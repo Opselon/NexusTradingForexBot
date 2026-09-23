@@ -23,6 +23,7 @@ import {
   StatusBadge,
 } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import { DistBars, FreshnessCaption, GateStepper, InfoRow, StatusPill } from "./lane5Kit";
 import { registryCounters, obj, str, type Row } from "../model";
 import { researchQueries, researchUseCases } from "../useCases";
@@ -31,10 +32,9 @@ import StrategyDrawer from "./StrategyDrawer";
 
 type Tab = "registry" | "queue" | "worker" | "analytics" | "history" | "datasets";
 
-const PAGE_SIZE_HINT = "bounded server-side (limit params enforced by the backend)";
-
 export default function ResearchPage(props: ShellPageProps) {
   void props;
+  const t = useI18n((s) => s.t);
   const [tab, setTab] = useState<Tab>("registry");
   const [lifecycle, setLifecycle] = useState<string | undefined>(undefined);
   const [selected, setSelected] = useState<string | null>(null);
@@ -106,14 +106,19 @@ export default function ResearchPage(props: ShellPageProps) {
 
   const unavailable = (data: { available?: boolean; reason?: string } | undefined) =>
     !data || data.available === false ? (
-      <EmptyState message="Research subsystem unavailable" hint={data?.reason ?? "backend answered without availability — nothing to show"} />
+      <EmptyState
+        message={t("research.page.unavailable", "Research subsystem unavailable")}
+        hint={data?.reason ?? t("research.page.no_availability", "backend answered without availability — nothing to show")}
+      />
     ) : null;
 
   return (
     <div>
       <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <h2>Research</h2>
-        <span className="muted small">candidate validation pipeline · legacy tab-research parity</span>
+        <h2>{t("nav.feature.research", "Research")}</h2>
+        <span className="muted small">
+          {t("research.page.subtitle", "candidate validation pipeline · legacy tab-research parity")}
+        </span>
         <FreshnessCaption
           timestamp={v1StatusQ.data?.generated_at ?? undefined}
           source="v1 /api/v1/research/status"
@@ -124,31 +129,41 @@ export default function ResearchPage(props: ShellPageProps) {
 
       <div className="grid cols-4">
         <MetricCard
-          label="Registry total"
+          label={t("research.page.kpi_total", "Registry total")}
           value={summaryQ.isPending ? "…" : summary?.available === false ? "n/a" : String(summary?.total ?? 0)}
-          sub={rows?.available === false ? (rows.reason ?? "unavailable") : "strategy_intelligence_registry"}
+          sub={
+            rows?.available === false
+              ? (rows.reason ?? t("research.page.unavailable_short", "unavailable"))
+              : "strategy_intelligence_registry"
+          }
         />
         <MetricCard
-          label="Validated"
+          label={t("research.page.kpi_validated", "Validated")}
           value={String(summary?.by_lifecycle?.VALIDATED ?? 0)}
           tone={summary?.by_lifecycle?.VALIDATED ? "pos" : "dim"}
-          sub="lifecycle census"
+          sub={t("research.page.kpi_validated_sub", "lifecycle census")}
         />
         <MetricCard
-          label="Active strategies"
+          label={t("research.page.kpi_active", "Active strategies")}
           value={String(summary?.by_lifecycle?.ACTIVE ?? 0)}
           tone={summary?.by_lifecycle?.ACTIVE ? "pos" : "dim"}
-          sub="backend lifecycle counts"
+          sub={t("research.page.kpi_active_sub", "backend lifecycle counts")}
         />
         <MetricCard
-          label="Research worker"
+          label={t("research.page.kpi_worker", "Research worker")}
           value={<StatusBadge status={str(obj(summary?.worker).status) ?? undefined} />}
-          sub={obj(summary?.outcome_quality).available ? `closed outcomes: ${String(obj(summary?.outcome_quality).closed_outcomes ?? 0)}` : "outcome quality not reported"}
+          sub={
+            obj(summary?.outcome_quality).available
+              ? t("research.page.kpi_worker_closed", "closed outcomes: {n}", {
+                  n: String(obj(summary?.outcome_quality).closed_outcomes ?? 0),
+                })
+              : t("research.page.kpi_worker_noquality", "outcome quality not reported")
+          }
         />
       </div>
 
       <Panel
-        title="Lifecycle census (registry summary)"
+        title={t("research.page.lifecycle_panel", "Lifecycle census (registry summary)")}
         right={<FreshnessCaption timestamp={null} isFetching={summaryQ.isFetching} error={summaryQ.isError} />}
         tight
       >
@@ -157,13 +172,17 @@ export default function ResearchPage(props: ShellPageProps) {
         ) : (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {registryCounters(summary).length === 0 ? (
-              <span className="muted small">no lifecycle rows reported</span>
+              <span className="muted small">{t("research.page.no_lifecycle_rows", "no lifecycle rows reported")}</span>
             ) : (
               registryCounters(summary).map((c) => (
                 <button
                   key={c.label}
                   className={`btn small ${lifecycle === c.label ? "primary" : "ghost"}`}
-                  title={lifecycle === c.label ? "filter: clear" : `filter registry by ${c.label}`}
+                  title={
+                    lifecycle === c.label
+                      ? t("research.page.filter_clear", "filter: clear")
+                      : t("research.page.filter_by", "filter registry by {s}", { s: c.label })
+                  }
                   onClick={() => {
                     setLifecycle(lifecycle === c.label ? undefined : c.label);
                     void queryClient.invalidateQueries({ queryKey: ["research", "registry"] });
@@ -183,12 +202,12 @@ export default function ResearchPage(props: ShellPageProps) {
 
       <Segmented
         options={[
-          { id: "registry" as const, label: "Registry" },
-          { id: "queue" as const, label: "Gate queue" },
-          { id: "worker" as const, label: "Worker" },
-          { id: "analytics" as const, label: "Analytics" },
-          { id: "history" as const, label: "Retention" },
-          { id: "datasets" as const, label: "Datasets (v1)" },
+          { id: "registry" as const, label: t("research.page.tab_registry", "Registry") },
+          { id: "queue" as const, label: t("research.page.tab_queue", "Gate queue") },
+          { id: "worker" as const, label: t("research.page.tab_worker", "Worker") },
+          { id: "analytics" as const, label: t("research.page.tab_analytics", "Analytics") },
+          { id: "history" as const, label: t("research.page.tab_history", "Retention") },
+          { id: "datasets" as const, label: t("research.page.tab_datasets", "Datasets (v1)") },
         ]}
         value={tab}
         onChange={setTab}
@@ -196,22 +215,33 @@ export default function ResearchPage(props: ShellPageProps) {
 
       <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
         {tab === "registry" && (
-          <Panel title={`Registry list ${lifecycle ? `· ${lifecycle}` : ""}`} right={<span className="tiny muted">{PAGE_SIZE_HINT}</span>} tight>
+          <Panel
+            title={t("research.page.registry_list", "Registry list {l}", { l: lifecycle ? `· ${lifecycle}` : "" })}
+            right={
+              <span className="tiny muted">
+                {t("research.page.size_hint", "bounded server-side (limit params enforced by the backend)")}
+              </span>
+            }
+            tight
+          >
             {registryQ.isPending ? (
               <Skeleton count={4} />
             ) : unavailable(registryQ.data) ?? (
               <>
                 {registry.length === 0 ? (
-                  <EmptyState message="Registry is empty for this filter." hint="/api/research/health explains WHY (source trades, rejections, attempts)." />
+                  <EmptyState
+                    message={t("research.page.registry_empty", "Registry is empty for this filter.")}
+                    hint={t("research.page.registry_empty_hint", "/api/research/health explains WHY (source trades, rejections, attempts).")}
+                  />
                 ) : (
                   <DataTable
                     headers={[
-                      { label: "strategy" },
-                      { label: "lifecycle" },
-                      { label: "conf", num: true },
-                      { label: "samples", num: true },
-                      { label: "score", num: true },
-                      { label: "updated" },
+                      { label: t("research.th.strategy", "strategy") },
+                      { label: t("research.th.lifecycle", "lifecycle") },
+                      { label: t("research.th.conf", "conf"), num: true },
+                      { label: t("research.th.samples", "samples"), num: true },
+                      { label: t("research.th.score", "score"), num: true },
+                      { label: t("research.th.updated", "updated") },
                       { label: "" },
                     ]}
                   >
@@ -229,7 +259,7 @@ export default function ResearchPage(props: ShellPageProps) {
                         <td className="tiny">{s.updatedAt ? formatDateTime(s.updatedAt) : "—"}</td>
                         <td>
                           <button className="btn small ghost" onClick={() => setSelected(s.strategyId)}>
-                            trace
+                            {t("research.page.trace_btn", "trace")}
                           </button>
                         </td>
                       </tr>
@@ -242,19 +272,29 @@ export default function ResearchPage(props: ShellPageProps) {
         )}
 
         {tab === "queue" && (
-          <Panel title="Gate queue census" right={<FreshnessCaption timestamp={null} isFetching={queueQ.isFetching} error={queueQ.isError} />} tight>
+          <Panel
+            title={t("research.page.queue_panel", "Gate queue census")}
+            right={<FreshnessCaption timestamp={null} isFetching={queueQ.isFetching} error={queueQ.isError} />}
+            tight
+          >
             {queueQ.isPending ? (
               <Skeleton count={3} />
             ) : unavailable(queueQ.data) ?? (
               <div className="grid cols-2">
                 <div>
-                  <div className="section-title">queued / running by gate type</div>
+                  <div className="section-title">{t("research.page.queue_by_gate", "queued / running by gate type")}</div>
                   <DistBars rows={queued} tone="var(--amber)" />
                 </div>
                 <div>
-                  <div className="section-title">running now</div>
+                  <div className="section-title">{t("research.page.running_now", "running now")}</div>
                   {(queue.running as Row[] | undefined)?.length ? (
-                    <DataTable headers={[{ label: "gate" }, { label: "strategy" }, { label: "status" }]}>
+                    <DataTable
+                      headers={[
+                        { label: t("research.th.gate", "gate") },
+                        { label: t("research.th.strategy", "strategy") },
+                        { label: t("research.th.status", "status") },
+                      ]}
+                    >
                       {(queue.running as Row[]).map((r: Row, i: number) => (
                         <tr key={i}>
                           <td className="tiny">{str(r.gate_type) ?? "—"}</td>
@@ -266,7 +306,7 @@ export default function ResearchPage(props: ShellPageProps) {
                       ))}
                     </DataTable>
                   ) : (
-                    <EmptyState message="Nothing running right now." />
+                    <EmptyState message={t("research.page.nothing_running", "Nothing running right now.")} />
                   )}
                 </div>
               </div>
@@ -275,18 +315,25 @@ export default function ResearchPage(props: ShellPageProps) {
         )}
 
         {tab === "worker" && (
-          <Panel title="Worker heartbeat + diagnostics" right={<FreshnessCaption timestamp={null} isFetching={workerQ.isFetching || !workerQ.isFetched} error={workerQ.isError} />} tight>
+          <Panel
+            title={t("research.page.worker_panel", "Worker heartbeat + diagnostics")}
+            right={<FreshnessCaption timestamp={null} isFetching={workerQ.isFetching || !workerQ.isFetched} error={workerQ.isError} />}
+            tight
+          >
             {workerQ.isPending ? (
               <Skeleton count={3} />
             ) : unavailable(workerQ.data) ?? (
               <div className="grid cols-2">
                 <div>
                   <dl className="kv">
-                    <InfoRow label="health" value={<StatusPill status={str(obj(workerQ.data?.worker).health) ?? "UNKNOWN"} />} />
-                    <InfoRow label="last beat" value={formatDateTime(str(obj(obj(workerQ.data?.worker).heartbeat).last_beat_at))} />
-                    <InfoRow label="cycle" value={String(obj(obj(workerQ.data?.worker).runtime).cycle_count ?? "—")} />
-                    <InfoRow label="status" value={str(obj(obj(workerQ.data?.worker).runtime).status) ?? "—"} />
-                    <InfoRow label="last error" value={str(obj(obj(workerQ.data?.worker).runtime).last_error) ?? "none reported"} />
+                    <InfoRow label={t("research.page.w_health", "health")} value={<StatusPill status={str(obj(workerQ.data?.worker).health) ?? "UNKNOWN"} />} />
+                    <InfoRow label={t("research.page.w_lastbeat", "last beat")} value={formatDateTime(str(obj(obj(workerQ.data?.worker).heartbeat).last_beat_at))} />
+                    <InfoRow label={t("research.page.w_cycle", "cycle")} value={String(obj(obj(workerQ.data?.worker).runtime).cycle_count ?? "—")} />
+                    <InfoRow label={t("research.th.status", "status")} value={str(obj(obj(workerQ.data?.worker).runtime).status) ?? "—"} />
+                    <InfoRow
+                      label={t("research.page.w_lasterror", "last error")}
+                      value={str(obj(obj(workerQ.data?.worker).runtime).last_error) ?? t("research.page.w_no_error", "none reported")}
+                    />
                   </dl>
                 </div>
                 <ResearchDiagMini />
@@ -296,17 +343,23 @@ export default function ResearchPage(props: ShellPageProps) {
         )}
 
         {tab === "analytics" && (
-          <Panel title="Failure heatmap + families" right={<FreshnessCaption timestamp={null} isFetching={analyticsQ.isFetching} error={analyticsQ.isError} />} tight>
+          <Panel
+            title={t("research.page.analytics_panel", "Failure heatmap + families")}
+            right={<FreshnessCaption timestamp={null} isFetching={analyticsQ.isFetching} error={analyticsQ.isError} />}
+            tight
+          >
             {analyticsQ.isPending ? (
               <Skeleton count={3} />
             ) : unavailable(analyticsQ.data) ?? (
               <div className="grid cols-2">
                 <div>
-                  <div className="section-title">failed gates (total: {String(heatmap.total_failures ?? 0)})</div>
+                  <div className="section-title">
+                    {t("research.page.failed_gates", "failed gates (total: {n})", { n: String(heatmap.total_failures ?? 0) })}
+                  </div>
                   <DistBars rows={Object.entries(byGate).map(([k, v]) => ({ label: k, count: Number(v) || 0 }))} tone="var(--red)" />
                 </div>
                 <div>
-                  <div className="section-title">rejection reasons</div>
+                  <div className="section-title">{t("research.page.rejection_reasons", "rejection reasons")}</div>
                   <DistBars
                     rows={Object.entries(rejectionReasons)
                       .slice(0, 15)
@@ -320,7 +373,7 @@ export default function ResearchPage(props: ShellPageProps) {
         )}
 
         {tab === "history" && (
-          <Panel title="Retention (live vs archive — archive-only contract)" tight>
+          <Panel title={t("research.page.retention_panel", "Retention (live vs archive — archive-only contract)")} tight>
             {historyQ.isPending ? (
               <Skeleton count={2} />
             ) : unavailable(historyQ.data) ?? (
@@ -334,17 +387,28 @@ export default function ResearchPage(props: ShellPageProps) {
         )}
 
         {tab === "datasets" && (
-          <Panel title="v1 datasets (provenance from real runs)" right={<span className="tiny muted">/api/v1/research/datasets</span>} tight>
+          <Panel
+            title={t("research.page.datasets_panel", "v1 datasets (provenance from real runs)")}
+            right={<span className="tiny muted">/api/v1/research/datasets</span>}
+            tight
+          >
             {datasetsQ.isPending ? (
               <Skeleton count={3} />
             ) : datasetsQ.isError ? (
               <div className="small" style={{ color: "var(--red)" }}>
-                {datasetsQ.error instanceof Error ? datasetsQ.error.message : "request failed"}
+                {datasetsQ.error instanceof Error
+                  ? datasetsQ.error.message
+                  : t("research.page.request_failed", "request failed")}
               </div>
             ) : (datasetsQ.data?.datasets ?? []).length === 0 ? (
-              <EmptyState message="No datasets derived from runs yet." />
+              <EmptyState message={t("research.page.no_datasets", "No datasets derived from runs yet.")} />
             ) : (
-              <DataTable headers={[{ label: "dataset_id" }, { label: "runs", num: true }]}>
+              <DataTable
+                headers={[
+                  { label: "dataset_id" },
+                  { label: t("research.th.runs", "runs"), num: true },
+                ]}
+              >
                 {(datasetsQ.data?.datasets ?? []).map((d, i) => (
                   <tr key={i}>
                     <td className="inline-mono tiny">{d.dataset_id ?? "—"}</td>
@@ -364,6 +428,7 @@ export default function ResearchPage(props: ShellPageProps) {
 
 /** Compact diagnostics block inside the worker tab (blocked-gate census). */
 function ResearchDiagMini() {
+  const t = useI18n((s) => s.t);
   const diagQ = useQuery({
     queryKey: ["research", "diagnostics"],
     queryFn: ({ signal }) => researchQueries.diagnostics(signal),
@@ -372,15 +437,15 @@ function ResearchDiagMini() {
   const blocked = diagQ.data?.blocked_gates ?? [];
   return (
     <div>
-      <div className="section-title">blocked / failed gates (diagnostics)</div>
+      <div className="section-title">{t("research.page.blocked_diag", "blocked / failed gates (diagnostics)")}</div>
       {diagQ.isPending ? (
         <Skeleton count={2} />
       ) : blocked.length === 0 ? (
-        <EmptyState message="No blocked gates reported." />
+        <EmptyState message={t("research.page.no_blocked", "No blocked gates reported.")} />
       ) : (
         <GateStepper
           gates={blocked.slice(0, 8).map((g) => ({
-            name: `${str(g.gate_type) ?? "gate"} · ${(str(g.strategy_id) ?? "").slice(0, 10)}`,
+            name: `${str(g.gate_type) ?? t("research.page.gate_fallback", "gate")} · ${(str(g.strategy_id) ?? "").slice(0, 10)}`,
             status: str(g.status) ?? "UNKNOWN",
             reason: str(g.failure_reason),
           }))}
