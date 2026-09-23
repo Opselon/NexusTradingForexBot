@@ -235,6 +235,43 @@ class TestProvisioningImportPath:
             pr._allowed_import_path(payload)
         assert payload not in str(ei.value)
 
+    def test_import_roots_reject_traversal(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """CodeQL #1149 — NEXUS_IMPORT_ROOTS entries are shape-validated."""
+        import os
+
+        from nexus_scalp.web import provisioning_routes as pr
+
+        sep = os.sep
+        monkeypatch.setenv(
+            pr._IMPORT_ROOTS_ENV,
+            os.pathsep.join(
+                [
+                    ".." + sep + ".." + sep + "etc" + sep + "passwd",
+                    "data" + sep + "raw",
+                    "weird<>|value",
+                ]
+            ),
+        )
+        roots = [str(r) for r in pr._allowed_import_roots()]
+        assert not any("passwd" in r for r in roots), roots
+        assert not any("weird" in r for r in roots), roots
+
+    def test_import_roots_keep_legitimate_nested(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Legitimate roots (incl. spaces / Windows drives) must survive #1149 fix."""
+        import os
+
+        from nexus_scalp.web import provisioning_routes as pr
+
+        sep = os.sep
+        legit = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+        monkeypatch.setenv(
+            pr._IMPORT_ROOTS_ENV,
+            os.pathsep.join([legit, "data" + sep + "imports", "legit dir" + sep + "raw"]),
+        )
+        roots = [str(r) for r in pr._allowed_import_roots()]
+        assert any(legit in r for r in roots), roots
+        assert not any("legit dir" not in r and "data" not in r and legit not in r for r in roots)
+
 
 # =============================================================================
 # FAMILY D — SQL injection

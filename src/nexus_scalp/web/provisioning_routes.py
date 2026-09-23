@@ -114,7 +114,14 @@ def _allowed_import_roots() -> list[Path]:
         cleaned = raw.strip()
         if not cleaned:
             continue
-        resolved = Path(cleaned).expanduser().resolve()
+        # SEC (py/path-injection #1149): validate shape before resolving
+        # operator-supplied env paths so traversal and shell tokens are refused.
+        if ".." in cleaned or "\x00" in cleaned or not _IMPORT_PATH_SHAPE.fullmatch(cleaned):
+            continue
+        try:
+            resolved = Path(cleaned).expanduser().resolve()
+        except (ValueError, RuntimeError):
+            continue
         if resolved not in seen:
             seen.add(resolved)
             roots.append(resolved)
