@@ -12,7 +12,7 @@
  * backend rows, backend-supplied levels; dropped rows are captioned, never hidden.
  */
 
-import { useMemo, useState } from "react";
+import { Suspense, lazy, memo, useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, EmptyState, ErrorState, MetricCard, Panel, ProbBar, Segmented, Skeleton } from "@/components/primitives";
 import { ConfidenceGauge } from "@/components/viz";
@@ -24,12 +24,74 @@ import { actionTone, confidence01, obj, str, type SignalDto } from "../model";
 import { aiAnalysisQueries, orderHistory } from "../useCases";
 import { actionFamily, actionKpi, countRows, topEntry } from "./vizMath";
 import { AaActionChip, ActionDonut, BarList, ConfidenceTimeline, ConfCell, PriceLadder, historyTimeline } from "./aaCharts";
-import DecisionDrawer from "./DecisionDrawer";
-import IndicatorsConsole from "./IndicatorsConsole";
-import { IntelligenceTelemetryPanel } from "./IntelligenceTelemetryPanel";
-import { PositionTimelineLookup } from "./PositionTimelineLookup";
-import { Shadow70DeepPanel } from "./Shadow70DeepPanel";
 import "./aiAnalysis.css";
+
+/* Inner splits (perf lane): these views render only behind a tab or an open
+ * drawer, so each ships as its own chunk fetched on first use behind a LOCAL
+ * Suspense boundary (the shell's shared Suspense would blank the whole
+ * route). The signals tab — hero, charts, vizMath — stays eager: it is the
+ * landing view. */
+const DecisionDrawer = lazy(() => import("./DecisionDrawer"));
+const IndicatorsConsole = lazy(() => import("./IndicatorsConsole"));
+const Shadow70DeepPanel = lazy(() => import("./Shadow70DeepPanel").then((m) => ({ default: m.Shadow70DeepPanel })));
+const IntelligenceTelemetryPanel = lazy(() => import("./IntelligenceTelemetryPanel").then((m) => ({ default: m.IntelligenceTelemetryPanel })));
+const PositionTimelineLookup = lazy(() => import("./PositionTimelineLookup").then((m) => ({ default: m.PositionTimelineLookup })));
+
+/** Shell-matching skeleton while a tab/drawer chunk streams in. */
+function TabFallback({ count = 4, height = 44 }: { count?: number; height?: number }) {
+  return <Skeleton count={count} height={height} />;
+}
+
+/** memo: the page re-renders on the 15s latest-signal tick; the wall only
+ *  cares about `tf`, so those ticks must not recompute it. */
+const IndicatorsConsoleTab = memo(function IndicatorsConsoleTab({ tf, onTf }: { tf: string; onTf: (tf: string) => void }) {
+  return <IndicatorsConsole tf={tf} onTf={onTf} />;
+});
+
+/** memo drawer: same isolation — its own queries, not the page's ticks. */
+const DecisionDrawerBox = memo(function DecisionDrawerBox({
+  decisionId,
+  onClose,
+}: {
+  decisionId: string;
+  onClose: () => void;
+}) {
+  return <DecisionDrawer decisionId={decisionId} onClose={onClose} />;
+});
+
+/** memo history row: the 15s latest-signal tick re-renders the page; rows
+ *  only change when the history query itself produces new data. */
+const HistoryRow = memo(function HistoryRow({
+  signal,
+  onOpen,
+}: {
+  signal: SignalDto;
+  onOpen: (requestId: string) => void;
+}) {
+  const s = signal;
+  return (
+    <tr>
+      <td className="inline-mono tiny">{str(s.request_id)?.slice(0, 10) ?? "—"}</td>
+      <td className="small">{s.symbol}</td>
+      <td>
+        <AaActionChip action={s.action} />
+      </td>
+      <td className="num">
+        <ConfCell value={confidence01(s.confidence)} action={s.action} />
+      </td>
+      <td className="tiny">{s.decision_stage ?? "—"}</td>
+      <td className="tiny muted aa-reason" title={s.reason_code ?? ""}>
+        {s.blocked_by ? `blocked:${s.blocked_by}` : (s.reason_code ?? "—")}
+      </td>
+      <td className="tiny">{formatDateTime(s.generated_at)}</td>
+      <td>
+        <button className="btn small ghost" onClick={() => onOpen(String(s.request_id ?? ""))}>
+          drilldown
+        </button>
+      </td>
+    </tr>
+  );
+});
 
 type Tab = "signals" | "indicators" | "shadow" | "intel";
 
@@ -79,6 +141,11 @@ export default function AiAnalysisPage(props: ShellPageProps) {
   const isNotFound = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.code === "RESOURCE_NOT_FOUND");
   const latest = latestQ.data;
   const latestFamily = actionFamily(latest?.action);
+
+  /* Stable drilldown callbacks — inline closures would defeat the memoized
+   * history rows and the memoized drawer on every 15s/60s query tick. */
+  const openDrilldown = useCallback((requestId: string) => setOpenDecision(requestId), []);
+  const closeDrilldown = useCallback(() => setOpenDecision(null), []);
 
   // Timeline series: page rows → normalized confidence (model rule) → sorted.
   const timeline = useMemo(
@@ -202,8 +269,17 @@ export default function AiAnalysisPage(props: ShellPageProps) {
             <div className="grid cols-4">
               <Skeleton count={4} />
             </div>
+          ) : isNotFound(statsQ.error) ? (
+            <EmptyState
+              message="No decisions recorded yet."
+              hint="/api/v1/decisions/stats answers RESOURCE_NOT_FOUND — the ledger holds no decisions in this window."
+            />
           ) : statsQ.isError ? (
-            <EmptyState message={statsQ.error instanceof Error ? statsQ.error.message : "stats unavailable"} />
+            <ErrorState
+              message={statsQ.error instanceof Error ? statsQ.error.message : "GET /api/v1/decisions/stats failed"}
+              requestId={statsQ.error instanceof ApiError ? statsQ.error.requestId : null}
+              onRetry={() => void statsQ.refetch()}
+            />
           ) : (
             (() => {
               const st = statsQ.data;
@@ -261,7 +337,11 @@ export default function AiAnalysisPage(props: ShellPageProps) {
             {historyQ.isPending ? (
               <Skeleton count={5} />
             ) : historyQ.isError ? (
-              <ErrorState message={historyQ.error instanceof Error ? historyQ.error.message : "history failed"} onRetry={() => void historyQ.refetch()} />
+              <ErrorState
+                message={historyQ.error instanceof Error ? historyQ.error.message : "GET /api/v1/signals/history failed"}
+                requestId={historyQ.error instanceof ApiError ? historyQ.error.requestId : null}
+                onRetry={() => void historyQ.refetch()}
+              />
             ) : (historyQ.data?.items ?? []).length === 0 ? (
               <EmptyState message="No signals in this window." />
             ) : (
@@ -279,26 +359,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
                   ]}
                 >
                   {orderHistory(historyQ.data?.items ?? []).map((s: SignalDto, i: number) => (
-                    <tr key={s.request_id ?? i}>
-                      <td className="inline-mono tiny">{str(s.request_id)?.slice(0, 10) ?? "—"}</td>
-                      <td className="small">{s.symbol}</td>
-                      <td>
-                        <AaActionChip action={s.action} />
-                      </td>
-                      <td className="num">
-                        <ConfCell value={confidence01(s.confidence)} action={s.action} />
-                      </td>
-                      <td className="tiny">{s.decision_stage ?? "—"}</td>
-                      <td className="tiny muted aa-reason" title={s.reason_code ?? ""}>
-                        {s.blocked_by ? `blocked:${s.blocked_by}` : (s.reason_code ?? "—")}
-                      </td>
-                      <td className="tiny">{formatDateTime(s.generated_at)}</td>
-                      <td>
-                        <button className="btn small ghost" onClick={() => setOpenDecision(String(s.request_id ?? ""))}>
-                          drilldown
-                        </button>
-                      </td>
-                    </tr>
+                    <HistoryRow key={s.request_id ?? i} signal={s} onOpen={openDrilldown} />
                   ))}
                 </DataTable>
                 <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
@@ -319,7 +380,11 @@ export default function AiAnalysisPage(props: ShellPageProps) {
         </div>
       )}
 
-      {tab === "indicators" && <IndicatorsConsole tf={tf} onTf={setTf} />}
+      {tab === "indicators" && (
+        <Suspense fallback={<TabFallback count={6} height={48} />}>
+          <IndicatorsConsoleTab tf={tf} onTf={setTf} />
+        </Suspense>
+      )}
 
       {tab === "shadow" && (
         <div className="aa-stack">
@@ -330,8 +395,17 @@ export default function AiAnalysisPage(props: ShellPageProps) {
           >
             {shadowQ.isPending ? (
               <Skeleton count={3} />
+            ) : isNotFound(shadowQ.error) ? (
+              <EmptyState
+                message="No shadow-70D records yet."
+                hint="/api/v1/shadow/70d answers RESOURCE_NOT_FOUND — the observer has not written a record on this build."
+              />
             ) : shadowQ.isError ? (
-              <EmptyState message={shadowQ.error instanceof Error ? shadowQ.error.message : "shadow store unavailable"} />
+              <ErrorState
+                message={shadowQ.error instanceof Error ? shadowQ.error.message : "GET /api/v1/shadow/70d failed"}
+                requestId={shadowQ.error instanceof ApiError ? shadowQ.error.requestId : null}
+                onRetry={() => void shadowQ.refetch()}
+              />
             ) : (
               <div className="grid cols-2">
                 <div>
@@ -370,19 +444,27 @@ export default function AiAnalysisPage(props: ShellPageProps) {
           </Panel>
 
           {/* v1 deep panel: legacy envelope above + health/disagreements/alerts below. */}
-          <Shadow70DeepPanel />
+          <Suspense fallback={<TabFallback count={3} height={40} />}>
+            <Shadow70DeepPanel />
+          </Suspense>
         </div>
       )}
 
       {tab === "intel" && (
         <div className="aa-stack">
           <div className="tiny faint">behaviour coverage — legacy tab-ai-analysis also loads intelligence centre + position timeline (orphaned components, now wired).</div>
-          <IntelligenceTelemetryPanel />
-          <PositionTimelineLookup />
+          <Suspense fallback={<TabFallback count={4} height={36} />}>
+            <IntelligenceTelemetryPanel />
+            <PositionTimelineLookup />
+          </Suspense>
         </div>
       )}
 
-      {openDecision && <DecisionDrawer decisionId={openDecision} onClose={() => setOpenDecision(null)} />}
+      {openDecision && (
+        <Suspense fallback={<TabFallback count={4} height={64} />}>
+          <DecisionDrawerBox decisionId={openDecision} onClose={closeDrilldown} />
+        </Suspense>
+      )}
     </div>
   );
 }
