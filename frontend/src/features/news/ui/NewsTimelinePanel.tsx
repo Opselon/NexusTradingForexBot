@@ -5,7 +5,7 @@
  * larger set, no client-side aggregation).
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { DataTable, EmptyState, ErrorState, Panel, Segmented } from "@/components/primitives";
 import { formatDateTime, formatNumber, formatPct } from "@/lib/format";
 import { useNewsImpact, useNewsTimeline } from "../hooks";
@@ -33,7 +33,9 @@ export function NewsTimelinePanel() {
   const impact = useNewsImpact(asset, 40);
 
   const buckets = timeline.data ?? [];
-  const win = timelineWindow(buckets);
+  // perf: window derivation (first/last/sum over the bucket array) once per
+  // payload identity — the timeline poll refetches every 120s.
+  const win = useMemo(() => timelineWindow(buckets), [buckets]);
   const assetInvalid = !/^[A-Z0-9._-]{1,16}$/.test(assetDraft.trim().toUpperCase());
 
   return (

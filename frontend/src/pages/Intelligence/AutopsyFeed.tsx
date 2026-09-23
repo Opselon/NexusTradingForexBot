@@ -1,51 +1,81 @@
 /**
- * PURPOSE:  Trade-autopsy card grid for /api/intelligence/autopsies — each
- *           autopsy as a compact card (outcome, signed realized R, exit
- *           reason) with honest loading/empty/error states.
- * OWNER:    uiux-wave5-intel  (future edits to this file belong to this lane)
+ * PURPOSE:  Trade-autopsy card grid for the autopsies query — pro cards with
+ *           a VERBATIM outcome badge (tone only restates the backend word),
+ *           raw ticket/strategy/realized-r/exit-reason figures, an outcome-
+ *           toned start border, endpoint provenance caption, and honest
+ *           loading/empty/error states.
+ * OWNER:    ui/w2-lane-c  (future edits to this file belong to lane C)
  * CONSUMES: a TanStack query result for /api/intelligence/autopsies
  *           (structurally typed via _shared/SectionState QueryLike),
- *           AutopsyRow declared fields only, primitives (Panel) + kit states.
+ *           AutopsyRow declared fields only, primitives (Panel) + kit states,
+ *           ./signalBits (WordBadge, outcomeTone), ./feed.css (`itl-*`).
  * PROVIDES: default AutopsyFeed — rendered inside IntelligencePage.
  * INVARIANTS: renders only the declared AutopsyRow fields (ticket,
  *           strategy_id, outcome, realized_r, exit_reason) — no timestamp or
- *           score is shown because the type carries none; realized-R color
- *           reuses the theme's existing pnl-pos/pnl-neg sign convention.
+ *           score is shown because the type carries none; every value is the
+ *           raw payload string (missing → "—"); the outcome badge prints the
+ *           backend word verbatim (WIN/LOSS/BREAKEVEN …) and its tone/border
+ *           only restate that word — no verdict is computed here;
+ *           realized-R color reuses the theme's pnl-pos/pnl-neg sign
+ *           convention; '/api/intelligence/autopsies' is the static provenance text — the
+ *           the lane brief; the honest empty state is unchanged.
  * EXTEND:   extra verified fields go into the figures row; keep the states.
  */
 
 import { Panel } from "@/components/primitives";
 import { SectionState, type QueryLike } from "@/pages/_shared/SectionState";
 import type { AutopsyRow } from "@/types/domain";
+import { WordBadge, outcomeTone } from "./signalBits";
 
 type AutopsyPayload = { available: boolean; autopsies?: AutopsyRow[] };
 
-function AutopsyCard({ row }: { row: AutopsyRow }) {
+/** Raw payload text with the kit's honest missing marker (never zero-filled). */
+function raw(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  const s = String(value).trim();
+  return s ? s : "—";
+}
+
+function AutopsyCard({ row, index }: { row: AutopsyRow; index: number }) {
   const r = typeof row.realized_r === "number" ? row.realized_r : null;
+  const tone = outcomeTone(row.outcome);
+  const outcomeRaw = row.outcome === null || row.outcome === undefined ? "" : String(row.outcome).trim();
   return (
-    <div className="itl-autopsy">
+    // tone class only re-words the backend outcome; index → entry stagger
+    <div
+      className={`itl-autopsy itl-autopsy--tone-${tone}`}
+      style={{ animationDelay: `${Math.min(index, 8) * 30}ms` }}
+    >
       <div className="itl-card__head">
         <span className="itl-type">trade autopsy</span>
-        <span className="itl-ticket">#{String(row.ticket ?? "—")}</span>
+        <WordBadge
+          word={row.outcome}
+          fallback="—"
+          tone={tone}
+          title={outcomeRaw ? `outcome (verbatim): ${outcomeRaw}` : "backend sent no outcome"}
+        />
+        <span className="itl-ticket" title="ticket (raw payload value)">
+          #{raw(row.ticket)}
+        </span>
       </div>
       <div className="itl-autopsy__figures">
-        <span className="itl-fig">
+        <span className="itl-fig" title="strategy_id (raw payload value)">
           <span className="k">strategy</span>
-          <span className="v">{row.strategy_id ?? "—"}</span>
+          <span className="v">{raw(row.strategy_id)}</span>
         </span>
-        <span className="itl-fig">
-          <span className="k">outcome</span>
-          <span className="v">{row.outcome ?? "—"}</span>
-        </span>
-        <span className="itl-fig">
+        <span
+          className="itl-fig"
+          title={r === null ? "realized_r missing in payload" : "realized_r (raw payload value, sign-coloured)"}
+        >
           <span className="k">realized r</span>
-          <span className={`v ${r === null ? "" : r >= 0 ? "pnl-pos" : "pnl-neg"}`}>
-            {r === null ? "—" : r.toFixed(2)}
-          </span>
+          <span className={`v ${r === null ? "" : r >= 0 ? "pnl-pos" : "pnl-neg"}`}>{raw(row.realized_r)}</span>
         </span>
       </div>
-      <div className="itl-autopsy__exit">
-        <span className="k">exit</span> {row.exit_reason ?? "—"}
+      <div
+        className="itl-autopsy__exit"
+        title={row.exit_reason ? "exit_reason (raw payload value)" : "backend sent no exit_reason"}
+      >
+        <span className="k">exit</span> {raw(row.exit_reason)}
       </div>
     </div>
   );
@@ -53,7 +83,18 @@ function AutopsyCard({ row }: { row: AutopsyRow }) {
 
 export default function AutopsyFeed({ query }: { query: QueryLike<AutopsyPayload> }) {
   return (
-    <Panel title="Recent trade autopsies (why trades won/lost)" tight>
+    <Panel
+      title="Recent trade autopsies (why trades won/lost)"
+      tight
+      right={
+        <span
+          className="itl-epcap"
+          title="static provenance — every figure below is loaded from this endpoint"
+        >
+          /api/intelligence/autopsies
+        </span>
+      }
+    >
       <SectionState
         query={query}
         skeletonRows={3}
@@ -64,7 +105,7 @@ export default function AutopsyFeed({ query }: { query: QueryLike<AutopsyPayload
         {(d) => (
           <div className="itl-autopsies">
             {(d.autopsies ?? []).map((a, i) => (
-              <AutopsyCard key={String(a.ticket ?? i)} row={a} />
+              <AutopsyCard key={String(a.ticket ?? i)} row={a} index={i} />
             ))}
           </div>
         )}

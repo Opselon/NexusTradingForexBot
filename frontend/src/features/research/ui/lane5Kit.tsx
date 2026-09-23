@@ -224,12 +224,43 @@ export function GuardButton({
   );
 }
 
-/** Local wall-clock tick for age displays without re-fetching. */
+/**
+ * Local wall-clock tick for age displays without re-fetching.
+ *
+ * perf: pause while the tab is hidden — `now` is Date.now()-derived (nothing
+ * accumulates, so pausing cannot corrupt it). On resume the interval restarts
+ * AND one immediate tick runs, so no displayed age is ever stale by a whole
+ * interval (visible cadence unchanged; same values, same freshness timing).
+ */
 export function useNow(intervalMs = 1000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), intervalMs);
-    return () => window.clearInterval(id);
+    let timer: number | null = null;
+    const tick = (): void => setNow(Date.now());
+    // (re)start the interval; `fresh` runs one immediate tick first so a
+    // resume can never leave a displayed age stale by a whole interval.
+    const start = (fresh: boolean): void => {
+      if (timer !== null) return; // already ticking
+      if (fresh) tick();
+      timer = window.setInterval(tick, intervalMs);
+    };
+    const stop = (): void => {
+      if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    };
+    // mount: no immediate tick — `now` was already seeded with Date.now().
+    if (document.visibilityState !== "hidden") start(false);
+    const onVisibility = (): void => {
+      if (document.visibilityState === "hidden") stop();
+      else start(true); // resume: one immediate tick, then the interval
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      stop();
+    };
   }, [intervalMs]);
   return now;
 }

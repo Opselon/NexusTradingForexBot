@@ -7,6 +7,7 @@
  * a missing component renders as an explicit UNKNOWN step, never as zero.
  */
 
+import { useMemo } from "react";
 import { fmtCompact, scaleLinear } from "./geometry";
 import "./viz.css";
 
@@ -49,34 +50,42 @@ export function buildTradeWaterfall(outcome: {
 }
 
 export function PnlWaterfall({ steps, height = 170, formatValue, emptyHint = "no PnL decomposition reported" }: PnlWaterfallProps) {
-  const usable = steps.filter((s) => s.value !== null);
-  if (usable.length === 0) return <div className="viz-empty">{emptyHint}</div>;
+  // Running levels + scale are a pure function of `steps` (memoized so an
+  // unchanged trade never re-derives them); the emitted SVG is byte-identical.
+  const geo = useMemo(() => {
+    const usable = steps.filter((s) => s.value !== null);
+    if (usable.length === 0) return null;
+
+    // Running levels: totals reset the level, deltas accumulate.
+    let level = 0;
+    const bars = steps.map((s) => {
+      if (s.value === null) return { s, from: null, to: null };
+      if (s.total) {
+        const from = 0;
+        const to = s.value;
+        level = s.value;
+        return { s, from, to };
+      }
+      const from = level;
+      level += s.value;
+      return { s, from, to: level };
+    });
+
+    const all = bars.flatMap((b) => (b.from === null || b.to === null ? [] : [b.from, b.to]));
+    const lo = Math.min(0, ...all);
+    const hi = Math.max(0, ...all);
+    const padT = 14;
+    const padB = 30;
+    const toY = scaleLinear(lo, hi, height - padB, padT);
+    const zeroY = toY(0);
+    const step = W / steps.length;
+    const barW = Math.max(10, Math.min(48, step * 0.55));
+    return { bars, toY, zeroY, step, barW };
+  }, [steps, height]);
+
+  if (geo === null) return <div className="viz-empty">{emptyHint}</div>;
+  const { bars, toY, zeroY, step, barW } = geo;
   const fmt = formatValue ?? ((v: number) => fmtCompact(v, 2));
-
-  // Running levels: totals reset the level, deltas accumulate.
-  let level = 0;
-  const bars = steps.map((s) => {
-    if (s.value === null) return { s, from: null, to: null };
-    if (s.total) {
-      const from = 0;
-      const to = s.value;
-      level = s.value;
-      return { s, from, to };
-    }
-    const from = level;
-    level += s.value;
-    return { s, from, to: level };
-  });
-
-  const all = bars.flatMap((b) => (b.from === null || b.to === null ? [] : [b.from, b.to]));
-  const lo = Math.min(0, ...all);
-  const hi = Math.max(0, ...all);
-  const padT = 14;
-  const padB = 30;
-  const toY = scaleLinear(lo, hi, height - padB, padT);
-  const zeroY = toY(0);
-  const step = W / steps.length;
-  const barW = Math.max(10, Math.min(48, step * 0.55));
 
   return (
     <div className="viz-frame">

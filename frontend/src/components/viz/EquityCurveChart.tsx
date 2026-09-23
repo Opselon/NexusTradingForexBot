@@ -6,7 +6,7 @@
  * does not compute drawdown, does not resample, and does not connect gaps.
  */
 
-import { useId } from "react";
+import { useId, useMemo } from "react";
 import { areaPath, extent, fmtCompact, linePath, niceTicks, scaleLinear, type Pt } from "./geometry";
 import "./viz.css";
 
@@ -41,26 +41,35 @@ export function EquityCurveChart({
   emptyHint = "no equity samples from the backend",
 }: EquityCurveChartProps) {
   const gid = useId().replace(/:/g, "");
-  const values = points.map((p) => p[field] ?? null);
-  const real = values.filter((v): v is number => v !== null && !Number.isNaN(v));
-  if (real.length < 2) {
+  // The geometry is a pure function of `points` + the numeric props; memoizing
+  // keeps an unchanged series from being re-walked on every parent render.
+  // The emitted SVG is byte-identical (same values, same tick rounding).
+  const geo = useMemo(() => {
+    const values = points.map((p) => p[field] ?? null);
+    const real = values.filter((v): v is number => v !== null && !Number.isNaN(v));
+    if (real.length < 2) return null;
+    const padT = 12;
+    const padB = 22;
+    const ext = extent(values)!;
+    const lo = ext[0];
+    const hi = ext[1];
+    const toY = scaleLinear(lo, hi, height - padB, padT);
+    const step = W / Math.max(1, points.length - 1);
+    const pts: Array<Pt | null> = values.map((v, i) => (v === null ? null : { x: i * step, y: toY(v) }));
+    const peakVals = showPeak ? points.map((p) => p.peak_equity ?? null) : [];
+    const peakPts: Array<Pt | null> = peakVals.map((v, i) => (v === null ? null : { x: i * step, y: toY(v) }));
+    const first = real[0] ?? 0;
+    const last = real[real.length - 1] ?? 0;
+    const rising = last >= first;
+    const ticks = niceTicks(lo, hi, 4);
+    return { toY, step, pts, peakPts, first, last, rising, ticks, real, padB };
+  }, [points, field, height, showPeak]);
+
+  if (geo === null) {
     return <div className="viz-empty">{emptyHint}</div>;
   }
-  const padT = 12;
-  const padB = 22;
-  const ext = extent(values)!;
-  const lo = ext[0];
-  const hi = ext[1];
-  const toY = scaleLinear(lo, hi, height - padB, padT);
-  const step = W / Math.max(1, points.length - 1);
-  const pts: Array<Pt | null> = values.map((v, i) => (v === null ? null : { x: i * step, y: toY(v) }));
-  const peakVals = showPeak ? points.map((p) => p.peak_equity ?? null) : [];
-  const peakPts: Array<Pt | null> = peakVals.map((v, i) => (v === null ? null : { x: i * step, y: toY(v) }));
-  const first = real[0] ?? 0;
-  const last = real[real.length - 1] ?? 0;
-  const rising = last >= first;
+  const { toY, step, pts, peakPts, first, last, rising, ticks, real, padB } = geo;
   const fmt = formatValue ?? ((v: number) => fmtCompact(v, 1));
-  const ticks = niceTicks(lo, hi, 4);
   const x0 = points[0]?.timestamp ?? "";
   const x1 = points[points.length - 1]?.timestamp ?? "";
   const short = (iso: string) => {

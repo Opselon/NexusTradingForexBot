@@ -565,9 +565,15 @@ function ModelSwapCard() {
   const swap = useModelSwap();
   const pushToast = useUiStore((s) => s.pushToast);
   const [path, setPath] = useState("");
-  const spec = { key: "model_artifact_path", label: "artifact path", kind: "path" as const, required: true, pattern: "\\.(pt|onnx|joblib|pkl)$", patternMessage: "artifact must be a .pt / .onnx / .joblib / .pkl file" };
-  const errors = validateFields([spec], { model_artifact_path: path });
-  const err = firstError(errors, spec.key);
+  // A fresh spec object literal per render made `errors` recompute every
+  // keystroke and every poll. One stable identity, memoized result — same
+  // messages, same disabled gating.
+  const spec = useMemo(
+    () => ({ key: "model_artifact_path", label: "artifact path", kind: "path" as const, required: true, pattern: "\\.(pt|onnx|joblib|pkl)$", patternMessage: "artifact must be a .pt / .onnx / .joblib / .pkl file" }),
+    [],
+  );
+  const errors = useMemo(() => validateFields([spec], { model_artifact_path: path }), [spec, path]);
+  const err = useMemo(() => firstError(errors, spec.key), [errors, spec.key]);
 
   const run = async () => {
     if (hasErrors(errors) || path.trim() === "") return;
@@ -699,8 +705,11 @@ function TelegramPanel() {
     ],
     [],
   );
-  const errors = validateFields(specs, { bot_token: token, admin_id: admin });
+  const errors = useMemo(() => validateFields(specs, { bot_token: token, admin_id: admin }), [specs, token, admin]);
   const dirty = token !== "" || admin !== "" || (enabled !== null && enabled !== (st?.enabled ?? false));
+
+  const errToken = useMemo(() => firstError(errors, "bot_token"), [errors]);
+  const errAdmin = useMemo(() => firstError(errors, "admin_id"), [errors]);
 
   const runSave = async () => {
     if (hasErrors(errors)) return;
@@ -746,11 +755,11 @@ function TelegramPanel() {
           <FieldRow label="enabled" hint="telegram.enabled (HOT_RESTRICTED)">
             <CheckField checked={effectiveEnabled} onChange={setEnabled} label="telegram enabled" />
           </FieldRow>
-          <FieldRow label={specs[0]!.label!} hint="leave empty to keep the stored secret — it never round-trips in plaintext (BUG-072)" error={firstError(errors, "bot_token")}>
-            <TextField value={token} onChange={setToken} error={firstError(errors, "bot_token")} placeholder={st?.masked_token || "123456:ABC-DEF…"} spec="bot token" />
+          <FieldRow label={specs[0]!.label!} hint="leave empty to keep the stored secret — it never round-trips in plaintext (BUG-072)" error={errToken}>
+            <TextField value={token} onChange={setToken} error={errToken} placeholder={st?.masked_token || "123456:ABC-DEF…"} spec="bot token" />
           </FieldRow>
-          <FieldRow label={specs[1]!.label!} hint="numeric chat id of the operator" error={firstError(errors, "admin_id")}>
-            <TextField value={admin} onChange={setAdmin} error={firstError(errors, "admin_id")} placeholder="-1001234567890" spec="admin chat id" />
+          <FieldRow label={specs[1]!.label!} hint="numeric chat id of the operator" error={errAdmin}>
+            <TextField value={admin} onChange={setAdmin} error={errAdmin} placeholder="-1001234567890" spec="admin chat id" />
           </FieldRow>
           <div className="l3-toolbar cfg-actions">
             <button className="btn" disabled={!dirty || hasErrors(errors) || save.isPending} onClick={() => void runSave()}>

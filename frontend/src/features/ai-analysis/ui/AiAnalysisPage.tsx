@@ -12,34 +12,85 @@
  * backend rows, backend-supplied levels; dropped rows are captioned, never hidden.
  */
 
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { DataTable, EmptyState, ErrorState, MetricCard, Panel, ProbBar, Segmented, Skeleton } from "@/components/primitives";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
+import { DataTable, EmptyState, ErrorState, Panel, ProbBar, Segmented, Skeleton } from "@/components/primitives";
 import { ConfidenceGauge } from "@/components/viz";
 import type { ShellPageProps } from "@/app/featureModule";
 import { ApiError } from "@/types/api";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { FreshnessCaption, GateStepper, InfoRow } from "../../research/ui/lane5Kit";
-import { actionTone, confidence01, obj, str, type SignalDto } from "../model";
+import { actionTone, confidence01, isNotFound, obj, str } from "../model";
 import { aiAnalysisQueries, orderHistory } from "../useCases";
-import { actionFamily, actionKpi, countRows, topEntry } from "./vizMath";
-import { AaActionChip, ActionDonut, BarList, ConfidenceTimeline, ConfCell, PriceLadder, historyTimeline } from "./aaCharts";
-import DecisionDrawer from "./DecisionDrawer";
-import IndicatorsConsole from "./IndicatorsConsole";
-import { IntelligenceTelemetryPanel } from "./IntelligenceTelemetryPanel";
-import { PositionTimelineLookup } from "./PositionTimelineLookup";
-import { Shadow70DeepPanel } from "./Shadow70DeepPanel";
+import { actionFamily, actionKpi, countRows, timelineSeries, topEntry } from "./vizMath";
+import { BarList, ConfidenceTimeline, PriceLadder } from "./aaCharts";
+import SignalsTab from "./SignalsTab";
 import "./aiAnalysis.css";
+
+// Wave-2 latency: the five heavyweight sections (indicators console 19KB,
+// decision drawer, shadow-deep, two intel panels) load ONLY when their tab or
+// the drawer opens. Verified page-local: no importer outside this feature, so
+// lazy() is a pure payload win for the default "Decisions & history" view.
+const IndicatorsConsole = lazy(() => import("./IndicatorsConsole"));
+const DecisionDrawer = lazy(() => import("./DecisionDrawer"));
+const Shadow70DeepPanel = lazy(() =>
+  import("./Shadow70DeepPanel").then((m) => ({ default: m.Shadow70DeepPanel })),
+);
+const IntelligenceTelemetryPanel = lazy(() =>
+  import("./IntelligenceTelemetryPanel").then((m) => ({ default: m.IntelligenceTelemetryPanel })),
+);
+const PositionTimelineLookup = lazy(() =>
+  import("./PositionTimelineLookup").then((m) => ({ default: m.PositionTimelineLookup })),
+);
+
+/** Uniform skeleton while a lazy section chunk loads (once per session). */
+function TabFallback() {
+  return <Skeleton count={4} />;
+}
 
 type Tab = "signals" | "indicators" | "shadow" | "intel";
 
+const TABS: Tab[] = ["signals", "indicators", "shadow", "intel"];
+const TAB_PARAM = "tab";
+
+/** Wave 2: explicit caps instead of inline magic numbers, so the caption
+ *  ("showing first N") and the slice stay in lockstep. */
+const DRIFT_SHOW = 12;
+const SUMMARY_ROWS = 14;
+/** Wave 2b (#39): every magic number that feeds a caption or a slice lives
+ *  here so the two can never drift apart again. */
+const REASONS_MAX = 8;
+
 export default function AiAnalysisPage(props: ShellPageProps) {
   void props;
-  const [tab, setTab] = useState<Tab>("signals");
+  const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTabState] = useState<Tab>(() => {
+    const t = searchParams.get(TAB_PARAM);
+    return TABS.some((x) => x === t) ? (t as Tab) : "signals";
+  });
+  const setTab = useCallback(
+    (next: Tab) => {
+      setTabState(next);
+      // Wave 2b (#31): mirror to the URL so the tab survives refresh, is
+      // linkable, and Back returns to the section the operator left.
+      setSearchParams((prev) => {
+        if (next === "signals") prev.delete(TAB_PARAM);
+        else prev.set(TAB_PARAM, next);
+        return prev;
+      });
+    },
+    [setSearchParams],
+  );
   const [hoursBack, setHoursBack] = useState(168);
   const [page, setPage] = useState(1);
   const [tf, setTf] = useState("M1");
   const [openDecision, setOpenDecision] = useState<string | null>(null);
+  // Wave 2: stable identities so the 15s latest-poll re-render can bail out of
+  // the memoized drawer/rows instead of re-creating handlers each pass.
+  const inspectDecision = useCallback((id: string) => setOpenDecision(id), []);
+  const closeDecision = useCallback(() => setOpenDecision(null), []);
 
   const latestQ = useQuery({
     queryKey: ["ai-analysis", "signal-latest"],
@@ -54,13 +105,20 @@ export default function AiAnalysisPage(props: ShellPageProps) {
     enabled: tab === "signals",
     placeholderData: (prev) => prev,
     refetchInterval: 60_000,
+    // Wave 2b (#3): data is good for a poll cycle — returning to this tab
+    // renders from cache instead of firing 3 background requests.
+    staleTime: 30_000,
+    gcTime: 600_000,
   });
   const statsQ = useQuery({
     queryKey: ["ai-analysis", "decision-stats", hoursBack],
     queryFn: ({ signal }) => aiAnalysisQueries.decisionStats(hoursBack, signal),
     retry: false,
     enabled: tab === "signals",
+    placeholderData: (prev) => prev,
     refetchInterval: 60_000,
+    staleTime: 30_000,
+    gcTime: 600_000,
   });
   const reasonsQ = useQuery({
     queryKey: ["ai-analysis", "no-trade-reasons"],
@@ -68,22 +126,27 @@ export default function AiAnalysisPage(props: ShellPageProps) {
     retry: false,
     enabled: tab === "signals",
     refetchInterval: 60_000,
+    staleTime: 30_000,
+    gcTime: 600_000,
   });
   const shadowQ = useQuery({
     queryKey: ["ai-analysis", "shadow70d"],
     queryFn: ({ signal }) => aiAnalysisQueries.shadow70d(signal),
     retry: false,
     enabled: tab === "shadow",
+    // Wave 2b (#16): 60s here, 30s in the deep panel — the envelope refreshes
+    // half as often as the v1 panel below it. Kept slower deliberately: the
+    // observer strip is a summary, not the live trace.
+    refetchInterval: 60_000,
   });
 
-  const isNotFound = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.code === "RESOURCE_NOT_FOUND");
   const latest = latestQ.data;
   const latestFamily = actionFamily(latest?.action);
 
   // Timeline series: page rows → normalized confidence (model rule) → sorted.
   const timeline = useMemo(
     () =>
-      historyTimeline(
+      timelineSeries(
         (historyQ.data?.items ?? []).map((s) => ({
           generated_at: s.generated_at,
           action: s.action,
@@ -93,6 +156,102 @@ export default function AiAnalysisPage(props: ShellPageProps) {
     [historyQ.data?.items],
   );
 
+  // Wave 2 (render perf): derived chart/table inputs computed once per data
+  // change — inline countRows()/orderHistory() used to allocate fresh arrays
+  // on every 15s poll, defeating memo and re-sorting 100 rows per render.
+  const stageRows = useMemo(() => countRows(statsQ.data?.by_stage), [statsQ.data]);
+  const reasonRows = useMemo(() => countRows(reasonsQ.data?.reasons), [reasonsQ.data]);
+  const historyRows = useMemo(() => orderHistory(historyQ.data?.items ?? []), [historyQ.data?.items]);
+  // Wave 2b (#8): KPI derivations hoisted to component level — the old IIFE
+  // re-ran actionKpi/topEntry inside the render branch on every 15s poll.
+  const kpi = useMemo(() => actionKpi(statsQ.data?.by_action), [statsQ.data]);
+  const top = useMemo(() => topEntry(statsQ.data?.by_stage), [statsQ.data]);
+
+  // Wave 2b (#4): warm the chunk + query for the other tabs on idle so the
+  // first click paints instead of loading. Signals is already loaded.
+  useEffect(() => {
+    // Wave 2b (#4): after first paint, warm the five section chunks so a tab
+    // click never waits on a code download (the visible cliff). Queries stay
+    // intent-driven — hover/focus above or tab enable — no server load
+    // without intent. Initial route payload is unchanged (measured); this
+    // runs post-idle.
+    const warm = () => {
+      void import("./IndicatorsConsole");
+      void import("./Shadow70DeepPanel");
+      void import("./IntelligenceTelemetryPanel");
+      void import("./PositionTimelineLookup");
+      void import("./DecisionDrawer");
+    };
+    if (window.requestIdleCallback) {
+      const idle = window.requestIdleCallback(warm);
+      return () => window.cancelIdleCallback(idle);
+    }
+    const timer = window.setTimeout(warm, 1200);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const prefetchTab = useCallback((id: Tab) => {
+    switch (id) {
+      case "indicators":
+        void import("./IndicatorsConsole");
+        void queryClient.prefetchQuery({
+          queryKey: ["ai-analysis", "indicators", "snapshot", tf],
+          queryFn: ({ signal }) => aiAnalysisQueries.indicatorsSnapshot(tf, signal),
+        });
+        break;
+      case "shadow":
+        void import("./Shadow70DeepPanel");
+        void queryClient.prefetchQuery({
+          queryKey: ["ai-analysis", "shadow70d"],
+          queryFn: ({ signal }) => aiAnalysisQueries.shadow70d(signal),
+        });
+        break;
+      case "intel":
+        void import("./IntelligenceTelemetryPanel");
+        void import("./PositionTimelineLookup");
+        break;
+      case "signals":
+        break;
+    }
+  }, [tf]);
+
+  /** Wave 2b (#23/#24): a pending/error query must not fall through to the
+   *  chart components' "backend returned no rows" empty text, which would
+   *  claim an empty ledger while the header says "loading…". Gate at the
+   *  page; the components stay pure presenters. */
+  const reasonBody = reasonsQ.isPending ? (
+    <Skeleton count={3} />
+  ) : reasonsQ.isError ? (
+    <ErrorState message={reasonsQ.error instanceof Error ? reasonsQ.error.message : "reasons failed"} onRetry={() => void reasonsQ.refetch()} />
+  ) : (
+    <BarList rows={reasonRows} tone="var(--amber)" max={REASONS_MAX} />
+  );
+  const timelineBody = historyQ.isPending ? (
+    <Skeleton count={3} />
+  ) : historyQ.isError ? (
+    <ErrorState message={historyQ.error instanceof Error ? historyQ.error.message : "history failed"} onRetry={() => void historyQ.refetch()} />
+  ) : (
+    <ConfidenceTimeline series={timeline} />
+  );
+
+  // perf(7, lane E): shadow-tab entry chains memoized on the exact payload
+  // slices — same rows/stepper inputs, rebuilt only when the payload lands.
+  const shadowSummaryEntries = useMemo(
+    () => Object.entries(obj(shadowQ.data?.summary)).slice(0, SUMMARY_ROWS),
+    [shadowQ.data?.summary],
+  );
+  const shadowGates = useMemo(
+    () =>
+      Object.entries(obj(shadowQ.data?.disagreement_counts)).map(([k, v]) => ({
+        name: k,
+        status: "INFO",
+        reason: String(v),
+      })),
+    [shadowQ.data?.disagreement_counts],
+  );
+  const shadowAlerts = useMemo(
+    () => (shadowQ.data?.drift_alerts ?? []).slice(0, DRIFT_SHOW),
+    [shadowQ.data?.drift_alerts],
+  );
   return (
     <div>
       <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
@@ -103,7 +262,13 @@ export default function AiAnalysisPage(props: ShellPageProps) {
 
       <Panel title="Latest signal (live card)" accent tight>
         {latestQ.isPending ? (
-          <Skeleton count={2} />
+          <div className="aa-hero aa-hero-skel">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="aa-skel-cell">
+                <Skeleton count={1} />
+              </div>
+            ))}
+          </div>
         ) : isNotFound(latestQ.error) ? (
           <EmptyState
             message="No signals recorded yet."
@@ -120,7 +285,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
             <div className="aa-hero-act">
               <div className="aa-big">{latest.action ?? "—"}</div>
               <div className="aa-when">{formatDateTime(latest.generated_at)}</div>
-              <button className="btn small primary" onClick={() => setOpenDecision(String(latest.request_id ?? ""))}>
+              <button className="btn small primary" disabled={!latest.request_id} onClick={() => inspectDecision(String(latest.request_id))}>
                 inspect decision
               </button>
               <span className="tiny muted">gates · evidence · explanation</span>
@@ -131,7 +296,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
             </div>
 
             <div className="aa-details">
-              <div className="aa-meta">
+              <div className="aa-chips aa-meta">
                 <b className="aa-symbol">{latest.symbol ?? "—"}</b>
                 {latest.regime ? <span className="aa-chip aa-fam-unknown">{latest.regime}</span> : <span className="tiny faint">regime not recorded</span>}
                 {latest.execution_mode ? <span className="aa-chip aa-fam-unknown">{latest.execution_mode}</span> : null}
@@ -170,156 +335,34 @@ export default function AiAnalysisPage(props: ShellPageProps) {
           ]}
           value={tab}
           onChange={setTab}
+          onPrefetch={(id) => prefetchTab(id as Tab)}
         />
       </div>
 
       {tab === "signals" && (
-        <div className="aa-stack">
-          <div className="aa-segbar">
-            <span className="section-title" style={{ margin: 0 }}>
-              decision stats
-            </span>
-            <span className="tiny faint">window</span>
-            <select
-              aria-label="Stats window (hours)"
-              className="select"
-              style={{ width: 92 }}
-              value={hoursBack}
-              onChange={(e) => {
-                setHoursBack(Number(e.target.value));
-                setPage(1);
-              }}
-            >
-              {[24, 72, 168, 720].map((h) => (
-                <option key={h} value={h}>
-                  {h}h
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {statsQ.isPending ? (
-            <div className="grid cols-4">
-              <Skeleton count={4} />
-            </div>
-          ) : statsQ.isError ? (
-            <EmptyState message={statsQ.error instanceof Error ? statsQ.error.message : "stats unavailable"} />
-          ) : (
-            (() => {
-              const st = statsQ.data;
-              const kpi = actionKpi(st?.by_action);
-              const top = topEntry(st?.by_stage);
-              const pct = (n: number) => (kpi.total > 0 ? `${((n / kpi.total) * 100).toFixed(1)}%` : "—");
-              return (
-                <>
-                  <div className="grid cols-4">
-                    <MetricCard label="decisions in window" value={kpi.total.toLocaleString()} sub={`/decisions/stats · ${st?.window_hours ?? hoursBack}h scanned`} />
-                    <MetricCard label="trade actions" value={kpi.trade.toLocaleString()} sub={`${pct(kpi.trade)} of decisions · non-NO_TRADE`} />
-                    <MetricCard label="no-trade" value={kpi.noTrade.toLocaleString()} sub={`${pct(kpi.noTrade)} of decisions · filter blocks`} />
-                    <MetricCard
-                      label="top stage"
-                      value={<span style={{ fontSize: 13, fontWeight: 700 }}>{top?.label ?? "—"}</span>}
-                      sub={top ? `${top.count.toLocaleString()} · ${pct(top.count)}` : "no stage rows"}
-                    />
-                  </div>
-
-                  <div className="grid cols-2">
-                    <Panel title="Decision mix (by action)" tight>
-                      <div className="panel-body">
-                        <ActionDonut byAction={st?.by_action} />
-                      </div>
-                    </Panel>
-                    <Panel title="NO_TRADE reasons" right={<span className="tiny faint">{(reasonsQ.data?.total ?? 0).toLocaleString()} in ledger</span>} tight>
-                      <div className="panel-body">
-                        <BarList rows={countRows(reasonsQ.data?.reasons)} tone="var(--amber)" max={8} />
-                      </div>
-                    </Panel>
-                  </div>
-
-                  <div className="grid cols-2">
-                    <Panel title="Decision stage distribution" right={<span className="tiny faint">sorted by count — backend returns no stage order</span>} tight>
-                      <div className="panel-body">
-                        <BarList rows={countRows(st?.by_stage)} tone="var(--violet)" max={20} />
-                      </div>
-                    </Panel>
-                    <Panel
-                      title="Confidence over time"
-                      right={<span className="tiny faint">{historyQ.isPending ? "loading…" : `current history page · ${historyQ.data?.page_size ?? "—"} rows max`}</span>}
-                      tight
-                    >
-                      <div className="panel-body">
-                        <ConfidenceTimeline series={timeline} />
-                      </div>
-                    </Panel>
-                  </div>
-                </>
-              );
-            })()
-          )}
-
-          <Panel title="Signal history (ledger, newest first)" tight>
-            {historyQ.isPending ? (
-              <Skeleton count={5} />
-            ) : historyQ.isError ? (
-              <ErrorState message={historyQ.error instanceof Error ? historyQ.error.message : "history failed"} onRetry={() => void historyQ.refetch()} />
-            ) : (historyQ.data?.items ?? []).length === 0 ? (
-              <EmptyState message="No signals in this window." />
-            ) : (
-              <>
-                <DataTable
-                  headers={[
-                    { label: "decision" },
-                    { label: "symbol" },
-                    { label: "action" },
-                    { label: "conf", num: true },
-                    { label: "stage" },
-                    { label: "reason" },
-                    { label: "at" },
-                    { label: "" },
-                  ]}
-                >
-                  {orderHistory(historyQ.data?.items ?? []).map((s: SignalDto, i: number) => (
-                    <tr key={s.request_id ?? i}>
-                      <td className="inline-mono tiny">{str(s.request_id)?.slice(0, 10) ?? "—"}</td>
-                      <td className="small">{s.symbol}</td>
-                      <td>
-                        <AaActionChip action={s.action} />
-                      </td>
-                      <td className="num">
-                        <ConfCell value={confidence01(s.confidence)} action={s.action} />
-                      </td>
-                      <td className="tiny">{s.decision_stage ?? "—"}</td>
-                      <td className="tiny muted aa-reason" title={s.reason_code ?? ""}>
-                        {s.blocked_by ? `blocked:${s.blocked_by}` : (s.reason_code ?? "—")}
-                      </td>
-                      <td className="tiny">{formatDateTime(s.generated_at)}</td>
-                      <td>
-                        <button className="btn small ghost" onClick={() => setOpenDecision(String(s.request_id ?? ""))}>
-                          drilldown
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </DataTable>
-                <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
-                  <button className="btn small" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-                    ← newer
-                  </button>
-                  <span className="tiny muted">page {page}</span>
-                  <button className="btn small" disabled={!historyQ.data?.has_more} onClick={() => setPage((p) => p + 1)}>
-                    older →
-                  </button>
-                  <span className="tiny faint" style={{ marginInlineStart: "auto" }}>
-                    {historyQ.data?.page_size} rows/page · hours_back cap 720 (backend-enforced)
-                  </span>
-                </div>
-              </>
-            )}
-          </Panel>
-        </div>
+        <SignalsTab
+          statsQ={statsQ}
+          historyQ={historyQ}
+          reasonsQ={reasonsQ}
+          kpi={kpi}
+          top={top}
+          stageRows={stageRows}
+          historyRows={historyRows}
+          hoursBack={hoursBack}
+          setHoursBack={setHoursBack}
+          page={page}
+          setPage={setPage}
+          inspectDecision={inspectDecision}
+          reasonBody={reasonBody}
+          timelineBody={timelineBody}
+        />
       )}
 
-      {tab === "indicators" && <IndicatorsConsole tf={tf} onTf={setTf} />}
+      {tab === "indicators" && (
+        <Suspense fallback={<TabFallback />}>
+          <IndicatorsConsole tf={tf} onTf={setTf} />
+        </Suspense>
+      )}
 
       {tab === "shadow" && (
         <div className="aa-stack">
@@ -331,30 +374,36 @@ export default function AiAnalysisPage(props: ShellPageProps) {
             {shadowQ.isPending ? (
               <Skeleton count={3} />
             ) : shadowQ.isError ? (
-              <EmptyState message={shadowQ.error instanceof Error ? shadowQ.error.message : "shadow store unavailable"} />
+              <ErrorState
+                message={shadowQ.error instanceof Error ? shadowQ.error.message : "shadow store unavailable"}
+                requestId={shadowQ.error instanceof ApiError ? shadowQ.error.requestId : null}
+                onRetry={() => void shadowQ.refetch()}
+              />
             ) : (
               <div className="grid cols-2">
                 <div>
-                  <div className="section-title">summary</div>
+                  <div className="section-title">
+                    summary ({Object.keys(obj(shadowQ.data?.summary)).length} keys, showing first {SUMMARY_ROWS})
+                  </div>
                   <dl className="kv">
-                    {Object.entries(obj(shadowQ.data?.summary))
-                      .slice(0, 14)
-                      .map(([k, v]) => (
+                    {shadowSummaryEntries.map(([k, v]) => (
                         <InfoRow key={k} label={k} value={typeof v === "object" ? "…" : String(v)} />
                       ))}
                   </dl>
                   <div className="section-title" style={{ marginTop: 10 }}>
                     disagreement counts
                   </div>
-                  <GateStepper gates={Object.entries(obj(shadowQ.data?.disagreement_counts)).map(([k, v]) => ({ name: k, status: "INFO", reason: String(v) }))} />
+                  <GateStepper gates={shadowGates} />
                 </div>
                 <div>
-                  <div className="section-title">drift alerts (latest 25)</div>
+                  <div className="section-title">
+                    drift alerts ({(shadowQ.data?.drift_alerts ?? []).length} recorded, showing first {Math.min(DRIFT_SHOW, (shadowQ.data?.drift_alerts ?? []).length)})
+                  </div>
                   {(shadowQ.data?.drift_alerts ?? []).length === 0 ? (
                     <EmptyState message="No drift alerts recorded." />
                   ) : (
                     <DataTable headers={[{ label: "feature" }, { label: "kind" }, { label: "value", num: true }, { label: "at" }]}>
-                      {(shadowQ.data?.drift_alerts ?? []).slice(0, 12).map((a, i) => (
+                      {shadowAlerts.map((a, i) => (
                         <tr key={i}>
                           <td className="tiny">{str(a.feature) ?? str(a.name) ?? "—"}</td>
                           <td className="tiny">{str(a.kind) ?? str(a.alert_type) ?? "—"}</td>
@@ -370,19 +419,29 @@ export default function AiAnalysisPage(props: ShellPageProps) {
           </Panel>
 
           {/* v1 deep panel: legacy envelope above + health/disagreements/alerts below. */}
-          <Shadow70DeepPanel />
+          <Suspense fallback={<TabFallback />}>
+            <Shadow70DeepPanel />
+          </Suspense>
         </div>
       )}
 
       {tab === "intel" && (
         <div className="aa-stack">
           <div className="tiny faint">behaviour coverage — legacy tab-ai-analysis also loads intelligence centre + position timeline (orphaned components, now wired).</div>
-          <IntelligenceTelemetryPanel />
-          <PositionTimelineLookup />
+          <Suspense fallback={<TabFallback />}>
+            <IntelligenceTelemetryPanel />
+          </Suspense>
+          <Suspense fallback={<TabFallback />}>
+            <PositionTimelineLookup />
+          </Suspense>
         </div>
       )}
 
-      {openDecision && <DecisionDrawer decisionId={openDecision} onClose={() => setOpenDecision(null)} />}
+      {openDecision && (
+        <Suspense fallback={<TabFallback />}>
+          <DecisionDrawer decisionId={openDecision} onClose={closeDecision} />
+        </Suspense>
+      )}
     </div>
   );
 }

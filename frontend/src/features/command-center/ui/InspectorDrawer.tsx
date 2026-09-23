@@ -4,6 +4,7 @@
  * behavior unchanged).
  */
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
@@ -39,6 +40,18 @@ export function InspectorDrawer({ strategyId, onClose }: { strategyId: string; o
   const events = arr(timelineQ.data?.events);
   const gates = obj(obj(snap?.evaluation).gates);
 
+  // perf: stringify once per data identity (deps = the exact values these
+  // strings derive from) instead of re-serializing every blocker/hint on each
+  // render of this 3-query drawer.
+  const blockerTexts = useMemo(
+    () => arr(ee.blockers).map((b) => (typeof b === "string" ? b : JSON.stringify(b))),
+    [ee.blockers],
+  );
+  const hintTexts = useMemo(
+    () => arr(debug.hints).map((h) => (typeof h === "string" ? h : JSON.stringify(h))),
+    [debug.hints],
+  );
+
   return (
     <Drawer title={`Inspector — ${strategyId}`} onClose={onClose}>
       {inspectorQ.isPending ? (
@@ -65,9 +78,9 @@ export function InspectorDrawer({ strategyId, onClose }: { strategyId: string; o
                     <InfoRow label="required_gate" value={str(ee.required_gate) ?? "—"} />
                     <InfoRow label="blockers" value={arr(ee.blockers).length === 0 ? "none" : `${arr(ee.blockers).length} listed`} />
                   </dl>
-                  {arr(ee.blockers).map((b, i) => (
+                  {blockerTexts.map((b, i) => (
                     <div key={i} className="tiny muted">
-                      • {typeof b === "string" ? b : JSON.stringify(b)}
+                      • {b}
                     </div>
                   ))}
                 </div>
@@ -90,10 +103,10 @@ export function InspectorDrawer({ strategyId, onClose }: { strategyId: string; o
                 <InfoRow label="validation consistency" value={formatNumber(num(debug.validation_consistency) ?? NaN, 3)} />
                 <InfoRow label="debug priority" value={formatNumber(num(debug.debug_priority) ?? NaN, 3)} />
               </dl>
-              {arr(debug.hints).length > 0 && (
+              {hintTexts.length > 0 && (
                 <ul className="tiny muted" style={{ margin: "6px 0 0", paddingInlineStart: 16 }}>
-                  {arr(debug.hints).map((h, i) => (
-                    <li key={i}>{typeof h === "string" ? h : JSON.stringify(h)}</li>
+                  {hintTexts.map((h, i) => (
+                    <li key={i}>{h}</li>
                   ))}
                 </ul>
               )}

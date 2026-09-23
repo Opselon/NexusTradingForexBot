@@ -134,13 +134,25 @@ def _list_databases() -> list[dict[str, Any]]:
                 if driver.ping():
                     entry["status"] = "CONNECTED"
                     entry["table_count"] = driver.table_count()
+                # ping() swallows the underlying exception, so "why" has to
+                # come from the provider capability, not from the failure:
+                # a missing psycopg is NOT the same fault as a stopped
+                # server and the operator's next action differs.
+                elif cfg.is_postgresql and not _pg_driver_available():
+                    entry["status"] = "DRIVER_UNAVAILABLE: psycopg"
+                    entry["hint"] = _PG_INSTALL_HINT
                 else:
                     entry["status"] = "DISCONNECTED"
+                    hint = _connection_hint(cfg)
+                    if hint:
+                        entry["hint"] = hint
             finally:
                 driver.close()
         except Exception as exc:  # pragma: no cover - env edges
             logger.warning("db_console driver unavailable", exc_info=exc)
+            failure = _fail(exc, f"opening the '{domain}' database", cfg)
             entry["status"] = f"DRIVER_UNAVAILABLE: {type(exc).__name__}"
+            entry["hint"] = str(failure.get("hint") or failure["error"])
         out.append(entry)
     # settings DB (the database of record for UI/runtime config)
     sdb = _settings_db_path()
@@ -193,6 +205,103 @@ def _query_console_sql(sql: str, provider: str) -> str:
 
         return PostgreSQLDriver.translate_sql(sql)
     return sql
+
+
+# ---------------------------------------------------------------------------
+# Operator-grade failure payloads
+# ---------------------------------------------------------------------------
+#
+# Every driver failure used to be answered with the bare exception TYPE name
+# ("RuntimeError"), while the actionable sentence the driver raised (e.g.
+# "PostgreSQL support is not installed ...") was discarded — observed
+# 2026-09-23 with provider=postgresql and psycopg absent, which turned the
+# whole explorer (tables/rows/columns/quick/query) into the single word
+# "RuntimeError" and left the operator nothing to act on.
+#
+# Contract: `error` is a human sentence, `code` is stable for clients, and
+# `hint` (optional) is the single next action. Exception TEXT is never echoed
+# (CodeQL py/stack-trace-exposure): known conditions map to fixed sentences,
+# unknown ones fall back to the type name + a server-log reference.
+
+_PG_INSTALL_HINT = (
+    "Install the driver (`pip install 'nexus[postgres]'`, "
+    "psycopg[binary]==3.2.*) or switch the active provider back to sqlite "
+    "on the Manage tab."
+)
+#: Marker of PostgreSQLDriver's own missing-dependency guard (a constant
+#: sentence raised as RuntimeError — matched, never echoed back).
+_PSYCOPG_MISSING_MARKER = "PostgreSQL support is not installed"
+
+
+def _psycopg_missing(exc: BaseException) -> bool:
+    """True when the failure is the driver's missing-psycopg guard."""
+    return isinstance(exc, RuntimeError) and _PSYCOPG_MISSING_MARKER in str(exc)
+
+
+def _server_target(cfg: DatabaseConfig | None, database: str) -> str:
+    """Non-secret description of where the console tried to read."""
+    if cfg is None:
+        return database
+    if cfg.is_postgresql:
+        return f"postgresql://{cfg.host}:{cfg.port or 5432}/{cfg.database}"
+    return str(cfg.sqlite_connect_path or database)
+
+
+def _connection_hint(cfg: DatabaseConfig | None) -> str | None:
+    """Single next action for an unreachable PostgreSQL database (None for SQLite)."""
+    if cfg is None or not cfg.is_postgresql:
+        return None
+    if not _pg_driver_available():
+        return _PG_INSTALL_HINT
+    return (
+        f"Start the PostgreSQL server at {cfg.host}:{cfg.port or 5432} "
+        "or switch the active provider back to sqlite on the Manage tab."
+    )
+
+
+def _pg_driver_available() -> bool:
+    """psycopg importable in this environment (never raises)."""
+    try:
+        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+
+        return PostgreSQLDriver.available()
+    except Exception:  # pragma: no cover - defensive
+        return False
+
+
+def _fail(exc: BaseException, action: str, cfg: DatabaseConfig | None = None) -> dict[str, Any]:
+    """Build the `{success: False}` envelope for a console failure.
+
+    `action` is the operator-facing verb ("reading rows from ...").  Keeps the
+    UI's `error: string` contract and adds `code` (+ `hint` when the fix is
+    knowable here) so the page can render guidance instead of a type name.
+    """
+    if _psycopg_missing(exc):
+        return {
+            "success": False,
+            "code": "PG_DRIVER_MISSING",
+            "error": f"{action} needs PostgreSQL, but psycopg is not installed here.",
+            "hint": _PG_INSTALL_HINT,
+        }
+    module = type(exc).__module__ or ""
+    if module.startswith("psycopg") or isinstance(exc, (ConnectionError, TimeoutError)):
+        out: dict[str, Any] = {
+            "success": False,
+            "code": "DB_UNREACHABLE",
+            "error": (
+                f"Could not reach {_server_target(cfg, 'the database')} — "
+                f"{action} stopped before reading any data."
+            ),
+        }
+        hint = _connection_hint(cfg)
+        if hint:
+            out["hint"] = hint
+        return out
+    return {
+        "success": False,
+        "code": "DB_CONSOLE_ERROR",
+        "error": f"{action} failed ({type(exc).__name__}); details are in the server log.",
+    }
 
 
 def _mask_secret_name(name: str) -> str:
@@ -256,7 +365,7 @@ def console_databases() -> dict[str, Any]:
         return {"success": True, "databases": dbs, "timestamp": _utc_now()}
     except Exception as exc:
         logger.warning("db_console error", exc_info=exc)
-        return {"success": False, "error": type(exc).__name__}
+        return _fail(exc, "scanning the database list")
 
 
 @router.post("/refresh")
@@ -267,19 +376,29 @@ def console_refresh() -> dict[str, Any]:
         return {"success": True, "databases": dbs, "resynced": True, "timestamp": _utc_now()}
     except Exception as exc:
         logger.warning("db_console error", exc_info=exc)
-        return {"success": False, "error": type(exc).__name__}
+        return _fail(exc, "re-scanning the database list")
 
 
 @router.get("/tables")
 def console_tables(database: str = "audit") -> dict[str, Any]:
     """Tables + row counts for one database (SSMS object-explorer style)."""
+    cfg: DatabaseConfig | None = None
+    driver = None
     try:
         driver, cfg = _driver_for(database)
         if driver is None:
             return {"success": False, "error": f"unknown database '{database}'"}
         try:
             if not driver.ping():
-                return {"success": False, "error": f"'{database}' not reachable"}
+                out: dict[str, Any] = {
+                    "success": False,
+                    "code": "DB_UNREACHABLE",
+                    "error": f"'{database}' is not reachable ({_server_target(cfg, database)}).",
+                }
+                hint = _connection_hint(cfg)
+                if hint:
+                    out["hint"] = hint
+                return out
             tables: list[dict[str, Any]] = []
             for name in driver.list_tables():
                 try:
@@ -298,12 +417,14 @@ def console_tables(database: str = "audit") -> dict[str, Any]:
             driver.close()
     except Exception as exc:
         logger.warning("db_console error", exc_info=exc)
-        return {"success": False, "error": type(exc).__name__}
+        return _fail(exc, f"listing tables in '{database}'", cfg)
 
 
 @router.get("/columns")
 def console_columns(database: str = "audit", table: str = "") -> dict[str, Any]:
     """Column layout for one table (portable type + pk/notnull flags)."""
+    cfg: DatabaseConfig | None = None
+    driver = None
     try:
         if not table:
             return {"success": False, "error": "table required"}
@@ -339,7 +460,7 @@ def console_columns(database: str = "audit", table: str = "") -> dict[str, Any]:
             driver.close()
     except Exception as exc:
         logger.warning("db_console error", exc_info=exc)
-        return {"success": False, "error": type(exc).__name__}
+        return _fail(exc, f"reading the schema of '{table}'", cfg)
 
 
 @router.get("/rows")
@@ -350,6 +471,8 @@ def console_rows(
     offset: int = 0,
 ) -> dict[str, Any]:
     """Paginated row preview (rowid order, hard 500-row cap)."""
+    cfg: DatabaseConfig | None = None
+    driver = None
     try:
         if not table:
             return {"success": False, "error": "table required"}
@@ -403,7 +526,7 @@ def console_rows(
             driver.close()
     except Exception as exc:
         logger.warning("db_console error", exc_info=exc)
-        return {"success": False, "error": type(exc).__name__}
+        return _fail(exc, f"reading rows from '{table}'", cfg)
 
 
 def _strip_sql_comments(sql: str) -> str:
@@ -453,6 +576,7 @@ def console_query(payload: dict[str, Any]) -> dict[str, Any]:
     """
     try:
         database = str(payload.get("database") or "audit")
+        cfg: DatabaseConfig | None = None
         raw_sql = str(payload.get("sql") or "").strip()
         if not raw_sql:
             return {"success": False, "error": "empty SQL"}
@@ -502,10 +626,16 @@ def console_query(payload: dict[str, Any]) -> dict[str, Any]:
         compiled = _query_console_sql(sql_trimmed, provider)
         try:
             # bounded: never let a console query hang the web loop; query_readonly enforces engine-level read-only
+            # The driver materializes the full result set (fetchall) and the
+            # endpoint used to slice it AFTER testing `len(rows) >= cap`, so an
+            # exactly-cap-sized answer was reported as truncated.  Decide the
+            # flag on the UNSLICED result: `truncated` means rows were withheld.
             if hasattr(driver, "query_readonly"):
-                rows = driver.query_readonly(compiled)[:QUERY_LIMIT]
+                fetched = driver.query_readonly(compiled)
             else:
-                rows = driver.query(compiled)[:QUERY_LIMIT]
+                fetched = driver.query(compiled)
+            truncated = len(fetched) > QUERY_LIMIT
+            rows = fetched[:QUERY_LIMIT]
             columns = list(rows[0].keys()) if rows else []
             return {
                 "success": True,
@@ -513,23 +643,25 @@ def console_query(payload: dict[str, Any]) -> dict[str, Any]:
                 "provider": provider,
                 "columns": columns,
                 "rows": rows,
-                "truncated": len(rows) >= QUERY_LIMIT,
+                "truncated": truncated,
                 "rows_returned": len(rows),
+                "cap": QUERY_LIMIT,
                 "timestamp": _utc_now(),
             }
         except Exception as exc:
             logger.warning("db_console query failed", exc_info=exc)
-            return {"success": False, "error": f"query failed: {type(exc).__name__}"}
+            return _fail(exc, "running the console query", cfg)
         finally:
             driver.close()
     except Exception as exc:
         logger.warning("db_console error", exc_info=exc)
-        return {"success": False, "error": type(exc).__name__}
+        return _fail(exc, "running the console query", cfg)
 
 
 @router.get("/quick")
 def console_quick(database: str = "audit", table: str = "", kind: str = "top100") -> dict[str, Any]:
     """Ready-made SQL buttons: build + run a canned query for a table."""
+    cfg: DatabaseConfig | None = None
     try:
         if not table:
             return {"success": False, "error": "table required"}
@@ -593,13 +725,13 @@ def console_quick(database: str = "audit", table: str = "", kind: str = "top100"
                     drv.close()
             except Exception as exc:
                 logger.warning("db_console error", exc_info=exc)
-                return {"success": False, "error": type(exc).__name__}
+                return _fail(exc, f"reading the schema of '{table}'", cfg)
 
         sql = template.format(table=table_sql)
         return console_query({"database": database, "sql": sql})
     except Exception as exc:
         logger.warning("db_console error", exc_info=exc)
-        return {"success": False, "error": type(exc).__name__}
+        return _fail(exc, f"running quick query '{kind}' on '{table}'", cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -614,7 +746,7 @@ def console_apikeys() -> dict[str, Any]:
         return {"success": True, "apikeys": _load_apikey_names(), "timestamp": _utc_now()}
     except Exception as exc:
         logger.warning("db_console error", exc_info=exc)
-        return {"success": False, "error": type(exc).__name__}
+        return _fail(exc, "listing the stored API keys")
 
 
 @router.post("/apikey")
@@ -648,7 +780,7 @@ def console_apikey_set(payload: dict[str, Any]) -> dict[str, Any]:
         }
     except Exception as exc:
         logger.warning("db_console error", exc_info=exc)
-        return {"success": False, "error": type(exc).__name__}
+        return _fail(exc, "writing the API key to the secret store")
 
 
 @router.delete("/apikey/{name}")
@@ -661,4 +793,4 @@ def console_apikey_delete(name: str) -> dict[str, Any]:
         return {"success": True, "deleted": name}
     except Exception as exc:
         logger.warning("db_console error", exc_info=exc)
-        return {"success": False, "error": type(exc).__name__}
+        return _fail(exc, "deleting the API key from the secret store")

@@ -10,7 +10,7 @@
  * UI renders that verbatim per section (never a fabricated board).
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import {
@@ -102,7 +102,98 @@ export default function FactoryPage(props: ShellPageProps) {
   const loop = obj(statusQ.data?.loop);
   const provider = obj(statusQ.data?.provider);
   const usage = obj(provider.usage);
-  const gens = factoryUseCases.generationList(arr(generationsQ.data?.generations));
+  // perf(7): candidates/benchmarks/failures/ranking/events row chains are
+  // memoized with deps = the payload each reads; only a new payload rebuilds
+  // the rows (loop-status polls no longer re-map every table).
+  const gens = useMemo(
+    () => factoryUseCases.generationList(arr(generationsQ.data?.generations)),
+    [generationsQ.data],
+  );
+  const candidateRows = useMemo(
+    () =>
+      arr(candidatesQ.data?.candidates)
+        .slice(0, 100)
+        .map((c: Row, i: number) => {
+          const cid = str(c.candidate_id) ?? str(c.id) ?? "";
+          return (
+            <tr key={`${cid}-${i}`}>
+              <td className="inline-mono tiny">{cid.slice(0, 16) || "—"}</td>
+              <td className="inline-mono tiny">{str(c.generation_id)?.slice(0, 10) ?? "—"}</td>
+              <td>
+                <StatusPill status={str(c.lifecycle) ?? str(c.status)} />
+              </td>
+              <td className="num tiny">{num(c.score) === null ? "—" : formatNumber(num(c.score)!, 3)}</td>
+              <td>
+                <button className="btn small ghost" disabled={cmd.state.running || !cid} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask(`Evaluate ${cid.slice(0, 10)}`, false, () => factoryUseCases.evaluate(cid))}>
+                  {cmd.state.running ? "sending…" : "evaluate"}
+                </button>
+              </td>
+            </tr>
+          );
+        }),
+    [candidatesQ.data, cmd.state.running],
+  );
+  const benchmarkRows = useMemo(
+    () =>
+      arr(benchmarksQ.data?.benchmarks)
+        .slice(0, 60)
+        .map((b: Row, i: number) => (
+          <tr key={i}>
+            <td className="inline-mono tiny">{str(b.candidate_id)?.slice(0, 14) ?? "—"}</td>
+            <td className="num tiny">{num(b.coverage) === null ? "—" : `${formatNumber(num(b.coverage)!, 1)}%`}</td>
+            <td>
+              <StatusPill status={str(b.decision_label) ?? str(b.decision)} />
+            </td>
+            <td className="tiny">{str(b.oos_status) ?? "—"}</td>
+            <td className="tiny">{str(b.robustness_status) ?? "—"}</td>
+          </tr>
+        )),
+    [benchmarksQ.data],
+  );
+  const failureRows = useMemo(
+    () =>
+      arr(failuresQ.data?.failures)
+        .slice(0, 80)
+        .map((f: Row, i: number) => (
+          <tr key={i}>
+            <td className="tiny">{formatDateTime(str(f.created_at) ?? str(f.at))}</td>
+            <td className="tiny">{str(f.stage) ?? str(f.kind) ?? "—"}</td>
+            <td className="tiny muted" title={str(f.reason) ?? ""}>
+              {(str(f.reason) ?? "—").slice(0, 60)}
+            </td>
+          </tr>
+        )),
+    [failuresQ.data],
+  );
+  const rankingRows = useMemo(
+    () =>
+      arr(rankingQ.data?.ranked).map((r: Row, i: number) => (
+        <tr key={i}>
+          <td className="num tiny">{i + 1}</td>
+          <td className="inline-mono tiny">{str(r.strategy_id)?.slice(0, 16) ?? "—"}</td>
+          <td>
+            <StatusPill status={str(r.lifecycle)} />
+          </td>
+          <td className="num tiny">{formatNumber(num(r.score) ?? num(r.value) ?? NaN, 3)}</td>
+        </tr>
+      )),
+    [rankingQ.data],
+  );
+  const eventRows = useMemo(
+    () =>
+      arr(eventsQ.data?.events)
+        .slice(0, 100)
+        .map((e: Row, i: number) => (
+          <tr key={i}>
+            <td className="tiny">{formatDateTime(str(e.created_at) ?? str(e.at))}</td>
+            <td className="small">{str(e.event_type) ?? str(e.kind) ?? "—"}</td>
+            <td className="tiny muted" title={str(e.payload) ?? str(e.detail) ?? ""}>
+              {(str(e.detail) ?? str(e.message) ?? "").slice(0, 80)}
+            </td>
+          </tr>
+        )),
+    [eventsQ.data],
+  );
 
   const runCmd = async (label: string, fn: () => Promise<FactoryCommandDto>) => {
     await cmd.run(async () => {
@@ -159,23 +250,23 @@ export default function FactoryPage(props: ShellPageProps) {
               size
             </label>
             <input id="factory-size" className="input" style={{ width: 70 }} value={size} onChange={(e) => setSize(e.target.value)} />
-            <button className="btn small primary" disabled={cmd.state.running} onClick={() => ask("Generate generation", false, () => factoryUseCases.generate(num(Number(size)) ?? undefined))}>
-              ⚒ generate
+            <button className="btn small primary" disabled={cmd.state.running} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("Generate generation", false, () => factoryUseCases.generate(num(Number(size)) ?? undefined))}>
+              {cmd.state.running ? "generating…" : "⚒ generate"}
             </button>
-            <button className="btn small" disabled={cmd.state.running || !mounted} onClick={() => ask("Start autonomous loop", true, factoryUseCases.loopStart)}>
-              ▶ loop start
+            <button className="btn small" disabled={cmd.state.running || !mounted} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("Start autonomous loop", true, factoryUseCases.loopStart)}>
+              {cmd.state.running ? "sending…" : "▶ loop start"}
             </button>
-            <button className="btn small" disabled={cmd.state.running || !mounted} onClick={() => ask("Pause loop", false, factoryUseCases.loopPause)}>
-              ⏸ pause
+            <button className="btn small" disabled={cmd.state.running || !mounted} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("Pause loop", false, factoryUseCases.loopPause)}>
+              {cmd.state.running ? "sending…" : "⏸ pause"}
             </button>
-            <button className="btn small" disabled={cmd.state.running || !mounted} onClick={() => ask("Resume loop", false, factoryUseCases.loopResume)}>
-              ⏵ resume
+            <button className="btn small" disabled={cmd.state.running || !mounted} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("Resume loop", false, factoryUseCases.loopResume)}>
+              {cmd.state.running ? "sending…" : "⏵ resume"}
             </button>
-            <button className="btn small danger" disabled={cmd.state.running || !mounted} onClick={() => ask("STOP loop (kill switch)", true, factoryUseCases.loopStop)}>
-              ■ loop stop
+            <button className="btn small danger" disabled={cmd.state.running || !mounted} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("STOP loop (kill switch)", true, factoryUseCases.loopStop)}>
+              {cmd.state.running ? "sending…" : "■ loop stop"}
             </button>
-            <button className="btn small ghost" disabled={cmd.state.running || !mounted} onClick={() => ask("Provider connectivity test", false, factoryUseCases.providerTest)}>
-              provider test
+            <button className="btn small ghost" disabled={cmd.state.running || !mounted} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("Provider connectivity test", false, factoryUseCases.providerTest)}>
+              {cmd.state.running ? "testing…" : "provider test"}
             </button>
           </div>
         )}
@@ -234,9 +325,10 @@ export default function FactoryPage(props: ShellPageProps) {
                       <button
                         className="btn small ghost"
                         disabled={cmd.state.running || g.state === "COMPLETED"}
+                        title={cmd.state.running ? "a factory command is already running" : undefined}
                         onClick={() => ask(`Complete ${g.id.slice(0, 10)}`, false, () => factoryUseCases.complete(g.id))}
                       >
-                        complete
+                        {cmd.state.running ? "sending…" : "complete"}
                       </button>
                     </td>
                   </tr>
@@ -256,26 +348,7 @@ export default function FactoryPage(props: ShellPageProps) {
               <EmptyState message="No candidates for this selection." />
             ) : (
               <DataTable headers={[{ label: "candidate" }, { label: "generation" }, { label: "lifecycle" }, { label: "score", num: true }, { label: "" }]}>
-                {arr(candidatesQ.data?.candidates)
-                  .slice(0, 100)
-                  .map((c: Row, i: number) => {
-                    const cid = str(c.candidate_id) ?? str(c.id) ?? "";
-                    return (
-                      <tr key={`${cid}-${i}`}>
-                        <td className="inline-mono tiny">{cid.slice(0, 16) || "—"}</td>
-                        <td className="inline-mono tiny">{str(c.generation_id)?.slice(0, 10) ?? "—"}</td>
-                        <td>
-                          <StatusPill status={str(c.lifecycle) ?? str(c.status)} />
-                        </td>
-                        <td className="num tiny">{num(c.score) === null ? "—" : formatNumber(num(c.score)!, 3)}</td>
-                        <td>
-                          <button className="btn small ghost" disabled={cmd.state.running || !cid} onClick={() => ask(`Evaluate ${cid.slice(0, 10)}`, false, () => factoryUseCases.evaluate(cid))}>
-                            evaluate
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                {candidateRows}
               </DataTable>
             )}
           </Panel>
@@ -291,19 +364,7 @@ export default function FactoryPage(props: ShellPageProps) {
               <EmptyState message="No benchmark rows for this selection." />
             ) : (
               <DataTable headers={[{ label: "candidate" }, { label: "coverage", num: true }, { label: "decision" }, { label: "oos" }, { label: "robust" }]}>
-                {arr(benchmarksQ.data?.benchmarks)
-                  .slice(0, 60)
-                  .map((b: Row, i: number) => (
-                    <tr key={i}>
-                      <td className="inline-mono tiny">{str(b.candidate_id)?.slice(0, 14) ?? "—"}</td>
-                      <td className="num tiny">{num(b.coverage) === null ? "—" : `${formatNumber(num(b.coverage)!, 1)}%`}</td>
-                      <td>
-                        <StatusPill status={str(b.decision_label) ?? str(b.decision)} />
-                      </td>
-                      <td className="tiny">{str(b.oos_status) ?? "—"}</td>
-                      <td className="tiny">{str(b.robustness_status) ?? "—"}</td>
-                    </tr>
-                  ))}
+                {benchmarkRows}
               </DataTable>
             )}
           </Panel>
@@ -319,17 +380,7 @@ export default function FactoryPage(props: ShellPageProps) {
               <EmptyState message="No recorded failures." />
             ) : (
               <DataTable headers={[{ label: "at" }, { label: "stage" }, { label: "reason" }]}>
-                {arr(failuresQ.data?.failures)
-                  .slice(0, 80)
-                  .map((f: Row, i: number) => (
-                    <tr key={i}>
-                      <td className="tiny">{formatDateTime(str(f.created_at) ?? str(f.at))}</td>
-                      <td className="tiny">{str(f.stage) ?? str(f.kind) ?? "—"}</td>
-                      <td className="tiny muted" title={str(f.reason) ?? ""}>
-                        {(str(f.reason) ?? "—").slice(0, 60)}
-                      </td>
-                    </tr>
-                  ))}
+                {failureRows}
               </DataTable>
             )}
           </Panel>
@@ -355,16 +406,7 @@ export default function FactoryPage(props: ShellPageProps) {
               <EmptyState message="Factory not mounted" hint={rankingQ.data.reason ?? ""} />
             ) : (
               <DataTable headers={[{ label: "#" }, { label: "strategy" }, { label: "lifecycle" }, { label: "value", num: true }]}>
-                {arr(rankingQ.data?.ranked).map((r: Row, i: number) => (
-                  <tr key={i}>
-                    <td className="num tiny">{i + 1}</td>
-                    <td className="inline-mono tiny">{str(r.strategy_id)?.slice(0, 16) ?? "—"}</td>
-                    <td>
-                      <StatusPill status={str(r.lifecycle)} />
-                    </td>
-                    <td className="num tiny">{formatNumber(num(r.score) ?? num(r.value) ?? NaN, 3)}</td>
-                  </tr>
-                ))}
+                {rankingRows}
               </DataTable>
             )}
           </Panel>
@@ -392,17 +434,7 @@ export default function FactoryPage(props: ShellPageProps) {
               <EmptyState message="No events." />
             ) : (
               <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "detail" }]}>
-                {arr(eventsQ.data?.events)
-                  .slice(0, 100)
-                  .map((e: Row, i: number) => (
-                    <tr key={i}>
-                      <td className="tiny">{formatDateTime(str(e.created_at) ?? str(e.at))}</td>
-                      <td className="small">{str(e.event_type) ?? str(e.kind) ?? "—"}</td>
-                      <td className="tiny muted" title={str(e.payload) ?? str(e.detail) ?? ""}>
-                        {(str(e.detail) ?? str(e.message) ?? "").slice(0, 80)}
-                      </td>
-                    </tr>
-                  ))}
+                {eventRows}
               </DataTable>
             )}
           </Panel>
@@ -426,11 +458,11 @@ export default function FactoryPage(props: ShellPageProps) {
         )}
           <div className="row" style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <span className="tiny muted">strategy factory feature (CHG-0034 single user control):</span>
-            <button className="btn small primary" disabled={cmd.state.running} onClick={() => ask("Enable factory provider", false, () => factoryUseCases.providerToggle(true))}>
-              enable
+            <button className="btn small primary" disabled={cmd.state.running} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("Enable factory provider", false, () => factoryUseCases.providerToggle(true))}>
+              {cmd.state.running ? "sending…" : "enable"}
             </button>
-            <button className="btn small danger" disabled={cmd.state.running} onClick={() => ask("Disable factory provider", true, () => factoryUseCases.providerToggle(false))}>
-              disable
+            <button className="btn small danger" disabled={cmd.state.running} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("Disable factory provider", true, () => factoryUseCases.providerToggle(false))}>
+              {cmd.state.running ? "sending…" : "disable"}
             </button>
             <span className="tiny faint">enabling validates config without a network probe; disabling stops new provider requests only.</span>
           </div>

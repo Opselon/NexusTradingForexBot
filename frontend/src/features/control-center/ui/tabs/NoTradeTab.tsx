@@ -9,6 +9,7 @@
  *             renders as returned (never defaulted); skeleton + failed states visible.
  * EXTEND:   new breakdown = a field OperatorNoTradeDto already declares.
  */
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, EmptyState, Panel, Skeleton } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
@@ -23,6 +24,31 @@ export function NoTradeTab({ hours }: { hours: number | undefined }) {
     retry: false,
   });
 
+  // perf: four derivations over the no-trade payload memoized per identity —
+  // re-used on the parent's 15s summary re-renders without re-mapping.
+  const data = noTradeQ.data;
+  const gateRows = useMemo(
+    () => (data?.gates ?? []).map((g) => ({ label: g.gate ?? "—", count: g.count ?? 0 })),
+    [data],
+  );
+  const regimeRows = useMemo(
+    () => (data?.regimes ?? []).map((g) => ({ label: g.regime ?? "—", count: g.count ?? 0 })),
+    [data],
+  );
+  const trendRows = useMemo(
+    () => (data?.hourly_trend ?? []).map((g) => ({ label: (g.hour ?? "—").slice(5, 13), count: g.count ?? 0 })),
+    [data],
+  );
+  const recentRows = useMemo(
+    () => arr(data?.recent).map((r) => ({
+      key: `${str(r.generated_at) ?? ""}-${str(r.reason_code) ?? ""}-${str(r.blocked_by) ?? ""}`,
+      at: formatDateTime(str(r.generated_at)),
+      reason: str(r.reason_code) ?? "—",
+      gate: str(r.blocked_by) ?? "",
+    })),
+    [data],
+  );
+
   return (
     <Panel title="NO_TRADE forensics" tight>
       {noTradeQ.isPending ? (
@@ -33,24 +59,24 @@ export function NoTradeTab({ hours }: { hours: number | undefined }) {
         <div className="grid cols-2">
           <div>
             <div className="section-title">blocking gates</div>
-            <DistBars rows={(noTradeQ.data?.gates ?? []).map((g) => ({ label: g.gate ?? "—", count: g.count ?? 0 }))} tone="var(--red)" />
+            <DistBars rows={gateRows} tone="var(--red)" />
             <div className="section-title" style={{ marginTop: 8 }}>
               regimes
             </div>
-            <DistBars rows={(noTradeQ.data?.regimes ?? []).map((g) => ({ label: g.regime ?? "—", count: g.count ?? 0 }))} />
+            <DistBars rows={regimeRows} />
           </div>
           <div>
             <div className="section-title">hourly trend</div>
-            <DistBars rows={(noTradeQ.data?.hourly_trend ?? []).map((g) => ({ label: (g.hour ?? "—").slice(5, 13), count: g.count ?? 0 }))} tone="var(--violet)" />
+            <DistBars rows={trendRows} tone="var(--violet)" />
             <div className="section-title" style={{ marginTop: 8 }}>
               recent examples
             </div>
             <DataTable headers={[{ label: "at" }, { label: "reason" }, { label: "gate" }]}>
-              {arr(noTradeQ.data?.recent).map((r, i) => (
-                <tr key={i}>
-                  <td className="tiny">{formatDateTime(str(r.generated_at))}</td>
-                  <td className="tiny">{str(r.reason_code) ?? "—"}</td>
-                  <td className="tiny">{str(r.blocked_by) ?? ""}</td>
+              {recentRows.map((r, i) => (
+                <tr key={r.key ?? i}>
+                  <td className="tiny">{r.at}</td>
+                  <td className="tiny">{r.reason}</td>
+                  <td className="tiny">{r.gate}</td>
                 </tr>
               ))}
             </DataTable>

@@ -13,7 +13,7 @@
  * never by ad-hoc token probing.
  */
 
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 // Wave 6 (perf): the seven legacy routes are code-split like the feature
@@ -154,12 +154,6 @@ export function AppShell() {
   useEffect(() => onCore("auth:expired", ({ at }) => setAuthExpiredAt(at)), []);
   useEffect(() => onCore("auth:changed", () => setAuthExpiredAt(getAuthState().lastUnauthorizedAt)), []);
 
-  // 1s ticker for data-age display (visual only).
-  useEffect(() => {
-    const t = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(t);
-  }, []);
-
   // Density class on <body> — CSS custom properties cascade from there.
   useEffect(() => {
     document.body.classList.toggle("dense", dense);
@@ -222,12 +216,84 @@ export function AppShell() {
 
   const { snapshot, realtimeStatus } = useRealtimeSnapshot(snapshotQuery.data);
 
+  // 1s ticker for data-age display (visual only).
+  // perf: pause while the tab is hidden — nowMs is Date.now()-derived (nothing
+  // accumulates, so pausing cannot corrupt it); on return run one immediate
+  // tick so no displayed age is ever stale by a whole interval. Visible
+  // cadence unchanged (OUTPUT-IDENTICAL: same values, same freshness timing).
+  useEffect(() => {
+    if (document.visibilityState === "hidden") return;
+    let alive = true;
+    let timer: number | null = window.setInterval(tickNow, 1000);
+    function tickNow(): void {
+      if (alive) setNowMs(Date.now());
+    }
+    const onVisibility = (): void => {
+      if (document.visibilityState === "hidden") {
+        if (timer !== null) {
+          window.clearInterval(timer);
+          timer = null;
+        }
+        return;
+      }
+      if (timer === null && alive) {
+        tickNow();
+        timer = window.setInterval(tickNow, 1000);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      alive = false;
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (timer !== null) window.clearInterval(timer);
+    };
+  }, []);
+
   const authError =
     snapshotQuery.error instanceof ApiError && snapshotQuery.error.isAuthError
       ? (snapshotQuery.error as ApiError)
       : null;
   const showAuthBanner = authError !== null || authExpiredAt !== null;
   const lf = snapshot?.live_freshness ?? null;
+
+  /**
+   * Perf wave 7 (route memoization): the feature `<Route>` elements used to be
+   * built inline in JSX, so EVERY render allocated 20 fresh `element` objects.
+   * React Router reconciles `<Route>` by `element` identity: a new object for
+   * the ACTIVE route makes it REMOUNT the whole page — unmounting the live
+   * page, destroying its DOM + internal state, and re-running its effects
+   * (queries re-mount, charts re-initialize) on every single tick. At the
+   * backend's 5 Hz telemetry cadence that is 5 full page teardown+rebuild
+   * cycles per second, sustained 24/7 — the single biggest runtime cost on the
+   * console and the direct cause of the "the page flashes/redraws constantly"
+   * symptom under load.
+   *
+   * `useMemo` keyed on `[snapshot, nowMs, routePathname]` keeps each route's
+   * element identity stable across renders that only change unrelated state
+   * (palette/help/density toggles), so React Router reuses the existing tree.
+   * The snapshot+nowMs deps are intentional: when the live data changes, the
+   * page must re-render with it — but re-render ≠ remount, which is the whole
+   * distinction this preserves.
+   */
+  const featureRoutes = useMemo(
+    () =>
+      FEATURE_SECTIONS.flatMap((sec) => sec.items).map((f) => (
+        <Route
+          key={f.route}
+          path={f.route}
+          element={
+            <ErrorBoundary label={f.label} resetKey={routePathname}>
+              <Suspense fallback={<LoadingState label={`Loading ${f.label}…`} />}>
+                <f.lazy snapshot={snapshot} nowMs={nowMs} />
+              </Suspense>
+            </ErrorBoundary>
+          }
+        />
+      )),
+    [snapshot, nowMs, routePathname],
+  );
+
+
 
   return (
     <div className="app-shell">
@@ -350,19 +416,7 @@ export function AppShell() {
               <Route path="/ml" element={<MlRoute snapshot={snapshot} />} />
               <Route path="/intelligence" element={<IntelRoute snapshot={snapshot} />} />
               <Route path="/audit" element={<AuditRoute />} />
-              {FEATURE_SECTIONS.flatMap((sec) => sec.items).map((f) => (
-                <Route
-                  key={f.route}
-                  path={f.route}
-                  element={
-                    <ErrorBoundary label={f.label} resetKey={routePathname}>
-                      <Suspense fallback={<LoadingState label={`Loading ${f.label}…`} />}>
-                        <f.lazy snapshot={snapshot} nowMs={nowMs} />
-                      </Suspense>
-                    </ErrorBoundary>
-                  }
-                />
-              ))}
+              {featureRoutes}
                   <Route path="*" element={<ErrorState message="Unknown route" />} />
                 </Routes>
               </Suspense>

@@ -127,6 +127,9 @@ export function PromotionControls() {
   const promo = obj(statusQ.data?.promotion);
   const frozen = Boolean(promo.frozen);
   const canExecute = candidate.trim() !== "" && token.trim() !== "" && actor.trim() !== "" && !frozen;
+  // ConfigPage house standard: one mutation in flight disables the others
+  // (panel-level busy), while each button names its own running operation.
+  const busy = execMut.isPending || freezeMut.isPending || reconcileMut.isPending;
 
   return (
     <Panel
@@ -183,7 +186,8 @@ export function PromotionControls() {
       <div className="l3-toolbar" style={{ marginTop: 10, flexWrap: "wrap" }}>
         <button
           className="btn small"
-          disabled={!candidate.trim()}
+          disabled={!candidate.trim() || previewQ.isFetching}
+          title={previewQ.isFetching ? "preview read in flight" : undefined}
           onClick={() => {
             setPreviewError(null);
             setCommandMessage(null);
@@ -194,7 +198,7 @@ export function PromotionControls() {
         </button>
         <button
           className="btn small primary"
-          disabled={!canExecute || execMut.isPending}
+          disabled={!canExecute || busy}
           onClick={() => setConfirmOpen(true)}
           title={
             frozen
@@ -208,21 +212,24 @@ export function PromotionControls() {
         </button>
         <button
           className="btn small"
-          disabled={freezeMut.isPending || !actor.trim()}
+          disabled={busy || !actor.trim()}
+          title={busy ? (freezeMut.isPending ? "emergency control in flight" : "another command is in flight") : undefined}
           onClick={() => void freezeMut.mutateAsync(true)}
         >
-          Freeze
+          {freezeMut.isPending ? "freezing…" : "Freeze"}
         </button>
         <button
           className="btn small"
-          disabled={freezeMut.isPending || !actor.trim()}
+          disabled={busy || !actor.trim()}
+          title={busy ? (freezeMut.isPending ? "emergency control in flight" : "another command is in flight") : undefined}
           onClick={() => void freezeMut.mutateAsync(false)}
         >
-          Unfreeze
+          {freezeMut.isPending ? "unfreezing…" : "Unfreeze"}
         </button>
         <button
           className="btn small"
-          disabled={reconcileMut.isPending}
+          disabled={busy}
+          title={busy ? (reconcileMut.isPending ? "reconcile in flight" : "another command is in flight") : undefined}
           onClick={() => void reconcileMut.mutateAsync()}
         >
           {reconcileMut.isPending ? "reconciling…" : "Reconcile registry"}

@@ -74,6 +74,32 @@ export interface PgConfig {
   [key: string]: unknown;
 }
 
+export interface SqliteEvidence {
+  name: string;
+  file: string;
+  path?: string;
+  bytes: number;
+  age_seconds: number;
+  mtime_utc?: string;
+  active: boolean;
+}
+
+/** Measured configured-vs-effective provider (backend `_provider_truth`,
+ *  2026-09-23): `mismatch=true` is the "badge says postgresql, data comes
+ *  from sqlite" state. Absent on an engine that has not been restarted
+ *  with the new code — the UI then derives a narrower claim client-side. */
+export interface ProviderTruthPayload {
+  configured: string;
+  effective: string;
+  mismatch: boolean;
+  pg_reachable: boolean | null;
+  pg_target: string;
+  pg_error: string;
+  evidence: SqliteEvidence[];
+  note: string;
+  measured_at?: string;
+}
+
 export interface DbManageStatus {
   success: boolean;
   provider?: string;
@@ -82,6 +108,21 @@ export interface DbManageStatus {
   domains?: Record<string, unknown>;
   postgres?: PgConfig | null;
   password_set?: boolean;
+  /** Is psycopg importable in the server env (added 2026-09-23: the active
+   *  provider can be postgresql while the driver package is absent). */
+  postgresql_driver_available?: boolean;
+  /** Backend-computed guidance for a broken provider state — rendered
+   *  verbatim, never re-derived on the client. */
+  hints?: string[];
+  /** Measured configured-vs-effective provider; see ProviderTruthPayload. */
+  provider_truth?: ProviderTruthPayload;
+  /** Advanced knobs reported by GET /api/db/manage/status (wave
+   *  db-provider-pro, contract §3.3). Absent on older builds — the UI
+   *  renders UNAVAILABLE, never a fabricated default. */
+  options?: { [key: string]: unknown } | null;
+  /** DEFAULT_DB_FILES domain list (additive key; `domains` stays the
+   *  per-domain health snapshot dict). */
+  domain_db_names?: string[];
   error?: { code?: string; message?: string; request_id?: string };
 }
 
@@ -152,10 +193,22 @@ export interface ConsoleDatabase {
   path: string;
   size_bytes: number | null;
   status: string;
+  table_count?: number | null;
+  description?: string;
+  /** Backend's single next action when this database cannot be opened
+   *  (psycopg missing / server down are different faults, different fixes). */
+  hint?: string;
   [key: string]: unknown;
 }
 
-export interface ConsoleTables {
+export interface ConsoleFailure {
+  /** Stable machine code (PG_DRIVER_MISSING / DB_UNREACHABLE / DB_CONSOLE_ERROR). */
+  code?: string;
+  /** The one next action, when the backend can name it. */
+  hint?: string;
+}
+
+export interface ConsoleTables extends ConsoleFailure {
   success: boolean;
   database?: string;
   provider?: string;
@@ -163,7 +216,7 @@ export interface ConsoleTables {
   error?: string;
 }
 
-export interface ConsoleRows {
+export interface ConsoleRows extends ConsoleFailure {
   success: boolean;
   database?: string;
   table?: string;
@@ -174,7 +227,7 @@ export interface ConsoleRows {
   error?: string;
 }
 
-export interface ConsoleQueryResult {
+export interface ConsoleQueryResult extends ConsoleFailure {
   success: boolean;
   database?: string;
   provider?: string;
@@ -182,7 +235,18 @@ export interface ConsoleQueryResult {
   rows?: Array<Record<string, unknown>>;
   truncated?: boolean;
   rows_returned?: number;
+  /** Row cap the backend applied (present on successful query answers). */
+  cap?: number;
   error?: string;
+}
+
+/** One column from /api/db/console/columns (portable normalized shape). */
+export interface ConsoleColumn {
+  name: string;
+  type: string;
+  notnull: boolean;
+  pk: boolean;
+  default?: unknown;
 }
 
 export interface ApiKeyRow {
@@ -216,7 +280,7 @@ export const dbApi = {
     send("/api/db/console/refresh", {}),
   consoleTables: (database: string, signal?: AbortSignal): Promise<ConsoleTables> =>
     getLegacy<ConsoleTables>(`/api/db/console/tables?database=${encodeURIComponent(database)}`, signal),
-  consoleColumns: (database: string, table: string, signal?: AbortSignal): Promise<{ success: boolean; columns?: Array<Record<string, unknown>>; error?: string }> =>
+  consoleColumns: (database: string, table: string, signal?: AbortSignal): Promise<{ success: boolean; columns?: ConsoleColumn[]; error?: string } & ConsoleFailure> =>
     getLegacy(`/api/db/console/columns?database=${encodeURIComponent(database)}&table=${encodeURIComponent(table)}`, signal),
   consoleRows: (database: string, table: string, limit = 100, offset = 0, signal?: AbortSignal): Promise<ConsoleRows> =>
     getLegacy<ConsoleRows>(

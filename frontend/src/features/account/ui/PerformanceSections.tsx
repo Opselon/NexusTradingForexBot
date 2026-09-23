@@ -7,9 +7,23 @@
  * draws net_pnl per consecutive period straight from /performance/{kind}/series.
  * The intelligence panel echoes the structured PerformanceReport summary that
  * the Telegram daily report consumes — same object, so UI and report agree.
+ *
+ * Wave 6 (analytics studio): advanced metrics render in a studio distribution
+ * plate; the per-period series carries an emphasis strip scaled to the SAME
+ * net_pnl values the sparkline already draws. No metric is recomputed.
+ *
+ * OWNER:    uiux-w6-account
+ * CONSUMES: useAccountPerformance/useAccountIntelligence/useAccountSeries,
+ *           ADVANCED_ROWS (../model), shared formatters, studio-math-react
+ * PROVIDES: AdvancedMetricsSection, PeriodSeriesSection,
+ *           PerformanceIntelligenceSection
+ * INVARIANTS: missing stats render "—" — never 0 (BUG-020 lineage); emphasis
+ *           bars scale to on-screen values and are labeled "derived"; the
+ *           kind switch and report toggle keep working unchanged.
+ * EXTEND:   a new advanced stat needs an ADVANCED_ROWS entry, not new math.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { Sparkline } from "@/components/viz";
 import { formatDateTime } from "@/lib/format";
@@ -17,6 +31,7 @@ import { useAccountPerformance, useAccountIntelligence, useAccountSeries } from 
 import { ADVANCED_ROWS } from "../model";
 import type { PeriodKind } from "../types";
 import { DASH, FreshnessNote, asErrorText, moneyOrDash } from "./shared";
+import { DistPanel, EmphBars } from "./studio-math-react";
 
 export function AdvancedMetricsSection() {
   const perf = useAccountPerformance();
@@ -34,32 +49,54 @@ export function AdvancedMetricsSection() {
       ) : !a ? (
         <EmptyState message="No advanced metrics computed." hint="Needs closed trades in the accounting core." />
       ) : (
-        <>
-          <div className="acct-grid-stats">
-            {ADVANCED_ROWS.map((row) => {
+        <DistPanel
+          title="Risk-adjusted performance"
+          scaleNote="bars scale within each unit family — $ rows against $, ratios against ratios, never mixed"
+          footer={`source: accounting core · ${a.sample_trades ?? 0} closed trades · sharpe/sortino/calmar/sqn computed over the same realized series the period reports use`}
+          rows={(() => {
+            // One shared scale would let avg_hold_sec (1800s) flatten Sharpe
+            // (1.4) to a zero-width bar — the screen must not imply "≈ 0".
+            // Each unit family gets its own magnitude ceiling instead.
+            // A count (12 wins) shares no unit with a ratio (Sharpe 1.4), and
+            // "%" and percentOfOne rows are both percentages — key them apart
+            // so no row's bar is flattened by an unrelated metric.
+            const family = (r: (typeof ADVANCED_ROWS)[number]) => {
+              if (r.money) return "$";
+              if (r.percentOfOne || r.suffix === "%") return "pct";
+              if (r.suffix === "R") return "R";
+              if (r.suffix === "s") return "s";
+              if (r.key.startsWith("max_consecutive")) return "count";
+              return "ratio";
+            };
+            const ceiling = new Map<string, number>();
+            for (const r of ADVANCED_ROWS) {
+              const raw = (a as Record<string, number | null | undefined>)[r.key];
+              if (raw === null || raw === undefined || !Number.isFinite(raw)) continue;
+              const f = family(r);
+              ceiling.set(f, Math.max(ceiling.get(f) ?? 0, Math.abs(raw)));
+            }
+            return ADVANCED_ROWS.map((row) => {
               const raw = (a as Record<string, number | null | undefined>)[row.key];
-              const shown =
-                raw === null || raw === undefined
-                  ? DASH
-                  : row.percentOfOne
-                    ? `${(raw * 100).toFixed(1)}%`
-                    : row.money
-                      ? moneyOrDash(raw)
-                      : `${raw.toFixed(row.digits)}${row.suffix ?? ""}`;
-              const tone = raw === null || raw === undefined ? "" : raw > 0 ? "pos" : raw < 0 ? "neg" : "";
-              return (
-                <div className="acct-stat" key={row.key} title={row.key}>
-                  <div className="k">{row.label}</div>
-                  <div className={`v ${tone}`}>{shown}</div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="tiny faint" style={{ marginTop: 8 }}>
-            source: accounting core · {a.sample_trades ?? 0} closed trades · sharpe/sortino/calmar/sqn computed over the same realized series the period
-            reports use
-          </div>
-        </>
+              const known = raw !== null && raw !== undefined && Number.isFinite(raw);
+              const v = known ? (raw as number) : null;
+              const shown = v === null
+                ? DASH
+                : row.percentOfOne
+                  ? `${(v * 100).toFixed(1)}%`
+                  : row.money
+                    ? moneyOrDash(v, true)
+                    : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(row.digits)}${row.suffix ?? ""}`;
+              return {
+                label: row.label,
+                value: v,
+                text: shown,
+                full: ceiling.get(family(row)) || 1,
+                tone: v === null ? "dim" : v > 0 ? "pos" : v < 0 ? "neg" : "dim",
+                title: `${row.key} = ${shown}`,
+              };
+            });
+          })()}
+        />
       )}
     </Panel>
   );
@@ -68,6 +105,26 @@ export function AdvancedMetricsSection() {
 export function PeriodSeriesSection() {
   const [kind, setKind] = useState<PeriodKind>("DAY");
   const series = useAccountSeries(kind, 30);
+
+  // Backend series, memoized per response identity; the two derivations below
+  // read only it. `values` keeps its null gaps (Sparkline renders them as gaps).
+  const seriesData = series.data ?? [];
+  const seriesValues = useMemo(
+    () => seriesData.map((p) => (typeof p.net_pnl === "number" ? p.net_pnl : null)),
+    [seriesData],
+  );
+  const seriesRows = useMemo(
+    () =>
+      seriesData.map((p, i) => (
+        <div className="statline" key={`${p.key}-${i}`} style={{ fontSize: 11, justifyContent: "space-between" }}>
+          <span>{p.key ?? `#${i}`}</span>
+          <span>{p.total_trades ?? 0} trades</span>
+          <span className={(p.net_pnl ?? 0) >= 0 ? "tx-good" : "tx-bad"}>{moneyOrDash(p.net_pnl, true)}</span>
+          <span className="faint">wr {p.win_rate === null || p.win_rate === undefined ? DASH : `${p.win_rate.toFixed(0)}%`}</span>
+        </div>
+      )),
+    [seriesData],
+  );
 
   return (
     <Panel
@@ -95,7 +152,7 @@ export function PeriodSeriesSection() {
         <>
           <div className="spark-cell" style={{ gap: 14 }}>
             <Sparkline
-              values={(series.data ?? []).map((p) => (typeof p.net_pnl === "number" ? p.net_pnl : null))}
+              values={seriesValues}
               width={420}
               height={54}
               label={`net pnl per ${kind}`}
@@ -104,15 +161,14 @@ export function PeriodSeriesSection() {
               {(series.data ?? []).length} periods · last {moneyOrDash(series.data?.[0]?.net_pnl ?? null)}
             </div>
           </div>
+          <div style={{ marginTop: 4 }}>
+            <EmphBars bars={(series.data ?? []).map((pr) => ({ value: pr.net_pnl ?? null }))} minPct={10} />
+            <div className="tiny faint" style={{ marginBlockStart: 4 }}>
+              emphasis bars: per-period net PnL, scaled to the largest |net PnL| in view (derived from the values above)
+            </div>
+          </div>
           <div style={{ display: "grid", gap: 2, marginTop: 10, maxHeight: 220, overflowY: "auto" }}>
-            {(series.data ?? []).map((p, i) => (
-              <div className="statline" key={`${p.key}-${i}`} style={{ fontSize: 11, justifyContent: "space-between" }}>
-                <span>{p.key ?? `#${i}`}</span>
-                <span>{p.total_trades ?? 0} trades</span>
-                <span className={ (p.net_pnl ?? 0) >= 0 ? "tx-good" : "tx-bad" } >{moneyOrDash(p.net_pnl, true)}</span>
-                <span className="faint">wr {p.win_rate === null || p.win_rate === undefined ? DASH : `${p.win_rate.toFixed(0)}%`}</span>
-              </div>
-            ))}
+            {seriesRows}
           </div>
           <div className="tiny faint" style={{ marginTop: 6 }}>oldest → newest; the accounting worker keeps consecutive-period rows server-side.</div>
         </>
@@ -128,6 +184,10 @@ export function PerformanceIntelligenceSection() {
 
   const i = intel.data?.intelligence;
 
+  // perf: pretty-print the backend report once per distinct payload
+  // instead of on every render; dep is the exact object serialized.
+  const report = intel.data?.report;
+  const reportText = useMemo(() => JSON.stringify(report ?? {}, null, 2), [report]);
   return (
     <Panel
       title="Performance intelligence (report engine)"
@@ -154,7 +214,7 @@ export function PerformanceIntelligenceSection() {
         <EmptyState message="No intelligence report." />
       ) : showReport ? (
         <pre tabIndex={0} style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 10, fontSize: 10.5, maxHeight: 420, overflow: "auto", fontFamily: "var(--mono)", margin: 0 }}>
-          {JSON.stringify(intel.data.report ?? {}, null, 2)}
+          {reportText}
         </pre>
       ) : (
         <div className="grid cols-2">

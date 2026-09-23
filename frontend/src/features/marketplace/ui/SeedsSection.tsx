@@ -1,14 +1,22 @@
 /**
- * Seeds table + lifecycle commands + seed detail drawer.
- *
- * Enablement goes through a mode picker with a confirm step; the backend can
- * answer OK / PENDING (202) / DENIED (403) — all three are shown verbatim and
- * the table refetches either way (the response, not the click, decides).
- * Disable and repair are destructive-ish and confirm-guarded. Run-research is
- * a queue request (202), not a synchronous result.
+ * PURPOSE:  Seeds storefront — table or card view, filter/sort chips derived
+ *           ONLY from loaded rows, lifecycle commands + detail drawer.
+ * OWNER:    uiux-w6-marketplace
+ * CONSUMES: ../hooks (useMktSeeds + command hooks), ../model (ENABLE_MODES,
+ *           lifecycleLevel), ./storeViewModel (facetCounts, seedCardMeta),
+ *           ./SeedDetailDrawer, ./shared, ./marketplace-store.css
+ * PROVIDES: SeedsSection, fmtScore
+ * INVARIANTS: enable/disable/repair/research keep their confirm step and the
+ *           backend response decides (OK / PENDING / DENIED verbatim); chips
+ *           only offer categories present in the loaded page (no hardcoded
+ *           vocabulary); client-side sort is display-only and labeled derived;
+ *           Skeleton/ErrorState/EmptyState keep their existing strings;
+ *           search, pagination and every row action keep working.
+ * EXTEND:   add a facet by reading MktSeed fields; keep localStorage under
+ *           the w6.marketplace.* prefix.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ConfirmModal, DataTable, EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { useDisableSeed, useEnableSeed, useMktSeeds, useRepairSeed, useRunResearch } from "../hooks";
@@ -16,6 +24,10 @@ import { ENABLE_MODES, lifecycleLevel, type SeedVM } from "../model";
 import type { MktEnableMode } from "../types";
 import { SeedDetailDrawer } from "./SeedDetailDrawer";
 import { FreshnessNote, asErrorText } from "./shared";
+import { facetCounts, seedCardMeta } from "./storeViewModel";
+import "./marketplace.css";
+import "./marketplace-store.css";
+import "./marketplace-store-detail.css";
 
 type PendingCmd =
   | { kind: "enable"; seed: string; mode: MktEnableMode }
@@ -23,6 +35,41 @@ type PendingCmd =
   | { kind: "repair"; seed: string }
   | { kind: "research"; seed: string }
   | null;
+
+/** Display-only sort of loaded rows — persisted, labeled derived in the UI. */
+type SortMode = "backend" | "name" | "lifecycle" | "updated";
+const SORTS: Array<{ id: SortMode; label: string }> = [
+  { id: "backend", label: "backend order" },
+  { id: "name", label: "name A→Z" },
+  { id: "lifecycle", label: "lifecycle" },
+  { id: "updated", label: "updated ↓" },
+];
+const LS_SORT = "w6.marketplace.sort";
+const LS_VIEW = "w6.marketplace.view";
+
+function lsGet(key: string, fallback: string): string {
+  try {
+    return window.localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+function lsSet(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    /* display state only — a blocked localStorage never breaks the page */
+  }
+}
+
+function sortRows(rows: SeedVM[], mode: SortMode): SeedVM[] {
+  if (mode === "backend") return rows;
+  const out = [...rows];
+  if (mode === "name") out.sort((a, b) => a.label.localeCompare(b.label));
+  else if (mode === "lifecycle") out.sort((a, b) => a.lifecycle.localeCompare(b.lifecycle) || a.label.localeCompare(b.label));
+  else out.sort((a, b) => String(b.seed.updated_at ?? "").localeCompare(String(a.seed.updated_at ?? "")));
+  return out;
+}
 
 export function SeedsSection() {
   const [page, setPage] = useState(1);
@@ -33,6 +80,8 @@ export function SeedsSection() {
   const [detail, setDetail] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingCmd>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [sort, setSort] = useState<SortMode>(() => (lsGet(LS_SORT, "backend") as SortMode));
+  const [view, setView] = useState<"table" | "cards">(() => (lsGet(LS_VIEW, "table") === "cards" ? "cards" : "table"));
 
   const seeds = useMktSeeds({ page, family, status, q: appliedQ });
   const enable = useEnableSeed();
@@ -41,6 +90,35 @@ export function SeedsSection() {
   const research = useRunResearch();
 
   const rows: SeedVM[] = seeds.data?.seeds ?? [];
+
+  // Facets come ONLY from the rows this response actually delivered.
+  const familyFacets = useMemo(
+    () => facetCounts(rows.map((r) => r.seed), "family"),
+    [rows],
+  );
+  const lifecycleFacets = useMemo(
+    () => facetCounts(rows.map((r) => r.seed), "lifecycle"),
+    [rows],
+  );
+  const visibleRows = useMemo(() => sortRows(rows, sort), [rows, sort]);
+
+  const changeSort = (m: SortMode): void => {
+    setSort(m);
+    lsSet(LS_SORT, m);
+  };
+  const changeView = (v: "table" | "cards"): void => {
+    setView(v);
+    lsSet(LS_VIEW, v);
+  };
+
+  /** Reset the server query to a clean key (family/status chips share this). */
+  const clearFilters = (): void => {
+    setFamily("");
+    setStatus("");
+    setPage(1);
+    setAppliedQ("");
+    setQ("");
+  };
 
   const runCmd = (): void => {
     if (!pending) return;
@@ -61,6 +139,37 @@ export function SeedsSection() {
   };
 
   const busy = enable.isPending || disable.isPending || repair.isPending || research.isPending;
+  const hasFilter = family !== "" || status !== "" || appliedQ !== "";
+
+  const rowActions = (s: SeedVM) => (
+    <div className="mkt-actions mkt-row-actions" style={{ justifyContent: "flex-end" }}>
+      <button className="btn small" onClick={() => setPending({ kind: "research", seed: s.seed.seed_id })} disabled={busy}>
+        {busy ? "running…" : "Research"}
+      </button>
+      <select
+        className="select"
+        style={{ padding: "2px 4px", fontSize: 10 }}
+        value=""
+        aria-label={`enable mode for ${s.seed.seed_id}`}
+        onChange={(e) => {
+          const mode = e.target.value as MktEnableMode;
+          if (mode) setPending({ kind: "enable", seed: s.seed.seed_id, mode });
+        }}
+      >
+        <option value="">enable…</option>
+        {ENABLE_MODES.map((m) => (
+          <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>
+        ))}
+      </select>
+      <span className="mkt-row-sep" aria-hidden="true" />
+      <button className="btn small danger" onClick={() => setPending({ kind: "disable", seed: s.seed.seed_id })} disabled={busy}>
+        {busy ? "running…" : "Disable"}
+      </button>
+      <button className="btn small" onClick={() => setPending({ kind: "repair", seed: s.seed.seed_id })} disabled={busy} title="evolution-operator repair">
+        {busy ? "running…" : "Repair"}
+      </button>
+    </div>
+  );
 
   return (
     <Panel
@@ -90,23 +199,85 @@ export function SeedsSection() {
           >
             Search
           </button>
+          <div className="mkt-store-viewtoggle" role="group" aria-label="seeds view">
+            <button aria-pressed={view === "table"} onClick={() => changeView("table")}>table</button>
+            <button aria-pressed={view === "cards"} onClick={() => changeView("cards")}>cards</button>
+          </div>
           <FreshnessNote updatedAtMs={seeds.dataUpdatedAt ?? null} label="seeds" />
         </>
       }
     >
+      {/* Facet chips — categories/count labels derived from the loaded page only */}
+      <div className="mkt-store-chips" style={{ marginBottom: 6 }} role="group" aria-label="family filter (loaded rows)">
+        <span className="tiny faint" style={{ letterSpacing: "0.08em" }}>family</span>
+        {familyFacets.length === 0 ? (
+          <span className="tiny faint">no families in the loaded page</span>
+        ) : (
+          familyFacets.map((f) => (
+            <button
+              key={f.value}
+              className="mkt-store-chip"
+              aria-pressed={family === f.value}
+              onClick={() => {
+                setFamily(family === f.value ? "" : f.value);
+                setPage(1);
+              }}
+              title={`${f.value} — ${f.count} of ${rows.length} loaded rows`}
+            >
+              <span className="swatch" aria-hidden="true" />
+              {f.value}
+              <span className="cnt">{f.count}</span>
+            </button>
+          ))
+        )}
+      </div>
+      <div className="mkt-store-chips" style={{ marginBottom: 8 }} role="group" aria-label="lifecycle filter (loaded rows)">
+        <span className="tiny faint" style={{ letterSpacing: "0.08em" }}>lifecycle</span>
+        {lifecycleFacets.length === 0 ? (
+          <span className="tiny faint">no lifecycles in the loaded page</span>
+        ) : (
+          lifecycleFacets.map((f) => (
+            <button
+              key={f.value}
+              className="mkt-store-chip"
+              aria-pressed={status === f.value}
+              onClick={() => {
+                setStatus(status === f.value ? "" : f.value);
+                setPage(1);
+              }}
+              title={`${f.value} — ${f.count} of ${rows.length} loaded rows`}
+            >
+              {f.value}
+              <span className="cnt">{f.count}</span>
+            </button>
+          ))
+        )}
+        {hasFilter && (
+          <button className="mkt-store-chip" aria-pressed={false} onClick={clearFilters} title="clear family/lifecycle/search filters">
+            ✕ clear filters
+          </button>
+        )}
+        <span className="spacer" style={{ flex: 1 }} />
+        <span className="tiny faint" style={{ letterSpacing: "0.08em" }}>sort</span>
+        {SORTS.map((s) => (
+          <button
+            key={s.id}
+            className="mkt-store-chip"
+            aria-pressed={sort === s.id}
+            onClick={() => changeSort(s.id)}
+            title={s.id === "backend" ? "order served by the backend" : "client-side sort of loaded rows (derived display order)"}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {sort !== "backend" && (
+        <div className="tiny faint" style={{ marginBottom: 8 }}>
+          client-side sort of the loaded page (derived display order — the backend ranking is untouched)
+        </div>
+      )}
+
       <div className="mkt-actions" style={{ marginBottom: 8 }}>
-        <select className="select" value={family} onChange={(e) => { setFamily(e.target.value); setPage(1); }} aria-label="family filter">
-          <option value="">all families</option>
-          {["PRICE_ACTION", "ICT", "ICHIMOKU", "BREAKOUT", "MEAN_REVERSION", "MOMENTUM", "HYBRID"].map((f) => (
-            <option key={f} value={f}>{f}</option>
-          ))}
-        </select>
-        <select className="select" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} aria-label="lifecycle filter">
-          <option value="">all lifecycles</option>
-          {["INSTALLED", "RESEARCH_PENDING", "RESEARCH_RUNNING", "VALIDATED", "LIVE_CANDIDATE", "LIVE_ELIGIBLE", "REJECTED", "QUARANTINED", "DISABLED", "RETIRED"].map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
         <span className="spacer" style={{ flex: 1 }} />
         <button className="btn small ghost" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || seeds.isFetching}>
           ← prev
@@ -125,6 +296,31 @@ export function SeedsSection() {
         <ErrorState message={asErrorText(seeds.error)} onRetry={() => seeds.refetch()} />
       ) : rows.length === 0 ? (
         <EmptyState message="No seeds match this filter." hint="Install a pack above — seeds appear here after the backend stores them." />
+      ) : view === "cards" ? (
+        <div className="mkt-store-seeds">
+          {visibleRows.map((s) => (
+            <div className="mkt-store-seed" key={`${s.seed.seed_id}:${String(s.seed.version ?? "")}`}>
+              <div className="mkt-store-seed-head">
+                <div>
+                  <button className="btn small ghost nm" onClick={() => setDetail(s.seed.seed_id)} title="open detail drawer" style={{ padding: 0, border: "none", background: "none" }}>
+                    {s.seed.name || s.seed.seed_id}
+                  </button>
+                  <div className="id">{s.seed.seed_id}</div>
+                </div>
+                <span className={`badge ${lifecycleLevel(s.lifecycle)}`}>{s.lifecycle}</span>
+              </div>
+              <div className="mkt-store-seed-meta">
+                {seedCardMeta(s.seed).map((m) => (
+                  <span className="kv" key={`${m.label}:${m.text}`} title={m.label}>
+                    {m.label === "family" || m.label === "v" || m.label === "license" ? m.text : `${m.label} ${m.text}`}
+                  </span>
+                ))}
+              </div>
+              <div className="tiny faint">{s.seed.updated_at ? `updated ${formatDateTime(String(s.seed.updated_at))}` : "updated —"}</div>
+              <div className="mkt-store-seed-foot">{rowActions(s)}</div>
+            </div>
+          ))}
+        </div>
       ) : (
         <DataTable
           headers={[
@@ -137,7 +333,7 @@ export function SeedsSection() {
             { label: "actions" },
           ]}
         >
-          {rows.map((s) => (
+          {visibleRows.map((s) => (
             <tr key={`${s.seed.seed_id}:${String(s.seed.version ?? "")}`}>
               <td>
                 <button className="btn small ghost" onClick={() => setDetail(s.seed.seed_id)} title="open detail drawer">
@@ -161,35 +357,7 @@ export function SeedsSection() {
               </td>
               <td className="inline-mono tiny">{String(s.seed.pack_id ?? "—")}</td>
               <td>{s.seed.updated_at ? formatDateTime(String(s.seed.updated_at)) : "—"}</td>
-              <td>
-                <div className="mkt-actions mkt-row-actions" style={{ justifyContent: "flex-end" }}>
-                  <button className="btn small" onClick={() => setPending({ kind: "research", seed: s.seed.seed_id })} disabled={busy}>
-                    Research
-                  </button>
-                  <select
-                    className="select"
-                    style={{ padding: "2px 4px", fontSize: 10 }}
-                    value=""
-                    aria-label={`enable mode for ${s.seed.seed_id}`}
-                    onChange={(e) => {
-                      const mode = e.target.value as MktEnableMode;
-                      if (mode) setPending({ kind: "enable", seed: s.seed.seed_id, mode });
-                    }}
-                  >
-                    <option value="">enable…</option>
-                    {ENABLE_MODES.map((m) => (
-                      <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>
-                    ))}
-                  </select>
-                  <span className="mkt-row-sep" aria-hidden="true" />
-                  <button className="btn small danger" onClick={() => setPending({ kind: "disable", seed: s.seed.seed_id })} disabled={busy}>
-                    Disable
-                  </button>
-                  <button className="btn small" onClick={() => setPending({ kind: "repair", seed: s.seed.seed_id })} disabled={busy} title="evolution-operator repair">
-                    Repair
-                  </button>
-                </div>
-              </td>
+              <td>{rowActions(s)}</td>
             </tr>
           ))}
         </DataTable>

@@ -7,7 +7,7 @@
  * the backend refuses without one, and the refusal is rendered verbatim.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import {
@@ -25,6 +25,7 @@ import { formatDateTime, formatNumber } from "@/lib/format";
 import { CommandResultLine, DistBars, FreshnessCaption, GateStepper, InfoRow, JsonBlock, StatusPill } from "../../research/ui/lane5Kit";
 import { arr, bool, commandVerdict, num, obj, str, type Row } from "../model";
 import { governanceQueries, governanceUseCases } from "../useCases";
+import "./governance.css";
 
 type Tab = "ladder" | "ledger" | "experience" | "review";
 
@@ -95,29 +96,183 @@ export default function GovernancePage(props: ShellPageProps) {
 
   const after = () => void qc.invalidateQueries({ queryKey: ["governance"] });
 
+  // ConfigPage house standard: while a mutation is in flight the toolbar is
+  // inert and each button names its own running operation (no new calls or
+  // payloads — busy mirrors cmd.state.running only).
+  const busy = cmd.state.running;
+  const busyLabel = (idle: string, running: string) => (busy ? running : idle);
+
   const ask = (title: string, danger: boolean, needsModel: boolean, label: string, run: PendingCommand["run"]) =>
     setPending({ title, danger, needsModel, label, run });
 
   const status = statusQ.data?.available === true ? statusQ.data : null;
-  const ladder = status ? governanceUseCases.ladder(status) : [];
+  // perf(7): every payload-array chain below (ladder steps, ledger VOs, table
+  // rows) memoizes with deps = the exact payload it reads — row sets and gate
+  // objects keep identity across unrelated re-renders (actor typing, toasts).
+  const ladder = useMemo(() => (status ? governanceUseCases.ladder(status) : []), [status]);
+  const gateRows = useMemo(
+    () =>
+      status
+        ? Object.entries(obj(status.gates)).map(([k, v]) => (
+            <tr key={k}>
+              <td className="small">{k}</td>
+              <td>
+                <StatusPill status={str(v)} />
+              </td>
+            </tr>
+          ))
+        : [],
+    [status],
+  );
+  const gates = useMemo(
+    () =>
+      ladder.map((s) => ({
+        name: s.label,
+        status: s.active ? (s.id === "promotion" ? s.state : "PASS") : s.state === "NONE" ? "NOT_RUN" : s.state,
+        reason: s.state,
+      })),
+    [ladder],
+  );
   const candModel = status?.candidate?.model_id ?? "";
   const frozen = bool(status?.promotion?.frozen) ?? false;
-  const events = governanceUseCases.ledgerRows(arr(eventsQ.data?.events));
+  const events = useMemo(
+    () => governanceUseCases.ledgerRows(arr(eventsQ.data?.events)),
+    [eventsQ.data],
+  );
+  const eventRows = useMemo(
+    () =>
+      events.slice(0, 100).map((r, i) => (
+        <tr key={i}>
+          <td className="tiny">{formatDateTime(r.at)}</td>
+          <td>
+            <StatusPill status={r.event} />
+          </td>
+          <td className="inline-mono tiny">{r.modelId ?? "—"}</td>
+          <td className="tiny">{r.actor ?? "—"}</td>
+          <td className="tiny muted" title={r.reason ?? ""}>
+            {r.reason?.slice(0, 60) ?? "—"}
+          </td>
+        </tr>
+      )),
+    [events],
+  );
+  const auditRows = useMemo(
+    () =>
+      arr(auditsQ.data?.audits)
+        .slice(0, 40)
+        .map((a: Row, i: number) => (
+          <tr key={i}>
+            <td className="tiny">{formatDateTime(str(a.created_at) ?? str(a.at))}</td>
+            <td className="small">{str(a.action) ?? str(a.kind) ?? "—"}</td>
+            <td className="inline-mono tiny">{str(a.model_id) ?? "—"}</td>
+            <td className="tiny">{str(a.actor) ?? "—"}</td>
+          </tr>
+        )),
+    [auditsQ.data],
+  );
+  const lifecycleRows = useMemo(
+    () =>
+      Object.entries(obj(expSummaryQ.data?.lifecycle_counts)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 })),
+    [expSummaryQ.data],
+  );
+  const expModelRows = useMemo(
+    () =>
+      arr(expModelsQ.data)
+        .slice(0, 25)
+        .map((m: Row, i: number) => (
+          <tr key={i}>
+            <td className="inline-mono tiny">{str(m.model_id) ?? str(m.id) ?? "—"}</td>
+            <td className="tiny">{str(m.feature_schema_id) ?? "—"}</td>
+            <td className="num tiny">{num(m.feature_dimension) ?? "—"}</td>
+            <td className="tiny">{formatDateTime(str(m.created_at))}</td>
+          </tr>
+        )),
+    [expModelsQ.data],
+  );
+  const expStrategyRows = useMemo(
+    () =>
+      arr(expStrategiesQ.data)
+        .slice(0, 25)
+        .map((s: Row, i: number) => (
+          <tr key={i}>
+            <td className="inline-mono tiny" title={str(s.strategy_id) ?? ""}>
+              {(str(s.strategy_id) ?? "—").slice(0, 16)}
+            </td>
+            <td>
+              <StatusPill status={str(s.lifecycle_state) ?? str(s.state)} />
+            </td>
+            <td className="num tiny">{num(s.score) === null ? "—" : formatNumber(num(s.score)!, 3)}</td>
+            <td className="tiny">{formatDateTime(str(s.updated_at))}</td>
+          </tr>
+        )),
+    [expStrategiesQ.data],
+  );
+  const bucketRows = useMemo(
+    () =>
+      (reviewQ.data?.calibration?.buckets ?? []).map((b: Row, i: number) => (
+        <tr key={i}>
+          <td className="tiny">{str(b.bucket) ?? str(b.label) ?? `#${i}`}</td>
+          <td className="num tiny">{num(b.count) ?? num(b.n) ?? "—"}</td>
+          <td className="num tiny">{formatNumber(num(b.accuracy) ?? NaN, 3)}</td>
+        </tr>
+      )),
+    [reviewQ.data],
+  );
 
   return (
-    <div>
-      <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <h2>Governance</h2>
-        <span className="muted small">model promotion ladder · decision ledger · experience intelligence</span>
-        <FreshnessCaption
-          timestamp={expSummaryQ.data?.fetched_at ?? undefined}
-          source="experience summary"
-          isFetching={statusQ.isFetching}
-          error={statusQ.isError}
-        />
-      </div>
+    <div className="gv-page">
+      <section className="gv-hero" aria-labelledby="gv-h1">
+        <div className="gv-hero-main">
+          <div className="gv-kicker">
+            <span className="dot" aria-hidden="true" />
+            SAFETY &amp; GOVERNANCE
+          </div>
+          <h1 className="gv-title" id="gv-h1">
+            <span className="gv-mark" aria-hidden="true">
+              ⚖
+            </span>
+            <span className="word">Governance</span>
+          </h1>
+          <p className="gv-desc">
+            Model promotion ladder, decision ledger, experience intelligence and calibration review — every state below is served by the
+            governance engine; emergency commands are confirm-gated and actor-required.
+          </p>
+        </div>
+        <div className="gv-hero-side">
+          <div
+            className={`gv-freeze ${frozen ? "on" : ""}`}
+            role="status"
+            title={frozen ? "EMERGENCY FREEZE ACTIVE" : "promotions not frozen — backend verdict from /api/models/governance/status"}
+          >
+            <span className="ico" aria-hidden="true">
+              {frozen ? "❄" : "⚑"}
+            </span>
+            {frozen ? "EMERGENCY FREEZE ACTIVE" : "NO FREEZE — promotions live"}
+          </div>
+          <div className="gv-eps" role="group" aria-label="Governance provenance">
+            <span className={`gv-ep ${status ? "" : "bad"}`}>
+              <span className="d" aria-hidden="true" />
+              /api/models/governance/status
+            </span>
+            <span className="gv-ep">
+              <span className="d" aria-hidden="true" />
+              /api/experience/summary
+            </span>
+            <span className="gv-ep">
+              <span className="d" aria-hidden="true" />
+              poll 30s
+            </span>
+          </div>
+          <FreshnessCaption
+            timestamp={expSummaryQ.data?.fetched_at ?? undefined}
+            source="experience summary"
+            isFetching={statusQ.isFetching}
+            error={statusQ.isError}
+          />
+        </div>
+      </section>
 
-      <div className="grid cols-4">
+      <div className="gv-metrics">
         <MetricCard
           label="Champion"
           value={<span className="tiny inline-mono">{status?.champion?.model_id ?? "—"}</span>}
@@ -133,69 +288,89 @@ export default function GovernancePage(props: ShellPageProps) {
         <MetricCard label="Active strategies" value={String(expSummaryQ.data?.active_strategies ?? 0)} sub={`recorded experiences: ${formatNumber(expSummaryQ.data?.recorded_experiences ?? 0, 0)}`} />
       </div>
 
-      <Panel title="Promotion ladder (backend-decided)" accent tight>
-        {statusQ.isPending ? (
-          <Skeleton count={2} />
-        ) : !status ? (
-          <EmptyState message="Model governance engine unavailable" hint="/api/models/governance/status answered available:false — no ladder to draw." />
-        ) : (
-          <GateStepper
-            gates={ladder.map((s) => ({
-              name: s.label,
-              status: s.active ? (s.id === "promotion" ? s.state : "PASS") : s.state === "NONE" ? "NOT_RUN" : s.state,
-              reason: s.state,
-            }))}
-          />
-        )}
-      </Panel>
+      <section className="gv-sec" aria-labelledby="gv-sec-ladder">
+        <div className="gv-sec-label" id="gv-sec-ladder">
+          <span className="idx">01</span>
+          Promotion ladder
+          <span className="ln" aria-hidden="true" />
+        </div>
+        <div className="gv-sec-body">
+          <Panel title="Promotion ladder (backend-decided)" accent tight>
+            {statusQ.isPending ? (
+              <Skeleton count={2} />
+            ) : !status ? (
+              <EmptyState message="Model governance engine unavailable" hint="/api/models/governance/status answered available:false — no ladder to draw." />
+            ) : (
+              <GateStepper gates={gates} />
+            )}
+          </Panel>
+        </div>
+      </section>
 
-      <div style={{ marginBlock: 12, display: "grid", gap: 8 }}>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+      <section className="gv-sec" aria-labelledby="gv-sec-commands">
+        <div className="gv-sec-label" id="gv-sec-commands">
+          <span className="idx">02</span>
+          Emergency &amp; maintenance commands
+          <span className="ln" aria-hidden="true" />
+        </div>
+        <div className="gv-cmd-wrap">
+          <div className="gv-cmd-bar">
           <label className="tiny muted" htmlFor="gov-actor">
             actor (required by backend)
           </label>
           <input id="gov-actor" className="input" style={{ width: 170 }} value={actor} onChange={(e) => setActor(e.target.value)} />
           <button
             className="btn small danger"
-            disabled={cmd.state.running || !status}
+            disabled={busy || !status}
+            title={busy ? "a command is already running" : undefined}
             onClick={() =>
               ask("Freeze promotions", true, false, "Freeze", (a) => governanceUseCases.freeze(a, "ui:lane5 emergency freeze"))
             }
           >
-            ❄ Freeze promotions
+            {busyLabel("❄ Freeze promotions", "❄ freezing…")}
           </button>
           <button
             className="btn small"
-            disabled={cmd.state.running || !frozen}
+            disabled={busy || !frozen}
+            title={busy ? "a command is already running" : undefined}
             onClick={() => ask("Unfreeze promotions", true, false, "Unfreeze", (a) => governanceUseCases.unfreeze(a, "ui:lane5 release freeze"))}
           >
-            ⚑ Unfreeze
+            {busyLabel("⚑ Unfreeze", "⚑ unfreezing…")}
           </button>
           <button
             className="btn small danger"
-            disabled={cmd.state.running || !candModel}
+            disabled={busy || !candModel}
+            title={busy ? "a command is already running" : undefined}
             onClick={() =>
               ask(`Disable candidate ${candModel}`, true, false, "Disable candidate", (a) =>
                 governanceUseCases.disableCandidate(a, candModel, "ui:lane5 operator disable"),
               )
             }
           >
-            ⛔ Disable candidate
+            {busyLabel("⛔ Disable candidate", "⛔ disabling…")}
           </button>
-          <button className="btn small" disabled={cmd.state.running} onClick={() => ask("Reconcile model registry", false, false, "Reconcile", () => governanceUseCases.reconcileRegistry())}>
-            Reconcile registry
+          <button className="btn small" disabled={busy} title={busy ? "a command is already running" : undefined} onClick={() => ask("Reconcile model registry", false, false, "Reconcile", () => governanceUseCases.reconcileRegistry())}>
+            {busyLabel("Reconcile registry", "reconciling…")}
           </button>
-          <button className="btn small danger" disabled={cmd.state.running} onClick={() => ask("Self-heal experience intelligence", true, false, "Rebuild", () => governanceUseCases.selfHealExperience())}>
-            Self-heal experience
+          <button className="btn small danger" disabled={busy} title={busy ? "a command is already running" : undefined} onClick={() => ask("Self-heal experience intelligence", true, false, "Rebuild", () => governanceUseCases.selfHealExperience())}>
+            {busyLabel("Self-heal experience", "self-healing…")}
           </button>
         </div>
-        <div className="tiny muted">
-          Approve/execute promotion intentionally stays behind the preview + token flow (approval_token is minted by the approve transition); this
-          console exposes the emergency set + rebuild commands only. The backend decides every outcome.
+          <div className="gv-cmd-note">
+            Approve/execute promotion intentionally stays behind the preview + token flow (approval_token is minted by the approve transition); this
+            console exposes the emergency set + rebuild commands only. The backend decides every outcome.
+          </div>
+          <CommandResultLine state={cmd.state} />
         </div>
-        <CommandResultLine state={cmd.state} />
-      </div>
+      </section>
 
+      <section className="gv-sec" aria-labelledby="gv-sec-ledgers">
+        <div className="gv-sec-label" id="gv-sec-ledgers">
+          <span className="idx">03</span>
+          Ledgers &amp; review
+          <span className="ln" aria-hidden="true" />
+        </div>
+        <div className="gv-sec-body">
       <Segmented
         options={[
           { id: "ladder" as const, label: "Registry & ladder" },
@@ -211,16 +386,7 @@ export default function GovernancePage(props: ShellPageProps) {
         {tab === "ladder" && (
           <Panel title="Gate matrix (governance/status.gates)" tight>
             {status ? (
-              <DataTable headers={[{ label: "gate" }, { label: "verdict" }]}>
-                {Object.entries(obj(status.gates)).map(([k, v]) => (
-                  <tr key={k}>
-                    <td className="small">{k}</td>
-                    <td>
-                      <StatusPill status={str(v)} />
-                    </td>
-                  </tr>
-                ))}
-              </DataTable>
+              <DataTable headers={[{ label: "gate" }, { label: "verdict" }]}>{gateRows}</DataTable>
             ) : (
               <EmptyState message="no governance status" />
             )}
@@ -255,19 +421,7 @@ export default function GovernancePage(props: ShellPageProps) {
                 <EmptyState message="No governance events recorded." />
               ) : (
                 <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "model" }, { label: "actor" }, { label: "reason" }]}>
-                  {events.slice(0, 100).map((r, i) => (
-                    <tr key={i}>
-                      <td className="tiny">{formatDateTime(r.at)}</td>
-                      <td>
-                        <StatusPill status={r.event} />
-                      </td>
-                      <td className="inline-mono tiny">{r.modelId ?? "—"}</td>
-                      <td className="tiny">{r.actor ?? "—"}</td>
-                      <td className="tiny muted" title={r.reason ?? ""}>
-                        {r.reason?.slice(0, 60) ?? "—"}
-                      </td>
-                    </tr>
-                  ))}
+                  {eventRows}
                 </DataTable>
               )}
             </Panel>
@@ -275,18 +429,7 @@ export default function GovernancePage(props: ShellPageProps) {
               {auditsQ.isPending ? (
                 <Skeleton count={2} />
               ) : (arr(auditsQ.data?.audits).length === 0 ? <EmptyState message="No audit rows." /> : (
-                <DataTable headers={[{ label: "at" }, { label: "action" }, { label: "model" }, { label: "actor" }]}>
-                  {arr(auditsQ.data?.audits)
-                    .slice(0, 40)
-                    .map((a: Row, i: number) => (
-                      <tr key={i}>
-                        <td className="tiny">{formatDateTime(str(a.created_at) ?? str(a.at))}</td>
-                        <td className="small">{str(a.action) ?? str(a.kind) ?? "—"}</td>
-                        <td className="inline-mono tiny">{str(a.model_id) ?? "—"}</td>
-                        <td className="tiny">{str(a.actor) ?? "—"}</td>
-                      </tr>
-                    ))}
-                </DataTable>
+                <DataTable headers={[{ label: "at" }, { label: "action" }, { label: "model" }, { label: "actor" }]}>{auditRows}</DataTable>
               ))}
             </Panel>
           </>
@@ -309,10 +452,7 @@ export default function GovernancePage(props: ShellPageProps) {
                 <InfoRow label="recorded" value={formatNumber(expSummaryQ.data?.recorded_experiences ?? 0, 0)} />
                 <InfoRow label="retired strategies" value={String(expSummaryQ.data?.retired_strategies ?? 0)} />
               </dl>
-              <DistBars
-                rows={Object.entries(obj(expSummaryQ.data?.lifecycle_counts)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 }))}
-                tone="var(--green)"
-              />
+              <DistBars rows={lifecycleRows} tone="var(--green)" />
             </Panel>
             <Panel title={`Model provenance (${arr(expModelsQ.data).length})`} tight>
               {expModelsQ.isPending ? (
@@ -321,16 +461,7 @@ export default function GovernancePage(props: ShellPageProps) {
                 <EmptyState message="No registered model provenance rows." />
               ) : (
                 <DataTable headers={[{ label: "model" }, { label: "schema" }, { label: "dim", num: true }, { label: "created" }]}>
-                  {arr(expModelsQ.data)
-                    .slice(0, 25)
-                    .map((m: Row, i: number) => (
-                      <tr key={i}>
-                        <td className="inline-mono tiny">{str(m.model_id) ?? str(m.id) ?? "—"}</td>
-                        <td className="tiny">{str(m.feature_schema_id) ?? "—"}</td>
-                        <td className="num tiny">{num(m.feature_dimension) ?? "—"}</td>
-                        <td className="tiny">{formatDateTime(str(m.created_at))}</td>
-                      </tr>
-                    ))}
+                  {expModelRows}
                 </DataTable>
               )}
             </Panel>
@@ -341,20 +472,7 @@ export default function GovernancePage(props: ShellPageProps) {
                 <EmptyState message="No derived intelligence rows — run experience self-heal if the ledger is non-empty." />
               ) : (
                 <DataTable headers={[{ label: "strategy" }, { label: "state" }, { label: "score", num: true }, { label: "updated" }]}>
-                  {arr(expStrategiesQ.data)
-                    .slice(0, 25)
-                    .map((s: Row, i: number) => (
-                      <tr key={i}>
-                        <td className="inline-mono tiny" title={str(s.strategy_id) ?? ""}>
-                          {(str(s.strategy_id) ?? "—").slice(0, 16)}
-                        </td>
-                        <td>
-                          <StatusPill status={str(s.lifecycle_state) ?? str(s.state)} />
-                        </td>
-                        <td className="num tiny">{num(s.score) === null ? "—" : formatNumber(num(s.score)!, 3)}</td>
-                        <td className="tiny">{formatDateTime(str(s.updated_at))}</td>
-                      </tr>
-                    ))}
+                  {expStrategyRows}
                 </DataTable>
               )}
             </Panel>
@@ -368,34 +486,26 @@ export default function GovernancePage(props: ShellPageProps) {
             ) : reviewQ.isError || reviewQ.data?.available === false ? (
               <EmptyState message="governance engine unavailable" />
             ) : (
-              <div className="grid cols-2">
+              <div className="gv-review-grid">
                 <div>
                   <dl className="kv">
                     <InfoRow label="brier" value={formatNumber(reviewQ.data?.calibration?.brier ?? null, 4)} />
                     <InfoRow label="ece" value={formatNumber(reviewQ.data?.calibration?.ece ?? null, 4)} />
                     <InfoRow label="samples" value={String(reviewQ.data?.samples ?? 0)} />
                   </dl>
-                  <div className="section-title" style={{ marginTop: 8 }}>
-                    calibration buckets
-                  </div>
+                  <div className="gv-review-sub">calibration buckets</div>
                   <DataTable headers={[{ label: "bucket" }, { label: "n", num: true }, { label: "acc", num: true }]}>
-                    {(reviewQ.data?.calibration?.buckets ?? []).map((b: Row, i: number) => (
-                      <tr key={i}>
-                        <td className="tiny">{str(b.bucket) ?? str(b.label) ?? `#${i}`}</td>
-                        <td className="num tiny">{num(b.count) ?? num(b.n) ?? "—"}</td>
-                        <td className="num tiny">{formatNumber(num(b.accuracy) ?? NaN, 3)}</td>
-                      </tr>
-                    ))}
+                    {bucketRows}
                   </DataTable>
                 </div>
                 <div>
-                  <div className="section-title">drift alerts</div>
+                  <div className="gv-review-sub">drift alerts</div>
                   {(reviewQ.data?.drift ?? []).length === 0 ? (
                     <EmptyState message="No drift alerts." />
                   ) : (
                     <JsonBlock value={reviewQ.data?.drift} maxChars={1800} />
                   )}
-                  <div className="section-title" style={{ marginTop: 8 }}>
+                  <div className="gv-review-sub" style={{ marginTop: 8 }}>
                     backtest-vs-live divergence
                   </div>
                   <JsonBlock value={reviewQ.data?.divergence} maxChars={1200} />
@@ -404,7 +514,9 @@ export default function GovernancePage(props: ShellPageProps) {
             )}
           </Panel>
         )}
-      </div>
+        </div>
+        </div>
+      </section>
 
       {pending && (
         <ConfirmModal
@@ -446,12 +558,12 @@ function RegistryInline() {
     queryFn: ({ signal }) => governanceQueries.registry(signal),
     retry: false,
   });
-  if (regQ.isPending) return <Skeleton count={2} />;
-  if (regQ.data?.available !== true) return <EmptyState message={regQ.data?.reason ?? "registry snapshot unavailable"} />;
-  const cats = obj(obj(regQ.data.registry).categories);
-  return (
-    <div style={{ display: "grid", gap: 8 }}>
-      {Object.entries(cats).map(([k, v]) => {
+  // perf(7): memos run unconditionally BEFORE the early returns (hook order);
+  // deps = the registry payload — category cards only rebuild on a new payload.
+  const cats = useMemo(() => obj(obj(regQ.data?.registry).categories), [regQ.data]);
+  const catRows = useMemo(
+    () =>
+      Object.entries(cats).map(([k, v]) => {
         const o = obj(v);
         return (
           <div key={k} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px" }}>
@@ -463,7 +575,14 @@ function RegistryInline() {
             </div>
           </div>
         );
-      })}
+      }),
+    [cats],
+  );
+  if (regQ.isPending) return <Skeleton count={2} />;
+  if (regQ.data?.available !== true) return <EmptyState message={regQ.data?.reason ?? "registry snapshot unavailable"} />;
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      {catRows}
       {Object.keys(cats).length === 0 && <JsonBlock value={regQ.data.registry} maxChars={1500} />}
     </div>
   );

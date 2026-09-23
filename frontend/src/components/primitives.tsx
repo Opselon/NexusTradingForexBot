@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { positionSide } from "@/lib/format";
 import { useUiStore, type ToastItem } from "@/stores/uiStore";
 
@@ -15,7 +15,11 @@ function badgeLevel(status: string | null | undefined): "good" | "warn" | "bad" 
 }
 
 export function StatusBadge({ status, label }: { status: string | null | undefined; label?: string }) {
-  const level = badgeLevel(status);
+  // The badge renders by the hundred in tables and re-renders with its parent;
+  // the only non-trivial internal derivation is badgeLevel (uppercase + four
+  // category scans), memoized on the exact value it reads. Same status in,
+  // same level out — the badge markup is unchanged.
+  const level = useMemo(() => badgeLevel(status), [status]);
   const text = status ? status.replace(/_/g, " ") : "UNKNOWN";
   const glyph = level === "good" ? "\u2713" : level === "warn" ? "\u26a0" : level === "bad" ? "\u2715" : level === "neutral" ? "\u25cf" : "\u2013";
   return (
@@ -179,10 +183,14 @@ export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  onPrefetch,
 }: {
   options: Array<{ id: T; label: string }>;
   value: T;
   onChange: (v: T) => void;
+  /** Optional (wave 2b): fires on hover/focus of an option so the caller can
+   *  warm that section's chunk+query before the click. Inert when omitted. */
+  onPrefetch?: (v: T) => void;
 }) {
   return (
     <div className="segmented" role="tablist">
@@ -193,6 +201,8 @@ export function Segmented<T extends string>({
           aria-selected={value === o.id}
           className={value === o.id ? "active" : ""}
           onClick={() => onChange(o.id)}
+          onPointerEnter={onPrefetch ? () => onPrefetch(o.id) : undefined}
+          onFocus={onPrefetch ? () => onPrefetch(o.id) : undefined}
         >
           {o.label}
         </button>

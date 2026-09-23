@@ -12,6 +12,7 @@
  *           pressure-based arithmetic; never hardcode a number.
  */
 
+import { useMemo } from "react";
 import { pressureOf, SOFT_UTIL, HARD_UTIL, type RiskLimitRow } from "./riskThresholds";
 
 interface Bucket {
@@ -36,9 +37,9 @@ const COUNTS: Bucket[] = [
 ];
 
 export function HeroStrip({ rows }: { rows: RiskLimitRow[] }) {
+  const pressures = useMemo(() => rows.map((r) => pressureOf(r.value, r.limit, r.direction)), [rows]);
+  const buckets = useMemo(() => COUNTS.map((b) => ({ ...b, n: pressures.filter(b.test).length })), [pressures]);
   if (rows.length === 0) return null;
-  const pressures = rows.map((r) => pressureOf(r.value, r.limit, r.direction));
-  const buckets = COUNTS.map((b) => ({ ...b, n: pressures.filter(b.test).length }));
   const visible = buckets.filter((b) => b.n > 0);
   if (visible.length === 0) return null;
 

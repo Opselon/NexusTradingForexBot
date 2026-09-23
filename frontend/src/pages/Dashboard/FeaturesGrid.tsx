@@ -96,6 +96,22 @@ export function FeaturesGrid({
     return features.slice(c.range[0], c.range[1]);
   }, [features, cat]);
 
+  /** Per-tile display text derived once per feature slice instead of on every
+   *  parent clock tick: fmtFeature's toFixed ladder + the tint + the tooltip
+   *  string are all functions of the row alone. Same expressions, same output;
+   *  deps read only `active`. */
+  const tileInfo = useMemo(() => {
+    const m = new Map<number, { tint: string; text: string; title: string }>();
+    for (const f of active) {
+      m.set(f.index, {
+        tint: valueTint(f.value),
+        text: fmtFeature(f.value),
+        title: `${f.name} · dim ${f.index} · ${f.status}`,
+      });
+    }
+    return m;
+  }, [active]);
+
   // Diff values against the previous accepted state — CSS-only pulse, no data
   // is invented from it (a tile that never changed never pulses).
   useEffect(() => {
@@ -147,15 +163,16 @@ export function FeaturesGrid({
           <div tabIndex={0} className="mc-feat__grid">
             {active.map((f) => {
               const pulse = pulses.get(f.index);
+              const info = tileInfo.get(f.index);
               return (
                 <div
                   key={f.index}
                   className={`mc-feat__tile ${statusClass(f.status)} ${pulse ? `pulse pulse-${pulse}` : ""}`}
-                  title={`${f.name} · dim ${f.index} · ${f.status}`}
+                  title={info?.title ?? `${f.name} · dim ${f.index} · ${f.status}`}
                 >
                   <div className="n">{f.name}</div>
                   <div className="row">
-                    <span className={`v ${valueTint(f.value)}`}>{fmtFeature(f.value)}</span>
+                    <span className={`v ${info?.tint ?? valueTint(f.value)}`}>{info?.text ?? fmtFeature(f.value)}</span>
                     <span className="d">Dim {f.index}</span>
                   </div>
                   {f.status !== "VALID" && <div className="st">{f.status}</div>}

@@ -20,7 +20,7 @@
  * render "—" (UNKNOWN). Command outcomes come from the backend reply only.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { engineApi } from "@/api/engineApi";
 import { riskApi } from "@/api/riskApi";
@@ -42,6 +42,7 @@ import { AgeNote, SectionState, fmtAge, TriBadge } from "@/pages/_shared/Section
 import { InfoChip } from "@/pages/_shared/widgets";
 import { ReplayPanel } from "./ReplayPanel";
 import { PriceChart } from "./PriceChart";
+import { chartHistoryKey, chartStaleMs } from "./chart/queryPerf";
 import { MarketRadarPanel } from "./MarketRadarPanel";
 import { FeaturesGrid } from "./FeaturesGrid";
 import { PredictionsTable } from "./PredictionsTable";
@@ -89,10 +90,18 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
   // 3000-bar window for deep pan/zoom (backend caps 5000); the key carries
   // the timeframe so each TF caches separately, and keepPreviousData holds
   // the old bars while the new TF loads (TradingView-like continuity).
+  // Lane C (wave 3): staleTime + the query-key/staleness helpers live in
+  // chart/queryPerf — the painter reacts to hover/zoom/crosshair with renders
+  // that re-read query options, and staleTime:0 turns each of those into a
+  // background refetch of the whole 3000-bar window. Live ticks already
+  // arrive over SSE; the 60s refetchInterval stays as the dead-stream safety
+  // net, so caching the window between beats costs nothing in accuracy and
+  // removes the fetch storm.
   const chartQuery = useQuery({
-    queryKey: ["chart-history", snapshot?.symbol ?? "", tfParam ?? "engine"],
+    queryKey: chartHistoryKey(snapshot?.symbol ?? "", tfParam),
     queryFn: ({ signal }) => chartApi.history(3000, tfParam, signal),
     refetchInterval: 60_000,
+    staleTime: chartStaleMs(),
     retry: 1,
     enabled: Boolean(snapshot),
     placeholderData: keepPreviousData,
@@ -136,6 +145,12 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
   // provenance); fall back to snapshot bars while it loads. Nulls stay null.
   const useServerBars = Boolean(chartQuery.data?.bars?.length);
   const chartBars = useServerBars ? chartQuery.data!.bars : snapshot.bars ?? [];
+  // perf: the forming-bar count (filter over the chart bar array) derives once
+  // per bar array instead of on every render of this SSE-driven page.
+  const formingCount = useMemo(
+    () => chartBars.filter((b) => b.is_complete === false).length,
+    [chartBars],
+  );
   const chartSource = useServerBars ? chartQuery.data!.source : snapshot.bars?.length ? "SNAPSHOT" : null;
   const chartBusy = chartQuery.isPending && !chartQuery.data && !snapshot.bars?.length;
   const chartErr = !useServerBars && chartQuery.isError && !snapshot.bars?.length
@@ -246,7 +261,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
           right={
             <>
               <span className="timestamp-note">
-                {chartBars.length ? `${chartBars.filter((b) => b.is_complete === false).length} forming · ${chartBars.length} bars` : "no bars"}
+                {chartBars.length ? `${formingCount} forming · ${chartBars.length} bars` : "no bars"}
                 {chartQuery.data?.generated_at ? ` · history ${formatTime(chartQuery.data.generated_at)}` : ""}
               </span>
               <button className="btn small ghost" onClick={() => void chartQuery.refetch()} disabled={chartQuery.isFetching}>
