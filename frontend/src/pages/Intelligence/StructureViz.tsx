@@ -178,8 +178,127 @@ function PoolLadder({ pools }: { pools: StructureVizProps["pools"] }) {
   );
 }
 
+/**
+ * Narrow MslieStatus.liquidity_map (typed Array<Record<string, unknown>>) to
+ * the frozen band shape WITHOUT `any` — the orchestrator wires
+ * `bands={mslieBands(ms?.liquidity_map)}`. Values outside the frozen
+ * number|string|null union become undefined -> rendered as "—"; fields the
+ * payload does not carry are never invented.
+ */
+export function mslieBands(map: Array<Record<string, unknown>> | null | undefined): StructureVizProps["bands"] {
+  const pickNumStr = (src: Record<string, unknown>, key: string): number | string | null | undefined => {
+    const v = src[key];
+    return typeof v === "number" || typeof v === "string" || v === null ? v : undefined;
+  };
+  const pickStr = (src: Record<string, unknown>, key: string): string | null | undefined => {
+    const v = src[key];
+    return typeof v === "string" || v === null ? v : undefined;
+  };
+  return (map ?? []).map((b) => ({
+    low: pickNumStr(b, "low"),
+    high: pickNumStr(b, "high"),
+    type: pickStr(b, "type"),
+    kind: pickStr(b, "kind"),
+    touches: pickNumStr(b, "touches"),
+    strength: pickNumStr(b, "strength"),
+  }));
+}
+
+/** Pixel size of the point marker for a degenerate (low == high) band row. */
+const POINT_PX = 3;
+
+/**
+ * variant="bands" — horizontal band map of the liquidity-map zones. Each band
+ * segment is SCALED between the payload-derived min(low) and max(high) only;
+ * the verbatim `low – high` range, `type|kind` word, `touches` and `strength`
+ * raw values render beside every band. Rows whose endpoints are not numeric
+ * still render their raw values — they simply carry no segment (no coerced
+ * scale, no zero-fill).
+ */
+function BandMap({ bands }: { bands: StructureVizProps["bands"] }) {
+  if (bands.length === 0) {
+    return (
+      <p className="ixviz-empty">
+        No liquidity-map bands in the payload — band map omitted. An empty backend list is reported as empty, never drawn as a chart.
+      </p>
+    );
+  }
+
+  const rows = bands.map((b) => ({ b, lo: scaleNum(b.low), hi: scaleNum(b.high) }));
+
+  // Scale endpoints come ONLY from the payload (invariant: no invented scale max).
+  const lows = rows.map((r) => r.lo).filter((n): n is number => n !== null);
+  const highs = rows.map((r) => r.hi).filter((n): n is number => n !== null);
+  const minLow = lows.length > 0 ? Math.min(...lows) : null;
+  const maxHigh = highs.length > 0 ? Math.max(...highs) : null;
+  const span = minLow !== null && maxHigh !== null ? maxHigh - minLow : 0;
+
+  type Seg = { startPct: number; widthPct: number; point: boolean };
+  /** Display-only segment geometry on the payload min..max scale (clamped). */
+  const segment = (lo: number | null, hi: number | null): Seg | null => {
+    if (lo === null || hi === null || minLow === null || span <= 0) return null;
+    const a = Math.min(lo, hi);
+    const b = Math.max(lo, hi);
+    const start = Math.min(100, Math.max(0, ((a - minLow) / span) * 100));
+    const end = Math.min(100, Math.max(0, ((b - minLow) / span) * 100));
+    const width = Math.max(0, end - start);
+    return { startPct: start, widthPct: width, point: b - a === 0 };
+  };
+
+  return (
+    <div className="ixviz ixviz-bands">
+      <ul className="ixviz-rows">
+        {rows.map(({ b, lo, hi }, i) => {
+          const seg = segment(lo, hi);
+          const kindWord = b.type ?? b.kind;
+          return (
+            <li className="ixviz-band-row" key={i}>
+              {/* raw payload fields: liquidity_map[].low / .high / type|kind */}
+              <span className="ixviz-band-label">
+                <span className="ixviz-range">
+                  {raw(b.low)} – {raw(b.high)}
+                </span>
+                <span className="ixviz-chip is-unknown">{raw(kindWord)}</span>
+              </span>
+              {/* segment = placement only; the raw range above is its value */}
+              <span className="ixviz-track" aria-hidden="true">
+                {seg &&
+                  (seg.point ? (
+                    <i
+                      className="ixviz-seg point"
+                      style={{ insetInlineStart: `calc(${seg.startPct}% - ${POINT_PX / 2}px)` }}
+                    />
+                  ) : (
+                    <i
+                      className="ixviz-seg"
+                      style={{ insetInlineStart: `${seg.startPct}%`, inlineSize: `${seg.widthPct}%` }}
+                    />
+                  ))}
+              </span>
+              {/* raw payload fields: liquidity_map[].touches / .strength — no units, no rounding */}
+              <span className="ixviz-band-meta">
+                <span>
+                  touches <b>{raw(b.touches)}</b>
+                </span>
+                <span>
+                  strength <b>{raw(b.strength)}</b>
+                </span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="ixviz-scale">
+        <span>
+          payload min/max scale: <b>{raw(minLow)}</b> – <b>{raw(maxHigh)}</b>
+        </span>
+        <span>band placed on that scale (clamped); raw low – high printed per band</span>
+      </div>
+    </div>
+  );
+}
+
 export default function StructureViz(props: StructureVizProps & { variant: "pools" | "bands" }) {
   if (props.variant === "pools") return <PoolLadder pools={props.pools} />;
-  // variant="bands" (BandMap) is added in the next lane-B commit.
-  return null;
+  return <BandMap bands={props.bands} />;
 }

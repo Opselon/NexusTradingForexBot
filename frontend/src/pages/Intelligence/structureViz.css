@@ -193,6 +193,103 @@
   box-shadow: none;
 }
 
+/* ------------------------------ band map ------------------------------ */
+
+.ixviz-band-row {
+  display: grid;
+  grid-template-columns: minmax(130px, auto) minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  border-block-end: 1px solid var(--border);
+  animation: ixvizIn 0.25s ease-out both;
+}
+.ixviz-band-row:last-child {
+  border-block-end: 0;
+}
+.ixviz-band-row:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+/* verbatim low – high range + type/kind word beside the band */
+.ixviz-band-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.ixviz-range {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* the track the band segment rides — layout only, carries no value itself */
+.ixviz-track {
+  position: relative;
+  block-size: 18px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  overflow: hidden;
+}
+.ixviz-track::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+  background: var(--border);
+}
+
+/* segment — inset-inline-start / inline-size are payload min/max placement */
+.ixviz-seg {
+  position: absolute;
+  inset-block: 3px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 30%, transparent),
+    color-mix(in srgb, var(--accent) 70%, transparent)
+  );
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: var(--glow-blue);
+  transition: inset-inline-start 0.45s ease, inline-size 0.45s ease;
+}
+/* degenerate range (low == high) drawn as a point marker, not a fake span */
+.ixviz-seg.point {
+  inset-block: 2px;
+  inline-size: 3px;
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+/* touches / strength raw values — field names cited, no units invented */
+.ixviz-band-meta {
+  display: flex;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ixviz-band-meta b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .ixviz-band-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 @keyframes ixvizIn {
   from {
     opacity: 0;
