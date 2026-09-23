@@ -16,6 +16,16 @@ export function asErrorText(e: unknown): string {
   return "unknown error";
 }
 
+/** Correlation id carried by a failed query (ApiError.requestId) for ErrorState. */
+export function requestIdOf(e: unknown): string | null {
+  if (e instanceof ApiError) return e.requestId;
+  if (e && typeof e === "object" && "requestId" in e) {
+    const r = (e as { requestId?: unknown }).requestId;
+    return typeof r === "string" && r !== "" ? r : null;
+  }
+  return null;
+}
+
 export function FreshnessNote({ updatedAtMs, label, staleAfterMs }: { updatedAtMs: number | null; label: string; staleAfterMs?: number }) {
   if (!updatedAtMs) return <span className="timestamp-note">{label}: never loaded</span>;
   const age = Date.now() - updatedAtMs;

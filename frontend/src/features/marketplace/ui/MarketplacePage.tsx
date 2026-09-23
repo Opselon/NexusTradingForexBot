@@ -14,6 +14,7 @@
  * PENDING / DENIED / granted are distinct backend words.
  */
 
+import { useMemo } from "react";
 import { useMktPacks, useMktSnapshot } from "../hooks";
 import { PacksSection } from "./PacksSection";
 import { RankingsSection } from "./RankingsSection";
@@ -33,8 +34,11 @@ export default function MarketplacePage() {
   const packs = useMktPacks();
   const snapshot = useMktSnapshot();
 
+  // Derived once per query result — the hero no longer refilters on every
+  // render of the page (nav, section queries, snapshot ticks).
   const packList = packs.data?.packs ?? [];
-  const installedPacks = packList.filter((p) => p.installed).length;
+  const installedPacks = useMemo(() => packList.filter((p) => p.installed).length, [packList]);
+  const enabledCount = useMemo(() => (snapshot.data?.enabled_set ?? []).length, [snapshot.data]);
 
   return (
     <div className="mkt-container">
@@ -42,7 +46,7 @@ export default function MarketplacePage() {
         packCount={packList.length}
         installedPacks={installedPacks}
         snapshotVersion={snapshot.data?.version ?? null}
-        enabledCount={(snapshot.data?.enabled_set ?? []).length}
+        enabledCount={enabledCount}
         packsLoaded={packs.isSuccess}
       />
       <nav className="mkt-nav" aria-label="Marketplace sections">
@@ -114,8 +118,9 @@ function MarketplaceHero({
           />
           <span className="mkt-ribbon-item">
             <span className="lab">Packs</span>
-            <span className="val">
-              {installedPacks}/{packCount}
+            {/* Loading shows an ellipsis, never a fabricated 0/0 count. */}
+            <span className={`val ${packsLoaded ? "" : "dim"}`}>
+              {packsLoaded ? `${installedPacks}/${packCount}` : "…"}
             </span>
           </span>
           <span className="mkt-ribbon-sep" />

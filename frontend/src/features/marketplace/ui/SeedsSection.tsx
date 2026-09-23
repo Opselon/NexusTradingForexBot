@@ -8,14 +8,14 @@
  * a queue request (202), not a synchronous result.
  */
 
-import { useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { ConfirmModal, DataTable, EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { useDisableSeed, useEnableSeed, useMktSeeds, useRepairSeed, useRunResearch } from "../hooks";
 import { ENABLE_MODES, lifecycleLevel, type SeedVM } from "../model";
 import type { MktEnableMode } from "../types";
 import { SeedDetailDrawer } from "./SeedDetailDrawer";
-import { FreshnessNote, asErrorText } from "./shared";
+import { FreshnessNote, asErrorText, requestIdOf } from "./shared";
 
 type PendingCmd =
   | { kind: "enable"; seed: string; mode: MktEnableMode }
@@ -23,6 +23,88 @@ type PendingCmd =
   | { kind: "repair"; seed: string }
   | { kind: "research"; seed: string }
   | null;
+
+/** Row-level command (no null) — what a memoized row may ask the section to do. */
+type RowCmd = Exclude<PendingCmd, null>;
+
+/** Constant style objects hoisted out of the row map (no per-render allocs). */
+const ROW_ACTIONS_STYLE = { justifyContent: "flex-end" } as const;
+const SEARCH_INPUT_STYLE = { width: 150 } as const;
+const ENABLE_SELECT_STYLE = { padding: "2px 4px", fontSize: 10 } as const;
+const FILTERS_STYLE = { marginBottom: 8 } as const;
+
+/**
+ * One seed table row. Memoized: the table re-renders on every keystroke in the
+ * search box, and rows only depend on their own VM + the stable handlers.
+ */
+const SeedRow = memo(function SeedRow({
+  vm,
+  busy,
+  onOpen,
+  onCommand,
+}: {
+  vm: SeedVM;
+  busy: boolean;
+  onOpen: (seedId: string) => void;
+  onCommand: (cmd: RowCmd) => void;
+}) {
+  const s = vm;
+  return (
+    <tr key={`${s.seed.seed_id}:${String(s.seed.version ?? "")}`}>
+      <td>
+        <button className="btn small ghost" onClick={() => onOpen(s.seed.seed_id)} title="open detail drawer">
+          {s.seed.name || s.seed.seed_id}
+        </button>
+        <div className="tiny faint inline-mono">{s.seed.seed_id} · v{String(s.seed.version ?? "—")}</div>
+      </td>
+      <td>{s.seed.family || "—"}</td>
+      <td>
+        <span className={`badge ${lifecycleLevel(s.lifecycle)}`}>{s.lifecycle}</span>
+      </td>
+      <td>
+        {typeof s.seed.risk_profile === "string" && s.seed.risk_profile ? (
+          <span className="mkt-family-tag" title="risk profile">
+            <span className="swatch" aria-hidden="true" />
+            {s.seed.risk_profile}
+          </span>
+        ) : (
+          "—"
+        )}
+      </td>
+      <td className="inline-mono tiny">{String(s.seed.pack_id ?? "—")}</td>
+      <td>{s.seed.updated_at ? formatDateTime(String(s.seed.updated_at)) : "—"}</td>
+      <td>
+        <div className="mkt-actions mkt-row-actions" style={ROW_ACTIONS_STYLE}>
+          <button className="btn small" onClick={() => onCommand({ kind: "research", seed: s.seed.seed_id })} disabled={busy}>
+            Research
+          </button>
+          <select
+            className="select"
+            style={ENABLE_SELECT_STYLE}
+            value=""
+            aria-label={`enable mode for ${s.seed.seed_id}`}
+            onChange={(e) => {
+              const mode = e.target.value as MktEnableMode;
+              if (mode) onCommand({ kind: "enable", seed: s.seed.seed_id, mode });
+            }}
+          >
+            <option value="">enable…</option>
+            {ENABLE_MODES.map((m) => (
+              <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>
+            ))}
+          </select>
+          <span className="mkt-row-sep" aria-hidden="true" />
+          <button className="btn small danger" onClick={() => onCommand({ kind: "disable", seed: s.seed.seed_id })} disabled={busy}>
+            Disable
+          </button>
+          <button className="btn small" onClick={() => onCommand({ kind: "repair", seed: s.seed.seed_id })} disabled={busy} title="evolution-operator repair">
+            Repair
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+});
 
 export function SeedsSection() {
   const [page, setPage] = useState(1);
@@ -41,6 +123,11 @@ export function SeedsSection() {
   const research = useRunResearch();
 
   const rows: SeedVM[] = seeds.data?.seeds ?? [];
+
+  // Stable row callbacks: rows are memoized, so the section's keystrokes and
+  // note banners no longer re-render every table row.
+  const openDetail = useCallback((seedId: string) => setDetail(seedId), []);
+  const queueCmd = useCallback((cmd: RowCmd) => setPending(cmd), []);
 
   const runCmd = (): void => {
     if (!pending) return;
@@ -69,7 +156,7 @@ export function SeedsSection() {
         <>
           <input
             className="input"
-            style={{ width: 150 }}
+            style={SEARCH_INPUT_STYLE}
             placeholder="search id/name…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -94,7 +181,7 @@ export function SeedsSection() {
         </>
       }
     >
-      <div className="mkt-actions" style={{ marginBottom: 8 }}>
+      <div className="mkt-actions" style={FILTERS_STYLE}>
         <select className="select" value={family} onChange={(e) => { setFamily(e.target.value); setPage(1); }} aria-label="family filter">
           <option value="">all families</option>
           {["PRICE_ACTION", "ICT", "ICHIMOKU", "BREAKOUT", "MEAN_REVERSION", "MOMENTUM", "HYBRID"].map((f) => (
@@ -122,9 +209,16 @@ export function SeedsSection() {
       {seeds.isPending ? (
         <Skeleton count={6} height={22} />
       ) : seeds.isError ? (
-        <ErrorState message={asErrorText(seeds.error)} onRetry={() => seeds.refetch()} />
+        <ErrorState
+          message={asErrorText(seeds.error)}
+          requestId={requestIdOf(seeds.error)}
+          onRetry={() => seeds.refetch()}
+        />
       ) : rows.length === 0 ? (
-        <EmptyState message="No seeds match this filter." hint="Install a pack above — seeds appear here after the backend stores them." />
+        <EmptyState
+          message="No seeds match this filter."
+          hint="GET /api/v1/marketplace/seeds returned an empty page — install a pack above and seeds appear once the backend stores them."
+        />
       ) : (
         <DataTable
           headers={[
@@ -138,59 +232,13 @@ export function SeedsSection() {
           ]}
         >
           {rows.map((s) => (
-            <tr key={`${s.seed.seed_id}:${String(s.seed.version ?? "")}`}>
-              <td>
-                <button className="btn small ghost" onClick={() => setDetail(s.seed.seed_id)} title="open detail drawer">
-                  {s.seed.name || s.seed.seed_id}
-                </button>
-                <div className="tiny faint inline-mono">{s.seed.seed_id} · v{String(s.seed.version ?? "—")}</div>
-              </td>
-              <td>{s.seed.family || "—"}</td>
-              <td>
-                <span className={`badge ${lifecycleLevel(s.lifecycle)}`}>{s.lifecycle}</span>
-              </td>
-              <td>
-                {typeof s.seed.risk_profile === "string" && s.seed.risk_profile ? (
-                  <span className="mkt-family-tag" title="risk profile">
-                    <span className="swatch" aria-hidden="true" />
-                    {s.seed.risk_profile}
-                  </span>
-                ) : (
-                  "—"
-                )}
-              </td>
-              <td className="inline-mono tiny">{String(s.seed.pack_id ?? "—")}</td>
-              <td>{s.seed.updated_at ? formatDateTime(String(s.seed.updated_at)) : "—"}</td>
-              <td>
-                <div className="mkt-actions mkt-row-actions" style={{ justifyContent: "flex-end" }}>
-                  <button className="btn small" onClick={() => setPending({ kind: "research", seed: s.seed.seed_id })} disabled={busy}>
-                    Research
-                  </button>
-                  <select
-                    className="select"
-                    style={{ padding: "2px 4px", fontSize: 10 }}
-                    value=""
-                    aria-label={`enable mode for ${s.seed.seed_id}`}
-                    onChange={(e) => {
-                      const mode = e.target.value as MktEnableMode;
-                      if (mode) setPending({ kind: "enable", seed: s.seed.seed_id, mode });
-                    }}
-                  >
-                    <option value="">enable…</option>
-                    {ENABLE_MODES.map((m) => (
-                      <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>
-                    ))}
-                  </select>
-                  <span className="mkt-row-sep" aria-hidden="true" />
-                  <button className="btn small danger" onClick={() => setPending({ kind: "disable", seed: s.seed.seed_id })} disabled={busy}>
-                    Disable
-                  </button>
-                  <button className="btn small" onClick={() => setPending({ kind: "repair", seed: s.seed.seed_id })} disabled={busy} title="evolution-operator repair">
-                    Repair
-                  </button>
-                </div>
-              </td>
-            </tr>
+            <SeedRow
+              key={`${s.seed.seed_id}:${String(s.seed.version ?? "")}`}
+              vm={s}
+              busy={busy}
+              onOpen={openDetail}
+              onCommand={queueCmd}
+            />
           ))}
         </DataTable>
       )}

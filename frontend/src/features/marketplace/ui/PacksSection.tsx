@@ -6,12 +6,52 @@
  * then refetches rather than marking the pack installed optimistically.
  */
 
-import { useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { ConfirmModal, EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { useInstallPack, useMktPacks } from "../hooks";
 import { validateInstallCount } from "../model";
-import { asErrorText } from "./shared";
+import type { MktPack } from "../types";
+import { FreshnessNote, asErrorText, requestIdOf } from "./shared";
 import "./marketplace.css";
+
+/** Constant style objects hoisted out of the render (no per-render allocs). */
+const COUNT_INPUT_STYLE = { width: 90 } as const;
+const COUNT_ROW_STYLE = { marginTop: 10 } as const;
+const FIELD_ERR_STYLE = { marginTop: 6 } as const;
+const RANGE_NOTE_STYLE = { marginTop: 8 } as const;
+
+/** One pack card. Memoized so keystrokes in the install-count dialog and the
+ *  note banner do not re-render the whole grid. */
+const PackCard = memo(function PackCard({
+  pack,
+  busy,
+  onInstall,
+}: {
+  pack: MktPack;
+  busy: boolean;
+  onInstall: (packId: string) => void;
+}) {
+  return (
+    <div className={`mkt-pack ${pack.installed ? "is-installed" : ""}`} key={pack.id}>
+      <div className="name">{pack.name}</div>
+      <div className="desc">{pack.description || "—"}</div>
+      <div className="foot">
+        <span className="mkt-family-tag">
+          <span className="swatch" aria-hidden="true" />
+          {pack.family}
+        </span>
+        {pack.installed ? (
+          <span className="badge good">INSTALLED · {pack.seed_count}</span>
+        ) : (
+          <span className="badge neutral">not installed</span>
+        )}
+        <button className="btn small primary" onClick={() => onInstall(pack.id)} disabled={busy}>
+          Install
+        </button>
+      </div>
+    </div>
+  );
+});
 
 export function PacksSection() {
   const packs = useMktPacks();
@@ -22,7 +62,9 @@ export function PacksSection() {
 
   const validation = validateInstallCount(countRaw);
   const list = packs.data?.packs ?? [];
-  const installedCount = list.filter((p) => p.installed).length;
+  // Derived once per data change, not once per keystroke/render.
+  const installedCount = useMemo(() => list.filter((p) => p.installed).length, [list]);
+  const openInstall = useCallback((packId: string) => setTarget(packId), []);
 
   const confirmInstall = (): void => {
     if (!target || validation.value === null) return;
@@ -41,35 +83,30 @@ export function PacksSection() {
   return (
     <Panel
       title={`Seed packs (${installedCount}/${list.length} installed)`}
-      right={<button className="btn small ghost" onClick={() => packs.refetch()} disabled={packs.isFetching}>{packs.isFetching ? "loading…" : "Reload"}</button>}
+      right={
+        <>
+          <button className="btn small ghost" onClick={() => packs.refetch()} disabled={packs.isFetching}>{packs.isFetching ? "loading…" : "Reload"}</button>
+          <FreshnessNote updatedAtMs={packs.dataUpdatedAt ?? null} label="packs" />
+        </>
+      }
     >
       {packs.isPending ? (
         <Skeleton count={4} height={64} />
       ) : packs.isError ? (
-        <ErrorState message={asErrorText(packs.error)} onRetry={() => packs.refetch()} />
+        <ErrorState
+          message={asErrorText(packs.error)}
+          requestId={requestIdOf(packs.error)}
+          onRetry={() => packs.refetch()}
+        />
       ) : list.length === 0 ? (
-        <EmptyState message="Pack registry is empty." hint="The backend REGISTRY has no packs on this build." />
+        <EmptyState
+          message="Pack registry is empty."
+          hint="GET /api/v1/marketplace/packs returned no packs on this build."
+        />
       ) : (
         <div className="mkt-packs">
           {list.map((p) => (
-            <div className={`mkt-pack ${p.installed ? "is-installed" : ""}`} key={p.id}>
-              <div className="name">{p.name}</div>
-              <div className="desc">{p.description || "—"}</div>
-              <div className="foot">
-                <span className="mkt-family-tag">
-                  <span className="swatch" aria-hidden="true" />
-                  {p.family}
-                </span>
-                {p.installed ? (
-                  <span className="badge good">INSTALLED · {p.seed_count}</span>
-                ) : (
-                  <span className="badge neutral">not installed</span>
-                )}
-                <button className="btn small primary" onClick={() => setTarget(p.id)} disabled={install.isPending}>
-                  Install
-                </button>
-              </div>
-            </div>
+            <PackCard key={p.id} pack={p} busy={install.isPending} onInstall={openInstall} />
           ))}
         </div>
       )}
@@ -87,14 +124,14 @@ export function PacksSection() {
           <div>
             Generates seed specs from the pack and stores them (idempotent per pack). The backend validates the count and may refuse.
           </div>
-          <div className="mkt-actions" style={{ marginTop: 10 }}>
+          <div className="mkt-actions" style={COUNT_ROW_STYLE}>
             <label className="small muted" htmlFor="mkt-count">
               seeds to install
             </label>
             <input
               id="mkt-count"
               className={`input ${validation.error ? "invalid" : ""}`}
-              style={{ width: 90 }}
+              style={COUNT_INPUT_STYLE}
               value={countRaw}
               onChange={(e) => setCountRaw(e.target.value)}
               inputMode="numeric"
@@ -104,8 +141,8 @@ export function PacksSection() {
               default 25
             </button>
           </div>
-          {validation.error && <div className="mkt-field-error" style={{ marginTop: 6 }}>{validation.error}</div>}
-          <div className="tiny faint" style={{ marginTop: 8 }}>range enforced locally AND by the backend (VALIDATION_ERROR outside 1–500)</div>
+          {validation.error && <div className="mkt-field-error" style={FIELD_ERR_STYLE}>{validation.error}</div>}
+          <div className="tiny faint" style={RANGE_NOTE_STYLE}>range enforced locally AND by the backend (VALIDATION_ERROR outside 1–500)</div>
         </ConfirmModal>
       )}
     </Panel>

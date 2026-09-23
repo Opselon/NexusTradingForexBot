@@ -4,14 +4,28 @@
  * from GET /scores/{id}/history. Missing sections say they are missing.
  */
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useDialogA11y } from "../../../components/useDialogA11y";
 import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { HeatBar, Sparkline } from "@/components/viz";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { useMktScoreHistory, useMktSeedDetail } from "../hooks";
 import { detailSections, factorsOf, lifecycleLevel } from "../model";
-import { FreshnessNote, asErrorText } from "./shared";
+import type { MktScoreSnapshot } from "../types";
+import { FreshnessNote, asErrorText, requestIdOf } from "./shared";
+
+/** HeatBar item derived from the LATEST snapshot's numeric factors. */
+function heatItemsOf(items: MktScoreSnapshot[]): Array<{ label: string; value: number; caption: string; title: string }> {
+  const latest = items[0];
+  const f = latest ? factorsOf(latest) : null;
+  if (!f) return [];
+  return Object.entries(f).map(([k, v]) => ({
+    label: k,
+    value: Math.max(0, Math.min(1, v)),
+    caption: formatNumber(v, 3),
+    title: `${k} = ${v}`,
+  }));
+}
 
 function fmtScore(total: number | null | undefined): string {
   return total === null || total === undefined || Number.isNaN(total) ? "NOT_AVAILABLE" : formatNumber(total, 3);
@@ -26,7 +40,21 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
   useDialogA11y(boxRef, onClose);
 
   const d = detail.data;
-  const sections = d ? detailSections(d) : [];
+  // Derived arrays memoized: the drawer re-renders on raw/structured toggles
+  // and freshness captions — parsing factors/snapshot lists must not repeat.
+  const sections = useMemo(() => (d ? detailSections(d) : []), [d]);
+  const rawJson = useMemo(() => (d ? JSON.stringify(d, null, 2) : ""), [d]);
+  const historyItems = history.data?.items ?? [];
+  const sparkValues = useMemo(
+    () =>
+      historyItems
+        .slice(0, 40)
+        .reverse()
+        .map((s) => (typeof s.total === "number" ? s.total : null)),
+    [historyItems],
+  );
+  const heatItems = useMemo(() => heatItemsOf(historyItems), [historyItems]);
+  const tableRows = useMemo(() => historyItems.slice(0, 12), [historyItems]);
 
   return (
     <div className="mkt-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -45,11 +73,18 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
           {detail.isPending ? (
             <Skeleton count={4} height={48} />
           ) : detail.isError ? (
-            <ErrorState message={asErrorText(detail.error)} onRetry={() => detail.refetch()} />
+            <ErrorState
+              message={asErrorText(detail.error)}
+              requestId={requestIdOf(detail.error)}
+              onRetry={() => detail.refetch()}
+            />
           ) : !d ? (
-            <EmptyState message="Seed detail payload was empty." />
+            <EmptyState
+              message="Seed detail payload was empty."
+              hint="GET /api/v1/marketplace/seeds/{id} answered without a payload."
+            />
           ) : showRaw ? (
-            <pre>{JSON.stringify(d, null, 2)}</pre>
+            <pre>{rawJson}</pre>
           ) : (
             <>
               <section>
@@ -91,16 +126,20 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
                 {history.isPending ? (
                   <Skeleton count={2} height={24} />
                 ) : history.isError ? (
-                  <ErrorState message={asErrorText(history.error)} onRetry={() => history.refetch()} />
-                ) : (history.data?.items ?? []).length === 0 ? (
-                  <EmptyState message="No score snapshots yet." hint="Queue a research run — totals and factors are written by scoring." />
+                  <ErrorState
+                    message={asErrorText(history.error)}
+                    requestId={requestIdOf(history.error)}
+                    onRetry={() => history.refetch()}
+                  />
+                ) : historyItems.length === 0 ? (
+                  <EmptyState
+                    message="No score snapshots yet."
+                    hint="GET /api/v1/marketplace/scores/{id}/history returned an empty page — queue a research run; totals and factors are written by scoring."
+                  />
                 ) : (
                   <>
                     <Sparkline
-                      values={(history.data?.items ?? [])
-                        .slice(0, 40)
-                        .reverse()
-                        .map((s) => (typeof s.total === "number" ? s.total : null))}
+                      values={sparkValues}
                       tone="neu"
                       label="score total history"
                       width={200}
@@ -108,23 +147,13 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
                     />
                     <div style={{ marginTop: 8 }}>
                       <HeatBar
-                        items={(() => {
-                          const latest = (history.data?.items ?? [])[0];
-                          const f = latest ? factorsOf(latest) : null;
-                          if (!f) return [];
-                          return Object.entries(f).map(([k, v]) => ({
-                            label: k,
-                            value: Math.max(0, Math.min(1, v)),
-                            caption: formatNumber(v, 3),
-                            title: `${k} = ${v}`,
-                          }));
-                        })()}
+                        items={heatItems}
                         emptyHint="latest snapshot has no numeric factors"
                         scaleCaptions={["0", "1.0"]}
                       />
                     </div>
                     <DataTable headers={[{ label: "scored at" }, { label: "profile" }, { label: "total", num: true }, { label: "verdict" }]}>
-                      {(history.data?.items ?? []).slice(0, 12).map((s, i) => (
+                      {tableRows.map((s, i) => (
                         <tr key={i}>
                           <td>{s.created_at ? formatDateTime(String(s.created_at)) : "—"}</td>
                           <td>{String(s.profile_id ?? "default")} · v{s.profile_version ?? "—"}</td>

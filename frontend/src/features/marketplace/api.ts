@@ -8,7 +8,7 @@
  */
 
 import { getV1, send } from "@/api/client";
-import type { V1Envelope } from "@/types/api";
+import { ApiError, type V1Envelope } from "@/types/api";
 import type {
   MktRepairResult,
   MktDisableResult,
@@ -38,10 +38,28 @@ function qs(params: Record<string, string | number | boolean | undefined>): stri
   return s ? `?${s}` : "";
 }
 
-/** POST a v1 route and unwrap its envelope (client throws on {error}). */
+/**
+ * POST a v1 route and unwrap its envelope (client throws on {error}).
+ *
+ * Logic guard: the transport only rejects NON-2xx answers. If a route ever
+ * answers HTTP 200 with the safe error envelope {error:{code,message,
+ * request_id}} the unwrap above would silently yield `undefined` and the UI
+ * would report a bogus success — so the envelope is checked HERE, in the
+ * api layer, and rethrown as ApiError (→ mutation onError / ErrorState).
+ */
 async function postV1<T>(path: string, body?: unknown): Promise<T> {
-  const env = await send<V1Envelope<T>>(path, body ?? {});
-  return env.data;
+  const env = await send<V1Envelope<T> & { error?: { code?: string; message?: string; request_id?: string } }>(path, body ?? {});
+  const err = env && typeof env === "object" ? env.error : undefined;
+  if (err && (typeof err.code === "string" || typeof err.message === "string")) {
+    throw new ApiError(
+      200,
+      typeof err.code === "string" ? err.code : "INTERNAL_ERROR",
+      typeof err.message === "string" ? err.message : "Backend reported an error envelope at HTTP 200.",
+      typeof err.request_id === "string" ? err.request_id : null,
+      false,
+    );
+  }
+  return (env as V1Envelope<T>).data;
 }
 
 export const marketplaceApi = {
