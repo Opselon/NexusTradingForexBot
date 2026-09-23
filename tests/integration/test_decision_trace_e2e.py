@@ -81,7 +81,9 @@ def _account():
 def _tick(bid: float, ask: float, when: datetime):
     from nexus_scalp.domain.models import TickData
 
-    return TickData(symbol="XAUUSD", timestamp=when, bid=bid, ask=ask, last=(bid + ask) / 2.0, volume=1.0)
+    return TickData(
+        symbol="XAUUSD", timestamp=when, bid=bid, ask=ask, last=(bid + ask) / 2.0, volume=1.0
+    )
 
 
 def _feed_minute(engine, base_minute: datetime, close: float, steps: int = 3) -> None:
@@ -157,7 +159,14 @@ def test_open_ui_full_chain_real_evidence(engine):
     rows = trace_observer.decisions_list(limit=50)["rows"]
     assert rows, "no decision recorded during real ticks"
     row = rows[0]
-    assert row.get("status") in {"NO_TRADE", "REJECTED", "APPROVED", "EXECUTED", "FAILED", "DISPATCHED"}
+    assert row.get("status") in {
+        "NO_TRADE",
+        "REJECTED",
+        "APPROVED",
+        "EXECUTED",
+        "FAILED",
+        "DISPATCHED",
+    }
 
     key = row.get("decision_id") or row.get("trace_id")
     bundle = trace_observer.trace_bundle(key)
@@ -226,7 +235,9 @@ def test_rejection_downstream_not_reached(engine):
         assert terminal_idx == len(evs) - 1, "event after terminal — hypothetical continuation"
         if row["status"] == "NO_TRADE":
             for e in evs:
-                assert e["stage"] not in ("MT5", "GATEWAY", "ORDER"), "rejected trace claims execution"
+                assert e["stage"] not in ("MT5", "GATEWAY", "ORDER"), (
+                    "rejected trace claims execution"
+                )
     trace_observer.stop_session()
 
 
@@ -239,9 +250,9 @@ def test_topology_discovered_from_events_only(engine):
     # prove a hardcoded graph. (Node state is process-global across tests, so
     # assert derivation rather than an empty precondition.)
     topo_before = trace_observer.topology()
-    event_stages = {
-        e["stage"] for e in trace_observer.events_since(0, limit=5000)["events"]
-    } | {"DECISION"}  # always-on decision node needs no detailed event
+    event_stages = {e["stage"] for e in trace_observer.events_since(0, limit=5000)["events"]} | {
+        "DECISION"
+    }  # always-on decision node needs no detailed event
     for n in topo_before["nodes"]:
         assert n["stage"] in event_stages, f"topology node {n['stage']} not backed by events"
         assert n["count"] >= 1
@@ -376,7 +387,7 @@ def test_stream_protocol_hello_and_disconnect_cleanup(engine, monkeypatch):
     def runner() -> None:
         try:
             asyncio.run(app(scope, receive, send))
-        except BaseException as exc:  # noqa: BLE001 - surfaced to assertions
+        except BaseException as exc:
             app_error.append(exc)
         finally:
             app_done.set()
@@ -394,23 +405,27 @@ def test_stream_protocol_hello_and_disconnect_cleanup(engine, monkeypatch):
 
     with lock:
         assert messages, "no ASGI messages at all"
-        start = next(
-            (m for m in messages if m.get("type") == "http.response.start"), None
-        )
+        start = next((m for m in messages if m.get("type") == "http.response.start"), None)
         assert start is not None, "no http.response.start"
         assert start["status"] == 200, start["status"]
         headers = {k.decode().lower(): v.decode() for k, v in start.get("headers", [])}
         assert headers.get("content-type", "").startswith("text/event-stream"), headers
 
-        body = b"".join(m.get("body", b"") for m in messages if m.get("type") == "http.response.body")
+        body = b"".join(
+            m.get("body", b"") for m in messages if m.get("type") == "http.response.body"
+        )
 
     # hello frame: real session identity + schema version + resume point
     hello_line = next(
-        (ln for ln in body.decode("utf-8", "replace").splitlines() if ln.startswith("data:") and "hello" in ln),
+        (
+            ln
+            for ln in body.decode("utf-8", "replace").splitlines()
+            if ln.startswith("data:") and "hello" in ln
+        ),
         None,
     )
     assert hello_line, "no hello frame in the stream"
-    hello = json.loads(hello_line[len("data:"):])
+    hello = json.loads(hello_line[len("data:") :])
     assert hello.get("session_id", "").startswith("SES-"), hello
     assert hello.get("observer_id"), hello
     assert hello.get("trace_schema_version") == TRACE_SCHEMA_VERSION, hello
@@ -482,6 +497,7 @@ def test_rest_contract_and_event_resume(engine, monkeypatch):
 def test_observer_failure_isolation(engine):
     """§47: a pathological detail payload can never raise into the caller."""
     trace_observer.start_session()
+
     class _Bomb:
         def __iter__(self):
             raise RuntimeError("serialization bomb")

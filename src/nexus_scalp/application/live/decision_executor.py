@@ -36,11 +36,14 @@ except Exception:  # pragma: no cover - observability failure isolation
 
 def _trace_decision_id(policy_decision: Any) -> str | None:
     """Canonical id for the decision: EXEC execution_id, else request_id."""
-    return str(
-        getattr(policy_decision, "execution_id", None)
-        or getattr(policy_decision, "request_id", None)
-        or ""
-    ) or None
+    return (
+        str(
+            getattr(policy_decision, "execution_id", None)
+            or getattr(policy_decision, "request_id", None)
+            or ""
+        )
+        or None
+    )
 
 
 class DecisionExecutor:
@@ -399,7 +402,9 @@ class DecisionExecutor:
                             detail={
                                 "allowed": risk_order is not None,
                                 "context": "primary_entry",
-                                "reason": "RISK_EVALUATION_REJECTED" if risk_order is None else None,
+                                "reason": "RISK_EVALUATION_REJECTED"
+                                if risk_order is None
+                                else None,
                                 "action": policy_decision.action.value,
                                 "atr_for_risk": atr_for_risk,
                                 "volume": risk_order.volume if risk_order is not None else None,
@@ -595,24 +600,23 @@ class DecisionExecutor:
                             self.om.signal_policy._last_active_direction_time = None
                             self.om.signal_policy._last_executed_price = 0.0
 
-                else:
-                    # DECISION-TRACE: entry approved but dispatch was never
-                    # attempted (no symbol info) — terminal, honestly labeled.
-                    if _trace is not None:
-                        _trace.emit(
-                            stage="EXECUTION",
-                            component="order_manager",
-                            event_type="ORDER_BUILD",
-                            status="NOT_DISPATCHED",
-                            symbol=policy_decision.symbol,
-                            decision_id=_trace_decision_id(policy_decision),
-                            terminal=True,
-                            detail={
-                                "reason": "SYMBOL_INFO_UNAVAILABLE",
-                                "action": policy_decision.action.value,
-                                "request_id": policy_decision.request_id,
-                            },
-                        )
+                # DECISION-TRACE: entry approved but dispatch was never
+                # attempted (no symbol info) — terminal, honestly labeled.
+                elif _trace is not None:
+                    _trace.emit(
+                        stage="EXECUTION",
+                        component="order_manager",
+                        event_type="ORDER_BUILD",
+                        status="NOT_DISPATCHED",
+                        symbol=policy_decision.symbol,
+                        decision_id=_trace_decision_id(policy_decision),
+                        terminal=True,
+                        detail={
+                            "reason": "SYMBOL_INFO_UNAVAILABLE",
+                            "action": policy_decision.action.value,
+                            "request_id": policy_decision.request_id,
+                        },
+                    )
 
             # FOR POSITION LIFECYCLE ACTIONS
             elif policy_decision.action in (

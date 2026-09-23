@@ -415,7 +415,7 @@ class InferenceService:
                 component="inference",
                 event_type="MODEL_INFERENCE",
                 status="OK",
-                latency_us=int(round(float(self._last_e2e_ms) * 1000.0)),
+                latency_us=round(float(self._last_e2e_ms) * 1000.0),
                 detail=_d,
             )
         return probs

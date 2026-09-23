@@ -28,8 +28,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.observability.trace_contract import (
-    TRACE_SCHEMA_VERSION,
     TERMINAL_STATUSES,
+    TRACE_SCHEMA_VERSION,
     TraceEvent,
     decision_summary_dict,
     sanitize_detail,
@@ -73,7 +73,7 @@ def _new_id(prefix: str) -> str:
 def _percentile(sorted_vals: list[int], p: float) -> int:
     if not sorted_vals:
         return 0
-    idx = min(len(sorted_vals) - 1, max(0, int(round(p * (len(sorted_vals) - 1)))))
+    idx = min(len(sorted_vals) - 1, max(0, round(p * (len(sorted_vals) - 1))))
     return sorted_vals[idx]
 
 
@@ -99,9 +99,7 @@ class Subscriber:
                 return
             # Terminal pressure: evict the oldest NON-terminal visual event;
             # if the buffer is all-terminal, force-drop the oldest and count.
-            idx = next(
-                (i for i, e in enumerate(self.buffer) if not e.get("terminal")), None
-            )
+            idx = next((i for i, e in enumerate(self.buffer) if not e.get("terminal")), None)
             if idx is None:
                 self.buffer.pop(0)
                 self.forced_drops += 1
@@ -425,9 +423,7 @@ class TraceObserver:
         if latency_us is not None:
             samples = self._latency.setdefault(stage, deque(maxlen=_LATENCY_SAMPLES))
             samples.append(int(latency_us))
-        self._observe_topology_locked(
-            stage, parent_stage=parent_stage is not None
-        )
+        self._observe_topology_locked(stage, parent_stage=parent_stage is not None)
         if parent_stage:
             self._observe_edge_locked(parent_stage, stage)
         if trace_id and not terminal:
@@ -647,9 +643,8 @@ class TraceObserver:
             return {
                 "query": key,
                 "trace_id": trace_id or None,
-                "decision_id": (summary or {}).get("decision_id") or (
-                    key if key.startswith("EXEC-") else None
-                ),
+                "decision_id": (summary or {}).get("decision_id")
+                or (key if key.startswith("EXEC-") else None),
                 "events": evs,
                 "summary": summary,
                 "found": bool(evs or summary),

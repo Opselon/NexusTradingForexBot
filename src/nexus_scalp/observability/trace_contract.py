@@ -27,6 +27,7 @@ from typing import Any
 
 TRACE_SCHEMA_VERSION = 1
 
+
 # ---------------------------------------------------------------------------
 # Taxonomy. These constants name the stages the runtime ACTUALLY emits today
 # (verified at the instrumentation call sites). They are NOT a closed enum:

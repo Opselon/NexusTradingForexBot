@@ -380,8 +380,7 @@ class TickPipeline:
                     event_type="POST_POLICY_GATES",
                     status="OBSERVED",
                     symbol=proposal.symbol,
-                    decision_id=str(proposal.execution_id or proposal.request_id or "")
-                    or None,
+                    decision_id=str(proposal.execution_id or proposal.request_id or "") or None,
                     detail={
                         "decision_stage": proposal.decision_stage,
                         "freshness_blocked": bool(_fresh_blocked),
@@ -389,18 +388,13 @@ class TickPipeline:
                             getattr(self.om, "_last_experience_decision", "") or ""
                         )
                         or None,
-                        "suitability": str(
-                            getattr(self.om, "_last_suitability_verdict", "") or ""
-                        )
+                        "suitability": str(getattr(self.om, "_last_suitability_verdict", "") or "")
                         or None,
-                        "news_decision": str(getattr(self.om, "_last_news_gate", "") or "")
-                        or None,
+                        "news_decision": str(getattr(self.om, "_last_news_gate", "") or "") or None,
                     },
                 )
             _act_val = (
-                proposal.action.value
-                if hasattr(proposal.action, "value")
-                else str(proposal.action)
+                proposal.action.value if hasattr(proposal.action, "value") else str(proposal.action)
             )
             if _act_val == "NO_TRADE":
                 _nt_blocked = bool(
@@ -764,8 +758,7 @@ class TickPipeline:
         # risk_checks pairs are the runtime's own gate record).
         if _trace is not None and _trace.active:
             _p_blocked = bool(
-                getattr(proposal, "blocked_by", None)
-                or getattr(proposal, "rejection_reason", None)
+                getattr(proposal, "blocked_by", None) or getattr(proposal, "rejection_reason", None)
             )
             _trace.emit(
                 stage="POLICY",
