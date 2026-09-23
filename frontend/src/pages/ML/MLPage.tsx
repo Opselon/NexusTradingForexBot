@@ -64,6 +64,27 @@ function VerdictChip({ disagreement, valid }: { disagreement: string; valid?: bo
   );
 }
 
+/** Column set for the recent-70D-observations table. perf: built ONCE at
+ *  module scope (9 sortValue/render closures) instead of re-allocated on every
+ *  render of a 15s-refreshed panel — keys, labels and cell output unchanged. */
+const OBSERVATION_COLUMNS: Array<Column<Record<string, any>>> = [
+  { key: "t", label: "Time", sortValue: (o) => o.timestamp, render: (o) => o.timestamp.slice(0, 19) },
+  { key: "c", label: "Champion", sortValue: (o) => o.champion_action, render: (o) => o.champion_action },
+  { key: "s", label: "Shadow", sortValue: (o) => o.shadow_action, render: (o) => <span className={`l4-chip ${o.shadow_action !== o.champion_action ? "warn" : ""}`}>{o.shadow_action}</span> },
+  { key: "conf", label: "Conf C/S", num: true, sortValue: (o) => o.champion_confidence, render: (o) => `${formatNumber(o.champion_confidence)} / ${formatNumber(o.shadow_confidence)}` },
+  { key: "dis", label: "Disagreement", sortValue: (o) => o.disagreement, render: (o) => <VerdictChip disagreement={o.disagreement} valid={o.valid} /> },
+  { key: "rg", label: "Regime", sortValue: (o) => o.regime, render: (o) => o.regime || "—" },
+  { key: "nw", label: "News", render: (o) => o.news_state || "—" },
+  { key: "liq", label: "Liquidity", render: (o) => o.liquidity_state || "—" },
+  { key: "out", label: "Outcome", sortValue: (o) => o.outcome, render: (o) => o.outcome },
+];
+
+/** Backend-word filter for the observations table (stable reference). */
+const OBSERVATION_FILTER = (o: Record<string, any>, q: string): boolean =>
+  o.champion_action.toLowerCase().includes(q) ||
+  o.shadow_action.toLowerCase().includes(q) ||
+  (o.regime ?? "").toLowerCase().includes(q);
+
 /** Canonical 70D family blocks (backend schema_contract / liquidity_runtime). */
 const FAMILY_BLOCKS = [
   { id: "base", label: "BASE 0–49 (scalp_v1 protected)", from: 0, to: 49 },
@@ -184,6 +205,12 @@ export default function MLPage({ snapshot }: Props) {
   const integrityLevel =
     integ?.state === "ACTIVE" ? "good" : integ?.state === "INCOMPATIBLE" || integ?.state === "INVALID" ? "bad" : integ?.state === "NO_CHAMPION" || integ?.state === "UNAVAILABLE" ? "warn" : "unknown";
   const s70 = shadow70Query.data;
+  // perf: the observations window (slice + sort/filter inputs for the shared
+  // table) derives once per shadow70 payload, not on every render.
+  const observations = useMemo(
+    () => (s70?.store?.recent_observations ?? []).slice(0, 25),
+    [s70?.store?.recent_observations],
+  );
   const features = snapshot?.features ?? [];
 
   const blocks = useMemo(
@@ -603,21 +630,11 @@ export default function MLPage({ snapshot }: Props) {
       {s70?.store?.recent_observations && s70.store.recent_observations.length > 0 && (
         <Panel title="Recent 70D shadow observations" tight right={<span className="timestamp-note">champion vs 70D, engine-recorded</span>}>
           <SortableTable
-            columns={[
-              { key: "t", label: "Time", sortValue: (o) => o.timestamp, render: (o) => o.timestamp.slice(0, 19) },
-              { key: "c", label: "Champion", sortValue: (o) => o.champion_action, render: (o) => o.champion_action },
-              { key: "s", label: "Shadow", sortValue: (o) => o.shadow_action, render: (o) => <span className={`l4-chip ${o.shadow_action !== o.champion_action ? "warn" : ""}`}>{o.shadow_action}</span> },
-              { key: "conf", label: "Conf C/S", num: true, sortValue: (o) => o.champion_confidence, render: (o) => `${formatNumber(o.champion_confidence)} / ${formatNumber(o.shadow_confidence)}` },
-              { key: "dis", label: "Disagreement", sortValue: (o) => o.disagreement, render: (o) => <VerdictChip disagreement={o.disagreement} valid={o.valid} /> },
-              { key: "rg", label: "Regime", sortValue: (o) => o.regime, render: (o) => o.regime || "—" },
-              { key: "nw", label: "News", render: (o) => o.news_state || "—" },
-              { key: "liq", label: "Liquidity", render: (o) => o.liquidity_state || "—" },
-              { key: "out", label: "Outcome", sortValue: (o) => o.outcome, render: (o) => o.outcome },
-            ]}
-            rows={s70.store.recent_observations.slice(0, 25)}
+            columns={OBSERVATION_COLUMNS}
+            rows={observations}
             rowKey={(o) => o.observation_id}
             initialSort={{ key: "t", dir: "desc" }}
-            filter={(o, q) => o.champion_action.toLowerCase().includes(q) || o.shadow_action.toLowerCase().includes(q) || (o.regime ?? "").toLowerCase().includes(q)}
+            filter={OBSERVATION_FILTER}
             emptyMessage="No observations."
           />
         </Panel>

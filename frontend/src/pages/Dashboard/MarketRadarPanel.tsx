@@ -14,6 +14,7 @@
  * docs/audit/wave_20260914/09_indicators_ui.md §5).
  */
 
+import { useMemo } from "react";
 import type { ReactNode } from "react";
 import { Panel } from "@/components/primitives";
 import { formatTime } from "@/lib/format";
@@ -85,7 +86,10 @@ function directionOf(best: RadarSetup | null | undefined): "BUY" | "SELL" | null
 const dash = (v: ReactNode | null | undefined): ReactNode => (v === null || v === undefined || v === "" ? "—" : v);
 
 export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: number }) {
-  const r = parseRadar(radar);
+  // perf: the shape-normalisation derivation (recursive record walk + array
+  // maps/filters over the payload) runs once per payload identity instead of
+  // on every render of this snapshot-driven page.
+  const r = useMemo(() => parseRadar(radar), [radar]);
   // legacy default: a present radar object without a state string is NO_SETUP;
   // an absent radar is the explicit waiting badge NO RADAR DATA.
   const state = r ? r.state || "NO_SETUP" : "NO_RADAR_DATA";
