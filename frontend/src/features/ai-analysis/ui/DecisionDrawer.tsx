@@ -5,10 +5,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { EmptyState, ErrorState, MetricCard, Panel, ProbBar, Skeleton } from "@/components/primitives";
-import { ApiError } from "@/types/api";
 import { formatDateTime, formatPrice } from "@/lib/format";
 import { Drawer, GateStepper, InfoRow, JsonBlock, StatusPill } from "../../research/ui/lane5Kit";
-import { confidence01, str } from "../model";
+import { confidence01, isNotFound, str, actionTone } from "../model";
 import { aiAnalysisQueries } from "../useCases";
 
 export default function DecisionDrawer({ decisionId, onClose }: { decisionId: string; onClose: () => void }) {
@@ -33,13 +32,13 @@ export default function DecisionDrawer({ decisionId, onClose }: { decisionId: st
     retry: false,
   });
 
-  const notFound = (e: unknown) => e instanceof ApiError && e.status === 404;
+  const notFound = isNotFound;
   const d = detailQ.data;
 
   return (
     <Drawer title={`Decision ${decisionId.slice(0, 16)}…`} onClose={onClose}>
       <div className="grid cols-3" style={{ marginBottom: 12 }}>
-        <MetricCard label="Action" value={d?.action ?? "—"} tone={d?.action === "BUY" ? "pos" : d?.action === "SELL" ? "neg" : "dim"} />
+        <MetricCard label="Action" value={d?.action ?? "—"} tone={actionTone(d?.action) === "buy" ? "pos" : actionTone(d?.action) === "sell" ? "neg" : "dim"} />
         <MetricCard label="Stage / blocked_by" value={d?.decision_stage ?? "—"} sub={d?.blocked_by ? `blocked by ${d.blocked_by}` : undefined} />
         <MetricCard label="Generated" value={<span className="tiny">{formatDateTime(d?.generated_at)}</span>} sub={`reason ${d?.reason_code ?? "—"}`} />
       </div>
@@ -57,7 +56,7 @@ export default function DecisionDrawer({ decisionId, onClose }: { decisionId: st
           </dl>
           <ProbBar
             rows={[
-              { label: "P (confidence)", value: confidence01(d.confidence), tone: d.action === "BUY" ? "buy" : d.action === "SELL" ? "sell" : "flat" },
+              { label: "P (confidence)", value: confidence01(d.confidence), tone: actionTone(d.action) },
               { label: "before filters", value: confidence01(d.confidence_before_filters), tone: "flat" },
               { label: "after filters", value: confidence01(d.confidence_after_filters), tone: "flat" },
             ]}

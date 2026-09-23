@@ -50,6 +50,14 @@
 .aa-gauge { width: 100%; max-inline-size: 156px; justify-self: center; }
 
 .aa-details { display: grid; gap: 8px; min-width: 0; }
+/* ── wave 2b (#32): .aa-segbar is used on the page but had no rules — the
+ *   stats toolbar relied on accidental inline layout. */
+.aa-segbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
 .aa-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .aa-chip {
   font-family: var(--mono);
@@ -99,6 +107,34 @@
   transition: opacity 0.15s ease;
 }
 .aa-donut-seg:hover { opacity: 0.75; }
+
+/* ── reduced motion (wave 2 a11y): the page polls every 15-60s, so chart
+ *   transitions are decorative — honor the OS preference and drop them. */
+@media (prefers-reduced-motion: reduce) {
+  .aa-donut-seg,
+  .aa-bar-track i,
+  .aa-conf-track i {
+    transition: none !important;
+  }
+  /* the indicators live dot keeps keyframing (animation, not transition) —
+   * kill it too: a permanently-pulsing dot is not information. */
+  .ic-live-live .ic-live-dot {
+    animation: none !important;
+  }
+}
+
+/* ── hero skeleton (wave 2): reserve the 4-cell grid so the card does not
+ *   jump height/layout when the latest signal lands. */
+.aa-hero-skel {
+  grid-template-columns: 176px 156px minmax(240px, 1fr) 212px;
+}
+.aa-skel-cell { min-height: 88px; }
+.aa-metric-skel {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+}
 .aa-donut-total {
   font-family: var(--mono);
   font-size: 15px;
@@ -314,19 +350,9 @@ td.aa-reason {
   white-space: nowrap;
 }
 
-/* ── panels row helper ─────────────────────────────────────────────────── */
-.aa-row2 {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--panel-gap);
-}
-@media (max-width: 1100px) {
-  .aa-row2 { grid-template-columns: 1fr; }
-}
-
 /* panels in this page sit inside grid rows — neutralise the stacked margin
    (descendant selector: shadow/intel stacks nest Panels one level deeper) */
-.aa-row2 .panel, .aa-stack .panel { margin-bottom: 0; }
+.aa-stack .panel { margin-bottom: 0; }
 .aa-stack { display: grid; gap: var(--panel-gap); }
 
 /* drawer gate-trace summary chips */

@@ -1,35 +1,50 @@
 /**
- * Incidents — forensic console (legacy tab-incidents parity).
- *
- * Sections: health strip (counts + worker display_state + recurring
- * fingerprints) · filterable incident list with detail drawer (report +
- * zip href) · confirm-guarded reconcile · search / one-click trace /
- * value lineage / forensic probes sections.
+ * PURPOSE:  Incidents — incident-command console (legacy tab-incidents parity):
+ *           health strip · severity heat timeline · filter chips derived from
+ *           the loaded rows · incident record cards · evidence-dossier drawer ·
+ *           confirm-guarded reconcile · search / one-click trace / value
+ *           lineage / forensic probes sections.
+ * OWNER:    uiux-w6-incidents  (future edits belong to this lane)
+ * CONSUMES: @/components/primitives kit + @/features/research/ui/lane5Kit
+ *           (shared READ-ONLY kit), @/hooks/useMutationFeedback, @/lib/format,
+ *           ./model + ./useCases (existing queries/VOs — no new network calls),
+ *           ./incidents.css (class prefix inc-), ./incidentLook (pure helpers).
+ * PROVIDES: default export IncidentsPage (route /incidents) + nothing else.
+ * INVARIANTS: every rendered value is a field the backend returned (missing
+ *             timestamps show "—"); filters only offer severities/statuses
+ *             present in the loaded rows; honest Skeleton/EmptyState/ErrorState
+ *             strings are preserved; reconcile stays confirm-guarded; the
+ *             drawer is a restyle — no mutation or query changes.
+ * EXTEND:    add a section component in this folder; keep this page a shell
+ *            (queries + section composition) so it stays under 500 lines.
  */
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
-import {
-  ConfirmModal,
-  DataTable,
-  EmptyState,
-  ErrorState,
-  MetricCard,
-  Panel,
-  Segmented,
-  SeverityBadge,
-  Skeleton,
-  StatusBadge,
-} from "@/components/primitives";
+import { ConfirmModal, DataTable, EmptyState, MetricCard, Panel, Segmented, SeverityBadge, Skeleton, StatusBadge } from "@/components/primitives";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
-import { formatDateTime, formatNumber } from "@/lib/format";
-import { CommandResultLine, DistBars, FreshnessCaption, InfoRow, JsonBlock } from "../../research/ui/lane5Kit";
+import { formatNumber } from "@/lib/format";
+import { CommandResultLine, FreshnessCaption, InfoRow, JsonBlock } from "../../research/ui/lane5Kit";
 import { arr, num, obj, str, type Row } from "../model";
 import { incidentsQueries, incidentsUseCases } from "../useCases";
+import ListSection from "./ListSection";
 import IncidentDrawer from "./IncidentDrawer";
+import "./incidents.css";
+import "./incidents-command.css";
 
 type Tab = "list" | "search" | "lineage" | "forensics";
+
+/** Static route contract this console speaks — read-only display of api.ts:4-15 (wave-8 hero). */
+const INCIDENT_ENDPOINTS = [
+  "/api/diagnostics/incidents",
+  "/api/diagnostics/health",
+  "/api/diagnostics/search",
+  "/api/diagnostics/trace",
+  "/api/diagnostics/lineage",
+  "/api/diagnostics/forensics",
+  "POST /api/diagnostics/incidents/reconcile",
+];
 
 export default function IncidentsPage(props: ShellPageProps) {
   void props;
@@ -86,29 +101,93 @@ export default function IncidentsPage(props: ShellPageProps) {
   const incidents = incidentsUseCases.voList(listQ.data?.incidents ?? []);
   const counts = healthQ.data?.counts ?? listQ.data?.counts;
   const worker = obj(healthQ.data?.worker);
+  const recurring = arr(healthQ.data?.recurring);
+  const workerStatus = str(worker.display_state) ?? str(worker.state) ?? "DISABLED";
+  const recurringCount = recurring.length;
 
   return (
-    <div>
-      <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <h2>Incidents</h2>
-        <span className="muted small">forensic incident console · read-only records + guarded audit</span>
-        <FreshnessCaption timestamp={null} source="diagnostics incident store" isFetching={listQ.isFetching} error={listQ.isError} />
-      </div>
+    <div className="inc-root">
+      <header className="inc-hero">
+        <div className="inc-hero-main">
+          <div className="inc-kicker">
+            <span className="inc-kicker-bar" aria-hidden="true" />
+            <span className="inc-kicker-dot" aria-hidden="true" />
+            SAFETY &amp; GOVERNANCE · FORENSICS
+          </div>
+          <h1 className="inc-title">
+            <span className="inc-title-mark" aria-hidden="true">
+              ⚠
+            </span>
+            <span className="word">Incidents</span>
+          </h1>
+          <p className="inc-desc">
+            Forensic incident console (legacy tab-incidents): read-only records, health aggregates, bounded
+            search, one-click trace, value lineage and read-only probes — plus one confirm-guarded forensic
+            audit. Every figure below comes from the diagnostics envelope; missing state stays explicit,
+            never fabricated.
+          </p>
+          <div className="inc-endpoints" aria-label="endpoints served by this console">
+            {INCIDENT_ENDPOINTS.map((ep) => (
+              <span className="inc-ep" key={ep}>
+                {ep}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="inc-hero-side">
+          <div className="inc-prov" role="group" aria-label="incident store provenance">
+            <div className="inc-prov-cell">
+              <span className="inc-prov-k">total / open</span>
+              <span className={`inc-prov-v ${counts ? "" : "dim"}`}>
+                {String(counts?.total ?? "—")} / {String(counts?.open ?? "—")}
+              </span>
+            </div>
+            <div className="inc-prov-cell">
+              <span className="inc-prov-k">crit / high</span>
+              <span
+                className={`inc-prov-v ${num(counts?.critical) ? "neg" : num(counts?.high) ? "warn" : "dim"}`}
+              >
+                {String(counts?.critical ?? "—")} / {String(counts?.high ?? "—")}
+              </span>
+            </div>
+            <div className="inc-prov-cell">
+              <span className="inc-prov-k">worker</span>
+              <span className="inc-prov-v">
+                <StatusBadge status={workerStatus} />
+              </span>
+            </div>
+            <div className="inc-prov-cell">
+              <span className="inc-prov-k">recurring</span>
+              <span className={`inc-prov-v ${recurringCount ? "warn" : "dim"}`}>{String(recurringCount)}</span>
+            </div>
+          </div>
+          <span className="inc-prov-fresh">
+            <FreshnessCaption
+              timestamp={null}
+              source="diagnostics incident store"
+              isFetching={listQ.isFetching}
+              error={listQ.isError}
+            />
+          </span>
+        </div>
+      </header>
 
-      <div className="grid cols-4">
-        <MetricCard label="total / open" value={`${String(counts?.total ?? "—")} / ${String(counts?.open ?? "—")}`} tone="dim" sub="store.count() backend aggregate" />
-        <MetricCard label="critical / high" value={`${String(counts?.critical ?? 0)} / ${String(counts?.high ?? 0)}`} tone={num(counts?.critical) ? "neg" : "dim"} />
-        <MetricCard
-          label="incident worker"
-          value={<StatusBadge status={str(worker.display_state) ?? str(worker.state) ?? "DISABLED"} />}
-          sub={str(worker.last_error) ?? "state decided by backend"}
-        />
-        <MetricCard
-          label="recurring fingerprints"
-          value={String(arr(healthQ.data?.recurring).length)}
-          tone="dim"
-          sub="same failure seen repeatedly"
-        />
+      <div className="inc-sec">
+        <div className="inc-sec-label">
+          Store health
+          <span className="inc-sec-rule" aria-hidden="true" />
+          <span className="inc-sec-hint">counts + worker display state + recurring fingerprints</span>
+        </div>
+        <div className="inc-stats">
+          <MetricCard label="total / open" value={`${String(counts?.total ?? "—")} / ${String(counts?.open ?? "—")}`} tone="dim" sub="store.count() backend aggregate" />
+          <MetricCard label="critical / high" value={`${String(counts?.critical ?? 0)} / ${String(counts?.high ?? 0)}`} tone={num(counts?.critical) ? "neg" : "dim"} />
+          <MetricCard
+            label="incident worker"
+            value={<StatusBadge status={workerStatus} />}
+            sub={str(worker.last_error) ?? "state decided by backend"}
+          />
+          <MetricCard label="recurring fingerprints" value={String(recurringCount)} tone="dim" sub="same failure seen repeatedly" />
+        </div>
       </div>
 
       <Panel
@@ -127,7 +206,6 @@ export default function IncidentsPage(props: ShellPageProps) {
         <CommandResultLine state={cmd.state} />
       </Panel>
 
-      <div style={{ height: 12 }} />
       <Segmented
         options={[
           { id: "list" as const, label: `Incidents (${incidents.length})` },
@@ -139,105 +217,19 @@ export default function IncidentsPage(props: ShellPageProps) {
         onChange={setTab}
       />
 
-      <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
+      <div className="inc-sec">
         {tab === "list" && (
-          <>
-            <div className="grid cols-2">
-              <Panel title="By component" tight>
-                <DistBars
-                  rows={Object.entries(obj(healthQ.data?.by_component)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 }))}
-                  tone="var(--violet)"
-                />
-              </Panel>
-              <Panel title="Recurring (fingerprint)" tight>
-                {arr(healthQ.data?.recurring).length === 0 ? (
-                  <EmptyState message="No recurring incidents." />
-                ) : (
-                  <DataTable headers={[{ label: "fingerprint" }, { label: "seen", num: true }, { label: "severity" }]}>
-                    {arr(healthQ.data?.recurring)
-                      .slice(0, 10)
-                      .map((r: Row, i: number) => (
-                        <tr key={i}>
-                          <td className="inline-mono tiny">{str(r.fingerprint)?.slice(0, 16) ?? "—"}</td>
-                          <td className="num tiny">{num(r.count) ?? num(r.repeated_count) ?? "—"}</td>
-                          <td>
-                            <SeverityBadge severity={str(r.severity)} />
-                          </td>
-                        </tr>
-                      ))}
-                  </DataTable>
-                )}
-              </Panel>
-            </div>
-            <Panel
-              title="Incident list"
-              right={
-                <div style={{ display: "flex", gap: 6 }}>
-                  <select aria-label="Severity filter" className="select" style={{ width: 110 }} value={severity} onChange={(e) => setSeverity(e.target.value)}>
-                    <option value="">severity: any</option>
-                    {["CRITICAL", "HIGH", "MEDIUM", "LOW"].map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                  <select aria-label="Status filter" className="select" style={{ width: 110 }} value={status} onChange={(e) => setStatus(e.target.value)}>
-                    <option value="">status: any</option>
-                    {["OPEN", "INVESTIGATING", "RECOVERED", "FALSE_POSITIVE", "CLOSED"].map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              }
-              tight
-            >
-              {listQ.isPending ? (
-                <Skeleton count={5} />
-              ) : listQ.isError ? (
-                <ErrorState message={listQ.error instanceof Error ? listQ.error.message : "incidents failed"} onRetry={() => void listQ.refetch()} />
-              ) : incidents.length === 0 ? (
-                <EmptyState message="No incidents match." hint="the store is empty or filters exclude everything" />
-              ) : (
-                <DataTable
-                  headers={[
-                    { label: "incident" },
-                    { label: "sev" },
-                    { label: "status" },
-                    { label: "component" },
-                    { label: "category" },
-                    { label: "×", num: true },
-                    { label: "last seen" },
-                    { label: "" },
-                  ]}
-                >
-                  {incidents.map((i) => (
-                    <tr key={i.id}>
-                      <td className="inline-mono tiny" title={i.id}>
-                        {i.id.slice(0, 14)}
-                      </td>
-                      <td>
-                        <SeverityBadge severity={i.severity} />
-                      </td>
-                      <td>
-                        <StatusBadge status={i.status} />
-                      </td>
-                      <td className="tiny">{i.component}</td>
-                      <td className="tiny muted">{i.category}</td>
-                      <td className="num tiny">{i.repeatedCount > 1 ? `×${i.repeatedCount}` : ""}</td>
-                      <td className="tiny">{formatDateTime(i.lastSeenAt)}</td>
-                      <td>
-                        <button className="btn small ghost" onClick={() => setOpen(i.id)}>
-                          open
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </DataTable>
-              )}
-            </Panel>
-          </>
+          <ListSection
+            listQ={listQ}
+            healthQ={healthQ}
+            incidents={incidents}
+            recurring={recurring}
+            severity={severity}
+            status={status}
+            setSeverity={setSeverity}
+            setStatus={setStatus}
+            onOpen={setOpen}
+          />
         )}
 
         {tab === "search" && (
@@ -277,7 +269,8 @@ export default function IncidentsPage(props: ShellPageProps) {
               <input
                 className="input"
                 style={{ width: "100%" }}
-                aria-label="Related id filter" placeholder="incident_id | ticket | execution_id | order_id | model_id | research_run_id"
+                aria-label="Related id filter"
+                placeholder="incident_id | ticket | execution_id | order_id | model_id | research_run_id"
                 value={traceQ}
                 onChange={(e) => setTraceQ(e.target.value)}
               />

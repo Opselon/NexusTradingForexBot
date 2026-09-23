@@ -30,7 +30,7 @@ function RailCell({ label, value }: { label: string; value: string }) {
   return (
     <div className="ctl-rail-cell">
       <span className="ctl-rail-label">{label}</span>
-      <span className={`ctl-rail-value${dim ? " dim" : ""}`} title={value}>
+      <span className={`ctl-rail-value${dim ? " ctl-dim" : ""}`} title={value}>
         {value}
       </span>
     </div>

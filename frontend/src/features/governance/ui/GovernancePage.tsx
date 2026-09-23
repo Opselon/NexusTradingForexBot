@@ -25,6 +25,7 @@ import { formatDateTime, formatNumber } from "@/lib/format";
 import { CommandResultLine, DistBars, FreshnessCaption, GateStepper, InfoRow, JsonBlock, StatusPill } from "../../research/ui/lane5Kit";
 import { arr, bool, commandVerdict, num, obj, str, type Row } from "../model";
 import { governanceQueries, governanceUseCases } from "../useCases";
+import "./governance.css";
 
 type Tab = "ladder" | "ledger" | "experience" | "review";
 
@@ -95,6 +96,12 @@ export default function GovernancePage(props: ShellPageProps) {
 
   const after = () => void qc.invalidateQueries({ queryKey: ["governance"] });
 
+  // ConfigPage house standard: while a mutation is in flight the toolbar is
+  // inert and each button names its own running operation (no new calls or
+  // payloads — busy mirrors cmd.state.running only).
+  const busy = cmd.state.running;
+  const busyLabel = (idle: string, running: string) => (busy ? running : idle);
+
   const ask = (title: string, danger: boolean, needsModel: boolean, label: string, run: PendingCommand["run"]) =>
     setPending({ title, danger, needsModel, label, run });
 
@@ -105,19 +112,59 @@ export default function GovernancePage(props: ShellPageProps) {
   const events = governanceUseCases.ledgerRows(arr(eventsQ.data?.events));
 
   return (
-    <div>
-      <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <h2>Governance</h2>
-        <span className="muted small">model promotion ladder · decision ledger · experience intelligence</span>
-        <FreshnessCaption
-          timestamp={expSummaryQ.data?.fetched_at ?? undefined}
-          source="experience summary"
-          isFetching={statusQ.isFetching}
-          error={statusQ.isError}
-        />
-      </div>
+    <div className="gv-page">
+      <section className="gv-hero" aria-labelledby="gv-h1">
+        <div className="gv-hero-main">
+          <div className="gv-kicker">
+            <span className="dot" aria-hidden="true" />
+            SAFETY &amp; GOVERNANCE
+          </div>
+          <h1 className="gv-title" id="gv-h1">
+            <span className="gv-mark" aria-hidden="true">
+              ⚖
+            </span>
+            <span className="word">Governance</span>
+          </h1>
+          <p className="gv-desc">
+            Model promotion ladder, decision ledger, experience intelligence and calibration review — every state below is served by the
+            governance engine; emergency commands are confirm-gated and actor-required.
+          </p>
+        </div>
+        <div className="gv-hero-side">
+          <div
+            className={`gv-freeze ${frozen ? "on" : ""}`}
+            role="status"
+            title={frozen ? "EMERGENCY FREEZE ACTIVE" : "promotions not frozen — backend verdict from /api/models/governance/status"}
+          >
+            <span className="ico" aria-hidden="true">
+              {frozen ? "❄" : "⚑"}
+            </span>
+            {frozen ? "EMERGENCY FREEZE ACTIVE" : "NO FREEZE — promotions live"}
+          </div>
+          <div className="gv-eps" role="group" aria-label="Governance provenance">
+            <span className={`gv-ep ${status ? "" : "bad"}`}>
+              <span className="d" aria-hidden="true" />
+              /api/models/governance/status
+            </span>
+            <span className="gv-ep">
+              <span className="d" aria-hidden="true" />
+              /api/experience/summary
+            </span>
+            <span className="gv-ep">
+              <span className="d" aria-hidden="true" />
+              poll 30s
+            </span>
+          </div>
+          <FreshnessCaption
+            timestamp={expSummaryQ.data?.fetched_at ?? undefined}
+            source="experience summary"
+            isFetching={statusQ.isFetching}
+            error={statusQ.isError}
+          />
+        </div>
+      </section>
 
-      <div className="grid cols-4">
+      <div className="gv-metrics">
         <MetricCard
           label="Champion"
           value={<span className="tiny inline-mono">{status?.champion?.model_id ?? "—"}</span>}
@@ -133,69 +180,95 @@ export default function GovernancePage(props: ShellPageProps) {
         <MetricCard label="Active strategies" value={String(expSummaryQ.data?.active_strategies ?? 0)} sub={`recorded experiences: ${formatNumber(expSummaryQ.data?.recorded_experiences ?? 0, 0)}`} />
       </div>
 
-      <Panel title="Promotion ladder (backend-decided)" accent tight>
-        {statusQ.isPending ? (
-          <Skeleton count={2} />
-        ) : !status ? (
-          <EmptyState message="Model governance engine unavailable" hint="/api/models/governance/status answered available:false — no ladder to draw." />
-        ) : (
-          <GateStepper
-            gates={ladder.map((s) => ({
-              name: s.label,
-              status: s.active ? (s.id === "promotion" ? s.state : "PASS") : s.state === "NONE" ? "NOT_RUN" : s.state,
-              reason: s.state,
-            }))}
-          />
-        )}
-      </Panel>
+      <section className="gv-sec" aria-labelledby="gv-sec-ladder">
+        <div className="gv-sec-label" id="gv-sec-ladder">
+          <span className="idx">01</span>
+          Promotion ladder
+          <span className="ln" aria-hidden="true" />
+        </div>
+        <div className="gv-sec-body">
+          <Panel title="Promotion ladder (backend-decided)" accent tight>
+            {statusQ.isPending ? (
+              <Skeleton count={2} />
+            ) : !status ? (
+              <EmptyState message="Model governance engine unavailable" hint="/api/models/governance/status answered available:false — no ladder to draw." />
+            ) : (
+              <GateStepper
+                gates={ladder.map((s) => ({
+                  name: s.label,
+                  status: s.active ? (s.id === "promotion" ? s.state : "PASS") : s.state === "NONE" ? "NOT_RUN" : s.state,
+                  reason: s.state,
+                }))}
+              />
+            )}
+          </Panel>
+        </div>
+      </section>
 
-      <div style={{ marginBlock: 12, display: "grid", gap: 8 }}>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+      <section className="gv-sec" aria-labelledby="gv-sec-commands">
+        <div className="gv-sec-label" id="gv-sec-commands">
+          <span className="idx">02</span>
+          Emergency &amp; maintenance commands
+          <span className="ln" aria-hidden="true" />
+        </div>
+        <div className="gv-cmd-wrap">
+          <div className="gv-cmd-bar">
           <label className="tiny muted" htmlFor="gov-actor">
             actor (required by backend)
           </label>
           <input id="gov-actor" className="input" style={{ width: 170 }} value={actor} onChange={(e) => setActor(e.target.value)} />
           <button
             className="btn small danger"
-            disabled={cmd.state.running || !status}
+            disabled={busy || !status}
+            title={busy ? "a command is already running" : undefined}
             onClick={() =>
               ask("Freeze promotions", true, false, "Freeze", (a) => governanceUseCases.freeze(a, "ui:lane5 emergency freeze"))
             }
           >
-            ❄ Freeze promotions
+            {busyLabel("❄ Freeze promotions", "❄ freezing…")}
           </button>
           <button
             className="btn small"
-            disabled={cmd.state.running || !frozen}
+            disabled={busy || !frozen}
+            title={busy ? "a command is already running" : undefined}
             onClick={() => ask("Unfreeze promotions", true, false, "Unfreeze", (a) => governanceUseCases.unfreeze(a, "ui:lane5 release freeze"))}
           >
-            ⚑ Unfreeze
+            {busyLabel("⚑ Unfreeze", "⚑ unfreezing…")}
           </button>
           <button
             className="btn small danger"
-            disabled={cmd.state.running || !candModel}
+            disabled={busy || !candModel}
+            title={busy ? "a command is already running" : undefined}
             onClick={() =>
               ask(`Disable candidate ${candModel}`, true, false, "Disable candidate", (a) =>
                 governanceUseCases.disableCandidate(a, candModel, "ui:lane5 operator disable"),
               )
             }
           >
-            ⛔ Disable candidate
+            {busyLabel("⛔ Disable candidate", "⛔ disabling…")}
           </button>
-          <button className="btn small" disabled={cmd.state.running} onClick={() => ask("Reconcile model registry", false, false, "Reconcile", () => governanceUseCases.reconcileRegistry())}>
-            Reconcile registry
+          <button className="btn small" disabled={busy} title={busy ? "a command is already running" : undefined} onClick={() => ask("Reconcile model registry", false, false, "Reconcile", () => governanceUseCases.reconcileRegistry())}>
+            {busyLabel("Reconcile registry", "reconciling…")}
           </button>
-          <button className="btn small danger" disabled={cmd.state.running} onClick={() => ask("Self-heal experience intelligence", true, false, "Rebuild", () => governanceUseCases.selfHealExperience())}>
-            Self-heal experience
+          <button className="btn small danger" disabled={busy} title={busy ? "a command is already running" : undefined} onClick={() => ask("Self-heal experience intelligence", true, false, "Rebuild", () => governanceUseCases.selfHealExperience())}>
+            {busyLabel("Self-heal experience", "self-healing…")}
           </button>
         </div>
-        <div className="tiny muted">
-          Approve/execute promotion intentionally stays behind the preview + token flow (approval_token is minted by the approve transition); this
-          console exposes the emergency set + rebuild commands only. The backend decides every outcome.
+          <div className="gv-cmd-note">
+            Approve/execute promotion intentionally stays behind the preview + token flow (approval_token is minted by the approve transition); this
+            console exposes the emergency set + rebuild commands only. The backend decides every outcome.
+          </div>
+          <CommandResultLine state={cmd.state} />
         </div>
-        <CommandResultLine state={cmd.state} />
-      </div>
+      </section>
 
+      <section className="gv-sec" aria-labelledby="gv-sec-ledgers">
+        <div className="gv-sec-label" id="gv-sec-ledgers">
+          <span className="idx">03</span>
+          Ledgers &amp; review
+          <span className="ln" aria-hidden="true" />
+        </div>
+        <div className="gv-sec-body">
       <Segmented
         options={[
           { id: "ladder" as const, label: "Registry & ladder" },
@@ -368,16 +441,14 @@ export default function GovernancePage(props: ShellPageProps) {
             ) : reviewQ.isError || reviewQ.data?.available === false ? (
               <EmptyState message="governance engine unavailable" />
             ) : (
-              <div className="grid cols-2">
+              <div className="gv-review-grid">
                 <div>
                   <dl className="kv">
                     <InfoRow label="brier" value={formatNumber(reviewQ.data?.calibration?.brier ?? null, 4)} />
                     <InfoRow label="ece" value={formatNumber(reviewQ.data?.calibration?.ece ?? null, 4)} />
                     <InfoRow label="samples" value={String(reviewQ.data?.samples ?? 0)} />
                   </dl>
-                  <div className="section-title" style={{ marginTop: 8 }}>
-                    calibration buckets
-                  </div>
+                  <div className="gv-review-sub">calibration buckets</div>
                   <DataTable headers={[{ label: "bucket" }, { label: "n", num: true }, { label: "acc", num: true }]}>
                     {(reviewQ.data?.calibration?.buckets ?? []).map((b: Row, i: number) => (
                       <tr key={i}>
@@ -389,13 +460,13 @@ export default function GovernancePage(props: ShellPageProps) {
                   </DataTable>
                 </div>
                 <div>
-                  <div className="section-title">drift alerts</div>
+                  <div className="gv-review-sub">drift alerts</div>
                   {(reviewQ.data?.drift ?? []).length === 0 ? (
                     <EmptyState message="No drift alerts." />
                   ) : (
                     <JsonBlock value={reviewQ.data?.drift} maxChars={1800} />
                   )}
-                  <div className="section-title" style={{ marginTop: 8 }}>
+                  <div className="gv-review-sub" style={{ marginTop: 8 }}>
                     backtest-vs-live divergence
                   </div>
                   <JsonBlock value={reviewQ.data?.divergence} maxChars={1200} />
@@ -404,7 +475,9 @@ export default function GovernancePage(props: ShellPageProps) {
             )}
           </Panel>
         )}
-      </div>
+        </div>
+        </div>
+      </section>
 
       {pending && (
         <ConfirmModal

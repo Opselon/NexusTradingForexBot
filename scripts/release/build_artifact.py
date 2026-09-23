@@ -71,6 +71,12 @@ def main() -> int:
                 "--onefile",
                 "--name",
                 "NexusScalpEngine-CLI",
+                # EU-RELEASE-001: canonical branded application icon, generated
+                # from frontend/public/icon-512.png by scripts/build/
+                # generate_app_icon.py. Without it PyInstaller stamps its
+                # generic placeholder onto the shipped CLI executable.
+                "--icon",
+                str(REPO / "installer" / "NexusScalpEngine.ico"),
                 # Stamped build identity travels INSIDE the onefile payload
                 # (sys._MEIPASS lookup, BUG-174 contract). Without this the
                 # artifact reports NOT_RECORDED - found by release acceptance.
