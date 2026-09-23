@@ -10,7 +10,7 @@
  * green truth). Failed reads fail their cell, never the page.
  */
 
-import { useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { DataTable, EmptyState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { Dot, FreshnessCaption, KeyValueList, MonoValue, PollControl, ResultStrip, usePolling } from "@/features/config/ui/kit";
 import "@/features/config/ui/kit.css";
@@ -89,56 +89,122 @@ export default function HealthPage(props: ShellPageProps) {
   const version = useVersion(poll.paused);
   const capabilities = useCapabilities(poll.paused);
 
-  const cells: MatrixCell[] = [];
-  if (debug.data) for (const sub of debug.data.subsystems) cells.push(cellFromSubsystem(sub, "debug/health", debug.dataUpdatedAt || null));
-  if (system.data) {
-    const sys = system.data;
-    for (const check of sys.checks) cells.push(cellFromCheck(check, "v1/system", system.dataUpdatedAt || null));
-  }
-  if (workers.data) for (const w of workers.data.workers) cells.push(cellFromWorker(w, workers.dataUpdatedAt || null));
-  if (mt5.data) {
-    cells.push({
-      id: "mt5:connection",
-      name: "MT5 broker",
-      status: mt5.data.available ? "CONNECTED" : "DISCONNECTED",
-      level: mt5.data.available ? "good" : "bad",
-      detail: mt5.data.available ? "" : String(mt5.data.reason ?? mt5.data.error_state ?? "adapter unavailable"),
-      metrics: Object.entries(mt5.data.connection ?? {}).slice(0, 4),
-      fetchedAtMs: mt5.dataUpdatedAt || null,
-      source: "mt5",
-    });
-  }
-  if (news.data) {
-    cells.push({
-      id: "news:subsystem",
-      name: "News intelligence",
-      status: news.data.available ? (news.data.enabled ? "ACTIVE" : "IDLE") : "UNAVAILABLE",
-      level: news.data.available ? "good" : "neutral",
-      detail: news.data.available ? String(news.data.worker ?? "") : "news module not attached",
-      metrics: Object.entries(news.data.health ?? {}).slice(0, 4),
-      fetchedAtMs: news.dataUpdatedAt || null,
-      source: "news",
-    });
-  }
-  if (forensics.data) {
-    cells.push({
-      id: "forensics:matrix",
-      name: "Forensic checks",
-      status: forensics.data.available ? "ACTIVE" : "UNAVAILABLE",
-      level: forensics.data.available ? "good" : "neutral",
-      detail: String((forensics.data.error as { message?: string } | undefined)?.message ?? ""),
-      metrics: [],
-      fetchedAtMs: forensics.dataUpdatedAt || null,
-      source: "forensics",
-    });
-  }
-  const failed: Array<{ name: string; error: unknown; retry: () => void }> = [];
-  for (const [name, q] of [["debug/health", debug], ["v1 system health", system], ["readiness", readiness], ["workers", workers], ["mt5", mt5], ["news", news], ["forensics", forensics], ["probe /health", probe], ["runtime", runtime], ["status", status], ["version", version], ["capabilities", capabilities]] as const) {
-    if (q.isError) failed.push({ name, error: q.error, retry: () => void q.refetch() });
-  }
-  const summary = matrixSummary(cells);
+  // perf(7): the matrix is the DOT-chain hot path of this page — 12 polls,
+  // so memo deps are the exact payload identities (plus nowMs, which drives
+  // the per-cell age tone). Cells only rebuild when a payload or the clock
+  // tick moves; the summary/failures depend on cells alone.
+  const cells = useMemo(() => {
+    const out: MatrixCell[] = [];
+    if (debug.data) for (const sub of debug.data.subsystems) out.push(cellFromSubsystem(sub, "debug/health", debug.dataUpdatedAt || null));
+    if (system.data) {
+      const sys = system.data;
+      for (const check of sys.checks) out.push(cellFromCheck(check, "v1/system", system.dataUpdatedAt || null));
+    }
+    if (workers.data) for (const w of workers.data.workers) out.push(cellFromWorker(w, workers.dataUpdatedAt || null));
+    if (mt5.data) {
+      out.push({
+        id: "mt5:connection",
+        name: "MT5 broker",
+        status: mt5.data.available ? "CONNECTED" : "DISCONNECTED",
+        level: mt5.data.available ? "good" : "bad",
+        detail: mt5.data.available ? "" : String(mt5.data.reason ?? mt5.data.error_state ?? "adapter unavailable"),
+        metrics: Object.entries(mt5.data.connection ?? {}).slice(0, 4),
+        fetchedAtMs: mt5.dataUpdatedAt || null,
+        source: "mt5",
+      });
+    }
+    if (news.data) {
+      out.push({
+        id: "news:subsystem",
+        name: "News intelligence",
+        status: news.data.available ? (news.data.enabled ? "ACTIVE" : "IDLE") : "UNAVAILABLE",
+        level: news.data.available ? "good" : "neutral",
+        detail: news.data.available ? String(news.data.worker ?? "") : "news module not attached",
+        metrics: Object.entries(news.data.health ?? {}).slice(0, 4),
+        fetchedAtMs: news.dataUpdatedAt || null,
+        source: "news",
+      });
+    }
+    if (forensics.data) {
+      out.push({
+        id: "forensics:matrix",
+        name: "Forensic checks",
+        status: forensics.data.available ? "ACTIVE" : "UNAVAILABLE",
+        level: forensics.data.available ? "good" : "neutral",
+        detail: String((forensics.data.error as { message?: string } | undefined)?.message ?? ""),
+        metrics: [],
+        fetchedAtMs: forensics.dataUpdatedAt || null,
+        source: "forensics",
+      });
+    }
+    return out;
+    // nowMs is included so stale-recolor keeps tracking the wall clock.
+  }, [debug.data, system.data, workers.data, mt5.data, news.data, forensics.data, debug.dataUpdatedAt, system.dataUpdatedAt, workers.dataUpdatedAt, mt5.dataUpdatedAt, news.dataUpdatedAt, forensics.dataUpdatedAt, nowMs]);
+
+  const failed = useMemo(() => {
+    const out: Array<{ name: string; error: unknown; retry: () => void }> = [];
+    for (const [name, q] of [["debug/health", debug], ["v1 system health", system], ["readiness", readiness], ["workers", workers], ["mt5", mt5], ["news", news], ["forensics", forensics], ["probe /health", probe], ["runtime", runtime], ["status", status], ["version", version], ["capabilities", capabilities]] as const) {
+      if (q.isError) out.push({ name, error: q.error, retry: () => void q.refetch() });
+    }
+    return out;
+    // Query observers are stable per hook; identity changes only on error state.
+  }, [debug.isError, system.isError, readiness.isError, workers.isError, mt5.isError, news.isError, forensics.isError, probe.isError, runtime.isError, status.isError, version.isError, capabilities.isError]);
+
+  const summary = useMemo(() => matrixSummary(cells), [cells]);
   const overall =
     summary.bad > 0 ? "DEGRADED-FAIL" : summary.warn > 0 ? "WARNING" : summary.good > 0 ? "HEALTHY" : "UNKNOWN";
+
+  // perf(7): tab-local payload chains — deps = the exact payload array the
+  // derivation reads (identity-tab entries/filter, readiness/worker maps).
+  const versionRows = useMemo(
+    () =>
+      Object.entries(version.data ?? {})
+        .filter(([, v]) => v !== null && v !== undefined)
+        .map(([k, v]): [string, ReactNode] => [k, <MonoValue key={k} value={v} />]),
+    [version.data],
+  );
+  const domainChips = useMemo(
+    () =>
+      Object.entries(capabilities.data?.domains ?? {}).map(([d, n]) => (
+        <span className="l3-param-chip" key={d}>
+          {d}=<b>{String(n)}</b>
+        </span>
+      )),
+    [capabilities.data],
+  );
+  const requiredLayerRows = useMemo(
+    () =>
+      (readiness.data?.required_layers ?? []).map((c) => (
+        <tr key={`r:${c.category}`}>
+          <td>{c.category}</td>
+          <td><StatusBadge status={c.verdict} /></td>
+          <td className="l3-cell" title={c.reason}>{c.reason ?? "—"}</td>
+          <td className="l3-cell" title={c.suggestion}>{c.suggestion ?? "—"}</td>
+        </tr>
+      )),
+    [readiness.data],
+  );
+  const optionalLayerRows = useMemo(
+    () =>
+      (readiness.data?.optional_layers ?? []).map((c) => (
+        <tr key={`o:${c.category}`}>
+          <td>{c.category}</td>
+          <td><StatusBadge status={c.verdict} /></td>
+          <td className="l3-cell" title={c.reason}>{c.reason ?? "—"}</td>
+        </tr>
+      )),
+    [readiness.data],
+  );
+  const workerRows = useMemo(
+    () =>
+      (workers.data?.workers ?? []).map((w) => (
+        <tr key={w.name}>
+          <td className="inline-mono">{w.name}</td>
+          <td><StatusBadge status={String(w.state ?? "UNKNOWN")} /></td>
+        </tr>
+      )),
+    [workers.data],
+  );
 
   return (
     <div className="l3-wrap">
@@ -208,24 +274,11 @@ export default function HealthPage(props: ShellPageProps) {
             <>
               <div className="section-title">required (must PASS for READY) · {readiness.data.required_layers.length}</div>
               <DataTable headers={[{ label: "CATEGORY" }, { label: "VERDICT" }, { label: "REASON" }, { label: "SUGGESTION" }]}>
-                {readiness.data.required_layers.map((c) => (
-                  <tr key={`r:${c.category}`}>
-                    <td>{c.category}</td>
-                    <td><StatusBadge status={c.verdict} /></td>
-                    <td className="l3-cell" title={c.reason}>{c.reason ?? "—"}</td>
-                    <td className="l3-cell" title={c.suggestion}>{c.suggestion ?? "—"}</td>
-                  </tr>
-                ))}
+                {requiredLayerRows}
               </DataTable>
               <div className="section-title" style={{ marginTop: 10 }}>optional (may WARN without blocking) · {readiness.data.optional_layers.length}</div>
               <DataTable headers={[{ label: "CATEGORY" }, { label: "VERDICT" }, { label: "REASON" }]}>
-                {readiness.data.optional_layers.map((c) => (
-                  <tr key={`o:${c.category}`}>
-                    <td>{c.category}</td>
-                    <td><StatusBadge status={c.verdict} /></td>
-                    <td className="l3-cell" title={c.reason}>{c.reason ?? "—"}</td>
-                  </tr>
-                ))}
+                {optionalLayerRows}
               </DataTable>
             </>
           ) : (
@@ -242,12 +295,7 @@ export default function HealthPage(props: ShellPageProps) {
             <EmptyState message="No worker attributes attached to the engine object." hint="NOT_ATTACHED is a state the backend reports — it is never hidden." />
           ) : workers.data ? (
             <DataTable headers={[{ label: "WORKER" }, { label: "STATE" }]}>
-              {workers.data.workers.map((w) => (
-                <tr key={w.name}>
-                  <td className="inline-mono">{w.name}</td>
-                  <td><StatusBadge status={String(w.state ?? "UNKNOWN")} /></td>
-                </tr>
-              ))}
+              {workerRows}
             </DataTable>
           ) : (
             <FailedCell name="workers" error={workers.error} onRetry={() => void workers.refetch()} />
@@ -278,7 +326,7 @@ export default function HealthPage(props: ShellPageProps) {
             ) : version.isError ? (
               <FailedCell name="version" error={version.error} onRetry={() => void version.refetch()} />
             ) : version.data ? (
-              <KeyValueList rows={Object.entries(version.data).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => [k, <MonoValue key={k} value={v} />])} />
+              <KeyValueList rows={versionRows} />
             ) : null}
           </Panel>
           <Panel title="API capabilities (/api/v1/system/capabilities)" right={<span className="timestamp-note">every {60}s · route-table truth</span>}>
@@ -295,9 +343,7 @@ export default function HealthPage(props: ShellPageProps) {
                   ]}
                 />
                 <div className="l3-rule-params" style={{ marginTop: 6 }}>
-                  {Object.entries(capabilities.data.domains ?? {}).map(([d, n]) => (
-                    <span className="l3-param-chip" key={d}>{d}=<b>{String(n)}</b></span>
-                  ))}
+                  {domainChips}
                 </div>
               </>
             ) : (
