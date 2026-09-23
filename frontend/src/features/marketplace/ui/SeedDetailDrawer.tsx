@@ -12,6 +12,7 @@ import { formatDateTime, formatNumber } from "@/lib/format";
 import { useMktScoreHistory, useMktSeedDetail } from "../hooks";
 import { detailSections, factorsOf, lifecycleLevel } from "../model";
 import { FreshnessNote, asErrorText } from "./shared";
+import "./marketplace-store.css";
 
 function fmtScore(total: number | null | undefined): string {
   return total === null || total === undefined || Number.isNaN(total) ? "NOT_AVAILABLE" : formatNumber(total, 3);
@@ -52,9 +53,13 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
             <pre>{JSON.stringify(d, null, 2)}</pre>
           ) : (
             <>
-              <section>
+              <section className="mkt-store-evidence">
+                <div className="mkt-store-evidence-title">
+                  Seed detail
+                  <span className="pill">{sections.length} backend section{sections.length === 1 ? "" : "s"}</span>
+                </div>
                 <div style={{ fontSize: 13.5, fontWeight: 700 }}>{d.name || d.seed_id}</div>
-                <div className="statline" style={{ marginTop: 4 }}>
+                <div className="mkt-store-statline">
                   <span className={`badge ${lifecycleLevel(String(d.lifecycle ?? ""))}`}>{String(d.lifecycle ?? "UNKNOWN")}</span>
                   <span>{d.family || "—"}</span>
                   <span>v{String(d.version ?? "—")}</span>
@@ -62,18 +67,40 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
                   <span>risk {String(d.risk_profile ?? "—")}</span>
                   <span>source {String(d.source ?? "—")}</span>
                 </div>
-                {d.description ? <p className="small muted">{d.description}</p> : null}
+                {d.description ? <p className="small muted" style={{ marginTop: 6 }}>{d.description}</p> : null}
+                <div className="mkt-store-keyfigs" style={{ marginTop: 9 }}>
+                  {[
+                    { k: "seed_id", v: String(d.seed_id ?? "—") },
+                    { k: "lifecycle", v: String(d.lifecycle ?? "UNKNOWN") },
+                    { k: "version", v: String(d.version ?? "—") },
+                    { k: "family", v: String(d.family ?? "—") },
+                    { k: "pack_id", v: String(d.pack_id ?? "—") },
+                    { k: "risk_profile", v: String(d.risk_profile ?? "—") },
+                    { k: "source", v: String(d.source ?? "—") },
+                    { k: "license", v: String(d.license ?? "—") },
+                    { k: "created_at", v: d.created_at ? formatDateTime(String(d.created_at)) : "—" },
+                    { k: "updated_at", v: d.updated_at ? formatDateTime(String(d.updated_at)) : "—" },
+                  ].map((f) => (
+                    <div className="mkt-store-keyfig" key={f.k}>
+                      <span className="k">{f.k}</span>
+                      <span className={`v ${f.v === "—" || f.v === "UNKNOWN" ? "dim" : ""}`}>{f.v}</span>
+                    </div>
+                  ))}
+                </div>
               </section>
 
-              <section>
-                <div className="section-title">Enablement (backend rows)</div>
+              <section className="mkt-store-evidence">
+                <div className="mkt-store-evidence-title">
+                  Enablement (backend rows)
+                  <span className="pill">{(d.enablement ?? []).length} row{(d.enablement ?? []).length === 1 ? "" : "s"}</span>
+                </div>
                 {(d.enablement ?? []).length === 0 ? (
                   <EmptyState message="No enablement rows — this seed is not enabled for any mode." />
                 ) : (
                   <DataTable headers={[{ label: "mode" }, { label: "status" }, { label: "reason" }, { label: "actor" }, { label: "updated" }]}>
                     {(d.enablement ?? []).map((e, i) => (
                       <tr key={i}>
-                        <td>{String(e.mode ?? "—")}</td>
+                        <td className="mkt-store-mono">{String(e.mode ?? "—")}</td>
                         <td>
                           <StatusBadge status={String(e.status ?? "UNKNOWN")} />
                         </td>
@@ -86,8 +113,11 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
                 )}
               </section>
 
-              <section>
-                <div className="section-title">14-factor score — history ({(history.data?.items ?? []).length} snapshots)</div>
+              <section className="mkt-store-evidence">
+                <div className="mkt-store-evidence-title">
+                  14-factor score — history
+                  <span className="pill">{(history.data?.items ?? []).length} snapshot{(history.data?.items ?? []).length === 1 ? "" : "s"}</span>
+                </div>
                 {history.isPending ? (
                   <Skeleton count={2} height={24} />
                 ) : history.isError ? (
@@ -128,7 +158,7 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
                         <tr key={i}>
                           <td>{s.created_at ? formatDateTime(String(s.created_at)) : "—"}</td>
                           <td>{String(s.profile_id ?? "default")} · v{s.profile_version ?? "—"}</td>
-                          <td className="num mkt-score-cell">{fmtScore(s.total)}</td>
+                          <td className="num mkt-score-cell mkt-store-mono">{fmtScore(s.total)}</td>
                           <td>
                             <StatusBadge status={String(s.verdict ?? "UNKNOWN")} />
                           </td>
@@ -140,35 +170,38 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
                 )}
               </section>
 
-              <section>
-                <div className="section-title">Lifecycle events</div>
+              <section className="mkt-store-evidence">
+                <div className="mkt-store-evidence-title">
+                  Lifecycle events
+                  <span className="pill">{(d.lifecycle_events ?? []).length} transition{(d.lifecycle_events ?? []).length === 1 ? "" : "s"}</span>
+                </div>
                 {(d.lifecycle_events ?? []).length === 0 ? (
                   <EmptyState message="No lifecycle transitions recorded." />
                 ) : (
-                  <DataTable headers={[{ label: "at" }, { label: "from → to" }, { label: "actor" }, { label: "reason" }]}>
+                  <div className="mkt-store-timeline">
                     {(d.lifecycle_events ?? []).map((e, i) => (
-                      <tr key={i}>
-                        <td>{e.created_at ? formatDateTime(String(e.created_at)) : "—"}</td>
-                        <td className="inline-mono">
-                          {String(e.from_lifecycle ?? "—")} → {String(e.to_lifecycle ?? "—")}
-                        </td>
-                        <td>{String(e.actor ?? "system")}</td>
-                        <td className="tiny muted">{String(e.reason ?? "—")}</td>
-                      </tr>
+                      <div className="mkt-store-tl-item" key={i}>
+                        <span className="flow">{String(e.from_lifecycle ?? "—")} → {String(e.to_lifecycle ?? "—")}</span>
+                        <span className="meta">{e.created_at ? formatDateTime(String(e.created_at)) : "—"} · actor {String(e.actor ?? "system")}</span>
+                        {e.reason ? <span className="why">{String(e.reason)}</span> : null}
+                      </div>
                     ))}
-                  </DataTable>
+                  </div>
                 )}
               </section>
 
-              <section>
-                <div className="section-title">Recent repairs (child/parent links)</div>
+              <section className="mkt-store-evidence">
+                <div className="mkt-store-evidence-title">
+                  Recent repairs (child/parent links)
+                  <span className="pill">{(d.recent_repairs ?? []).length} record{(d.recent_repairs ?? []).length === 1 ? "" : "s"}</span>
+                </div>
                 {(d.recent_repairs ?? []).length === 0 ? (
                   <EmptyState message="No repair records reference this seed." />
                 ) : (
                   <DataTable headers={[{ label: "created" }, { label: "trigger" }, { label: "status" }, { label: "seed → child" }]}>
                     {(d.recent_repairs ?? []).map((r, i) => (
                       <tr key={i}>
-                        <td>{r.created_at ? formatDateTime(String(r.created_at)) : "—"}</td>
+                        <td className="mkt-store-mono">{r.created_at ? formatDateTime(String(r.created_at)) : "—"}</td>
                         <td>{String(r.trigger ?? "—")}</td>
                         <td>
                           <StatusBadge status={String(r.status ?? "UNKNOWN")} />
@@ -183,8 +216,8 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
               </section>
 
               {d.dsl && (
-                <section>
-                  <div className="section-title">DSL (stored spec)</div>
+                <section className="mkt-store-evidence">
+                  <div className="mkt-store-evidence-title">DSL (stored spec)</div>
                   <pre>{JSON.stringify(d.dsl, null, 2)}</pre>
                 </section>
               )}
