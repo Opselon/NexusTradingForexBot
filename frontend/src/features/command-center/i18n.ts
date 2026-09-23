@@ -121,4 +121,10 @@ export const MESSAGES: FeatureMessages = {
   "command-center.mode.impact_paper": { fa: "فقط اجراهای شبیه‌سازی‌شده — هیچ سفارش واقعی به کارگزار نمی‌رود.", de: "Nur simulierte Fills — keine echten Orders gehen an den Broker.", es: "solo ejecuciones simuladas — no llegan órdenes reales al bróker.", ar: "تنفيذ محاكى فقط — لا تصل أي أوامر حقيقية إلى الوسيط." },
   "command-center.mode.impact_shadow": { fa: "سیگنال‌ها محاسبه می‌شوند اما هرگز به‌صورت سفارش ارسال نمی‌شوند.", de: "Signale werden berechnet, aber nie als Orders versendet.", es: "las señales se calculan pero nunca se envían como órdenes.", ar: "تُحسب الإشارات لكنها لا تُرسل كأوامر أبدًا." },
   "command-center.mode.impact_live": { fa: "موتور سفارش‌های واقعی به حساب کارگزار متصل ارسال خواهد کرد.", de: "Die Engine sendet ECHTE Orders an das verbundene Broker-Konto.", es: "el motor enviará órdenes REALES a la cuenta del bróker conectada.", ar: "سيُرسل المحرك أوامر حقيقية إلى حساب الوسيط المتصل." },
+  "command-center.err.overview_dead": { fa: "اطلاحات مرکز فرمان در دسترس نیست — مرور کلی پس از تلاش‌های مجدد ناموفق بود ({e})", de: "Command-Center-Daten nicht verfügbar — Overview scheiterte nach Wiederholungen ({e})", es: "Datos del centro de comandos no disponibles: la vista general falló tras los reintentos ({e})", ar: "بيانات مركز القيادة غير متاحة — فشل نظرة عامة بعد إعادة المحاولات ({e})" },
+  "command-center.err.unknown": { fa: "خطای ناشناخته", de: "unbekannter Fehler", es: "error desconocido", ar: "خطأ غير معروف" },
+  "command-center.view.analysis": { fa: "تحلیل", de: "Analyse", es: "Análisis", ar: "تحليل" },
+  "command-center.view.time_machine": { fa: "ماشین زمان", de: "Zeitmaschine", es: "Máquina del tiempo", ar: "آلة الزمن" },
+  "command-center.a11y.eligibility_filter": { fa: "فیلتر واجد شرایط", de: "Berechtigungsfilter", es: "Filtro de elegibilidad", ar: "مرشّح الأهلية" },
+  "command-center.analysis.loading": { fa: "در حال بارگذاری داده‌های تحلیل…", de: "Analysedaten werden geladen…", es: "cargando datos de análisis…", ar: "جارٍ تحميل بيانات التحليل…" },
 };
