@@ -8,10 +8,13 @@ import { useMemo, useState } from "react";
 import { DataTable, EmptyState, ErrorState, MetricCard, Panel } from "@/components/primitives";
 import { HeatBar } from "@/components/viz";
 import { formatNumber } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import { useNewsKeywords } from "../hooks";
+import { dirWord } from "../model";
 import { FreshnessNote, asErrorText } from "./shared";
 
 export function NewsKeywordsPanel() {
+  const t = useI18n((s) => s.t);
   const [category, setCategory] = useState("");
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -35,11 +38,11 @@ export function NewsKeywordsPanel() {
 
   return (
     <Panel
-      title="Keyword intelligence"
+      title={t("news.keywords.title", "Keyword intelligence")}
       right={
         <>
-          <select className="select" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="category">
-            <option value="">all categories</option>
+          <select className="select" value={category} onChange={(e) => setCategory(e.target.value)} aria-label={t("news.keywords.category_label", "category")}>
+            <option value="">{t("news.keywords.all_categories", "all categories")}</option>
             {catKeys.map((c) => (
               <option key={c} value={c}>
                 {c} ({cats[c]})
@@ -49,46 +52,54 @@ export function NewsKeywordsPanel() {
           <input
             className="input"
             style={{ width: 140 }}
-            placeholder="filter keyword…"
+            placeholder={t("news.keywords.filter_placeholder", "filter keyword…")}
             value={q}
             onChange={(e) => submitSearch(e.target.value)}
-            aria-label="keyword search"
+            aria-label={t("news.keywords.search_label", "keyword search")}
           />
         </>
       }
     >
       <div className="grid cols-4">
-        <MetricCard label="dataset keywords" value={data?.dataset?.total_keywords ?? "—"} tone="dim" sub={`v${data?.dataset?.version ?? "—"}`} />
-        <MetricCard label="articles scanned" value={cov?.articles_scanned ?? "—"} tone="dim" sub="last 500 canonical" />
-        <MetricCard label="total mentions" value={cov?.total_mentions ?? "—"} tone="dim" sub={`active keywords ${cov?.active_keywords ?? "—"}`} />
+        <MetricCard label={t("news.keywords.metric_dataset", "dataset keywords")} value={data?.dataset?.total_keywords ?? "—"} tone="dim" sub={`v${data?.dataset?.version ?? "—"}`} />
+        <MetricCard label={t("news.keywords.metric_scanned", "articles scanned")} value={cov?.articles_scanned ?? "—"} tone="dim" sub={t("news.keywords.metric_scanned_sub", "last 500 canonical")} />
         <MetricCard
-          label="direction mix"
+          label={t("news.keywords.metric_mentions", "total mentions")}
+          value={cov?.total_mentions ?? "—"}
+          tone="dim"
+          sub={t("news.keywords.metric_mentions_sub", "active keywords {n}", { n: cov?.active_keywords ?? "—" })}
+        />
+        <MetricCard
+          label={t("news.keywords.metric_mix", "direction mix")}
           value={`${dir.BULLISH ?? 0} / ${dir.BEARISH ?? 0}`}
           tone="dim"
-          sub={`neutral ${dir.NEUTRAL ?? 0} · bullish / bearish keywords`}
+          sub={t("news.keywords.metric_mix_sub", "neutral {n} · bullish / bearish keywords", { n: dir.NEUTRAL ?? 0 })}
         />
       </div>
 
       <div className="statline" style={{ margin: "10px 0 4px" }}>
-        <span>top coverage (backend scan)</span>
-        <FreshnessNote updatedAtMs={keywords.dataUpdatedAt ?? null} label="keywords" staleAfterMs={120_000} />
+        <span>{t("news.keywords.top_coverage", "top coverage (backend scan)")}</span>
+        <FreshnessNote updatedAtMs={keywords.dataUpdatedAt ?? null} label={t("news.fresh.keywords", "keywords")} staleAfterMs={120_000} />
       </div>
       {keywords.isPending ? (
-        <div className="viz-empty">loading keyword dataset…</div>
+        <div className="viz-empty">{t("news.keywords.loading", "loading keyword dataset…")}</div>
       ) : keywords.isError ? (
-        <ErrorState message={asErrorText(keywords.error)} onRetry={() => keywords.refetch()} />
+        <ErrorState message={asErrorText(keywords.error, t)} onRetry={() => keywords.refetch()} />
       ) : tops.length === 0 ? (
-        <EmptyState message="No keyword hits in the scanned corpus." hint="Fetch news to populate — the scan covers the last 500 canonical articles." />
+        <EmptyState
+          message={t("news.keywords.empty", "No keyword hits in the scanned corpus.")}
+          hint={t("news.keywords.empty_hint", "Fetch news to populate — the scan covers the last 500 canonical articles.")}
+        />
       ) : (
         <>
           <DataTable
             headers={[
-              { label: "keyword" },
-              { label: "category" },
-              { label: "bias" },
-              { label: "hits", num: true },
-              { label: "mentions", num: true },
-              { label: "share", num: true },
+              { label: t("news.keywords.h_keyword", "keyword") },
+              { label: t("news.keywords.h_category", "category") },
+              { label: t("news.keywords.h_bias", "bias") },
+              { label: t("news.keywords.h_hits", "hits"), num: true },
+              { label: t("news.keywords.h_mentions", "mentions"), num: true },
+              { label: t("news.keywords.h_share", "share"), num: true },
             ]}
           >
             {tops.map((k) => (
@@ -96,7 +107,7 @@ export function NewsKeywordsPanel() {
                 <td>{k.keyword}</td>
                 <td>{k.category ?? "—"}</td>
                 <td>
-                  <span className={`news-dir ${(k.direction_bias ?? "NEUTRAL").toUpperCase()}`}>{k.direction_bias ?? "NEUTRAL"}</span>
+                  <span className={`news-dir ${(k.direction_bias ?? "NEUTRAL").toUpperCase()}`}>{dirWord(t, k.direction_bias ?? "NEUTRAL")}</span>
                 </td>
                 <td className="num">{k.article_hits ?? 0}</td>
                 <td className="num">{k.mention_count ?? 0}</td>
@@ -111,14 +122,14 @@ export function NewsKeywordsPanel() {
                 value: k.share ?? null,
                 caption: `${formatNumber((k.share ?? 0) * 100, 1)}%`,
                 tone: k.direction_bias === "BULLISH" ? "pos" : k.direction_bias === "BEARISH" ? "bad" : "neu",
-                title: `${k.category ?? ""} · weight ${k.weight ?? "—"}`,
+                title: t("news.keywords.weight_title", "{category} · weight {w}", { category: k.category ?? "", w: k.weight ?? "—" }),
               }))}
-              scaleCaptions={["0%", "share 100%"]}
+              scaleCaptions={["0%", t("news.keywords.scale_share", "share 100%")]}
             />
           </div>
           {listing.length > 0 && (
             <div className="tiny faint" style={{ marginTop: 8 }}>
-              {listing.length} dataset keywords match the current filter (top {tops.length} shown above).
+              {t("news.keywords.matching", "{n} dataset keywords match the current filter (top {top} shown above).", { n: listing.length, top: tops.length })}
             </div>
           )}
         </>
