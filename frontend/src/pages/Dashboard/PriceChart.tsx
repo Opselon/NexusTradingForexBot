@@ -57,6 +57,8 @@ import { SnapshotButton } from "./toolbar/SnapshotButton";
 import { FullscreenButton } from "./toolbar/FullscreenButton";
 import { ChartContextMenu } from "./chart/ChartContextMenu";
 import { ChartPerfBadge } from "./chart/ChartPerfBadge";
+// wave-3 Lane A documented exception hunk: static-layer cache ref only.
+import type { LayerCache } from "./chart/paintCache";
 import { useChartKeyboardNav } from "./chart/keyboardNav";
 import "@/pages/_shared/pages.css";
 import "./market-console.css";
@@ -153,6 +155,9 @@ function PriceChartInner({
   const [dragging, setDragging] = useState(false);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // wave-3 Lane A documented exception hunk: static-layer cache (the layer
+  // canvas is created lazily inside paintStaticLayers — this owns the ref).
+  const cacheRef = useRef<LayerCache>({ key: "" });
   const dragRef = useRef<DragState | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const rtVersion = useRealtimeVersion();
@@ -375,7 +380,9 @@ function PriceChartInner({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const scale = scaleRef.current;
       if (!scale || sc.shown.length === 0) return;
-      paintChart(ctx, { w, h }, scale, sc, pal, mono);
+      // wave-3 Lane A documented exception hunk: hand the static-layer cache
+      // to the painter (dynamic stages stay in paintChart, uncached).
+      paintChart(ctx, { w, h }, scale, sc, pal, mono, cacheRef.current);
     };
 
     const step = () => {
