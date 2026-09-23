@@ -314,4 +314,5 @@ export const MESSAGES: FeatureMessages = {
   "dash.ml.title": { fa: "مدل / 70D", de: "Modell / 70D", es: "modelo / 70D", ar: "النموذج / 70D" },
   "dash.mt5.pending_orders": { fa: "سفارش‌های معلق", de: "Ausstehende Orders", es: "órdenes pendientes", ar: "أوامر معلقة" },
   "dash.confirm.stop_body": { fa: "حلقه موتور متوقف می‌شود — هیچ پیشنهاد یا اجرای جدیدی نیست. پوزیشن‌های باز تا زمان اقدام دستی شما روی بروکر می‌مانند.", de: "Die Engine-Schleife stoppt — keine neuen Vorschläge, keine neuen Ausführungen. Offene Positionen bleiben beim Broker, bis du dort handelst.", es: "el bucle del motor se detiene — sin nuevas propuestas ni nuevas ejecuciones. Las posiciones abiertas permanecen en el bróker hasta que actúes allí.", ar: "توقفت حلقة المحرك — لا اقتراحات جديدة ولا تنفيذات جديدة. تبقى المراكز المفتوحة لدى الوسيط حتى تتحرّك هناك." },
+  "dash.chart.tools_aria": { fa: "ابزارهای نمودار", de: "Chart-Werkzeuge", es: "herramientas del gráfico", ar: "أدوات الرسم" },
 };
