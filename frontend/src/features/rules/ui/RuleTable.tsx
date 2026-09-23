@@ -9,7 +9,7 @@
  * filtered rows the page passes in. Pure presentational component.
  */
 
-import { type ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { useUiStore } from "@/stores/uiStore";
 import { catTone, type RuleSort, type RuleSortKey, type RuleVO } from "../model";
 
@@ -79,6 +79,106 @@ function Th({
   );
 }
 
+/** Memoized rule row (matrix up to ~40 rows). Primitive/stable props only:
+ *  the shell re-renders every second (nowMs tick into the page) — rows must
+ *  bail out of that tick instead of re-rendering 5 cells x N rows. The switch
+ *  still never flips optimistically: it only arms the page's ConfirmModal. */
+const RuleRow = memo(function RuleRow({
+  rule,
+  query,
+  busy,
+  onEdit,
+  onToggleRequest,
+}: {
+  rule: RuleVO;
+  query: string;
+  busy: boolean;
+  onEdit: (rule: RuleVO) => void;
+  onToggleRequest: (rule: RuleVO) => void;
+}) {
+  const pushToast = useUiStore((s) => s.pushToast);
+  const copyName = (r: RuleVO) => {
+    const clip = navigator.clipboard;
+    if (!clip?.writeText) {
+      pushToast("fail", "clipboard unavailable in this context");
+      return;
+    }
+    void clip
+      .writeText(r.name)
+      .then(() => pushToast("ok", `rule id copied — ${r.name}`))
+      .catch(() => pushToast("fail", "clipboard write blocked by the browser"));
+  };
+
+  const [pfx, ...rest] = rule.name.startsWith("RULE_") ? ["RULE_", rule.name.slice(5)] : ["", rule.name];
+  const bare = rest.join("_") || rule.name;
+  return (
+    <tr className={rule.enabled ? "rl-on" : "rl-off"}>
+      <td>
+        <button
+          className="rl-name"
+          onClick={() => copyName(rule)}
+          title={`copy ${rule.name}`}
+          aria-label={`Copy rule id ${rule.name}`}
+        >
+          {pfx && <span className="pfx">{highlight(pfx, query)}</span>}
+          <span className="txt">{highlight(bare, query)}</span>
+          <span className="cpy" aria-hidden="true">⧉</span>
+        </button>
+      </td>
+      <td>
+        <span className={`rl-tag rl-tone-${catTone(rule.category)}`} title={rule.category}>
+          <span className="lbl">{highlight(rule.category, query)}</span>
+        </span>
+      </td>
+      <td>
+        <div className="rl-status">
+          <button
+            className={`rl-sw ${rule.enabled ? "on" : ""}`}
+            role="switch"
+            aria-checked={rule.enabled}
+            aria-label={`${rule.enabled ? "Disable" : "Enable"} rule ${rule.name}`}
+            disabled={busy}
+            onClick={() => onToggleRequest(rule)}
+            title={rule.enabled ? "disable this rule…" : "enable this rule…"}
+          />
+          <span className={`rl-state ${rule.enabled ? "on" : ""}`}>{rule.enabled ? "ON" : "OFF"}</span>
+        </div>
+      </td>
+      <td>
+        {rule.paramsError ? (
+          <span className="badge bad" title={rule.paramsError}>PARAMS PARSE ERROR</span>
+        ) : rule.params.length === 0 ? (
+          <span className="rl-pempty">no parameters</span>
+        ) : (
+          <div className="rl-params">
+            {rule.params.map((p) => (
+              <span
+                key={p.key}
+                className={`rl-pchip ${p.threshold ? "thr" : ""}`}
+                title={`${p.key} = ${p.value}${p.threshold ? " (threshold-shaped key)" : ""}`}
+              >
+                {p.key}=<b>{p.value}</b>
+              </span>
+            ))}
+          </div>
+        )}
+      </td>
+      <td>
+        <div className="rl-act">
+          <button
+            className="btn small ghost"
+            onClick={() => onEdit(rule)}
+            disabled={rule.params.length === 0}
+            title={rule.params.length === 0 ? "this rule stores no parameters" : "edit parameters…"}
+          >
+            ✎ Edit
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+});
+
 export function RuleTable({
   rows,
   grouped,
@@ -98,20 +198,6 @@ export function RuleTable({
   onToggleRequest: (rule: RuleVO) => void;
   busy: boolean;
 }) {
-  const pushToast = useUiStore((s) => s.pushToast);
-
-  const copyName = (rule: RuleVO) => {
-    const clip = navigator.clipboard;
-    if (!clip?.writeText) {
-      pushToast("fail", "clipboard unavailable in this context");
-      return;
-    }
-    void clip
-      .writeText(rule.name)
-      .then(() => pushToast("ok", `rule id copied — ${rule.name}`))
-      .catch(() => pushToast("fail", "clipboard write blocked by the browser"));
-  };
-
   // Group into consecutive same-category runs (valid only when the page sorted
   // by category — sortRules keeps each category contiguous).
   const groups: Array<{ cat: string; items: RuleVO[] }> = [];
@@ -123,78 +209,9 @@ export function RuleTable({
     }
   }
 
-  const renderRow = (rule: RuleVO) => {
-    const [pfx, ...rest] = rule.name.startsWith("RULE_")
-      ? ["RULE_", rule.name.slice(5)]
-      : ["", rule.name];
-    const bare = rest.join("_") || rule.name;
-    return (
-      <tr key={rule.name} className={rule.enabled ? "rl-on" : "rl-off"}>
-        <td>
-          <button
-            className="rl-name"
-            onClick={() => copyName(rule)}
-            title={`copy ${rule.name}`}
-            aria-label={`Copy rule id ${rule.name}`}
-          >
-            {pfx && <span className="pfx">{highlight(pfx, query)}</span>}
-            <span className="txt">{highlight(bare, query)}</span>
-            <span className="cpy" aria-hidden="true">⧉</span>
-          </button>
-        </td>
-        <td>
-          <span className={`rl-tag rl-tone-${catTone(rule.category)}`} title={rule.category}>
-            <span className="lbl">{highlight(rule.category, query)}</span>
-          </span>
-        </td>
-        <td>
-          <div className="rl-status">
-            <button
-              className={`rl-sw ${rule.enabled ? "on" : ""}`}
-              role="switch"
-              aria-checked={rule.enabled}
-              aria-label={`${rule.enabled ? "Disable" : "Enable"} rule ${rule.name}`}
-              disabled={busy}
-              onClick={() => onToggleRequest(rule)}
-              title={rule.enabled ? "disable this rule…" : "enable this rule…"}
-            />
-            <span className={`rl-state ${rule.enabled ? "on" : ""}`}>{rule.enabled ? "ON" : "OFF"}</span>
-          </div>
-        </td>
-        <td>
-          {rule.paramsError ? (
-            <span className="badge bad" title={rule.paramsError}>PARAMS PARSE ERROR</span>
-          ) : rule.params.length === 0 ? (
-            <span className="rl-pempty">no parameters</span>
-          ) : (
-            <div className="rl-params">
-              {rule.params.map((p) => (
-                <span
-                  key={p.key}
-                  className={`rl-pchip ${p.threshold ? "thr" : ""}`}
-                  title={`${p.key} = ${p.value}${p.threshold ? " (threshold-shaped key)" : ""}`}
-                >
-                  {p.key}=<b>{p.value}</b>
-                </span>
-              ))}
-            </div>
-          )}
-        </td>
-        <td>
-          <div className="rl-act">
-            <button
-              className="btn small ghost"
-              onClick={() => onEdit(rule)}
-              disabled={rule.params.length === 0}
-              title={rule.params.length === 0 ? "this rule stores no parameters" : "edit parameters…"}
-            >
-              ✎ Edit
-            </button>
-          </div>
-        </td>
-      </tr>
-    );
-  };
+  const renderRow = (rule: RuleVO) => (
+    <RuleRow key={rule.name} rule={rule} query={query} busy={busy} onEdit={onEdit} onToggleRequest={onToggleRequest} />
+  );
 
   return (
     <div tabIndex={0} className="rl-table-wrap">

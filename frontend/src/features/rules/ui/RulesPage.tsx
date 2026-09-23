@@ -19,7 +19,7 @@
  * deepening over the same model.ts / useCases.ts contracts.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useUiStore } from "@/stores/uiStore";
 import { ConfirmModal, EmptyState, Skeleton, StatusBadge } from "@/components/primitives";
 import {
@@ -108,8 +108,13 @@ export default function RulesPage(props: ShellPageProps) {
     return m;
   }, [query.data]);
 
-  const onSort = (key: RuleSortKey) =>
-    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+  // Stable identities: the memoized RuleRow/RulesStats children must not be
+  // invalidated by the shell's 1s tick — these only touch state setters.
+  const onSort = useCallback(
+    (key: RuleSortKey) =>
+      setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" })),
+    [],
+  );
 
   const runCommand = async () => {
     if (!pending) return;
@@ -124,20 +129,23 @@ export default function RulesPage(props: ShellPageProps) {
     if (outcome.ok) setEditing(null);
   };
 
-  const requestToggle = (rule: RuleVO) =>
-    setPending({
-      rule,
-      enable: !rule.enabled,
-      parameters: null,
-      label: `${rule.enabled ? "DISABLE" : "ENABLE"} rule "${rule.name}"`,
-    });
+  const requestToggle = useCallback(
+    (rule: RuleVO) =>
+      setPending({
+        rule,
+        enable: !rule.enabled,
+        parameters: null,
+        label: `${rule.enabled ? "DISABLE" : "ENABLE"} rule "${rule.name}"`,
+      }),
+    [],
+  );
 
-  const openParams = (rule: RuleVO) => {
+  const openParams = useCallback((rule: RuleVO) => {
     const draft: RuleDraft = {};
     for (const p of rule.params) draft[p.key] = p.value;
     setShowErrors(false);
     setEditing({ rule, draft });
-  };
+  }, []);
 
   const saveParams = () => {
     if (!editing) return;

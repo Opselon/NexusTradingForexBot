@@ -8,10 +8,12 @@
  * Presentation only; no fetch, no commands.
  */
 
-import type { CSSProperties } from "react";
+import { memo, type CSSProperties } from "react";
 import type { RuleVO } from "../model";
 
-export function RulesStats({ all, cats }: { all: RuleVO[]; cats: string[] }) {
+/** Memoized stat cards: `all`/`cats` are memoized upstream, so the shell's 1s
+ *  tick skips the three array scans + donut rebuild entirely. */
+export const RulesStats = memo(function RulesStats({ all, cats }: { all: RuleVO[]; cats: string[] }) {
   const total = all.length;
   const enabled = all.filter((r) => r.enabled).length;
   const broken = all.filter((r) => r.paramsError).length;
@@ -68,4 +70,4 @@ export function RulesStats({ all, cats }: { all: RuleVO[]; cats: string[] }) {
       </div>
     </div>
   );
-}
+});
