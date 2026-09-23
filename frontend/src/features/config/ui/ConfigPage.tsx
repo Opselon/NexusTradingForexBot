@@ -15,7 +15,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Panel, Skeleton, StatusBadge } from "@/components/primitives";
+import { ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { useUiStore } from "@/stores/uiStore";
 import {
   CheckField,
@@ -124,10 +124,11 @@ function EngineModeCard() {
       {modeQuery.isPending ? (
         <Skeleton count={2} />
       ) : modeQuery.isError ? (
-        <div className="l3-note bad">
-          {modeQuery.error instanceof Error ? modeQuery.error.message : "runtime/mode unreadable"} — the current mode is
-          UNKNOWN, never guessed. <button className="btn small" onClick={() => void modeQuery.refetch()}>Retry</button>
-        </div>
+        <ErrorState
+          message={`${modeQuery.error instanceof Error ? modeQuery.error.message : "runtime/mode unreadable"} — the current mode is UNKNOWN, never guessed`}
+          requestId={(modeQuery.error as { requestId?: string } | null)?.requestId ?? null}
+          onRetry={() => void modeQuery.refetch()}
+        />
       ) : (
         <div className="l3-mode-card">
           <div>
@@ -332,6 +333,12 @@ function RuntimeConfigForm() {
             <div className="section-title">Version truth (runtime-config diagnostics)</div>
             {diagQuery.isPending ? (
               <Skeleton count={2} height={12} />
+            ) : diagQuery.isError ? (
+              <ErrorState
+                message={diagQuery.error instanceof Error ? diagQuery.error.message : "runtime-config diagnostics unreadable"}
+                requestId={(diagQuery.error as { requestId?: string } | null)?.requestId ?? null}
+                onRetry={() => void diagQuery.refetch()}
+              />
             ) : diagQuery.data ? (
               <div className="l3-runtime-ver">
                 <span>persistent v{String(diagQuery.data.persistent_version ?? "—")}</span>
@@ -418,7 +425,11 @@ function SettingsProvenance() {
       {query.isPending ? (
         <Skeleton count={3} />
       ) : query.isError ? (
-        <div className="l3-note bad">{query.error instanceof Error ? query.error.message : "settings unreadable"}</div>
+        <ErrorState
+          message={query.error instanceof Error ? query.error.message : "settings unreadable"}
+          requestId={(query.error as { requestId?: string } | null)?.requestId ?? null}
+          onRetry={() => void query.refetch()}
+        />
       ) : (
         <>
           <div className="l3-runtime-ver">
@@ -533,7 +544,11 @@ function TelegramPanel() {
       {status.isPending ? (
         <Skeleton count={3} />
       ) : status.isError ? (
-        <div className="l3-note bad">{status.error instanceof Error ? status.error.message : "telegram status unreadable"}</div>
+        <ErrorState
+          message={status.error instanceof Error ? status.error.message : "telegram status unreadable"}
+          requestId={(status.error as { requestId?: string } | null)?.requestId ?? null}
+          onRetry={() => void status.refetch()}
+        />
       ) : (
         <div className="l3-form">
           <div className="l3-runtime-ver" style={{ marginBottom: 6 }}>
