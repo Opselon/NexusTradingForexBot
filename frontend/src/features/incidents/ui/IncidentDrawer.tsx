@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton, SeverityBadge, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import { incidentZipHref } from "../api";
 import { arr, bool, num, obj, str, type Row } from "../model";
 import { incidentsQueries } from "../useCases";
@@ -14,6 +15,7 @@ import { Drawer, InfoRow, JsonBlock, StatusPill } from "../../research/ui/lane5K
 
 export default function IncidentDrawer({ incidentId, onClose }: { incidentId: string; onClose: () => void }) {
   const [tab, setTab] = useState<"detail" | "timeline" | "report" | "traces">("detail");
+  const t = useI18n((s) => s.t);
   const detailQ = useQuery({
     queryKey: ["incidents", "detail", incidentId],
     queryFn: ({ signal }) => incidentsQueries.detail(incidentId, signal),
@@ -34,17 +36,23 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
 
   const inc = detailQ.data?.incident;
   const impact = obj(inc?.impact);
+  const tabLabels: Record<string, string> = {
+    detail: t("incidents.drawer.tab_detail", "detail"),
+    timeline: t("incidents.drawer.tab_timeline", "timeline"),
+    traces: t("incidents.drawer.tab_traces", "traces"),
+    report: t("incidents.drawer.tab_report", "report"),
+  };
 
   return (
-    <Drawer title={`Incident ${incidentId}`} onClose={onClose}>
+    <Drawer title={t("incidents.drawer.title", "Incident {id}", { id: incidentId })} onClose={onClose}>
       <div className="inc-drawer-tabs">
-        {(["detail", "timeline", "traces", "report"] as const).map((t) => (
-          <button key={t} className={`btn small ${tab === t ? "primary" : "ghost"}`} aria-pressed={tab === t} onClick={() => setTab(t)}>
-            {t}
+        {(["detail", "timeline", "traces", "report"] as const).map((t2) => (
+          <button key={t2} className={`btn small ${tab === t2 ? "primary" : "ghost"}`} aria-pressed={tab === t2} onClick={() => setTab(t2)}>
+            {tabLabels[t2]}
           </button>
         ))}
         <a className="btn small" href={incidentZipHref(incidentId)} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
-          ⤓ evidence zip (href)
+          {t("incidents.drawer.zip_link", "⤓ evidence zip (href)")}
         </a>
       </div>
 
@@ -52,47 +60,54 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
         <Skeleton count={4} />
       ) : detailQ.isError ? (
               <ErrorState
-                message={detailQ.error instanceof Error ? detailQ.error.message : "incident detail unavailable"}
+                message={detailQ.error instanceof Error ? detailQ.error.message : t("incidents.drawer.detail_unavailable", "incident detail unavailable")}
                 onRetry={() => void detailQ.refetch()}
               />
       ) : detailQ.data?.available === false || !inc ? (
-        <EmptyState message="incident not found" hint={str(detailQ.data?.error) ?? "the store answered available:false"} />
+        <EmptyState
+          message={t("incidents.drawer.not_found", "incident not found")}
+          hint={str(detailQ.data?.error) ?? t("incidents.drawer.not_found_hint", "the store answered available:false")}
+        />
       ) : tab === "detail" ? (
         <div style={{ display: "grid", gap: 10 }}>
           <div className="grid cols-4">
-            <MetricCard label="severity" value={<SeverityBadge severity={inc.severity} />} />
-            <MetricCard label="status" value={<StatusBadge status={inc.status} />} />
-            <MetricCard label="root cause" value={<StatusPill status={inc.root_cause_status} />} sub={inc.root_cause ?? "not yet attributed"} />
+            <MetricCard label={t("incidents.drawer.severity", "severity")} value={<SeverityBadge severity={inc.severity} />} />
+            <MetricCard label={t("incidents.drawer.status", "status")} value={<StatusBadge status={inc.status} />} />
             <MetricCard
-              label="repeated"
+              label={t("incidents.drawer.root_cause", "root cause")}
+              value={<StatusPill status={inc.root_cause_status} />}
+              sub={inc.root_cause ?? t("incidents.drawer.no_attr", "not yet attributed")}
+            />
+            <MetricCard
+              label={t("incidents.drawer.repeated", "repeated")}
               value={formatNumber(inc.repeated_count ?? 1, 0)}
               tone={bool(inc.is_regression) ? "neg" : "dim"}
-              sub={inc.related_bug_id ? `linked ${inc.related_bug_id}` : "no bug linkage"}
+              sub={inc.related_bug_id ? t("incidents.drawer.linked_bug", "linked {id}", { id: inc.related_bug_id }) : t("incidents.drawer.no_bug", "no bug linkage")}
             />
           </div>
-          <Panel title="Where it happened" tight>
+          <Panel title={t("incidents.drawer.where", "Where it happened")} tight>
             <dl className="kv">
-              <InfoRow label="component / operation" value={`${inc.component ?? "—"} / ${inc.operation ?? "—"}`} />
-              <InfoRow label="category" value={inc.category ?? "—"} />
-              <InfoRow label="correlation id" value={<span className="inline-mono tiny">{inc.correlation_id ?? "—"}</span>} />
-              <InfoRow label="detected" value={formatDateTime(inc.detected_at)} />
-              <InfoRow label="first / last seen" value={`${formatDateTime(inc.first_seen_at)} → ${formatDateTime(inc.last_seen_at)}`} />
-              <InfoRow label="fingerprint" value={<span className="inline-mono tiny">{inc.fingerprint ?? "—"}</span>} />
-              <InfoRow label="recovery state" value={<StatusPill status={inc.recovery_status} />} />
-              <InfoRow label="recommended action" value={inc.recommended_action ?? "—"} />
+              <InfoRow label={t("incidents.drawer.component_op", "component / operation")} value={`${inc.component ?? "—"} / ${inc.operation ?? "—"}`} />
+              <InfoRow label={t("incidents.drawer.category", "category")} value={inc.category ?? "—"} />
+              <InfoRow label={t("incidents.drawer.correlation", "correlation id")} value={<span className="inline-mono tiny">{inc.correlation_id ?? "—"}</span>} />
+              <InfoRow label={t("incidents.drawer.detected", "detected")} value={formatDateTime(inc.detected_at)} />
+              <InfoRow label={t("incidents.drawer.first_last", "first / last seen")} value={`${formatDateTime(inc.first_seen_at)} → ${formatDateTime(inc.last_seen_at)}`} />
+              <InfoRow label={t("incidents.drawer.fingerprint", "fingerprint")} value={<span className="inline-mono tiny">{inc.fingerprint ?? "—"}</span>} />
+              <InfoRow label={t("incidents.drawer.recovery_state", "recovery state")} value={<StatusPill status={inc.recovery_status} />} />
+              <InfoRow label={t("incidents.drawer.recommended", "recommended action")} value={inc.recommended_action ?? "—"} />
               <InfoRow
-                label="fix / regression test"
+                label={t("incidents.drawer.fix_test", "fix / regression test")}
                 value={`${inc.fix_commit || "—"} · ${inc.regression_test || "—"}`}
               />
               <InfoRow
-                label="resolved without evidence"
-                value={bool(inc.resolved_without_evidence) ? "YES (flagged)" : "no"}
+                label={t("incidents.drawer.resolved_wo", "resolved without evidence")}
+                value={bool(inc.resolved_without_evidence) ? t("incidents.drawer.yes_flagged", "YES (flagged)") : t("incidents.drawer.no", "no")}
               />
             </dl>
           </Panel>
-          <Panel title="Impact (backend analyzer)" tight>
+          <Panel title={t("incidents.drawer.impact", "Impact (backend analyzer)")} tight>
             {Object.keys(impact).length === 0 ? (
-              <EmptyState message="no impact payload" />
+              <EmptyState message={t("incidents.drawer.no_impact", "no impact payload")} />
             ) : (
               <dl className="kv">
                 {Object.entries(impact).slice(0, 16).map(([k, v]) => (
@@ -101,13 +116,16 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
               </dl>
             )}
             <div className="tiny muted" style={{ marginTop: 6 }}>
-              affected: {arr(inc.affected_records).length} records · {arr(inc.affected_models).length} models · tags{" "}
-              {(inc.tags ?? []).join(", ") || "—"}
+              {t("incidents.drawer.affected", "affected: {records} records · {models} models · tags {tags}", {
+                records: arr(inc.affected_records).length,
+                models: arr(inc.affected_models).length,
+                tags: (inc.tags ?? []).join(", ") || "—",
+              })}
             </div>
           </Panel>
-          <Panel title={`Evidence (${arr(inc.evidence).length})`} tight>
+          <Panel title={t("incidents.drawer.evidence", "Evidence ({n})", { n: arr(inc.evidence).length })} tight>
             {arr(inc.evidence).length === 0 ? (
-              <EmptyState message="No evidence items attached." />
+              <EmptyState message={t("incidents.drawer.no_evidence", "No evidence items attached.")} />
             ) : (
               <div style={{ display: "grid", gap: 6 }}>
                 {arr(inc.evidence)
@@ -115,7 +133,8 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
                   .map((e, i) => (
                     <details key={i} className="inc-ev">
                       <summary className="tiny">
-                        {str(e.kind) ?? str(e.label) ?? `evidence ${i + 1}`} · {formatDateTime(str(e.timestamp) ?? str(e.at))}
+                        {str(e.kind) ?? str(e.label) ?? t("incidents.drawer.evidence_n", "evidence {n}", { n: i + 1 })} ·{" "}
+                        {formatDateTime(str(e.timestamp) ?? str(e.at))}
                       </summary>
                       <div style={{ marginTop: 4 }}>
                         <JsonBlock value={e} maxChars={1500} />
@@ -125,50 +144,57 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
               </div>
             )}
           </Panel>
-          <Panel title="Recovery plan" tight>
+          <Panel title={t("incidents.drawer.recovery_plan", "Recovery plan")} tight>
             <JsonBlock value={inc.recovery_plan} maxChars={1500} />
           </Panel>
         </div>
       ) : tab === "timeline" ? (
-        <Panel title="Incident timeline" tight>
+        <Panel title={t("incidents.drawer.timeline", "Incident timeline")} tight>
           {arr(inc.timeline).length === 0 ? (
-            <EmptyState message="No timeline events recorded." />
+            <EmptyState message={t("incidents.drawer.no_timeline", "No timeline events recorded.")} />
           ) : (
-            <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "detail" }]}>
+            <DataTable
+              headers={[
+                { label: t("incidents.th.at", "at") },
+                { label: t("incidents.th.event", "event") },
+                { label: t("incidents.th.detail", "detail") },
+              ]}
+            >
               {arr(inc.timeline)
                 .slice()
                 .reverse()
                 .slice(0, 100)
-                .map((t: Row, i: number) => (
+                .map((t2: Row, i: number) => (
                   <tr key={i}>
-                    <td className="tiny">{formatDateTime(str(t.timestamp))}</td>
-                    <td className="small">{str(t.event) ?? str(t.event_type) ?? "—"}</td>
-                    <td className="tiny muted">{str(t.detail) ?? str(t.message) ?? ""}</td>
+                    <td className="tiny">{formatDateTime(str(t2.timestamp))}</td>
+                    <td className="small">{str(t2.event) ?? str(t2.event_type) ?? "—"}</td>
+                    <td className="tiny muted">{str(t2.detail) ?? str(t2.message) ?? ""}</td>
                   </tr>
                 ))}
             </DataTable>
           )}
           <div className="section-title" style={{ marginTop: 10 }}>
-            quarantine entries
+            {t("incidents.drawer.quarantine", "quarantine entries")}
           </div>
           {arr(inc.quarantine_entries).length === 0 ? (
-            <EmptyState message="Nothing quarantined." />
+            <EmptyState message={t("incidents.drawer.quarantine_none", "Nothing quarantined.")} />
           ) : (
             <JsonBlock value={inc.quarantine_entries} maxChars={2000} />
           )}
         </Panel>
       ) : tab === "traces" ? (
-        <Panel title="Value traces (how each number got here)" tight>
+        <Panel title={t("incidents.drawer.traces", "Value traces (how each number got here)")} tight>
           {arr(inc.value_traces).length === 0 ? (
-            <EmptyState message="No value traces recorded for this incident." />
+            <EmptyState message={t("incidents.drawer.no_traces", "No value traces recorded for this incident.")} />
           ) : (
             <div style={{ display: "grid", gap: 8 }}>
-              {arr(inc.value_traces).map((t: Row, i: number) => (
+              {arr(inc.value_traces).map((t2: Row, i: number) => (
                 <div key={i} className="inc-trace">
                   <div className="small">
-                    <b>{str(t.field) ?? "field"}</b> · <span className="muted tiny">{str(t.source) ?? "—"}</span>
+                    <b>{str(t2.field) ?? t("incidents.drawer.field_fallback", "field")}</b> ·{" "}
+                    <span className="muted tiny">{str(t2.source) ?? "—"}</span>
                   </div>
-                  <JsonBlock value={t.hops ?? t} maxChars={1200} />
+                  <JsonBlock value={t2.hops ?? t2} maxChars={1200} />
                 </div>
               ))}
             </div>
@@ -176,18 +202,21 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
         </Panel>
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
-          <Panel title="Report export (secret-masked)" tight>
+          <Panel title={t("incidents.drawer.report", "Report export (secret-masked)")} tight>
             {reportQ.isPending ? (
               <Skeleton count={2} />
             ) : reportQ.data?.available === false ? (
-              <EmptyState message={str(reportQ.data?.error) ?? "report unavailable"} />
+              <EmptyState message={str(reportQ.data?.error) ?? t("incidents.drawer.report_unavailable", "report unavailable")} />
             ) : (
               <>
                 <div className="tiny muted" style={{ marginBottom: 6 }}>
-                  incident_json + incident_markdown produced server-side (secret-masked).
+                  {t(
+                    "incidents.drawer.report_note",
+                    "incident_json + incident_markdown produced server-side (secret-masked).",
+                  )}
                 </div>
                 <details>
-                  <summary className="small">markdown report</summary>
+                  <summary className="small">{t("incidents.drawer.markdown_report", "markdown report")}</summary>
                   <pre tabIndex={0} className="inline-mono tiny" style={{ whiteSpace: "pre-wrap", maxHeight: 300, overflow: "auto" }}>
                     {reportQ.data?.markdown ?? "—"}
                   </pre>
@@ -195,17 +224,23 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
               </>
             )}
           </Panel>
-          <Panel title="Evidence bundle" tight>
+          <Panel title={t("incidents.drawer.bundle", "Evidence bundle")} tight>
             {zipQ.isPending ? (
               <Skeleton />
             ) : zipQ.data?.available === true ? (
               <dl className="kv">
                 <InfoRow label="zip_path" value={<span className="inline-mono tiny">{zipQ.data.zip_path ?? "—"}</span>} />
-                <InfoRow label="size" value={num(zipQ.data.size_bytes) === null ? "—" : `${formatNumber(num(zipQ.data.size_bytes)!, 0)} bytes`} />
-                <InfoRow label="note" value={zipQ.data.note ?? "—"} />
+                <InfoRow
+                  label={t("incidents.drawer.size", "size")}
+                  value={num(zipQ.data.size_bytes) === null ? "—" : t("incidents.drawer.size_value", "{n} bytes", { n: formatNumber(num(zipQ.data.size_bytes)!, 0) })}
+                />
+                <InfoRow label={t("incidents.drawer.note", "note")} value={zipQ.data.note ?? "—"} />
               </dl>
             ) : (
-              <EmptyState message="zip export not available" hint="the export route answered available:false" />
+              <EmptyState
+                message={t("incidents.drawer.zip_unavailable", "zip export not available")}
+                hint={t("incidents.drawer.zip_unavailable_hint", "the export route answered available:false")}
+              />
             )}
           </Panel>
         </div>
