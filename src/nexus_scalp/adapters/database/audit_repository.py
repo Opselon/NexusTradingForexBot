@@ -24,6 +24,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.adapters.database.audit_write_plane import (
+    AuditWritePlane,
+    SqliteAuditWriteBackend,
+)
 from nexus_scalp.adapters.database.broker_history import (
     create_history_tables,
     create_paper_executions_table,
@@ -191,17 +195,39 @@ def resolve_audit_db_url(db_url: str = _DEFAULT_AUDIT_DB_URL, config: Any = None
     """Resolves the database URL for AuditRepository (BUG-223 isolation contract).
 
     Precedence order:
-      1. Explicit `config` (DatabaseConfig): derives connect URL from config.
+      1. Explicit `config` (DatabaseConfig): derives connect URL from config —
+         honouring the config's PROVIDER (previously this branch hardcoded a
+         SQLite URL, so a PostgreSQL config was silently downgraded).
       2. Implicit default (`db_url == _DEFAULT_AUDIT_DB_URL`): honors `NEXUS_AUDIT_DB`
-         environment override if present (BUG-223 isolation seam);
+         environment override if present (BUG-223 isolation seam), then the
+         persisted provider setting (the app-level switch).
       3. Explicit `db_url` parameter: caller keeps full authority.
     """
     if config is not None:
+        provider = getattr(getattr(config, "provider", None), "value", "sqlite")
+        if str(provider).lower() in ("postgresql", "postgres", "pg"):
+            from nexus_scalp.database.config import build_postgres_url
+
+            return build_postgres_url(config)
         return f"sqlite:///{config.sqlite_connect_path}"
     if db_url == _DEFAULT_AUDIT_DB_URL:
         env_db = os.environ.get("NEXUS_AUDIT_DB", "").strip()
         if env_db:
             return f"sqlite:///{Path(env_db).as_posix()}"
+        # No explicit URL and no test seam: consult the persisted provider so a
+        # `nexus db-portability connect/switch` binds EVERY AuditRepository(), not
+        # only the ones that already pass a config. Placed strictly AFTER the
+        # NEXUS_AUDIT_DB seam so test isolation (BUG-223) keeps winning.
+        try:
+            from nexus_scalp.database.config import load_database_config
+
+            persisted = load_database_config("audit")
+            if getattr(persisted, "is_postgresql", False):
+                from nexus_scalp.database.config import build_postgres_url
+
+                return build_postgres_url(persisted)
+        except Exception:  # pragma: no cover - settings DB unavailable
+            pass
     return db_url
 
 
@@ -295,6 +321,27 @@ class AuditRepository:
     control flow (duplicate column/index), not swallowed errors.
     """
 
+    @staticmethod
+    def _detect_sqlite(db_url: str) -> bool:
+        """True when `db_url` addresses a SQLite database.
+
+        Recognised as SQLite:
+          * ``sqlite:///<path>`` and ``sqlite:///:memory:``;
+          * a bare filesystem path (no scheme at all) — call sites have
+            always been allowed to pass the path directly.
+
+        Everything else is another provider:
+          * a URL scheme (``postgres://``, ``postgresql://``);
+          * a libpq key=value DSN (``host=... dbname=...``) — PostgreSQL,
+            MySQL and friends speak this form and SQLite never does.
+        """
+        if "://" in db_url:
+            return db_url.split("://", 1)[0].lower() in ("sqlite", "file")
+        # A libpq-style DSN names a driver keyword: SQLite has no such form.
+        if "=" in db_url:
+            return False
+        return True
+
     def __init__(
         self,
         db_url: str = _DEFAULT_AUDIT_DB_URL,
@@ -306,7 +353,10 @@ class AuditRepository:
         purge_batch_size: int = 500,
     ) -> None:
         self._db_url = resolve_audit_db_url(db_url, config)
-        self._is_sqlite = self._db_url.startswith("sqlite")
+        # A bare filesystem path (no scheme) is a SQLite file: callers have
+        # always been allowed to pass the path directly. Only a URL with an
+        # explicit non-sqlite scheme means "another provider".
+        self._is_sqlite = self._detect_sqlite(self._db_url)
         self._db_path = self._db_url.replace("sqlite:///", "") if self._is_sqlite else ""
         # sqlite:///:memory: opens a PRIVATE empty DB per connection; the
         # background worker would never see the schema created here. Use a
@@ -339,12 +389,27 @@ class AuditRepository:
             conn_factory=_dl_conn_factory,
             is_sqlite=self._is_sqlite,
             db_path=self._db_path,
+            write_sink=self._dead_letter_write_sink(),
         )
 
         self._flush_interval = flush_interval_sec
         self._queue: queue.Queue[tuple[str, tuple]] = queue.Queue(maxsize=10000)
-        self._running = False
-        self._worker_thread: threading.Thread | None = None
+        # NOTE: ``_running`` is deliberately NOT set here. It is a property
+        # below delegating to the write plane: after DB-FABRIC-001 the worker
+        # lives in AuditWritePlane, and a stale constant False here broke
+        # BUG-297 connection caching in StrategyEvaluator (which gates
+        # handle reuse on ``audit_repo._running`` and was opening a fresh
+        # connect per call instead of reusing the cached one).
+        # ``_worker_thread`` is likewise a property below: callers/tests read
+        # ``repo._worker_thread`` to verify the consumer is bound and alive
+        # (BUG-288 handshake), and ``close()`` needs to join it.
+        # The provider-agnostic write plane owns the queue/worker/overflow
+        # machinery (see audit_write_plane). It is constructed here so this
+        # repository keeps its exact public surface, but the persistence
+        # destination is decided by the domain's provider, not by a hard
+        # `if sqlite` gate: under PostgreSQL the plane uses the fabric's
+        # pooled write backend instead of silently no-oping.
+        self._write_plane = self._build_write_plane()
         # =====================================================================
         # DATA-INTEGRITY METRICS (runtime safety mission, P0).
         # Financial record loss MUST be observable. These counters are the
@@ -423,7 +488,65 @@ class AuditRepository:
         self._last_snapshot_equity = 0.0
 
         self._setup_storage()
-        self._start_background_worker()
+        # Exactly ONE consumer of self._queue. Under SQLite the write plane
+        # owns the queue (its backend wraps this repository's single writer
+        # connection), so the legacy worker thread must NOT also start — two
+        # consumers of one queue race the batches and duplicate/drop rows.
+        # Under a pooled provider the plane is the sole consumer too.
+        self._write_plane.start()
+        self._legacy_worker_armed = True
+
+    @property
+    def _running(self) -> bool:
+        """Is the repository's background machinery live?
+
+        After DB-FABRIC-001 the queue/worker/overflow machinery moved into
+        :class:`AuditWritePlane`, so this delegates there. StrategyEvaluator
+        reads this flag to decide whether to cache its registry connection
+        (BUG-297: a stale ``False`` made it drop the cache and reconnect on
+        every pre-trade score lookup).
+        """
+        plane = getattr(self, "_write_plane", None)
+        if plane is not None and getattr(plane, "_running", False):
+            return True
+        return False
+
+    @_running.setter
+    def _running(self, value: bool) -> None:
+        """Delegate the running flag to the write plane (the worker owner).
+
+        Preserves the pre-existing write sites (``_start_background_worker``,
+        ``close``) that set this attribute directly; the plane is the single
+        source of truth after DB-FABRIC-001.
+        """
+        plane = getattr(self, "_write_plane", None)
+        if plane is not None:
+            plane._running = value
+
+    @property
+    def _worker_thread(self) -> threading.Thread | None:
+        """The background consumer thread (BUG-288 handshake: bound to the
+        queue at construction).
+
+        After DB-FABRIC-001 the worker lives in :class:`AuditWritePlane`;
+        delegating here keeps the historical surface (``close()`` joins it,
+        tests assert it is alive and cannot adopt a rebound queue).
+        """
+        plane = getattr(self, "_write_plane", None)
+        if plane is not None:
+            return getattr(plane, "_worker_thread", None)
+        return None
+
+    @_worker_thread.setter
+    def _worker_thread(self, value: threading.Thread | None) -> None:
+        """Delegate the worker thread slot to the write plane.
+
+        ``_start_background_worker`` (legacy fallback) and ``close()`` still
+        write this attribute; the plane owns the authoritative slot.
+        """
+        plane = getattr(self, "_write_plane", None)
+        if plane is not None:
+            plane._worker_thread = value
 
     def _setup_storage(self) -> None:
         """Initializes tables, indexes, and HFT performance pragmas."""
@@ -2230,6 +2353,11 @@ class AuditRepository:
         Bounded by `timeout_sec` so a stalled worker can never deadlock a
         live-path caller; returns True only when the queue fully drained.
         """
+        if not self._is_sqlite and getattr(self, "_write_plane", None) is not None:
+            # A pooled provider has its own queue + worker; the plane owns the
+            # drain contract.  Returning True here without draining would make
+            # "flush ok" vacuous (the row would never be guaranteed durable).
+            return self._write_plane.flush(timeout_sec=max(0.0, float(timeout_sec)))
         if not self._is_sqlite:
             return True
         try:
@@ -2250,6 +2378,132 @@ class AuditRepository:
     #: a timeout is loud but non-fatal (warning + pre-fix semantics remain).
     _WORKER_READY_TIMEOUT_SEC = 5.0
 
+    def _build_write_plane(self) -> AuditWritePlane:
+        """Constructs the provider-agnostic write plane for this domain.
+
+        SQLite keeps the historical model: one dedicated writer connection
+        (WAL single-writer) and the worker thread bound to this queue.
+        PostgreSQL builds the plane over the fabric's pooled write backend
+        so the same queue, overflow and dead-letter guarantees apply.
+        """
+        from nexus_scalp.adapters.database.audit_write_plane import (
+            AuditWritePlane,
+        )
+
+        def _get_flush_interval() -> float:
+            return float(self._flush_interval)
+
+        def _do_financial_overflow(
+            query: str, args: tuple, error: BaseException | None = None
+        ) -> None:
+            self._write_financial_overflow(query, args, error)
+
+        flush_interval = float(self._flush_interval)
+        if self._is_sqlite:
+            return AuditWritePlane(
+                queue=self._queue,
+                queue_resolver=lambda: self._queue,
+                backend_factory=lambda: SqliteAuditWriteBackend(
+                    self._connect_sqlite, busy_timeout=10.0
+                ),
+                dead_letter_store=self.dead_letter_store,
+                overflow_dir=self._overflow_dir(),
+                overflow_resolver=self._overflow_dir,
+                overflow_sink=_do_financial_overflow,
+                flush_interval=flush_interval,
+                flush_interval_resolver=_get_flush_interval,
+                on_metrics=self._apply_write_plane_metrics,
+            )
+
+        # Non-SQLite domain: the fabric supplies the pooled write backend.
+        pg_backend = self._build_pooled_write_backend()
+        if pg_backend is None:
+            # No fabric backend is configured (e.g. the domain is not yet
+            # provisioned for PostgreSQL). The plane still exists so callers
+            # see the documented metrics, but writes cannot be silently
+            # accepted: the backend raises on use and the caller's failure
+            # is loud. This is deliberately NOT the old silent no-op.
+            raise RuntimeError(
+                "AuditRepository configured for a non-SQLite provider, but no "
+                "pooled write backend is available for the audit domain. "
+                "Provision the domain via the database fabric (nexus db ...) "
+                "before switching providers."
+            )
+        return AuditWritePlane(
+            queue=self._queue,
+            queue_resolver=lambda: self._queue,
+            backend_factory=lambda: pg_backend,
+            dead_letter_store=self.dead_letter_store,
+            overflow_dir=self._overflow_dir(),
+            overflow_resolver=self._overflow_dir,
+            flush_interval=flush_interval,
+            flush_interval_resolver=_get_flush_interval,
+            on_metrics=self._apply_write_plane_metrics,
+        )
+
+    def _build_pooled_write_backend(self) -> Any:
+        """Resolves the fabric's pooled write backend for the audit domain.
+
+        Auto-provisions the domain the first time a process touches a pooled
+        provider: without this, a bare ``AuditRepository()`` on a PostgreSQL
+        default would raise "no pooled write backend" on the very first boot,
+        since nothing else had registered the domain yet. Falls back to
+        ``None`` (loud, not silent) when provisioning itself fails.
+        """
+        try:
+            from nexus_scalp.database.fabric import get_domain_backend, provision_domain
+
+            backend = get_domain_backend("audit", readonly=False)
+            if backend is not None:
+                return backend
+            # Not provisioned in this process — bootstrap it from the resolved
+            # DSN (includes the secret, injected by resolve_audit_db_url).
+            if not self._db_url or self._is_sqlite:
+                return None
+            return provision_domain("audit", self._db_url, min_size=1, max_size=4)
+        except Exception as exc:
+            logger.error(
+                "[DB-FABRIC] audit domain provisioning failed: %s",
+                exc,
+            )
+            return None
+
+    def _dead_letter_write_sink(self) -> Any:
+        """Dead-letter persistence sink for non-SQLite domains.
+
+        Routes the dead-letter INSERT through the fabric's write plane so a
+        PostgreSQL domain keeps durable failure evidence instead of the old
+        silent counter increment.
+        """
+        if self._is_sqlite:
+            return None
+        try:
+            from nexus_scalp.database.fabric import get_domain_backend
+
+            backend = get_domain_backend("audit", readonly=False)
+        except Exception:
+            return None
+        if backend is None:
+            return None
+
+        def _sink(sql: str, args: tuple) -> bool:
+            try:
+                backend.execute(sql, args)
+                return True
+            except Exception:
+                return False
+
+        return _sink
+
+    def _apply_write_plane_metrics(self, metrics: dict[str, Any]) -> None:
+        """Pulls the plane's durability counters onto this repository.
+
+        The runtime-safety tests and debug_snapshot read these attributes on
+        the repository, so the plane must not own the only copy.
+        """
+        for key, value in metrics.items():
+            setattr(self, key, value)
+
     def _start_background_worker(self) -> None:
         """Starts the dedicated background thread for zero-latency database inserts.
 
@@ -2265,13 +2519,19 @@ class AuditRepository:
         The constructor now blocks until the worker confirms capture, so
         "repo object published" implies "writer bound to self._queue".
         """
+        # Retired in favour of the provider-agnostic write plane, which owns
+        # the queue, the worker thread and the backend (see __init__). Kept as
+        # the armament surface so a caller that rebinds self._queue before the
+        # plane exists still gets a consumer; the plane is the authority.
+        if getattr(self, "_write_plane", None) is not None:
+            return
         self._running = True
         ready = threading.Event()
         self._worker_thread = threading.Thread(
             target=self._process_queue_worker,
             args=(ready,),
             daemon=True,
-            name="AuditDB_Worker",
+            name="AuditDB_LegacyWorker",
         )
         self._worker_thread.start()
         if not ready.wait(timeout=self._WORKER_READY_TIMEOUT_SEC):
@@ -2481,54 +2741,17 @@ class AuditRepository:
     _ORDERS_DEDUP_REPAIR_BATCH = 500
 
     def _enqueue_financial(self, query: str, args: tuple[Any, ...]) -> None:
-        """Enqueue a CRITICAL FINANCIAL audit row. Never silently drops.
+        """Enqueue a CRITICAL financial row. Delegates to the write plane.
 
-        Order of defense:
-        1. bounded blocking put (backpressure — producer waits for capacity
-           up to ~2 flush intervals);
-        2. durable overflow file (the row survives even if the queue never
-           drains and the process dies);
-        3. metrics + CRITICAL log (observable loss of durability).
+        Kept as the repository's entry point so the ~30 producers keep their
+        call sites byte-identical; the plane owns the durability contract.
+
+        R1 (perf wave): the backpressure window the plane applies is
+        ``min(self._flush_interval * 2.0, 0.1)`` — bounded blocking put with
+        no hard 2-second floor, so a saturated queue can never wedge the tick
+        path for more than 100 ms while durable overflow still wins.
         """
-        backpressured = False
-        if self._queue.qsize() >= 8000:
-            # Soft watermark: capacity pressure is observable even before
-            # any blocking starts.
-            self.financial_queue_backpressure += 1
-        try:
-            if self._queue.qsize() >= 9000:
-                # PERF-WAVE R1 (P1, docs/audit/wave_20260914/10_performance.md):
-                # the blocking window is the audit FLUSH cadence, never a
-                # 2-second floor — log_signal runs on the tick path, so the
-                # old max(flush*2, 2.0) could stall the hot path 20x longer
-                # than the comment at the class header claimed ("worst case
-                # costs one flush interval"). Backpressure still exists (the
-                # put blocks + counter + WARNING below); overflow still wins
-                # if capacity never frees within the bounded window.
-                self._queue.put((query, args), timeout=min(self._flush_interval * 2.0, 0.1))
-                backpressured = True
-            else:
-                self._queue.put_nowait((query, args))
-            if backpressured:
-                self.financial_queue_backpressure += 1
-                logger.warning(
-                    "Financial audit enqueue backpressured (queue near full; "
-                    "producer waited for capacity) qsize=%d",
-                    self._queue.qsize(),
-                )
-            return
-        except queue.Full:
-            self.financial_queue_backpressure += 1
-        except Exception as put_err:
-            self.financial_events_failed += 1
-            logger.error("Financial audit enqueue failed: %s", put_err)
-            self.record_dead_letter(
-                query=query, args=args, error=put_err, payload_note="enqueue exception"
-            )
-            return
-        # Queue stayed full past the bounded wait -> durable overflow file.
-        self.financial_events_overflowed += 1
-        self._write_financial_overflow(query, args, error=None)
+        self._write_plane.enqueue_financial(query, args)
 
     def _write_financial_overflow(
         self, query: str, args: tuple[Any, ...], error: BaseException | None
@@ -2739,19 +2962,8 @@ class AuditRepository:
             return -1
 
     def _enqueue_telemetry(self, query: str, args: tuple[Any, ...]) -> None:
-        """Enqueue a NON-CRITICAL telemetry row: dropable by design.
-
-        Telemetry loss is observable (telemetry_dropped) but never blocks
-        the producer and never triggers fail-safe behavior.
-        """
-        try:
-            self._queue.put_nowait((query, args))
-        except queue.Full:
-            self.telemetry_dropped += 1
-            logger.error(
-                "Audit telemetry queue full — counter dropped (telemetry_dropped=%d)",
-                self.telemetry_dropped,
-            )
+        """Enqueue a NON-CRITICAL telemetry row. Delegates to the write plane."""
+        self._write_plane.enqueue_telemetry(query, args)
 
     def log_signal(self, proposal: TradeProposal) -> None:
         """Zero-latency async logging of generated trade signals.
@@ -2765,8 +2977,6 @@ class AuditRepository:
           never create duplicate decision rows across restart/races — no
           synchronous SELECT in the hot path, no in-memory state to lose.
         """
-        if not self._is_sqlite:
-            return
 
         reason_code = str(proposal.reason_code or "MODEL_SIGNAL")
         if reason_code in self._GUARD_TELEMETRY_CODES:
@@ -2947,8 +3157,6 @@ class AuditRepository:
         execution_id: str | None = None,
     ) -> None:
         """Zero-latency async logging of order lifecycle events."""
-        if not self._is_sqlite:
-            return
 
         query = """
             INSERT INTO audit_orders
@@ -2979,8 +3187,6 @@ class AuditRepository:
 
     def log_execution(self, order: TradeOrder, status: str) -> None:
         """Zero-latency async logging of order execution attempts."""
-        if not self._is_sqlite:
-            return
 
         query = """
             INSERT INTO audit_executions
@@ -3015,8 +3221,6 @@ class AuditRepository:
         otherwise) so the accounting layer can exclude simulation plateaus
         from drawdown/equity metrics without rewriting history.
         """
-        if not self._is_sqlite:
-            return
 
         now = time.time()
         balance_changed = abs(account.balance - self._last_snapshot_balance) > 0.01
@@ -3071,8 +3275,6 @@ class AuditRepository:
         'SHADOW' — '' for legacy rows. AccountingCore excludes PAPER provenance
         from every performance metric; the raw row itself is never rewritten.
         """
-        if not self._is_sqlite:
-            return
 
         query = """
             INSERT INTO audit_ledger
@@ -3427,8 +3629,6 @@ class AuditRepository:
         are preserved from the OPENED row whenever the caller passes blanks, so a close
         that lacks context never erases what was captured at entry.
         """
-        if not self._is_sqlite:
-            return
 
         # ---------------------------------------------------------------------
         # TASK 4 FIX: PnL / friction accounting.
@@ -3988,6 +4188,15 @@ class AuditRepository:
         """
         logger.info("Initiating graceful shutdown of Audit Database. Flushing queues...")
         self._running = False
+        # The write plane owns the queue/worker/backend; drain it bounded.
+        plane, self._write_plane = self._write_plane, None
+        if plane is not None:
+            plane_drained = plane.stop(max(self._CLOSE_FLUSH_TIMEOUT_SEC, 1.0))
+            if not plane_drained:
+                logger.warning(
+                    "AUDIT close timed out after %.1fs — pending rows remain",
+                    self._CLOSE_FLUSH_TIMEOUT_SEC,
+                )
         if self._worker_thread and self._worker_thread.is_alive():
             drained = self._join_queue_bounded(self._CLOSE_FLUSH_TIMEOUT_SEC)
             self._worker_thread.join(timeout=self._CLOSE_FLUSH_TIMEOUT_SEC)

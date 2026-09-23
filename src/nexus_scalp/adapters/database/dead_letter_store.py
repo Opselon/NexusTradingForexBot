@@ -19,12 +19,27 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.adapters.audit_db")
+
+
+def _derived_table_name(query: str, table_name: str) -> str:
+    """Derives the failing table from the INSERT target when not provided."""
+    if table_name:
+        return table_name
+    q = (query or "").strip().upper()
+    if q.startswith("INSERT INTO") or q.startswith("REPLACE INTO"):
+        rest = (
+            query.strip()[len("INSERT INTO ") :].split()[0]
+            if q.startswith("INSERT INTO")
+            else query.strip()[len("REPLACE INTO ") :].split()[0]
+        )
+        return rest.strip('"`[]')
+    return ""
 
 
 class DeadLetterStore:
@@ -70,17 +85,37 @@ class DeadLetterStore:
     def __init__(
         self,
         *,
-        conn_factory: Callable[[str], sqlite3.Connection],
-        is_sqlite: bool,
-        db_path: str,
+        conn_factory: Callable[[str], sqlite3.Connection] | None = None,
+        is_sqlite: bool = True,
+        db_path: str = "",
         max_rows: int = DEFAULT_MAX_ROWS,
         prune_batch: int = DEFAULT_PRUNE_BATCH,
+        write_sink: Callable[[str, Sequence[Any]], bool] | None = None,
     ) -> None:
+        """One dead-letter store.
+
+        Persistence is supplied by exactly one of:
+
+        * ``conn_factory`` — the legacy SQLite path (opens a connection on
+          the owner's DB path; ``create_table`` is called on the owner's
+          setup connection); or
+        * ``write_sink`` — a provider-supplied sink for the INSERT, used when
+          the owning domain is NOT SQLite (e.g. the fabric's pooled
+          PostgreSQL write plane).  It receives ``(sql, args)`` and returns
+          whether the row landed.
+
+        Before the database fabric, ``is_sqlite=False`` meant every
+        dead-letter call silently incremented a counter and the failing row
+        was lost.  That is the portability gap this closes: a PostgreSQL
+        audit domain now dead-letters durably through the write plane.
+        """
         self._conn_factory = conn_factory
-        self._is_sqlite = is_sqlite
+        self._is_sqlite = bool(is_sqlite)
         self._db_path = db_path
         self._max_rows = max(0, int(max_rows))
         self._prune_batch = max(1, int(prune_batch))
+        # Provider sink for non-SQLite domains (see class docstring).
+        self._write_sink = write_sink
         # None = never ran (first prune is always due — do NOT compare a
         # 0.0 sentinel against time.monotonic(): on a freshly booted host
         # monotonic < interval and the first pass would be silently skipped).
@@ -99,6 +134,15 @@ class DeadLetterStore:
         # Rows removed by retention (observable: growth is bounded AND the
         # pruning is visible in debug_snapshot consumers of this store).
         self.dead_letter_pruned_rows: int = 0
+
+    def next_seq(self) -> int:
+        """Next dead-letter sequence number (overflow-file naming uses it)."""
+        self._dead_letter_seq += 1
+        return self._dead_letter_seq
+
+    def json_safe_args(self, args: tuple[Any, ...]) -> str:
+        """Public alias of the static encoder (write plane consumes it)."""
+        return self._json_safe_args(args)
 
     # ---------------------------------------------------------------------
     # SCHEMA (moved VERBATIM from AuditRepository._create_sqlite_tables —
@@ -177,13 +221,16 @@ class DeadLetterStore:
         failure classification, timestamps and a producer note. Never raises;
         on catastrophic failure the loss is still counted in metrics and
         logged CRITICAL.
+
+        Persistence routes by provider: SQLite uses the injected connection
+        factory; any other provider uses the write sink (the fabric's pooled
+        write plane). Before the database fabric, a non-SQLite domain
+        silently counted the row and lost it — the exact "no silent
+        financial drop" contract violation this closes.
         """
-        if not self._is_sqlite:
-            self.audit_dead_letter_rows += 1
-            return False
-        self._dead_letter_seq += 1
         from datetime import UTC, datetime
 
+        self._dead_letter_seq += 1
         err_type = type(error).__name__ if error is not None else "UnknownError"
         err_msg = str(error)[:2000] if error is not None else ""
         sql = """
@@ -192,33 +239,56 @@ class DeadLetterStore:
                  error_message, retry_count, sequence_no, payload_note)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        try:
-            # Derive table_name from the INSERT target when not provided.
-            derived = table_name
-            if not derived:
-                q = (query or "").strip().upper()
-                if q.startswith("INSERT INTO") or q.startswith("REPLACE INTO"):
-                    rest = (
-                        query.strip()[len("INSERT INTO ") :].split()[0]
-                        if q.startswith("INSERT INTO")
-                        else query.strip()[len("REPLACE INTO ") :].split()[0]
-                    )
-                    derived = rest.strip('"`[]')
-            with self._conn_factory(self._db_path) as conn:
-                conn.execute(
-                    sql,
-                    (
-                        datetime.now(UTC).isoformat(),
-                        derived,
-                        str(query or "")[:8000],
-                        self._json_safe_args(args or ()),
-                        err_type,
-                        err_msg,
-                        int(retry_count),
-                        self._dead_letter_seq,
-                        str(payload_note or "")[:1000],
-                    ),
+        args_tuple = (
+            datetime.now(UTC).isoformat(),
+            _derived_table_name(query, table_name),
+            str(query or "")[:8000],
+            self._json_safe_args(args or ()),
+            err_type,
+            err_msg,
+            int(retry_count),
+            self._dead_letter_seq,
+            str(payload_note or "")[:1000],
+        )
+
+        if not self._is_sqlite:
+            if self._write_sink is None:
+                # A non-SQLite store without a sink cannot persist: the loss
+                # is counted and logged CRITICAL, never silent.
+                self.audit_dead_letter_rows += 1
+                logger.critical(
+                    "DEAD-LETTER WRITE IMPOSSIBLE — no write sink on a "
+                    "non-SQLite dead-letter store; financial record "
+                    "unrecoverable. query=%s",
+                    (query or "")[:200],
                 )
+                return False
+            try:
+                ok = bool(self._write_sink(sql, args_tuple))
+            except Exception as sink_err:
+                self.audit_dead_letter_rows += 1
+                logger.critical(
+                    "DEAD-LETTER WRITE FAILED — financial record unrecoverable. "
+                    "query=%s error_type=%s sink_error=%s",
+                    (query or "")[:200],
+                    err_type,
+                    sink_err,
+                )
+                return False
+            if not ok:
+                self.audit_dead_letter_rows += 1
+                logger.critical(
+                    "DEAD-LETTER WRITE REJECTED by provider sink — financial "
+                    "record unrecoverable. query=%s",
+                    (query or "")[:200],
+                )
+            else:
+                self.audit_dead_letter_rows += 1
+            return ok
+
+        try:
+            with self._conn_factory(self._db_path) as conn:
+                conn.execute(sql, args_tuple)
                 conn.commit()
             self.audit_dead_letter_rows += 1
             self._prune_if_due()
