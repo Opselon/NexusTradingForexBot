@@ -8,7 +8,7 @@
  * MSLIE vector exposed read-only.
  */
 
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import {
@@ -26,6 +26,44 @@ import { formatDateTime, formatNumber, formatPrice } from "@/lib/format";
 import { CommandResultLine, FreshnessCaption, InfoRow, JsonBlock, StatusPill } from "../../research/ui/lane5Kit";
 import { arr, bool, num, obj, str, toZoneRow, toggleVerdict } from "../model";
 import { liquidityQueries, liquidityUseCases } from "../useCases";
+
+/** Memoized liquidity-map row (20 visible of N). Primitive props only: the
+ *  shell re-renders every second and the panel re-renders every 15s poll —
+ *  neither should re-render 6 cells x 20 rows. */
+const ZoneRow = memo(function ZoneRow({
+  side,
+  price,
+  timeframe,
+  tests,
+  probability,
+  rank,
+}: {
+  side: string | null;
+  price: number | null;
+  timeframe: string | null;
+  tests: number | null;
+  probability: number | null;
+  rank: string | null;
+}) {
+  return (
+    <tr>
+      <td className="tiny">{side ?? "—"}</td>
+      <td className="num tiny">{formatPrice(price, 2)}</td>
+      <td className="tiny">{timeframe ?? "—"}</td>
+      <td className="num tiny">{tests ?? "—"}</td>
+      <td
+        className="num tiny"
+        style={{
+          background:
+            probability !== null ? `color-mix(in srgb, var(--accent) ${Math.min(60, Math.round((probability ?? 0) * 60))}%, transparent)` : undefined,
+        }}
+      >
+        {probability === null ? "—" : `${(probability * 100).toFixed(0)}%`}
+      </td>
+      <td className="tiny">{rank ?? "—"}</td>
+    </tr>
+  );
+});
 
 export default function LiquidityPage(props: ShellPageProps) {
   void props;
@@ -59,11 +97,14 @@ export default function LiquidityPage(props: ShellPageProps) {
 
   const s = stateQ.data;
   const enabled = bool(s?.enabled) ?? false;
-  const zones = arr(mslieQ.data?.liquidity_map).map(toZoneRow);
-  const sweep = obj(mslieQ.data?.last_sweep);
-  const pools = arr(s?.pools);
-  const featureNames = s?.feature_names ?? Object.keys(obj(s?.features));
-  const featureMap = obj(s?.features);
+  // Derived rows are memoized: the shell ticks every second and the state
+  // polls every 15s — neither should re-map/sort the full map payload.
+  const zones = useMemo(() => arr(mslieQ.data?.liquidity_map).map(toZoneRow), [mslieQ.data]);
+  const rankedZones = useMemo(() => [...zones].sort((a, b) => (b.probability ?? 0) - (a.probability ?? 0)).slice(0, 20), [zones]);
+  const sweep = useMemo(() => obj(mslieQ.data?.last_sweep), [mslieQ.data]);
+  const pools = useMemo(() => arr(s?.pools), [s]);
+  const featureNames = useMemo(() => s?.feature_names ?? Object.keys(obj(s?.features)), [s]);
+  const featureMap = useMemo(() => obj(s?.features), [s]);
 
   return (
     <div>
@@ -129,7 +170,11 @@ export default function LiquidityPage(props: ShellPageProps) {
           {stateQ.isPending ? (
             <Skeleton count={4} />
           ) : stateQ.isError ? (
-            <ErrorState message={stateQ.error instanceof Error ? stateQ.error.message : "state endpoint failed"} onRetry={() => void stateQ.refetch()} />
+            <ErrorState
+              message={stateQ.error instanceof Error ? stateQ.error.message : "state endpoint failed"}
+              requestId={(stateQ.error as { requestId?: string } | null)?.requestId ?? null}
+              onRetry={() => void stateQ.refetch()}
+            />
           ) : featureNames.length === 0 ? (
             <EmptyState message="No feature values reported." hint={s?.reason ?? "governor snapshot empty — check enabled/available above"} />
           ) : (
@@ -149,8 +194,16 @@ export default function LiquidityPage(props: ShellPageProps) {
         </Panel>
 
         <Panel title="Liquidity pools (governor snapshot)" tight>
-          {pools.length === 0 ? (
-            stateQ.isPending ? <Skeleton count={3} /> : <EmptyState message="No pools in the current snapshot (engine not running or features disabled)." />
+          {stateQ.isPending ? (
+            <Skeleton count={3} />
+          ) : stateQ.isError ? (
+            <ErrorState
+              message={stateQ.error instanceof Error ? stateQ.error.message : "state endpoint failed"}
+              requestId={(stateQ.error as { requestId?: string } | null)?.requestId ?? null}
+              onRetry={() => void stateQ.refetch()}
+            />
+          ) : pools.length === 0 ? (
+            <EmptyState message="No pools in the current snapshot." hint="engine not running or liquidity features disabled — see governor status above" />
           ) : (
             <DataTable headers={[{ label: "side" }, { label: "source" }, { label: "state" }, { label: "price", num: true }]}>
               {pools.slice(0, 24).map((p, i) => (
@@ -177,7 +230,11 @@ export default function LiquidityPage(props: ShellPageProps) {
         {mslieQ.isPending ? (
           <Skeleton count={3} />
         ) : mslieQ.isError ? (
-          <ErrorState message={mslieQ.error instanceof Error ? mslieQ.error.message : "mslie endpoint failed"} onRetry={() => void mslieQ.refetch()} />
+          <ErrorState
+            message={mslieQ.error instanceof Error ? mslieQ.error.message : "mslie endpoint failed"}
+            requestId={(mslieQ.error as { requestId?: string } | null)?.requestId ?? null}
+            onRetry={() => void mslieQ.refetch()}
+          />
         ) : (
           <div className="grid cols-2">
             <div>
@@ -186,29 +243,17 @@ export default function LiquidityPage(props: ShellPageProps) {
                 <EmptyState message="No liquidity zones mapped yet (engine STANDBY until bars arrive)." />
               ) : (
                 <DataTable headers={[{ label: "side" }, { label: "price", num: true }, { label: "tf" }, { label: "tests", num: true }, { label: "prob", num: true }, { label: "rank" }]}>
-                  {[...zones]
-                    .sort((a, b) => (b.probability ?? 0) - (a.probability ?? 0))
-                    .slice(0, 20)
-                    .map((z, i) => (
-                      <tr key={i}>
-                        <td className="tiny">{z.side ?? "—"}</td>
-                        <td className="num tiny">{formatPrice(z.price, 2)}</td>
-                        <td className="tiny">{z.timeframe ?? "—"}</td>
-                        <td className="num tiny">{z.tests ?? "—"}</td>
-                        <td
-                          className="num tiny"
-                          style={{
-                            background:
-                              z.probability !== null
-                                ? `color-mix(in srgb, var(--accent) ${Math.min(60, Math.round((z.probability ?? 0) * 60))}%, transparent)`
-                                : undefined,
-                          }}
-                        >
-                          {z.probability === null ? "—" : `${(z.probability * 100).toFixed(0)}%`}
-                        </td>
-                        <td className="tiny">{z.rank ?? "—"}</td>
-                      </tr>
-                    ))}
+                  {rankedZones.map((z, i) => (
+                    <ZoneRow
+                      key={`${z.price ?? "x"}|${z.side ?? ""}|${z.timeframe ?? ""}|${i}`}
+                      side={z.side}
+                      price={z.price}
+                      timeframe={z.timeframe}
+                      tests={z.tests}
+                      probability={z.probability}
+                      rank={z.rank}
+                    />
+                  ))}
                 </DataTable>
               )}
             </div>
@@ -240,8 +285,16 @@ export default function LiquidityPage(props: ShellPageProps) {
       <Panel title="MSLIE feature vector (model input, read-only)" tight>
         {vectorQ.isPending ? (
           <Skeleton count={2} />
+        ) : vectorQ.isError ? (
+          <ErrorState
+            message={vectorQ.error instanceof Error ? vectorQ.error.message : "mslie feature vector request failed"}
+            requestId={(vectorQ.error as { requestId?: string } | null)?.requestId ?? null}
+            onRetry={() => void vectorQ.refetch()}
+          />
         ) : vectorQ.data?.available === false ? (
-          <EmptyState message={vectorQ.data.reason ?? "no vector yet"} />
+          <EmptyState message={vectorQ.data.reason ?? "no vector yet"} hint="/api/v1/liquidity/mslie/features answers available:false until warmup completes" />
+        ) : vectorQ.data?.vector === undefined ? (
+          <EmptyState message="Vector payload empty." hint="/api/v1/liquidity/mslie/features returned no vector" />
         ) : (
           <JsonBlock value={vectorQ.data?.vector} maxChars={4000} />
         )}
