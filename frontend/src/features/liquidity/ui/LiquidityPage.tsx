@@ -313,7 +313,7 @@ export default function LiquidityPage(props: ShellPageProps) {
             await cmd.run(async () => {
               const res = await liquidityUseCases.toggle(target);
               const v = toggleVerdict(res);
-              if (!v.ok) return { ok: false, success: false, message: v.message, status: 500 };
+              if (!v.ok) return { ok: false, success: false, message: v.message === "Backend refused the toggle." ? t("liquidity.feedback.refused", "Backend refused the toggle.") : v.message, status: 500 };
               const state = res.enabled ? t("liquidity.feedback.enabled", "ENABLED") : t("liquidity.feedback.disabled", "DISABLED");
               const ver = res.algorithm_version ?? t("liquidity.feedback.version_unknown", "version not reported");
               const message = t("liquidity.feedback.toggled", "Liquidity Intelligence now {state} (source: {src}, {ver})", {

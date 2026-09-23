@@ -65,4 +65,5 @@ export const MESSAGES: FeatureMessages = {
   "liquidity.feedback.disabled": { fa: "غیرفعال", de: "DEAKTIV", es: "DESACTIVADO", ar: "معطّل" },
   "liquidity.feedback.version_unknown": { fa: "نسخه گزارش نشده است", de: "Version nicht gemeldet", es: "versión no reportada", ar: "لم يتم الإبلاغ عن الإصدار" },
   "liquidity.feedback.toggled": { fa: "هوش نقدینگی اکنون {state} است (منبع: {src}، {ver})", de: "Liquiditäts-Intelligenz jetzt {state} (Quelle: {src}, {ver})", es: "inteligencia de liquidez ahora {state} (fuente: {src}, {ver})", ar: "ذكاء السيولة الآن {state} (المصدر: {src}، {ver})" },
+  "liquidity.feedback.refused": { fa: "بک‌اند تغییر وضعیت را رد کرد.", de: "Das Backend hat den Umschalten abgelehnt.", es: "El backend rechazó el cambio de estado.", ar: "رفض الخادم التبديل." },
 };
