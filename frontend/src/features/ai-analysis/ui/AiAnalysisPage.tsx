@@ -93,6 +93,35 @@ export default function AiAnalysisPage(props: ShellPageProps) {
     [historyQ.data?.items],
   );
 
+  // vizMath/countRows/orderHistory call-site memoization (contract 2.3: pure
+  // .ts model functions get their memo WHERE the component re-runs them).
+  // Every dep is exactly the payload slice the derivation reads; the rendered
+  // values are byte-for-byte what the inline calls produced at base.
+  const statsKpi = useMemo(() => actionKpi(statsQ.data?.by_action), [statsQ.data]);
+  const statsTop = useMemo(() => topEntry(statsQ.data?.by_stage), [statsQ.data]);
+  const stageRows = useMemo(() => countRows(statsQ.data?.by_stage), [statsQ.data]);
+  const reasonRows = useMemo(() => countRows(reasonsQ.data?.reasons), [reasonsQ.data]);
+  const historyRows = useMemo(() => orderHistory(historyQ.data?.items ?? []), [historyQ.data?.items]);
+  // Shadow tab: Object.entries/slice chains over payload maps, same optional-
+  // chain deps shape the base timeline memo uses.
+  const shadowSummaryEntries = useMemo(
+    () => Object.entries(obj(shadowQ.data?.summary)).slice(0, 14),
+    [shadowQ.data?.summary],
+  );
+  const shadowGates = useMemo(
+    () =>
+      Object.entries(obj(shadowQ.data?.disagreement_counts)).map(([k, v]) => ({
+        name: k,
+        status: "INFO",
+        reason: String(v),
+      })),
+    [shadowQ.data?.disagreement_counts],
+  );
+  const shadowAlerts = useMemo(
+    () => (shadowQ.data?.drift_alerts ?? []).slice(0, 12),
+    [shadowQ.data?.drift_alerts],
+  );
+
   return (
     <div>
       <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
@@ -207,8 +236,8 @@ export default function AiAnalysisPage(props: ShellPageProps) {
           ) : (
             (() => {
               const st = statsQ.data;
-              const kpi = actionKpi(st?.by_action);
-              const top = topEntry(st?.by_stage);
+              const kpi = statsKpi;
+              const top = statsTop;
               const pct = (n: number) => (kpi.total > 0 ? `${((n / kpi.total) * 100).toFixed(1)}%` : "—");
               return (
                 <>
@@ -231,7 +260,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
                     </Panel>
                     <Panel title="NO_TRADE reasons" right={<span className="tiny faint">{(reasonsQ.data?.total ?? 0).toLocaleString()} in ledger</span>} tight>
                       <div className="panel-body">
-                        <BarList rows={countRows(reasonsQ.data?.reasons)} tone="var(--amber)" max={8} />
+                        <BarList rows={reasonRows} tone="var(--amber)" max={8} />
                       </div>
                     </Panel>
                   </div>
@@ -239,7 +268,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
                   <div className="grid cols-2">
                     <Panel title="Decision stage distribution" right={<span className="tiny faint">sorted by count — backend returns no stage order</span>} tight>
                       <div className="panel-body">
-                        <BarList rows={countRows(st?.by_stage)} tone="var(--violet)" max={20} />
+                        <BarList rows={stageRows} tone="var(--violet)" max={20} />
                       </div>
                     </Panel>
                     <Panel
@@ -278,7 +307,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
                     { label: "" },
                   ]}
                 >
-                  {orderHistory(historyQ.data?.items ?? []).map((s: SignalDto, i: number) => (
+                  {historyRows.map((s: SignalDto, i: number) => (
                     <tr key={s.request_id ?? i}>
                       <td className="inline-mono tiny">{str(s.request_id)?.slice(0, 10) ?? "—"}</td>
                       <td className="small">{s.symbol}</td>
@@ -337,16 +366,14 @@ export default function AiAnalysisPage(props: ShellPageProps) {
                 <div>
                   <div className="section-title">summary</div>
                   <dl className="kv">
-                    {Object.entries(obj(shadowQ.data?.summary))
-                      .slice(0, 14)
-                      .map(([k, v]) => (
+                    {shadowSummaryEntries.map(([k, v]) => (
                         <InfoRow key={k} label={k} value={typeof v === "object" ? "…" : String(v)} />
                       ))}
                   </dl>
                   <div className="section-title" style={{ marginTop: 10 }}>
                     disagreement counts
                   </div>
-                  <GateStepper gates={Object.entries(obj(shadowQ.data?.disagreement_counts)).map(([k, v]) => ({ name: k, status: "INFO", reason: String(v) }))} />
+                  <GateStepper gates={shadowGates} />
                 </div>
                 <div>
                   <div className="section-title">drift alerts (latest 25)</div>
@@ -354,7 +381,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
                     <EmptyState message="No drift alerts recorded." />
                   ) : (
                     <DataTable headers={[{ label: "feature" }, { label: "kind" }, { label: "value", num: true }, { label: "at" }]}>
-                      {(shadowQ.data?.drift_alerts ?? []).slice(0, 12).map((a, i) => (
+                      {shadowAlerts.map((a, i) => (
                         <tr key={i}>
                           <td className="tiny">{str(a.feature) ?? str(a.name) ?? "—"}</td>
                           <td className="tiny">{str(a.kind) ?? str(a.alert_type) ?? "—"}</td>
