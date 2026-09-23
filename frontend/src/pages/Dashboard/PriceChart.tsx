@@ -28,6 +28,7 @@ import type { Bar } from "@/types/domain";
 import type { OverlayLine, OverlayRect, OverlayOrderLines } from "../_shared/contracts";
 import { useRealtimeVersion } from "@/hooks/useRealtime";
 import { formatPrice } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import { AXIS_W, PAD_LEFT, paintChart, readPalette, type PainterScene } from "./chartPainter";
 import "@/pages/_shared/pages.css";
 import "./market-console.css";
@@ -86,6 +87,7 @@ export function PriceChart({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const rtVersion = useRealtimeVersion();
+  const t = useI18n((s) => s.t);
 
   // ---- data window (pure slice of backend bars — no gap fill, no synthesis)
   const shown = useMemo(() => bars.filter((b) => b.time).slice(-visible), [bars, visible]);
@@ -270,7 +272,7 @@ export function PriceChart({
   const headerNote = (
     <span className="l4-chip-row" style={{ marginInlineStart: "auto" }}>
       {[90, 180, 360, 720].map((o) => (
-        <button key={o} className={`btn small ${visible === o ? "primary" : "ghost"}`} onClick={() => setVisible(o)} title={`show last ${o} bars`}>
+        <button key={o} className={`btn small ${visible === o ? "primary" : "ghost"}`} onClick={() => setVisible(o)} title={t("dash.chart.show_bars", "show last {n} bars", { n: o })}>
           {o}
         </button>
       ))}
@@ -279,34 +281,34 @@ export function PriceChart({
 
   const stateBlock = error ? (
     <div className="l4-chart__state">
-      <span>chart history failed: {error}</span>
+      <span>{t("dash.chart.failed", "chart history failed: {e}", { e: error })}</span>
       {onRetry && (
         <button className="btn small" onClick={onRetry}>
-          Retry
+          {t("common.retry", "Retry")}
         </button>
       )}
     </div>
   ) : busy ? (
     <div className="l4-chart__state">
       <div className="spinner" />
-      <span>loading broker history…</span>
+      <span>{t("dash.chart.loading", "loading broker history…")}</span>
     </div>
   ) : (
     <div className="l4-chart__state">
       <span className="glyph">∅</span>
-      <span>Awaiting ticks — no candles yet. The chart renders only real MT5/engine bars, never synthetic ones.</span>
+      <span>{t("dash.chart.awaiting", "Awaiting ticks — no candles yet. The chart renders only real MT5/engine bars, never synthetic ones.")}</span>
     </div>
   );
 
   return (
-    <section className="l4-chart" aria-label="Price chart">
+    <section className="l4-chart" aria-label={t("dash.chart.aria", "Price chart")}>
       <div className="l4-chart__head">
         <span className="l4-chip accent">{symbol ?? "—"}</span>
         <span className="l4-chip">{timeframe ?? "—"}</span>
         <span className={`l4-chip ${source === "BROKER_NATIVE" ? "good" : source === "UNAVAILABLE" ? "bad" : "warn"}`}>
-          {source ?? "UNAVAILABLE"}
+          {source ?? t("dash.chart.unavailable", "UNAVAILABLE")}
         </span>
-        {stale && <span className="l4-chip warn">TICK STALE</span>}
+        {stale && <span className="l4-chip warn">{t("dash.chart.tick_stale", "TICK STALE")}</span>}
         {caption && <span className="timestamp-note">{caption}</span>}
         {headerNote}
       </div>
@@ -326,13 +328,17 @@ export function PriceChart({
           }}
           onMouseLeave={() => setHover(null)}
         >
-          <canvas ref={canvasRef} aria-label={`${shown.length} ${timeframe ?? ""} candles for ${symbol ?? "market"}`} role="img" />
+          <canvas
+            ref={canvasRef}
+            aria-label={t("dash.chart.canvas_aria", "{n} {tf} candles for {sym}", { n: shown.length, tf: timeframe ?? "", sym: symbol ?? "market" })}
+            role="img"
+          />
           {hovered && hover && (
             <div className="mc-tip" style={{ insetInlineStart: Math.min(hover.x + 15, Math.max(0, size.w - 190)), insetBlockStart: Math.min(hover.y + 15, Math.max(0, size.h - 96)) }}>
               <div className="mc-tip__row">
                 <span>{hovered.time.replace("T", " ").slice(0, 19)}</span>
                 <span className={hovered.close !== null && hovered.open !== null && hovered.close >= hovered.open ? "up" : "down"}>
-                  {hovered.is_complete === false ? "Forming" : "Completed"}
+                  {hovered.is_complete === false ? t("dash.chart.forming", "Forming") : t("dash.chart.completed", "Completed")}
                 </span>
               </div>
               <div className="mc-tip__ohlc">

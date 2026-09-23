@@ -377,7 +377,12 @@ body.dense .mc-feat__grid { grid-template-columns: repeat(auto-fill, minmax(140p
   font-size: 8px;
   font-weight: 800;
   padding: 0 5px;
-  border-radius: 0 7px 0 6px;
+  /* logical corners: the badge sits at top/inline-end, so the outer corner
+     stays rounded when dir=rtl mirrors it to the top-left */
+  border-start-start-radius: 0;
+  border-start-end-radius: 7px;
+  border-end-start-radius: 6px;
+  border-end-end-radius: 0;
 }
 .mc-feat__tile.nan { border-color: rgba(235, 161, 63, 0.45); }
 .mc-feat__tile.nan .v { color: var(--amber); }
@@ -462,3 +467,20 @@ body.dense .mc-feat__grid { grid-template-columns: repeat(auto-fill, minmax(140p
 }
 .mc-pred__more { font-family: var(--mono); font-size: 10px; }
 .mc-pred__note { font-size: 10.5px; color: var(--text-faint); }
+
+/* -------------------------- RTL safety (lane P1) ---------------------------
+   Numeric / technical runs keep LTR inside an RTL document so "123 pts" and
+   OHLC blocks never mirror ("pts 123"); labels around them stay in the page
+   direction. Direction isolation only — no physical properties. */
+.mc-quote__item .v,
+.mc-tip__ohlc,
+.mc-feat__tile .n,
+.mc-feat__tile .v,
+.mc-radar__v,
+.mc-radar__fv,
+.mc-radar__setups li .q,
+.mc-pred__head .t,
+.mc-pred__head .c {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
