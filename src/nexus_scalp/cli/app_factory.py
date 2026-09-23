@@ -44,6 +44,52 @@ app: typer.Typer = typer.Typer(
     rich_markup_mode="rich",
 )
 
+
+# ---------------------------------------------------------------------------
+# `nexus --version` (EU-RELEASE-001): the universal CLI convention was a
+# Typer usage error (exit 2, "No such option: --version"). Typer has no
+# built-in root version flag, so it is provided by a no-command callback.
+# The command form `nexus version` stays the detailed surface (--json /
+# --plain + full build identity); this flag prints the SAME one-line
+# identity `nexus version --plain` produces, byte-for-byte — the format is
+# duplicated from cli/doctor.py::version_cmd so a divergence shows up as a
+# failing test instead of two disagreeing user-visible outputs.
+# ---------------------------------------------------------------------------
+def _version_callback(show: bool) -> None:
+    if not show:
+        return
+    from nexus_scalp.release.metadata import PRODUCT_DISPLAY, get_version_info
+
+    # Same test-patchable seam `nexus version` uses (tests monkeypatch
+    # get_version_info on the cli.main facade); a callback that bypassed it
+    # would report a different identity than the command form.
+    info = _resolve_facade_seam("get_version_info", get_version_info)()
+    commit_txt = (
+        str(info.get("commit"))
+        if info.get("commit")
+        else str(info.get("commit_status") or "NOT_RECORDED")
+    )
+    print(
+        f"{PRODUCT_DISPLAY} version {info.get('version')} "
+        f"({info.get('channel')}, {info.get('architecture')}, commit {commit_txt})"
+    )
+    raise typer.Exit(0)
+
+
+@app.callback()
+def _nexus_root(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        help="Show the application version and exit (same as `nexus version --plain`).",
+        is_eager=True,
+        callback=_version_callback,
+    ),
+) -> None:
+    """Nexus root options (no subcommand required)."""
+    return None
+
+
 # ---------------------------------------------------------------------------
 # DB migration & schema management (TASK-10) — same canonical engine as startup
 # ---------------------------------------------------------------------------

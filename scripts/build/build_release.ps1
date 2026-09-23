@@ -103,6 +103,12 @@ if (-not $SkipGates) {
 # 4. Build windows-x64 with PyInstaller (onedir + onefile)
 # ---------------------------------------------------------------------------
 Write-Step "4/10 PyInstaller build (windows-$Arch) — onedir + onefile"
+
+# EU-RELEASE-001: canonical branded application icon (generated from
+# frontend/public/icon-512.png). Without --icon PyInstaller stamps its
+# generic placeholder onto the EXE, the Start Menu entry and the shortcut.
+& $PythonExe (Join-Path $Root "scripts\build\generate_app_icon.py")
+if ($LASTEXITCODE -ne 0) { Fail "application icon generation failed" }
 if ($Arch -ne "x64") {
     Fail "Only windows-x64 is supported by the dependency stack (torch/polars/MetaTrader5). '$Arch' requested = BLOCKED."
 }
@@ -123,6 +129,10 @@ foreach ($p in $StaleLock) {
 }
 if ($StaleLock) { Start-Sleep -Seconds 1 }
 
+$IconPath = Join-Path $Root "installer\NexusScalpEngine.ico"
+if (-not (Test-Path $IconPath)) {
+    Fail "Application icon missing: $IconPath — run: python scripts\build\generate_app_icon.py (it converts the canonical frontend/public/icon-512.png)"
+}
 $PyInstaller = Join-Path $Root ".venv\Scripts\pyinstaller.exe"
 if (-not (Test-Path $PyInstaller)) { Fail "pyinstaller not found — install with: .venv\Scripts\python -m pip install pyinstaller" }
 
@@ -153,6 +163,7 @@ $buildInfo = @{
 
 & $PyInstaller --noconfirm --clean `
     --onedir --name "NexusScalpEngine" `
+    --icon $IconPath `
     --add-data "$Root\Web;Web" `
     --add-data "$Root\configs;configs" `
     --add-data "$Root\docs;docs" `
@@ -190,6 +201,7 @@ Pass "onedir build: $BuildDir\onedir\NexusScalpEngine\NexusScalpEngine.exe"
 
 & $PyInstaller --noconfirm --clean `
     --onefile --name "NexusScalpEngine-CLI" `
+    --icon $IconPath `
     --exclude-module "torch" `
     --exclude-module "polars" `
     --exclude-module "numpy" `
