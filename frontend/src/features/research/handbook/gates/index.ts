@@ -6,12 +6,12 @@
  * build's test gate if the two ever drift.
  */
 import type { HandbookEntry } from "../types";
-import { staticValidationEntry } from "./staticValidation";
-import { backtestEntry } from "./backtest";
-import { walkForwardEntry } from "./walkForward";
-import { oosEntry } from "./oos";
-import { robustnessEntry } from "./robustness";
-import { scoringGateEntry } from "./scoringGate";
+import { staticValidationEntry, staticValidationEntryTranslated } from "./staticValidation";
+import { backtestEntry, backtestEntryTranslated } from "./backtest";
+import { walkForwardEntry, walkForwardEntryTranslated } from "./walkForward";
+import { oosEntry, oosEntryTranslated } from "./oos";
+import { robustnessEntry, robustnessEntryTranslated } from "./robustness";
+import { scoringGateEntry, scoringGateEntryTranslated } from "./scoringGate";
 import type { ScoringTranslate } from "../scoring";
 
 /** Canonical chain order — mirrors evidence.py::GATE_CHAIN verbatim. */
@@ -172,3 +172,20 @@ export const pipelineEntries: HandbookEntry[] = [
   robustnessEntry,
   scoringGateEntry,
 ];
+/**
+ * Translator-aware view of EVERY entry this directory exports:
+ * chainOverviewEntry plus the whole pipeline. Splice into
+ * handbook/index.ts translatedEntries with a memoized store t().
+ */
+export function gatesTranslated(t: ScoringTranslate): HandbookEntry[] {
+  return [
+    chainOverviewEntryTranslated(t),
+    staticValidationEntryTranslated(t),
+    backtestEntryTranslated(t),
+    walkForwardEntryTranslated(t),
+    oosEntryTranslated(t),
+    robustnessEntryTranslated(t),
+    scoringGateEntryTranslated(t),
+  ];
+}
+
