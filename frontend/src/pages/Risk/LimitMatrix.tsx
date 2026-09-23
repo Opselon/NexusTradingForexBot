@@ -12,27 +12,40 @@
  */
 
 import { EmptyState } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
+import type { Translator } from "./riskThresholds";
 import { formatNumber } from "@/lib/format";
 import { pressureOf, rampStyle, utilTone } from "./riskThresholds";
 import type { RiskLimitRow } from "./riskThresholds";
 
-const COLUMNS = ["Metric", "Value", "Limit", "Utilization"] as const;
+type MatrixCol = "metric" | "value" | "limit" | "utilization";
+
+/** Column captions are render copy — literal t() keys (dynamic keys are banned). */
+function colT(c: MatrixCol, t: Translator): string {
+  switch (c) {
+    case "metric": return t("risk.matrix.col.metric", "Metric");
+    case "value": return t("risk.matrix.col.value", "Value");
+    case "limit": return t("risk.matrix.col.limit", "Limit");
+    default: return t("risk.matrix.col.utilization", "Utilization");
+  }
+}
 
 export function LimitMatrix({ rows }: { rows: RiskLimitRow[] }) {
+  const t = useI18n((s) => s.t);
   if (rows.length === 0) {
     return (
       <EmptyState
-        message="No limit rows in the payload (no account, exposure or config numbers to compare)."
-        hint="The matrix appears as soon as the backend sends a comparable pair — an empty store is never rendered as 'within limit'."
+        message={t("risk.matrix.empty_rows", "No limit rows in the payload (no account, exposure or config numbers to compare).")}
+        hint={t("risk.matrix.empty_rows_hint", "The matrix appears as soon as the backend sends a comparable pair — an empty store is never rendered as 'within limit'.")}
       />
     );
   }
   return (
-    <div className="rsk-matrix" role="table" aria-label="Stress and limits matrix">
+    <div className="rsk-matrix" role="table" aria-label={t("risk.matrix.aria", "Stress and limits matrix")}>
       <div className="rsk-mx__row" role="row">
-        {COLUMNS.map((c) => (
+        {(["metric", "value", "limit", "utilization"] as const).map((c) => (
           <div key={c} className="rsk-mx__h" role="columnheader">
-            {c}
+            {colT(c, t)}
           </div>
         ))}
       </div>
@@ -45,13 +58,13 @@ export function LimitMatrix({ rows }: { rows: RiskLimitRow[] }) {
         const limitText = row.limit === null ? "—" : `${formatNumber(row.limit, row.digits)}${row.unit}`;
         const tip =
           row.limit === null
-            ? `${row.label}: ${valueText} — ${row.field} (no backend limit in payload; never read as satisfied)`
-            : `${row.label}: ${valueText} vs ${limitText} — ${row.field}`;
+            ? t("risk.matrix.tip_no_limit", "{label}: {value} — {field} (no backend limit in payload; never read as satisfied)", { label: row.label, value: valueText, field: row.field })
+            : t("risk.matrix.tip", "{label}: {value} vs {limit} — {field}", { label: row.label, value: valueText, limit: limitText, field: row.field });
         return (
           <div key={row.id} className="rsk-mx__row" role="row">
             <div className="rsk-mx__rowh" role="rowheader" title={tip}>
               <span className="rsk-mx__name">{row.label}</span>
-              <span className="rsk-mx__field">{row.direction === "ge" ? "floor ≥" : "ceiling ≤"}</span>
+              <span className="rsk-mx__field">{row.direction === "ge" ? t("risk.matrix.dir_floor", "floor ≥") : t("risk.matrix.dir_ceiling", "ceiling ≤")}</span>
             </div>
             <div className="rsk-mx__cell num" role="cell" title={tip} style={rampStyle(pressure)}>
               {valueText}
@@ -60,7 +73,7 @@ export function LimitMatrix({ rows }: { rows: RiskLimitRow[] }) {
               {limitText}
             </div>
             <div className={`rsk-mx__cell num tone-${tone}`} role="cell" title={tip} style={rampStyle(pressure)}>
-              {utilPct === null ? <span className="rsk-mx__unk">— no limit</span> : `${utilPct}%`}
+              {utilPct === null ? <span className="rsk-mx__unk">{t("risk.matrix.no_limit_cell", "— no limit")}</span> : `${utilPct}%`}
             </div>
           </div>
         );

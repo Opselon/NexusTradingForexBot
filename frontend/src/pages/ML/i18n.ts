@@ -156,4 +156,16 @@ export const MESSAGES: FeatureMessages = {
   "ml.th.liquidity": { fa: "نقدشوندگی", de: "Liquidität", es: "liquidez", ar: "السيولة" },
   "ml.th.outcome": { fa: "نتیجه", de: "Ergebnis", es: "resultado", ar: "النتيجة" },
   "ml.obs.empty": { fa: "مشاهده‌ای نیست.", de: "Keine Beobachtungen.", es: "Sin observaciones.", ar: "لا ملاحظات." },
+
+  // --- V2-I re-wrap (new wording, 4 langs) ---
+  "ml.st.error": { fa: "خطا", de: "FEHLER", es: "ERROR", ar: "خطأ" },
+  "ml.families.block_base": { fa: "BASE 0–49 (حفاظت‌شده scalp_v1)", de: "BASE 0–49 (scalp_v1 geschützt)", es: "BASE 0–49 (scalp_v1 protegido)", ar: "BASE 0–49 (محمي scalp_v1)" },
+  "ml.families.block_liquidity": { fa: "LIQUIDITY 60–69 (فقط 70D)", de: "LIQUIDITY 60–69 (nur 70D)", es: "LIQUIDITY 60–69 (solo 70D)", ar: "LIQUIDITY 60–69 (70D فقط)" },
+  "ml.identity.empty": { fa: "هیچ بسته مدل بارگذاری نشده است.", de: "Kein Modell-Bundle geladen.", es: "No hay paquete de modelo cargado.", ar: "لا توجد حزمة نموذج محمّلة." },
+  "ml.cal.refresh_aria": { fa: "تازه‌سازی کالیبراسیون", de: "Kalibrierung aktualisieren", es: "actualizar calibración", ar: "تحديث المعايرة" },
+  "ml.drift.refresh_aria": { fa: "تازه‌سازی سایه 70D", de: "70D-Shadow aktualisieren", es: "actualizar shadow 70D", ar: "تحديث الظلّي 70D" },
+  "ml.shadow.refresh_aria": { fa: "تازه‌سازی وضعیت سایه", de: "Shadow-Status aktualisieren", es: "actualizar estado shadow", ar: "تحديث الحالة الظلّية" },
+  "ml.runs.csv": { fa: "⇩ CSV", de: "⇩ CSV", es: "⇩ CSV", ar: "⇩ CSV" },
+  "ml.runs.prev_aria": { fa: "صفحهٔ قبل", de: "vorherige Seite", es: "página anterior", ar: "الصفحة السابقة" },
+  "ml.runs.next_aria": { fa: "صفحهٔ بعد", de: "nächste Seite", es: "página siguiente", ar: "الصفحة التالية" },
 };
