@@ -81,7 +81,7 @@ export function IpcTab() {
               <MetricCard label="positions / pendings" value={`${data.exposure.positions} / ${data.exposure.pendings}`} sub={`cap ${data.max_total_exposure}`} />
               <span className="timestamp-note">{api.sort.key === null ? "backend order — click a header to sort" : `sorted by ${api.sort.key} ${api.sort.dir}`}</span>
             </div>
-            <div className="l3-scroll dbg-table-wrap">
+            <div tabIndex={0} className="l3-scroll dbg-table-wrap">
               <table className="data-table dbg-table">
                 <thead>
                   <tr>

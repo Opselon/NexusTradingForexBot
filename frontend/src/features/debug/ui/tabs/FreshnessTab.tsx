@@ -33,13 +33,13 @@ export function FreshnessTab() {
           <div className="l3-split dbg-split">
             <div className="dbg-pane">
               <div className="section-title">live freshness (engine view)</div>
-              <div className="l3-scroll dbg-json">
+              <div tabIndex={0} className="l3-scroll dbg-json">
                 <JsonView value={data.live_freshness ?? null} name="live_freshness" />
               </div>
             </div>
             <div className="dbg-pane">
               <div className="section-title">no-cache diagnostic (frozen-at localization)</div>
-              <div className="l3-scroll dbg-json">
+              <div tabIndex={0} className="l3-scroll dbg-json">
                 <JsonView value={data.diagnostic ?? null} name="diagnostic" />
               </div>
               <div className="tiny faint" style={{ marginTop: 6 }}>

@@ -1,0 +1,227 @@
+/* ==========================================================================
+   PURPOSE:  Control Center operator-console skin — hero state strip, glowing
+             status pills, guarded action rack with state/guard chips, and the
+             console-style event tape. Single scoped sheet for the feature.
+   OWNER:    uiux-wave5-control
+   CONSUMES: frontend/src/styles/theme.css tokens only (--bg*, --border*, --text*,
+             --accent/--accent-strong/--green/--red/--amber, --mono/--sans,
+             --row-pad, --elevate-hi, --elev-*); rgba() of those token hues and
+             the theme's own white-alpha zebra convention (see §5) are the only
+             non-token values — no other hardcoded hex anywhere.
+   PROVIDES: every selector below, all prefixed `ctl-` (page root .ctl-page)
+   INVARIANTS: colors re-state backend words only (never a fabricated verdict);
+               logical properties everywhere (RTL-safe); motion is decorative
+               and wrapped in (prefers-reduced-motion: no-preference).
+   EXTEND:   new tone = a .ctl-glow--<tone> / .ctl-chip--<tone> pair reusing an
+             existing token pair; keep every new rule inside its own section.
+   ========================================================================== */
+
+/* --- 1. page frame ------------------------------------------------------- */
+.ctl-page { --ctl-radius: 12px; --ctl-radius-sm: 8px; }
+.ctl-head { flex-wrap: wrap; }
+.ctl-body { margin-block-start: 12px; display: grid; gap: 12px; }
+/* panels carry their own spacing — inside the grid the gap does the job */
+.ctl-body .panel { margin-bottom: 0; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .ctl-hero { animation: ctlIn 0.22s ease-out both; }
+}
+@keyframes ctlIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+/* --- 2. hero state strip — grid plate + accent bloom --------------------- */
+.ctl-hero {
+  position: relative;
+  display: flex; align-items: stretch; justify-content: space-between;
+  gap: 18px; flex-wrap: wrap; padding: 16px 18px;
+  border: 1px solid var(--border); border-radius: var(--ctl-radius); overflow: hidden;
+  background:
+    repeating-linear-gradient(0deg, rgba(65, 166, 242, 0.05) 0 1px, transparent 1px 26px),
+    repeating-linear-gradient(90deg, rgba(65, 166, 242, 0.05) 0 1px, transparent 1px 26px),
+    radial-gradient(520px 180px at 86% -30%, rgba(65, 166, 242, 0.16), transparent 70%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 45%), var(--bg-panel);
+  box-shadow: var(--elev-2);
+}
+/* top hairline that fades out at both ends */
+.ctl-hero::before {
+  content: ""; position: absolute; inset: 0 0 auto; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(108, 192, 255, 0.55), transparent);
+}
+.ctl-hero-main { display: grid; gap: 10px; align-content: center; min-inline-size: 300px; flex: 1 1 380px; }
+.ctl-eyebrow {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent-strong);
+}
+.ctl-eyebrow-bar {
+  inline-size: 18px; block-size: 2px; border-radius: 2px; flex-shrink: 0;
+  background: linear-gradient(90deg, var(--accent), var(--violet));
+  box-shadow: 0 0 8px rgba(65, 166, 242, 0.7);
+}
+.ctl-glows { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.ctl-hero-error { color: var(--red); font-family: var(--mono); }
+
+/* right-hand snapshot rail */
+.ctl-rail {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(112px, auto);
+  align-items: stretch; align-self: center; overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--ctl-radius-sm);
+  background: rgba(8, 12, 18, 0.72); box-shadow: inset 0 1px 0 var(--elevate-hi);
+}
+.ctl-rail-cell {
+  display: grid; align-content: center; gap: 3px; padding: 9px 14px;
+  border-inline-start: 1px solid var(--border); min-inline-size: 0;
+}
+.ctl-rail-cell:first-child { border-inline-start: none; }
+.ctl-rail-label {
+  font-family: var(--mono); font-size: 9px; font-weight: 700; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--text-faint); white-space: nowrap;
+}
+.ctl-rail-value {
+  font-family: var(--mono); font-size: 13px; font-weight: 700; letter-spacing: 0.02em;
+  color: var(--text); font-variant-numeric: tabular-nums;
+  max-inline-size: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ctl-rail-value.dim { color: var(--text-faint); font-weight: 500; }
+.ctl-rail-loading { padding: 10px 14px; min-inline-size: 240px; }
+
+/* --- 3. status glow pills — dot + label + backend word ------------------- */
+.ctl-glow {
+  display: inline-flex; align-items: center; gap: 9px; padding: 7px 14px;
+  border-radius: 999px; border: 1px solid var(--border-strong);
+  background: var(--bg-inset); box-shadow: inset 0 1px 0 var(--elevate-hi);
+  font-family: var(--mono); font-size: 12.5px; font-weight: 700;
+  letter-spacing: 0.06em; color: var(--text-dim);
+}
+.ctl-dot { inline-size: 9px; block-size: 9px; border-radius: 50%; background: var(--text-faint); flex-shrink: 0; }
+.ctl-glow-label { font-size: 9.5px; font-weight: 700; letter-spacing: 0.16em; color: var(--text-faint); }
+.ctl-glow-text { font-variant-numeric: tabular-nums; }
+.ctl-glow--on {
+  color: var(--green); border-color: rgba(62, 207, 142, 0.45);
+  background: linear-gradient(180deg, rgba(62, 207, 142, 0.14), rgba(62, 207, 142, 0.05));
+  box-shadow: 0 0 16px -6px rgba(62, 207, 142, 0.55);
+}
+.ctl-glow--on .ctl-dot { background: var(--green); box-shadow: 0 0 8px rgba(62, 207, 142, 0.8); }
+.ctl-glow--off {
+  color: var(--text-dim); border-color: var(--border-strong);
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 50%), var(--bg-inset);
+}
+.ctl-glow--live {
+  color: var(--red); border-color: rgba(242, 86, 77, 0.55);
+  background: linear-gradient(180deg, rgba(242, 86, 77, 0.18), rgba(242, 86, 77, 0.06));
+  box-shadow: 0 0 18px -6px rgba(242, 86, 77, 0.6);
+}
+.ctl-glow--live .ctl-dot { background: var(--red); box-shadow: 0 0 8px rgba(242, 86, 77, 0.85); }
+.ctl-glow--paper {
+  color: var(--accent-strong); border-color: rgba(65, 166, 242, 0.5);
+  background: linear-gradient(180deg, rgba(65, 166, 242, 0.16), rgba(65, 166, 242, 0.05));
+  box-shadow: 0 0 16px -6px rgba(65, 166, 242, 0.5);
+}
+.ctl-glow--paper .ctl-dot { background: var(--accent); box-shadow: 0 0 8px rgba(65, 166, 242, 0.8); }
+.ctl-glow--shadow, .ctl-glow--stale {
+  color: var(--amber); border-color: rgba(235, 161, 63, 0.5);
+  background: linear-gradient(180deg, rgba(235, 161, 63, 0.15), rgba(235, 161, 63, 0.05));
+  box-shadow: 0 0 16px -6px rgba(235, 161, 63, 0.5);
+}
+.ctl-glow--shadow .ctl-dot, .ctl-glow--stale .ctl-dot { background: var(--amber); box-shadow: 0 0 8px rgba(235, 161, 63, 0.8); }
+.ctl-glow--unknown { color: var(--text-faint); border: 1px dashed var(--border-strong); background: var(--bg-panel-2); }
+/* decorative pulse — opt-in only, off under prefers-reduced-motion */
+@media (prefers-reduced-motion: no-preference) {
+  .ctl-glow--on .ctl-dot { animation: ctlPulseOn 2.4s ease-in-out infinite; }
+  .ctl-glow--live .ctl-dot { animation: ctlPulseLive 2.2s ease-in-out infinite; }
+  .ctl-glow--live { animation: ctlGlowLive 2.6s ease-in-out infinite; }
+}
+@keyframes ctlPulseOn { 0%, 100% { box-shadow: 0 0 0 0 rgba(62, 207, 142, 0.45); } 50% { box-shadow: 0 0 0 5px rgba(62, 207, 142, 0); } }
+@keyframes ctlPulseLive { 0%, 100% { box-shadow: 0 0 0 0 rgba(242, 86, 77, 0.5); } 50% { box-shadow: 0 0 0 5px rgba(242, 86, 77, 0); } }
+@keyframes ctlGlowLive { 0%, 100% { box-shadow: 0 0 14px -6px rgba(242, 86, 77, 0.5); } 50% { box-shadow: 0 0 24px -4px rgba(242, 86, 77, 0.75); } }
+
+/* --- 4. action rack — groups, state chips, guard affordances ------------- */
+.ctl-rack { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(288px, 1fr)); }
+.ctl-rack-group {
+  display: grid; gap: 9px; align-content: start; padding: 11px 12px;
+  border: 1px solid var(--border); border-radius: var(--ctl-radius-sm);
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 45%), var(--bg-inset);
+}
+.ctl-rack-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-faint);
+}
+.ctl-rack-head .sep {
+  flex: 1 1 24px; min-inline-size: 16px; height: 1px;
+  background: linear-gradient(90deg, var(--border-strong), transparent);
+}
+.ctl-rack-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.ctl-rack-note { font-size: 10px; line-height: 1.5; color: var(--text-faint); }
+.ctl-rack-foot { display: grid; gap: 4px; }
+.ctl-mode-select { inline-size: 130px; }
+.ctl-live-input { inline-size: 160px; }
+/* state chip — its dot re-states the backend word shown next to it */
+.ctl-chip {
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+  padding: 2px 9px; border-radius: 999px;
+  border: 1px solid var(--border-strong); background: var(--bg-panel-2); color: var(--text-dim);
+}
+.ctl-chip::before { content: ""; inline-size: 6px; block-size: 6px; border-radius: 50%; background: currentColor; opacity: 0.85; }
+.ctl-chip--on { color: var(--green); background: var(--green-dim); border-color: rgba(62, 207, 142, 0.45); }
+.ctl-chip--off { color: var(--text-dim); }
+.ctl-chip--unknown { color: var(--text-faint); border-style: dashed; }
+.ctl-chip--live { color: var(--red); background: var(--red-dim); border-color: rgba(242, 86, 77, 0.5); }
+.ctl-chip--paper { color: var(--accent-strong); background: rgba(65, 166, 242, 0.14); border-color: rgba(65, 166, 242, 0.45); }
+.ctl-chip--shadow, .ctl-chip--stale { color: var(--amber); background: var(--amber-dim); border-color: rgba(235, 161, 63, 0.45); }
+.ctl-chip--armed {
+  color: var(--accent-strong); background: rgba(65, 166, 242, 0.14);
+  border-color: rgba(65, 166, 242, 0.55); box-shadow: 0 0 12px -4px rgba(65, 166, 242, 0.7);
+}
+/* "requires confirm" affordance — visual only, the dialog does the guarding */
+.ctl-guard {
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  font-family: var(--mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em;
+  color: var(--amber); background: var(--amber-dim);
+  border: 1px dashed rgba(235, 161, 63, 0.55); border-radius: 999px; padding: 2px 8px;
+}
+
+/* --- 5. event tape — console-style ledger rows --------------------------- */
+.ctl-tape-wrap {
+  max-height: min(52vh, 460px); overflow: auto;
+  scrollbar-gutter: stable; background: var(--bg-inset);
+}
+.ctl-tape {
+  width: 100%; min-inline-size: 660px;
+  border-collapse: separate; border-spacing: 0;
+  font-family: var(--mono); font-size: 11.5px;
+}
+.ctl-tape th {
+  position: sticky; top: 0; z-index: 1; text-align: start; white-space: nowrap;
+  font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint);
+  background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-inset));
+  border-bottom: 1px solid var(--border-strong); padding: 7px 12px;
+}
+.ctl-tape td {
+  padding: var(--row-pad) 12px; border-bottom: 1px solid var(--border);
+  vertical-align: top; color: var(--text); font-variant-numeric: tabular-nums;
+}
+/* zebra + hover — white-alpha follows theme.css's own zebra convention
+   (rgba(255,255,255,.015)); density follows body.dense automatically */
+.ctl-tape tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.02); }
+.ctl-tape tbody tr:hover td { background: var(--bg-panel-2); }
+.ctl-tape .ctl-rel { color: var(--text-faint); white-space: nowrap; }
+.ctl-tape .ctl-ts { color: var(--text-dim); font-size: 10.5px; white-space: nowrap; }
+.ctl-tape .ctl-act { white-space: nowrap; }
+.ctl-tape .ctl-reason { color: var(--text-dim); overflow-wrap: anywhere; max-inline-size: 320px; }
+.ctl-tape .ctl-open { text-align: end; }
+.ctl-tape-foot { padding: 7px 14px; }
+
+/* --- 6. responsive — hero stacks, rail wraps, rack collapses ------------- */
+@media (max-width: 1080px) {
+  .ctl-hero { flex-direction: column; }
+  .ctl-rail { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+  .ctl-rail-cell { border-inline-start: 1px solid var(--border); border-block-start: 1px solid var(--border); }
+  .ctl-rail-cell:first-child { border-block-start: none; }
+}
+@media (max-width: 720px) {
+  .ctl-hero { padding: 14px; }
+  .ctl-hero-main { min-inline-size: 0; }
+  .ctl-rack { grid-template-columns: 1fr; }
+  .ctl-glow { font-size: 12px; }
+}

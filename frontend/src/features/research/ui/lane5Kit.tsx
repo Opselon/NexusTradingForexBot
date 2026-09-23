@@ -63,7 +63,7 @@ export function JsonBlock({ value, maxChars = 4000 }: { value: unknown; maxChars
   }
   const clipped = text.length > maxChars ? `${text.slice(0, maxChars)}\n… (${text.length} chars, truncated)` : text;
   return (
-    <pre className="inline-mono small" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, maxHeight: 320, overflow: "auto" }}>
+    <pre tabIndex={0} className="inline-mono small" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, maxHeight: 320, overflow: "auto" }}>
       {clipped}
     </pre>
   );
@@ -183,7 +183,7 @@ export function Drawer({
             close <kbd>esc</kbd>
           </button>
         </div>
-        <div className="panel-body" style={{ flex: "1 1 auto", overflow: "auto" }}>
+        <div tabIndex={0} className="panel-body" style={{ flex: "1 1 auto", overflow: "auto" }}>
           {children}
         </div>
         {footer && <div className="panel-body tight" style={{ flex: "0 0 auto", borderTop: "1px solid var(--border)" }}>{footer}</div>}

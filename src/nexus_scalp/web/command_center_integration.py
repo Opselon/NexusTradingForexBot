@@ -18,6 +18,7 @@ from nexus_scalp.research.debug_intelligence import (
     decompose_strategy_health,
     generate_debug_hints,
 )
+from nexus_scalp.research.snapshot import build_snapshot
 from nexus_scalp.research.spatial_layout import SpatialLayout
 from nexus_scalp.research.time_machine import TimeMachine
 from nexus_scalp.web.command_center_routes import (
@@ -104,15 +105,32 @@ def register_command_center_routes(
             return {"available": False, "reason": "RESEARCH_ENGINE_UNAVAILABLE"}
         try:
             entries = api.registry.list(limit=limit)
-            snapshots = {e.strategy_id: api.inspector(e.strategy_id) for e in entries}
+            # PERF (BUG-312): the previous implementation called
+            # api.inspector(e.strategy_id) for EVERY registry entry. One
+            # inspector() = registry.get + event projection + evidence
+            # completeness + invariant check + a 2000-row research_runs scan
+            # (_running_runs_by_strategy), measured at ~1.4-2.0 s each. With
+            # 500 strategies that is ~17 minutes SEQUENTIALLY, so
+            # GET /api/command-center/spatial never returned and the Command
+            # Center page (spatial is its default tab) hung on the loading
+            # skeleton forever.
+            #
+            # SpatialLayout reads only health_score.final + evidence_summary
+            # statuses from each snapshot, and the enrichment loop needs only
+            # execution_eligibility + evaluation_detail — all pure functions
+            # of the registry entry ALREADY in hand (fleet() builds the same
+            # snapshot for the full registry in <2 s). Snapshots are therefore
+            # built once, in memory, from the listed entries; the running-runs
+            # map is fetched ONCE for the whole payload.
+            entries_by_id = {e.strategy_id: e for e in entries}
+            snapshots: dict[str, Any] = {
+                sid: build_snapshot(e).model_dump() for sid, e in entries_by_id.items()
+            }
             layout = SpatialLayout(max_columns=max_columns)
             result = layout.compute(entries, snapshots=snapshots)
-            # Enrich each spatial node with the transient evaluation pipeline
-            # projection + execution eligibility so the renderer can show an
-            # INTERNAL indicator (not a fake lifecycle-zone move).
             running_runs = _running_runs_by_strategy(api.audit_repo)
             for n in result.get("nodes", []):
-                entry = api.registry.get(n["strategy_id"])
+                entry = entries_by_id.get(n["strategy_id"])
                 if entry is None:
                     continue
                 n["evaluation"] = evaluation_detail(entry, running_runs)

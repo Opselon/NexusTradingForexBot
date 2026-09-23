@@ -49,7 +49,7 @@ export function StateTab() {
             ))}
           </div>
           {raw || section === "__all" ? (
-            <div className="l3-scroll dbg-json">
+            <div tabIndex={0} className="l3-scroll dbg-json">
               <JsonView value={snap} name="state" />
             </div>
           ) : (
@@ -69,7 +69,7 @@ export function StateTab() {
               return (
                 <>
                   <KeyValueList rows={rows} />
-                  <div className="l3-scroll sm dbg-json" style={{ marginTop: 8 }}>
+                  <div tabIndex={0} className="l3-scroll sm dbg-json" style={{ marginTop: 8 }}>
                     <JsonView value={obj} name={section} depth={1} />
                   </div>
                 </>

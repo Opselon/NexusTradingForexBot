@@ -54,3 +54,4 @@ tests/unit/test_shadow_phase11.py
 tests/unit/test_research_phase09b.py
 tests/unit/test_model_lifecycle_phase10.py
 tests/unit/test_performance_report_intelligence.py
+tests/integration/test_walk_forward_pipeline_real.py

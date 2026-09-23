@@ -97,7 +97,7 @@ export function CompareTab({ a, b, setA, setB }: { a: string | null; b: string |
               · <span className="badge good">+{counts.added}</span> <span className="badge bad">−{counts.removed}</span> <span className="badge warn">~{counts.changed}</span>
             </span>
           </div>
-          <div className="l3-scroll dbg-diff-scroll">
+          <div tabIndex={0} className="l3-scroll dbg-diff-scroll">
             {clientRows.length === 0 ? (
               <EmptyState message="No key differences in this section." />
             ) : (
@@ -162,7 +162,7 @@ function CompareSummary({ diff, deltaApi }: { diff: CompareResult; deltaApi: Sor
           <div className="section-title">
             feature deltas ({featureDiffs.length}) · sorted by {deltaApi.sort.key} {deltaApi.sort.dir}
           </div>
-          <div className="l3-scroll sm dbg-table-wrap">
+          <div tabIndex={0} className="l3-scroll sm dbg-table-wrap">
             <table className="data-table dbg-table">
               <thead>
                 <tr>

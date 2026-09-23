@@ -109,7 +109,7 @@ function FeatureBlock({
         <span className={`l4-chip ${nan ? "warn" : ""}`}>{nan} NAN</span>
         <span className={`l4-chip ${unavail ? "" : ""}`}>{unavail} UNAVAILABLE</span>
       </div>
-      <div className="l4-features" style={{ maxBlockSize: 210 }}>
+      <div tabIndex={0} className="l4-features" style={{ maxBlockSize: 210 }}>
         {features.map((f) => (
           <div key={`${f.index}-${f.name}`} className={`l4-feature ${(f.status ?? "").toUpperCase() === "VALID" ? "" : (f.status ?? "").toUpperCase() === "NAN" ? "nan" : "unavailable"}`} title={`${f.name} · ${f.status}`}>
             <div className="n">{f.index} {f.name}</div>

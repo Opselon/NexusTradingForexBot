@@ -681,7 +681,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                       <b>{String(tuneResult.best.seed ?? "--")}</b>
                     </span>
                   </div>
-                  <div className="pa-table-wrap">
+                  <div tabIndex={0} className="pa-table-wrap">
                     <table className="pa-table">
                       <thead>
                         <tr>

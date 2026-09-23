@@ -470,7 +470,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
         {events.length > 0 ? (
           <div className="pv-field">
             <div className="small faint uppercase font-bold">Progress</div>
-            <pre className="pv-log" aria-live="polite">
+            <pre tabIndex={0} className="pv-log" aria-live="polite">
               {events
                 .map((e) => `[${e.stage}] ${String(e.status)} — ${String(e.message ?? "")}`)
                 .join("\n")}
@@ -481,7 +481,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
         {result ? (
           <div className="pv-callout ok">
             <div className="head">Run result</div>
-            <pre className="pv-json">{JSON.stringify(result, null, 2)}</pre>
+            <pre tabIndex={0} className="pv-json">{JSON.stringify(result, null, 2)}</pre>
           </div>
         ) : null}
       </Panel>

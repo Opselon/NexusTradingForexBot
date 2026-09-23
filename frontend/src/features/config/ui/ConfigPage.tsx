@@ -6,15 +6,21 @@
  * handlers (BUG-072/080 mask discipline) + runtime-config apply flow.
  *
  * HARD RULES enforced here:
- *  - every mutation follows validate(client) -> validate(server, per key) ->
- *    apply -> report backend verdict verbatim -> refetch. An invalid payload
- *    never reaches the wire;
+ *  - every mutation follows validate(client) -> validate(server, per key,
+ *    WITH the proposed value) -> apply -> report backend verdict verbatim ->
+ *    refetch. An invalid payload never reaches the wire; RESTART_REQUIRED keys
+ *    are excluded from the hot-apply payload and named in the report;
  *  - the masked bot_token served by the backend is treated as "unchanged",
  *    never resubmitted as a credential (BUG-080 path);
- *  - engine-mode changes to LIVE need a typed confirmation.
+ *  - engine-mode changes to LIVE need a typed confirmation, and the confirm
+ *    modal shows the SERVER's preview (/api/v1/runtime/mode/preview) — the
+ *    local matrix in model.ts is only a fast pre-filter.
+ *
+ * TASK-CFGUI-001: hero status strip, mode rail with server preview, restart
+ * chip reporting, and the settings.css visual layer (tokens only).
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { useUiStore } from "@/stores/uiStore";
 import {
@@ -33,6 +39,7 @@ import {
   usePolling,
 } from "@/features/config/ui/kit";
 import "@/features/config/ui/kit.css";
+import "@/features/config/ui/settings.css";
 import {
   BOT_TOKEN_PATTERN,
   ADMIN_ID_PATTERN,
@@ -49,7 +56,9 @@ import {
 } from "@/features/config/validation";
 import type { ShellPageProps } from "@/app/featureModule";
 import {
+  useApplyRuntimeConfig,
   useConfigFormQuery,
+  useModePreview,
   useModelSwap,
   useRuntimeDiagnosticsQuery,
   useRuntimeEffectiveQuery,
@@ -59,10 +68,11 @@ import {
   useSettingsSnapshotQuery,
   useTelegramStatusQuery,
   useTestTelegram,
-  useApplyRuntimeConfig,
+  type ApplySteps,
   type CommandOutcome,
 } from "../useCases";
 import {
+  EXECUTION_MODES,
   allowedModes,
   checkModeTransition,
   configBaseline,
@@ -76,14 +86,113 @@ function outcomeLine(o: CommandOutcome | null): { running: boolean; lastResult: 
   return { running: false, lastResult: o.ok, lastMessage: o.requestId ? `${o.message} · request_id: ${o.requestId}` : o.message };
 }
 
+const modeTone = (m: string | null | undefined): "good" | "warn" | "bad" | "neutral" =>
+  m === "LIVE" ? "bad" : m === "PAPER" ? "good" : m === "SHADOW" ? "warn" : "neutral";
+
 /* ------------------------------------------------------------------ */
-/* Engine mode card                                                    */
+/* Hero status strip — live tiles above both columns                   */
+/* ------------------------------------------------------------------ */
+
+function Stat({ k, v, m, tone }: { k: string; v: ReactNode; m?: ReactNode; tone?: "good" | "warn" | "bad" | "neutral" }) {
+  return (
+    <div className={`cfg-stat ${tone && tone !== "neutral" ? tone : ""}`} role="listitem">
+      <div className="k">{k}</div>
+      <div className="v">{v}</div>
+      {m !== undefined && <div className="m">{m}</div>}
+    </div>
+  );
+}
+
+function ConfigHero() {
+  // Same query keys as the cards below — the cache is shared, the hero adds
+  // no extra polling of its own (only reads).
+  const modeQuery = useRuntimeModeQuery(false);
+  const cfgQuery = useConfigFormQuery(false);
+  const diagQuery = useRuntimeDiagnosticsQuery(false);
+  const tgQuery = useTelegramStatusQuery(false);
+
+  const mode = modeQuery.data?.mode ?? null;
+  const diag = diagQuery.data;
+  const tg = tgQuery.data;
+
+  return (
+    <header className="cfg-hero">
+      <div className="cfg-hero-top">
+        <h1>Settings</h1>
+        <span className="crumb">PLATFORM</span>
+        <span className="desc">Engine mode · runtime configuration · model swap · provenance · Telegram (legacy tab-config)</span>
+      </div>
+      <div className="cfg-stats" role="list" aria-label="live status">
+        <Stat
+          k="execution mode"
+          tone={modeTone(mode)}
+          v={
+            modeQuery.isPending ? (
+              <Skeleton count={1} height={16} />
+            ) : modeQuery.isError || !mode ? (
+              <span className="faint">—</span>
+            ) : (
+              <span className={`cfg-mode-live tone-${modeTone(mode)}`}>{mode}</span>
+            )
+          }
+          m={modeQuery.data?.effective_mode ? <>effective {modeQuery.data.effective_mode}</> : "effective —"}
+        />
+        <Stat
+          k="engine"
+          tone={modeQuery.data?.engine_attached ? "good" : "bad"}
+          v={
+            modeQuery.isPending ? (
+              <Skeleton count={1} height={16} />
+            ) : modeQuery.isError ? (
+              <span className="faint">—</span>
+            ) : (
+              <StatusBadge status={modeQuery.data?.engine_attached ? "CONNECTED" : "DISCONNECTED"} />
+            )
+          }
+          m={modeQuery.data?.engine_attached ? (modeQuery.data?.replaying ? "replaying" : "live session") : "no engine reference"}
+        />
+        <Stat
+          k="config version"
+          tone={diag?.mismatch ? "warn" : diag ? "good" : undefined}
+          v={cfgQuery.isPending ? <Skeleton count={1} height={16} /> : <>v{String(cfgQuery.data?.configuration_version ?? "—")}</>}
+          m={
+            diagQuery.isPending
+              ? "checking store…"
+              : diagQuery.isError
+                ? "diagnostics unreadable"
+                : diag
+                  ? diag.mismatch
+                    ? "⚠ persistent/runtime mismatch"
+                    : "persistent = runtime"
+                  : "—"
+          }
+        />
+        <Stat
+          k="telegram"
+          tone={tg?.configured ? "good" : undefined}
+          v={tgQuery.isPending ? <Skeleton count={1} height={16} /> : <StatusBadge status={tg?.token_status ?? "UNKNOWN"} />}
+          m={tg ? (tg.configured ? (tg.admin_id_shape_valid ? "configured · admin ok" : "configured · admin invalid") : "not configured") : "—"}
+        />
+      </div>
+      <p className="l3-note cfg-promise">
+        Validate-before-apply is enforced on every write: client rules (type/range/enum/shape) block an invalid payload
+        locally, then <span className="inline-mono">/api/settings/validate</span> dry-runs each proposed value
+        server-side, and only the surviving hot batch reaches <span className="inline-mono">/api/runtime-config/apply</span>.
+        Restart-bound keys are named, never sent. The engine’s report — not the HTTP status — decides the verdict shown here.
+      </p>
+    </header>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Engine mode card — mode rail + server preview before typed confirm  */
 /* ------------------------------------------------------------------ */
 
 function EngineModeCard() {
   const poll = usePolling(15_000);
   const modeQuery = useRuntimeModeQuery(poll.paused);
   const setMode = useSetEngineMode();
+  const preview = useModePreview();
   const pushToast = useUiStore((s) => s.pushToast);
   const [target, setTarget] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -91,13 +200,20 @@ function EngineModeCard() {
 
   const current = modeQuery.data?.mode ?? null;
   const check = target ? checkModeTransition(current, target) : null;
+  const allowed = allowedModes(current);
+  const previewBusy = preview.isPending;
+  const pv = !preview.isPending && preview.variables === target ? preview.data : undefined;
+  const previewBlocked = pv !== undefined && pv.validation.valid === false;
 
   const requestSwitch = () => {
     if (!target || !check?.ok) return;
     setConfirmOpen(true);
+    preview.mutate(target); // server matrix + impact for the modal (never applies)
   };
 
   const confirmSwitch = async () => {
+    if (previewBusy) return;
+    if (previewBlocked) return; // server refused the transition — never proceed
     const outcome = await setMode.mutateAsync(target);
     setResult(outcome);
     pushToast(outcome.ok ? "ok" : "fail", outcome.message);
@@ -129,32 +245,60 @@ function EngineModeCard() {
           UNKNOWN, never guessed. <button className="btn small" onClick={() => void modeQuery.refetch()}>Retry</button>
         </div>
       ) : (
-        <div className="l3-mode-card">
-          <div>
-            <div className="timestamp-note">configured</div>
-            <div className={`l3-mode-badge ${badgeClass(current)}`}>{current ?? "ENGINE OFFLINE"}</div>
+        <div className="cfg-mode-card">
+          <div className="cfg-mode-facts">
+            <div>
+              <div className="timestamp-note">configured</div>
+              <div className={`l3-mode-badge ${badgeClass(current)}`}>{current ?? "ENGINE OFFLINE"}</div>
+            </div>
+            <div>
+              <div className="timestamp-note">effective (runtime)</div>
+              <div className="inline-mono">{modeQuery.data?.effective_mode ?? "—"}</div>
+            </div>
+            <div>
+              <div className="timestamp-note">engine attached</div>
+              <StatusBadge status={modeQuery.data?.engine_attached ? "CONNECTED" : "DISCONNECTED"} />
+            </div>
           </div>
-          <div>
-            <div className="timestamp-note">effective (runtime)</div>
-            <div className="inline-mono">{modeQuery.data?.effective_mode ?? "—"}</div>
-          </div>
-          <div>
-            <div className="timestamp-note">engine attached</div>
-            <StatusBadge status={modeQuery.data?.engine_attached ? "CONNECTED" : "DISCONNECTED"} />
-          </div>
+
           <div className="l3-field">
             <div className="l3-field-head">
               <span className="lab">switch mode</span>
+              <span className="cfg-rail-hint">allowed from {current ?? "current"} · server re-checks at confirm</span>
             </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <SelectField
-                value={target}
-                onChange={setTarget}
-                options={allowedModes(current).includes(target) || target === "" ? ["", ...allowedModes(current)] : allowedModes(current)}
-                label="target execution mode"
-              />
-              <button className="btn danger" disabled={!target || target === current || setMode.isPending} onClick={requestSwitch}>
-                Switch…
+            <div className="cfg-rail" role="group" aria-label="target execution mode">
+              {EXECUTION_MODES.map((m) => {
+                const isCurrent = m === current;
+                const enabled = !isCurrent && allowed.includes(m);
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    className={`cfg-chip mode-${m.toLowerCase()} ${isCurrent ? "is-current" : ""} ${m === "LIVE" ? "is-live" : ""} ${target === m ? "is-target" : ""}`}
+                    aria-pressed={target === m}
+                    disabled={!enabled}
+                    title={
+                      isCurrent
+                        ? "current mode"
+                        : enabled
+                          ? `switch to ${m}`
+                          : `${current ?? "?"} → ${m} is not an allowed transition`
+                    }
+                    onClick={() => setTarget(m)}
+                  >
+                    {isCurrent && <span className="cfg-chip-now">now</span>}
+                    {m}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="cfg-switch-row">
+              <button
+                className="btn danger"
+                disabled={!target || target === current || !check?.ok || setMode.isPending}
+                onClick={requestSwitch}
+              >
+                Switch to {target || "…"}…
               </button>
             </div>
             {check && check.errors.length > 0 && (
@@ -164,7 +308,7 @@ function EngineModeCard() {
               <div className="l3-field-hint">⚠ {check.warnings.join(" · ")}</div>
             )}
             {target === "LIVE" && check?.ok && (
-              <div className="l3-note bad" style={{ marginTop: 4 }}>
+              <div className="l3-note bad">
                 LIVE = real capital at risk through the broker adapter. The backend re-checks everything (BUG-148 path)
                 — a 200 alone is never treated as success; the response payload is.
               </div>
@@ -178,13 +322,44 @@ function EngineModeCard() {
           title={`Switch execution mode → ${target}`}
           word={target}
           confirmLabel="Switch mode"
-          busy={setMode.isPending}
+          busy={previewBusy || setMode.isPending}
+          busyLabel={previewBusy ? "validating…" : "sending…"}
           onCancel={() => setConfirmOpen(false)}
           onConfirm={() => void confirmSwitch()}
           body={
             <>
-              Current mode <b>{current ?? "UNKNOWN"}</b> → <b>{target}</b>. The engine hot-swaps the adapter boundary,
-              persists to the settings DB and the versioned runtime store (source=WEB_UI). {target === "LIVE" ? "Orders will be placed with the real broker." : ""}
+              <div>
+                Current mode <b>{current ?? "UNKNOWN"}</b> → <b>{target}</b>. The engine hot-swaps the adapter boundary,
+                persists to the settings DB and the versioned runtime store (source=WEB_UI).{" "}
+                {target === "LIVE" ? "Orders will be placed with the real broker." : ""}
+              </div>
+              <div className="cfg-preview">
+                {previewBusy && (
+                  <div className="timestamp-note">validating against the backend transition matrix…</div>
+                )}
+                {!previewBusy && preview.isError && (
+                  <div className="l3-note warn">
+                    Server preview unavailable ({preview.error instanceof Error ? preview.error.message : "request failed"}) —
+                    the backend still re-checks the transition on switch; a refusal is shown verbatim.
+                  </div>
+                )}
+                {!previewBusy && !preview.isError && previewBlocked && pv && (
+                  <div className="l3-note bad">
+                    SERVER REFUSED THE TRANSITION — {pv.validation.errors.join(" · ")}
+                  </div>
+                )}
+                {!previewBusy && !preview.isError && pv && pv.validation.valid && pv.validation.warnings.length > 0 && (
+                  <div className="l3-note warn">{pv.validation.warnings.join(" · ")}</div>
+                )}
+                {!previewBusy && !preview.isError && pv && pv.validation.valid && pv.impact.touches.length > 0 && (
+                  <div className="cfg-impact">
+                    <span className="k">touches</span>
+                    {pv.impact.touches.map((t) => (
+                      <span key={t} className="cfg-impact-chip">{t}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </>
           }
         />
@@ -211,6 +386,7 @@ function RuntimeConfigForm() {
   const [result, setResult] = useState<CommandOutcome | null>(null);
   const [serverFieldErrors, setServerFieldErrors] = useState<FieldErrors>({});
   const [step, setStep] = useState<null | "client" | "server" | "applied">(null);
+  const [steps, setSteps] = useState<ApplySteps | null>(null);
 
   const specs = useMemo(() => runtimeConfigSpecs(), []);
   const baseline = useMemo(() => (cfgQuery.data ? configBaseline(cfgQuery.data) : null), [cfgQuery.data]);
@@ -234,18 +410,23 @@ function RuntimeConfigForm() {
       return;
     }
     setServerFieldErrors({});
-    const steps = await apply.mutateAsync(changes);
-    setResult(steps.outcome);
-    setStep(steps.sent ? "applied" : steps.clientErrors && hasErrors(steps.clientErrors) ? "client" : "server");
-    if (steps.serverErrors && hasErrors(steps.serverErrors)) setServerFieldErrors(steps.serverErrors);
-    const allErrors = { ...(steps.clientErrors ?? {}), ...(steps.serverErrors ?? {}) };
-    pushToast(steps.outcome?.ok ? "ok" : "fail", steps.outcome?.message ?? "apply refused");
-    if (steps.outcome?.ok) {
-      setDraft(null);
+    const ran = await apply.mutateAsync(changes);
+    setSteps(ran);
+    setResult(ran.outcome);
+    setStep(ran.sent ? "applied" : ran.clientErrors && hasErrors(ran.clientErrors) ? "client" : "server");
+    if (ran.serverErrors && hasErrors(ran.serverErrors)) setServerFieldErrors(ran.serverErrors);
+    const allErrors = { ...(ran.clientErrors ?? {}), ...(ran.serverErrors ?? {}) };
+    pushToast(ran.outcome?.ok ? "ok" : "fail", ran.outcome?.message ?? "apply refused");
+    if (ran.outcome?.ok) {
+      // Keep the draft when restart-bound edits remain (they were NOT sent —
+      // they must stay visible as unsaved local edits, never silently lost).
+      if (!ran.restartRequired || ran.restartRequired.length === 0) setDraft(null);
     } else if (hasErrors(allErrors)) {
-      setResult({ ok: false, message: `${steps.outcome?.message ?? "Refused."} → ${flattenErrors(allErrors).join(" · ")}`, requestId: steps.outcome?.requestId ?? null });
+      setResult({ ok: false, message: `${ran.outcome?.message ?? "Refused."} → ${flattenErrors(allErrors).join(" · ")}`, requestId: ran.outcome?.requestId ?? null });
     }
   };
+
+  const restartLeft = steps?.restartRequired && steps.restartRequired.length > 0 ? steps.restartRequired : null;
 
   const renderSpec = (spec: SpecWithMutability) => {
     const v = values[spec.key];
@@ -258,9 +439,9 @@ function RuntimeConfigForm() {
         ) : spec.kind === "enum" ? (
           <SelectField value={STR(v)} onChange={(s) => setValue(spec.key, s)} options={spec.options ?? []} error={err} label={spec.key} />
         ) : spec.kind === "number" || spec.kind === "integer" ? (
-          <NumberField value={STR(v)} onChange={(s) => setValue(spec.key, s)} error={err} step={spec.kind === "integer" ? "1" : "any"} />
+          <NumberField value={STR(v)} onChange={(s) => setValue(spec.key, s)} error={err} step={spec.kind === "integer" ? "1" : "any"} spec={spec.label ?? spec.key} />
         ) : (
-          <TextField value={STR(v)} onChange={(s) => setValue(spec.key, s)} error={err} />
+          <TextField value={STR(v)} onChange={(s) => setValue(spec.key, s)} error={err} spec={spec.label ?? spec.key} />
         )}
       </FieldRow>
     );
@@ -294,21 +475,26 @@ function RuntimeConfigForm() {
             </div>
           )}
           {specSections(specs).map((section) => (
-            <div key={section} style={{ marginBottom: 12 }}>
-              <div className="section-title">{section}</div>
-              <div className="l3-form" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
+            <div key={section} className="cfg-sec">
+              <div className="cfg-sec-title">{section}</div>
+              <div className="cfg-fields">
                 {specs.filter((s) => s.section === section).map(renderSpec)}
               </div>
             </div>
           ))}
-          <div className="l3-toolbar" style={{ justifyContent: "flex-end" }}>
+          <div className="l3-toolbar cfg-actions">
             {dirtyKeys.length > 0 && (
-              <button className="btn ghost" onClick={() => { setDraft(null); setServerFieldErrors({}); }}>
-                Revert {dirtyKeys.length} edit{dirtyKeys.length === 1 ? "" : "s"}
-              </button>
+              <>
+                <span className="cfg-dirtycount" title="edited locally, not yet applied">
+                  {dirtyKeys.length} edited
+                </span>
+                <button className="btn ghost" onClick={() => { setDraft(null); setServerFieldErrors({}); setSteps(null); }}>
+                  Revert {dirtyKeys.length} edit{dirtyKeys.length === 1 ? "" : "s"}
+                </button>
+              </>
             )}
-            <span className="timestamp-note">
-              validate(/api/settings/validate) → apply(/api/runtime-config/apply) → report → refetch
+            <span className="timestamp-note cfg-pipeline">
+              validate(/api/settings/validate, value) → apply(/api/runtime-config/apply) → report → refetch
             </span>
             <button
               className="btn primary"
@@ -327,9 +513,17 @@ function RuntimeConfigForm() {
             <div className="l3-note bad">CLIENT VALIDATION BLOCKED SUBMISSION: {flattenErrors(errors).join(" · ")}</div>
           )}
           <ResultStrip result={apply.isPending ? { running: true, lastResult: null, lastMessage: null } : outcomeLine(result)} />
+          {restartLeft && (
+            <div className="l3-note warn cfg-restart">
+              RESTART REQUIRED — not sent through the hot-apply gate, kept as local edits:{" "}
+              {restartLeft.map((k) => (
+                <span key={k} className="cfg-restart-chip">{k}</span>
+              ))}
+            </div>
+          )}
 
-          <div style={{ marginTop: 12 }}>
-            <div className="section-title">Version truth (runtime-config diagnostics)</div>
+          <div className="cfg-sec">
+            <div className="cfg-sec-title">Version truth (runtime-config diagnostics)</div>
             {diagQuery.isPending ? (
               <Skeleton count={2} height={12} />
             ) : diagQuery.data ? (
@@ -379,10 +573,10 @@ function ModelSwapCard() {
     <Panel title="Model artifact hot-swap" right={<span className="timestamp-note">load → validate → warm → atomic swap</span>}>
       <div className="l3-form">
         <FieldRow label={spec.label} hint={spec.key} error={path === "" ? null : err}>
-          <TextField value={path} onChange={setPath} error={err} placeholder="artifacts/model.pt" />
+          <TextField value={path} onChange={setPath} error={err} placeholder="artifacts/model.pt" spec="artifact path" />
         </FieldRow>
       </div>
-      <div className="l3-toolbar" style={{ justifyContent: "flex-end" }}>
+      <div className="l3-toolbar cfg-actions">
         <button className="btn primary" disabled={path.trim() === "" || hasErrors(errors) || swap.isPending} onClick={() => void run()}>
           {swap.isPending ? "swapping…" : "Swap model…"}
         </button>
@@ -427,7 +621,7 @@ function SettingsProvenance() {
             <span>{Object.keys(query.data?.settings ?? {}).length} tracked keys</span>
           </div>
           {open && query.data && (
-            <div className="l3-scroll sm" style={{ marginTop: 8 }}>
+            <div tabIndex={0} className="l3-scroll sm" style={{ marginTop: 8 }}>
               <table className="data-table">
                 <thead>
                   <tr>
@@ -460,7 +654,7 @@ function SettingsProvenance() {
             Read-only provenance ("which value is active, where did it come from"). Writes go through the runtime-config
             gate above or the Telegram panel — never by editing this table; secret rows are masked by the backend itself.
           </div>
-          <div className="section-title" style={{ marginTop: 10 }}>Recent settings audit</div>
+          <div className="cfg-sec-title" style={{ marginTop: 10 }}>Recent settings audit</div>
           <KeyValueList
             rows={(query.data?.recent_audit ?? []).slice(0, 8).map((row, i) => [
               `${STR(row.key) || STR((row as Record<string, unknown>).setting_key) || "event"} · ${STR(row.timestamp) || `#${i}`}`,
@@ -536,7 +730,7 @@ function TelegramPanel() {
         <div className="l3-note bad">{status.error instanceof Error ? status.error.message : "telegram status unreadable"}</div>
       ) : (
         <div className="l3-form">
-          <div className="l3-runtime-ver" style={{ marginBottom: 6 }}>
+          <div className="l3-runtime-ver cfg-tg-facts" style={{ marginBottom: 6 }}>
             <span>token: <StatusBadge status={st?.token_status ?? "UNKNOWN"} /></span>
             <span className="l3-mask">{st?.masked_token || "no mask served"}</span>
             <span>configured: {st?.configured ? "yes" : "no"}</span>
@@ -547,12 +741,12 @@ function TelegramPanel() {
             <CheckField checked={effectiveEnabled} onChange={setEnabled} label="telegram enabled" />
           </FieldRow>
           <FieldRow label={specs[0]!.label!} hint="leave empty to keep the stored secret — it never round-trips in plaintext (BUG-072)" error={firstError(errors, "bot_token")}>
-            <TextField value={token} onChange={setToken} error={firstError(errors, "bot_token")} placeholder={st?.masked_token || "123456:ABC-DEF…"} />
+            <TextField value={token} onChange={setToken} error={firstError(errors, "bot_token")} placeholder={st?.masked_token || "123456:ABC-DEF…"} spec="bot token" />
           </FieldRow>
           <FieldRow label={specs[1]!.label!} hint="numeric chat id of the operator" error={firstError(errors, "admin_id")}>
-            <TextField value={admin} onChange={setAdmin} error={firstError(errors, "admin_id")} placeholder="-1001234567890" />
+            <TextField value={admin} onChange={setAdmin} error={firstError(errors, "admin_id")} placeholder="-1001234567890" spec="admin chat id" />
           </FieldRow>
-          <div className="l3-toolbar" style={{ justifyContent: "flex-end" }}>
+          <div className="l3-toolbar cfg-actions">
             <button className="btn" disabled={!dirty || hasErrors(errors) || save.isPending} onClick={() => void runSave()}>
               {save.isPending ? "saving…" : "Save telegram settings…"}
             </button>
@@ -581,24 +775,14 @@ function TelegramPanel() {
 export default function ConfigPage(props: ShellPageProps) {
   void props;
   return (
-    <div className="l3-wrap">
-      <div className="l3-head">
-        <h1>Settings</h1>
-        <span className="crumb">PLATFORM</span>
-        <span className="desc">Engine mode · runtime configuration · model swap · provenance · Telegram (legacy tab-config)</span>
-      </div>
-      <div className="l3-note">
-        Validate-before-apply is enforced on every write: client rules (type/range/enum/shape) block an invalid payload
-        locally, then <span className="inline-mono">/api/settings/validate</span> answers per-key mutability server-side,
-        and only a fully-valid batch reaches <span className="inline-mono">/api/runtime-config/apply</span>. The engine's
-        report — not the HTTP status — decides the verdict shown here.
-      </div>
+    <div className="cfg-page l3-wrap">
+      <ConfigHero />
       <div className="l3-split">
-        <div>
+        <div className="cfg-col">
           <RuntimeConfigForm />
           <SettingsProvenance />
         </div>
-        <div>
+        <div className="cfg-col">
           <EngineModeCard />
           <ModelSwapCard />
           <TelegramPanel />
