@@ -14,9 +14,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { intelligenceTelemetryApi } from "../intelligenceApi";
 
 export function PositionTimelineLookup() {
+  const t = useI18n((s) => s.t);
   const [ticket, setTicket] = useState("");
   const [submitted, setSubmitted] = useState<string | null>(null);
 
@@ -30,14 +32,15 @@ export function PositionTimelineLookup() {
   const events = timelineQ.data?.events ?? [];
 
   return (
-    <Panel title="Position timeline (ticket lookup)" tight>
+    <Panel title={t("ai-analysis.timeline.panel_title", "Position timeline (ticket lookup)")} tight>
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         <input
           className="input"
           style={{ flex: 1 }}
           value={ticket}
           inputMode="numeric"
-          aria-label="Ticket lookup" placeholder="ticket e.g. 501"
+          aria-label={t("ai-analysis.timeline.aria", "Ticket lookup")}
+          placeholder={t("ai-analysis.timeline.ticket_placeholder", "ticket e.g. 501")}
           onChange={(e) => setTicket(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") setSubmitted(ticket.trim());
@@ -48,31 +51,34 @@ export function PositionTimelineLookup() {
           disabled={!ticket.trim()}
           onClick={() => setSubmitted(ticket.trim())}
         >
-          View
+          {t("ai-analysis.timeline.view", "View")}
         </button>
       </div>
 
       {submitted === null ? (
-        <EmptyState message="Enter a ticket to load its immutable position timeline." />
+        <EmptyState message={t("ai-analysis.timeline.enter_ticket", "Enter a ticket to load its immutable position timeline.")} />
       ) : timelineQ.isPending ? (
         <Skeleton count={3} />
       ) : timelineQ.isError ? (
         <ErrorState
-          message={timelineQ.error instanceof Error ? timelineQ.error.message : "timeline endpoint failed"}
+          message={timelineQ.error instanceof Error ? timelineQ.error.message : t("ai-analysis.timeline.failed", "timeline endpoint failed")}
           onRetry={() => void timelineQ.refetch()}
         />
       ) : timelineQ.data && timelineQ.data.available === false ? (
         <EmptyState
-          message="Timeline unavailable — the intelligence subsystem is not attached."
-          hint="/api/intelligence/positions/{ticket}/timeline answered available:false"
+          message={t("ai-analysis.timeline.unavailable", "Timeline unavailable — the intelligence subsystem is not attached.")}
+          hint={t(
+            "ai-analysis.timeline.unavailable_hint",
+            "/api/intelligence/positions/{ticket}/timeline answered available:false",
+          )}
         />
       ) : events.length === 0 ? (
-        <EmptyState message={`No lifecycle events for ticket ${submitted}.`} />
+        <EmptyState message={t("ai-analysis.timeline.no_events", "No lifecycle events for ticket {ticket}.", { ticket: submitted })} />
       ) : (
-        <DataTable headers={[{ label: "event" }, { label: "detail" }, { label: "MFE", num: true }, { label: "MAE", num: true }]}>
+        <DataTable headers={[{ label: t("ai-analysis.th.event", "event") }, { label: t("ai-analysis.th.detail", "detail") }, { label: "MFE", num: true }, { label: "MAE", num: true }]}>
           {events.map((ev, i) => (
             <tr key={i}>
-              <td className="small">
+              <td className="small" dir="ltr">
                 <strong>{ev.event_type || "—"}</strong>
               </td>
               <td className="tiny muted">{ev.detail || ""}</td>
