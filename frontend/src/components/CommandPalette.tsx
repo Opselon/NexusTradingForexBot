@@ -218,7 +218,7 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
       style={{ alignItems: "flex-start", paddingTop: "12vh" }}
       onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}
     >
-      <div className="modal cp-modal" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div className="modal cp-modal" role="dialog" aria-modal="true" aria-label={t("ux.shortcut.palette", "Command palette")}>
         <div className="cp-searchrow">
           <span className="cp-glyph" aria-hidden="true">⌘</span>
           <input

@@ -7,6 +7,7 @@
  */
 
 import { extent, fmtCompact, linePath, niceTicks, scaleLinear, type Pt } from "./geometry";
+import { useI18n } from "@/stores/i18nStore";
 import "./viz.css";
 
 export interface DrawdownPoint {
@@ -24,10 +25,12 @@ export interface DrawdownChartProps {
 
 const W = 640;
 
-export function DrawdownChart({ points, height = 150, maxDrawdownPct, emptyHint = "no drawdown samples from the backend" }: DrawdownChartProps) {
+export function DrawdownChart({ points, height = 150, maxDrawdownPct, emptyHint }: DrawdownChartProps) {
+  const t = useI18n((s) => s.t);
   const values = points.map((p) => p.drawdown_pct ?? null);
   const real = values.filter((v): v is number => v !== null && !Number.isNaN(v));
-  if (real.length < 2) return <div className="viz-empty">{emptyHint}</div>;
+  if (real.length < 2)
+    return <div className="viz-empty">{emptyHint ?? t("ui.viz.dd_empty", "no drawdown samples from the backend")}</div>;
   const padT = 10;
   const padB = 18;
   const lo = Math.min(...real, 0);
@@ -43,12 +46,12 @@ export function DrawdownChart({ points, height = 150, maxDrawdownPct, emptyHint 
   const ticks = niceTicks(ext[0], ext[1], 3);
   return (
     <div className="viz-frame">
-      <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={`drawdown, worst ${worst.toFixed(2)}%`}>
-        {ticks.map((t) => (
-          <g key={t}>
-            <line className="viz-grid" x1={0} x2={W} y1={toY(t)} y2={toY(t)} />
-            <text className="viz-axis" x={2} y={toY(t) - 3}>
-              {fmtCompact(t, 1)}%
+      <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={t("ui.viz.dd_aria", "drawdown, worst {w}%", { w: worst.toFixed(2) })}>
+        {ticks.map((tk) => (
+          <g key={tk}>
+            <line className="viz-grid" x1={0} x2={W} y1={toY(tk)} y2={toY(tk)} />
+            <text className="viz-axis" x={2} y={toY(tk) - 3}>
+              {fmtCompact(tk, 1)}%
             </text>
           </g>
         ))}
@@ -57,14 +60,14 @@ export function DrawdownChart({ points, height = 150, maxDrawdownPct, emptyHint 
         <path className="viz-line neg" d={line} />
         {maxDrawdownPct !== null && maxDrawdownPct !== undefined && (
           <text className="viz-axis" x={W} y={toY(Math.min(maxDrawdownPct, ext[1])) - 3} textAnchor="end" style={{ fill: "var(--amber)" }}>
-            max {maxDrawdownPct.toFixed(2)}%
+            {t("ui.viz.max_pct", "max {v}%", { v: maxDrawdownPct.toFixed(2) })}
           </text>
         )}
       </svg>
       <div className="viz-legend">
         <span>
           <i className="sw neg" />
-          drawdown_pct (running peak, accounting core)
+          {t("ui.viz.dd_legend", "drawdown_pct (running peak, accounting core)")}
         </span>
       </div>
     </div>

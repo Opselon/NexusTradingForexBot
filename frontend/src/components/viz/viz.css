@@ -36,11 +36,12 @@
   min-block-size: 72px; color: var(--text-faint); font-size: 11px; font-family: var(--mono);
   border: 1px dashed var(--border); border-radius: 8px;
   background: var(--bg-inset);
-  padding: 0 12px; text-align: center;
+  padding-inline: 12px; text-align: center; overflow-wrap: break-word;
 }
 .viz-legend {
   display: flex; flex-wrap: wrap; gap: 4px 14px;
   margin-block-start: 6px; font-family: var(--mono); font-size: 10px; color: var(--text-dim);
+  overflow-wrap: anywhere;
 }
 .viz-legend .sw {
   display: inline-block; inline-size: 8px; block-size: 8px; border-radius: 2px;
@@ -67,11 +68,16 @@
 
 /* heat bar */
 .heatbar { display: grid; gap: 3px; }
-.heatbar .row { display: grid; grid-template-columns: max-content 1fr max-content; align-items: center; gap: 10px; }
-.heatbar .lab { font-size: 10px; color: var(--text-dim); font-family: var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
+/* minmax(0,...) lets both side columns shrink when translated labels/captions
+   are wider than the row; the label cell may then wrap instead of overflowing */
+.heatbar .row { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr) minmax(0, max-content); align-items: center; gap: 10px; }
+.heatbar .lab { font-size: 10px; color: var(--text-dim); font-family: var(--mono); letter-spacing: 0.06em; text-transform: uppercase; overflow-wrap: anywhere; }
 .heatbar .track { height: 14px; border-radius: 4px; background: var(--bg-inset); border: 1px solid var(--border); overflow: hidden; display: flex; }
 .heatbar .cell { block-size: 100%; }
-.heatbar .val { font-size: 10px; color: var(--text-dim); font-family: var(--mono); min-inline-size: 42px; text-align: end; }
+.heatbar .val { font-size: 10px; color: var(--text-dim); font-family: var(--mono); min-inline-size: 42px; text-align: end; overflow-wrap: anywhere; }
+/* RTL: mirror the segment strip so cell 0 sits at the start edge (right),
+   matching the scale labels below, which flex-order with direction */
+:root[dir="rtl"] .heatbar .row .viz { transform: scaleX(-1); }
 .heatbar-scale {
   display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9px;
   color: var(--text-faint); margin-block-start: 4px;

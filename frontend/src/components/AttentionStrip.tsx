@@ -105,7 +105,7 @@ export function AttentionStrip({
   }
   const critical = rows.some((r) => r.kind === "critical");
   return (
-    <div className={`banner ${critical ? "down" : "stale"} ${critical ? "attention-critical" : "attention-action"}`} role="region" aria-label="Attention summary">
+    <div className={`banner ${critical ? "down" : "stale"} ${critical ? "attention-critical" : "attention-action"}`} role="region" aria-label={t("ui.attention.summary", "Attention summary")}>
       <div className="attention-rows">
         {rows.map((r, i) => (
           <span key={i} className="a-row">

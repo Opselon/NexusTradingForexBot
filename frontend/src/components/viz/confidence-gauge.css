@@ -78,11 +78,14 @@
   transition: background-color 0.12s ease;
 }
 .cm-row:hover { background: var(--bg-panel-2); }
+/* min-inline-size:0 lets the grid item shrink below its content width, so the
+   ellipsis — not layout overflow — handles an over-long localized alias */
 .cm-name {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--text-dim);
   letter-spacing: 0.04em;
+  min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -126,6 +129,7 @@
   font-size: 8.5px;
   letter-spacing: 0.1em;
   color: var(--text-faint);
+  white-space: nowrap; /* short localized tier word — keep the row one line */
 }
 
 /* ---- multi-strategy card grid ---------------------------------------- */
