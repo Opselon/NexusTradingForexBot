@@ -73,13 +73,16 @@ export function ManageTab() {
   const progress = useMigrationProgress(migrating);
   const report = useLastReport(migrating || (progress.data?.done ?? false));
 
-  const errors = validatePgConfig(form);
-  const invalid = Object.values(errors).some((m) => m.length > 0);
+  const errors = useMemo(() => validatePgConfig(form), [form]);
+  const invalid = useMemo(() => Object.values(errors).some((m) => m.length > 0), [errors]);
   const set = (k: string, v: string | boolean) => setValues((prev) => ({ ...(prev ?? baseline), [k]: v }));
 
   const pct = Math.round(Math.max(0, Math.min(1, progress.data?.progress ?? 0)) * 100);
   const jobDone = progress.data?.done === true;
-  const hints = providerHints(manage.data);
+  const hints = useMemo(() => providerHints(manage.data), [manage.data]);
+  // One spec array per mount (module-pure builder) instead of 7 fresh spec
+  // objects per render — same objects, same firstError() results.
+  const pgFieldSpecs = useMemo(() => pgSpecs(), []);
 
   const guardRun = async () => {
     if (!guard) return;
@@ -152,7 +155,7 @@ export function ManageTab() {
 
             <div className="dbc-section-title">connection</div>
             <div className="l3-form" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 10 }}>
-              {pgSpecs().map((spec) => {
+              {pgFieldSpecs.map((spec) => {
                 const err = firstError(errors, spec.key);
                 const v = form[spec.key];
                 return (

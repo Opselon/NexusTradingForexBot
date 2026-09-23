@@ -4,7 +4,7 @@
  * from GET /scores/{id}/history. Missing sections say they are missing.
  */
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useDialogA11y } from "../../../components/useDialogA11y";
 import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { HeatBar, Sparkline } from "@/components/viz";
@@ -28,7 +28,31 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
   useDialogA11y(boxRef, onClose);
 
   const d = detail.data;
-  const sections = d ? detailSections(d) : [];
+  const sections = useMemo(() => (d ? detailSections(d) : []), [d]);
+
+  // perf: the score-history derivation (slice/reverse map over the snapshot
+  // array + factor object projection) runs once per payload change, not on
+  // every drawer render.
+  const items = history.data?.items ?? [];
+  // perf: the pretty payload blocks serialize once per payload identity —
+  // toggling structured ↔ raw JSON no longer re-stringifies the whole object.
+  const rawJson = useMemo(() => (d ? JSON.stringify(d, null, 2) : ""), [d]);
+  const dslJson = useMemo(() => (d?.dsl ? JSON.stringify(d.dsl, null, 2) : ""), [d]);
+  const sparkValues = useMemo(
+    () => items.slice(0, 40).reverse().map((s) => (typeof s.total === "number" ? s.total : null)),
+    [items],
+  );
+  const heatItems = useMemo(() => {
+    const latest = items[0];
+    const f = latest ? factorsOf(latest) : null;
+    if (!f) return [];
+    return Object.entries(f).map(([k, v]) => ({
+      label: k,
+      value: Math.max(0, Math.min(1, v)),
+      caption: formatNumber(v, 3),
+      title: `${k} = ${v}`,
+    }));
+  }, [items]);
 
   return (
     <div className="mkt-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -51,7 +75,7 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
           ) : !d ? (
             <EmptyState message="Seed detail payload was empty." />
           ) : showRaw ? (
-            <pre>{JSON.stringify(d, null, 2)}</pre>
+            <pre>{rawJson}</pre>
           ) : (
             <>
               <section className="mkt-store-evidence">
@@ -117,7 +141,7 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
               <section className="mkt-store-evidence">
                 <div className="mkt-store-evidence-title">
                   14-factor score — history
-                  <span className="pill">{(history.data?.items ?? []).length} snapshot{(history.data?.items ?? []).length === 1 ? "" : "s"}</span>
+                  <span className="pill">{items.length} snapshot{items.length === 1 ? "" : "s"}</span>
                 </div>
                 {history.isPending ? (
                   <Skeleton count={2} height={24} />
@@ -128,10 +152,7 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
                 ) : (
                   <>
                     <Sparkline
-                      values={(history.data?.items ?? [])
-                        .slice(0, 40)
-                        .reverse()
-                        .map((s) => (typeof s.total === "number" ? s.total : null))}
+                      values={sparkValues}
                       tone="neu"
                       label="score total history"
                       width={200}
@@ -139,23 +160,13 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
                     />
                     <div style={{ marginTop: 8 }}>
                       <HeatBar
-                        items={(() => {
-                          const latest = (history.data?.items ?? [])[0];
-                          const f = latest ? factorsOf(latest) : null;
-                          if (!f) return [];
-                          return Object.entries(f).map(([k, v]) => ({
-                            label: k,
-                            value: Math.max(0, Math.min(1, v)),
-                            caption: formatNumber(v, 3),
-                            title: `${k} = ${v}`,
-                          }));
-                        })()}
+                        items={heatItems}
                         emptyHint="latest snapshot has no numeric factors"
                         scaleCaptions={["0", "1.0"]}
                       />
                     </div>
                     <DataTable headers={[{ label: "scored at" }, { label: "profile" }, { label: "total", num: true }, { label: "verdict" }]}>
-                      {(history.data?.items ?? []).slice(0, 12).map((s, i) => (
+                      {items.slice(0, 12).map((s, i) => (
                         <tr key={i}>
                           <td>{s.created_at ? formatDateTime(String(s.created_at)) : "—"}</td>
                           <td>{String(s.profile_id ?? "default")} · v{s.profile_version ?? "—"}</td>
@@ -219,7 +230,7 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
               {d.dsl && (
                 <section className="mkt-store-evidence">
                   <div className="mkt-store-evidence-title">DSL (stored spec)</div>
-                  <pre>{JSON.stringify(d.dsl, null, 2)}</pre>
+                  <pre>{dslJson}</pre>
                 </section>
               )}
               {sections.length < 7 && (

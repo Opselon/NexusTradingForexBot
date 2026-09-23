@@ -9,6 +9,7 @@
  *             states stay visible (no fabricated bars).
  * EXTEND:   new distribution column = a field OperatorFunnelDto already declares.
  */
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { EmptyState, Panel, Skeleton } from "@/components/primitives";
 import { DistBars } from "../../../research/ui/lane5Kit";
@@ -20,6 +21,22 @@ export function FunnelTab({ hours }: { hours: number | undefined }) {
     queryFn: ({ signal }) => controlCenterQueries.funnel(hours, signal),
     retry: false,
   });
+
+  // perf: the three DistBars row maps derive once per payload identity — the
+  // parent page re-renders on every 15s summary tick with this query idle.
+  const data = funnelQ.data;
+  const actionRows = useMemo(
+    () => (data?.actions ?? []).map((a) => ({ label: a.action ?? "—", count: a.count ?? 0 })),
+    [data],
+  );
+  const stageRows = useMemo(
+    () => (data?.stages ?? []).map((a) => ({ label: a.stage ?? "—", count: a.count ?? 0 })),
+    [data],
+  );
+  const gateRows = useMemo(
+    () => (data?.gates ?? []).map((a) => ({ label: a.gate ?? "—", count: a.count ?? 0 })),
+    [data],
+  );
 
   return (
     <Panel title="Terminal-stage funnel" tight>
@@ -35,15 +52,15 @@ export function FunnelTab({ hours }: { hours: number | undefined }) {
           <div className="grid cols-3">
             <div>
               <div className="section-title">actions</div>
-              <DistBars rows={(funnelQ.data?.actions ?? []).map((a) => ({ label: a.action ?? "—", count: a.count ?? 0 }))} tone="var(--green)" />
+              <DistBars rows={actionRows} tone="var(--green)" />
             </div>
             <div>
               <div className="section-title">stages</div>
-              <DistBars rows={(funnelQ.data?.stages ?? []).map((a) => ({ label: a.stage ?? "—", count: a.count ?? 0 }))} tone="var(--amber)" />
+              <DistBars rows={stageRows} tone="var(--amber)" />
             </div>
             <div>
               <div className="section-title">gates</div>
-              <DistBars rows={(funnelQ.data?.gates ?? []).map((a) => ({ label: a.gate ?? "—", count: a.count ?? 0 }))} tone="var(--red)" />
+              <DistBars rows={gateRows} tone="var(--red)" />
             </div>
           </div>
           <div className="tiny faint" style={{ marginTop: 6 }}>

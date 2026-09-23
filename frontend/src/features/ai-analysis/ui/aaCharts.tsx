@@ -20,7 +20,7 @@
  *   whole SVG subtree between polls.
  */
 
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { formatTime } from "@/lib/format";
 import { actionTone } from "../model";
 import {
@@ -41,16 +41,18 @@ const FAM_CLASS = (f: ReturnType<typeof actionFamily>): string => `aa-fam-${f}`;
 /** Donut of /api/v1/decisions/stats by_action collapsed to display families,
  *  with the real backend labels as a legend (counts + share of the map). */
 function ActionDonutBase({ byAction }: { byAction: Record<string, number> | undefined }) {
-  const legend: CountRow[] = countRows(byAction);
-  const kpi = actionKpi(byAction);
   const R = 44;
-  const { segs, total } = donutSegments(familyTotals(byAction), R);
+  // Every derivation below reads ONLY byAction: memo deps are exactly the
+  // payload map the vizMath call consumes (re-runs only when it changes).
+  const legend: CountRow[] = useMemo(() => countRows(byAction), [byAction]);
+  const kpi = useMemo(() => actionKpi(byAction), [byAction]);
+  const { segs, total } = useMemo(() => donutSegments(familyTotals(byAction), R), [byAction, R]);
+  const aria = useMemo(() => legend.map((r) => `${r.label} ${r.count}`).join(", "), [legend]);
 
   if (total <= 0) {
     return <div className="aa-empty">backend returned no by_action counts for this window</div>;
   }
   const circ = 2 * Math.PI * R;
-  const aria = legend.map((r) => `${r.label} ${r.count}`).join(", ");
   return (
     <div className="aa-donut-wrap">
       <svg viewBox="0 0 120 120" className="aa-donut" role="img" aria-label={`decision mix: ${aria}`}>
@@ -99,11 +101,6 @@ function ActionDonutBase({ byAction }: { byAction: Record<string, number> | unde
  *  where the backend recorded no confidence; dropped rows are captioned. */
 function ConfidenceTimelineBase({ series }: { series: TimelineSeries }) {
   const { points, dropped, from, to } = series;
-  const plottable = points.filter((p) => p.v !== null);
-  if (points.length === 0) {
-    return <div className="aa-empty">no history rows with a parseable timestamp on this page</div>;
-  }
-
   const W = 640;
   const H = 210;
   const L = 40;
@@ -117,24 +114,38 @@ function ConfidenceTimelineBase({ series }: { series: TimelineSeries }) {
     span > 0 ? L + ((t - from!) / span) * plotW : L + plotW / 2;
   const yOf = (v: number): number => T + (1 - Math.max(0, Math.min(1, v))) * plotH;
 
-  const gridVals = [0, 0.25, 0.5, 0.75, 1];
-  // Polyline points with explicit gaps (vizMath already clamped v to 0..1).
-  const xy = points.map((p) => (p.v === null ? null : { x: xOf(p.t), y: yOf(p.v) }));
-  let d = "";
-  let pen = false;
-  for (const p of xy) {
-    if (!p) {
-      pen = false;
-      continue;
+  // Derivations read ONLY the series fields (points/dropped/from/to) plus the
+  // constant geometry above — memo deps are exactly those inputs, so an
+  // unrelated parent re-render never rebuilds the path/aria/filter results.
+  const plottable = useMemo(() => points.filter((p) => p.v !== null), [points]);
+  // Polyline path with explicit gaps (vizMath already clamped v to 0..1).
+  const d = useMemo(() => {
+    const xy = points.map((p) => (p.v === null ? null : { x: xOf(p.t), y: yOf(p.v) }));
+    let path = "";
+    let pen = false;
+    for (const p of xy) {
+      if (!p) {
+        pen = false;
+        continue;
+      }
+      path += pen ? ` L${p.x.toFixed(2)},${p.y.toFixed(2)}` : ` M${p.x.toFixed(2)},${p.y.toFixed(2)}`;
+      pen = true;
     }
-    d += pen ? ` L${p.x.toFixed(2)},${p.y.toFixed(2)}` : ` M${p.x.toFixed(2)},${p.y.toFixed(2)}`;
-    pen = true;
+    return path;
+  }, [points, from, to]);
+  const nActions = useMemo(() => new Set(points.map((p) => p.action ?? "?")).size, [points]);
+  const aria = useMemo(
+    () =>
+      `confidence timeline, ${plottable.length} samples from ${formatTime(from)} to ${formatTime(to)}` +
+      (dropped > 0 ? `, ${dropped} rows dropped for unparsable timestamps` : ""),
+    [plottable, from, to, dropped],
+  );
+
+  if (points.length === 0) {
+    return <div className="aa-empty">no history rows with a parseable timestamp on this page</div>;
   }
 
-  const nActions = new Set(points.map((p) => p.action ?? "?")).size;
-  const aria =
-    `confidence timeline, ${plottable.length} samples from ${formatTime(from)} to ${formatTime(to)}` +
-    (dropped > 0 ? `, ${dropped} rows dropped for unparsable timestamps` : "");
+  const gridVals = [0, 0.25, 0.5, 0.75, 1];
 
   return (
     <div className="aa-tl">
@@ -191,8 +202,9 @@ function BarListBase({
   empty?: string;
 }) {
   if (rows.length === 0) return <div className="aa-empty">{empty}</div>;
-  const shown = rows.slice(0, max);
-  const peak = Math.max(1, ...shown.map((r) => r.count));
+  // shown/peak read ONLY the rows prop + max: memo deps are exactly those.
+  const shown = useMemo(() => rows.slice(0, max), [rows, max]);
+  const peak = useMemo(() => Math.max(1, ...shown.map((r) => r.count)), [shown]);
   return (
     <div className="aa-bars">
       {shown.map((r) => (
@@ -235,29 +247,45 @@ function PriceLadderBase({
   sl: number | null | undefined;
   tp: number | null | undefined;
 }) {
-  const rr = rrRatio(entry, sl, tp);
-  const risk = finite(entry) && finite(sl) ? Math.abs(entry - sl) : null;
-  const reward = finite(entry) && finite(tp) ? Math.abs(tp - entry) : null;
-
-  const levels = [
-    { key: "tp", label: "TP", v: tp, dist: reward !== null ? `reward ${reward.toFixed(2)}` : null },
-    { key: "entry", label: "ENTRY", v: entry, dist: null },
-    { key: "sl", label: "SL", v: sl, dist: risk !== null ? `risk ${risk.toFixed(2)}` : null },
-  ].filter((l): l is { key: string; label: string; v: number; dist: string | null } => finite(l.v));
+  // levels/distances read ONLY the three level props — memo deps are exactly
+  // those (distances are arithmetic over the same recorded levels).
+  const levels = useMemo(
+    () => {
+      const reward = finite(entry) && finite(tp) ? Math.abs(tp - entry) : null;
+      const risk = finite(entry) && finite(sl) ? Math.abs(entry - sl) : null;
+      return [
+        { key: "tp", label: "TP", v: tp, dist: reward !== null ? `reward ${reward.toFixed(2)}` : null },
+        { key: "entry", label: "ENTRY", v: entry, dist: null },
+        { key: "sl", label: "SL", v: sl, dist: risk !== null ? `risk ${risk.toFixed(2)}` : null },
+      ].filter((l): l is { key: string; label: string; v: number; dist: string | null } => finite(l.v));
+    },
+    [entry, sl, tp],
+  );
+  const rr = useMemo(() => rrRatio(entry, sl, tp), [entry, sl, tp]);
+  // Geometry is derived ONLY from the (memoized) levels array — one memo for
+  // the max/min/spread/positioning + the axis text alternative.
+  const layout = useMemo(() => {
+    const vals = levels.map((l) => l.v);
+    const max = Math.max(...vals);
+    const min = Math.min(...vals);
+    const spread = max - min;
+    return {
+      max,
+      spread,
+      positioned: levels.length > 1 && spread > 0,
+      axisAria: levels.map((l) => `${l.label} ${l.v.toFixed(2)}`).join(", "),
+    };
+  }, [levels]);
 
   if (levels.length === 0) {
     return <div className="aa-empty">no entry / SL / TP recorded for this decision</div>;
   }
-  const vals = levels.map((l) => l.v);
-  const max = Math.max(...vals);
-  const min = Math.min(...vals);
-  const spread = max - min;
-  const positioned = levels.length > 1 && spread > 0;
+  const { max, spread, positioned } = layout;
 
   return (
     <div className="aa-ladder">
       <div className={`aa-ladder-axis ${positioned ? "positioned" : ""}`} role="img"
-        aria-label={levels.map((l) => `${l.label} ${l.v.toFixed(2)}`).join(", ")}>
+        aria-label={layout.axisAria}>
         {levels.map((l) => (
           <div
             key={l.key}

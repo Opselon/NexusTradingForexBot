@@ -17,6 +17,7 @@
  *           no new query keys, no new network calls.
  */
 
+import { useMemo } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { DataTable, EmptyState, ErrorState, Panel, SeverityBadge, Skeleton } from "@/components/primitives";
 import { DistBars } from "../../research/ui/lane5Kit";
@@ -48,10 +49,16 @@ export default function ListSection({
   setStatus: (v: string) => void;
   onOpen: (id: string) => void;
 }) {
-  const byComponent = Object.entries(obj((healthQ.data as DiagnosticsHealthDto | undefined)?.by_component)).map(([k, v]) => ({
-    label: k,
-    count: num(v) ?? 0,
-  }));
+  // perf(7): memoized on the exact payload the bars read (Object.entries identity
+  // changes only when the health payload lands).
+  const byComponent = useMemo(
+    () =>
+      Object.entries(obj((healthQ.data as DiagnosticsHealthDto | undefined)?.by_component)).map(([k, v]) => ({
+        label: k,
+        count: num(v) ?? 0,
+      })),
+    [healthQ.data],
+  );
 
   const visible = incidents.filter(
     (i) => (severity === "" || i.severity === severity) && (status === "" || i.status === status),

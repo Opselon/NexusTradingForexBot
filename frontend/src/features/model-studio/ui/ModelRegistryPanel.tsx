@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Panel } from "@/components/primitives";
 import type {
   ActiveModelResponse,
@@ -86,6 +87,17 @@ export function ModelRegistryPanel({
   scalerResult,
   onInspectScaler,
 }: ModelRegistryPanelProps) {
+  // One derivation: the catalog's model option labels (accessor chains over
+  // the models array). Memo deps are exactly that array, so an unrelated
+  // parent re-render (slider drag, hot-load busy flip) never rebuilds it.
+  const options = useMemo(
+    () =>
+      models.map((m) => ({
+        id: m.id,
+        label: `${m.is_active ? "★ " : ""}${m.id} [${m.dimension}D] ${m.fine_tune_enabled ? "[FT:ON]" : "[FT:OFF]"} (loss: ${m.final_loss?.toFixed(4) || "0.0000"})`,
+      })),
+    [models],
+  );
   return (
     <Panel
       title="AI HUB: MODEL REGISTRY & RUNTIME HOT-LOADER"
@@ -155,9 +167,9 @@ export function ModelRegistryPanel({
               className="ms-select-styled"
             >
               {models.length === 0 && <option value="">No registered models found</option>}
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.is_active ? "★ " : ""}{m.id} [{m.dimension}D] {m.fine_tune_enabled ? "[FT:ON]" : "[FT:OFF]"} (loss: {m.final_loss?.toFixed(4) || "0.0000"})
+              {options.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
                 </option>
               ))}
             </select>
