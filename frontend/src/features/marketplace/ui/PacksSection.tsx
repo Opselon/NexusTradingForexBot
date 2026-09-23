@@ -6,7 +6,7 @@
  * then refetches rather than marking the pack installed optimistically.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ConfirmModal, EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { useInstallPack, useMktPacks } from "../hooks";
 import { validateInstallCount } from "../model";
@@ -22,7 +22,9 @@ export function PacksSection() {
 
   const validation = validateInstallCount(countRaw);
   const list = packs.data?.packs ?? [];
-  const installedCount = list.filter((p) => p.installed).length;
+  // perf: the installed count (filter over the pack list) derives once per
+  // fetched list instead of on every render of the catalog grid.
+  const installedCount = useMemo(() => list.filter((p) => p.installed).length, [list]);
 
   const confirmInstall = (): void => {
     if (!target || validation.value === null) return;

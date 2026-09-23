@@ -17,6 +17,32 @@ import type { MktEnableMode } from "../types";
 import { SeedDetailDrawer } from "./SeedDetailDrawer";
 import { FreshnessNote, asErrorText } from "./shared";
 
+/* perf: the static option vocabularies (backend enum words) are module
+ * constants — their <option> elements are built ONCE instead of on every
+ * render of this 100-row table page. Labels/keys/words are unchanged. */
+const FAMILY_OPTIONS = [
+  "PRICE_ACTION", "ICT", "ICHIMOKU", "BREAKOUT", "MEAN_REVERSION", "MOMENTUM", "HYBRID",
+].map((f) => (
+  <option key={f} value={f}>
+    {f}
+  </option>
+));
+
+const LIFECYCLE_OPTIONS = [
+  "INSTALLED", "RESEARCH_PENDING", "RESEARCH_RUNNING", "VALIDATED", "LIVE_CANDIDATE",
+  "LIVE_ELIGIBLE", "REJECTED", "QUARANTINED", "DISABLED", "RETIRED",
+].map((s) => (
+  <option key={s} value={s}>
+    {s}
+  </option>
+));
+
+const ENABLE_OPTIONS = ENABLE_MODES.map((m) => (
+  <option key={m.id} value={m.id} title={m.hint}>
+    {m.label}
+  </option>
+));
+
 type PendingCmd =
   | { kind: "enable"; seed: string; mode: MktEnableMode }
   | { kind: "disable"; seed: string }
@@ -97,15 +123,11 @@ export function SeedsSection() {
       <div className="mkt-actions" style={{ marginBottom: 8 }}>
         <select className="select" value={family} onChange={(e) => { setFamily(e.target.value); setPage(1); }} aria-label="family filter">
           <option value="">all families</option>
-          {["PRICE_ACTION", "ICT", "ICHIMOKU", "BREAKOUT", "MEAN_REVERSION", "MOMENTUM", "HYBRID"].map((f) => (
-            <option key={f} value={f}>{f}</option>
-          ))}
+          {FAMILY_OPTIONS}
         </select>
         <select className="select" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} aria-label="lifecycle filter">
           <option value="">all lifecycles</option>
-          {["INSTALLED", "RESEARCH_PENDING", "RESEARCH_RUNNING", "VALIDATED", "LIVE_CANDIDATE", "LIVE_ELIGIBLE", "REJECTED", "QUARANTINED", "DISABLED", "RETIRED"].map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
+          {LIFECYCLE_OPTIONS}
         </select>
         <span className="spacer" style={{ flex: 1 }} />
         <button className="btn small ghost" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || seeds.isFetching}>
@@ -177,9 +199,7 @@ export function SeedsSection() {
                     }}
                   >
                     <option value="">enable…</option>
-                    {ENABLE_MODES.map((m) => (
-                      <option key={m.id} value={m.id} title={m.hint}>{m.label}</option>
-                    ))}
+                    {ENABLE_OPTIONS}
                   </select>
                   <span className="mkt-row-sep" aria-hidden="true" />
                   <button className="btn small danger" onClick={() => setPending({ kind: "disable", seed: s.seed.seed_id })} disabled={busy}>
