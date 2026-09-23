@@ -60,13 +60,20 @@ function MatrixCellView({ cell, nowMs }: { cell: MatrixCell; nowMs: number }) {
   );
 }
 
-function FailedCell({ name, error, onRetry }: { name: string; error: unknown; onRetry: () => void }) {
+/** One failing endpoint cell + its own retry. `busy` mirrors that query's
+ *  isFetching window so the retry cannot be spammed while the re-read is in
+ *  flight (ConfigPage house standard: disabled while pending + busy label). */
+function FailedCell({ name, error, onRetry, busy }: { name: string; error: unknown; onRetry: () => void; busy?: boolean }) {
   return (
     <div className="l3-health-cell bad hl-cell">
       <div className="name"><span>{name}</span><Dot status="ERROR" /></div>
       <StatusBadge status="ERROR" />
       <div className="detail">{error instanceof Error ? error.message : "read failed"}</div>
-      <div><button className="btn small" onClick={onRetry}>Retry</button></div>
+      <div>
+        <button className="btn small" onClick={onRetry} disabled={busy} title={busy ? "re-read in progress" : undefined}>
+          {busy ? "retrying…" : "Retry"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -133,9 +140,9 @@ export default function HealthPage(props: ShellPageProps) {
       source: "forensics",
     });
   }
-  const failed: Array<{ name: string; error: unknown; retry: () => void }> = [];
+  const failed: Array<{ name: string; error: unknown; retry: () => void; busy: boolean }> = [];
   for (const [name, q] of [["debug/health", debug], ["v1 system health", system], ["readiness", readiness], ["workers", workers], ["mt5", mt5], ["news", news], ["forensics", forensics], ["probe /health", probe], ["runtime", runtime], ["status", status], ["version", version], ["capabilities", capabilities]] as const) {
-    if (q.isError) failed.push({ name, error: q.error, retry: () => void q.refetch() });
+    if (q.isError) failed.push({ name, error: q.error, retry: () => void q.refetch(), busy: q.isFetching });
   }
   const summary = matrixSummary(cells);
   const overall =
@@ -230,12 +237,11 @@ export default function HealthPage(props: ShellPageProps) {
             ) : (
               <div className="l3-health-grid">
                 {cells.map((c) => <MatrixCellView key={c.id} cell={c} nowMs={nowMs} />)}
-                {failed.map((f) => <FailedCell key={f.name} name={f.name} error={f.error} onRetry={f.retry} />)}
+                {failed.map((f) => <FailedCell key={f.name} name={f.name} error={f.error} onRetry={f.retry} busy={f.busy} />)}
               </div>
             )}
           </Panel>
-        </div>
-      )}
+        </div>      )}
 
       {tab === "layers" && (
         <div className="hl-section">

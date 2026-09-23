@@ -171,12 +171,8 @@ export default function LiquidityPage(props: ShellPageProps) {
         title="Liquidity Intelligence toggle"
         accent
         right={
-          <button
-            className={`btn small ${enabled ? "danger" : "primary"}`}
-            disabled={stateQ.isPending || cmd.state.running}
-            onClick={() => setConfirmTo(!enabled)}
-          >
-            {enabled ? "disable" : "enable"}
+          <button className={`btn small ${enabled ? "danger" : "primary"}`} disabled={stateQ.isPending || cmd.state.running} title={cmd.state.running ? "toggle already in flight" : undefined} onClick={() => setConfirmTo(!enabled)}>
+            {cmd.state.running ? (enabled ? "disabling…" : "enabling…") : enabled ? "disable" : "enable"}
           </button>
         }
         tight

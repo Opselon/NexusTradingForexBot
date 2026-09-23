@@ -141,8 +141,7 @@ export default function IncidentsPage(props: ShellPageProps) {
                 {ep}
               </span>
             ))}
-          </div>
-        </div>
+          </div>        </div>
         <div className="inc-hero-side">
           <div className="inc-prov" role="group" aria-label="incident store provenance">
             <div className="inc-prov-cell">
@@ -202,8 +201,8 @@ export default function IncidentsPage(props: ShellPageProps) {
         <Panel
           title="Reconcile (forensic audit)"
           right={
-            <button className="btn small danger" disabled={cmd.state.running} onClick={() => setConfirmReconcile(true)}>
-              run forensic audit
+            <button className="btn small danger" disabled={cmd.state.running} title={cmd.state.running ? "reconcile already in flight" : undefined} onClick={() => setConfirmReconcile(true)}>
+              {cmd.state.running ? "running audit…" : "run forensic audit"}
             </button>
           }
           tight

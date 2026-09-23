@@ -452,7 +452,8 @@
   letter-spacing: 0.05em;
   border-radius: 7px;
   font-size: 10.5px;
-  transition: all 0.14s;
+  /* hover repaint is transform + border + color + shadow only */
+  transition: transform 0.14s ease, border-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
 }
 
 .mkt-actions .btn.small.primary {

@@ -107,10 +107,10 @@ export function ArticleDrawer({
                     {busy ? "analyzing…" : "Analyze with AI"}
                   </button>
                   <button className="btn small" onClick={() => onAnalyze(true)} disabled={busy}>
-                    Force re-analyze
+                    {busy ? "analyzing…" : "Force re-analyze"}
                   </button>
-                  <button className="btn small ghost" onClick={() => detail.refetch()}>
-                    Reload detail
+                  <button className="btn small ghost" onClick={() => detail.refetch()} disabled={detail.isFetching}>
+                    {detail.isFetching ? "loading…" : "Reload detail"}
                   </button>
                 </div>
                 {analyzeNote && <div className="news-status-line" style={{ marginTop: 6 }}>{analyzeNote}</div>}

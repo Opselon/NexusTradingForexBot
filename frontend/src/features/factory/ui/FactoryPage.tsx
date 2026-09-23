@@ -159,23 +159,23 @@ export default function FactoryPage(props: ShellPageProps) {
               size
             </label>
             <input id="factory-size" className="input" style={{ width: 70 }} value={size} onChange={(e) => setSize(e.target.value)} />
-            <button className="btn small primary" disabled={cmd.state.running} onClick={() => ask("Generate generation", false, () => factoryUseCases.generate(num(Number(size)) ?? undefined))}>
-              ⚒ generate
+            <button className="btn small primary" disabled={cmd.state.running} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("Generate generation", false, () => factoryUseCases.generate(num(Number(size)) ?? undefined))}>
+              {cmd.state.running ? "generating…" : "⚒ generate"}
             </button>
-            <button className="btn small" disabled={cmd.state.running || !mounted} onClick={() => ask("Start autonomous loop", true, factoryUseCases.loopStart)}>
-              ▶ loop start
+            <button className="btn small" disabled={cmd.state.running || !mounted} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("Start autonomous loop", true, factoryUseCases.loopStart)}>
+              {cmd.state.running ? "sending…" : "▶ loop start"}
             </button>
-            <button className="btn small" disabled={cmd.state.running || !mounted} onClick={() => ask("Pause loop", false, factoryUseCases.loopPause)}>
-              ⏸ pause
+            <button className="btn small" disabled={cmd.state.running || !mounted} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("Pause loop", false, factoryUseCases.loopPause)}>
+              {cmd.state.running ? "sending…" : "⏸ pause"}
             </button>
-            <button className="btn small" disabled={cmd.state.running || !mounted} onClick={() => ask("Resume loop", false, factoryUseCases.loopResume)}>
-              ⏵ resume
+            <button className="btn small" disabled={cmd.state.running || !mounted} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("Resume loop", false, factoryUseCases.loopResume)}>
+              {cmd.state.running ? "sending…" : "⏵ resume"}
             </button>
-            <button className="btn small danger" disabled={cmd.state.running || !mounted} onClick={() => ask("STOP loop (kill switch)", true, factoryUseCases.loopStop)}>
-              ■ loop stop
+            <button className="btn small danger" disabled={cmd.state.running || !mounted} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("STOP loop (kill switch)", true, factoryUseCases.loopStop)}>
+              {cmd.state.running ? "sending…" : "■ loop stop"}
             </button>
-            <button className="btn small ghost" disabled={cmd.state.running || !mounted} onClick={() => ask("Provider connectivity test", false, factoryUseCases.providerTest)}>
-              provider test
+            <button className="btn small ghost" disabled={cmd.state.running || !mounted} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("Provider connectivity test", false, factoryUseCases.providerTest)}>
+              {cmd.state.running ? "testing…" : "provider test"}
             </button>
           </div>
         )}
@@ -234,9 +234,10 @@ export default function FactoryPage(props: ShellPageProps) {
                       <button
                         className="btn small ghost"
                         disabled={cmd.state.running || g.state === "COMPLETED"}
+                        title={cmd.state.running ? "a factory command is already running" : undefined}
                         onClick={() => ask(`Complete ${g.id.slice(0, 10)}`, false, () => factoryUseCases.complete(g.id))}
                       >
-                        complete
+                        {cmd.state.running ? "sending…" : "complete"}
                       </button>
                     </td>
                   </tr>
@@ -269,8 +270,8 @@ export default function FactoryPage(props: ShellPageProps) {
                         </td>
                         <td className="num tiny">{num(c.score) === null ? "—" : formatNumber(num(c.score)!, 3)}</td>
                         <td>
-                          <button className="btn small ghost" disabled={cmd.state.running || !cid} onClick={() => ask(`Evaluate ${cid.slice(0, 10)}`, false, () => factoryUseCases.evaluate(cid))}>
-                            evaluate
+                          <button className="btn small ghost" disabled={cmd.state.running || !cid} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask(`Evaluate ${cid.slice(0, 10)}`, false, () => factoryUseCases.evaluate(cid))}>
+                            {cmd.state.running ? "sending…" : "evaluate"}
                           </button>
                         </td>
                       </tr>
@@ -426,11 +427,11 @@ export default function FactoryPage(props: ShellPageProps) {
         )}
           <div className="row" style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <span className="tiny muted">strategy factory feature (CHG-0034 single user control):</span>
-            <button className="btn small primary" disabled={cmd.state.running} onClick={() => ask("Enable factory provider", false, () => factoryUseCases.providerToggle(true))}>
-              enable
+            <button className="btn small primary" disabled={cmd.state.running} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("Enable factory provider", false, () => factoryUseCases.providerToggle(true))}>
+              {cmd.state.running ? "sending…" : "enable"}
             </button>
-            <button className="btn small danger" disabled={cmd.state.running} onClick={() => ask("Disable factory provider", true, () => factoryUseCases.providerToggle(false))}>
-              disable
+            <button className="btn small danger" disabled={cmd.state.running} title={cmd.state.running ? "a factory command is already running" : undefined} onClick={() => ask("Disable factory provider", true, () => factoryUseCases.providerToggle(false))}>
+              {cmd.state.running ? "sending…" : "disable"}
             </button>
             <span className="tiny faint">enabling validates config without a network probe; disabling stops new provider requests only.</span>
           </div>

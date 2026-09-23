@@ -164,13 +164,14 @@ export function SeedsSection() {
               <td>
                 <div className="mkt-actions mkt-row-actions" style={{ justifyContent: "flex-end" }}>
                   <button className="btn small" onClick={() => setPending({ kind: "research", seed: s.seed.seed_id })} disabled={busy}>
-                    Research
+                    {busy ? "running…" : "Research"}
                   </button>
                   <select
                     className="select"
                     style={{ padding: "2px 4px", fontSize: 10 }}
                     value=""
                     aria-label={`enable mode for ${s.seed.seed_id}`}
+                    disabled={busy}
                     onChange={(e) => {
                       const mode = e.target.value as MktEnableMode;
                       if (mode) setPending({ kind: "enable", seed: s.seed.seed_id, mode });
@@ -183,10 +184,10 @@ export function SeedsSection() {
                   </select>
                   <span className="mkt-row-sep" aria-hidden="true" />
                   <button className="btn small danger" onClick={() => setPending({ kind: "disable", seed: s.seed.seed_id })} disabled={busy}>
-                    Disable
+                    {busy ? "running…" : "Disable"}
                   </button>
                   <button className="btn small" onClick={() => setPending({ kind: "repair", seed: s.seed.seed_id })} disabled={busy} title="evolution-operator repair">
-                    Repair
+                    {busy ? "running…" : "Repair"}
                   </button>
                 </div>
               </td>

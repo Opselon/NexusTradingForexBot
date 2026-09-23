@@ -69,18 +69,18 @@ export function ActionRack({ running, mode, engineKnown, modeTone, onSettled }: 
           <div className="ctl-rack-group">
             <div className="ctl-rack-head">
               <span>ENGINE</span>
-              <span className="sep" aria-hidden="true" />
+              <span className="ctl-sep" aria-hidden="true" />
               <span className={`ctl-chip ctl-chip--${engineChipTone}`}>{engineChip}</span>
             </div>
             <div className="ctl-rack-actions">
-              <button className="btn primary" disabled={engineCmd.state.running || running} onClick={() => setStartConfirm(true)}>
-                ▶ Start engine
+              <button className="btn primary" disabled={engineCmd.state.running || running} title={engineCmd.state.running ? "engine command already in flight" : undefined} onClick={() => setStartConfirm(true)}>
+                {engineCmd.state.running ? "sending…" : "▶ Start engine"}
               </button>
               <span className="ctl-guard" title="opens the existing confirmation dialog">
                 ⚠ requires confirm
               </span>
-              <button className="btn danger" disabled={engineCmd.state.running || !running} onClick={() => setStopConfirm(true)}>
-                ■ Stop engine (kill switch)
+              <button className="btn danger" disabled={engineCmd.state.running || !running} title={engineCmd.state.running ? "engine command already in flight" : undefined} onClick={() => setStopConfirm(true)}>
+                {engineCmd.state.running ? "sending…" : "■ Stop engine (kill switch)"}
               </button>
               <span className="ctl-guard" title="opens the existing confirmation dialog">
                 ⚠ requires confirm
@@ -94,7 +94,7 @@ export function ActionRack({ running, mode, engineKnown, modeTone, onSettled }: 
           <div className="ctl-rack-group">
             <div className="ctl-rack-head">
               <span>EXECUTION MODE</span>
-              <span className="sep" aria-hidden="true" />
+              <span className="ctl-sep" aria-hidden="true" />
               <span className={`ctl-chip ctl-chip--${modeTone}`}>{mode}</span>
               {armed && <span className="ctl-chip ctl-chip--armed">ARMED · {modeTarget}</span>}
             </div>
@@ -115,9 +115,10 @@ export function ActionRack({ running, mode, engineKnown, modeTone, onSettled }: 
               <button
                 className={`btn ${modeTarget === "LIVE" ? "danger" : ""}`}
                 disabled={!modeTarget || modeCmd.state.running || modeTarget.toUpperCase() === mode}
+                title={modeCmd.state.running ? "mode switch already in flight" : undefined}
                 onClick={() => void applyMode()}
               >
-                apply
+                {modeCmd.state.running ? "applying…" : "apply"}
               </button>
               {typedGuard && (
                 <span className="ctl-guard" title="legacy typed LIVE confirmation phrase">
@@ -185,8 +186,8 @@ export function ActionRack({ running, mode, engineKnown, modeTone, onSettled }: 
                 aria-label="LIVE confirmation phrase"
                 placeholder={LIVE_CONFIRM_TEXT}
               />
-              <button className="btn small danger" disabled={liveConfirm !== LIVE_CONFIRM_TEXT} onClick={() => void applyMode()}>
-                switch to LIVE
+              <button className="btn small danger" disabled={liveConfirm !== LIVE_CONFIRM_TEXT || modeCmd.state.running} title={modeCmd.state.running ? "mode switch already in flight" : undefined} onClick={() => void applyMode()}>
+                {modeCmd.state.running ? "applying…" : "switch to LIVE"}
               </button>
             </div>
           </div>
