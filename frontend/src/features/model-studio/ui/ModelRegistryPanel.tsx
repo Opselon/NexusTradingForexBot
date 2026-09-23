@@ -1,4 +1,5 @@
 import { Panel } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import type {
   ActiveModelResponse,
   HotLoadResponse,
@@ -86,14 +87,18 @@ export function ModelRegistryPanel({
   scalerResult,
   onInspectScaler,
 }: ModelRegistryPanelProps) {
+  const t = useI18n((s) => s.t);
   return (
     <Panel
-      title="AI HUB: MODEL REGISTRY & RUNTIME HOT-LOADER"
-      subtitle="Dynamically swap weights and calibrated scaler sidecars into engine memory without restarting the process."
+      title={t("model-studio.registry.title", "AI HUB: MODEL REGISTRY & RUNTIME HOT-LOADER")}
+      subtitle={t(
+        "model-studio.registry.subtitle",
+        "Dynamically swap weights and calibrated scaler sidecars into engine memory without restarting the process.",
+      )}
       accent
       right={
         <span className="badge good">
-          {models.length} Checkpoints Cataloged
+          {t("model-studio.registry.checkpoints", "{n} Checkpoints Cataloged", { n: models.length })}
         </span>
       }
     >
@@ -111,32 +116,36 @@ export function ModelRegistryPanel({
           }}
         >
           <StatCell
-            label="Active Checkpoint"
+            label={t("model-studio.registry.active_checkpoint", "Active Checkpoint")}
             value={activeModel?.model_id || "—"}
           />
           <StatCell
-            label="Tensor Dimension"
+            label={t("model-studio.registry.tensor_dimension", "Tensor Dimension")}
             value={activeModel ? `${activeModel.dimension}D` : "—"}
             color="var(--accent-strong)"
           />
           <StatCell
-            label="Weights Hash"
+            label={t("model-studio.registry.weights_hash", "Weights Hash")}
             value={activeModel?.weights_sha256 ? activeModel.weights_sha256.substring(0, 14) : "—"}
             color="var(--green)"
             mono
           />
           <StatCell
-            label="Scaler Sidecar"
-            value={activeModel?.scaler_path ? basename(activeModel.scaler_path) : "Default (Unit)"}
+            label={t("model-studio.registry.scaler_sidecar", "Scaler Sidecar")}
+            value={
+              activeModel?.scaler_path
+                ? basename(activeModel.scaler_path)
+                : t("model-studio.registry.default_unit", "Default (Unit)")
+            }
             color="var(--accent-strong)"
             mono
           />
           <StatCell
-            label="Lifecycle Stage"
+            label={t("model-studio.registry.lifecycle_stage", "Lifecycle Stage")}
             value={activeModel?.stage || "—"}
           />
           <StatCell
-            label="Runtime Inferences"
+            label={t("model-studio.registry.runtime_inferences", "Runtime Inferences")}
             value={(activeModel?.inference_count ?? 0).toLocaleString()}
             color="var(--green)"
           />
@@ -146,7 +155,10 @@ export function ModelRegistryPanel({
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1.2fr) minmax(140px, auto)", gap: 12, alignItems: "flex-end" }}>
           <div className="ms-form-row">
             <label htmlFor="model-checkpoint-select">
-              Select Model Checkpoint (SQLite Registry / On-Disk Artifacts)
+              {t(
+                "model-studio.registry.select_label",
+                "Select Model Checkpoint (SQLite Registry / On-Disk Artifacts)",
+              )}
             </label>
             <select
               id="model-checkpoint-select"
@@ -154,10 +166,12 @@ export function ModelRegistryPanel({
               onChange={(e) => onSelectModelId(e.target.value)}
               className="ms-select-styled"
             >
-              {models.length === 0 && <option value="">No registered models found</option>}
+              {models.length === 0 && (
+                <option value="">{t("model-studio.registry.no_models", "No registered models found")}</option>
+              )}
               {models.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.is_active ? "★ " : ""}{m.id} [{m.dimension}D] {m.fine_tune_enabled ? "[FT:ON]" : "[FT:OFF]"} (loss: {m.final_loss?.toFixed(4) || "0.0000"})
+                  {m.is_active ? "★ " : ""}{m.id} [{m.dimension}D] {m.fine_tune_enabled ? "[FT:ON]" : "[FT:OFF]"} ({t("model-studio.registry.loss_label", "loss")}: {m.final_loss?.toFixed(4) || "0.0000"})
                 </option>
               ))}
             </select>
@@ -166,7 +180,8 @@ export function ModelRegistryPanel({
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label className="ms-checkbox-row" style={{ padding: "6px 10px" }}>
               <span className="ms-checkbox-label" style={{ fontSize: 11 }}>
-                <span>🧬</span> Enable Fine-Tune Mode
+                <span>🧬</span>{" "}
+                {t("model-studio.registry.enable_ft", "Enable Fine-Tune Mode")}
               </span>
               <input
                 type="checkbox"
@@ -176,7 +191,8 @@ export function ModelRegistryPanel({
             </label>
             <label className="ms-checkbox-row" style={{ padding: "6px 10px" }}>
               <span className="ms-checkbox-label" style={{ fontSize: 11 }}>
-                <span>⚖️</span> Auto-Load Scaler Sidecar
+                <span>⚖️</span>{" "}
+                {t("model-studio.registry.auto_scaler", "Auto-Load Scaler Sidecar")}
               </span>
               <input
                 type="checkbox"
@@ -191,9 +207,11 @@ export function ModelRegistryPanel({
               onClick={onHotLoad}
               disabled={hotLoadBusy || !selectedModelId}
               className="ms-btn-action ms-btn-success"
-              style={{ padding: "10px 20px", width: "100%", whiteSpace: "nowrap" }}
+              style={{ padding: "10px 20px", width: "100%" }}
             >
-              {hotLoadBusy ? "⏳ Hot-Loading…" : "⚡ Hot-Load Model"}
+              {hotLoadBusy
+                ? t("model-studio.registry.hotload_busy", "⏳ Hot-Loading…")
+                : t("model-studio.registry.hotload_idle", "⚡ Hot-Load Model")}
             </button>
           </div>
         </div>
@@ -205,7 +223,9 @@ export function ModelRegistryPanel({
             disabled={verifyBusy || !selectedModelId}
             className="ms-btn-action ms-btn-ghost"
           >
-            {verifyBusy ? "⏳ Verifying…" : "✓ Run Integrity Battery"}
+            {verifyBusy
+              ? t("model-studio.registry.verify_busy", "⏳ Verifying…")
+              : t("model-studio.registry.verify_idle", "✓ Run Integrity Battery")}
           </button>
           <button
             onClick={onRollback}
@@ -213,7 +233,9 @@ export function ModelRegistryPanel({
             className="ms-btn-action ms-btn-ghost"
             style={{ color: "var(--amber)" }}
           >
-            {rollbackBusy ? "⏳ Rolling back…" : "↺ Rollback to Previous Champion"}
+            {rollbackBusy
+              ? t("model-studio.registry.rollback_busy", "⏳ Rolling back…")
+              : t("model-studio.registry.rollback_idle", "↺ Rollback to Previous Champion")}
           </button>
           <button
             onClick={onInspectScaler}
@@ -221,7 +243,7 @@ export function ModelRegistryPanel({
             className="ms-btn-action ms-btn-ghost"
             style={{ color: "var(--accent-strong)" }}
           >
-            📊 Inspect Scaler Vectors
+            {t("model-studio.registry.inspect_scaler", "📊 Inspect Scaler Vectors")}
           </button>
         </div>
 
@@ -229,9 +251,24 @@ export function ModelRegistryPanel({
         {hotLoadResult && (
           <div className="ms-banner-ok">
             <div style={{ minWidth: 0 }}>
-              <strong>✓ Model {hotLoadResult.model_id} ({hotLoadResult.dimension}D) Successfully Hot-Loaded</strong>
+              <strong>
+                {t("model-studio.registry.hotload_ok", "✓ Model {id} ({d}D) Successfully Hot-Loaded", {
+                  id: hotLoadResult.model_id,
+                  d: hotLoadResult.dimension,
+                })}
+              </strong>
               <div className="inline-mono tiny" style={{ opacity: 0.9, marginTop: 2, wordBreak: "break-all" }}>
-                SHA256: {hotLoadResult.weights_sha256.substring(0, 16)}… • Scaler: {hotLoadResult.scaler_attached ? "Attached" : "Unit"} • Warmup: {hotLoadResult.warmup_latency_us} µs
+                {t(
+                  "model-studio.registry.hotload_meta",
+                  "SHA256: {h}… • Scaler: {s} • Warmup: {w} µs",
+                  {
+                    h: hotLoadResult.weights_sha256.substring(0, 16),
+                    s: hotLoadResult.scaler_attached
+                      ? t("model-studio.registry.attached", "Attached")
+                      : t("model-studio.registry.unit", "Unit"),
+                    w: hotLoadResult.warmup_latency_us,
+                  },
+                )}
               </div>
             </div>
             <span className="badge good">{hotLoadResult.stage}</span>
@@ -242,7 +279,7 @@ export function ModelRegistryPanel({
           <div className="ms-banner-err">
             <span>⚠</span>
             <div>
-              <strong>Hot-Load Operation Failed</strong>
+              <strong>{t("model-studio.registry.hotload_err", "Hot-Load Operation Failed")}</strong>
               <div className="tiny" style={{ marginTop: 2 }}>{hotLoadError}</div>
             </div>
           </div>
@@ -253,19 +290,23 @@ export function ModelRegistryPanel({
           <div style={{ padding: 12, borderRadius: 8, background: "var(--bg-inset)", border: "1px solid var(--border)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <span className="small font-bold" style={{ color: "var(--accent-strong)" }}>
-                Pre-Load Checkpoint Verification Results ({verifyResult.model_id})
+                {t("model-studio.registry.verify_title", "Pre-Load Checkpoint Verification Results ({id})", {
+                  id: verifyResult.model_id,
+                })}
               </span>
               <span className={`badge ${verifyResult.all_passed ? "good" : "warn"}`}>
-                {verifyResult.all_passed ? "ALL PASSED" : "WARNINGS DETECTED"}
+                {verifyResult.all_passed
+                  ? t("model-studio.verdict.all_passed", "ALL PASSED")
+                  : t("model-studio.verdict.warnings_detected", "WARNINGS DETECTED")}
               </span>
             </div>
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Check Name</th>
-                    <th style={{ textAlign: "center" }}>Verdict</th>
-                    <th>Diagnostic Detail</th>
+                    <th>{t("model-studio.verdict.check_name", "Check Name")}</th>
+                    <th style={{ textAlign: "center" }}>{t("model-studio.verdict.verdict", "Verdict")}</th>
+                    <th>{t("model-studio.verdict.detail", "Diagnostic Detail")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -274,7 +315,9 @@ export function ModelRegistryPanel({
                       <td style={{ fontWeight: 600, color: "var(--text)" }}>{c.name}</td>
                       <td style={{ textAlign: "center" }}>
                         <span className={`badge ${c.passed ? "good" : "bad"}`}>
-                          {c.passed ? "PASS" : "FAIL"}
+                          {c.passed
+                          ? t("model-studio.verdict.pass", "PASS")
+                          : t("model-studio.verdict.fail", "FAIL")}
                         </span>
                       </td>
                       <td style={{ color: "var(--text-dim)" }}>{c.detail}</td>
@@ -291,24 +334,32 @@ export function ModelRegistryPanel({
           <div style={{ padding: 12, borderRadius: 8, background: "var(--bg-inset)", border: "1px solid var(--border)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <span className="small font-bold" style={{ color: "var(--accent-strong)" }}>
-                Attached Scaler Normalization Vectors ({scalerResult.dimension}D)
+                {t("model-studio.registry.scaler_title", "Attached Scaler Normalization Vectors ({d}D)", {
+                  d: scalerResult.dimension,
+                })}
               </span>
-              <span className="badge neutral">{scalerResult.features_count} Features Calibrated</span>
+              <span className="badge neutral">
+                {t("model-studio.registry.features_calibrated", "{n} Features Calibrated", {
+                  n: scalerResult.features_count,
+                })}
+              </span>
             </div>
             {scalerResult.features.length === 0 ? (
               <div className="tiny faint" style={{ textAlign: "center", padding: "12px 0" }}>
-                {scalerResult.message || "No scaler vectors cataloged."}
+                {scalerResult.message || t("model-studio.registry.no_scaler", "No scaler vectors cataloged.")}
               </div>
             ) : (
               <div className="table-wrap" style={{ maxHeight: 220 }}>
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th># Index</th>
-                      <th className="num">Mean (μ)</th>
-                      <th className="num">Std Dev (σ)</th>
-                      <th style={{ textAlign: "center" }}>Clamping</th>
-                      <th style={{ textAlign: "center" }}>Zero Variance</th>
+                      <th>{t("model-studio.registry.th_index", "# Index")}</th>
+                      <th className="num">{t("model-studio.registry.th_mean", "Mean (μ)")}</th>
+                      <th className="num">{t("model-studio.registry.th_std", "Std Dev (σ)")}</th>
+                      <th style={{ textAlign: "center" }}>{t("model-studio.registry.th_clamping", "Clamping")}</th>
+                      <th style={{ textAlign: "center" }}>
+                        {t("model-studio.registry.th_zero_var", "Zero Variance")}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -320,7 +371,9 @@ export function ModelRegistryPanel({
                         <td style={{ textAlign: "center", color: "var(--text-dim)" }}>[{f.clamp_min}, {f.clamp_max}]</td>
                         <td style={{ textAlign: "center" }}>
                           <span className={`badge ${f.zero_variance ? "warn" : "good"}`}>
-                            {f.zero_variance ? "YES" : "NO"}
+                            {f.zero_variance
+                            ? t("model-studio.registry.yes", "YES")
+                            : t("model-studio.registry.no", "NO")}
                           </span>
                         </td>
                       </tr>
