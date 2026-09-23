@@ -546,11 +546,13 @@ class TestRegression:
         engine = ShadowEngine(store=store)
         worker = ShadowWorker(audit_repo=temp_audit_repo, engine=engine, interval_sec=0.0)
         worker.start()
-        import time
+        # CPU-time bound (ML-QA-004): process_time() is insensitive to
+        # co-tenant CI load, unlike the wall clock it replaces.
+        from tests.e2e.chain_clock import budget_cpu_ms
 
-        t0 = time.perf_counter()
-        worker.tick()
-        assert time.perf_counter() - t0 < 5.0
+        with budget_cpu_ms(5000.0) as sw:
+            worker.tick()
+        assert sw.consumed_ms < 5000.0
         worker.stop()
 
 

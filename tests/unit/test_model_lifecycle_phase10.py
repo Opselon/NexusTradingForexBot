@@ -950,11 +950,15 @@ class TestWorker:
         )
         worker = TrainingWorker(audit_repo=repo, ledger=ledger, orchestrator=orch, interval_sec=0.0)
         worker.start()
-        import time
+        # CPU-time bound (ML-QA-004): the tick must not block the live path.
+        # process_time() excludes co-tenant CI scheduler load, which a wall
+        # clock bound would fold in; 5 s CPU is a huge margin over a no-op
+        # worker cycle.
+        from tests.e2e.chain_clock import budget_cpu_ms
 
-        t0 = time.perf_counter()
-        worker.tick()
-        assert time.perf_counter() - t0 < 5.0
+        with budget_cpu_ms(5000.0) as sw:
+            worker.tick()
+        assert sw.consumed_ms < 5000.0
         worker.stop()
 
 

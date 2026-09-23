@@ -34,6 +34,7 @@ from contextlib import contextmanager
 import pytest
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from tests.e2e.chain_clock import budget_cpu_ms
 
 
 @contextmanager
@@ -78,9 +79,11 @@ def test_flush_returns_true_and_rows_are_durable(tmp_path) -> None:
 
 def test_flush_on_idle_queue_returns_true_immediately(tmp_path) -> None:
     with _repo(tmp_path, "flush_idle.db") as repo:
-        started = time.monotonic()
-        assert repo.flush(timeout_sec=5.0) is True
-        assert time.monotonic() - started < 2.0
+        # CPU-time bound (ML-QA-004): an idle flush returns immediately in CPU
+        # terms; a wall-clock bound would trip under co-tenant CI load.
+        with budget_cpu_ms(2000.0) as sw:
+            assert repo.flush(timeout_sec=5.0) is True
+        assert sw.consumed_ms < 2000.0
 
 
 def test_close_drains_pending_writes_and_is_idempotent_safe(tmp_path) -> None:
