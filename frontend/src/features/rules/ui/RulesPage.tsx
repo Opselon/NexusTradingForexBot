@@ -20,6 +20,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import markUrl from "@/assets/nse-mark.png";
 import { useUiStore } from "@/stores/uiStore";
 import { ConfirmModal, EmptyState, Skeleton, StatusBadge } from "@/components/primitives";
 import {
@@ -161,7 +162,7 @@ export default function RulesPage(props: ShellPageProps) {
             SAFETY &amp; GOVERNANCE
           </div>
           <h1 className="rl-title">
-            <span className="glyph" aria-hidden="true">§</span>
+            <img className="rl-mark" src={markUrl} alt="" aria-hidden="true" width={30} height={30} />
             <span className="word">Rules</span>
           </h1>
           <p className="rl-desc">

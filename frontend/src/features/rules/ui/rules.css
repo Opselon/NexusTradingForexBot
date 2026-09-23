@@ -78,16 +78,13 @@
   font-weight: 800;
   letter-spacing: 0.01em;
 }
-.rl-title .glyph {
-  font-family: var(--mono);
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--accent-strong);
-  background: rgba(65, 166, 242, 0.10);
+.rl-title .rl-mark {
+  inline-size: 30px;
+  block-size: 30px;
+  border-radius: 8px;
   border: 1px solid rgba(65, 166, 242, 0.45);
-  border-radius: 9px;
-  padding: 4px 9px;
-  box-shadow: 0 0 14px rgba(65, 166, 242, 0.18);
+  box-shadow: 0 0 14px rgba(65, 166, 242, 0.18), 0 4px 10px rgba(0, 0, 0, 0.35);
+  flex: none;
 }
 .rl-title .word { color: var(--text); }
 @supports ((-webkit-background-clip: text) or (background-clip: text)) {
