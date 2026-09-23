@@ -22,6 +22,7 @@ import { packMonogram } from "./storeViewModel";
 import { asErrorText } from "./shared";
 import "./marketplace.css";
 import "./marketplace-store.css";
+import "./marketplace-store-detail.css";
 
 export function PacksSection() {
   const packs = useMktPacks();

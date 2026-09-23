@@ -13,6 +13,7 @@ import { useMktScoreHistory, useMktSeedDetail } from "../hooks";
 import { detailSections, factorsOf, lifecycleLevel } from "../model";
 import { FreshnessNote, asErrorText } from "./shared";
 import "./marketplace-store.css";
+import "./marketplace-store-detail.css";
 
 function fmtScore(total: number | null | undefined): string {
   return total === null || total === undefined || Number.isNaN(total) ? "NOT_AVAILABLE" : formatNumber(total, 3);

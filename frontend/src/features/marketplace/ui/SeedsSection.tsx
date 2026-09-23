@@ -27,6 +27,7 @@ import { FreshnessNote, asErrorText } from "./shared";
 import { facetCounts, seedCardMeta } from "./storeViewModel";
 import "./marketplace.css";
 import "./marketplace-store.css";
+import "./marketplace-store-detail.css";
 
 type PendingCmd =
   | { kind: "enable"; seed: string; mode: MktEnableMode }

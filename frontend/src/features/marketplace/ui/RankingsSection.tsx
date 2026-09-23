@@ -27,6 +27,7 @@ import { rankWord } from "./storeViewModel";
 import { FreshnessNote, asErrorText } from "./shared";
 import "./marketplace.css";
 import "./marketplace-store.css";
+import "./marketplace-store-detail.css";
 
 const DIMENSIONS = [
   { id: "OVERALL", label: "Overall" },
