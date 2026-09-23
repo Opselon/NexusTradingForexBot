@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { positionSide } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import { useUiStore, type ToastItem } from "@/stores/uiStore";
 
 /** Health/status -> semantic badge level. Backend status strings are trusted;
@@ -14,9 +15,51 @@ function badgeLevel(status: string | null | undefined): "good" | "warn" | "bad" 
   return "unknown";
 }
 
+type Translate = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
+/** Known status CODES whose display word may be localized at the render site
+ *  (requested by lanes P2/F1 so badges sit in the page language). The level
+ *  mapping above still compares the RAW code, and anything not listed here —
+ *  incl. compound codes like HIGH_IMPACT / BREAKING — is a backend enum value
+ *  and renders VERBATIM (underscore -> space, as before). */
+function statusText(t: Translate, status: string | null | undefined): string {
+  if (!status) return t("ui.word.unknown", "UNKNOWN");
+  switch (status) {
+    case "READY": return t("ui.status.ready", "READY");
+    case "IDLE": return t("ui.status.idle", "IDLE");
+    case "PASS": return t("ui.word.pass", "PASS");
+    case "CONNECTED": return t("ui.status.connected", "CONNECTED");
+    case "ACTIVE": return t("ui.word.active", "ACTIVE");
+    case "OK": return t("ui.status.ok", "OK");
+    case "RUNNING": return t("ui.status.running", "RUNNING");
+    case "NORMAL": return t("ui.status.normal", "NORMAL");
+    case "DISABLED": return t("ui.status.disabled", "DISABLED");
+    case "WARMING_UP": return t("ui.status.warming_up", "WARMING_UP");
+    case "STALE": return t("ux.data.stale", "STALE");
+    case "DEGRADED": return t("ui.status.degraded", "DEGRADED");
+    case "CONNECTING": return t("ui.conn.connecting", "CONNECTING");
+    case "ELEVATED": return t("ui.status.elevated", "ELEVATED");
+    case "WARNING": return t("ui.status.warning", "WARNING");
+    case "WAITING_TICK": return t("ui.status.waiting_tick", "WAITING_TICK");
+    case "PENDING": return t("ui.status.pending", "PENDING");
+    case "ERROR": return t("ui.conn.error_word", "ERROR");
+    case "DISCONNECTED": return t("ui.status.disconnected", "DISCONNECTED");
+    case "UNAVAILABLE": return t("ui.status.unavailable", "UNAVAILABLE");
+    case "FAILED": return t("ui.status.failed", "FAILED");
+    case "BLOCKED": return t("ui.status.blocked", "BLOCKED");
+    case "INVALID": return t("ui.status.invalid", "INVALID");
+    case "HALTED": return t("ui.status.halted", "HALTED");
+    case "CONFLICTED": return t("ui.status.conflicted", "CONFLICTED");
+    case "STOPPED": return t("ui.status.stopped", "STOPPED");
+    case "UNKNOWN": return t("ui.word.unknown", "UNKNOWN");
+    default: return status.replace(/_/g, " ");
+  }
+}
+
 export function StatusBadge({ status, label }: { status: string | null | undefined; label?: string }) {
+  const t = useI18n((s) => s.t);
   const level = badgeLevel(status);
-  const text = status ? status.replace(/_/g, " ") : "UNKNOWN";
+  const text = statusText(t, status);
   const glyph = level === "good" ? "\u2713" : level === "warn" ? "\u26a0" : level === "bad" ? "\u2715" : level === "neutral" ? "\u25cf" : "\u2013";
   return (
     <span className={`badge ${level}`} title={label ?? text}>
@@ -27,14 +70,25 @@ export function StatusBadge({ status, label }: { status: string | null | undefin
 }
 
 export function SeverityBadge({ severity }: { severity: string | null | undefined }) {
+  const t = useI18n((s) => s.t);
   const s = (severity ?? "unknown").toUpperCase();
   const level = s === "CRITICAL" || s === "HIGH" ? "bad" : s === "MEDIUM" ? "warn" : s === "LOW" ? "neutral" : "unknown";
-  return <span className={`badge ${level}`}>{s}</span>;
+  // display localized for the known severity words; level compare stays on `s`
+  const text =
+    s === "CRITICAL" ? t("ui.severity.critical", "CRITICAL")
+    : s === "HIGH" ? t("ui.severity.high", "HIGH")
+    : s === "MEDIUM" ? t("ui.severity.medium", "MEDIUM")
+    : s === "LOW" ? t("ui.severity.low", "LOW")
+    : s === "UNKNOWN" ? t("ui.word.unknown", "UNKNOWN")
+    : s;
+  return <span className={`badge ${level}`}>{text}</span>;
 }
 
 export function PositionSideBadge({ type }: { type: number | string | null | undefined }) {
+  const t = useI18n((s) => s.t);
   const side = positionSide(type);
-  return <span className={`badge ${side === "BUY" ? "good" : side === "SELL" ? "bad" : "unknown"}`}>{side}</span>;
+  const text = side === "BUY" ? t("ui.side.buy", "BUY") : side === "SELL" ? t("ui.side.sell", "SELL") : t("ui.word.unknown", "UNKNOWN");
+  return <span className={`badge ${side === "BUY" ? "good" : side === "SELL" ? "bad" : "unknown"}`}>{text}</span>;
 }
 
 export function MetricCard({
@@ -93,16 +147,18 @@ export function Panel({
   );
 }
 
-export function LoadingState({ label = "Loading backend state…" }: { label?: string }) {
+export function LoadingState({ label }: { label?: string }) {
+  const t = useI18n((s) => s.t);
   return (
     <div className="state-block" role="status">
       <div className="spinner" />
-      <div>{label}</div>
+      <div>{label ?? t("ui.state.loading", "Loading backend state…")}</div>
     </div>
   );
 }
 
 export function ErrorState({ message, requestId, onRetry }: { message: string; requestId?: string | null; onRetry?: () => void }) {
+  const t = useI18n((s) => s.t);
   return (
     <div className="state-block" role="alert">
       <div className="glyph">⚠</div>
@@ -110,7 +166,7 @@ export function ErrorState({ message, requestId, onRetry }: { message: string; r
       {requestId && <div className="hint inline-mono">request_id: {requestId}</div>}
       {onRetry && (
         <button className="btn small" onClick={onRetry}>
-          Retry
+          {t("common.retry", "Retry")}
         </button>
       )}
     </div>
@@ -159,12 +215,13 @@ export function DataTable({ headers, children }: { headers: Array<{ label: strin
 
 /** Horizontal 0..1 probability meter rows (display of backend values only). */
 export function ProbBar({ rows }: { rows: Array<{ label: string; value: number | null; tone: "buy" | "sell" | "flat" }> }) {
+  const t = useI18n((s) => s.t);
   return (
     <div className="probbar">
       {rows.map((r) => (
         <div className="row" key={r.label}>
           <span className="lab">{r.label}</span>
-          <span className="track" role="img" aria-label={`${r.label} ${r.value ?? "unknown"}`}>
+          <span className="track" role="img" aria-label={`${r.label} ${r.value ?? t("ui.word.unknown", "UNKNOWN")}`}>
             <i className={r.tone} style={{ width: r.value === null ? 0 : `${Math.max(0, Math.min(1, r.value)) * 100}%` }} />
           </span>
           <span className="val">{r.value === null ? "—" : `${(r.value * 100).toFixed(1)}%`}</span>
@@ -221,6 +278,7 @@ export function ConfirmModal({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const t = useI18n((s) => s.t);
   const modalRef = useRef<HTMLDivElement>(null);
   const prevFocusRef = useRef<HTMLElement | null>(null);
   // Focus enters the dialog on open and returns to the trigger on close.
@@ -267,10 +325,10 @@ export function ConfirmModal({
         <div className="modal-body">{children}</div>
         <div className="modal-actions">
           <button className="btn" disabled={busy} onClick={onCancel}>
-            Cancel <kbd>esc</kbd>
+            {t("ux.confirm.cancel", "Cancel")} <kbd>esc</kbd>
           </button>
           <button className={`btn ${danger ? "danger" : "primary"}`} disabled={busy} onClick={onConfirm}>
-            {busy ? "sending…" : confirmLabel}
+            {busy ? t("ui.confirm.sending", "sending…") : confirmLabel}
           </button>
         </div>
       </div>
