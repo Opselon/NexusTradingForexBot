@@ -50,8 +50,12 @@ export default function CommandCenterPage(props: ShellPageProps) {
     retry: false,
   });
 
-  const rows = commandCenterUseCases.fleetByRisk(fleetQ.data?.rows ?? [], nowMs);
   const overview = overviewQ.data?.available === true ? overviewQ.data : null;
+  // perf: risk-first sort + stuck census derived only when their inputs change
+  // (deps: fleetRows / nowMs / overview — every reactive value read).
+  const fleetRows = fleetQ.data?.rows;
+  const rows = useMemo(() => commandCenterUseCases.fleetByRisk(fleetRows ?? [], nowMs), [fleetRows, nowMs]);
+  const stuck = useMemo(() => stuckRows(overview ?? undefined), [overview]);
 
   return (
     <div>
@@ -95,10 +99,10 @@ export default function CommandCenterPage(props: ShellPageProps) {
         </Panel>
       </div>
 
-      {stuckRows(overview ?? undefined).length > 0 && (
+      {stuck.length > 0 && (
         <Panel title="Stuck strategies (hours in non-terminal state)" tight>
           <DataTable headers={[{ label: "strategy" }, { label: "state" }, { label: "hours", num: true }, { label: "" }]}>
-            {stuckRows(overview ?? undefined).map((s) => (
+            {stuck.map((s) => (
               <tr key={s.strategy_id}>
                 <td className="inline-mono tiny">{s.strategy_id.slice(0, 16)}</td>
                 <td>
@@ -249,6 +253,17 @@ function TimeMachine() {
   const effectiveMs = sliderMs ?? range?.hi ?? null;
   const debouncedIso = useDebounced(effectiveMs === null ? null : new Date(effectiveMs).toISOString(), 350);
   const frameQ = useTimeMachineFrame(debouncedIso);
+  const frame = frameQ.data;
+  // perf: zone census built once per frame instead of every render
+  // (deps: frame — the only reactive value read; same insertion order/values).
+  const zoneRows = useMemo(() => {
+    const byZone = new Map<string, number>();
+    for (const n of arr(frame?.nodes)) {
+      const z = str(n.zone) ?? "UNKNOWN";
+      byZone.set(z, (byZone.get(z) ?? 0) + 1);
+    }
+    return [...byZone.entries()].map(([label, count]) => ({ label, count }));
+  }, [frame]);
 
   if (boundsQ.isPending) return <Panel title="Time machine"><Skeleton count={3} /></Panel>;
   if (!bounds || !range) {
@@ -259,10 +274,6 @@ function TimeMachine() {
     );
   }
 
-  const frame = frameQ.data;
-  const nodes = arr(frame?.nodes);
-  const byZone = new Map<string, number>();
-  for (const n of nodes) byZone.set(str(n.zone) ?? "UNKNOWN", (byZone.get(str(n.zone) ?? "UNKNOWN") ?? 0) + 1);
   const transitions = arr(frame?.transitions);
 
   return (
@@ -294,7 +305,7 @@ function TimeMachine() {
           <div className="grid cols-2" style={{ marginTop: 6 }}>
             <div>
               <div className="section-title">zone census at instant</div>
-              <DistBars rows={[...byZone.entries()].map(([label, count]) => ({ label, count }))} />
+              <DistBars rows={zoneRows} />
             </div>
             <div>
               <div className="section-title">transitions in this frame (±60 s)</div>
