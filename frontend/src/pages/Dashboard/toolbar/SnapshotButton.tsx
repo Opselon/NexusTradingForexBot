@@ -1,11 +1,23 @@
-import type { RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import "./chartControls.css";
 
-/** Wave-2 LANE D slot: PNG snapshot of the chart canvas (scaffold ships the
- *  working core; lane D adds feedback flash + filename polish). */
+/** Wave-2 LANE D slot: PNG snapshot of the chart canvas. Core export logic
+ *  unchanged; after a successful download the label flips to "✓ saved" for
+ *  1.2s (timer cleared on unmount). */
 export function SnapshotButton({ canvasRef }: { canvasRef: RefObject<HTMLCanvasElement | null> }) {
+  const [saved, setSaved] = useState(false);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    },
+    [],
+  );
+
   return (
     <button
-      className="btn small ghost"
+      className={saved ? "flash" : "btn small ghost"}
       title="download chart snapshot (PNG)"
       onClick={() => {
         const cv = canvasRef.current;
@@ -18,10 +30,16 @@ export function SnapshotButton({ canvasRef }: { canvasRef: RefObject<HTMLCanvasE
           a.download = `nse-chart-${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
           a.click();
           URL.revokeObjectURL(url);
+          setSaved(true);
+          if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+          timerRef.current = window.setTimeout(() => {
+            setSaved(false);
+            timerRef.current = null;
+          }, 1200);
         }, "image/png");
       }}
     >
-      ⤓ PNG
+      {saved ? "✓ saved" : "⤓ PNG"}
     </button>
   );
 }
