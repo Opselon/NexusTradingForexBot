@@ -77,32 +77,34 @@ FIX (fail-closed, no data touched — audit trail is immutable):
 - DO NOT mutate the DB, and do not add a whitelist entry for `''` — that would
   mask a genuine future duplicate written with an empty id.
 
-### LD-2 — FastAPI Duplicate Operation IDs (route double-registration) — P0
-`src/nexus_scalp/web/debug_research_routes.py` lines ~1217-1230 and ~2137-2150
+### LD-2 — FastAPI Duplicate Operation IDs (module-router accumulation) — P0
+`src/nexus_scalp/web/debug_research_routes.py` lines ~1254-1270 and ~2183-2196
 
-Every route in `intelligence_routes.py` (10) and `model_governance_routes.py`
-(48) is registered TWICE:
-```python
-register_intelligence_routes(app)     # registers closures on `router`
-app.include_router(intelligence_router)   # <-- registers the SAME router again
-...
-register_model_governance_routes(app)
-app.include_router(_mgr.router)           # <-- same router, second time
-```
-`register_*_routes(app)` already attaches every route via the module-level
-`router`; the following `include_router` re-adds all of them. 58 duplicate
-operation IDs at startup. FastAPI warns (noise) and the OpenAPI surface lies
-about the real route count; generated clients can break on the duplicate IDs.
+CORRECTED BY LANE B (the original contract read below was WRONG — kept for
+provenance): `register_*_routes(app)` does NOT mount anything on `app`. It
+only decorates the MODULE-level `APIRouter()` with `@router.get/post`, and the
+following `app.include_router(<that router>)` is the SOLE mount. The warnings
+appear because FastAPI's `include_router` is not idempotent and the router is
+process-global STATE: on the 2nd+ `create_app()` in one process (which the
+forensic check performed every sweep — see LD-3) each `include_router` appends
+a fresh wrapper for the already-accumulated router, so 10 + 45 = 55 duplicate
+operation IDs per extra build and an inflated OpenAPI surface.
 
-FIX: delete the redundant `app.include_router(...)` calls only. Keep
-`register_*_routes(app)` — that is the registration contract (docstrings say
-"registered at the same position", i.e. order parity, which the register call
-preserves; include_router was not part of the original inline-route order).
-Verify: `create_app()` emits ZERO duplicate-operation-ID warnings, and
-`/api/intelligence/summary` + `/api/models/summary` still resolve (route
-COUNT unchanged — the duplicates were the same paths, so no route is lost).
-The API-group forensic check enumerates `app.openapi()` paths; assert the set
-is unchanged before/after.
+Original (incorrect) contract read: "register_*_routes(app) already attaches
+every route via the module-level router; the following include_router re-adds
+them all → delete the include_router calls." Deleting them would have
+UNREGISTERED every /api/intelligence/* and /api/models/* route. Lane B read the
+producer and rejected that instruction — the right fix is below.
+
+LANE B FIX (applied, verified): keep `include_router` as the sole mount and
+CLEAR the module router immediately before re-registering
+(`intelligence_router.routes.clear()` / `_mgr.router.routes.clear()` before
+each `register_*_routes(app)`), making the mount exactly-once per app while
+preserving original route ORDER. The `from ... import ... as _mgr` import was
+hoisted above the register call (no behaviour change).
+Verified by `tests/unit/test_ld2_route_registration.py`: across 3 successive
+`create_app()` builds, ZERO "Duplicate Operation ID" warnings, and the
+(method, path) operation set is IDENTICAL across builds.
 
 ### LD-3 — app rebuilt per forensic sweep (create_app on a loop) — P0
 `src/nexus_scalp/forensics/checks_observability.py::check_api_200_but_wrong`
