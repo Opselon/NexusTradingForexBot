@@ -302,13 +302,22 @@ class AuditRepository:
     @staticmethod
     def _detect_sqlite(db_url: str) -> bool:
         """True when `db_url` addresses a SQLite database.
-        Accepts the URI forms (``sqlite:///<path>``, ``sqlite:///:memory:``) and
-        the bare-filesystem-path form that many call sites still use. A URL with
-        an explicit non-sqlite scheme (``postgres://``...) is the only case that
-        means "not SQLite".
+
+        Recognised as SQLite:
+          * ``sqlite:///<path>`` and ``sqlite:///:memory:``;
+          * a bare filesystem path (no scheme at all) — call sites have
+            always been allowed to pass the path directly.
+
+        Everything else is another provider:
+          * a URL scheme (``postgres://``, ``postgresql://``);
+          * a libpq key=value DSN (``host=... dbname=...``) — PostgreSQL,
+            MySQL and friends speak this form and SQLite never does.
         """
         if "://" in db_url:
             return db_url.split("://", 1)[0].lower() in ("sqlite", "file")
+        # A libpq-style DSN names a driver keyword: SQLite has no such form.
+        if "=" in db_url:
+            return False
         return True
 
     def __init__(
@@ -2263,6 +2272,11 @@ class AuditRepository:
         Bounded by `timeout_sec` so a stalled worker can never deadlock a
         live-path caller; returns True only when the queue fully drained.
         """
+        if not self._is_sqlite and getattr(self, "_write_plane", None) is not None:
+            # A pooled provider has its own queue + worker; the plane owns the
+            # drain contract.  Returning True here without draining would make
+            # "flush ok" vacuous (the row would never be guaranteed durable).
+            return self._write_plane.flush(timeout_sec=max(0.0, float(timeout_sec)))
         if not self._is_sqlite:
             return True
         try:
@@ -2852,8 +2866,6 @@ class AuditRepository:
           never create duplicate decision rows across restart/races — no
           synchronous SELECT in the hot path, no in-memory state to lose.
         """
-        if not self._is_sqlite:
-            return
 
         reason_code = str(proposal.reason_code or "MODEL_SIGNAL")
         if reason_code in self._GUARD_TELEMETRY_CODES:
@@ -3034,8 +3046,6 @@ class AuditRepository:
         execution_id: str | None = None,
     ) -> None:
         """Zero-latency async logging of order lifecycle events."""
-        if not self._is_sqlite:
-            return
 
         query = """
             INSERT INTO audit_orders
@@ -3066,8 +3076,6 @@ class AuditRepository:
 
     def log_execution(self, order: TradeOrder, status: str) -> None:
         """Zero-latency async logging of order execution attempts."""
-        if not self._is_sqlite:
-            return
 
         query = """
             INSERT INTO audit_executions
@@ -3102,8 +3110,6 @@ class AuditRepository:
         otherwise) so the accounting layer can exclude simulation plateaus
         from drawdown/equity metrics without rewriting history.
         """
-        if not self._is_sqlite:
-            return
 
         now = time.time()
         balance_changed = abs(account.balance - self._last_snapshot_balance) > 0.01
@@ -3158,8 +3164,6 @@ class AuditRepository:
         'SHADOW' — '' for legacy rows. AccountingCore excludes PAPER provenance
         from every performance metric; the raw row itself is never rewritten.
         """
-        if not self._is_sqlite:
-            return
 
         query = """
             INSERT INTO audit_ledger
@@ -3514,8 +3518,6 @@ class AuditRepository:
         are preserved from the OPENED row whenever the caller passes blanks, so a close
         that lacks context never erases what was captured at entry.
         """
-        if not self._is_sqlite:
-            return
 
         # ---------------------------------------------------------------------
         # TASK 4 FIX: PnL / friction accounting.

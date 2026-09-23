@@ -522,6 +522,13 @@ def provision_domain(domain: str, dsn: str, **pool_kwargs: Any) -> Any:
     fabric = DatabaseFabric(domain, domain_cfg)
     fabric.open()
     backend = fabric.write_backend(domain)
+    # A pooled write plane owns its own PgPool, which is NOT opened by
+    # fabric.open(): without this the pool has nothing to lend and every
+    # checkout fails with "pg pool is not open" (the write would be silently
+    # dead-lettered on the first batch).
+    backend_open = getattr(backend, "open", None)
+    if callable(backend_open):
+        backend_open()
     register_domain_backend(domain, backend)
     return backend
 
