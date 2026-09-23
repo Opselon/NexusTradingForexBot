@@ -55,6 +55,9 @@ import { ChartTypeButton } from "./toolbar/ChartTypeButton";
 import { ChartOverlaysButton } from "./toolbar/ChartOverlaysButton";
 import { SnapshotButton } from "./toolbar/SnapshotButton";
 import { FullscreenButton } from "./toolbar/FullscreenButton";
+import { ChartContextMenu } from "./chart/ChartContextMenu";
+import { ChartPerfBadge } from "./chart/ChartPerfBadge";
+import { useChartKeyboardNav } from "./chart/keyboardNav";
 import "@/pages/_shared/pages.css";
 import "./market-console.css";
 
@@ -190,6 +193,9 @@ function PriceChartInner({
     [content, effLeft, len, view.visible],
   );
   const count = view.visible;
+
+  // wave-3: keyboard navigation (Lane B fills the hook; inert until then).
+  useChartKeyboardNav({ stageRef, view, setView, barCount: len + maxFutureFor(view.visible) });
 
   // ---- view mutations (all clamp + recompute followLive at the boundary)
   const applyLeft = (nl: number) => {
@@ -513,6 +519,27 @@ function PriceChartInner({
     </div>
   );
 
+  /** Wave-3 shared actions: toolbar buttons and the context menu call these. */
+  const snapshotNow = () => {
+    const cv = canvasRef.current;
+    if (!cv) return;
+    cv.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `nse-chart-${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }, "image/png");
+  };
+  const fullscreenNow = () => {
+    const el = stageRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void el.requestFullscreen().catch(() => undefined);
+  };
+
   const stateBlock = error ? (
     <div className="l4-chart__state">
       <span>chart history failed: {error}</span>
@@ -538,11 +565,24 @@ function PriceChartInner({
     <section className="l4-chart" aria-label="Price chart">
       <div className="l4-chart__head">{statusChips}</div>
       {toolRow}
+      <ContextAnchor>
+        <ChartContextMenu
+          chartKind={chartKind}
+          onChartKind={settings.setChartKind}
+          onSnapshot={snapshotNow}
+          onFullscreen={fullscreenNow}
+          onGoLive={() => setView((v) => ({ ...v, followLive: true }))}
+          overlayVisible={overlayVisible}
+          onOverlayToggle={settings.setOverlayVisible}
+        />
+      </ContextAnchor>
       {shown.length === 0 ? (
         stateBlock
       ) : (
         <div
           ref={stageRef}
+          tabIndex={0}
+          aria-label="price chart - arrow keys pan the view, Home/End jump to oldest/newest bar"
           className={`mc-stage${dragging ? " mc-stage--dragging" : ""}`}
           onPointerDown={(e) => {
             if (e.button !== 0) return;
@@ -585,6 +625,7 @@ function PriceChartInner({
             role="img"
           />
           <ChartLegend hovered={hovered ?? null} last={shown[shown.length - 1] ?? null} digits={digits} timeframe={timeframe} symbol={symbol} />
+          <ChartPerfBadge />
           {hovered && hover && (
             <div className="mc-tip" style={{ insetInlineStart: Math.min(hover.x + 15, Math.max(0, size.w - 190)), insetBlockStart: Math.min(hover.y + 15, Math.max(0, size.h - 96)) }}>
               <div className="mc-tip__row">
@@ -616,6 +657,12 @@ export function PriceChart(props: PriceChartProps) {
       <PriceChartInner {...props} />
     </ChartSettingsProvider>
   );
+}
+
+/** Wave-3 context-menu anchor: keeps ChartContextMenu mounted whenever bars
+ *  render (its document listener checks .mc-stage containment itself). */
+function ContextAnchor({ children }: { children: { type: null } | React.ReactNode }) {
+  return <>{children}</>;
 }
 
 /** Pointer-capture drag anchor (module-level so handlers never re-bind). */

@@ -1,0 +1,46 @@
+.cx-menu {
+  position: fixed;
+  z-index: 20;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--bg-panel, #0d131b);
+  border: 1px solid var(--border-strong, #2b3d51);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  font: 10px/1.6 var(--mono, monospace);
+  color: var(--text, #dbe4ee);
+}
+
+.cx-menu__item {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.cx-menu__item:hover {
+  background: var(--bg-inset, #0a0f16);
+  color: var(--accent, #41a6f2);
+}
+
+.cx-menu__sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border, #1c2836);
+}
+
+.cx-perf {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 70px;
+  z-index: 3;
+  font: 9px/1.4 var(--mono, monospace);
+  color: var(--text-faint, #56697d);
+  pointer-events: none;
+}
