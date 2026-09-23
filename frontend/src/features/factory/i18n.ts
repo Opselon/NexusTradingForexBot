@@ -111,6 +111,8 @@ export const MESSAGES: FeatureMessages = {
   "factory.confirm_send": { fa: "ارسال فرمان", de: "Befehl senden", es: "Enviar comando", ar: "إرسال الأمر" },
   "factory.confirm_danger": { fa: "این فرمان وضعیت کنترل حلقه خودگردان را روی پشتیبان تغییر می‌دهد. کارخانه هرگز به مسیر معامله زنده دست نمی‌زند، اما شروع حلقه تا زمان توقف/مکث به تولید/اعتبارسنجی کاندیداها ادامه می‌دهد.", de: "Dieser Befehl ändert den autonomen Loop-Steuerungsstatus im Backend. Die Fabrik berührt nie den Live-Handelspfad, aber Loop-Start generiert/validiert Kandidaten weiter, bis pausiert/gestoppt wird.", es: "Este comando cambia el estado de control del bucle autónomo en el backend. La fábrica nunca toca la ruta de operaciones en vivo, pero al iniciar el bucle sigue generando/validando candidatos hasta pausar/detener.", ar: "يغيّر هذا الأمر حالة تحكّم الحلقة الذاتية في الخادم. لا تمسّ المصنع مسار التداول الحي أبدًا، لكن بدء الحلقة يستمر بتوليد المرشحين والتحقق منهم حتى الإيقاف المؤقت/التوقف." },
   "factory.confirm_plain": { fa: "فرمان به پشتیبان کارخانه می‌رود؛ پاسخ آن نتیجه را تعیین می‌کند.", de: "Der Befehl geht an das Fabrik-Backend; dessen Antwort bestimmt das Ergebnis.", es: "El comando va al backend de la fábrica; su respuesta decide el resultado.", ar: "يذهب الأمر إلى خادم المصنع؛ يحدّد رده النتيجة." },
+  "factory.gen_filter_a11y": { fa: "فیلتر شناسه نسل", de: "Filter nach Generations-ID", es: "filtro de id de generación", ar: "ترشيح معرّف الجيل", en: "Generation id filter" },
+  "factory.rank_dim_a11y": { fa: "بُعد رتبه‌بندی", de: "Rangdimension", es: "dimensión de rango", ar: "بُعد الترتيب", en: "Rank dimension" },
 };
 
 /** Key catalogue generated alongside MESSAGES. */
