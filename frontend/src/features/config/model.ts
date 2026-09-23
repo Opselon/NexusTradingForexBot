@@ -11,9 +11,11 @@
 
 import {
   MUTABILITY,
+  identityT,
   type FieldSpec,
   type FieldValues,
   type Mutability,
+  type Translate,
 } from "@/features/config/validation";
 import type { ConfigDto } from "./api";
 
@@ -47,18 +49,18 @@ export interface ModeCheck {
 }
 
 /** Pure client-side transition verdict (mirrors v1 /mode/validate semantics). */
-export function checkModeTransition(current: string | null | undefined, proposed: string): ModeCheck {
+export function checkModeTransition(current: string | null | undefined, proposed: string, t: Translate = identityT): ModeCheck {
   const errors: string[] = [];
   const warnings: string[] = [];
   const p = proposed.trim().toUpperCase();
   if (!EXECUTION_MODES.includes(p as (typeof EXECUTION_MODES)[number])) {
-    errors.push(`mode must be one of ${EXECUTION_MODES.join(", ")}`);
+    errors.push(t("config.mode.must_be_one_of", "mode must be one of {modes}", { modes: EXECUTION_MODES.join(", ") }));
     return { ok: false, errors, warnings };
   }
   const c = (current ?? "").toUpperCase();
-  if (c && p === c) warnings.push("proposed mode equals current mode (no-op)");
-  else if (c && !allowedModes(c).includes(p)) errors.push(`transition ${c} -> ${p} is not allowed`);
-  if (p === "LIVE") warnings.push("LIVE places real orders with the broker — capital at risk");
+  if (c && p === c) warnings.push(t("config.mode.noop", "proposed mode equals current mode (no-op)"));
+  else if (c && !allowedModes(c).includes(p)) errors.push(t("config.mode.transition_denied", "transition {from} -> {to} is not allowed", { from: c, to: p }));
+  if (p === "LIVE") warnings.push(t("config.mode.live_warning", "LIVE places real orders with the broker — capital at risk"));
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -87,27 +89,27 @@ const S = (
   ...extra,
 });
 
-export function runtimeConfigSpecs(): SpecWithMutability[] {
+export function runtimeConfigSpecs(t: Translate = identityT): SpecWithMutability[] {
   return [
-    S("execution.symbol", "Symbol", "string", MUTABILITY.RESTART_REQUIRED, {
+    S("execution.symbol", t("config.field.symbol", "Symbol"), "string", MUTABILITY.RESTART_REQUIRED, {
       pattern: "^[A-Z0-9]{2,16}$",
-      patternMessage: "symbol looks wrong (expected an uppercase instrument code like XAUUSD)",
+      patternMessage: t("config.field.symbol_pattern", "symbol looks wrong (expected an uppercase instrument code like XAUUSD)"),
     }),
-    S("execution.timeframe", "Timeframe", "enum", MUTABILITY.RESTART_REQUIRED, {
+    S("execution.timeframe", t("config.field.timeframe", "Timeframe"), "enum", MUTABILITY.RESTART_REQUIRED, {
       options: ["M1", "M5", "M15", "M30", "H1", "H4", "D1"],
     }),
-    S("execution.magic_number", "Magic number", "integer", MUTABILITY.RESTART_REQUIRED, { min: 0, max: 2_147_483_647 }),
-    S("execution.max_slippage_points", "Max slippage (points)", "integer", MUTABILITY.HOT_RESTRICTED, { min: 0, max: 10_000 }),
-    S("risk.max_account_drawdown_pct", "Max account drawdown %", "number", MUTABILITY.HOT_RESTRICTED, { min: 0.1, max: 100 }),
-    S("risk.risk_per_trade_pct", "Risk per trade %", "number", MUTABILITY.HOT_RESTRICTED, { min: 0.01, max: 100 }),
-    S("risk.max_concurrent_positions", "Max concurrent positions", "integer", MUTABILITY.HOT_RESTRICTED, { min: 0, max: 500 }),
-    S("risk.max_spread_points", "Max spread (points)", "integer", MUTABILITY.HOT_RESTRICTED, { min: 0, max: 100_000 }),
-    S("risk.max_allowed_lots", "Max allowed lots", "number", MUTABILITY.HOT_RESTRICTED, { min: 0.01, max: 1000 }),
-    S("risk.enforce_stop_loss", "Enforce stop-loss", "boolean", MUTABILITY.HOT_RESTRICTED),
-    S("model.confidence_threshold", "Confidence threshold", "number", MUTABILITY.HOT_RESTRICTED, { min: 0, max: 1 }),
-    S("model.model_artifact_path", "Model artifact path", "path", MUTABILITY.RESTART_REQUIRED, {
+    S("execution.magic_number", t("config.field.magic_number", "Magic number"), "integer", MUTABILITY.RESTART_REQUIRED, { min: 0, max: 2_147_483_647 }),
+    S("execution.max_slippage_points", t("config.field.max_slippage", "Max slippage (points)"), "integer", MUTABILITY.HOT_RESTRICTED, { min: 0, max: 10_000 }),
+    S("risk.max_account_drawdown_pct", t("config.field.max_drawdown", "Max account drawdown %"), "number", MUTABILITY.HOT_RESTRICTED, { min: 0.1, max: 100 }),
+    S("risk.risk_per_trade_pct", t("config.field.risk_per_trade", "Risk per trade %"), "number", MUTABILITY.HOT_RESTRICTED, { min: 0.01, max: 100 }),
+    S("risk.max_concurrent_positions", t("config.field.max_positions", "Max concurrent positions"), "integer", MUTABILITY.HOT_RESTRICTED, { min: 0, max: 500 }),
+    S("risk.max_spread_points", t("config.field.max_spread", "Max spread (points)"), "integer", MUTABILITY.HOT_RESTRICTED, { min: 0, max: 100_000 }),
+    S("risk.max_allowed_lots", t("config.field.max_lots", "Max allowed lots"), "number", MUTABILITY.HOT_RESTRICTED, { min: 0.01, max: 1000 }),
+    S("risk.enforce_stop_loss", t("config.field.enforce_sl", "Enforce stop-loss"), "boolean", MUTABILITY.HOT_RESTRICTED),
+    S("model.confidence_threshold", t("config.field.confidence_threshold", "Confidence threshold"), "number", MUTABILITY.HOT_RESTRICTED, { min: 0, max: 1 }),
+    S("model.model_artifact_path", t("config.field.artifact_path", "Model artifact path"), "path", MUTABILITY.RESTART_REQUIRED, {
       pattern: "\\.(pt|onnx|joblib|pkl)$",
-      patternMessage: "artifact must be a .pt / .onnx / .joblib / .pkl file",
+      patternMessage: t("config.field.artifact_pattern", "artifact must be a .pt / .onnx / .joblib / .pkl file"),
     }),
   ];
 }

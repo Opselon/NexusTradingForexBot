@@ -15,19 +15,25 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Panel } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { useUiStore } from "@/stores/uiStore";
 import { simulationApi, type SimulationTickType } from "../simulationApi";
 
 type Phase = "idle" | "dispatching" | "dispatched" | "refused" | "failed";
 
-const BUTTONS: Array<{ type: SimulationTickType; label: string; hint: string; tone: string }> = [
-  { type: "BUY_PRESSURE", label: "↑ Buy pressure", hint: "upward pressure tick", tone: "var(--green)" },
-  { type: "SELL_PRESSURE", label: "↓ Sell pressure", hint: "downward pressure tick", tone: "var(--red)" },
-  { type: "VOLATILE_SWEEP", label: "⌁ Liquidity sweep (stop hunt)", hint: "deep swing sweep", tone: "var(--amber)" },
-];
-
 export function SimulationPanel() {
+  const t = useI18n((s) => s.t);
   const pushToast = useUiStore((s) => s.pushToast);
+  const BUTTONS: Array<{ type: SimulationTickType; label: string; hint: string; tone: string }> = [
+    { type: "BUY_PRESSURE", label: t("debug.sim.buy", "↑ Buy pressure"), hint: t("debug.sim.buy_hint", "upward pressure tick"), tone: "var(--green)" },
+    { type: "SELL_PRESSURE", label: t("debug.sim.sell", "↓ Sell pressure"), hint: t("debug.sim.sell_hint", "downward pressure tick"), tone: "var(--red)" },
+    {
+      type: "VOLATILE_SWEEP",
+      label: t("debug.sim.sweep", "⌁ Liquidity sweep (stop hunt)"),
+      hint: t("debug.sim.sweep_hint", "deep swing sweep"),
+      tone: "var(--amber)",
+    },
+  ];
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState<string | null>(null);
 
@@ -40,40 +46,41 @@ export function SimulationPanel() {
     onSuccess: (data) => {
       if (data.success) {
         setPhase("dispatched");
-        setMessage(data.message ?? "tick dispatched to the engine pipeline");
-        pushToast("ok", "Simulation tick dispatched.");
+        setMessage(data.message ?? t("debug.sim.dispatched_msg", "tick dispatched to the engine pipeline"));
+        pushToast("ok", t("debug.sim.dispatched_toast", "Simulation tick dispatched."));
         window.setTimeout(() => setPhase((p) => (p === "dispatched" ? "idle" : p)), 1_500);
       } else {
         // The backend refused (e.g. mode=LIVE). Never render "Dispatched".
         setPhase("refused");
-        setMessage(data.message ?? "the engine refused the simulated tick");
-        pushToast("fail", data.message ?? "Simulation tick refused.");
+        setMessage(data.message ?? t("debug.sim.refused_msg", "the engine refused the simulated tick"));
+        pushToast("fail", data.message ?? t("debug.sim.refused_toast", "Simulation tick refused."));
       }
     },
     onError: (e: unknown) => {
       setPhase("failed");
-      setMessage(e instanceof Error ? e.message : "simulation dispatch failed");
-      pushToast("fail", "Simulation dispatch failed.");
+      setMessage(e instanceof Error ? e.message : t("debug.sim.failed_msg", "simulation dispatch failed"));
+      pushToast("fail", t("debug.sim.failed_toast", "Simulation dispatch failed."));
     },
   });
 
   const badge = {
-    idle: { text: "Ready", cls: "badge good" },
-    dispatching: { text: "Dispatching…", cls: "badge warn" },
-    dispatched: { text: "Dispatched", cls: "badge good" },
-    refused: { text: "Refused", cls: "badge bad" },
-    failed: { text: "Failed", cls: "badge bad" },
+    idle: { text: t("debug.sim.ready", "Ready"), cls: "badge good" },
+    dispatching: { text: t("debug.sim.dispatching", "Dispatching…"), cls: "badge warn" },
+    dispatched: { text: t("debug.sim.dispatched", "Dispatched"), cls: "badge good" },
+    refused: { text: t("debug.sim.refused", "Refused"), cls: "badge bad" },
+    failed: { text: t("debug.sim.failed", "Failed"), cls: "badge bad" },
   }[phase];
 
   return (
     <Panel
-      title="Interactive live simulation"
+      title={t("debug.sim.title", "Interactive live simulation")}
       right={<span className={badge.cls}>{badge.text}</span>}
     >
       <div className="small muted" style={{ marginBottom: 10 }}>
-        Inject mock ticks to test the model&apos;s live response — random walk, trending structure, or deep swing
-        sweeps. The backend refuses injection unless the execution mode is SIMULATION/PAPER, so synthetic prices can
-        never reach a live pipeline.
+        {t(
+          "debug.sim.desc",
+          "Inject mock ticks to test the model’s live response — random walk, trending structure, or deep swing sweeps. The backend refuses injection unless the execution mode is SIMULATION/PAPER, so synthetic prices can never reach a live pipeline.",
+        )}
       </div>
       <div style={{ display: "grid", gap: 8 }}>
         <div style={{ display: "flex", gap: 8 }}>

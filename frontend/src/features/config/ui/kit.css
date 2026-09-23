@@ -195,3 +195,30 @@
   padding: 8px 10px; resize: vertical;
 }
 .l3-cell { max-inline-size: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ------------------------- RTL / overflow fixes -------------------------- */
+/* The progress fill grows with the inline axis, but a degree-based gradient
+   has no logical keyword — flip it under an RTL root so the ramp still
+   travels with the bar instead of against it. */
+html[dir="rtl"] .l3-progress .track i {
+  background: linear-gradient(270deg, var(--accent), var(--violet));
+}
+
+/* fa/ar are cursive scripts: the LTR tracking + uppercase treatment splits
+   glyph joins and does nothing useful, so reset letter-spacing on RTL. */
+html[dir="rtl"] .l3-head .crumb,
+html[dir="rtl"] .l3-field-head .lab,
+html[dir="rtl"] .l3-dirty,
+html[dir="rtl"] .l3-mut,
+html[dir="rtl"] .l3-fresh-cell .k {
+  letter-spacing: normal;
+}
+
+/* Localized copy runs longer than the English source: let long tokens
+   (paths, ids) wrap inside notes instead of pushing them wide, and let
+   row-action buttons wrap rather than overflow narrow cells. */
+.l3-note { overflow-wrap: anywhere; }
+.l3-row-actions { flex-wrap: wrap; }
+
+/* The diff badge track is the last fixed column — size it to content so a
+   longer localized label (de "hinzugefuegt") never overflows. */
+.l3-diff-row { grid-template-columns: 90px 1fr 1fr minmax(100px, auto); }
