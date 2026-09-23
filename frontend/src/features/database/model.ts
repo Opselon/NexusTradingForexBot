@@ -11,37 +11,54 @@ import {
   type FieldErrors,
   type FieldSpec,
   type FieldValues,
+  type Translate,
+  identityT,
   validateFields,
 } from "@/features/config/validation";
 import type { ConsoleDatabase, DbDomainStatus, PgConfig } from "./api";
 
 export const PG_SSL_MODES = ["", "disable", "allow", "prefer", "require", "verify-ca", "verify-full"] as const;
 
-export function pgSpecs(): FieldSpec[] {
+/** `t` is threaded from the render site (ManageTab) so labels/hints/errors
+ *  render in the active language; the identity default keeps the pure
+ *  non-UI callers (useCases client-block checks) on the English fallback. */
+export function pgSpecs(t: Translate = identityT): FieldSpec[] {
   return [
-    { key: "host", label: "host", kind: "string", required: true, min: undefined },
-    { key: "port", label: "port", kind: "integer", required: true, min: 1, max: 65_535 },
-    { key: "database", label: "database", kind: "string", required: true },
-    { key: "username", label: "username", kind: "string", required: true },
-    { key: "ssl_mode", label: "ssl mode", kind: "enum", required: false, options: PG_SSL_MODES },
+    { key: "host", label: t("database.pg.host", "host"), kind: "string", required: true, min: undefined },
+    { key: "port", label: t("database.pg.port", "port"), kind: "integer", required: true, min: 1, max: 65_535 },
+    { key: "database", label: t("database.pg.database", "database"), kind: "string", required: true },
+    { key: "username", label: t("database.pg.username", "username"), kind: "string", required: true },
+    { key: "ssl_mode", label: t("database.pg.ssl_mode", "ssl mode"), kind: "enum", required: false, options: PG_SSL_MODES },
     {
       key: "password",
-      label: "password",
+      label: t("database.pg.password", "password"),
       kind: "string",
       required: false,
       secret: true,
-      hint: "routed to the OS SecretStore (DPAPI) server-side; never stored in the settings DB, never echoed back",
+      hint: t(
+        "database.pg.password_hint",
+        "routed to the OS SecretStore (DPAPI) server-side; never stored in the settings DB, never echoed back",
+      ),
       cross: (values: FieldValues) =>
         String(values.password ?? "") !== "" && String(values.password ?? "") !== String(values.confirm_password ?? "")
-          ? "password and confirmation do not match (backend would answer PASSWORD_MISMATCH)"
+          ? t(
+              "database.pg.cross_mismatch",
+              "password and confirmation do not match (backend would answer PASSWORD_MISMATCH)",
+            )
           : null,
     },
-    { key: "confirm_password", label: "confirm password", kind: "string", required: false, secret: true },
+    {
+      key: "confirm_password",
+      label: t("database.pg.confirm_password", "confirm password"),
+      kind: "string",
+      required: false,
+      secret: true,
+    },
   ];
 }
 
-export function validatePgConfig(values: FieldValues): FieldErrors {
-  return validateFields(pgSpecs(), values);
+export function validatePgConfig(values: FieldValues, t: Translate = identityT): FieldErrors {
+  return validateFields(pgSpecs(t), values, undefined, t);
 }
 
 /** Strip to exactly the payload shape the backend consumes. */

@@ -112,7 +112,7 @@ export function useSaveDbConfig() {
   const queryClient = useQueryClient();
   return useMutation<DbOutcome, Error, FieldValues>({
     mutationFn: async (values) => {
-      const errors = validatePgConfig(values);
+      const errors = validatePgConfig(values, t);
       if (Object.values(errors).some((m) => m.length > 0)) {
         return {
           ok: false,
@@ -137,7 +137,7 @@ export function useTestDbConnection() {
   const t = useI18n((s) => s.t);
   return useMutation<DbOutcome, Error, FieldValues>({
     mutationFn: async (values) => {
-      const errors = validatePgConfig(values);
+      const errors = validatePgConfig(values, t);
       if (Object.values(errors).some((m) => m.length > 0)) {
         return { ok: false, message: t("database.msg.fix_fields", "Fix the highlighted fields first: {errors}", { errors: Object.values(errors).flat().join(" · ") }), requestId: null, body: null };
       }
@@ -180,7 +180,7 @@ export function useMigrationPreview() {
   const t = useI18n((s) => s.t);
   return useMutation<DbOutcome, Error, FieldValues>({
     mutationFn: async (values) => {
-      const errors = validatePgConfig(values);
+      const errors = validatePgConfig(values, t);
       if (Object.values(errors).some((m) => m.length > 0)) {
         return { ok: false, message: t("database.msg.preview_blocked", "Preview blocked by client validation: {errors}", { errors: Object.values(errors).flat().join(" · ") }), requestId: null, body: null };
       }
@@ -201,7 +201,7 @@ export function useStartMigration() {
   const queryClient = useQueryClient();
   return useMutation<DbOutcome, Error, { values: FieldValues; resume: boolean; batchSize: number }>({
     mutationFn: async ({ values, resume, batchSize }) => {
-      const errors = validatePgConfig(values);
+      const errors = validatePgConfig(values, t);
       if (Object.values(errors).some((m) => m.length > 0)) {
         return { ok: false, message: t("database.msg.migration_blocked", "Migration blocked by client validation: {errors}", { errors: Object.values(errors).flat().join(" · ") }), requestId: null, body: null };
       }

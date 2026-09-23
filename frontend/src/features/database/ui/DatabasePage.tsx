@@ -36,8 +36,8 @@ export default function DatabasePage(props: ShellPageProps) {
   const [tab, setTab] = useState<TabId>("status");
   const manage = useDbManageStatus();
   const provider = manage.data?.provider;
-  const truth = providerTruth(manage.data);
-  const psycopg = psycopgState(manage.data?.postgresql_driver_available);
+  const truth = providerTruth(manage.data, t);
+  const psycopg = psycopgState(manage.data?.postgresql_driver_available, t);
   // mismatch = the 2026-09-23 complaint: badge says postgres, data is sqlite
   const mismatch = Boolean(truth?.mismatch);
   const providerLabel = mismatch && truth ? `${truth.configured} → ${truth.effective}` : provider ?? "…";
@@ -136,7 +136,7 @@ export default function DatabasePage(props: ShellPageProps) {
                 <li key={e.name} className={e.active ? "active" : ""}>
                   <span className="inline-mono">{e.file}</span>
                   <span>{formatBytes(e.bytes)}</span>
-                  <span>{t("database.page.evidence_written", "written {age}", { age: ageLabel(e.age_seconds) })}</span>
+                  <span>{t("database.page.evidence_written", "written {age}", { age: ageLabel(e.age_seconds, t) })}</span>
                   {e.active && <span className="tiny dbc-evi-live">{t("database.page.evidence_live", "live")}</span>}
                 </li>
               ))}
