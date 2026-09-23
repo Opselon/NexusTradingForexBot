@@ -11,10 +11,14 @@
  *  2. authHeader       — Bearer + X-NSE-Token from core/auth (cookie rides
  *                        anyway via credentials:"same-origin" — BUG-267).
  *  3. timeout          — AbortSignal.timeout merged with the caller signal.
- *  4. errorNormalize   — non-2xx + network failures -> ApiError (both the
+ *  4. cookieHeal       — one-shot 401 heal on GETs: re-fetch the public
+ *                        cookie-issuing asset, arm ONE retry, then give up.
+ *                        MUST wrap errorNormalize: only that layer turns a
+ *                        401 Response into ApiError, and the terminal fetch
+ *                        itself never throws for a status code (perf lane 1 —
+ *                        in the old inner position the heal was unreachable).
+ *  5. errorNormalize   — non-2xx + network failures -> ApiError (both the
  *                        v1 `{error:{...}}` and legacy safe-error envelopes).
- *  5. cookieHeal       — one-shot 401 heal on GETs: re-fetch the public
- *                        cookie-issuing asset, retry once, then give up.
  */
 
 import { ApiError } from "@/types/api";
@@ -95,7 +99,23 @@ export const errorNormalizeMiddleware: Middleware = async (ctx, next) => {
   if (!res.ok) throw apiErrorFromResponse(res.status, await safeJson(res), ctx.requestId);
 };
 
-/** BUG-267 one-shot cookie heal (GET only; mutations NEVER re-run). */
+/**
+ * Meta key arming the single heal retry (scratchpad — plugins may extend `meta`).
+ * Set by cookieHealMiddleware, consumed by executeRequest().
+ */
+const HEAL_RETRY_META = "cookieHealRetry";
+
+/**
+ * BUG-267 one-shot cookie heal (GET only; mutations NEVER re-run).
+ *
+ * WHY THE SHAPE (perf lane 1): the retry cannot call `next()` a second time —
+ * `compose()` rejects a double `next()` in one middleware by design — and the
+ * heal must observe the NORMALIZED 401 (only errorNormalize turns a 401
+ * Response into ApiError), which is why this layer wraps it instead of the
+ * other way round. A successful heal therefore arms `meta[HEAL_RETRY_META]`;
+ * `executeRequest()` re-runs the whole pipeline in a fresh dispatch, which
+ * also re-derives auth headers and a fresh timeout signal for the retry.
+ */
 const cookieHealMiddleware: Middleware = async (ctx, next) => {
   try {
     await next();
@@ -109,9 +129,9 @@ const cookieHealMiddleware: Middleware = async (ctx, next) => {
     ) {
       ctx.allowHeal = false;
       ctx.response = null;
+      ctx.meta[HEAL_RETRY_META] = true;
       coreEvents.publish("transport:healed", { path: ctx.path });
-      await next();
-      return;
+      return; // executeRequest() performs the single retry dispatch
     }
     if (e instanceof ApiError && e.status === 401) noteUnauthorized();
     throw e;
@@ -170,12 +190,14 @@ function mergeSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
 
 // ----------------------------------------------------------------- pipeline
 
+// Execution order matters: cookieHeal wraps errorNormalize (see the file
+// header) so a 401 Response normalized into ApiError actually reaches it.
 const builtins: Middleware[] = [
   requestIdMiddleware,
   authHeaderMiddleware,
   timeoutMiddleware,
-  errorNormalizeMiddleware,
   cookieHealMiddleware,
+  errorNormalizeMiddleware,
 ];
 
 const extensions: Middleware[] = [];
@@ -260,10 +282,19 @@ export async function executeRequest(path: string, opts: MiddlewareRequestOption
     ctx.response = res;
   });
   await run(ctx);
+  // One-shot 401 cookie-heal retry (armed by cookieHealMiddleware): re-run the
+  // whole pipeline as a NEW dispatch — compose() forbids a second next() inside
+  // one dispatch, and a fresh run re-derives auth headers plus a fresh timeout
+  // signal, so the retry cannot ride the first attempt's aborted/expired one.
+  if (ctx.meta[HEAL_RETRY_META] === true) {
+    delete ctx.meta[HEAL_RETRY_META];
+    ctx.response = null;
+    await run(ctx);
+  }
   return ctx;
 }
 
 /** Current effective pipeline (introspection for the debug page). */
 export function describePipeline(): string[] {
-  return ["requestId", "authHeader", "timeout", "errorNormalize", "cookieHeal", ...extensions.map((_, i) => `extension[${i}]`)];
+  return ["requestId", "authHeader", "timeout", "cookieHeal", "errorNormalize", ...extensions.map((_, i) => `extension[${i}]`)];
 }

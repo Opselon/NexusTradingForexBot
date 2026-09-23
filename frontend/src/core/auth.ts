@@ -151,17 +151,61 @@ export function noteUnauthorized(): void {
   coreEvents.publish("auth:expired", { at: lastUnauthorizedAt });
 }
 
-/** Re-derive the cookie by fetching a public cookie-issuing asset (BUG-267). */
-export async function refreshBootstrapCookie(): Promise<boolean> {
+// ---------------------------------------------------------------- cookie heal
+/**
+ * Heal concurrency state: when the bootstrap cookie expires, EVERY in-flight
+ * GET 401s in the same tick — without coalescing each one would fire its own
+ * /app.js fetch (identical concurrent requests) and each caller would pay the
+ * round-trip again on retry.
+ *  - `healInFlight`  callers inside an ongoing heal join it (one fetch).
+ *  - `lastHeal*`     after a heal settles, its verdict answers every caller for
+ *                    `runtimeConfig.timeouts.cookieHealMs` (the documented
+ *                    "throttle window ... many 401s land at once").
+ */
+let healInFlight: Promise<boolean> | null = null;
+let lastHealOk = false;
+let lastHealSettledAt: number | null = null;
+
+/** One bounded cookie-issuing fetch. NEVER rejects (failures resolve false). */
+async function performCookieHeal(): Promise<boolean> {
   try {
     const r = await fetch(ENDPOINTS.cookieBootstrapAsset, {
       method: "GET",
       credentials: "same-origin",
       cache: "no-store",
+      // Bounded: an unbounded heal would wedge the caller's single retry (and
+      // its loading state) forever — a hung asset fetch must fail as false.
+      signal: AbortSignal.timeout(runtimeConfig.timeouts.requestMs),
     });
     noteCookieBootstrap(r.ok);
     return r.ok;
   } catch {
     return false;
   }
+}
+
+/**
+ * Re-derive the cookie by fetching a public cookie-issuing asset (BUG-267).
+ * Coalesced + throttled: concurrent 401s share one heal fetch, and a settled
+ * heal answers for the cookieHealMs window instead of stampeding the asset.
+ */
+export async function refreshBootstrapCookie(): Promise<boolean> {
+  if (healInFlight) return healInFlight;
+  if (
+    lastHealSettledAt !== null &&
+    Date.now() - lastHealSettledAt < runtimeConfig.timeouts.cookieHealMs
+  ) {
+    return lastHealOk;
+  }
+  const heal = performCookieHeal()
+    .then((ok) => {
+      lastHealOk = ok;
+      lastHealSettledAt = Date.now();
+      return ok;
+    })
+    .finally(() => {
+      healInFlight = null;
+    });
+  healInFlight = heal;
+  return heal;
 }
