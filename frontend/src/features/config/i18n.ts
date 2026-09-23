@@ -1,10 +1,18 @@
 /**
- * Local i18n messages for the config scope (config page, engine mode, runtime
- * configuration, model swap, provenance and Telegram panel).
- * Every entry lists fa, de, es and ar translations for the English source stored
- * at the t(key, fallback) call site.
+ * i18n messages — scope: features/config
+ * OWNER: lane for this scope (see CONTRACT.md) (i18n wave). DATA-ONLY file: no logic, only the type import.
+ *
+ * Format (enforced by tests/js/frontend_i18n_parity.test.js):
+ *   "<key>": { fa: "...", de: "...", es: "...", ar: "..." },
+ * - Key namespace: "config.<area>.<name>" (lowercase, dot-separated).
+ * - en is identity: the English source string lives at the call site —
+ *   t("config.x.y", "English source") — do NOT add `en` entries here.
+ * - Registered centrally by src/lib/i18nMessages.ts (pre-wired; never edit
+ *   that file). Components never import this file; they call t() instead.
  */
-export const MESSAGES = {
+import type { FeatureMessages } from "@/lib/i18n";
+
+export const MESSAGES: FeatureMessages = {
   "config.apply.applied_runtime": { fa: "در زمان اجرا اعمال شد — پیکربندی نسخه {v}", de: "Zur Laufzeit angewendet — Konfiguration v{v}", es: "Aplicado en tiempo de ejecución — configuración v{v}", ar: "طُبِّق أثناء التشغيل — الإعدادات نسخة {v}" },
   "config.apply.applying": { fa: "در حال اعمال…", de: "wird angewendet…", es: "aplicando…", ar: "جارٍ التطبيق…" },
   "config.apply.client_blocked": { fa: "اعتبارسنجی سمت کلاینت ارسال را مسدود کرد: {errors}", de: "Client-Validierung hat die Sendung blockiert: {errors}", es: "La validación del cliente bloqueó el envío: {errors}", ar: "منع التحقق من جهة العميل الإرسال: {errors}" },
@@ -183,4 +191,4 @@ export const MESSAGES = {
   "config.validation.required": { fa: "{label} الزامی است", de: "{label} ist erforderlich", es: "{label} es obligatorio", ar: "{label} مطلوب" },
   "config.validation.vector_length": { fa: "{label} باید دقیقاً {n} مقدار داشته باشد، {m} دریافت شد", de: "{label} muss genau {n} Werte enthalten, erhalten: {m}", es: "{label} debe contener exactamente {n} valores; se recibieron {m}", ar: "{label} يجب أن يحتوي على {n} قيم بالضبط، تم استلام {m}" },
   "config.validation.vector_not_finite": { fa: "{label}[{i}] یک عدد متناهی نیست", de: "{label}[{i}] ist keine endliche Zahl", es: "{label}[{i}] no es un número finito", ar: "{label}[{i}] ليس رقمًا منتهيًا" },
-} as const;
+};

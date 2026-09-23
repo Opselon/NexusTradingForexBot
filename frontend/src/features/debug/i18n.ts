@@ -1,10 +1,18 @@
 /**
- * Local i18n messages.
- * Owns: debug scope keys (`debug.*`) — debug hub tabs, health, features, freshness,
- * IPC, snapshots, compare, model test, trace, research, simulation, telegram worker.
- * En is the call-site fallback (t(key, "English")); this file ships fa/de/es/ar.
+ * i18n messages — scope: features/debug
+ * OWNER: lane for this scope (see CONTRACT.md) (i18n wave). DATA-ONLY file: no logic, only the type import.
+ *
+ * Format (enforced by tests/js/frontend_i18n_parity.test.js):
+ *   "<key>": { fa: "...", de: "...", es: "...", ar: "..." },
+ * - Key namespace: "debug.<area>.<name>" (lowercase, dot-separated).
+ * - en is identity: the English source string lives at the call site —
+ *   t("debug.x.y", "English source") — do NOT add `en` entries here.
+ * - Registered centrally by src/lib/i18nMessages.ts (pre-wired; never edit
+ *   that file). Components never import this file; they call t() instead.
  */
-export const MESSAGES = {
+import type { FeatureMessages } from "@/lib/i18n";
+
+export const MESSAGES: FeatureMessages = {
   "debug.compare.changes": { fa: "{name} تغییرات", de: "{name}-Änderungen", es: "cambios en {name}", ar: "تغييرات {name}" },
   "debug.compare.deltas": { fa: "دلتاهای ویژگی ({n})", de: "Feature-Deltas ({n})", es: "deltas de características ({n})", ar: "فروقات الخصائص ({n})" },
   "debug.compare.empty": { fa: "دو اسنپ‌شات انتخاب کنید (یا از A=/B= در زبانه اسنپ‌شات استفاده کنید).", de: "Zwei Snapshots wählen (oder A=/B= im Snapshots-Tab verwenden).", es: "Elige dos instantáneas (o usa A=/B= en la pestaña Snapshots).", ar: "اختر لقطتين (أو استخدم A=/B= في تبويب اللقطات)." },
@@ -191,4 +199,4 @@ export const MESSAGES = {
   "debug.trace.summary": { fa: "{id} · {signal} ردیف سیگنال · {order} ردیف سفارش", de: "{id} · {signal} Signalzeile(n) · {order} Orderzeile(n)", es: "{id} · {signal} fila(s) de señal · {order} fila(s) de orden", ar: "{id} · {signal} صف إشارة · {order} صف أمر" },
   "debug.trace.title": { fa: "ردیابی اجرا ({path})", de: "Ausführungs-Trace ({path})", es: "Traza de ejecución ({path})", ar: "تتبع التنفيذ ({path})" },
   "debug.trace.unavailable": { fa: "ردیابی در دسترس نیست: {reason}", de: "Trace nicht verfügbar: {reason}", es: "traza no disponible: {reason}", ar: "التتبع غير متاح: {reason}" },
-} as const;
+};

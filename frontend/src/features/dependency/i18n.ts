@@ -1,10 +1,18 @@
 /**
- * Local i18n messages.
- * Owns: dependency scope keys (`dependency.*`) — overview, health, hotspots,
- * graph browser, cycles, violations, node inspector, path/impact explorers.
- * En is the call-site fallback (t(key, "English")); this file ships fa/de/es/ar.
+ * i18n messages — scope: features/dependency
+ * OWNER: lane for this scope (see CONTRACT.md) (i18n wave). DATA-ONLY file: no logic, only the type import.
+ *
+ * Format (enforced by tests/js/frontend_i18n_parity.test.js):
+ *   "<key>": { fa: "...", de: "...", es: "...", ar: "..." },
+ * - Key namespace: "dependency.<area>.<name>" (lowercase, dot-separated).
+ * - en is identity: the English source string lives at the call site —
+ *   t("dependency.x.y", "English source") — do NOT add `en` entries here.
+ * - Registered centrally by src/lib/i18nMessages.ts (pre-wired; never edit
+ *   that file). Components never import this file; they call t() instead.
  */
-export const MESSAGES = {
+import type { FeatureMessages } from "@/lib/i18n";
+
+export const MESSAGES: FeatureMessages = {
   "dependency.cycles.empty": { fa: "حلقه‌ای شناسایی نشد.", de: "Keine Zyklen erkannt.", es: "No se detectaron ciclos.", ar: "لم تُكتشف دوائر." },
   "dependency.cycles.empty_hint": { fa: "detect_cycles مقدار count=0 برگرداند — گراف بدون حلقه است.", de: "detect_cycles lieferte count=0 — der Graph ist azyklisch.", es: "detect_cycles devolvió count=0; el grafo es acíclico.", ar: "أعاد detect_cycles count=0 — المخطط خالي من الدورات." },
   "dependency.cycles.failed": { fa: "نقطه پایانی cycles ناموفق بود", de: "Cycles-Endpunkt fehlgeschlagen", es: "falló el endpoint de ciclos", ar: "فشل نقطة نهاية الدورات" },
@@ -92,4 +100,4 @@ export const MESSAGES = {
   "dependency.violations.th_rule": { fa: "قاعده", de: "Regel", es: "regla", ar: "قاعدة" },
   "dependency.violations.th_severity": { fa: "شدت", de: "Schweregrad", es: "gravedad", ar: "الخطورة" },
   "dependency.violations.title": { fa: "نقض‌های معماری", de: "Architekturverstöße", es: "Violaciones de arquitectura", ar: "انتهاكات معمارية" },
-} as const;
+};
