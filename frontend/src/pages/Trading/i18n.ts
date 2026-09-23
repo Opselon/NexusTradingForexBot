@@ -120,6 +120,7 @@ export const MESSAGES: FeatureMessages = {
   "trading.th.ticket": { fa: "تیکت", de: "Ticket", es: "Ticket", ar: "تذكرة" },
   "trading.th.time": { fa: "زمان", de: "Zeit", es: "Tiempo", ar: "الوقت" },
   "trading.th.type": { fa: "نوع", de: "Typ", es: "Tipo", ar: "النوع" },
+  "trading.deck.kicker": { fa: "دستور عمل", de: "Kommandocenter", es: "Centro de comandos", ar: "لوحة الأوامر" },
   "trading.th.vol": { fa: "حجم", de: "Volumen", es: "Volumen", ar: "الحجم" },
   "trading.th.volume": { fa: "حجم", de: "Volumen", es: "Volumen", ar: "الحجم" },
   "trading.csv.btn": { fa: "⇩ CSV", de: "⇩ CSV", es: "⇩ CSV", ar: "⇩ CSV" },

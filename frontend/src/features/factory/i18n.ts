@@ -113,6 +113,7 @@ export const MESSAGES: FeatureMessages = {
   "factory.confirm_plain": { fa: "فرمان به پشتیبان کارخانه می‌رود؛ پاسخ آن نتیجه را تعیین می‌کند.", de: "Der Befehl geht an das Fabrik-Backend; dessen Antwort bestimmt das Ergebnis.", es: "El comando va al backend de la fábrica; su respuesta decide el resultado.", ar: "يذهب الأمر إلى خادم المصنع؛ يحدّد رده النتيجة." },
   "factory.gen_filter_a11y": { fa: "فیلتر شناسه نسل", de: "Filter nach Generations-ID", es: "filtro de id de generación", ar: "ترشيح معرّف الجيل", en: "Generation id filter" },
   "factory.rank_dim_a11y": { fa: "بُعد رتبه‌بندی", de: "Rangdimension", es: "dimensión de rango", ar: "بُعد الترتيب", en: "Rank dimension" },
+  "factory.page.hero_title": { fa: "کارخانهٔ راهبرد", de: "Strategie-Factory", es: "Fábrica de estrategias", ar: "مصنع الاستراتيجيات" },
 };
 
 /** Key catalogue generated alongside MESSAGES. */

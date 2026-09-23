@@ -19,6 +19,7 @@
 import { EmptyState } from "@/components/primitives";
 import { formatPrice, formatTime } from "@/lib/format";
 import { SortableTable } from "@/pages/_shared/widgets";
+import { useI18n } from "@/stores/i18nStore";
 import type { EngineSnapshot } from "@/types/domain";
 
 interface Props {
@@ -26,6 +27,7 @@ interface Props {
 }
 
 export function SmcReadoutPanel({ snapshot }: Props) {
+  const t = useI18n((s) => s.t);
   const ov = snapshot.visual_overlays as {
     rectangles?: Array<Record<string, unknown>>;
     bos_lines?: Array<Record<string, unknown>>;
@@ -60,7 +62,7 @@ export function SmcReadoutPanel({ snapshot }: Props) {
         />
       </div>
       <div>
-        <div className="section-title">Structure lines & sweeps</div>
+        <div className="section-title">{t("trading.smc.structure", "Structure lines & sweeps")}</div>
         <dl className="kv">
           <dt>BOS breaks</dt>
           <dd>{bos.length ? bos.slice(-6).map((l) => `${String(l.type ?? "BOS").split("_")[0]}@${formatPrice(num(l.price), digits)}`).join(" · ") : "—"}</dd>

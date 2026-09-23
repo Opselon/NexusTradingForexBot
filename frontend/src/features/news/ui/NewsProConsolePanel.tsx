@@ -312,14 +312,12 @@ export function NewsProConsolePanel() {
           )}
           {confirm === "purge-soft" && (
             <div>
-              Reports how many <b className="inline-mono">IRRELEVANT</b> rows exist and how many fall inside the limit window
-              (5000). <b>Nothing is deleted</b> by a soft purge.
+              {t("news.pro.soft_body_1", "Reports how many ")}<b className="inline-mono">IRRELEVANT</b>{t("news.pro.soft_body_2", " rows exist and how many fall inside the limit window (5000). ")}<b>{t("news.pro.soft_body_3", "Nothing is deleted")}</b>{t("news.pro.soft_body_4", " by a soft purge.")}
             </div>
           )}
           {confirm === "purge-hard" && (
             <div>
-              <b>HARD DELETE</b>: removes up to 5000 IRRELEVANT articles and their derived rows (analysis, AI answers,
-              entities, topics, impacts, consensus) from the news DB. <b>This cannot be undone.</b>
+              <b>{t("news.pro.hard_body_1", "HARD DELETE")}</b>{t("news.pro.hard_body_2", ": removes up to 5000 IRRELEVANT articles and their derived rows (analysis, AI answers, entities, topics, impacts, consensus) from the news DB. ")}<b>{t("news.pro.hard_body_3", "This cannot be undone.")}</b>
             </div>
           )}
           {confirm === "auto-prune" && (

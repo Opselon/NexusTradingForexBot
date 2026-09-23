@@ -123,6 +123,7 @@ export const MESSAGES: FeatureMessages = {
   "model-studio.registry.th_mean": { fa: "میانگین (μ)", de: "Mittelwert (μ)", es: "Media (μ)", ar: "المتوسط (μ)" },
   "model-studio.registry.th_std": { fa: "انحراف معیار (σ)", de: "Std.-Abw. (σ)", es: "Desv. típ. (σ)", ar: "الانحراف المعياري (σ)" },
   "model-studio.registry.th_clamping": { fa: "محدودسازی", de: "Wertebegrenzung", es: "Limitación de valores", ar: "التقييد" },
+  "model-studio.registry.th_diag": { fa: "جزئیات عیب‌یابی", de: "Diagnosedetails", es: "Detalle del diagnóstico", ar: "تفاصيل التشخيص" },
   "model-studio.registry.th_zero_var": { fa: "واریانس صفر", de: "Null-Varianz", es: "Varianza cero", ar: "تباين صفري" },
   "model-studio.registry.yes": { fa: "بله", de: "Ja", es: "Sí", ar: "نعم" },
   "model-studio.registry.no": { fa: "خیر", de: "Nein", es: "No", ar: "لا" },

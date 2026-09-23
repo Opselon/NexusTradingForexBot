@@ -178,6 +178,7 @@ export const MESSAGES: FeatureMessages = {
   "dependency.overview.nodes": { fa: "گره‌ها", de: "Knoten", es: "nodos", ar: "العقد" },
   "dependency.overview.scan_live": { fa: "اسکن {s}s", de: "Scan {s}s", es: "escaneo {s}s", ar: "فحص {s}ث" },
   "dependency.overview.top_risk": { fa: "بالاترین ریسک", de: "Top-Risiko", es: "riesgo principal", ar: "أعلى مخاطرة" },
+  "dependency.page.hero_title": { fa: "هوشمندی وابستگی", de: "Dependency Intelligence", es: "Inteligencia de dependencias", ar: "ذكاء الاعتماديات" },
   "dependency.path.aria": { fa: "شناسهٔ گره مقصد", de: "Ziel-Knoten-ID", es: "id de nodo destino", ar: "معرف العقدة الهدف" },
   "dependency.path.length_full": { fa: "طول {len} · {edges} یال", de: "Länge {len} · {edges} Kanten", es: "longitud {len} · {edges} aristas", ar: "الطول {len} · {edges} حواف" },
   "dependency.path.unknown": { fa: "گره ناشناخته در پرس‌وجوی مسیر.", de: "Unbekannter Knoten in der Pfadabfrage.", es: "Nodo desconocido en la consulta de ruta.", ar: "عقدة غير معروفة في استعلام المسار." },

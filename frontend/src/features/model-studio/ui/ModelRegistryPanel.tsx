@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Panel } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import type {
   ActiveModelResponse,
   HotLoadResponse,
@@ -87,6 +88,7 @@ export function ModelRegistryPanel({
   scalerResult,
   onInspectScaler,
 }: ModelRegistryPanelProps) {
+  const t = useI18n((s) => s.t);
   // One derivation: the catalog's model option labels (accessor chains over
   // the models array). Memo deps are exactly that array, so an unrelated
   // parent re-render (slider drag, hot-load busy flip) never rebuilds it.
@@ -166,7 +168,7 @@ export function ModelRegistryPanel({
               onChange={(e) => onSelectModelId(e.target.value)}
               className="ms-select-styled"
             >
-              {models.length === 0 && <option value="">No registered models found</option>}
+              {models.length === 0 && <option value="">{t("model-studio.registry.no_models", "No registered models found")}</option>}
               {options.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.label}
@@ -254,7 +256,7 @@ export function ModelRegistryPanel({
           <div className="ms-banner-err">
             <span>⚠</span>
             <div>
-              <strong>Hot-Load Operation Failed</strong>
+              <strong>{t("model-studio.registry.hotload_err", "Hot-Load Operation Failed")}</strong>
               <div className="tiny" style={{ marginTop: 2 }}>{hotLoadError}</div>
             </div>
           </div>
@@ -275,9 +277,9 @@ export function ModelRegistryPanel({
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Check Name</th>
+                    <th scope="col">{t("model-studio.verdict.check_name", "Check Name")}</th>
                     <th scope="col" style={{ textAlign: "center" }}>Verdict</th>
-                    <th scope="col">Diagnostic Detail</th>
+                    <th scope="col">{t("model-studio.registry.th_diag", "Diagnostic Detail")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -320,7 +322,7 @@ export function ModelRegistryPanel({
                       <th scope="col" className="num">Mean (μ)</th>
                       <th scope="col" className="num">Std Dev (σ)</th>
                       <th scope="col" style={{ textAlign: "center" }}>Clamping</th>
-                      <th scope="col" style={{ textAlign: "center" }}>Zero Variance</th>
+                      <th scope="col" style={{ textAlign: "center" }}>{t("model-studio.registry.th_zero_var", "Zero Variance")}</th>
                     </tr>
                   </thead>
                   <tbody>

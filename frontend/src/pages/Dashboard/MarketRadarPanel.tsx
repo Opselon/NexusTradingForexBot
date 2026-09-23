@@ -18,6 +18,7 @@ import { useMemo } from "react";
 import type { ReactNode } from "react";
 import { Panel } from "@/components/primitives";
 import { formatTime } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import "./market-console.css";
 
 /** Shape of the backend radar contract (bar_handler.py + SetupDetection.to_contract). */
@@ -86,6 +87,7 @@ function directionOf(best: RadarSetup | null | undefined): "BUY" | "SELL" | null
 const dash = (v: ReactNode | null | undefined): ReactNode => (v === null || v === undefined || v === "" ? "—" : v);
 
 export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: number }) {
+  const t = useI18n((s) => s.t);
   // Parsed once per radar payload: parseRadar allocates fresh objects/arrays,
   // so re-running it on every 1s clock tick would defeat every memo below.
   // Pure function of `radar` — output identical, deps complete over that read.
@@ -142,7 +144,7 @@ export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: numb
         {r && (
           <div className="mc-radar__hero">
             <div>
-              <div className="mc-radar__k">Best setup</div>
+              <div className="mc-radar__k">{t("dash.radar.best_setup", "Best setup")}</div>
               <div className="mc-radar__v">{dash(best?.setup_type)}</div>
             </div>
             <div>
@@ -170,7 +172,7 @@ export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: numb
             <span className="mc-radar__fv mc-radar__fv--gold">{r ? dash(r.candidate_count) : "—"}</span>
           </div>
           <div className="mc-radar__fact">
-            <span className="mc-radar__k">News state</span>
+            <span className="mc-radar__k">{t("dash.radar.news_state", "News state")}</span>
             <span className={`mc-radar__news mc-radar__news--${r ? newsTone : "idle"}`}>{r ? dash(news) : "—"}</span>
           </div>
           <div className="mc-radar__fact">
@@ -183,7 +185,7 @@ export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: numb
 
         {/* Compatible strategies as chips — verbatim backend strings */}
         <div className="mc-radar__strategies" aria-label="compatible strategies">
-          <span className="mc-radar__k">Compatible strategies</span>
+          <span className="mc-radar__k">{t("dash.radar.compatible", "Compatible strategies")}</span>
           <span className="mc-radar__chips">
             {r ? (compat.length > 0 ? compat.map((c) => <span key={c} className="l4-chip accent">{c}</span>) : <span className="mc-radar__fv">—</span>) : <span className="mc-radar__fv">—</span>}
           </span>

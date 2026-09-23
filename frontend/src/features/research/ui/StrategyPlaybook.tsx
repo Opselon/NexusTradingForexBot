@@ -147,6 +147,7 @@ function EntryCard({
   onSeeAlso: (id: string) => void;
   bindRef: (node: HTMLElement | null) => void;
 }) {
+  const t = useI18n((s) => s.t);
   const label = `${entry.kind}: ${entry.title}`;
   return (
     <article className={`rs-pb-entry ${open ? "open" : ""}`} ref={bindRef} id={`pb-${entry.id}`}>
@@ -210,7 +211,7 @@ function EntryCard({
 
             {entry.faq && entry.faq.length > 0 && (
               <>
-                <h4>Operator FAQ</h4>
+                <h4>{t("research.pb.faq_h", "Operator FAQ")}</h4>
                 {entry.faq.map((f) => (
                   <div className="rs-faq" key={f.q}>
                     <div className="rs-faq-q">{f.q}</div>

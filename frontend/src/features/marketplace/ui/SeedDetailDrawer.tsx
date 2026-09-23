@@ -9,6 +9,7 @@ import { useDialogA11y } from "../../../components/useDialogA11y";
 import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { HeatBar, Sparkline } from "@/components/viz";
 import { formatDateTime, formatNumber } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import { useMktScoreHistory, useMktSeedDetail } from "../hooks";
 import { detailSections, factorsOf, lifecycleLevel } from "../model";
 import { FreshnessNote, asErrorText } from "./shared";
@@ -20,6 +21,7 @@ function fmtScore(total: number | null | undefined): string {
 }
 
 export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose: () => void }) {
+  const t = useI18n((s) => s.t);
   const detail = useMktSeedDetail(seedId);
   const history = useMktScoreHistory(seedId);
   const [showRaw, setShowRaw] = useState(false);
@@ -58,7 +60,7 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
     <div className="mkt-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <aside ref={boxRef} className="mkt-drawer" role="dialog" aria-modal="true" aria-label={`Seed detail ${seedId}`}>
         <header aria-label="Seed detail">
-          <span>Seed detail</span>
+          <span>{t("marketplace.drawer.title", "Seed detail")}</span>
           <span className="inline-mono tiny faint">{seedId}</span>
           <button className="btn small" style={{ marginInlineStart: "auto" }} onClick={() => setShowRaw((v) => !v)}>
             {showRaw ? "structured" : "raw JSON"}

@@ -91,10 +91,10 @@ export default function CommandDeck(props: CommandDeckProps) {
           : "ready to apply";
 
   return (
-    <div className="tr-deck" role="region" aria-label="Command deck">
+    <div className="tr-deck" role="region" aria-label={t("trading.deck.kicker", "Command deck")}>
       <div className="tr-deck-frame">
         <div className="tr-deck-head">
-          <span className="tr-deck-kicker">Command deck</span>
+          <span className="tr-deck-kicker">{t("trading.deck.kicker", "Command deck")}</span>
           <span className="tr-deck-prov">
             {/* backend-verified routes (documented in TradingPage.tsx) */}
             <span className="l4-prov">POST /api/engine/toggle</span>

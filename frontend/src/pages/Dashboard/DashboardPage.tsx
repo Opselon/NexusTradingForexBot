@@ -47,6 +47,7 @@ import { MarketRadarPanel } from "./MarketRadarPanel";
 import { FeaturesGrid } from "./FeaturesGrid";
 import { PredictionsTable } from "./PredictionsTable";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
+import { useI18n } from "@/stores/i18nStore";
 import { formatMoney, formatNumber, formatPct, formatPnl, formatPrice, formatTime } from "@/lib/format";
 import { ApiError } from "@/types/api";
 import type { VisualOverlays } from "@/pages/_shared/contracts";
@@ -61,6 +62,7 @@ interface Props {
 const LIVE_CONFIRM_TEXT = "LIVE";
 
 export default function DashboardPage({ snapshot, nowMs }: Props) {
+  const t = useI18n((s) => s.t);
   const engineCmd = useMutationFeedback();
   const modeCmd = useMutationFeedback();
   const [stopConfirm, setStopConfirm] = useState(false);
@@ -327,7 +329,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
           <span className="v dim">{snapshot.regime ?? "—"}</span>
         </div>
         <div className="mc-quote__item">
-          <span className="k">Price source</span>
+          <span className="k">{t("dash.quote.price_source", "Price source")}</span>
           <span className="v dim">{snapshot.provenance.price}</span>
         </div>
         <AgeNote label="tick age" ageSec={snapshot.diagnostics.tick_age_sec} />
@@ -393,7 +395,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
               {engineCmd.state.lastResult ? "✓" : "✕"} {engineCmd.state.lastMessage}
             </div>
           )}
-          <div className="section-title" style={{ marginTop: 10 }}>Execution mode</div>
+          <div className="section-title" style={{ marginTop: 10 }}>{t("dash.engine.mode_title", "Execution mode")}</div>
           <div className="l4-transport">
             <select className="select" value={modeTarget} onChange={(e) => setModeTarget(e.target.value)} aria-label="execution mode target">
               <option value="">select mode…</option>
@@ -412,7 +414,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
           {modeTarget === "LIVE" && (
             <div className="confirm-box">
               <div>
-                <b>Real money is at risk.</b> <span className="muted">The engine will dispatch REAL orders to the connected broker account.</span>
+                <b>{t("dash.engine.real_money", "Real money is at risk.")}</b> <span className="muted">{t("dash.engine.live_impact", "The engine will dispatch REAL orders to the connected broker account.")}</span>
               </div>
               <div className="row">
                 <input
