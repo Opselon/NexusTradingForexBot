@@ -43,7 +43,7 @@
  * Presentation only: pure props in, canvas out, no fetch, no cache.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { Bar } from "@/types/domain";
 import type { OverlayLine, OverlayRect, OverlayOrderLines } from "../_shared/contracts";
 import { useRealtimeVersion } from "@/hooks/useRealtime";
@@ -121,7 +121,7 @@ interface View {
   followLive: boolean;
 }
 
-export function PriceChart({
+export const PriceChart = memo(function PriceChart({
   bars,
   digits,
   source,
@@ -399,18 +399,24 @@ export function PriceChart({
   // kick a repaint so the backing store stays crisp (draw() rescales itself).
   useEffect(() => {
     let alive = true;
-    const arm = () => {
+    let mq: MediaQueryList | null = null;
+    // Hoisted so the listener detaches on re-arm AND on unmount — a DPR
+    // listener that outlived the component would leak this closure.
+    function onChange(): void {
       if (!alive) return;
-      const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
-      const onChange = () => {
-        kickRef.current?.(60);
-        arm(); // re-arm for the new DPR value
-      };
-      mq.addEventListener("change", onChange, { once: true });
-    };
+      kickRef.current?.(60);
+      arm(); // re-arm for the new DPR value
+    }
+    function arm(): void {
+      if (!alive) return;
+      mq?.removeEventListener("change", onChange);
+      mq = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      mq.addEventListener("change", onChange);
+    }
     arm();
     return () => {
       alive = false;
+      mq?.removeEventListener("change", onChange);
     };
   }, []);
 
@@ -579,7 +585,7 @@ export function PriceChart({
       )}
     </section>
   );
-}
+});
 
 /** Pointer-capture drag anchor (module-level so handlers never re-bind). */
 interface DragState {

@@ -14,8 +14,9 @@
  * docs/audit/wave_20260914/09_indicators_ui.md §5).
  */
 
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { Panel } from "@/components/primitives";
+import { useNowMs } from "@/pages/_shared/SectionState";
 import { formatTime } from "@/lib/format";
 import "./market-console.css";
 
@@ -84,19 +85,39 @@ function directionOf(best: RadarSetup | null | undefined): "BUY" | "SELL" | null
 
 const dash = (v: ReactNode | null | undefined): ReactNode => (v === null || v === undefined || v === "" ? "—" : v);
 
-export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: number }) {
+/**
+ * RadarUpdatedCell — the "Updated · Ns ago" fact on its OWN 1s clock, so the
+ * surrounding panel can be memoized on `radar` and still show a live age.
+ * The age is always derived from the backend's own updated_at stamp; a
+ * missing/unparseable stamp renders "—", never a made-up freshness.
+ */
+function RadarUpdatedCell({ updatedAt }: { updatedAt: string | null | undefined }) {
+  const now = useNowMs();
+  if (!updatedAt) {
+    return (
+      <span className="mc-radar__fv mc-radar__fv--dim" title="no radar snapshot">
+        —
+      </span>
+    );
+  }
+  const ms = Date.parse(updatedAt);
+  const ageSec = Number.isFinite(ms) ? Math.max(0, Math.round((now - ms) / 1000)) : null;
+  return (
+    <span className="mc-radar__fv mc-radar__fv--dim" title={updatedAt}>
+      {formatTime(updatedAt)}
+      {ageSec === null ? " · age —" : ` · ${ageSec}s ago`}
+    </span>
+  );
+}
+
+/** Memoized on `radar` alone (age ticks inside RadarUpdatedCell): the panel
+ *  skips the AppShell 1s cascade unless the radar payload itself changes. */
+export const MarketRadarPanel = memo(function MarketRadarPanel({ radar }: { radar: unknown }) {
   const r = parseRadar(radar);
   // legacy default: a present radar object without a state string is NO_SETUP;
   // an absent radar is the explicit waiting badge NO RADAR DATA.
   const state = r ? r.state || "NO_SETUP" : "NO_RADAR_DATA";
   const tone = !r ? "idle" : state === "SETUP_READY" ? "ready" : state === "WATCHING" ? "watch" : "none";
-
-  // radar.updated_at is the authoritative timestamp — age is a display of it.
-  let age = "—";
-  if (r?.updated_at) {
-    const ms = Date.parse(r.updated_at);
-    age = Number.isFinite(ms) ? `${Math.max(0, Math.round((nowMs - ms) / 1000))}s` : "—";
-  }
 
   const best = r?.best_setup ?? null;
   const dir = directionOf(best);
@@ -158,9 +179,7 @@ export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: numb
           </div>
           <div className="mc-radar__fact">
             <span className="mc-radar__k">Updated</span>
-            <span className="mc-radar__fv mc-radar__fv--dim" title={r?.updated_at ?? "no radar snapshot"}>
-              {r?.updated_at ? `${formatTime(r.updated_at)} · ${age}s ago` : "—"}
-            </span>
+            <RadarUpdatedCell updatedAt={r?.updated_at} />
           </div>
         </div>
 
@@ -194,4 +213,4 @@ export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: numb
       </div>
     </Panel>
   );
-}
+});

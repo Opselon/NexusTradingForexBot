@@ -18,7 +18,7 @@
  *  - delta pulse: pure CSS ping when a value changes between SSE versions.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { EngineSnapshot } from "@/types/domain";
 import { AgeNote } from "@/pages/_shared/SectionState";
 import { EmptyState, Panel } from "@/components/primitives";
@@ -74,7 +74,7 @@ function statusClass(status: string): string {
   return "unavailable";
 }
 
-export function FeaturesGrid({
+export const FeaturesGrid = memo(function FeaturesGrid({
   features,
   featureDimension,
   ageSec,
@@ -167,4 +167,4 @@ export function FeaturesGrid({
       )}
     </Panel>
   );
-}
+});

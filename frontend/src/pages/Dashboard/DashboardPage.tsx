@@ -20,12 +20,12 @@
  * render "—" (UNKNOWN). Command outcomes come from the backend reply only.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { engineApi } from "@/api/engineApi";
 import { riskApi } from "@/api/riskApi";
 import { chartApi, replayApi, runtimeApi } from "@/pages/_shared/edgeApi";
-import type { EngineSnapshot, RuntimeRiskState } from "@/types/domain";
+import type { Bar, EngineSnapshot, RuntimeRiskState } from "@/types/domain";
 import {
   ConfirmModal,
   DataTable,
@@ -58,6 +58,9 @@ interface Props {
 }
 
 const LIVE_CONFIRM_TEXT = "LIVE";
+
+/** Shared empty array — a stable reference so memoized chart props don't churn. */
+const NO_BARS: Bar[] = [];
 
 export default function DashboardPage({ snapshot, nowMs }: Props) {
   const engineCmd = useMutationFeedback();
@@ -114,6 +117,29 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
 
   const onCursorMove = useCallback((iso: string | null) => setReplayCursor(iso), []);
 
+  // ---- chart derivation, hoisted ABOVE the no-snapshot guard: hooks must run
+  // unconditionally, and the forming-bar count used to be a 3000-element
+  // filter inside JSX re-evaluated on every 1s shell tick.
+  // Chart: prefer the dedicated history endpoint (deeper window, broker
+  // provenance); fall back to snapshot bars while it loads. Nulls stay null.
+  const useServerBars = Boolean(chartQuery.data?.bars?.length);
+  const chartBars = useServerBars ? chartQuery.data!.bars : snapshot?.bars ?? NO_BARS;
+  const chartSource = useServerBars ? chartQuery.data!.source : snapshot?.bars?.length ? "SNAPSHOT" : null;
+  const chartBusy = chartQuery.isPending && !chartQuery.data && !snapshot?.bars?.length;
+  const chartErr = !useServerBars && chartQuery.isError && !snapshot?.bars?.length
+    ? chartQuery.error instanceof ApiError
+      ? `${chartQuery.error.message}${chartQuery.error.requestId ? ` · request ${chartQuery.error.requestId}` : ""}`
+      : "history endpoint failed"
+    : null;
+  /** Forming-bar count for the panel header — recomputed only when bars change. */
+  const formingCount = useMemo(() => chartBars.reduce((n, b) => (b.is_complete === false ? n + 1 : n), 0), [chartBars]);
+
+  // Stable handlers: memoized children (PriceChart) compare these props, so an
+  // inline closure here would defeat their skip on the shell's 1s re-render.
+  const chartRetryRef = useRef<() => void>(() => undefined);
+  chartRetryRef.current = () => void chartQuery.refetch();
+  const onChartRetry = useCallback(() => chartRetryRef.current(), []);
+
   if (!snapshot) {
     return (
       <div>
@@ -132,17 +158,6 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
   const currentMode = (snapshot.runtime_mode ?? snapshot.execution_mode ?? "").toUpperCase();
   const replaying = runtimeModeQuery.data?.replaying ?? null;
 
-  // Chart: prefer the dedicated history endpoint (deeper window, broker
-  // provenance); fall back to snapshot bars while it loads. Nulls stay null.
-  const useServerBars = Boolean(chartQuery.data?.bars?.length);
-  const chartBars = useServerBars ? chartQuery.data!.bars : snapshot.bars ?? [];
-  const chartSource = useServerBars ? chartQuery.data!.source : snapshot.bars?.length ? "SNAPSHOT" : null;
-  const chartBusy = chartQuery.isPending && !chartQuery.data && !snapshot.bars?.length;
-  const chartErr = !useServerBars && chartQuery.isError && !snapshot.bars?.length
-    ? chartQuery.error instanceof ApiError
-      ? chartQuery.error.message
-      : "history endpoint failed"
-    : null;
   // snapshot.generated_at is the backend's own wall-clock stamp; the 1s UI
   // ticker (nowMs) turns it into an age. Unparseable stamp → "—", never 0s.
   const genMs = Date.parse(snapshot.generated_at);
@@ -246,7 +261,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
           right={
             <>
               <span className="timestamp-note">
-                {chartBars.length ? `${chartBars.filter((b) => b.is_complete === false).length} forming · ${chartBars.length} bars` : "no bars"}
+                {chartBars.length ? `${formingCount} forming · ${chartBars.length} bars` : "no bars"}
                 {chartQuery.data?.generated_at ? ` · history ${formatTime(chartQuery.data.generated_at)}` : ""}
               </span>
               <button className="btn small ghost" onClick={() => void chartQuery.refetch()} disabled={chartQuery.isFetching}>
@@ -272,7 +287,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
               stale={snapshot.tick_stale}
               busy={Boolean(chartBusy)}
               error={chartErr}
-              onRetry={() => void chartQuery.refetch()}
+              onRetry={onChartRetry}
               caption={chartBars.length && !chartQuery.data?.bars?.length ? "source: canonical snapshot bars (shallow window)" : undefined}
             />
             {snapshot.tick_stale && (
@@ -320,7 +335,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
 
       <div className="grid cols-2 l4-section-gap">
         {/* Market Radar — verbatim snapshot.radar (legacy renderMarketRadar) */}
-        <MarketRadarPanel radar={snapshot.radar} nowMs={nowMs} />
+        <MarketRadarPanel radar={snapshot.radar} />
 
         {/* Prediction panel — decision-card + probability meters */}
         <Panel
@@ -520,7 +535,11 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
           {riskStateQuery.isPending ? (
             <Skeleton count={4} />
           ) : riskStateQuery.isError ? (
-            <ErrorState message="Guardian state endpoint failed." onRetry={() => void riskStateQuery.refetch()} />
+            <ErrorState
+              message="Guardian state endpoint failed."
+              requestId={riskStateQuery.error instanceof ApiError ? riskStateQuery.error.requestId : null}
+              onRetry={() => void riskStateQuery.refetch()}
+            />
           ) : haltState ? (
             <dl className="kv">
               <dt>kill switch</dt>
@@ -616,7 +635,12 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
               <dt>positions (broker)</dt>
               <dd>{mt5Query.data.positions?.length ?? 0}</dd>
             </dl>
-          ) : null}
+          ) : (
+            <EmptyState
+              message="MT5 status returned no payload."
+              hint="GET /api/mt5/status settled without data — shown as UNKNOWN, never zero-filled."
+            />
+          )}
         </Panel>
       </div>
 

@@ -13,7 +13,7 @@
  * any query without the kit importing the cache.
  */
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ApiError } from "@/types/api";
 import { EmptyState, ErrorState, Skeleton } from "@/components/primitives";
 
@@ -136,4 +136,43 @@ export function triLevel(value: boolean | null | undefined): "good" | "bad" | "u
 export function TriBadge({ value, on, off }: { value: boolean | null | undefined; on: string; off: string }) {
   const level = value === true ? "good" : value === false ? "bad" : "unknown";
   return <span className={`badge ${level}`}>{triWord(value, on, off)}</span>;
+}
+
+/**
+ * useNowMs — a 1s wall clock LOCAL to the component that calls it.
+ *
+ * Why it exists: AppShell re-renders every route on its 1s nowMs ticker to
+ * drive age captions, which defeats React.memo on children. A memoized panel
+ * that must still show an advancing age ticks itself with this hook, so the
+ * parent's re-render cadence no longer matters. Interval cleared on unmount.
+ */
+export function useNowMs(intervalMs = 1000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
+
+/**
+ * LiveAgeNote — AgeNote on its own clock (useNowMs), for any age derived from
+ * "now − timestamp" instead of supplied directly by the backend payload.
+ * Missing/non-finite stamp renders age "—" (never 0s, never a frozen 0).
+ */
+export function LiveAgeNote({ label, atMs, suffix }: { label: string; atMs: number | null | undefined; suffix?: string }) {
+  const now = useNowMs();
+  const ageSec = typeof atMs === "number" && Number.isFinite(atMs) ? Math.max(0, (now - atMs) / 1000) : null;
+  return <AgeNote label={label} ageSec={ageSec} suffix={suffix} />;
+}
+
+/**
+ * LiveAge — bare humanised age text on its own clock (useNowMs), for slots
+ * that take text rather than an AgeNote (e.g. InfoChip `v`). Same rule: no
+ * parsable stamp → "—".
+ */
+export function LiveAge({ atMs }: { atMs: number | null | undefined }) {
+  const now = useNowMs();
+  const ageSec = typeof atMs === "number" && Number.isFinite(atMs) ? Math.max(0, (now - atMs) / 1000) : null;
+  return <>{fmtAge(ageSec)}</>;
 }

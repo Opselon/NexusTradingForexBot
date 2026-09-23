@@ -21,7 +21,7 @@
  * result.status) beyond the {success,message} shape.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { replayApi } from "@/pages/_shared/edgeApi";
 import type { ReplayDecision, ReplayReport, ReplayState } from "@/pages/_shared/contracts";
 import { ConfirmModal, Panel } from "@/components/primitives";
@@ -62,7 +62,7 @@ interface RunState {
   ok: boolean | null;
 }
 
-export function ReplayPanel({ onCursorMove }: { onCursorMove?: (iso: string | null) => void }) {
+export const ReplayPanel = memo(function ReplayPanel({ onCursorMove }: { onCursorMove?: (iso: string | null) => void }) {
   const pushToast = useUiStore((s) => s.pushToast);
   const [{ start, end }, setWin] = useState(defaultWindow);
   const [regimeEnabled, setRegimeEnabled] = useState(false);
@@ -452,4 +452,4 @@ export function ReplayPanel({ onCursorMove }: { onCursorMove?: (iso: string | nu
       )}
     </Panel>
   );
-}
+});
