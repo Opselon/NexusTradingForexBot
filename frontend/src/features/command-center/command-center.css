@@ -1,0 +1,270 @@
+/* Command Center analysis charts — namespaced .cc-* (alt-UI styling law:
+   hand-written CSS on theme.css tokens, no framework, feature-local file
+   imported by the components that use it). */
+
+.cc-analysis {
+  display: grid;
+  gap: 12px;
+}
+
+.cc-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.cc-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cc-card-hint {
+  margin-top: -4px;
+}
+
+.cc-chart-empty {
+  font-size: 12px;
+  color: var(--text-faint);
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  padding: 14px;
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------- donut */
+
+.cc-donut-wrap {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.cc-donut {
+  width: 100%;
+  height: auto;
+}
+
+.cc-donut-value {
+  fill: var(--text);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.cc-donut-label {
+  fill: var(--text-faint);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+
+.cc-donut-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.cc-donut-legend li {
+  display: grid;
+  grid-template-columns: 10px 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.cc-donut-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.cc-legend-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.cc-legend-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.cc-legend-share {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  min-width: 46px;
+  text-align: end;
+}
+
+/* ------------------------------------------------------------ histogram */
+
+.cc-hist {
+  display: grid;
+  gap: 4px;
+}
+
+.cc-hist-title {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.cc-hist-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cc-gap {
+  color: var(--amber);
+}
+
+/* --------------------------------------------------------- gate outcomes */
+
+.cc-gates,
+.cc-funnel,
+.cc-rings {
+  display: grid;
+  gap: 6px;
+}
+
+.cc-gate-row,
+.cc-funnel-row,
+.cc-ring-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 24%) 1fr minmax(120px, auto);
+  gap: 8px;
+  align-items: center;
+}
+
+.cc-gate-name,
+.cc-funnel-label,
+.cc-ring-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cc-gate-track {
+  position: relative;
+  display: block;
+  height: 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.cc-gate-pass {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  background: color-mix(in srgb, var(--green) 75%, transparent);
+}
+
+.cc-gate-fail {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  background: color-mix(in srgb, var(--red) 70%, transparent);
+}
+
+.cc-gate-num,
+.cc-funnel-num,
+.cc-ring-num {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  color: var(--text);
+}
+
+.cc-fail {
+  color: var(--red);
+}
+
+/* ---------------------------------------------------------------- funnel */
+
+.cc-funnel-track {
+  position: relative;
+  display: block;
+  height: 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.cc-funnel-fill {
+  position: absolute;
+  inset-block: 1px;
+  inset-inline-start: 1px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.cc-funnel-fill.pos {
+  background: var(--green);
+}
+
+.cc-funnel-fill.neg {
+  background: var(--red);
+}
+
+.cc-funnel-fill.warn {
+  background: var(--amber);
+}
+
+.cc-funnel-fill.dim {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.cc-funnel-base {
+  position: absolute;
+  inset-block: -2px;
+  width: 2px;
+  background: var(--text-faint);
+}
+
+/* ------------------------------------------------------------ evidence  */
+
+.cc-ring-track {
+  display: block;
+  height: 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.cc-ring-track i {
+  display: block;
+  height: 100%;
+  background: color-mix(in srgb, var(--violet, var(--accent)) 70%, transparent);
+  border-radius: 2px;
+}
+
+.cc-ring-row.cc-gap-row .cc-ring-label {
+  color: var(--amber);
+}
+
+.cc-ring-track.dashed,
+.cc-ring-track i.dashed {
+  border-style: dashed;
+}
+
+.cc-elig-foot {
+  margin-top: 6px;
+}
+
+@media (max-width: 900px) {
+  .cc-donut-wrap {
+    grid-template-columns: 1fr;
+  }
+}
