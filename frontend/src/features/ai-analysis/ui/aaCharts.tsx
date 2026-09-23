@@ -14,10 +14,14 @@
  *   unknown action labels render the "unknown" family (neutral), never a
  *   guessed color; chart elements carry role="img" + a text alternative.
  * EXTEND: new charts go through vizMath first (testable math), then here.
+ * PERF (wave 2): every component is memo()ed at the bottom of this file —
+ *   the page re-renders every 15s on the latest-signal poll, and chart props
+ *   are reference-stable (stats data, useMemo'd series), so React skips the
+ *   whole SVG subtree between polls.
  */
 
+import { memo } from "react";
 import { formatTime } from "@/lib/format";
-import { useI18n } from "@/stores/i18nStore";
 import { actionTone } from "../model";
 import {
   actionFamily,
@@ -26,7 +30,6 @@ import {
   donutSegments,
   familyTotals,
   rrRatio,
-  timelineSeries,
   type CountRow,
   type TimelineSeries,
 } from "./vizMath";
@@ -37,21 +40,20 @@ const FAM_CLASS = (f: ReturnType<typeof actionFamily>): string => `aa-fam-${f}`;
 
 /** Donut of /api/v1/decisions/stats by_action collapsed to display families,
  *  with the real backend labels as a legend (counts + share of the map). */
-export function ActionDonut({ byAction }: { byAction: Record<string, number> | undefined }) {
-  const t = useI18n((s) => s.t);
+function ActionDonutBase({ byAction }: { byAction: Record<string, number> | undefined }) {
   const legend: CountRow[] = countRows(byAction);
   const kpi = actionKpi(byAction);
   const R = 44;
   const { segs, total } = donutSegments(familyTotals(byAction), R);
 
   if (total <= 0) {
-    return <div className="aa-empty">{t("ai-analysis.chart.no_by_action", "backend returned no by_action counts for this window")}</div>;
+    return <div className="aa-empty">backend returned no by_action counts for this window</div>;
   }
   const circ = 2 * Math.PI * R;
   const aria = legend.map((r) => `${r.label} ${r.count}`).join(", ");
   return (
     <div className="aa-donut-wrap">
-      <svg viewBox="0 0 120 120" className="aa-donut" role="img" aria-label={t("ai-analysis.chart.decision_mix_aria", "decision mix: {s}", { s: aria })}>
+      <svg viewBox="0 0 120 120" className="aa-donut" role="img" aria-label={`decision mix: ${aria}`}>
         <g transform="rotate(-90 60 60)">
           <circle className="aa-donut-track" cx="60" cy="60" r={R} />
           {segs.map((s) => (
@@ -72,7 +74,7 @@ export function ActionDonut({ byAction }: { byAction: Record<string, number> | u
           {kpi.total.toLocaleString("en-US")}
         </text>
         <text className="aa-donut-cap" x="60" y="72" textAnchor="middle">
-          {t("ai-analysis.chart.decisions_cap", "decisions")}
+          decisions
         </text>
       </svg>
       <ul className="aa-legend">
@@ -95,12 +97,11 @@ export function ActionDonut({ byAction }: { byAction: Record<string, number> | u
 
 /** Confidence (0..1) over time from the CURRENT history page's rows. Gaps
  *  where the backend recorded no confidence; dropped rows are captioned. */
-export function ConfidenceTimeline({ series }: { series: TimelineSeries }) {
-  const t = useI18n((s) => s.t);
+function ConfidenceTimelineBase({ series }: { series: TimelineSeries }) {
   const { points, dropped, from, to } = series;
   const plottable = points.filter((p) => p.v !== null);
   if (points.length === 0) {
-    return <div className="aa-empty">{t("ai-analysis.chart.no_history_rows", "no history rows with a parseable timestamp on this page")}</div>;
+    return <div className="aa-empty">no history rows with a parseable timestamp on this page</div>;
   }
 
   const W = 640;
@@ -132,14 +133,8 @@ export function ConfidenceTimeline({ series }: { series: TimelineSeries }) {
 
   const nActions = new Set(points.map((p) => p.action ?? "?")).size;
   const aria =
-    t("ai-analysis.chart.tl_aria", "confidence timeline, {n} samples from {a} to {b}", {
-      n: plottable.length,
-      a: formatTime(from),
-      b: formatTime(to),
-    }) +
-    (dropped > 0
-      ? ", " + t("ai-analysis.chart.tl_dropped", "{n} rows dropped for unparsable timestamps", { n: dropped })
-      : "");
+    `confidence timeline, ${plottable.length} samples from ${formatTime(from)} to ${formatTime(to)}` +
+    (dropped > 0 ? `, ${dropped} rows dropped for unparsable timestamps` : "");
 
   return (
     <div className="aa-tl">
@@ -174,47 +169,28 @@ export function ConfidenceTimeline({ series }: { series: TimelineSeries }) {
         </text>
       </svg>
       <div className="aa-tl-cap">
-        {t("ai-analysis.chart.tl_caption", "{n} samples · {m} action label{s} in view", {
-          n: plottable.length,
-          m: nActions,
-          s: nActions === 1 ? "" : "s",
-        })}
-        {dropped > 0
-          ? " · " +
-            t("ai-analysis.chart.tl_dropped_paren", "{n} row{s} dropped (unparsable timestamp)", {
-              n: dropped,
-              s: dropped === 1 ? "" : "s",
-            })
-          : ""}
+        {plottable.length} samples · {nActions} action label{nActions === 1 ? "" : "s"} in view
+        {dropped > 0 ? ` · ${dropped} row${dropped === 1 ? "" : "s"} dropped (unparsable timestamp)` : ""}
       </div>
     </div>
   );
 }
 
-/** Build a timeline from history rows using the shared derivation. */
-export function historyTimeline(
-  items: Array<{ generated_at?: string | null; action?: string | null; conf01?: number | null }> | undefined,
-): TimelineSeries {
-  return timelineSeries(items);
-}
-
 /* ───────────────────────────── count bars ─────────────────────────────── */
 
 /** Sorted count bars with share-of-total (stage / reason distributions). */
-export function BarList({
+function BarListBase({
   rows,
   tone = "var(--accent)",
   max = 10,
-  empty,
+  empty = "backend returned no rows",
 }: {
   rows: CountRow[];
   tone?: string;
   max?: number;
   empty?: string;
 }) {
-  const t = useI18n((s) => s.t);
-  const emptyText = empty ?? t("ai-analysis.chart.no_rows", "backend returned no rows");
-  if (rows.length === 0) return <div className="aa-empty">{emptyText}</div>;
+  if (rows.length === 0) return <div className="aa-empty">{empty}</div>;
   const shown = rows.slice(0, max);
   const peak = Math.max(1, ...shown.map((r) => r.count));
   return (
@@ -227,11 +203,7 @@ export function BarList({
           <span
             className="aa-bar-track"
             role="img"
-            aria-label={t("ai-analysis.chart.bar_aria", "{l}: {c} ({p}%)", {
-              l: r.label,
-              c: r.count,
-              p: r.pct.toFixed(1),
-            })}
+            aria-label={`${r.label}: ${r.count} (${r.pct.toFixed(1)}%)`}
           >
             <i style={{ width: `${(r.count / peak) * 100}%`, background: tone }} />
           </span>
@@ -240,7 +212,7 @@ export function BarList({
         </div>
       ))}
       {rows.length > max && (
-        <div className="aa-bars-more">+{t("ai-analysis.chart.bars_more", "{n} smaller rows not shown", { n: rows.length - max })}</div>
+        <div className="aa-bars-more">+{(rows.length - max).toLocaleString("en-US")} smaller rows not shown</div>
       )}
     </div>
   );
@@ -254,7 +226,7 @@ const finite = (v: number | null | undefined): v is number =>
 /** Vertical entry/SL/TP ladder: markers positioned proportionally over the
  *  recorded price range, distances in price units, R:R as arithmetic over the
  *  three levels (null -> "—", never a guess). */
-export function PriceLadder({
+function PriceLadderBase({
   entry,
   sl,
   tp,
@@ -263,19 +235,18 @@ export function PriceLadder({
   sl: number | null | undefined;
   tp: number | null | undefined;
 }) {
-  const t = useI18n((s) => s.t);
   const rr = rrRatio(entry, sl, tp);
   const risk = finite(entry) && finite(sl) ? Math.abs(entry - sl) : null;
   const reward = finite(entry) && finite(tp) ? Math.abs(tp - entry) : null;
 
   const levels = [
-    { key: "tp", label: "TP", v: tp, dist: reward !== null ? t("ai-analysis.chart.reward", "reward {v}", { v: reward.toFixed(2) }) : null },
+    { key: "tp", label: "TP", v: tp, dist: reward !== null ? `reward ${reward.toFixed(2)}` : null },
     { key: "entry", label: "ENTRY", v: entry, dist: null },
-    { key: "sl", label: "SL", v: sl, dist: risk !== null ? t("ai-analysis.chart.risk", "risk {v}", { v: risk.toFixed(2) }) : null },
+    { key: "sl", label: "SL", v: sl, dist: risk !== null ? `risk ${risk.toFixed(2)}` : null },
   ].filter((l): l is { key: string; label: string; v: number; dist: string | null } => finite(l.v));
 
   if (levels.length === 0) {
-    return <div className="aa-empty">{t("ai-analysis.chart.no_levels", "no entry / SL / TP recorded for this decision")}</div>;
+    return <div className="aa-empty">no entry / SL / TP recorded for this decision</div>;
   }
   const vals = levels.map((l) => l.v);
   const max = Math.max(...vals);
@@ -304,7 +275,7 @@ export function PriceLadder({
         <span className="aa-rr-k">R:R</span>
         <b className={rr === null ? "faint" : ""}>{rr === null ? "—" : `1 : ${rr.toFixed(2)}`}</b>
         <span className="aa-rr-note">
-          {rr === null ? t("ai-analysis.chart.rr_missing", "entry · SL · TP not all recorded") : "|tp−entry| / |entry−sl|"}
+          {rr === null ? "entry · SL · TP not all recorded" : "|tp−entry| / |entry−sl|"}
         </span>
       </div>
     </div>
@@ -314,19 +285,18 @@ export function PriceLadder({
 /* ───────────────────────── small table cells ──────────────────────────── */
 
 /** Action chip with the explicit family classification (unknown -> neutral). */
-export function AaActionChip({ action }: { action: string | null | undefined }) {
+function AaActionChipBase({ action }: { action: string | null | undefined }) {
   if (!action) return <span className="aa-chip aa-fam-unknown">—</span>;
   return <span className={`aa-chip ${FAM_CLASS(actionFamily(action))}`}>{action}</span>;
 }
 
 /** Inline confidence meter cell (width IS the 0..1 backend value). */
-export function ConfCell({ value, action }: { value: number | null; action?: string | null }) {
-  const t = useI18n((s) => s.t);
+function ConfCellBase({ value, action }: { value: number | null; action?: string | null }) {
   if (value === null || !Number.isFinite(value)) return <span className="faint">—</span>;
   const pct = Math.max(0, Math.min(1, value)) * 100;
   const tone = actionTone(action ?? null);
   return (
-    <span className="aa-conf-cell" role="img" aria-label={t("ai-analysis.chart.conf_aria", "confidence {p}%", { p: pct.toFixed(1) })}>
+    <span className="aa-conf-cell" role="img" aria-label={`confidence ${pct.toFixed(1)}%`}>
       <span className="aa-conf-track">
         <i className={tone} style={{ width: `${pct}%` }} />
       </span>
@@ -334,3 +304,14 @@ export function ConfCell({ value, action }: { value: number | null; action?: str
     </span>
   );
 }
+
+/* ─────────────────────── memoized exports (wave 2) ────────────────────── *
+ * Reference-stable props + memo = the 15s latest-poll re-render skips the
+ * entire SVG/table subtrees below. Callers import timelineSeries from
+ * ./vizMath directly (memoizing the math would be pointless). */
+export const ActionDonut = memo(ActionDonutBase);
+export const ConfidenceTimeline = memo(ConfidenceTimelineBase);
+export const BarList = memo(BarListBase);
+export const PriceLadder = memo(PriceLadderBase);
+export const AaActionChip = memo(AaActionChipBase);
+export const ConfCell = memo(ConfCellBase);

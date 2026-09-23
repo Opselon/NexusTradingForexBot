@@ -30,27 +30,22 @@ import {
   useVersion,
   useWorkers,
 } from "../useCases";
-import { useI18n } from "@/stores/i18nStore";
 import { cellFromCheck, cellFromSubsystem, cellFromWorker, cellTone, matrixSummary, type MatrixCell } from "../model";
+import "./health.css";
 
-/** Known client-side detail strings — backend detail text stays verbatim. */
 function MatrixCellView({ cell, nowMs }: { cell: MatrixCell; nowMs: number }) {
-  const t = useI18n((s) => s.t);
   const tone = cellTone(cell, nowMs);
-  const details: Record<string, string> = {
-    "attribute missing on engine": t("health.cell.attribute_missing", "attribute missing on engine"),
-  };
   return (
-    <div className={`l3-health-cell ${tone.level} ${tone.staleClass}`}>
+    <div className={`l3-health-cell hl-cell ${tone.level} ${tone.staleClass}`}>
       <div className="name">
         <span title={cell.id}>{cell.name}</span>
         <Dot status={cell.status} />
       </div>
       <div>
         <StatusBadge status={cell.status} />{" "}
-        <span className="timestamp-note">{tone.ageMs === null ? t("health.cell.never_read", "never read") : formatAgeMs(tone.ageMs)}</span>
+        <span className="timestamp-note">{tone.ageMs === null ? "never read" : formatAgeMs(tone.ageMs)}</span>
       </div>
-      {cell.detail && <div className="detail">{details[cell.detail] ?? cell.detail}</div>}
+      {cell.detail && <div className="detail">{cell.detail}</div>}
       {cell.metrics.length > 0 && (
         <div className="metrics">
           {cell.metrics.map(([k, v]) => (
@@ -66,22 +61,18 @@ function MatrixCellView({ cell, nowMs }: { cell: MatrixCell; nowMs: number }) {
 }
 
 function FailedCell({ name, error, onRetry }: { name: string; error: unknown; onRetry: () => void }) {
-  const t = useI18n((s) => s.t);
   return (
-    <div className="l3-health-cell bad">
+    <div className="l3-health-cell bad hl-cell">
       <div className="name"><span>{name}</span><Dot status="ERROR" /></div>
       <StatusBadge status="ERROR" />
-      <div className="detail">{error instanceof Error ? error.message : t("health.cell.read_failed", "read failed")}</div>
-      <div>
-        <button className="btn small" onClick={onRetry}>{t("common.retry", "Retry")}</button>
-      </div>
+      <div className="detail">{error instanceof Error ? error.message : "read failed"}</div>
+      <div><button className="btn small" onClick={onRetry}>Retry</button></div>
     </div>
   );
 }
 
 export default function HealthPage(props: ShellPageProps) {
   void props;
-  const t = useI18n((s) => s.t);
   const poll = usePolling(10_000);
   const [tab, setTab] = useState<"matrix" | "layers" | "workers" | "identity">("matrix");
   const nowMs = props.nowMs ?? Date.now();
@@ -109,10 +100,10 @@ export default function HealthPage(props: ShellPageProps) {
   if (mt5.data) {
     cells.push({
       id: "mt5:connection",
-      name: t("health.cell.mt5", "MT5 broker"),
+      name: "MT5 broker",
       status: mt5.data.available ? "CONNECTED" : "DISCONNECTED",
       level: mt5.data.available ? "good" : "bad",
-      detail: mt5.data.available ? "" : String(mt5.data.reason ?? mt5.data.error_state ?? t("health.cell.adapter_unavailable", "adapter unavailable")),
+      detail: mt5.data.available ? "" : String(mt5.data.reason ?? mt5.data.error_state ?? "adapter unavailable"),
       metrics: Object.entries(mt5.data.connection ?? {}).slice(0, 4),
       fetchedAtMs: mt5.dataUpdatedAt || null,
       source: "mt5",
@@ -121,10 +112,10 @@ export default function HealthPage(props: ShellPageProps) {
   if (news.data) {
     cells.push({
       id: "news:subsystem",
-      name: t("health.cell.news", "News intelligence"),
+      name: "News intelligence",
       status: news.data.available ? (news.data.enabled ? "ACTIVE" : "IDLE") : "UNAVAILABLE",
       level: news.data.available ? "good" : "neutral",
-      detail: news.data.available ? String(news.data.worker ?? "") : t("health.cell.news_detached", "news module not attached"),
+      detail: news.data.available ? String(news.data.worker ?? "") : "news module not attached",
       metrics: Object.entries(news.data.health ?? {}).slice(0, 4),
       fetchedAtMs: news.dataUpdatedAt || null,
       source: "news",
@@ -133,7 +124,7 @@ export default function HealthPage(props: ShellPageProps) {
   if (forensics.data) {
     cells.push({
       id: "forensics:matrix",
-      name: t("health.cell.forensics", "Forensic checks"),
+      name: "Forensic checks",
       status: forensics.data.available ? "ACTIVE" : "UNAVAILABLE",
       level: forensics.data.available ? "good" : "neutral",
       detail: String((forensics.data.error as { message?: string } | undefined)?.message ?? ""),
@@ -149,29 +140,43 @@ export default function HealthPage(props: ShellPageProps) {
   const summary = matrixSummary(cells);
   const overall =
     summary.bad > 0 ? "DEGRADED-FAIL" : summary.warn > 0 ? "WARNING" : summary.good > 0 ? "HEALTHY" : "UNKNOWN";
-  const tabLabels: Record<string, string> = {
-    matrix: t("health.tab.matrix", "matrix"),
-    layers: t("health.tab.layers", "layers"),
-    workers: t("health.tab.workers", "workers"),
-    identity: t("health.tab.identity", "identity"),
-  };
 
   return (
-    <div className="l3-wrap">
-      <div className="l3-head">
-        <h1>{t("nav.feature.health", "Health")}</h1>
-        <span className="crumb">{t("ux.sidebar.features.safety", "Safety & governance")}</span>
-        <span className="desc">{t("health.page.desc", "subsystem matrix from debug + v1 system + broker + news (legacy tab-health)")}</span>
-      </div>
-      <div className="l3-note">
-        {t(
-          "health.page.note",
-          "Each cell is one independent read with its own age — a stale GOOD recolors to amber, a failed endpoint fails only its cell. Verdict words come from the backend (HealthEngine contract); nothing here is inferred client-side.",
-        )}
+    <div className="l3-wrap hl-page">
+      <header className="hl-hero">
+        <div className="hl-hero-main">
+          <div className="hl-kicker">
+            <span className="dot" aria-hidden="true" />
+            SAFETY &amp; GOVERNANCE
+          </div>
+          <h1 className="hl-title">
+            <span className="hl-mark" aria-hidden="true">+</span>
+            <span className="word">Health</span>
+          </h1>
+          <p className="hl-desc">
+            subsystem matrix from debug + v1 system + broker + news (legacy tab-health)
+          </p>
+        </div>
+        <div className="hl-hero-side" role="group" aria-label="Backend status and provenance">
+          <StatusBadge status={system.data?.verdict ?? probe.data?.status ?? overall} label="v1 verdict" />
+          <div className="hl-chips">
+            {readiness.data && <span className={`hl-chip ${readiness.data.ready ? "pos" : "neg"}`}>readiness {readiness.data.ready ? "READY" : "NOT READY"}</span>}
+            {runtime.data && <span className={`hl-chip ${runtime.data.engine_running ? "pos" : "dim"}`}>engine {runtime.data.engine_running ? "RUNNING" : "STOPPED"}</span>}
+            {status.data && status.data.critical_failures.length > 0 && (
+              <span className="hl-chip neg">critical: {status.data.critical_failures.join(", ")}</span>
+            )}
+            <span className="hl-chip dim">{cells.length} cells</span>
+            <span className="hl-chip dim">poll 10s</span>
+          </div>
+        </div>
+      </header>
+      <div className="l3-note hl-note">
+        Each cell is one independent read with its own age — a stale GOOD recolors to amber, a failed endpoint fails only
+        its cell. Verdict words are the backend's (HealthEngine contract); nothing here is inferred client-side.
       </div>
 
       <Panel
-        title={t("health.panel.overview", "Overview")}
+        title="Overview"
         accent
         right={
           <>
@@ -180,66 +185,75 @@ export default function HealthPage(props: ShellPageProps) {
           </>
         }
       >
-        <div className="l3-toolbar" style={{ marginBlockEnd: 8 }}>
-          <StatusBadge status={system.data?.verdict ?? probe.data?.status ?? overall} label={t("health.badge.v1_verdict", "v1 verdict")} />
-          {readiness.data && <StatusBadge status={readiness.data.ready ? "READY" : "NOT READY"} label={t("health.badge.readiness", "readiness")} />}
-          {runtime.data && <StatusBadge status={runtime.data.engine_running ? "RUNNING" : "STOPPED"} label={t("health.badge.engine_loop", "engine loop")} />}
-          {status.data && status.data.critical_failures.length > 0 && (
-            <span className="badge bad">{t("health.badge.critical", "critical: {list}", { list: status.data.critical_failures.join(", ") })}</span>
-          )}
-          <span className="segmented" role="tablist" style={{ marginInlineStart: "auto" }}>
-            {(["matrix", "layers", "workers", "identity"] as const).map((id) => (
-              <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
-                {tabLabels[id]}
-              </button>
-            ))}
-          </span>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-          <MetricCard label={t("health.metric.cells_good", "cells good")} value={summary.good} tone="pos" />
-          <MetricCard label={t("health.metric.warn_stale", "warn / stale")} value={summary.warn} tone={summary.warn ? "neg" : "dim"} />
-          <MetricCard label={t("health.metric.failing", "failing")} value={summary.bad} tone={summary.bad ? "neg" : "dim"} />
-          <MetricCard
-            label={t("health.metric.idle", "idle / n-a")}
-            value={summary.neutral}
-            tone="dim"
-            sub={t("health.metric.total_sub", "{n} total", { n: cells.length })}
-          />
+        <div className="hl-section">
+          <div className="hl-section-label">
+            <span className="lbl">Overview</span>
+            <span className="src">
+              <span className="hl-chip dim">/api/v1/system/health</span>
+              <span className="hl-chip dim">/health</span>
+            </span>
+          </div>
+          <div className="hl-toolbar l3-toolbar">
+            <span className="hl-segmented segmented" role="tablist">
+              {(["matrix", "layers", "workers", "identity"] as const).map((t) => (
+                <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
+                  {t}
+                </button>
+              ))}
+            </span>
+          </div>
+          <div className="hl-metrics">
+            <MetricCard label="cells good" value={summary.good} tone="pos" />
+            <MetricCard label="warn / stale" value={summary.warn} tone={summary.warn ? "neg" : "dim"} />
+            <MetricCard label="failing" value={summary.bad} tone={summary.bad ? "neg" : "dim"} />
+            <MetricCard label="idle / n-a" value={summary.neutral} tone="dim" sub={`${cells.length} total`} />
+          </div>
         </div>
       </Panel>
 
       {tab === "matrix" && (
-        <Panel title={t("health.panel.matrix", "Subsystem matrix")} tight={cells.length === 0}>
-          {cells.length === 0 && failed.length === 0 ? (
-            <Skeleton count={4} />
-          ) : (
-            <div className="l3-health-grid">
-              {cells.map((c) => <MatrixCellView key={c.id} cell={c} nowMs={nowMs} />)}
-              {failed.map((f) => <FailedCell key={f.name} name={f.name} error={f.error} onRetry={f.retry} />)}
-            </div>
-          )}
-        </Panel>
+        <div className="hl-section">
+          <div className="hl-section-label">
+            <span className="lbl">Subsystem matrix</span>
+            <span className="src">
+              <span className="hl-chip dim">/api/debug/health</span>
+              <span className="hl-chip dim">/api/v1/system/health</span>
+              <span className="hl-chip dim">/api/v1/system/workers</span>
+              <span className="hl-chip dim">/api/mt5/status</span>
+              <span className="hl-chip dim">/api/news/health</span>
+              <span className="hl-chip dim">/api/forensics/health</span>
+            </span>
+          </div>
+          <Panel title="Subsystem matrix" tight={cells.length === 0}>
+            {cells.length === 0 && failed.length === 0 ? (
+              <Skeleton count={4} />
+            ) : (
+              <div className="l3-health-grid">
+                {cells.map((c) => <MatrixCellView key={c.id} cell={c} nowMs={nowMs} />)}
+                {failed.map((f) => <FailedCell key={f.name} name={f.name} error={f.error} onRetry={f.retry} />)}
+              </div>
+            )}
+          </Panel>
+        </div>
       )}
 
       {tab === "layers" && (
-        <Panel title={t("health.panel.layers", "Required vs optional layers (/api/v1/system/readiness)")}>
+        <div className="hl-section">
+          <div className="hl-section-label">
+            <span className="lbl">Required vs optional layers</span>
+            <span className="src">
+              <span className="hl-chip dim">/api/v1/system/readiness</span>
+            </span>
+          </div>
+          <Panel title="Required vs optional layers (/api/v1/system/readiness)">
           {readiness.isPending ? (
             <Skeleton count={4} />
           ) : readiness.isError ? (
-            <ResultStrip result={{ running: false, lastResult: false, lastMessage: readiness.error instanceof Error ? readiness.error.message : t("health.empty.readiness_failed", "readiness failed") }} />
+            <ResultStrip result={{ running: false, lastResult: false, lastMessage: readiness.error instanceof Error ? readiness.error.message : "readiness failed" }} />
           ) : readiness.data ? (
             <>
-              <div className="section-title">
-                {t("health.section.required_layers", "required (must PASS for READY) · {n}", { n: readiness.data.required_layers.length })}
-              </div>
-              <DataTable
-                headers={[
-                  { label: t("health.th.category", "CATEGORY") },
-                  { label: t("health.th.verdict", "VERDICT") },
-                  { label: t("health.th.reason", "REASON") },
-                  { label: t("health.th.suggestion", "SUGGESTION") },
-                ]}
-              >
+              <div className="hl-sublabel">required (must PASS for READY) · {readiness.data.required_layers.length}</div>
+              <DataTable headers={[{ label: "CATEGORY" }, { label: "VERDICT" }, { label: "REASON" }, { label: "SUGGESTION" }]}>
                 {readiness.data.required_layers.map((c) => (
                   <tr key={`r:${c.category}`}>
                     <td>{c.category}</td>
@@ -249,16 +263,8 @@ export default function HealthPage(props: ShellPageProps) {
                   </tr>
                 ))}
               </DataTable>
-              <div className="section-title" style={{ marginTop: 10 }}>
-                {t("health.section.optional_layers", "optional (may WARN without blocking) · {n}", { n: readiness.data.optional_layers.length })}
-              </div>
-              <DataTable
-                headers={[
-                  { label: t("health.th.category", "CATEGORY") },
-                  { label: t("health.th.verdict", "VERDICT") },
-                  { label: t("health.th.reason", "REASON") },
-                ]}
-              >
+              <div className="hl-sublabel">optional (may WARN without blocking) · {readiness.data.optional_layers.length}</div>
+              <DataTable headers={[{ label: "CATEGORY" }, { label: "VERDICT" }, { label: "REASON" }]}>
                 {readiness.data.optional_layers.map((c) => (
                   <tr key={`o:${c.category}`}>
                     <td>{c.category}</td>
@@ -269,25 +275,28 @@ export default function HealthPage(props: ShellPageProps) {
               </DataTable>
             </>
           ) : (
-            <EmptyState message={t("health.empty.readiness_payload", "Readiness payload empty.")} />
+            <EmptyState message="Readiness payload empty." />
           )}
-        </Panel>
+          </Panel>
+        </div>
       )}
 
       {tab === "workers" && (
-        <Panel
-          title={t("health.panel.workers", "Workers (/api/v1/system/workers)")}
-          right={<span className="timestamp-note">engine_attached={String(workers.data?.engine_attached ?? "—")}</span>}
-        >
+        <div className="hl-section">
+          <div className="hl-section-label">
+            <span className="lbl">Workers &amp; runtime</span>
+            <span className="src">
+              <span className="hl-chip dim">/api/v1/system/workers</span>
+              <span className="hl-chip dim">/api/v1/system/runtime</span>
+            </span>
+          </div>
+          <Panel title="Workers (/api/v1/system/workers)" right={<span className="timestamp-note">engine_attached={String(workers.data?.engine_attached ?? "—")}</span>}>
           {workers.isPending ? (
             <Skeleton count={3} />
           ) : workers.data && workers.data.workers.length === 0 ? (
-            <EmptyState
-              message={t("health.empty.no_workers", "No worker attributes attached to the engine object.")}
-              hint={t("health.empty.no_workers_hint", "NOT_ATTACHED is a state the backend reports — it is never hidden.")}
-            />
+            <EmptyState message="No worker attributes attached to the engine object." hint="NOT_ATTACHED is a state the backend reports — it is never hidden." />
           ) : workers.data ? (
-            <DataTable headers={[{ label: t("health.th.worker", "WORKER") }, { label: t("health.th.state", "STATE") }]}>
+            <DataTable headers={[{ label: "WORKER" }, { label: "STATE" }]}>
               {workers.data.workers.map((w) => (
                 <tr key={w.name}>
                   <td className="inline-mono">{w.name}</td>
@@ -298,18 +307,11 @@ export default function HealthPage(props: ShellPageProps) {
           ) : (
             <FailedCell name="workers" error={workers.error} onRetry={() => void workers.refetch()} />
           )}
-          <div className="section-title" style={{ marginTop: 10 }}>{t("health.section.runtime", "runtime")}</div>
+          <div className="hl-sublabel">runtime</div>
           {runtime.data ? (
             <KeyValueList
               rows={[
-                [
-                  "engine",
-                  runtime.data.engine_running ? (
-                    <span key="e" className="badge good">{t("health.status.running", "RUNNING")}</span>
-                  ) : (
-                    <span key="e" className="badge neutral">{t("health.status.stopped", "STOPPED")}</span>
-                  ),
-                ],
+                ["engine", runtime.data.engine_running ? <span key="e" className="badge good">RUNNING</span> : <span key="e" className="badge neutral">STOPPED</span>],
                 ["warmup", String(runtime.data.warmup_state ?? "—")],
                 ["inference_enabled", String(runtime.data.inference_enabled)],
                 ["mode", String(runtime.data.mode ?? "—")],
@@ -320,12 +322,21 @@ export default function HealthPage(props: ShellPageProps) {
           ) : (
             <Skeleton count={2} />
           )}
-        </Panel>
+          </Panel>
+        </div>
       )}
 
       {tab === "identity" && (
-        <div className="l3-split">
-          <Panel title={t("health.panel.version", "Version / build (/api/v1/system/version)")}>
+        <div className="hl-section">
+          <div className="hl-section-label">
+            <span className="lbl">Identity &amp; capabilities</span>
+            <span className="src">
+              <span className="hl-chip dim">/api/v1/system/version</span>
+              <span className="hl-chip dim">/api/v1/system/capabilities</span>
+            </span>
+          </div>
+          <div className="l3-split">
+          <Panel title="Version / build (/api/v1/system/version)">
             {version.isPending ? (
               <Skeleton count={3} />
             ) : version.isError ? (
@@ -334,10 +345,7 @@ export default function HealthPage(props: ShellPageProps) {
               <KeyValueList rows={Object.entries(version.data).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => [k, <MonoValue key={k} value={v} />])} />
             ) : null}
           </Panel>
-          <Panel
-            title={t("health.panel.capabilities", "API capabilities (/api/v1/system/capabilities)")}
-            right={<span className="timestamp-note">{t("health.caps.interval", "every {n}s · route-table truth", { n: 60 })}</span>}
-          >
+          <Panel title="API capabilities (/api/v1/system/capabilities)" right={<span className="timestamp-note">every {60}s · route-table truth</span>}>
             {capabilities.isPending ? (
               <Skeleton count={3} />
             ) : capabilities.data ? (
@@ -350,7 +358,7 @@ export default function HealthPage(props: ShellPageProps) {
                     ["spec", capabilities.data.spec],
                   ]}
                 />
-                <div className="l3-rule-params" style={{ marginTop: 6 }}>
+                <div className="l3-rule-params">
                   {Object.entries(capabilities.data.domains ?? {}).map(([d, n]) => (
                     <span className="l3-param-chip" key={d}>{d}=<b>{String(n)}</b></span>
                   ))}
@@ -360,6 +368,7 @@ export default function HealthPage(props: ShellPageProps) {
               <FailedCell name="capabilities" error={capabilities.error} onRetry={() => void capabilities.refetch()} />
             )}
           </Panel>
+          </div>
         </div>
       )}
     </div>

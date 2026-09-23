@@ -20,7 +20,6 @@ import { useQuery } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import { DataTable, EmptyState, ErrorState, MetricCard, Panel, Segmented, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
-import { useI18n } from "@/stores/i18nStore";
 import { FreshnessCaption, StatusPill, useNow } from "../../research/ui/lane5Kit";
 import { obj, stuckRows, type CcFleetRowDto } from "../model";
 import { ccRetry, ccRetryDelay, commandCenterQueries, commandCenterUseCases } from "../useCases";
@@ -33,7 +32,6 @@ type View = "analysis" | "spatial" | "fleet" | "timemachine";
 
 export default function CommandCenterPage(props: ShellPageProps) {
   void props;
-  const t = useI18n((s) => s.t);
   const nowMs = useNow(5000);
   const [view, setView] = useState<View>("analysis");
   const [lifecycle, setLifecycle] = useState("");
@@ -66,8 +64,8 @@ export default function CommandCenterPage(props: ShellPageProps) {
   return (
     <div>
       <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <h2>{t("nav.feature.command-center", "Command Center")}</h2>
-        <span className="muted small">{t("command-center.page.subtitle", "analysis · spatial map · fleet grid · inspector · time machine")}</span>
+        <h2>Command Center</h2>
+        <span className="muted small">analysis · spatial map · fleet grid · inspector · time machine</span>
         <FreshnessCaption
           timestamp={null}
           source="research engine projection"
@@ -78,9 +76,9 @@ export default function CommandCenterPage(props: ShellPageProps) {
 
       {overviewDead && (
         <ErrorState
-          message={t("command-center.err.overview_dead", "Command Center data unavailable — overview failed after retries ({e})", {
-            e: overviewQ.error instanceof Error ? overviewQ.error.message : t("command-center.err.unknown", "unknown error"),
-          })}
+          message={`Command Center data unavailable — overview failed after retries (${
+            overviewQ.error instanceof Error ? overviewQ.error.message : "unknown error"
+          })`}
           onRetry={() => void overviewQ.refetch()}
         />
       )}
@@ -88,31 +86,31 @@ export default function CommandCenterPage(props: ShellPageProps) {
       {/* ---- overview KPI strip ---- */}
       <div className="grid cols-4">
         <MetricCard
-          label={t("command-center.kpi.strategies", "strategies")}
+          label="strategies"
           value={overviewQ.isPending ? "…" : String(overview?.total_strategies ?? "—")}
           tone="dim"
-          sub={t("command-center.kpi.running_evaluations", "running evaluations {n}", { n: String(overview?.running_evaluations ?? 0) })}
+          sub={`running evaluations ${String(overview?.running_evaluations ?? 0)}`}
         />
         <MetricCard
-          label={t("command-center.kpi.execution_eligible", "execution eligible")}
+          label="execution eligible"
           value={String(overview?.execution_eligible_count ?? "—")}
           tone={overview?.execution_eligible_count ? "pos" : "dim"}
-          sub={t("command-center.kpi.eligibility_yes", "eligibility YES (domain authority)")}
+          sub="eligibility YES (domain authority)"
         />
-        <MetricCard label={t("command-center.kpi.blocked", "blocked")} value={String(overview?.blocked_count ?? "—")} tone={overview?.blocked_count ? "neg" : "dim"} sub={t("command-center.kpi.eligibility_blocked", "eligibility BLOCKED")} />
+        <MetricCard label="blocked" value={String(overview?.blocked_count ?? "—")} tone={overview?.blocked_count ? "neg" : "dim"} sub="eligibility BLOCKED" />
         <MetricCard
-          label={t("command-center.kpi.terminal_states", "terminal states")}
+          label="terminal states"
           value={`${String(obj(overview?.terminal).REJECTED ?? 0)}R / ${String(obj(overview?.terminal).DEGRADED ?? 0)}D`}
           tone="dim"
-          sub={t("command-center.kpi.retired_excluded", "retired excluded from pipeline census")}
+          sub="retired excluded from pipeline census"
         />
       </div>
 
       <div style={{ height: 12 }} />
 
       {stuck.length > 0 && (
-        <Panel title={t("command-center.panel.stuck", "Stuck strategies (hours in non-terminal state)")} tight>
-          <DataTable headers={[{ label: t("command-center.th.strategy", "strategy") }, { label: t("command-center.th.state", "state") }, { label: t("command-center.th.hours", "hours"), num: true }, { label: "" }]}>
+        <Panel title="Stuck strategies (hours in non-terminal state)" tight>
+          <DataTable headers={[{ label: "strategy" }, { label: "state" }, { label: "hours", num: true }, { label: "" }]}>
             {stuck.map((s) => (
               <tr key={s.strategy_id}>
                 <td className="inline-mono tiny">{s.strategy_id.slice(0, 16)}</td>
@@ -122,7 +120,7 @@ export default function CommandCenterPage(props: ShellPageProps) {
                 <td className="num tiny">{s.hours === null ? "—" : formatNumber(s.hours, 1)}</td>
                 <td>
                   <button className="btn small ghost" onClick={() => setInspectId(s.strategy_id)}>
-                    {t("command-center.action.inspect", "inspect")}
+                    inspect
                   </button>
                 </td>
               </tr>
@@ -134,10 +132,10 @@ export default function CommandCenterPage(props: ShellPageProps) {
       <div style={{ marginBlock: 12 }}>
         <Segmented
           options={[
-            { id: "analysis" as const, label: t("command-center.view.analysis", "Analysis") },
-            { id: "spatial" as const, label: t("command-center.view.spatial", "Spatial 2.5D map") },
-            { id: "fleet" as const, label: t("command-center.view.fleet", "Fleet grid") },
-            { id: "timemachine" as const, label: t("command-center.view.time_machine", "Time machine") },
+            { id: "analysis" as const, label: "Analysis" },
+            { id: "spatial" as const, label: "Spatial 2.5D map" },
+            { id: "fleet" as const, label: "Fleet grid" },
+            { id: "timemachine" as const, label: "Time machine" },
           ]}
           value={view}
           onChange={setView}
@@ -154,7 +152,7 @@ export default function CommandCenterPage(props: ShellPageProps) {
       )}
 
       {view === "spatial" && (
-        <Panel title={t("command-center.panel.spatial", "Spatial fleet map — lifecycle strata (Canvas2D 2.5D)")} tight>
+        <Panel title="Spatial fleet map — lifecycle strata (Canvas2D 2.5D)" tight>
           <div style={{ padding: 10 }}>
             <SpatialFleetCanvas selectedId={inspectId} onSelect={(id) => setInspectId(id)} onInspect={(id) => setInspectId(id)} />
           </div>
@@ -163,11 +161,11 @@ export default function CommandCenterPage(props: ShellPageProps) {
 
       {view === "fleet" && (
         <Panel
-          title={t("command-center.panel.fleet", "Fleet ({n} rows, risk-first order)", { rows: String(fleetQ.data?.count ?? 0) })}
+          title={`Fleet (${String(fleetQ.data?.count ?? 0)} rows, risk-first order)`}
           right={
             <div style={{ display: "flex", gap: 6 }}>
-              <select aria-label={t("command-center.a11y.lifecycle_filter", "Lifecycle filter")} className="select" style={{ width: 150 }} value={lifecycle} onChange={(e) => setLifecycle(e.target.value)}>
-                <option value="">{t("command-center.filter.lifecycle_any", "lifecycle: any")}</option>
+              <select aria-label="Lifecycle filter" className="select" style={{ width: 150 }} value={lifecycle} onChange={(e) => setLifecycle(e.target.value)}>
+                <option value="">lifecycle: any</option>
                 {["DISCOVERED", "VALIDATED", "SHADOW", "ACTIVE", "REJECTED", "DEGRADED", "RETIRED"].map((l) => (
                   <option key={l} value={l}>
                     {l}
@@ -175,13 +173,13 @@ export default function CommandCenterPage(props: ShellPageProps) {
                 ))}
               </select>
               <select
-                aria-label={t("command-center.a11y.eligibility_filter", "Eligibility filter")}
+                aria-label="Eligibility filter"
                 className="select"
                 style={{ width: 140 }}
                 value={executionFilter}
                 onChange={(e) => setExecutionFilter(e.target.value)}
               >
-                <option value="">{t("command-center.filter.eligibility_any", "eligibility: any")}</option>
+                <option value="">eligibility: any</option>
                 {["YES", "BLOCKED", "CONDITIONAL", "UNKNOWN"].map((l) => (
                   <option key={l} value={l}>
                     {l}
@@ -195,24 +193,24 @@ export default function CommandCenterPage(props: ShellPageProps) {
           {fleetQ.isPending ? (
             <Skeleton count={6} />
           ) : fleetQ.isError ? (
-            <ErrorState message={fleetQ.error instanceof Error ? fleetQ.error.message : t("command-center.err.fleet", "fleet failed")} onRetry={() => void fleetQ.refetch()} />
+            <ErrorState message={fleetQ.error instanceof Error ? fleetQ.error.message : "fleet failed"} onRetry={() => void fleetQ.refetch()} />
           ) : fleetQ.data?.available === false ? (
-            <EmptyState message={t("command-center.empty.research_unavailable", "Research engine unavailable")} hint={fleetQ.data.reason ?? t("command-center.empty.spatial_hint", "RESEARCH_ENGINE_UNAVAILABLE")} />
+            <EmptyState message="Research engine unavailable" hint={fleetQ.data.reason ?? "RESEARCH_ENGINE_UNAVAILABLE"} />
           ) : rows.length === 0 ? (
-            <EmptyState message={t("command-center.empty.no_strategies", "No strategies match the filters.")} />
+            <EmptyState message="No strategies match the filters." />
           ) : (
             <div className="table-wrap" style={{ maxHeight: 560 }}>
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">{t("command-center.th.strategy", "strategy")}</th>
-                    <th scope="col">{t("command-center.th.lifecycle", "lifecycle")}</th>
-                    <th scope="col" className="num">{t("command-center.th.conf", "conf")}</th>
-                    <th scope="col" className="num">{t("command-center.th.samples", "samples")}</th>
-                    <th scope="col" className="num">{t("command-center.th.health", "health")}</th>
-                    <th scope="col">{t("command-center.th.eligibility", "eligibility")}</th>
-                    <th scope="col">{t("command-center.th.reason", "reason")}</th>
-                    <th scope="col">{t("command-center.th.updated", "updated")}</th>
+                    <th scope="col">strategy</th>
+                    <th scope="col">lifecycle</th>
+                    <th scope="col" className="num">conf</th>
+                    <th scope="col" className="num">samples</th>
+                    <th scope="col" className="num">health</th>
+                    <th scope="col">eligibility</th>
+                    <th scope="col">reason</th>
+                    <th scope="col">updated</th>
                     <th scope="col" />
                   </tr>
                 </thead>
@@ -237,7 +235,7 @@ export default function CommandCenterPage(props: ShellPageProps) {
                       <td className="tiny">{r.updated_at ? formatDateTime(r.updated_at) : "—"}</td>
                       <td>
                         <button className="btn small ghost" onClick={() => setInspectId(String(r.strategy_id ?? ""))}>
-                          {t("command-center.action.inspector", "inspector")}
+                          inspector
                         </button>
                       </td>
                     </tr>
@@ -252,7 +250,7 @@ export default function CommandCenterPage(props: ShellPageProps) {
       {view === "timemachine" && <TimeMachine />}
 
       {view === "analysis" && !overview && overviewQ.isPending && <Skeleton count={4} />}
-      {view === "analysis" && overviewQ.isPending && overviewQ.isFetching && !overview && <div className="tiny muted">{t("command-center.analysis.loading", "loading analysis data…")}</div>}
+      {view === "analysis" && overviewQ.isPending && overviewQ.isFetching && !overview && <div className="tiny muted">loading analysis data…</div>}
 
       {inspectId && <InspectorDrawer strategyId={inspectId} onClose={() => setInspectId(null)} />}
     </div>

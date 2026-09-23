@@ -23,7 +23,11 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 5_000,
-      refetchOnWindowFocus: false,
+      // Wave 6 (perf): returning to the tab now revalidates ACTIVE queries
+      // immediately instead of waiting up to the next refetchInterval tick —
+      // strictly fresher on return, unchanged everywhere else (background tabs
+      // still never auto-refetch: refetchIntervalInBackground stays false).
+      refetchOnWindowFocus: true,
       retry: 1,
     },
   },

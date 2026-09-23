@@ -6,18 +6,43 @@
  * markers → candles → quote line → order lines → replay boundary →
  * crosshair → axes. Every drawn value comes from the backend payload; the
  * painter computes coordinates only, never indicators or prices.
+ *
+ * Wave-2 seams (2026-09-23): paintVolume (tick_volume passthrough in the
+ * reserved band), paintSeries (line/area/hollow presentation), paintAxisTags
+ * (cursor axis tags) — coordinate/presentation work only, lane-09 intact.
  */
 
 import type { Bar } from "@/types/domain";
 import type { OverlayLine, OverlayRect, OverlayOrderLines } from "@/pages/_shared/contracts";
 import { niceTicks } from "@/components/viz/geometry";
 import { formatPrice } from "@/lib/format";
-import { useI18n } from "@/stores/i18nStore";
+import { paintVolume } from "./chart/volumeOverlay";
+import { paintAxisTags } from "./chart/axisCrosshair";
+import { paintSeries } from "./chart/renderers/seriesRender";
 
 export const PAD_TOP = 10;
 export const PAD_BOTTOM = 22;
 export const AXIS_W = 60;
 export const PAD_LEFT = 6;
+
+/** Wave-2 presentation kind (toolbar switch). Pure display — same OHLC. */
+export type ChartKind = "candles" | "line" | "area" | "hollow";
+
+/** Geometry handed to the wave-2 seam painters (price band + reserved
+ *  volume band share the plot; x/y map slots/prices like paintChart). */
+export interface PlotGeom {
+  x: (slot: number) => number;
+  y: (price: number) => number;
+  bw: number;
+  plotW: number;
+  /** Height of the price band (plot minus volume band). */
+  priceH: number;
+  /** Top of the reserved volume band (CSS px from canvas top). */
+  volY0: number;
+  volH: number;
+  w: number;
+  h: number;
+}
 
 export interface Palette {
   bg: string;
@@ -42,6 +67,8 @@ export interface PainterScene {
   left: number;
   /** … and how many slots the plot spans (may exceed shown.length → future space). */
   count: number;
+  /** Wave-2 presentation kind (defaults to candles when absent). */
+  kind?: ChartKind;
   overlays?: {
     rectangles?: OverlayRect[];
     bos_lines?: OverlayLine[];
@@ -111,19 +138,22 @@ export function paintChart(
   pal: Palette,
   mono: string,
 ): void {
-  const t = useI18n.getState().t;
   const { w, h } = size;
   if (w <= 0 || h <= 0 || sc.count <= 0 || sc.shown.length === 0) return;
   const { lo, hi } = scale;
   const plotW = w - AXIS_W - PAD_LEFT;
   const plotH = h - PAD_TOP - PAD_BOTTOM;
+  // Wave-2: reserve a volume band under the price band (stable geometry).
+  const volH = Math.round(Math.min(96, Math.max(56, plotH * 0.18)));
+  const priceH = Math.max(40, plotH - volH);
   // Slot model (TradingView-style pan/zoom): `count` slots span the plot and
   // `shown` fills the first shown.length of them — the tail is empty future
   // space. x() therefore takes a slot index RELATIVE to sc.left.
   const x = (i: number) => PAD_LEFT + (i * plotW) / sc.count;
   const bw = plotW / sc.count;
   const slotOf = (abs: number) => abs - sc.left;
-  const y = (p: number) => PAD_TOP + ((hi - p) / (hi - lo)) * plotH;
+  const y = (p: number) => PAD_TOP + ((hi - p) / (hi - lo)) * priceH;
+  const geom: PlotGeom = { x, y, bw, plotW, priceH, volY0: PAD_TOP + priceH, volH, w, h };
 
   // backdrop: flat inset + subtle top gradient (legacy #090d16, modernized)
   ctx.fillStyle = pal.bg;
@@ -142,7 +172,7 @@ export function paintChart(
   ctx.textAlign = "left";
   for (const tv of niceTicks(lo, hi, 5)) {
     const gy = Math.round(y(tv)) + 0.5;
-    if (gy < PAD_TOP || gy > h - PAD_BOTTOM) continue;
+    if (gy < PAD_TOP || gy > PAD_TOP + priceH) continue;
     ctx.beginPath();
     ctx.moveTo(0, gy);
     ctx.lineTo(w - AXIS_W, gy);
@@ -241,7 +271,8 @@ export function paintChart(
 
   // candles — green/red per backend OHLC, forming bar dashed accent border
   const shownBars = sc.shown;
-  for (let i = 0; i < shownBars.length; i++) {
+  const kind: ChartKind = sc.kind ?? "candles";
+  for (let i = 0; kind === "candles" && i < shownBars.length; i++) {
     const c = shownBars[i];
     if (!c || c.open === null || c.close === null || c.high === null || c.low === null) continue; // honest gap
     const up = c.close >= c.open;
@@ -266,6 +297,8 @@ export function paintChart(
       ctx.setLineDash([]);
     }
   }
+  if (kind !== "candles") paintSeries(kind, ctx, sc, geom, pal, mono);
+  paintVolume(ctx, sc, geom, pal, mono);
 
   // live quote line (snapshot bid — never drawn when null)
   if (typeof sc.liveBid === "number" && Number.isFinite(sc.liveBid)) {
@@ -313,12 +346,12 @@ export function paintChart(
     const profit = typeof ol.profit_usd === "number" ? ol.profit_usd : null;
     const zone = typeof ol.zone_score === "number" ? ol.zone_score : null;
     const lines = [
-      typeof ol.direction === "string" ? t("dash.chart.order_evaluated", "Order Evaluated: {d}", { d: ol.direction }) : null,
+      typeof ol.direction === "string" ? `Order Evaluated: ${ol.direction}` : null,
       rr !== null || risk !== null
-        ? t("dash.chart.order_rr", "Target RR: {rr} | Dollar Risk: {risk}", { rr: rr !== null ? `1:${rr.toFixed(2)}` : "—", risk: risk !== null ? `$${risk.toFixed(2)}` : "—" })
+        ? `Target RR: ${rr !== null ? `1:${rr.toFixed(2)}` : "—"} | Dollar Risk: ${risk !== null ? `$${risk.toFixed(2)}` : "—"}`
         : null,
       profit !== null || zone !== null
-        ? t("dash.chart.order_profit", "Potential Profit: {p} | Zone Score: {z}", { p: profit !== null ? `$${profit.toFixed(2)}` : "—", z: zone !== null ? `${zone.toFixed(0)}%` : "—" })
+        ? `Potential Profit: ${profit !== null ? `$${profit.toFixed(2)}` : "—"} | Zone Score: ${zone !== null ? `${zone.toFixed(0)}%` : "—"}`
         : null,
     ].filter((s): s is string => s !== null);
     if (lines.length > 0 && entryY !== null) {
@@ -360,8 +393,8 @@ export function paintChart(
       ctx.setLineDash([]);
       ctx.fillStyle = pal.accentStrong;
       ctx.font = `bold 9px ${mono}`;
-      ctx.fillText(t("dash.chart.cursor_label", "REPLAY CURSOR (KNOWN)"), Math.min(cx2 + 4, w - AXIS_W - 150), 12);
-      ctx.fillText(t("dash.chart.future_label", "FUTURE = UNKNOWN"), Math.min(cx2 + 4, w - AXIS_W - 150), 24);
+      ctx.fillText("REPLAY CURSOR (KNOWN)", Math.min(cx2 + 4, w - AXIS_W - 150), 12);
+      ctx.fillText("FUTURE = UNKNOWN", Math.min(cx2 + 4, w - AXIS_W - 150), 24);
     }
   }
 
@@ -381,7 +414,7 @@ export function paintChart(
       ctx.setLineDash([]);
       ctx.fillStyle = pal.axisText;
       ctx.font = `9px ${mono}`;
-      ctx.fillText(t("dash.chart.future_edge", "future"), edgeX + 5, h - PAD_BOTTOM - 6);
+      ctx.fillText("future", edgeX + 5, h - PAD_BOTTOM - 6);
     }
   }
 
@@ -433,4 +466,7 @@ export function paintChart(
     const lx = Math.min(Math.max(PAD_LEFT, x(idx)), w - AXIS_W - 58);
     ctx.fillText(b.time.replace("T", " ").slice(5, 16), lx, h - 8);
   }
+
+  // wave-2 seam: crosshair axis tags (price on right axis, time on bottom)
+  paintAxisTags(ctx, sc, geom, pal, mono);
 }

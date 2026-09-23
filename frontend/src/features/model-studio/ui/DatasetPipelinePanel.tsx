@@ -5,8 +5,8 @@
  * Stateless presentation component; owned state lives in ModelStudioPage.
  */
 
+import { useMemo } from "react";
 import { Panel } from "@/components/primitives";
-import { useI18n } from "@/stores/i18nStore";
 import {
   compareDatasetsByGranularity,
   DOWNLOAD_SOURCES,
@@ -89,8 +89,8 @@ export function DatasetPipelinePanel({
   trainError,
   onTrain,
 }: DatasetPipelinePanelProps) {
-  const t = useI18n((s) => s.t);
-  const sortedDatasets = [...datasets].sort(compareDatasetsByGranularity);
+  // perf: dataset sort derived only when the datasets prop changes (dep: datasets).
+  const sortedDatasets = useMemo(() => [...datasets].sort(compareDatasetsByGranularity), [datasets]);
   const pct =
     trainProgress && trainProgress.epochs > 0
       ? Math.min(100, Math.round((trainProgress.epoch / trainProgress.epochs) * 100))
@@ -101,21 +101,14 @@ export function DatasetPipelinePanel({
       {/* LEFT column: ingestion + training dispatch */}
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <Panel
-          title={t("model-studio.pipeline.ingest_title", "Historical Candle Ingestion")}
-          subtitle={t(
-            "model-studio.pipeline.ingest_subtitle",
-            "M1/M3/M5/M15 capture — synthetic GBM, live MT5 terminal, or on-disk CSV.",
-          )}
+          title="Historical Candle Ingestion"
+          subtitle="M1/M3/M5/M15 capture — synthetic GBM, live MT5 terminal, or on-disk CSV."
           accent
-          right={
-            <span className="badge neutral">
-              {t("model-studio.pipeline.staged", "{n} staged", { n: datasets.length })}
-            </span>
-          }
+          right={<span className="badge neutral">{datasets.length} staged</span>}
         >
           <div className="ms-control-group">
             <div className="ms-form-row">
-              <label htmlFor="dl-symbol">{t("model-studio.pipeline.lbl_symbol", "Instrument Symbol")}</label>
+              <label htmlFor="dl-symbol">Instrument Symbol</label>
               <input
                 id="dl-symbol"
                 className="ms-input-styled"
@@ -127,7 +120,7 @@ export function DatasetPipelinePanel({
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div className="ms-form-row">
-                <label htmlFor="dl-tf">{t("model-studio.pipeline.lbl_timeframe", "Timeframe")}</label>
+                <label htmlFor="dl-tf">Timeframe</label>
                 <select
                   id="dl-tf"
                   className="ms-select-styled"
@@ -140,7 +133,7 @@ export function DatasetPipelinePanel({
                 </select>
               </div>
               <div className="ms-form-row">
-                <label htmlFor="dl-src">{t("model-studio.pipeline.lbl_source", "Source")}</label>
+                <label htmlFor="dl-src">Source</label>
                 <select
                   id="dl-src"
                   className="ms-select-styled"
@@ -155,7 +148,7 @@ export function DatasetPipelinePanel({
             </div>
 
             <div className="ms-form-row">
-              <label htmlFor="dl-bars">{t("model-studio.pipeline.lbl_bars", "Bar Count")}</label>
+              <label htmlFor="dl-bars">Bar Count</label>
               <input
                 id="dl-bars"
                 type="number"
@@ -173,16 +166,14 @@ export function DatasetPipelinePanel({
               disabled={dlBusy}
               className="ms-btn-action ms-btn-primary"
             >
-              {dlBusy
-                ? t("model-studio.pipeline.ingest_busy", "⏳ Ingesting…")
-                : t("model-studio.pipeline.ingest_idle", "⬇ Ingest Dataset")}
+              {dlBusy ? "⏳ Ingesting…" : "⬇ Ingest Dataset"}
             </button>
 
             {dlError && (
               <div className="ms-banner-err">
                 <span>⚠</span>
                 <div>
-                  <strong>{t("model-studio.pipeline.ingest_err", "Ingestion Failed")}</strong>
+                  <strong>Ingestion Failed</strong>
                   <div className="tiny" style={{ marginTop: 2 }}>{dlError}</div>
                 </div>
               </div>
@@ -191,23 +182,9 @@ export function DatasetPipelinePanel({
             {dlResult && (
               <div className="ms-banner-ok">
                 <div>
-                  <strong>
-                    {t("model-studio.pipeline.bars_ingested", "✓ {n} bars ingested", {
-                      n: dlResult.rows.toLocaleString(),
-                    })}
-                  </strong>
+                  <strong>✓ {dlResult.rows.toLocaleString()} bars ingested</strong>
                   <div className="inline-mono tiny" style={{ opacity: 0.9, marginTop: 2 }}>
-                    {t(
-                      "model-studio.pipeline.ingest_meta",
-                      "{symbol} · {tf} · {size} · {sec}s · {thr} bars/s",
-                      {
-                        symbol: dlResult.symbol,
-                        tf: dlResult.timeframe,
-                        size: dlResult.size_display,
-                        sec: dlResult.elapsed_sec.toFixed(1),
-                        thr: dlResult.throughput_bars_sec.toLocaleString(),
-                      },
-                    )}
+                    {dlResult.symbol} · {dlResult.timeframe} · {dlResult.size_display} · {dlResult.elapsed_sec.toFixed(1)}s · {dlResult.throughput_bars_sec.toLocaleString()} bars/s
                   </div>
                 </div>
                 <span className="badge good">{dlResult.source.toUpperCase()}</span>
@@ -217,34 +194,27 @@ export function DatasetPipelinePanel({
         </Panel>
 
         <Panel
-          title={t("model-studio.pipeline.train_title", "PyTorch Training Dispatch")}
-          subtitle={t(
-            "model-studio.pipeline.train_subtitle",
-            "Launch a ScalpNet fine-tune run against the selected dataset; progress streams live.",
-          )}
+          title="PyTorch Training Dispatch"
+          subtitle="Launch a ScalpNet fine-tune run against the selected dataset; progress streams live."
           accent
           right={
             trainProgress ? (
               <span className={`badge ${trainBusy ? "warn" : "good"}`}>
-                {trainBusy
-                  ? t("model-studio.pipeline.badge_training", "TRAINING")
-                  : t("model-studio.pipeline.badge_completed", "COMPLETED")}
+                {trainBusy ? "TRAINING" : "COMPLETED"}
               </span>
             ) : null
           }
         >
           <div className="ms-control-group">
             <div className="ms-form-row">
-              <label htmlFor="train-ds">{t("model-studio.pipeline.lbl_train_ds", "Training Dataset")}</label>
+              <label htmlFor="train-ds">Training Dataset</label>
               <select
                 id="train-ds"
                 className="ms-select-styled"
                 value={selectedDataset}
                 onChange={(e) => onSelectDataset(e.target.value)}
               >
-                {sortedDatasets.length === 0 && (
-                  <option value="">{t("model-studio.pipeline.no_datasets", "No staged datasets")}</option>
-                )}
+                {sortedDatasets.length === 0 && <option value="">No staged datasets</option>}
                 {sortedDatasets.map((d) => (
                   <option key={d.path} value={d.path}>
                     {d.name} ({d.size_display})
@@ -255,7 +225,7 @@ export function DatasetPipelinePanel({
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div className="ms-form-row">
-                <label htmlFor="train-epochs">{t("model-studio.pipeline.lbl_epochs", "Epochs")}</label>
+                <label htmlFor="train-epochs">Epochs</label>
                 <input
                   id="train-epochs"
                   type="number"
@@ -267,7 +237,7 @@ export function DatasetPipelinePanel({
                 />
               </div>
               <div className="ms-form-row">
-                <label htmlFor="train-lr">{t("model-studio.pipeline.lbl_lr", "Learning Rate")}</label>
+                <label htmlFor="train-lr">Learning Rate</label>
                 <input
                   id="train-lr"
                   type="number"
@@ -285,16 +255,14 @@ export function DatasetPipelinePanel({
               disabled={trainBusy || !selectedDataset}
               className="ms-btn-action ms-btn-success"
             >
-              {trainBusy
-                ? t("model-studio.pipeline.train_busy", "⏳ Training…")
-                : t("model-studio.pipeline.train_idle", "▶ Dispatch Training Run")}
+              {trainBusy ? "⏳ Training…" : "▶ Dispatch Training Run"}
             </button>
 
             {trainError && (
               <div className="ms-banner-err">
                 <span>⚠</span>
                 <div>
-                  <strong>{t("model-studio.pipeline.train_err", "Training Failed")}</strong>
+                  <strong>Training Failed</strong>
                   <div className="tiny" style={{ marginTop: 2 }}>{trainError}</div>
                 </div>
               </div>
@@ -304,10 +272,7 @@ export function DatasetPipelinePanel({
               <div className="ms-progress-wrap">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span className="tiny tx-dim" >
-                    {t("model-studio.pipeline.epoch_line", "Epoch {e} / {E}", {
-                      e: trainProgress.epoch,
-                      E: trainProgress.epochs,
-                    })}
+                    Epoch {trainProgress.epoch} / {trainProgress.epochs}
                     {trainProgress.stage ? ` · ${trainProgress.stage}` : ""}
                   </span>
                   <span className="inline-mono small" style={{ color: "var(--accent-strong)", fontWeight: 700 }}>
@@ -319,13 +284,13 @@ export function DatasetPipelinePanel({
                 </div>
                 <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
                   <span className="inline-mono tiny tx-good" >
-                    {t("model-studio.registry.loss_label", "loss")} {trainProgress.loss.toFixed(4)}
+                    loss {trainProgress.loss.toFixed(4)}
                   </span>
                   <span className="inline-mono tiny tx-warn" >
-                    {t("model-studio.pipeline.m_val", "val")} {trainProgress.val_loss.toFixed(4)}
+                    val {trainProgress.val_loss.toFixed(4)}
                   </span>
                   <span className="inline-mono tiny tx-faint" >
-                    {t("model-studio.pipeline.m_run", "run")} {trainProgress.run_id.substring(0, 8)}
+                    run {trainProgress.run_id.substring(0, 8)}
                   </span>
                 </div>
                 {trainStatus && (
@@ -341,18 +306,13 @@ export function DatasetPipelinePanel({
 
       {/* RIGHT column: feature normalization inspector */}
       <Panel
-        title={t("model-studio.pipeline.insp_title", "Feature Normalization Inspector")}
-        subtitle={t(
-          "model-studio.pipeline.insp_subtitle",
-          "Z-score μ/σ per tensor slot; clamps, zero-variance columns, and NaN contamination.",
-        )}
+        title="Feature Normalization Inspector"
+        subtitle="Z-score μ/σ per tensor slot; clamps, zero-variance columns, and NaN contamination."
         accent
         right={
           inspectResult ? (
             <span className={`badge ${inspectResult.scaler_ready ? "good" : "warn"}`}>
-              {inspectResult.scaler_ready
-                ? t("model-studio.pipeline.badge_scaler_ready", "SCALER READY")
-                : t("model-studio.pipeline.badge_not_ready", "NOT READY")}
+              {inspectResult.scaler_ready ? "SCALER READY" : "NOT READY"}
             </span>
           ) : null
         }
@@ -365,17 +325,10 @@ export function DatasetPipelinePanel({
               className="ms-btn-action ms-btn-ghost tx-accent"
               
             >
-              {inspectBusy
-                ? t("model-studio.pipeline.insp_busy", "⏳ Computing Statistics…")
-                : t("model-studio.pipeline.insp_idle", "🔍 Inspect Features")}
+              {inspectBusy ? "⏳ Computing Statistics…" : "🔍 Inspect Features"}
             </button>
             <span className="tiny faint inline-mono">
-              {t("model-studio.pipeline.contract_short", "{d}D contract", { d: dimension })} ·{" "}
-              {selectedDataset ? (
-                selectedDataset.split(/[/\\]/).pop()
-              ) : (
-                t("model-studio.pipeline.no_dataset", "no dataset")
-              )}
+              {dimension}D contract · {selectedDataset ? selectedDataset.split(/[/\\]/).pop() : "no dataset"}
             </span>
           </div>
 
@@ -383,7 +336,7 @@ export function DatasetPipelinePanel({
             <div className="ms-banner-err">
               <span>⚠</span>
               <div>
-                <strong>{t("model-studio.pipeline.insp_err", "Inspection Failed")}</strong>
+                <strong>Inspection Failed</strong>
                 <div className="tiny" style={{ marginTop: 2 }}>{inspectError}</div>
               </div>
             </div>
@@ -403,11 +356,11 @@ export function DatasetPipelinePanel({
                 }}
               >
                 {[
-                  { l: t("model-studio.pipeline.stat_features", "Features"), v: String(inspectResult.total_features), c: "var(--accent-strong)" },
-                  { l: t("model-studio.pipeline.stat_healthy", "Healthy"), v: String(inspectResult.healthy_features), c: "var(--green)" },
-                  { l: t("model-studio.pipeline.stat_clamped", "Clamped"), v: String(inspectResult.clamped_features), c: "var(--amber)" },
-                  { l: t("model-studio.pipeline.stat_nan", "NaN"), v: String(inspectResult.nan_features), c: "var(--red)" },
-                  { l: t("model-studio.pipeline.stat_rows", "Rows"), v: inspectResult.rows_processed.toLocaleString(), c: "var(--text)" },
+                  { l: "Features", v: String(inspectResult.total_features), c: "var(--accent-strong)" },
+                  { l: "Healthy", v: String(inspectResult.healthy_features), c: "var(--green)" },
+                  { l: "Clamped", v: String(inspectResult.clamped_features), c: "var(--amber)" },
+                  { l: "NaN", v: String(inspectResult.nan_features), c: "var(--red)" },
+                  { l: "Rows", v: inspectResult.rows_processed.toLocaleString(), c: "var(--text)" },
                 ].map((s) => (
                   <div key={s.l}>
                     <div className="tiny faint uppercase" style={{ fontWeight: 700, letterSpacing: "0.08em" }}>
@@ -425,16 +378,14 @@ export function DatasetPipelinePanel({
                   <thead>
                     <tr>
                       <th scope="col">#</th>
-                      <th scope="col">{t("model-studio.pipeline.th_feature", "Feature")}</th>
-                      <th scope="col">{t("model-studio.pipeline.th_family", "Family")}</th>
-                      <th scope="col" className="num">{t("model-studio.pipeline.th_raw_min", "Raw Min")}</th>
-                      <th scope="col" className="num">{t("model-studio.pipeline.th_raw_max", "Raw Max")}</th>
+                      <th scope="col">Feature</th>
+                      <th scope="col">Family</th>
+                      <th scope="col" className="num">Raw Min</th>
+                      <th scope="col" className="num">Raw Max</th>
                       <th scope="col" className="num">μ</th>
                       <th scope="col" className="num">σ</th>
-                      <th scope="col" className="num">{t("model-studio.pipeline.th_z_sample", "Z-Sample")}</th>
-                      <th scope="col" style={{ textAlign: "center" }}>
-                        {t("model-studio.pipeline.th_status", "Status")}
-                      </th>
+                      <th scope="col" className="num">Z-Sample</th>
+                      <th scope="col" style={{ textAlign: "center" }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -467,10 +418,7 @@ export function DatasetPipelinePanel({
 
           {!inspectResult && !inspectError && (
             <div className="tiny faint" style={{ textAlign: "center", padding: "24px 0" }}>
-              {t(
-                "model-studio.pipeline.empty",
-                "Select a dataset and run the inspector to audit the Z-score normalization envelope.",
-              )}
+              Select a dataset and run the inspector to audit the Z-score normalization envelope.
             </div>
           )}
         </div>

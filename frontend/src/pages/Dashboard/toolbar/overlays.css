@@ -1,0 +1,56 @@
+/* Lane B — SMC overlay visibility popover (toolbar/ChartOverlaysButton.tsx).
+   Styling only: tokens come from styles/theme.css, layout mirrors the
+   market-console toolbar (.btn.small ghost buttons). z-index 5 sits above
+   the legend/mc-tip slots (z-index 3) without touching chart internals. */
+
+/* Anchor wraps button + absolutely-positioned panel. */
+.smc-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.smc-pop {
+  position: absolute;
+  inset-block-start: calc(100% + 4px);
+  inset-inline-start: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-inline-size: 196px;
+  padding: 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 10px 26px -14px var(--elevate-lo), 0 2px 8px -4px #000;
+  font: 10px/1.5 var(--mono, monospace);
+  color: var(--text);
+}
+
+.smc-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.smc-row:hover {
+  background: var(--bg-panel-2);
+  color: var(--text);
+}
+
+.smc-row input {
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.smc-row input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

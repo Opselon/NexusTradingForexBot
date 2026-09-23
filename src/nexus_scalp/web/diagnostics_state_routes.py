@@ -62,6 +62,183 @@ class ToggleRuleRequest(BaseModel):
     parameters: dict[str, Any] | None = None
 
 
+# =====================================================================
+# PROVIDER TRUTH — configured vs effective (DATABASE TAB, 2026-09-23)
+# ---------------------------------------------------------------------
+# The tab's badge echoed ONLY `database.provider` from settings, so it
+# claimed `postgresql` while every panel on the tab was fed by local
+# SQLite files (hygiene sizes/plans read artifacts/*.db, schema state is
+# read from the SQLite artifacts DB) and the configured PostgreSQL
+# target did not answer.  These helpers MEASURE the effective provider
+# instead of assuming it: probe the configured target (15s cache so the
+# 30s panel poll stays cheap), then look at local file activity as
+# evidence of what is actually being written.
+#
+# Secret-safe: probe failures are rendered through db_console._fail(),
+# so exception TEXT (which may embed credentials) is never echoed —
+# known conditions get code + actionable sentence, unknown ones only
+# the exception type name.
+# =====================================================================
+
+_TRUTH_PROBE_TTL_S = 15.0
+_TRUTH_ACTIVE_WINDOW_S = 600  # a local .db written within 10 min = live traffic
+_TRUTH_DOMAINS = ("audit", "news", "candle_intel")
+_PROBE_CACHE: dict[str, Any] = {"at": 0.0, "target": "", "ok": None, "error": ""}
+
+
+def _local_sqlite_evidence() -> list[dict[str, Any]]:
+    """Local SQLite files behind this tab's panels, with recency evidence."""
+    from nexus_scalp.database.config import load_database_config
+
+    rows: list[dict[str, Any]] = []
+    now = time.time()
+    for domain in _TRUTH_DOMAINS:
+        try:
+            cfg = load_database_config(domain)
+            path = Path(cfg.sqlite_connect_path)
+        except Exception:
+            continue
+        try:
+            st = path.stat()
+        except OSError:
+            continue
+        age = max(0, int(now - st.st_mtime))
+        rows.append(
+            {
+                "name": domain,
+                "file": path.name,
+                "path": str(path),
+                "bytes": int(st.st_size),
+                "age_seconds": age,
+                "mtime_utc": datetime.fromtimestamp(st.st_mtime, UTC).isoformat(timespec="seconds"),
+                "active": age <= _TRUTH_ACTIVE_WINDOW_S,
+            }
+        )
+    return rows
+
+
+def _probe_postgres(cfg: Any) -> tuple[bool, str, str]:
+    """(reachable, target, safe_error) — measured, 15s cached per target."""
+    target = f"{cfg.host}:{cfg.port or 5432}/{cfg.database}"
+    now = time.monotonic()
+    cached_ok = _PROBE_CACHE.get("ok")
+    if (
+        cached_ok is not None
+        and _PROBE_CACHE.get("target") == target
+        and now - float(_PROBE_CACHE.get("at") or 0.0) < _TRUTH_PROBE_TTL_S
+    ):
+        return bool(cached_ok), target, str(_PROBE_CACHE.get("error") or "")
+
+    ok = False
+    error = ""
+    try:
+        from nexus_scalp.database.drivers import get_driver
+
+        driver = get_driver(cfg)
+        try:
+            ok = bool(driver.ping())
+        finally:
+            driver.close()
+        if not ok:
+            error = f"PostgreSQL at {target} did not answer the connection probe."
+    except Exception as exc:  # a probe must never raise into the route
+        from nexus_scalp.web.db_console import _fail
+
+        failed = _fail(exc, "probing the configured PostgreSQL target", cfg)
+        error = str(failed.get("error") or "connection probe failed")
+    _PROBE_CACHE.update({"at": now, "target": target, "ok": ok, "error": error})
+    return ok, target, error
+
+
+def _provider_truth(ui: dict[str, Any]) -> dict[str, Any]:
+    """Configured-vs-effective provider, measured (see section header).
+
+    `mismatch=True` is the state the user reported on 2026-09-23: badge
+    says postgresql, the data on the tab comes from sqlite.
+    """
+    configured = str(ui.get("provider") or "sqlite")
+    evidence = _local_sqlite_evidence()
+    active = [row for row in evidence if row.get("active")]
+    truth: dict[str, Any] = {
+        "configured": configured,
+        "effective": configured,
+        "mismatch": False,
+        "pg_reachable": None,
+        "pg_target": "",
+        "pg_error": "",
+        "evidence": evidence,
+        "note": "",
+        "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
+    }
+    if configured != "postgresql":
+        truth["note"] = (
+            "Configured provider is sqlite; the storage, hygiene and schema "
+            "panels read the local SQLite files listed as evidence."
+        )
+        return truth
+
+    from nexus_scalp.database.config import load_database_config
+
+    try:
+        cfg = load_database_config("audit")
+        reachable, target, error = _probe_postgres(cfg)
+    except Exception as exc:  # pragma: no cover - config edge
+        reachable, target, error = False, "", type(exc).__name__
+    truth["pg_reachable"] = reachable
+    truth["pg_target"] = target
+    truth["pg_error"] = error
+    if reachable:
+        truth["note"] = f"PostgreSQL answered at {target}."
+        return truth
+
+    if active:
+        truth["effective"] = "sqlite"
+        truth["mismatch"] = True
+        mins = _TRUTH_ACTIVE_WINDOW_S // 60
+        truth["note"] = (
+            f"Configured provider is postgresql but {target or 'the configured target'} "
+            f"did not answer; local SQLite files were written in the last {mins} minutes "
+            "(see evidence) — the data on this tab comes from sqlite."
+        )
+    else:
+        truth["effective"] = "unavailable"
+        truth["mismatch"] = True
+        truth["note"] = (
+            f"Configured provider is postgresql but {target or 'the configured target'} "
+            "did not answer and no local SQLite file was written recently — the data "
+            "shown may be stale."
+        )
+    return truth
+
+
+# PERF-DB-STATUS (2026-09-23): TTL cache for GET /api/db/hygiene — see the
+# inline comment in get_db_hygiene for the measured numbers. Failure payloads
+# are never stored here.
+_DB_HYGIENE_TTL_SEC = 30.0
+# in-place mutable cache (same pattern as _PROBE_CACHE): {"at": t, "payload": d}
+_DB_HYGIENE_CACHE: dict[str, Any] = {}
+
+
+def invalidate_db_hygiene_cache() -> None:
+    """Drop the cached /api/db/hygiene payload (tests / mutation hooks)."""
+    _DB_HYGIENE_CACHE.clear()
+
+
+def _db_hygiene_cached() -> dict[str, Any] | None:
+    if not _DB_HYGIENE_CACHE:
+        return None
+    at = float(_DB_HYGIENE_CACHE.get("at") or 0.0)
+    if (time.monotonic() - at) >= _DB_HYGIENE_TTL_SEC:
+        return None
+    payload = _DB_HYGIENE_CACHE.get("payload")
+    return payload if isinstance(payload, dict) else None
+
+
+def _db_hygiene_store(payload: dict[str, Any]) -> None:
+    _DB_HYGIENE_CACHE.clear()
+    _DB_HYGIENE_CACHE.update({"at": time.monotonic(), "payload": payload})
+
+
 # ---------------------------------------------------------------------------
 # TASK-CFGUI-001 — /alt/config tab contract hardening
 # ---------------------------------------------------------------------------
@@ -282,6 +459,16 @@ def register_diagnostics_state_routes(
     # TASK-11: Database health / hygiene state (real backend data — never fake).
     @app.get("/api/db/hygiene")
     def get_db_hygiene() -> dict[str, Any]:
+        # PERF-DB-STATUS (2026-09-23): plan_database() re-scans all three
+        # SQLite files (audit 426MB + news 241MB + candle_intel) on every
+        # call — measured ~9s per poll, running CONCURRENTLY with
+        # /api/db/status and pushing it past the 15s frontend timeout.
+        # Plans only change when a hygiene run happens (background worker /
+        # CLI, never via a web POST), so a short TTL cache is safe here;
+        # failures are never cached. Mirrors the PERF-HEALTH /health cache.
+        fresh = _db_hygiene_cached()
+        if fresh is not None:
+            return fresh
         try:
             from nexus_scalp.hygiene import WorkerMode
             from nexus_scalp.hygiene.worker_runner import DatabaseHygieneWorker
@@ -311,7 +498,9 @@ def register_diagnostics_state_routes(
                 quarantine["items"] = sched.quarantine.list(limit=20)
             except Exception as _rt_err:
                 _log_err(_rt_err, "db hygiene runtime status failed", endpoint="/api/db/hygiene")
-            return {"status": st, "plans": plans, "runtime": runtime, "quarantine": quarantine}
+            payload = {"status": st, "plans": plans, "runtime": runtime, "quarantine": quarantine}
+            _db_hygiene_store(payload)
+            return payload
         except Exception as exc:
             _log_err(exc, "db hygiene failed", endpoint="/api/db/hygiene")
             return {
@@ -1237,12 +1426,46 @@ def register_diagnostics_state_routes(
 
     @app.get("/api/db/manage/status")
     def db_manage_status() -> dict[str, Any]:
-        """Active provider + per-domain health (DATABASE MANAGEMENT panel)."""
+        """Active provider + per-domain health (DATABASE MANAGEMENT panel).
+
+        Carries `postgresql_driver_available` and a `hints` list so the UI can
+        explain a broken state instead of showing a bare "Warning": the active
+        provider can be postgresql while psycopg is absent or the connection
+        configuration was never stored (both observed 2026-09-23), and those
+        two faults have different fixes.
+        """
         try:
+            from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
             from nexus_scalp.database.health import health_snapshot, load_ui_config
 
             health = health_snapshot()
             ui = load_ui_config()
+            pg_available = PostgreSQLDriver.available()
+            hints: list[str] = []
+            if ui["provider"] == "postgresql":
+                if not pg_available:
+                    hints.append(
+                        "Active provider is postgresql but psycopg is not installed: "
+                        "run `pip install 'nexus[postgres]'` or switch back to sqlite."
+                    )
+                if not ui["postgres"]:
+                    hints.append(
+                        "No PostgreSQL connection configuration is stored — fill in "
+                        "the form below and Save config before migrating."
+                    )
+                if (
+                    pg_available
+                    and ui["postgres"]
+                    and health.get("overall")
+                    not in (
+                        "Healthy",
+                        "OK",
+                    )
+                ):
+                    hints.append(
+                        "PostgreSQL is configured but the server did not answer "
+                        "its health probe — check that it is running."
+                    )
             return serialize_enums(
                 {
                     "success": True,
@@ -1252,6 +1475,9 @@ def register_diagnostics_state_routes(
                     "domains": health["domains"],
                     "postgres": ui["postgres"],
                     "password_set": ui["password_set"],
+                    "postgresql_driver_available": pg_available,
+                    "hints": hints,
+                    "provider_truth": _provider_truth(ui),
                 }
             )
         except Exception as e:

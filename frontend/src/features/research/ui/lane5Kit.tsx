@@ -8,10 +8,9 @@
  * core/transport directly (commands go through ../model -> ../api -> @/api/client).
  */
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, memo, useRef, useState, type ReactNode } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
-import { useI18n } from "@/stores/i18nStore";
 import "./lane5.css";
 
 /** "updated HH:MM:SS · source" caption — freshness must always be visible. */
@@ -26,18 +25,15 @@ export function FreshnessCaption({
   isFetching?: boolean;
   error?: boolean;
 }) {
-  const t = useI18n((s) => s.t);
   return (
     <span className="timestamp-note tiny muted" role="status" style={{ marginInlineStart: "auto" }}>
       {error ? (
-        <span className="tx-bad">{t("research.kit.stale_error", "stale — backend error")}</span>
+        <span className="tx-bad">stale — backend error</span>
       ) : (
         <>
-          {timestamp
-            ? t("research.kit.updated", "updated {t}", { t: formatDateTime(timestamp) })
-            : t("research.kit.no_timestamp", "no timestamp returned")}
+          {timestamp ? `updated ${formatDateTime(timestamp)}` : "no timestamp returned"}
           {source ? ` · ${source}` : ""}
-          {isFetching ? t("research.kit.refreshing", " · refreshing…") : ""}
+          {isFetching ? " · refreshing…" : ""}
         </>
       )}
     </span>
@@ -54,11 +50,12 @@ export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-/** Bounded pretty-printer for backend JSON blobs — never throws. */
-export function JsonBlock({ value, maxChars = 4000 }: { value: unknown; maxChars?: number }) {
-  const t = useI18n((s) => s.t);
+/** Bounded pretty-printer for backend JSON blobs — never throws.
+ *  perf: memoized so the JSON.stringify only re-runs when value/maxChars
+ *  change, not on every parent render (output identical). */
+export const JsonBlock = memo(function JsonBlock({ value, maxChars = 4000 }: { value: unknown; maxChars?: number }) {
   if (value === null || value === undefined) {
-    return <EmptyState message={t("research.kit.no_payload", "Backend returned no payload for this block.")} />;
+    return <EmptyState message="Backend returned no payload for this block." />;
   }
   let text: string;
   try {
@@ -66,15 +63,13 @@ export function JsonBlock({ value, maxChars = 4000 }: { value: unknown; maxChars
   } catch {
     text = String(value);
   }
-  const clipped = text.length > maxChars
-    ? `${text.slice(0, maxChars)}\n${t("research.kit.truncated", "… ({n} chars, truncated)", { n: text.length })}`
-    : text;
+  const clipped = text.length > maxChars ? `${text.slice(0, maxChars)}\n… (${text.length} chars, truncated)` : text;
   return (
     <pre tabIndex={0} className="inline-mono small" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, maxHeight: 320, overflow: "auto" }}>
       {clipped}
     </pre>
   );
-}
+});
 
 /** Query-state -> skeleton/loading/error mapping used by every lane-5 section. */
 export function SectionState<T>({
@@ -92,12 +87,11 @@ export function SectionState<T>({
   empty?: { when: (data: T) => boolean; message: string; hint?: string };
   children: (data: T) => ReactNode;
 }) {
-  const t = useI18n((s) => s.t);
   if (query.isPending) return <LoadingState />;
   if (query.isError) {
     return (
       <ErrorState
-        message={query.error instanceof Error ? query.error.message : t("research.kit.request_failed", "Backend request failed.")}
+        message={query.error instanceof Error ? query.error.message : "Backend request failed."}
         requestId={
           query.error && typeof query.error === "object" && "requestId" in query.error
             ? String((query.error as { requestId?: string | null }).requestId ?? "") || null
@@ -126,7 +120,6 @@ export function Drawer({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const prevFocusRef = useRef<HTMLElement | null>(null);
-  const t = useI18n((s) => s.t);
   // Focus enters the drawer on open and returns to the trigger on close.
   useEffect(() => {
     prevFocusRef.current = document.activeElement as HTMLElement | null;
@@ -189,7 +182,7 @@ export function Drawer({
         <div className="panel-header" style={{ flex: "0 0 auto" }}>
           <h2>{title}</h2>
           <button className="btn small ghost" style={{ marginInlineStart: "auto" }} onClick={onClose}>
-            {t("research.kit.close", "close")} <kbd>esc</kbd>
+            close <kbd>esc</kbd>
           </button>
         </div>
         <div tabIndex={0} className="panel-body" style={{ flex: "1 1 auto", overflow: "auto" }}>
@@ -203,8 +196,7 @@ export function Drawer({
 
 /** Inline `cmd-result` line mirroring useMutationFeedback state. */
 export function CommandResultLine({ state }: { state: { running: boolean; lastResult: boolean | null; lastMessage: string | null } }) {
-  const t = useI18n((s) => s.t);
-  if (state.running) return <div className="cmd-result">{t("research.kit.sending", "…sending to backend")}</div>;
+  if (state.running) return <div className="cmd-result">…sending to backend</div>;
   if (state.lastResult === null || !state.lastMessage) return null;
   return (
     <div className={`cmd-result ${state.lastResult ? "ok" : "fail"}`}>
@@ -248,8 +240,7 @@ export function GateStepper({
 }: {
   gates: Array<{ name: string; status: string; reason?: string | null; detail?: ReactNode }>;
 }) {
-  const t = useI18n((s) => s.t);
-  if (gates.length === 0) return <EmptyState message={t("research.kit.no_gates", "No gates recorded by the backend for this item.")} />;
+  if (gates.length === 0) return <EmptyState message="No gates recorded by the backend for this item." />;
   return (
     <ol className="gate-stepper">
       {gates.map((g, i) => {
@@ -297,8 +288,7 @@ export function DistBars({
   max?: number;
   tone?: string;
 }) {
-  const t = useI18n((s) => s.t);
-  if (rows.length === 0) return <EmptyState message={t("research.kit.no_rows", "No rows returned by the backend.")} />;
+  if (rows.length === 0) return <EmptyState message="No rows returned by the backend." />;
   const peak = max ?? Math.max(1, ...rows.map((r) => r.count));
   return (
     <div style={{ display: "grid", gap: 4 }}>

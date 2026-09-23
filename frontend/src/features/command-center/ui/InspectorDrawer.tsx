@@ -10,10 +10,8 @@ import { formatDateTime, formatNumber } from "@/lib/format";
 import { Drawer, GateStepper, InfoRow, JsonBlock } from "../../research/ui/lane5Kit";
 import { arr, num, obj, str } from "../model";
 import { ccRetry, ccRetryDelay, commandCenterQueries } from "../useCases";
-import { useI18n } from "@/stores/i18nStore";
 
 export function InspectorDrawer({ strategyId, onClose }: { strategyId: string; onClose: () => void }) {
-  const t = useI18n((s) => s.t);
   const inspectorQ = useQuery({
     queryKey: ["command-center", "inspector", strategyId],
     queryFn: ({ signal }) => commandCenterQueries.inspector(strategyId, signal),
@@ -42,30 +40,30 @@ export function InspectorDrawer({ strategyId, onClose }: { strategyId: string; o
   const gates = obj(obj(snap?.evaluation).gates);
 
   return (
-    <Drawer title={t("command-center.inspector.title", "Inspector — {id}", { id: strategyId })} onClose={onClose}>
+    <Drawer title={`Inspector — ${strategyId}`} onClose={onClose}>
       {inspectorQ.isPending ? (
         <Skeleton count={5} />
       ) : inspectorQ.data?.available === false ? (
-        <EmptyState message={str(inspectorQ.data.error) ?? t("command-center.empty.strategy_not_found", "strategy not found")} hint={t("command-center.empty.strategy_not_found_hint", "inspector answers STRATEGY_NOT_FOUND for unknown ids")} />
+        <EmptyState message={str(inspectorQ.data.error) ?? "strategy not found"} hint="inspector answers STRATEGY_NOT_FOUND for unknown ids" />
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
-          <Panel title={t("command-center.panel.execution_safety", "Execution safety (CAN-THIS-TRADE)")} accent tight>
+          <Panel title="Execution safety (CAN-THIS-TRADE)" accent tight>
             {safetyQ.isPending ? (
               <Skeleton />
             ) : safetyQ.isError ? (
-              <ErrorState message={t("command-center.err.safety", "execution-safety endpoint failed")} onRetry={() => void safetyQ.refetch()} />
+              <ErrorState message="execution-safety endpoint failed" onRetry={() => void safetyQ.refetch()} />
             ) : (
               <div className="decision-card">
                 <div>
-                  <div className={`big ${ee.can_trade === true ? "buy" : "sell"}`}>{ee.can_trade === true ? t("command-center.decision.yes", "YES") : ee.can_trade === false ? t("command-center.decision.no", "NO") : "—"}</div>
+                  <div className={`big ${ee.can_trade === true ? "buy" : "sell"}`}>{ee.can_trade === true ? "YES" : ee.can_trade === false ? "NO" : "—"}</div>
                   <div className="why-detail tiny">{str(ee.lifecycle) ?? "—"}</div>
                 </div>
                 <div style={{ flex: 1 }}>
                   <dl className="kv">
                     <InfoRow label="eligibility_state" value={<StatusBadge status={str(ee.eligibility_state)} />} />
-                    <InfoRow label={t("command-center.label.reason", "reason")} value={str(ee.reason) ?? "—"} />
+                    <InfoRow label="reason" value={str(ee.reason) ?? "—"} />
                     <InfoRow label="required_gate" value={str(ee.required_gate) ?? "—"} />
-                    <InfoRow label={t("command-center.label.blockers", "blockers")} value={arr(ee.blockers).length === 0 ? t("command-center.label.none", "none") : t("command-center.label.listed", "{n} listed", { n: arr(ee.blockers).length })} />
+                    <InfoRow label="blockers" value={arr(ee.blockers).length === 0 ? "none" : `${arr(ee.blockers).length} listed`} />
                   </dl>
                   {arr(ee.blockers).map((b, i) => (
                     <div key={i} className="tiny muted">
@@ -77,20 +75,20 @@ export function InspectorDrawer({ strategyId, onClose }: { strategyId: string; o
             )}
           </Panel>
 
-          <Panel title={t("command-center.panel.evaluation", "Evaluation (transient telemetry — not lifecycle)")} tight>
+          <Panel title="Evaluation (transient telemetry — not lifecycle)" tight>
             {Object.keys(gates).length === 0 ? (
-              <EmptyState message={t("command-center.empty.no_evaluation", "No evaluation running / recorded.")} />
+              <EmptyState message="No evaluation running / recorded." />
             ) : (
               <GateStepper gates={Object.entries(gates).map(([k, v]) => ({ name: k, status: str(v) ?? "UNKNOWN" }))} />
             )}
           </Panel>
 
           <div className="grid cols-2">
-            <Panel title={t("command-center.panel.debug_intel", "Debug intelligence (backend-computed)")} tight>
+            <Panel title="Debug intelligence (backend-computed)" tight>
               <dl className="kv">
-                <InfoRow label={t("command-center.label.anomaly_score", "anomaly score")} value={formatNumber(num(debug.anomaly_score) ?? NaN, 3)} />
-                <InfoRow label={t("command-center.label.validation_consistency", "validation consistency")} value={formatNumber(num(debug.validation_consistency) ?? NaN, 3)} />
-                <InfoRow label={t("command-center.label.debug_priority", "debug priority")} value={formatNumber(num(debug.debug_priority) ?? NaN, 3)} />
+                <InfoRow label="anomaly score" value={formatNumber(num(debug.anomaly_score) ?? NaN, 3)} />
+                <InfoRow label="validation consistency" value={formatNumber(num(debug.validation_consistency) ?? NaN, 3)} />
+                <InfoRow label="debug priority" value={formatNumber(num(debug.debug_priority) ?? NaN, 3)} />
               </dl>
               {arr(debug.hints).length > 0 && (
                 <ul className="tiny muted" style={{ margin: "6px 0 0", paddingInlineStart: 16 }}>
@@ -100,9 +98,9 @@ export function InspectorDrawer({ strategyId, onClose }: { strategyId: string; o
                 </ul>
               )}
             </Panel>
-            <Panel title={t("command-center.panel.evidence", "Evidence completeness")} tight>
+            <Panel title="Evidence completeness" tight>
               {Object.keys(completeness).length === 0 ? (
-                <EmptyState message={t("command-center.empty.completeness_missing", "completeness not reported")} />
+                <EmptyState message="completeness not reported" />
               ) : (
                 <dl className="kv">
                   {Object.entries(completeness).slice(0, 10).map(([k, v]) => (
@@ -114,16 +112,16 @@ export function InspectorDrawer({ strategyId, onClose }: { strategyId: string; o
           </div>
 
           {Object.keys(attribution).length > 0 && (
-            <Panel title={t("command-center.panel.ai_attribution", "AI attribution (explainability)")} tight>
+            <Panel title="AI attribution (explainability)" tight>
               <JsonBlock value={attribution} maxChars={2500} />
             </Panel>
           )}
 
-          <Panel title={t("command-center.panel.decision_timeline", "Decision timeline ({n})", { n: events.length })} tight>
+          <Panel title={`Decision timeline (${events.length})`} tight>
             {events.length === 0 ? (
-              timelineQ.isPending ? <Skeleton /> : <EmptyState message={t("command-center.empty.no_timeline", "No timeline events.")} />
+              timelineQ.isPending ? <Skeleton /> : <EmptyState message="No timeline events." />
             ) : (
-              <DataTable headers={[{ label: t("command-center.th.at", "at") }, { label: t("command-center.th.event", "event") }, { label: t("command-center.th.from", "from") }, { label: t("command-center.th.to", "to") }, { label: t("command-center.th.actor", "actor") }]}>
+              <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "from" }, { label: "to" }, { label: "actor" }]}>
                 {events.slice(0, 60).map((e, i) => (
                   <tr key={i}>
                     <td className="tiny">{formatDateTime(str(e.timestamp) ?? str(e.at))}</td>
@@ -137,7 +135,7 @@ export function InspectorDrawer({ strategyId, onClose }: { strategyId: string; o
             )}
           </Panel>
 
-          <Panel title={t("command-center.panel.invariant", "Invariant check")} tight>
+          <Panel title="Invariant check" tight>
             <JsonBlock value={snap?.invariant_check} maxChars={1500} />
           </Panel>
         </div>

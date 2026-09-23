@@ -46,10 +46,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Bar } from "@/types/domain";
 import type { OverlayLine, OverlayRect, OverlayOrderLines } from "../_shared/contracts";
-import { useI18n } from "@/stores/i18nStore";
 import { useRealtimeVersion } from "@/hooks/useRealtime";
 import { formatPrice } from "@/lib/format";
 import { AXIS_W, PAD_LEFT, paintChart, readPalette, type PainterScene } from "./chartPainter";
+import { ChartSettingsProvider, useChartSettings } from "./chart/chartSettings";
+import { ChartLegend } from "./chart/ChartLegend";
+import { ChartTypeButton } from "./toolbar/ChartTypeButton";
+import { ChartOverlaysButton } from "./toolbar/ChartOverlaysButton";
+import { SnapshotButton } from "./toolbar/SnapshotButton";
+import { FullscreenButton } from "./toolbar/FullscreenButton";
 import "@/pages/_shared/pages.css";
 import "./market-console.css";
 
@@ -122,7 +127,7 @@ interface View {
   followLive: boolean;
 }
 
-export function PriceChart({
+function PriceChartInner({
   bars,
   digits,
   source,
@@ -148,7 +153,19 @@ export function PriceChart({
   const dragRef = useRef<DragState | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const rtVersion = useRealtimeVersion();
-  const t = useI18n((s) => s.t);
+  const settings = useChartSettings();
+  const { chartKind, overlayVisible } = settings;
+  /** Overlay VISIBILITY filtering (lane-09: values stay engine-computed). */
+  const filteredOverlays = useMemo(() => {
+    if (!overlays) return overlays;
+    return {
+      rectangles: overlayVisible.zones ? overlays.rectangles : [],
+      bos_lines: overlayVisible.bos ? overlays.bos_lines : [],
+      midlines: overlayVisible.midlines ? overlays.midlines : [],
+      liq_markers: overlayVisible.liq ? overlays.liq_markers : [],
+      order_lines: overlayVisible.orderLines ? overlays.order_lines : null,
+    };
+  }, [overlays, overlayVisible]);
 
   // ---- data window (pure slice of backend bars — no gap fill, no synthesis)
   const content = useMemo(() => bars.filter((b) => b.time), [bars]);
@@ -242,14 +259,14 @@ export function PriceChart({
       lo = Math.min(lo, liveBid);
       hi = Math.max(hi, liveBid);
     }
-    for (const z of overlays?.rectangles ?? []) {
+    for (const z of filteredOverlays?.rectangles ?? []) {
       if (Number.isFinite(z.price_low)) lo = Math.min(lo, z.price_low);
       if (Number.isFinite(z.price_high)) hi = Math.max(hi, z.price_high);
     }
     if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
     const pad = (hi - lo) * 0.08 || 0.5; // legacy padding semantics
     return { lo: lo - pad, hi: hi + pad };
-  }, [shown, liveBid, overlays]);
+  }, [shown, liveBid, filteredOverlays]);
 
   // ---- ResizeObserver: CSS-pixel stage size drives the backing store
   useEffect(() => {
@@ -305,7 +322,8 @@ export function PriceChart({
     shown,
     left: effLeft,
     count,
-    overlays,
+    kind: chartKind,
+    overlays: filteredOverlays,
     liveBid,
     cursorIso,
     digits,
@@ -419,14 +437,7 @@ export function PriceChart({
   // new SSE version or any data change → one smooth redraw pass
   useEffect(() => {
     kickRef.current?.(260);
-  }, [rtVersion.version, shown, target, liveBid, overlays, cursorIso, hover]);
-
-  // language change → canvas labels are painted from the store at draw time
-  useEffect(() => {
-    const onLang = () => kickRef.current?.(60);
-    window.addEventListener("nexus:lang-changed", onLang);
-    return () => window.removeEventListener("nexus:lang-changed", onLang);
-  }, []);
+  }, [rtVersion.version, shown, target, liveBid, filteredOverlays, cursorIso, hover, chartKind]);
 
   const hovered = hover && hover.idx >= 0 ? shown[hover.idx] : null;
 
@@ -437,13 +448,13 @@ export function PriceChart({
       <span className={`l4-chip ${source === "BROKER_NATIVE" || source === "MT5" ? "good" : source === "UNAVAILABLE" ? "bad" : "warn"}`}>
         {source ?? "UNAVAILABLE"}
       </span>
-      {stale && <span className="l4-chip warn">{t("dash.chart.tick_stale", "TICK STALE")}</span>}
+      {stale && <span className="l4-chip warn">TICK STALE</span>}
       {engineTimeframe && timeframe && timeframe !== engineTimeframe && (
         <span
           className="l4-chip warn"
-          title={t("dash.chart.overlays_title", "SMC overlays (zones / BOS / liquidity) are computed by the engine on its native timeframe — their time mapping on this chart is approximate")}
+          title="SMC overlays (zones / BOS / liquidity) are computed by the engine on its native timeframe — their time mapping on this chart is approximate"
         >
-          {t("dash.chart.overlays_chip", "overlays {tf}-native", { tf: engineTimeframe })}
+          overlays {engineTimeframe}-native
         </span>
       )}
       {caption && <span className="timestamp-note">{caption}</span>}
@@ -451,18 +462,24 @@ export function PriceChart({
   );
 
   const toolRow = (
-    <div className="l4-chart__tools" role="toolbar" aria-label={t("dash.chart.toolbar_aria", "chart timeframe and zoom controls")}>
-      <span className="l4-chip-row mc-tfrow" role="group" aria-label={t("dash.chart.tf_aria", "chart timeframe")}>
+    <div className="l4-chart__tools" role="toolbar" aria-label="chart timeframe and zoom controls">
+      <span className="l4-chip-row mc-tfrow" role="group" aria-label="chart timeframe">
         {TF_CHIPS.map(([lbl, code]) => (
           <button
             key={code}
             className={`btn small ${(activeTf ?? timeframe) === code ? "primary" : "ghost"}`}
             onClick={() => onTfChange?.(code)}
-            title={t("dash.chart.tf_title", "load broker-native {lbl} ({code}) candles", { lbl, code })}
+            title={`load broker-native ${lbl} (${code}) candles`}
           >
             {lbl}
           </button>
         ))}
+      </span>
+      <span className="l4-chip-row mc-toolset" role="group" aria-label="chart tools">
+        <ChartTypeButton />
+        <ChartOverlaysButton />
+        <SnapshotButton canvasRef={canvasRef} />
+        <FullscreenButton targetRef={stageRef} />
       </span>
       <span className="l4-chip-row" style={{ marginInlineStart: "auto" }}>
         {[90, 180, 360, 720].map((o) => (
@@ -470,27 +487,27 @@ export function PriceChart({
             key={o}
             className={`btn small ${view.visible === o ? "primary" : "ghost"}`}
             onClick={() => applyView(o)}
-            title={t("dash.chart.show_bars", "show last {n} bars", { n: o })}
+            title={`show last ${o} bars`}
           >
             {o}
           </button>
         ))}
-        <button className="btn small ghost" onClick={() => applyView(Math.round(view.visible / 1.4))} title={t("dash.chart.zoom_out", "zoom out (mouse wheel down)")}>
+        <button className="btn small ghost" onClick={() => applyView(Math.round(view.visible / 1.4))} title="zoom out (mouse wheel down)">
           −
         </button>
-        <span className="mc-zoomval" title={t("dash.chart.slots_title", "visible slots (bars per screen width)")}>
+        <span className="mc-zoomval" title="visible slots (bars per screen width)">
           {view.visible}
         </span>
-        <button className="btn small ghost" onClick={() => applyView(Math.round(view.visible * 1.4))} title={t("dash.chart.zoom_in", "zoom in (mouse wheel up)")}>
+        <button className="btn small ghost" onClick={() => applyView(Math.round(view.visible * 1.4))} title="zoom in (mouse wheel up)">
           +
         </button>
         <button
           className={`btn small ${view.followLive ? "primary" : "ghost"}`}
           disabled={view.followLive}
           onClick={() => setView((v) => ({ ...v, followLive: true }))}
-          title={t("dash.chart.live_title", "jump back to the latest bar")}
+          title="jump back to the latest bar"
         >
-          {t("dash.chart.live_btn", "◉ LIVE")}
+          ◉ LIVE
         </button>
       </span>
     </div>
@@ -498,27 +515,27 @@ export function PriceChart({
 
   const stateBlock = error ? (
     <div className="l4-chart__state">
-      <span>{t("dash.chart.failed", "chart history failed: {e}", { e: error })}</span>
+      <span>chart history failed: {error}</span>
       {onRetry && (
         <button className="btn small" onClick={onRetry}>
-          {t("ux.retry", "Retry")}
+          Retry
         </button>
       )}
     </div>
   ) : busy ? (
     <div className="l4-chart__state">
       <div className="spinner" />
-      <span>{t("dash.chart.loading", "loading broker history…")}</span>
+      <span>loading broker history…</span>
     </div>
   ) : (
     <div className="l4-chart__state">
       <span className="glyph">∅</span>
-      <span>{t("dash.chart.awaiting", "Awaiting ticks — no candles yet. The chart renders only real MT5/engine bars, never synthetic ones.")}</span>
+      <span>Awaiting ticks — no candles yet. The chart renders only real MT5/engine bars, never synthetic ones.</span>
     </div>
   );
 
   return (
-    <section className="l4-chart" aria-label={t("dash.chart.aria", "Price chart")}>
+    <section className="l4-chart" aria-label="Price chart">
       <div className="l4-chart__head">{statusChips}</div>
       {toolRow}
       {shown.length === 0 ? (
@@ -564,15 +581,16 @@ export function PriceChart({
         >
           <canvas
             ref={canvasRef}
-            aria-label={t("dash.chart.canvas_aria", "{n} {tf} candles for {sym}", { n: shown.length, tf: timeframe ?? "", sym: symbol ?? "market" }) + t("dash.chart.canvas_help", " (wheel to zoom, drag to pan)")}
+            aria-label={`${shown.length} ${timeframe ?? ""} candles for ${symbol ?? "market"} (wheel to zoom, drag to pan)`}
             role="img"
           />
+          <ChartLegend hovered={hovered ?? null} last={shown[shown.length - 1] ?? null} digits={digits} timeframe={timeframe} symbol={symbol} />
           {hovered && hover && (
             <div className="mc-tip" style={{ insetInlineStart: Math.min(hover.x + 15, Math.max(0, size.w - 190)), insetBlockStart: Math.min(hover.y + 15, Math.max(0, size.h - 96)) }}>
               <div className="mc-tip__row">
                 <span>{hovered.time.replace("T", " ").slice(0, 19)}</span>
                 <span className={hovered.close !== null && hovered.open !== null && hovered.close >= hovered.open ? "up" : "down"}>
-                  {hovered.is_complete === false ? t("dash.chart.forming", "Forming") : t("dash.chart.completed", "Completed")}
+                  {hovered.is_complete === false ? "Forming" : "Completed"}
                 </span>
               </div>
               <div className="mc-tip__ohlc">
@@ -587,6 +605,16 @@ export function PriceChart({
         </div>
       )}
     </section>
+  );
+}
+
+/** Outer wrapper: every PriceChart owns its settings context (wave-2 —
+ *  presentation + visibility state only, lane-09 intact). */
+export function PriceChart(props: PriceChartProps) {
+  return (
+    <ChartSettingsProvider>
+      <PriceChartInner {...props} />
+    </ChartSettingsProvider>
   );
 }
 

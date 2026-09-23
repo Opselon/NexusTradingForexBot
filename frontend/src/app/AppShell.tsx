@@ -13,16 +13,22 @@
  * never by ad-hoc token probing.
  */
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import DashboardPage from "@/pages/Dashboard/DashboardPage";
-import TradingPage from "@/pages/Trading/TradingPage";
-import PositionsPage from "@/pages/Positions/PositionsPage";
-import RiskPage from "@/pages/Risk/RiskPage";
-import MLPage from "@/pages/ML/MLPage";
-import IntelligencePage from "@/pages/Intelligence/IntelligencePage";
-import AuditPage from "@/pages/Audit/AuditPage";
+// Wave 6 (perf): the seven legacy routes are code-split like the feature
+// registry — the entry chunk no longer carries every page up front. Same
+// modules, same default exports, same props/URLs; React.lazy defers only the
+// fetch. The Suspense+ErrorBoundary wrapper below mirrors the per-feature
+// route contract (legacy routes previously had neither — a render error was
+// uncaught).
+const DashboardPage = lazy(() => import("@/pages/Dashboard/DashboardPage"));
+const TradingPage = lazy(() => import("@/pages/Trading/TradingPage"));
+const PositionsPage = lazy(() => import("@/pages/Positions/PositionsPage"));
+const RiskPage = lazy(() => import("@/pages/Risk/RiskPage"));
+const MLPage = lazy(() => import("@/pages/ML/MLPage"));
+const IntelligencePage = lazy(() => import("@/pages/Intelligence/IntelligencePage"));
+const AuditPage = lazy(() => import("@/pages/Audit/AuditPage"));
 import type { EngineSnapshot } from "@/types/domain";
 import { engineApi } from "@/api/engineApi";
 import { useRealtimeSnapshot } from "@/hooks/useRealtimeSnapshot";
@@ -108,7 +114,7 @@ function LangRow() {
         className="select lang-select"
         value={lang}
         onChange={(e) => setLang(e.target.value as (typeof LANGUAGES)[number]["id"])}
-        aria-label={t("shell.lang.aria", "Language")}
+        aria-label="Language"
       >
         {LANGUAGES.map((l) => (
           <option key={l.id} value={l.id}>
@@ -147,12 +153,6 @@ export function AppShell() {
   const [authExpiredAt, setAuthExpiredAt] = useState<number | null>(() => getAuthState().lastUnauthorizedAt);
   useEffect(() => onCore("auth:expired", ({ at }) => setAuthExpiredAt(at)), []);
   useEffect(() => onCore("auth:changed", () => setAuthExpiredAt(getAuthState().lastUnauthorizedAt)), []);
-
-  // 1s ticker for data-age display (visual only).
-  useEffect(() => {
-    const t = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(t);
-  }, []);
 
   // Density class on <body> — CSS custom properties cascade from there.
   useEffect(() => {
@@ -216,6 +216,12 @@ export function AppShell() {
 
   const { snapshot, realtimeStatus } = useRealtimeSnapshot(snapshotQuery.data);
 
+  // 1s ticker for data-age display (visual only).
+  useEffect(() => {
+    const t = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+
   const authError =
     snapshotQuery.error instanceof ApiError && snapshotQuery.error.isAuthError
       ? (snapshotQuery.error as ApiError)
@@ -223,10 +229,49 @@ export function AppShell() {
   const showAuthBanner = authError !== null || authExpiredAt !== null;
   const lf = snapshot?.live_freshness ?? null;
 
+  /**
+   * Perf wave 7 (route memoization): the feature `<Route>` elements used to be
+   * built inline in JSX, so EVERY render allocated 20 fresh `element` objects.
+   * React Router reconciles `<Route>` by `element` identity: a new object for
+   * the ACTIVE route makes it REMOUNT the whole page — unmounting the live
+   * page, destroying its DOM + internal state, and re-running its effects
+   * (queries re-mount, charts re-initialize) on every single tick. At the
+   * backend's 5 Hz telemetry cadence that is 5 full page teardown+rebuild
+   * cycles per second, sustained 24/7 — the single biggest runtime cost on the
+   * console and the direct cause of the "the page flashes/redraws constantly"
+   * symptom under load.
+   *
+   * `useMemo` keyed on `[snapshot, nowMs, routePathname]` keeps each route's
+   * element identity stable across renders that only change unrelated state
+   * (palette/help/density toggles), so React Router reuses the existing tree.
+   * The snapshot+nowMs deps are intentional: when the live data changes, the
+   * page must re-render with it — but re-render ≠ remount, which is the whole
+   * distinction this preserves.
+   */
+  const featureRoutes = useMemo(
+    () =>
+      FEATURE_SECTIONS.flatMap((sec) => sec.items).map((f) => (
+        <Route
+          key={f.route}
+          path={f.route}
+          element={
+            <ErrorBoundary label={f.label} resetKey={routePathname}>
+              <Suspense fallback={<LoadingState label={`Loading ${f.label}…`} />}>
+                <f.lazy snapshot={snapshot} nowMs={nowMs} />
+              </Suspense>
+            </ErrorBoundary>
+          }
+        />
+      )),
+    [snapshot, nowMs, routePathname],
+  );
+
+
+
   return (
     <div className="app-shell">
-      <a className="skip-link" href="#main-content">{t("shell.skip_content", "Skip to content")}</a>
-      <aside aria-label={t("shell.sidebar.landmark", "Sidebar")} className={`sidebar ${collapsed ? "collapsed" : ""}`}>
+      <a className="skip-link" href="#main-content">Skip to content</a>
+      <aside aria-label="Sidebar" className={`sidebar ${collapsed ? "collapsed" : ""}`}>
         <div className="brand">
           <div className="brand-logo">NSE</div>
           <div className="brand-text">
@@ -234,7 +279,7 @@ export function AppShell() {
             <span className="sub">PRO CONSOLE</span>
           </div>
         </div>
-        <nav className="nav" aria-label={t("shell.nav.primary", "Primary")}>
+        <nav className="nav" aria-label="Primary">
           {ALL_NAV_SECTIONS.map((sec) => (
             <div key={sec.section}>
               <div className="nav-section">{t(sec.sectionKey, sec.section)}</div>
@@ -260,8 +305,8 @@ export function AppShell() {
               className={`switch ${dense ? "on" : ""}`}
               role="switch"
               aria-checked={dense}
-              aria-label={t("shell.dense.toggle", "Toggle dense layout")}
-              title={t("shell.dense.title", "Dense layout (visual only)")}
+              aria-label="Toggle dense layout"
+              title="Dense layout (visual only)"
               onClick={toggleDense}
             />
           </div>
@@ -269,24 +314,24 @@ export function AppShell() {
           <div className="side-row" title={t("ux.shortcut.help", "Keyboard shortcuts")}>
             <span><kbd>alt</kbd> 1–9 · <kbd>ctrl</kbd>K</span>
           </div>
-          <button className="sidebar-toggle" onClick={toggleSidebar} title={t("shell.sidebar.toggle", "Toggle sidebar (Alt+B)")} aria-label={t("shell.sidebar.toggle_aria", "Toggle sidebar")} aria-expanded={!collapsed}>
+          <button className="sidebar-toggle" onClick={toggleSidebar} title="Toggle sidebar (Alt+B)" aria-label="Toggle sidebar" aria-expanded={!collapsed}>
             {collapsed ? "»" : "«"}
           </button>
         </div>
       </aside>
 
       <div className="main-col">
-        <header aria-label={t("shell.topbar.aria", "Top bar")} className="topbar">
+        <header aria-label="Top bar" className="topbar">
           <ModeIndicator snapshot={snapshot} />
-          <span className="conn-chip" title={t("shell.engine.title", "Engine loop state (backend-authoritative)")}>
+          <span className="conn-chip" title="Engine loop state (backend-authoritative)">
             <span className={`conn-dot ${snapshot?.engine_running ? "connected" : snapshot ? "disconnected" : "reconnecting"}`} />
-            <span>{t("shell.engine.label", "ENGINE")} {snapshot ? (snapshot.engine_running ? t("shell.engine.running", "RUNNING") : t("shell.engine.stopped", "STOPPED")) : "—"}</span>
+            <span>ENGINE {snapshot ? (snapshot.engine_running ? "RUNNING" : "STOPPED") : "—"}</span>
           </span>
-          <span className="conn-chip" title={t("shell.health.title", "Backend health.overall from /api/status")}>
-            {snapshot ? <StatusBadge status={snapshot.health.overall} /> : <span className="badge unknown">{t("shell.health.label", "HEALTH —")}</span>}
+          <span className="conn-chip" title="Backend health.overall from /api/status">
+            {snapshot ? <StatusBadge status={snapshot.health.overall} /> : <span className="badge unknown">HEALTH —</span>}
           </span>
           {snapshot && (
-            <span className="conn-chip freshness-chip" title={t("shell.fresh.title", "Pipeline freshness stages (backend live_freshness)")}>
+            <span className="conn-chip freshness-chip" title="Pipeline freshness stages (backend live_freshness)">
               <FreshnessMeter label="MKT" state={lf?.market?.state} ageMs={lf?.market?.age_ms ?? ageSecToMs(snapshot.diagnostics.tick_age_sec)} />
               <FreshnessMeter label="FEAT" state={lf?.features?.state} ageMs={lf?.features?.age_ms ?? ageSecToMs(snapshot.diagnostics.features_age_sec)} />
               <FreshnessMeter label="INFR" state={lf?.inference?.state} ageMs={lf?.inference?.age_ms ?? ageSecToMs(snapshot.diagnostics.inference_age_sec)} />
@@ -295,7 +340,7 @@ export function AppShell() {
           )}
           {snapshot?.symbol && <span className="inline-mono small muted">{snapshot.symbol} M1</span>}
           <span className="spacer" />
-          <span className="timestamp-note" title={t("shell.clock.title", "Local wall clock (visual aid)")}>
+          <span className="timestamp-note" title="Local wall clock (visual aid)">
             {new Date(nowMs).toLocaleTimeString("en-GB", { hour12: false })} · v{snapshot?.state_version ?? "—"}
           </span>
           <ConnectionIndicator
@@ -326,37 +371,29 @@ export function AppShell() {
         <main className="page" id="main-content" tabIndex={-1}>
           <h1 className="sr-only">{routeLabel ?? "NSE Console"}</h1>
           {snapshotQuery.isPending ? (
-            <LoadingState label={t("shell.loading", "Connecting to NSE backend…")} />
+            <LoadingState label="Connecting to NSE backend…" />
           ) : snapshotQuery.isError && !snapshot ? (
             <ErrorState
-              message={snapshotQuery.error instanceof Error ? snapshotQuery.error.message : t("shell.unreachable", "Backend unreachable")}
+              message={snapshotQuery.error instanceof Error ? snapshotQuery.error.message : "Backend unreachable"}
               requestId={snapshotQuery.error instanceof ApiError ? snapshotQuery.error.requestId : null}
               onRetry={() => snapshotQuery.refetch()}
             />
           ) : (
-            <Routes>
-              <Route path="/" element={<DashboardRoute snapshot={snapshot} nowMs={nowMs} />} />
+            <ErrorBoundary label={routeLabel ?? "Console"} resetKey={routePathname}>
+              <Suspense fallback={<LoadingState label="Loading page…" />}>
+                <Routes>
+                  <Route path="/" element={<DashboardRoute snapshot={snapshot} nowMs={nowMs} />} />
               <Route path="/trading" element={<TradingRoute snapshot={snapshot} nowMs={nowMs} />} />
               <Route path="/positions" element={<PositionsRoute snapshot={snapshot} />} />
               <Route path="/risk" element={<RiskRoute snapshot={snapshot} />} />
               <Route path="/ml" element={<MlRoute snapshot={snapshot} />} />
               <Route path="/intelligence" element={<IntelRoute snapshot={snapshot} />} />
               <Route path="/audit" element={<AuditRoute />} />
-              {FEATURE_SECTIONS.flatMap((sec) => sec.items).map((f) => (
-                <Route
-                  key={f.route}
-                  path={f.route}
-                  element={
-                    <ErrorBoundary label={f.label} resetKey={routePathname}>
-                      <Suspense fallback={<LoadingState label={t("shell.loading_feature", "Loading {name}…", { name: f.label })} />}>
-                        <f.lazy snapshot={snapshot} nowMs={nowMs} />
-                      </Suspense>
-                    </ErrorBoundary>
-                  }
-                />
-              ))}
-              <Route path="*" element={<ErrorState message={t("shell.unknown_route", "Unknown route")} />} />
-            </Routes>
+              {featureRoutes}
+                  <Route path="*" element={<ErrorState message="Unknown route" />} />
+                </Routes>
+              </Suspense>
+            </ErrorBoundary>
           )}
         </main>
       </div>

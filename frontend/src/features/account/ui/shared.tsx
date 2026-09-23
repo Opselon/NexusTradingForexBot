@@ -44,3 +44,13 @@ export function pctOrDash(v: number | null | undefined, digits = 2): string {
 }
 
 export const DASH = "—";
+
+/** Raw-JSON inspection text — byte-identical to `JSON.stringify(value)`. */
+export function jsonInline(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+/** Pretty inspection text — byte-identical to `JSON.stringify(value, null, 2)`. */
+export function jsonPretty(value: unknown): string {
+  return JSON.stringify(value, null, 2);
+}

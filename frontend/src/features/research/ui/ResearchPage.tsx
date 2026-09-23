@@ -16,7 +16,7 @@
  * playbook is documentation; queries above are the data.
  */
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
@@ -153,7 +153,12 @@ export default function ResearchPage(props: ShellPageProps) {
 
   const summary = summaryQ.data?.summary;
   const rows = summaryQ.data;
-  const registry = registryQ.data?.available === true ? researchUseCases.registryList(registryQ.data.registry ?? []) : [];
+  // perf: registry map+sort derived only when the query data changes
+  // (deps: registryQ.data — the only reactive value read).
+  const registry = useMemo(
+    () => (registryQ.data?.available === true ? researchUseCases.registryList(registryQ.data.registry ?? []) : []),
+    [registryQ.data],
+  );
   const queue = obj(queueQ.data?.queue);
   const queued: Array<{ label: string; count: number }> = [];
   for (const [gateType, statusMap] of Object.entries(obj(queue.queued))) {

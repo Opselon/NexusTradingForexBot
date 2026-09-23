@@ -74,6 +74,16 @@ export function useConsoleRows(database: string | null, table: string | null, li
   });
 }
 
+/** Column schema for the selected table — enabled only while the operator has
+ *  the schema view open (the endpoint existed in api.ts but was never wired). */
+export function useConsoleColumns(database: string | null, table: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ["database", "console", "columns", database, table],
+    queryFn: ({ signal }) => dbApi.consoleColumns(database ?? "", table ?? "", signal),
+    enabled: !!database && !!table && enabled,
+  });
+}
+
 /* ------------------------------ envelope outcome ------------------------------ */
 
 export interface DbOutcome {

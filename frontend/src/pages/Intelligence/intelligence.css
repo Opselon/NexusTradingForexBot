@@ -9,6 +9,7 @@
  * PROVIDES  — namespaced `.ix-*` classes; nothing here can leak onto another
  *             feature page, and every selector is additive (primitives keep
  *             their own classes).
+ * SPLIT (wave-2 scaffold): .itl-* feed styles moved to ./feed.css.
  * INVARIANTS— logical properties only (RTL console mirrors correctly);
  *             honest states (stale/unavailable banners) keep their copy;
  *             reduced-motion users get no entry animation or hover lift.

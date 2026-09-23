@@ -11,18 +11,24 @@ Routes (registered under the authenticated operator surface):
     POST /api/provisioning/train/start       PATH B: start local training (background task)
     GET  /api/provisioning/train/progress    real progress events (never synthesized)
     POST /api/provisioning/train/cancel      request cancel (epoch boundary)
+    GET  /api/provisioning/datasets          allowed-root dataset browser (additive, GAP-6)
 
 Privacy invariant preserved: the train route accepts a SERVER-SIDE PATH to a
 file the user already placed on this machine (or a prior upload endpoint);
 market data is never POSTed through HTTP bodies and never leaves the host.
 Training itself is fully local. Security note: ``file`` is validated to be a
 readable .csv/.parquet under the configured data import root — arbitrary
-paths are refused (no path-traversal into the training pipeline).
+paths are refused (no path-traversal into the training pipeline). The
+datasets browser is READ-ONLY over the SAME allowlist: stat metadata only
+(contents never read), .csv/.parquet only, capped at 500 per root
+newest-mtime-first, and an optional ``?root=`` filter that must itself
+resolve inside an allowed root (``DATASETS_ROOT_REJECTED`` otherwise).
 """
 
 from __future__ import annotations
 
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +46,8 @@ from nexus_scalp.observability.logging import get_logger
 logger = get_logger("nexus_scalp.web.provisioning_routes")
 
 _IMPORT_ROOTS_ENV = "NEXUS_IMPORT_ROOTS"  # os.pathsep-separated allowed roots
+_DATASET_MAX_FILES_PER_ROOT = 500  # datasets browser: per-root cap, newest mtime first
+_DATASET_EXTS = (".csv", ".parquet")  # datasets browser: the ONLY listed extensions
 
 
 class _TrainRun:
@@ -149,6 +157,59 @@ def _allowed_import_path(raw: str) -> Path:
     )
 
 
+def _scan_dataset_root(root: Path) -> dict[str, Any]:
+    """Read-only listing of ONE allowed root for GET /api/provisioning/datasets.
+
+    A missing root answers ``exists:false`` — never an error. Security
+    invariants (same class as ``_allowed_import_path``):
+      1. containment, NOT prefix: every directory entry is resolved (symlinks
+         followed) and admitted only via ``resolved.is_relative_to(root)`` —
+         a symlink escaping the root is skipped, never listed nor descended;
+      2. the recursive scan admits ``.csv``/``.parquet`` regular files ONLY
+         (case-insensitive); directories are traversed, never listed;
+      3. file CONTENTS are never read — ``stat`` metadata only (size, mtime);
+      4. hard cap ``_DATASET_MAX_FILES_PER_ROOT`` per root, sorted mtime
+         descending (newest first), ties beyond the cap dropped silently.
+    """
+    exists = root.is_dir()  # Path.is_dir swallows OSError -> missing/unreadable = absent
+    found: list[tuple[float, int, Path]] = []
+    if exists:
+        stack = [root]
+        visited: set[Path] = {root}
+        while stack:
+            current = stack.pop()
+            try:
+                entries = sorted(current.iterdir())
+            except OSError:
+                continue  # unreadable directory: keep what was listed so far
+            for entry in entries:
+                try:
+                    resolved = entry.resolve()
+                    if not resolved.is_relative_to(root):
+                        continue  # symlink (or traversal) escaping the root
+                    if resolved.is_dir():
+                        if resolved not in visited:  # visited-set breaks symlink cycles
+                            visited.add(resolved)
+                            stack.append(resolved)
+                    elif resolved.is_file() and resolved.suffix.lower() in _DATASET_EXTS:
+                        stat = resolved.stat()
+                        found.append((stat.st_mtime, stat.st_size, resolved))
+                except OSError:
+                    continue  # deleted mid-scan / stat failure: skip, never fail the list
+    found.sort(key=lambda item: item[0], reverse=True)  # newest mtime first
+    files = [
+        {
+            "name": path.name,
+            "path": str(path),
+            "ext": path.suffix[1:].lower(),
+            "size_bytes": size,
+            "modified_iso": datetime.fromtimestamp(mtime, tz=UTC).isoformat(timespec="seconds"),
+        }
+        for mtime, size, path in found[:_DATASET_MAX_FILES_PER_ROOT]
+    ]
+    return {"root": str(root), "exists": exists, "count": len(files), "files": files}
+
+
 def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
     """Mount the provisioning endpoints on the web app (same seams as peers)."""
     router = app
@@ -167,6 +228,59 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
         except Exception as exc:
             _log_err(exc, "provisioning status failed", endpoint="/api/provisioning/status")
             return _err(code="PROVISIONING_STATUS_ERROR")
+
+    @router.get("/api/provisioning/datasets")
+    def provisioning_datasets(root: str | None = None) -> dict[str, Any]:
+        """READ-ONLY dataset browser over the allowed import roots (GAP-6).
+
+        Legacy raw-JSON lane (NO v1 envelope): one listing entry per allowed
+        root — ``exists:false`` for a missing root, never an error — plus
+        ``total`` = summed per-root counts. Security invariants mirror
+        ``_allowed_import_path``:
+          1. roots come from ``_allowed_import_roots()`` — this route NEVER
+             widens the allowlist (extend it via ``NEXUS_IMPORT_ROOTS``);
+          2. the optional ``?root=`` filter is resolved (traversal collapsed,
+             symlinks followed) and must be CONTAINED in an allowed root via
+             ``is_relative_to`` (containment, not string prefix) — otherwise
+             the typed ``DATASETS_ROOT_REJECTED`` envelope;
+          3. listings are stat metadata only (contents never read), capped at
+             500/root newest-mtime-first, entries escaping their root skipped;
+          4. unexpected failures are logged server-side and answer the stable
+             ``PROVISIONING_DATASETS_ERROR`` envelope — no raw exception text
+             (py/stack-trace-exposure discipline).
+        """
+        try:
+            allowed = _allowed_import_roots()
+            targets = allowed
+            if root is not None and str(root).strip():
+                raw = str(root).strip()
+                candidate: Path | None = None
+                if "\x00" not in raw:
+                    try:
+                        candidate = Path(raw).expanduser().resolve()
+                    except (OSError, RuntimeError, ValueError):
+                        candidate = None  # unresolvable -> treated as outside
+                if candidate is None or not any(
+                    candidate.is_relative_to(allowed_root) for allowed_root in allowed
+                ):
+                    return _err(
+                        code="DATASETS_ROOT_REJECTED",
+                        message=(
+                            "root must resolve inside an allowed import root "
+                            f"({', '.join(str(r) for r in allowed)})"
+                        ),
+                        remedy=f"pick an allowed root or extend {_IMPORT_ROOTS_ENV}",
+                    )
+                targets = [candidate]
+            listings = [_scan_dataset_root(target) for target in targets]
+            return {
+                "success": True,
+                "roots": listings,
+                "total": sum(entry["count"] for entry in listings),
+            }
+        except Exception as exc:
+            _log_err(exc, "dataset listing failed", endpoint="/api/provisioning/datasets")
+            return _err(code="PROVISIONING_DATASETS_ERROR")
 
     @router.get("/api/provisioning/environment")
     def provisioning_environment(backend: str = "auto") -> dict[str, Any]:
