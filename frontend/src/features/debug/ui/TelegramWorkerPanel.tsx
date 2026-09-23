@@ -15,6 +15,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { FreshnessCaption } from "@/features/config/ui/kit";
 import { observabilityApi } from "../simulationApi";
 
@@ -27,6 +28,7 @@ function workerTone(status: string | undefined): "good" | "warn" | "bad" | "unkn
 }
 
 export function TelegramWorkerPanel() {
+  const t = useI18n((s) => s.t);
   const q = useQuery({
     queryKey: ["observability", "stats"],
     queryFn: ({ signal }) => observabilityApi.stats(signal),
@@ -39,7 +41,7 @@ export function TelegramWorkerPanel() {
 
   return (
     <Panel
-      title="Telegram notifier (live worker)"
+      title={t("debug.tg.title", "Telegram notifier (live worker)")}
       right={<FreshnessCaption fetchedAtMs={q.dataUpdatedAt || null} intervalMs={15_000} stale={q.isError} />}
       tight
     >
@@ -47,47 +49,54 @@ export function TelegramWorkerPanel() {
         <Skeleton count={3} />
       ) : q.isError ? (
         <ErrorState
-          message={q.error instanceof Error ? q.error.message : "observability endpoint failed"}
+          message={q.error instanceof Error ? q.error.message : t("debug.tg.unreadable", "observability endpoint failed")}
           onRetry={() => void q.refetch()}
         />
       ) : q.data ? (
         <div style={{ display: "grid", gap: 8 }}>
           <div className="grid cols-2">
-            <MetricCard label="notifier queue" value={String(q.data.tg_queue)} sub="pending outbound messages" />
             <MetricCard
-              label="notifier armed"
-              value={q.data.tg_enabled ? "ARMED" : "DISARMED"}
+              label={t("debug.tg.queue", "notifier queue")}
+              value={String(q.data.tg_queue)}
+              sub={t("debug.tg.queue_sub", "pending outbound messages")}
+            />
+            <MetricCard
+              label={t("debug.tg.armed_label", "notifier armed")}
+              value={q.data.tg_enabled ? t("debug.tg.armed", "ARMED") : t("debug.tg.disarmed", "DISARMED")}
               sub="/api/observability/stats · tg_enabled"
             />
           </div>
           <dl className="kv" style={{ marginTop: 2 }}>
-            <dt>worker state</dt>
+            <dt>{t("debug.tg.worker_state", "worker state")}</dt>
             <dd>
               <StatusBadge status={status} label={workerTone(status)} />
             </dd>
-            <dt>sent / failed / retries</dt>
+            <dt>{t("debug.tg.counters", "sent / failed / retries")}</dt>
             <dd>
               {String(tg.sent_count ?? "--")} / {String(tg.failed_count ?? "--")} / {String(tg.retry_count ?? "--")}
             </dd>
             {tg.failure_category ? (
               <>
-                <dt>last failure</dt>
+                <dt>{t("debug.tg.last_failure", "last failure")}</dt>
                 <dd className="pnl-neg">{String(tg.failure_category)}</dd>
               </>
             ) : null}
             {tg.last_success && tg.last_success !== "-" ? (
               <>
-                <dt>last success</dt>
+                <dt>{t("debug.tg.last_success", "last success")}</dt>
                 <dd>{String(tg.last_success)}</dd>
               </>
             ) : null}
           </dl>
           {(!tg.status || !tg.last_success) && !tg.failure_category ? (
-            <EmptyState message="No delivery telemetry yet — the notifier has not attempted a send." />
+            <EmptyState message={t("debug.tg.empty", "No delivery telemetry yet — the notifier has not attempted a send.")} />
           ) : null}
         </div>
       ) : (
-        <EmptyState message="Notifier telemetry unavailable." hint="The backend answered with no body." />
+        <EmptyState
+          message={t("debug.tg.unavailable", "Notifier telemetry unavailable.")}
+          hint={t("debug.tg.unavailable_hint", "The backend answered with no body.")}
+        />
       )}
     </Panel>
   );

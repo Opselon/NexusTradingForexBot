@@ -6,12 +6,14 @@
 
 import { useState } from "react";
 import { EmptyState } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { FreshnessCaption, JsonView, KeyValueList, PollControl, QuerySection, scalarRows, usePolling } from "@/features/config/ui/kit";
 import type { DebugState } from "../../api";
 import { useDebugStateQuery } from "../../hooks";
 import { DEBUG_SECTIONS } from "../../model";
 
 export function StateTab() {
+  const t = useI18n((s) => s.t);
   const poll = usePolling(20_000);
   const query = useDebugStateQuery(poll.paused);
   const [section, setSection] = useState<string>("runtime");
@@ -19,32 +21,32 @@ export function StateTab() {
 
   return (
     <QuerySection<DebugState>
-      title="Canonical debug snapshot (/api/debug/state)"
+      title={t("debug.state.title", "Canonical debug snapshot (/api/debug/state)")}
       accent
       query={query}
       skeletonRows={6}
-      emptyMessage="Snapshot unavailable."
+      emptyMessage={t("debug.state.empty", "Snapshot unavailable.")}
       right={
         <>
           <FreshnessCaption fetchedAtMs={query.dataUpdatedAt || null} intervalMs={20_000} note={query.data?.snapshot_id ? `id ${query.data.snapshot_id}` : undefined} stale={poll.paused} />
           <PollControl paused={poll.paused} onToggle={poll.togglePaused} intervalMs={20_000} busy={query.isFetching} />
-          <button className="btn small ghost" onClick={() => setRaw((r) => !r)}>{raw ? "typed view" : "raw JSON"}</button>
+          <button className="btn small ghost" onClick={() => setRaw((r) => !r)}>{raw ? t("debug.state.typed_view", "typed view") : t("debug.state.raw_json", "raw JSON")}</button>
         </>
       }
     >
       {(snap) => (
         <div className="dbg-sec">
           {snap.available === false && (
-            <div className="l3-note bad">Snapshot flagged unavailable: {String(snap.reason ?? "UNKNOWN")} — the sections below are what the backend could still provide.</div>
+            <div className="l3-note bad">{t("debug.state.flagged", "Snapshot flagged unavailable: {reason} — the sections below are what the backend could still provide.", { reason: String(snap.reason ?? "UNKNOWN") })}</div>
           )}
-          <div className="dbg-chips" aria-label="state sections">
+          <div className="dbg-chips" aria-label={t("debug.state.chips_aria", "state sections")}>
             <button className={`dbg-chip ${section === "__all" ? "active" : ""}`} onClick={() => setSection("__all")}>
-              all
+              {t("debug.state.all", "all")}
             </button>
             {DEBUG_SECTIONS.filter((s) => s in snap).map((s) => (
               <button key={s} className={`dbg-chip ${section === s ? "active" : ""}`} aria-pressed={section === s} onClick={() => setSection(s)}>
                 {s}
-                {((snap as Record<string, unknown>)[s] as { available?: boolean } | undefined)?.available === false && <span className="dbg-chip-flag" title="section reports available=false">!</span>}
+                {((snap as Record<string, unknown>)[s] as { available?: boolean } | undefined)?.available === false && <span className="dbg-chip-flag" title={t("debug.state.flag_title", "section reports available=false")}>!</span>}
               </button>
             ))}
           </div>
@@ -55,13 +57,13 @@ export function StateTab() {
           ) : (
             (() => {
               const sec = (snap as Record<string, unknown>)[section];
-              if (!sec) return <EmptyState message={`Section "${section}" absent from this snapshot.`} />;
+              if (!sec) return <EmptyState message={t("debug.state.section_absent", "Section \"\"{section}\"\" absent from this snapshot.", { section })} />;
               const obj = sec as Record<string, unknown>;
               if (obj.available === false) {
                 return (
                   <div className="l3-note warn">
-                    {section}: UNAVAILABLE — {String(obj.reason ?? "no reason given")}
-                    {obj.correlation_id ? ` (correlation ${String(obj.correlation_id)})` : ""}
+                    {t("debug.state.section_unavailable", "{section}: UNAVAILABLE — {reason}", { section, reason: String(obj.reason ?? t("debug.state.no_reason", "no reason given")) })}
+                    {obj.correlation_id ? t("debug.state.correlation", " (correlation {id})", { id: String(obj.correlation_id) }) : ""}
                   </div>
                 );
               }
