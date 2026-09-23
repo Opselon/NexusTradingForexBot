@@ -4,7 +4,8 @@
  * from GET /scores/{id}/history. Missing sections say they are missing.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useDialogA11y } from "../../../components/useDialogA11y";
 import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { HeatBar, Sparkline } from "@/components/viz";
 import { formatDateTime, formatNumber } from "@/lib/format";
@@ -20,14 +21,17 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
   const detail = useMktSeedDetail(seedId);
   const history = useMktScoreHistory(seedId);
   const [showRaw, setShowRaw] = useState(false);
+  const boxRef = useRef<HTMLElement | null>(null);
+  // Shared dialog contract — this drawer previously had NO Escape handling.
+  useDialogA11y(boxRef, onClose);
 
   const d = detail.data;
   const sections = d ? detailSections(d) : [];
 
   return (
     <div className="mkt-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <aside className="mkt-drawer" role="dialog" aria-modal="true" aria-label={`Seed detail ${seedId}`}>
-        <header>
+      <aside ref={boxRef} className="mkt-drawer" role="dialog" aria-modal="true" aria-label={`Seed detail ${seedId}`}>
+        <header aria-label="Seed detail">
           <span>Seed detail</span>
           <span className="inline-mono tiny faint">{seedId}</span>
           <button className="btn small" style={{ marginInlineStart: "auto" }} onClick={() => setShowRaw((v) => !v)}>

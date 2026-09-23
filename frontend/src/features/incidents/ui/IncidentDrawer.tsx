@@ -39,7 +39,7 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
     <Drawer title={`Incident ${incidentId}`} onClose={onClose}>
       <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
         {(["detail", "timeline", "traces", "report"] as const).map((t) => (
-          <button key={t} className={`btn small ${tab === t ? "primary" : "ghost"}`} onClick={() => setTab(t)}>
+          <button key={t} className={`btn small ${tab === t ? "primary" : "ghost"}`} aria-pressed={tab === t} onClick={() => setTab(t)}>
             {t}
           </button>
         ))}
@@ -188,7 +188,7 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
                 </div>
                 <details>
                   <summary className="small">markdown report</summary>
-                  <pre className="inline-mono tiny" style={{ whiteSpace: "pre-wrap", maxHeight: 300, overflow: "auto" }}>
+                  <pre tabIndex={0} className="inline-mono tiny" style={{ whiteSpace: "pre-wrap", maxHeight: 300, overflow: "auto" }}>
                     {reportQ.data?.markdown ?? "—"}
                   </pre>
                 </details>

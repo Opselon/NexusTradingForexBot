@@ -95,7 +95,7 @@ export function Panel({
 
 export function LoadingState({ label = "Loading backend state…" }: { label?: string }) {
   return (
-    <div className="state-block">
+    <div className="state-block" role="status">
       <div className="spinner" />
       <div>{label}</div>
     </div>
@@ -104,7 +104,7 @@ export function LoadingState({ label = "Loading backend state…" }: { label?: s
 
 export function ErrorState({ message, requestId, onRetry }: { message: string; requestId?: string | null; onRetry?: () => void }) {
   return (
-    <div className="state-block error">
+    <div className="state-block" role="alert">
       <div className="glyph">⚠</div>
       <div>{message}</div>
       {requestId && <div className="hint inline-mono">request_id: {requestId}</div>}
@@ -119,7 +119,7 @@ export function ErrorState({ message, requestId, onRetry }: { message: string; r
 
 export function EmptyState({ message, hint }: { message: string; hint?: string }) {
   return (
-    <div className="state-block">
+    <div className="state-block" role="status">
       <div className="glyph">∅</div>
       <div>{message}</div>
       {hint && <div className="hint">{hint}</div>}
@@ -140,12 +140,12 @@ export function Skeleton({ count = 3, height = 14 }: { count?: number; height?: 
 
 export function DataTable({ headers, children }: { headers: Array<{ label: string; num?: boolean }>; children: ReactNode }) {
   return (
-    <div className="table-wrap">
+    <div tabIndex={0} className="table-wrap">
       <table className="data-table">
         <thead>
           <tr>
             {headers.map((h) => (
-              <th key={h.label} className={h.num ? "num" : undefined}>
+              <th scope="col" key={h.label} className={h.num ? "num" : undefined}>
                 {h.label}
               </th>
             ))}

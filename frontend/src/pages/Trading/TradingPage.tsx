@@ -294,10 +294,10 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
 
         <Panel title="Pending orders (broker)" tight>
           {mt5Query.data?.orders && mt5Query.data.orders.length > 0 ? (
-            <div className="table-wrap">
+            <div tabIndex={0} className="table-wrap">
               <table className="data-table">
                 <thead>
-                  <tr><th>Ticket</th><th>Type</th><th>Volume</th><th>Price</th><th>State</th><th>Setup</th></tr>
+                  <tr><th scope="col">Ticket</th><th scope="col">Type</th><th scope="col">Volume</th><th scope="col">Price</th><th scope="col">State</th><th scope="col">Setup</th></tr>
                 </thead>
                 <tbody>
                   {mt5Query.data.orders.map((o, i) => (
@@ -536,10 +536,10 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
           emptyWhen={(d) => d.items.length === 0}
         >
           {(d) => (
-            <div className="table-wrap">
+            <div tabIndex={0} className="table-wrap">
               <table className="data-table">
                 <thead>
-                  <tr><th>#</th><th>Order id</th><th>Symbol</th><th>Type</th><th>Volume</th><th>Price</th><th>Status</th><th>Executed</th></tr>
+                  <tr><th scope="col">#</th><th scope="col">Order id</th><th scope="col">Symbol</th><th scope="col">Type</th><th scope="col">Volume</th><th scope="col">Price</th><th scope="col">Status</th><th scope="col">Executed</th></tr>
                 </thead>
                 <tbody>
                   {d.items.map((r, i) => (

@@ -123,3 +123,10 @@
   padding: 24px;
   background: rgba(11, 18, 32, 0.86);
 }
+
+/* legend swatches — values MUST keep matching the 3D scene's data
+   palette (moved here from inline style; colors unchanged) ---------- */
+.spatial-legend i.sl-live      { background: #10b981; }
+.spatial-legend i.sl-shadow    { background: #eab308; }
+.spatial-legend i.sl-validated { background: #84cc16; }
+.spatial-legend i.sl-terminal  { background: #f43f5e; }

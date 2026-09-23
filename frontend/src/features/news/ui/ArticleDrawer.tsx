@@ -4,7 +4,8 @@
  * shows each block only when the backend provided it (no placeholder rows).
  */
 
-import { useEffect, useMemo } from "react";
+import { useMemo, useRef } from "react";
+import { useDialogA11y } from "../../../components/useDialogA11y";
 import { DataTable, EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber, formatPct } from "@/lib/format";
 import { HeatBar } from "@/components/viz";
@@ -54,13 +55,8 @@ export function ArticleDrawer({
     return rows.find((r) => r.article_id === articleId) ?? null;
   }, [proAnswers.data, articleId]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const boxRef = useRef<HTMLElement | null>(null);
+  useDialogA11y(boxRef, onClose);
 
   const art = detail.data?.article ?? null;
   const ana = detail.data?.analysis ?? analysis.data?.analysis ?? null;
@@ -73,8 +69,8 @@ export function ArticleDrawer({
 
   return (
     <div className="news-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <aside className="news-drawer" role="dialog" aria-modal="true" aria-label="News article detail">
-        <header>
+      <aside ref={boxRef} className="news-drawer" role="dialog" aria-modal="true" aria-label="News article detail">
+        <header aria-label="Article">
           <span>Article detail</span>
           <span className="inline-mono tiny faint">#{articleId.slice(0, 10)}</span>
           <button className="btn small close" onClick={onClose}>
@@ -299,7 +295,7 @@ export function ArticleDrawer({
               {postEvents.length > 0 && (
                 <section>
                   <div className="section-title">Post-event validation</div>
-                  <pre className="tiny inline-mono" style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, overflowX: "auto", margin: 0 }}>
+                  <pre tabIndex={0} className="tiny inline-mono" style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, overflowX: "auto", margin: 0 }}>
                     {JSON.stringify(postEvents, null, 2)}
                   </pre>
                 </section>

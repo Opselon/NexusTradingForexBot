@@ -1,0 +1,159 @@
+/**
+ * PURPOSE:  Positions-page trade-blotter skin — side rails, magnitude-ramped
+ *           signed P&L, derived aggregate strip, density toggle, row focus.
+ * OWNER:    uiux-wave5-positions  (future edits to this file belong to this lane)
+ * CONSUMES: tokens from styles/theme.css only (green, red, amber, accent,
+ *           border, bg-surface, text, mono and sans custom properties);
+ *           l4 helpers from pages.css (.l4-th-sort, .l4-prov, .l4-table--scroll).
+ * PROVIDES: .pos-strip, .pos-density, .pos-loading, .pos-blotter, .pos-pnl,
+ *           .pos-side-cell, .pos-row--* classes used by pages/Positions TSX.
+ * INVARIANTS: additive only — no other feature's markup is affected; every
+ *             colour is a theme token (the one rgba() tint mirrors --accent,
+ *             the same convention theme.css/debug.css already use); compact
+ *             density changes row padding only, never hides a column or cell.
+ * EXTEND:   keep every new class under the pos- prefix, consume theme tokens,
+ *           and use logical properties (margin-inline, inset-inline,
+ *           text-align: end) so the RTL console mirrors correctly.
+ */
+
+/* Documented alpha tint (only hardcoded channels in this file):
+   rgba(65, 166, 242, 0.1) = --accent at 10% — pressed state of the density
+   toggle, same mirror theme.css uses in .banner.info. */
+
+/* ------------------------------ Loading ------------------------------ */
+/* Kit Skeleton under a label — the label keeps the pre-existing string. */
+.pos-loading {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+}
+.pos-loading__label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* ------------------------------ Density toggle ------------------------------ */
+/* Display-only preference; persisted by pages/Positions/density.ts. */
+.pos-density {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.pos-density__btn[aria-pressed="true"] {
+  color: var(--accent-strong);
+  border-color: var(--accent);
+  background: rgba(65, 166, 242, 0.1);
+}
+
+/* ------------------------------ Derived aggregate strip ------------------------------ */
+/* Sits directly above the blotter; every figure carries a .l4-prov "derived"
+   chip so it can never be read as a backend field. Hidden by the component
+   itself when it is handed zero rows. */
+.pos-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 12px;
+  border-block-end: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 55%), var(--bg-inset);
+}
+.pos-strip__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.pos-strip__lab {
+  font-family: var(--sans);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.pos-strip__val {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.pos-strip__val[data-tone="pos"] { color: var(--green); }
+.pos-strip__val[data-tone="neg"] { color: var(--red); }
+.pos-strip__val[data-tone="partial"] { color: var(--amber); }
+.pos-strip .l4-prov { flex-shrink: 0; }
+
+/* ------------------------------ Blotter table ------------------------------ */
+/* Base look comes from theme .data-table (mono cells, zebra, sticky th);
+   these rules add the trade-terminal layer on top. */
+
+/* Sticky sortable header — theme already pins th; bump it above row chrome. */
+.pos-blotter thead th { z-index: 2; }
+/* Numeric columns read right-aligned in LTR, left-aligned in RTL. */
+.pos-blotter td.num,
+.pos-blotter th.num { text-align: end; }
+
+/* Row hover ring + keyboard focus ring (focus is inset so the scroll
+   container never clips it; rows use a roving tabindex from BlotterTable).
+   scroll-margin keeps an arrow-keyed row from parking under the sticky th. */
+.pos-blotter tbody tr { scroll-margin-block-start: 48px; }
+.pos-blotter tbody tr:hover td,
+.pos-blotter tbody tr:focus-visible td { background: var(--bg-panel-2); }
+.pos-blotter tbody tr:hover { outline: 1px solid var(--border-strong); outline-offset: -1px; }
+.pos-blotter tbody tr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Side rail on the first cell — restates Position.type (0 BUY / 1 SELL).
+   border-inline-start keeps it on the reading edge in both directions; the
+   transparent base keeps every row the same width (no layout shift). */
+.pos-blotter tbody td:first-child { border-inline-start: 2px solid transparent; }
+.pos-blotter tbody tr.pos-row--long td:first-child { border-inline-start-color: var(--green); }
+.pos-blotter tbody tr.pos-row--short td:first-child { border-inline-start-color: var(--red); }
+
+/* Compact density: row padding only — no column, cell or label is hidden. */
+.pos-blotter.pos-compact td { padding-block: 2px; }
+
+/* ------------------------------ Side cell (BUY/SELL + long/short) --------- */
+/* The badge keeps the backend word (BUY/SELL/UNKNOWN); the sub-line is the
+   trade-terminal reading of the same field, never new information. */
+.pos-side-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  line-height: 1.15;
+}
+.pos-side-cell__sub {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.pos-side-cell__sub[data-side="long"] { color: var(--green); }
+.pos-side-cell__sub[data-side="short"] { color: var(--red); }
+
+/* ------------------------------ Signed P&L magnitude ramp ------------------------------ */
+/* Hue from the sign (theme tokens), alpha from --pos-pnl-mix, which each
+   cell sets to 55%..100% of that token, scaled by sqrt(|value| / largest
+   |P&L| on screen) — derived display logic over backend values only.
+   The plain colour is declared first so browsers without color-mix() keep an
+   honest, fully-opaque sign colour (an unsupported later declaration is
+   dropped by the CSS parser). */
+.pos-pnl {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.pos-pnl--up {
+  color: var(--green);
+  color: color-mix(in oklab, var(--green) var(--pos-pnl-mix, 100%), transparent);
+}
+.pos-pnl--down {
+  color: var(--red);
+  color: color-mix(in oklab, var(--red) var(--pos-pnl-mix, 100%), transparent);
+}
+/* Top-of-ramp emphasis — static glow, no motion. */
+.pos-pnl--hot { text-shadow: 0 0 10px currentColor; }

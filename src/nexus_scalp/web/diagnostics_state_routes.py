@@ -239,6 +239,121 @@ def _db_hygiene_store(payload: dict[str, Any]) -> None:
     _DB_HYGIENE_CACHE.update({"at": time.monotonic(), "payload": payload})
 
 
+# ---------------------------------------------------------------------------
+# TASK-CFGUI-001 — /alt/config tab contract hardening
+# ---------------------------------------------------------------------------
+
+
+def mask_secret_tail(value: str) -> str:
+    """BUG-072 display mask: star everything but the last 4 characters."""
+    text = str(value)
+    if len(text) <= 4:
+        return "*" * len(text)
+    return "*" * (len(text) - 4) + text[-4:]
+
+
+def mask_config_secrets(raw_data: dict[str, Any]) -> dict[str, Any]:
+    """Never serve plaintext credentials on GET /api/config.
+
+    BUG-072 (telegram bot_token) extended to the MT5 credential block and
+    the notification API key: every secret-shaped field this route may carry
+    is replaced by a display mask before the payload reaches a browser.
+    Values that already contain ``*`` (secure-store masks such as
+    ``telegram.token_masked``) are left untouched — never double-masked.
+    """
+    for section, field in (
+        ("telegram", "bot_token"),
+        ("mt5", "password"),
+        ("notification", "telegram_api_key"),
+    ):
+        block = raw_data.get(section)
+        if not isinstance(block, dict):
+            continue
+        value = block.get(field)
+        if isinstance(value, str) and value and "*" not in value:
+            block[field] = mask_secret_tail(value)
+    return raw_data
+
+
+def restore_masked_mt5_password(
+    raw_data: dict[str, Any], yaml_path: Path | None = None
+) -> dict[str, Any]:
+    """Round-trip guard for POST /api/config (pairs with mask_config_secrets).
+
+    GET serves a MASK for ``mt5.password`` and the legacy config form echoes
+    the whole mt5 block back verbatim (Web/app.js ``saveConfiguration`` ->
+    ``mt5: selectedConfig.mt5``). Persisting that mask would overwrite the
+    real credential in live.yaml — so masked/empty inbound passwords keep the
+    stored value instead; a real (unmasked) value is written as-is.
+    """
+    mt5 = raw_data.get("mt5")
+    if not isinstance(mt5, dict):
+        return raw_data
+    inbound = str(mt5.get("password") or "")
+    if inbound and "*" not in inbound:
+        return raw_data  # operator supplied a real credential — keep it
+    path = yaml_path or Path("configs/live.yaml")
+    stored = ""
+    try:
+        if path.exists():
+            with open(path, encoding="utf-8") as f:
+                current = yaml.safe_load(f) or {}
+            current_mt5 = current.get("mt5") if isinstance(current, dict) else None
+            if isinstance(current_mt5, dict):
+                stored = str(current_mt5.get("password") or "")
+    except Exception as exc:  # an unreadable copy must not block a save
+        logger.warning("[CONFIG] stored mt5.password unreadable during restore", exc_info=exc)
+        stored = ""
+    mt5["password"] = stored
+    return raw_data
+
+
+def current_execution_mode(engine: Any) -> str | None:
+    """Canonical current mode string ('LIVE', 'PAPER', ...) or None if unreadable."""
+    try:
+        mode = engine.config.execution.mode  # type: ignore[union-attr]
+    except Exception:
+        return None
+    value = getattr(mode, "value", mode)
+    text = str(value or "").strip().upper()
+    return text or None
+
+
+def dry_run_config_errors(engine: Any, key: str, value: Any) -> list[str]:
+    """Validate one dotted key/value against the apply path's own validator.
+
+    Runs ``build_runtime_configuration`` with NO persist step — the exact
+    field validators (type/range/enum/unknown-key) and cross-field constraints
+    that POST /api/runtime-config/apply enforces — so ``valid: true`` here
+    means "would be accepted there". When the engine (and its live snapshot)
+    is offline, bootstrap defaults form the base so validation still works.
+    """
+    from nexus_scalp.configuration.runtime_config import build_runtime_configuration
+
+    base = None
+    version = 0
+    store = getattr(engine, "runtime_config", None) if engine else None
+    if store is not None:
+        try:
+            base = store.get_snapshot()
+            version = int(store.get_version())
+        except Exception as exc:
+            logger.warning("[SETTINGS_VALIDATE] snapshot unreadable", exc_info=exc)
+    bootstrap = None
+    if base is None:
+        from nexus_scalp.configuration.config import AppConfig
+
+        bootstrap = AppConfig()
+    result = build_runtime_configuration(
+        version=version + 1,
+        base=base,
+        bootstrap=bootstrap,
+        updates={key: value},
+        source="SETTINGS_VALIDATE",
+    )
+    return list(result.errors)
+
+
 def register_diagnostics_state_routes(
     app: Any,
     _err: Any,
@@ -1238,35 +1353,56 @@ def register_diagnostics_state_routes(
                 detail=f"Invalid execution mode '{req.mode}' (allowed: {', '.join(sorted(allowed))})",
             )
         target = ExecutionMode(wanted)
+        # TASK-CFGUI-001: /api/v1/runtime/mode documents the transition
+        # matrix as SERVER truth ("the SERVER remains authoritative") — but
+        # the route that actually APPLIES the mode never enforced it. Validate
+        # against the same matrix here; an illegal transition is refused
+        # before anything is swapped or persisted.
+        from nexus_scalp.web.api_v1.runtime import _validate_transition
+
+        check = _validate_transition(current_execution_mode(engine), wanted)
+        if not check["valid"]:
+            raise HTTPException(status_code=422, detail="; ".join(str(e) for e in check["errors"]))
         if hasattr(engine, "set_execution_mode"):
             result = engine.set_execution_mode(target, source="WEB_UI")
             if not result.get("success"):
                 raise HTTPException(status_code=500, detail=result)
         else:
             engine.config.execution.mode = target
-        from nexus_scalp.settings import load_settings_service
-
-        svc = getattr(engine, "settings_service", None) or load_settings_service()
-        saved = svc.db.set(
-            "execution.mode",
-            wanted,
-            value_type="str",
-            source="USER_SETTINGS",
-            actor="web",
-        )
         # RUNTIME CONFIGURATION: execution.mode is a persisted runtime value.
-        # Route through the versioned store so the snapshot/version/event
-        # stay consistent (the engine boot reads the settings DB anyway).
+        # Persist exactly ONCE: the versioned runtime store is the authority
+        # (it writes the same settings rows the engine boot hydrates from).
+        # The former unconditional db.set below double-wrote every mode
+        # switch — two audit rows + two version bumps per click (observed:
+        # execution.mode drifted to v86 while sibling keys sat at v41).
+        persisted = False
         if hasattr(engine, "runtime_config"):
-            engine.runtime_config.apply(
+            report = engine.runtime_config.apply(
                 {"execution.mode": wanted}, source="WEB_ENGINE_MODE", actor="web"
+            )
+            persisted = bool(getattr(report, "persisted", False)) or bool(
+                getattr(report, "runtime_applied", False)
+            )
+        else:
+            # Store-less fallback: the settings DB is the only persistence left.
+            from nexus_scalp.settings import load_settings_service
+
+            svc = getattr(engine, "settings_service", None) or load_settings_service()
+            persisted = bool(
+                svc.db.set(
+                    "execution.mode",
+                    wanted,
+                    value_type="str",
+                    source="USER_SETTINGS",
+                    actor="web",
+                )
             )
         return {
             "success": True,
             "mode": wanted,
             "engine_running": bool(getattr(engine, "_running", False)),
             "runtime_mode": getattr(engine, "_runtime_mode", wanted),
-            "persisted": bool(saved),
+            "persisted": persisted,
         }
 
     # =====================================================================
@@ -1692,7 +1828,9 @@ def register_diagnostics_state_routes(
             tg = raw_data.get("telegram") or {}
             tg["bot_token"] = snap.telegram.token_masked or ""
             raw_data["telegram"] = tg
-            return raw_data
+            # BUG-072 + TASK-CFGUI-001: mt5.password / notification key masked
+            # too — no secret-shaped field ever reaches the browser.
+            return mask_config_secrets(raw_data)
         # Engine offline: bootstrap YAML fallback (diagnostic only)
         live_config_path = Path("configs/live.yaml")
         if not live_config_path.exists():
@@ -1701,16 +1839,10 @@ def register_diagnostics_state_routes(
         with open(live_config_path, encoding="utf-8") as f:
             raw_data = yaml.safe_load(f) or {}
 
-        # BUG-072: never return the plaintext bot token to the browser.
-        # The UI receives a masked display value; real credentials live in
-        # the secure store and are exposed only as status.
-        tg = raw_data.get("telegram")
-        if isinstance(tg, dict) and tg.get("bot_token"):
-            token = str(tg["bot_token"])
-            tg["bot_token"] = (
-                "*" * (len(token) - 4) + token[-4:] if len(token) > 4 else "*" * len(token)
-            )
-        return raw_data
+        # BUG-072: never return plaintext credentials to the browser.
+        # The UI receives masked display values; real credentials live in
+        # the secure store / live.yaml and are exposed only as status.
+        return mask_config_secrets(raw_data)
 
     # POST /api/config
     @app.post("/api/config")
@@ -1769,6 +1901,11 @@ def register_diagnostics_state_routes(
                         "[TELEGRAM_CONFIG] event=REBUILT source=WEB_CONFIG configured=%s",
                         bool(sec_token and sec_admin),
                     )
+
+            # TASK-CFGUI-001: a MASKED mt5.password round-tripping from the
+            # config form must never overwrite the stored credential in
+            # live.yaml (pairs with mask_config_secrets on GET).
+            restore_masked_mt5_password(raw_config, live_config_path)
 
             # Write to disk atomically (compatibility projection; the
             # authoritative runtime state lives in the runtime config store)
@@ -1987,18 +2124,31 @@ def register_diagnostics_state_routes(
             )
         return result
 
-    # POST /api/settings/validate — server-side validation of a proposed value
+    # POST /api/settings/validate — server-side validation of a proposed value.
+    # TASK-CFGUI-001: previously this route answered `valid: true` for every
+    # key without ever seeing a value (mutability lookup only). It now dry-runs
+    # the proposed value through the runtime configuration builder — the SAME
+    # validator the apply path uses (type/range/enum/unknown-key/cross-field,
+    # zero side effects) — whenever the caller sends one, giving the UI's
+    # validate-before-apply gate real server-side verdicts to block on.
+    # Key-only calls stay mutability-only (backward compatible).
     @app.post("/api/settings/validate")
     def validate_setting(payload: dict[str, Any]) -> dict[str, Any]:
         key = str(payload.get("key") or "")
         from nexus_scalp.settings.service import MUTABILITY
 
         mutability = MUTABILITY.get(key, "HOT_RESTRICTED")
+        checked = "value" in payload
+        errors: list[str] = []
+        if checked and key:
+            errors = dry_run_config_errors(app.state.engine, key, payload.get("value"))
         return {
             "success": True,
             "key": key,
             "mutability": mutability,
-            "valid": True,
+            "valid": not errors,
+            "errors": errors,
+            "checked": checked,
         }
 
     # POST /api/telegram/test — sends a connectivity test message through the

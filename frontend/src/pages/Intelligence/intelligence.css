@@ -1,0 +1,643 @@
+/*
+ * PURPOSE   — UI/UX skin for the /alt/intelligence page (news, market
+ *             structure, regime, feed forensics). Presentation only: no data
+ *             derivation lives here, every value rendered under these classes
+ *             comes from the backend payloads the page already fetched.
+ * OWNER     — intelligence page lane (future edits: frontend/src/pages/Intelligence/).
+ * CONSUMES  — theme tokens from styles/theme.css only (no rogue hex colours),
+ *             plus the shared primitives (.metric, .panel, .badge, .state-block).
+ * PROVIDES  — namespaced `.ix-*` classes; nothing here can leak onto another
+ *             feature page, and every selector is additive (primitives keep
+ *             their own classes).
+ * INVARIANTS— logical properties only (RTL console mirrors correctly);
+ *             honest states (stale/unavailable banners) keep their copy;
+ *             reduced-motion users get no entry animation or hover lift.
+ * EXTEND    — add new `.ix-*` rules here; never restyle a shared primitive
+ *             globally from this file.
+ */
+
+.ix-page {
+  display: grid;
+  gap: var(--panel-gap);
+  animation: pageIn 0.18s ease-out;
+}
+
+/* ------------------------------ Hero ------------------------------ */
+.ix-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(460px 190px at 4% -40%, rgba(65, 166, 242, 0.16), transparent 70%),
+    radial-gradient(380px 170px at 96% -30%, rgba(157, 123, 240, 0.13), transparent 70%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 45%),
+    var(--bg-panel);
+  box-shadow: var(--elev-1);
+}
+.ix-hero::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(65, 166, 242, 0.55), rgba(157, 123, 240, 0.45), transparent);
+}
+.ix-hero-main {
+  min-width: 0;
+}
+.ix-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.ix-kicker .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(65, 166, 242, 0.85);
+}
+.ix-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 8px 0 5px;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.ix-title .glyph {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-strong);
+  background: rgba(65, 166, 242, 0.1);
+  border: 1px solid rgba(65, 166, 242, 0.45);
+  border-radius: 9px;
+  padding: 4px 9px;
+  box-shadow: 0 0 14px rgba(65, 166, 242, 0.18);
+}
+.ix-title .word {
+  color: var(--text);
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .ix-title .word {
+    background: linear-gradient(115deg, var(--text) 35%, var(--accent-strong));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+.ix-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  max-width: 82ch;
+}
+
+/* Endpoint provenance chips — where each figure below comes from. */
+.ix-endpoints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block-start: 11px;
+}
+.ix-ep {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+  background: var(--bg-inset);
+  border: 1px dashed var(--border-strong);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.ix-hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* Live news-state pill (backend state word + freshness, never inferred). */
+.ix-livechip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-inset);
+  color: var(--text-dim);
+  padding: 5px 11px;
+}
+.ix-livechip .d {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+.ix-livechip .fresh {
+  color: var(--text-faint);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.ix-livechip.good {
+  border-color: rgba(62, 207, 142, 0.4);
+  background: rgba(62, 207, 142, 0.08);
+  color: var(--green);
+}
+.ix-livechip.warn {
+  border-color: rgba(235, 161, 63, 0.45);
+  background: rgba(235, 161, 63, 0.08);
+  color: var(--amber);
+}
+.ix-livechip.bad {
+  border-color: rgba(242, 86, 77, 0.45);
+  background: rgba(242, 86, 77, 0.08);
+  color: #ff8f89;
+}
+.ix-livechip.dim {
+  color: var(--text-dim);
+}
+
+/* ------------------------------ Section labels ------------------------------ */
+.ix-sec {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-block-start: 6px;
+}
+.ix-sec > span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.ix-sec > i {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border-strong), transparent);
+}
+
+/* ------------------------------ Honest-state banner ------------------------------ */
+.ix-stale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--amber);
+  background: rgba(235, 161, 63, 0.08);
+  border: 1px solid rgba(235, 161, 63, 0.4);
+  border-radius: 8px;
+  padding: 9px 12px;
+}
+
+/* ------------------------------ KPI strip ------------------------------ */
+.ix-kpis .metric {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.ix-kpis .metric:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--elev-2);
+  transform: translateY(-1px);
+}
+
+/* Panels on this page: quiet lift on hover, scoped so no other page moves. */
+.ix-page .panel {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.ix-page .panel:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--elev-2);
+}
+
+/* ------------------------------ Page-local bits ------------------------------ */
+/* Scroll cap for the liquidity feature grid (page override of l4-features). */
+.ix-feats {
+  max-block-size: 160px;
+}
+
+/* Read-only / provenance notes get a softer, inset treatment. */
+.ix-readnote {
+  margin-block-start: 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  padding: 6px 9px;
+  line-height: 1.5;
+}
+
+/* Article-title cell: truncate instead of wrapping the row (was inline style). */
+.ix-title-cell {
+  max-width: 480px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Section gap helper replacing the old inline marginTop values. */
+.ix-gap {
+  margin-block-start: 10px;
+}
+
+/* "market context" heading spans the full kv grid (was inline gridColumn). */
+.ix-ctx-head {
+  grid-column: 1 / -1;
+}
+
+/* Skeleton padding inside the tight (table) panels. */
+.ix-skel {
+  padding: 12px;
+}
+
+/* Subtitle inside a panel header renders the source endpoint in mono. */
+.ix-page .panel-subtitle .inline-mono {
+  font-size: 10.5px;
+}
+
+/* ------------------------------ Responsive / motion ------------------------------ */
+@media (max-width: 900px) {
+  .ix-hero-side {
+    align-items: flex-start;
+  }
+  .ix-title {
+    font-size: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ix-page {
+    animation: none;
+  }
+  .ix-kpis .metric,
+  .ix-page .panel {
+    transition: none;
+  }
+  .ix-kpis .metric:hover {
+    transform: none;
+  }
+}
+
+/* ===== uiux-wave5-intel additions (itl- prefixed; zero overlap with main's rules above) ===== */
+/* ==========================================================================
+   PURPOSE:  Scoped stylesheet for the Intelligence page (lane token `itl-`) —
+             filter chips, timeline rail, signal cards, score bars, autopsy
+             cards, plus a card entrance animation.
+   OWNER:    uiux-wave5-intel  (future edits to this file belong to this lane)
+   CONSUMES: theme.css tokens only (--bg/--border/--text/--accent, spacing and
+             type tokens) — no hex colors except documented rgba() of tokens;
+             class names consumed by ./IntelligencePage, ./SignalFeed,
+             ./AutopsyFeed, ./signalBits (all itl- prefixed).
+   PROVIDES: itl-chiprow, itl-chip, itl-count, itl-rail, itl-item(--newest),
+             itl-card*, itl-type, itl-time, itl-fig, itl-score*, itl-autopsy*.
+   INVARIANTS: additive-only — no other page's markup is affected; colors
+             restate backend values (badge tones come from the kit), an
+             absent value is "—" upstream, never a fabricated bar; logical
+             properties everywhere so RTL mirrors correctly.
+   EXTEND:   add a new itl- block below; never edit another lane's stylesheet,
+             never hardcode a color that theme.css already provides.
+
+   Design language: feed of signal cards on a newest-first timeline rail,
+   derived filter chips with an active state, mono key figures, backend
+   0..1 score bars, and autopsy cards.
+
+   Rules (same discipline as the rest of the console):
+     - motion is decorative-only, wrapped in prefers-reduced-motion:
+       no-preference (the theme also neutralizes it globally).
+   ========================================================================== */
+
+/* ------------------------------------------------------------------ *
+ * 1. Filter chip row + result count
+ * ------------------------------------------------------------------ */
+
+.itl-chiprow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 9px 12px;
+  border-block-end: 1px solid var(--border);
+}
+
+.itl-chip {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-inset);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.itl-chip:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.itl-chip[aria-pressed="true"] {
+  background: rgba(65, 166, 242, 0.14);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.itl-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.itl-count {
+  margin-inline-start: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ *
+ * 2. Timeline rail (border-inline-start line + dots), newest emphasized
+ * ------------------------------------------------------------------ */
+
+.itl-rail {
+  list-style: none;
+  margin: 0;
+  padding: 10px 14px 12px;
+  display: grid;
+  gap: 0;
+}
+
+.itl-item {
+  position: relative;
+  border-inline-start: 2px solid var(--border-strong);
+  padding: 7px 0 7px 16px;
+}
+
+.itl-item:last-child {
+  padding-block-end: 2px;
+}
+
+.itl-item::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -5px;
+  inset-block-start: 18px;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--bg-panel-2);
+  border: 2px solid var(--border-strong);
+}
+
+.itl-item--newest {
+  border-inline-start-color: var(--accent);
+}
+
+.itl-item--newest::before {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(65, 166, 242, 0.65);
+}
+
+/* ------------------------------------------------------------------ *
+ * 3. Signal card
+ * ------------------------------------------------------------------ */
+
+.itl-card {
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 45%), var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.itl-card:hover {
+  border-color: var(--border-strong);
+}
+
+/* detail emphasis: the newest signal reads as the active card */
+.itl-item--newest .itl-card {
+  border-color: rgba(65, 166, 242, 0.45);
+  background: linear-gradient(180deg, rgba(65, 166, 242, 0.06), transparent 55%), var(--bg-panel);
+}
+
+.itl-card__head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.itl-type {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  background: rgba(65, 166, 242, 0.1);
+  border: 1px solid rgba(65, 166, 242, 0.35);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.itl-time {
+  margin-inline-start: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.itl-card__title {
+  margin: 6px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.itl-card__figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.itl-fig {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 11px;
+  min-width: 0;
+}
+
+.itl-fig .k {
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.itl-fig .v {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ *
+ * 4. Backend 0..1 score bar (width = value, label = raw number)
+ * ------------------------------------------------------------------ */
+
+.itl-score {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 8px;
+  align-items: center;
+  margin-block-start: 8px;
+  max-inline-size: 320px;
+}
+
+.itl-score__lab {
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.itl-score__num {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  justify-self: end;
+}
+
+.itl-score__track {
+  grid-column: 1 / -1;
+  block-size: 5px;
+  border-radius: 3px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.itl-score__fill {
+  display: block;
+  block-size: 100%;
+  background: linear-gradient(90deg, rgba(65, 166, 242, 0.5), var(--accent-strong));
+}
+
+/* ------------------------------------------------------------------ *
+ * 5. Autopsy cards
+ * ------------------------------------------------------------------ */
+
+.itl-autopsies {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.itl-autopsy {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 45%), var(--bg-panel);
+}
+
+.itl-autopsy:hover {
+  border-color: var(--border-strong);
+}
+
+.itl-ticket {
+  margin-inline-start: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.itl-autopsy__figures {
+  display: grid;
+  gap: 3px;
+}
+
+.itl-autopsy__exit {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.itl-autopsy__exit .k {
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ------------------------------------------------------------------ *
+ * 6. Motion — decorative entrance only, off under reduced motion
+ * ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: no-preference) {
+  .itl-card {
+    animation: itlCardIn 0.18s ease-out both;
+  }
+
+  .itl-score__fill {
+    transition: inline-size 0.4s ease;
+  }
+}
+
+@keyframes itlCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 7. Narrow screens
+ * ------------------------------------------------------------------ */
+
+@media (max-width: 720px) {
+  .itl-time {
+    margin-inline-start: 0;
+  }
+
+  .itl-count {
+    margin-inline-start: 0;
+    inline-size: 100%;
+  }
+}

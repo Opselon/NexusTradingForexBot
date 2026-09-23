@@ -9,7 +9,8 @@
  * `unknown` (hatched, never green): an unproven zero is not a satisfied gate.
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useDialogA11y } from "../../components/useDialogA11y";
 import { formatNumber } from "@/lib/format";
 import "@/pages/_shared/pages.css";
 
@@ -105,7 +106,7 @@ export function SortableTable<T>({
               {columns.map((c) => {
                 const active = sort?.key === c.key;
                 return (
-                  <th
+                  <th scope="col"
                     key={c.key}
                     className={c.num ? "num" : undefined}
                     style={c.width ? { inlineSize: c.width } : undefined}
@@ -246,26 +247,20 @@ export function Drawer({
   children: ReactNode;
   footer?: ReactNode;
 }) {
-  // Esc closes (same rule as ConfirmModal).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const boxRef = useRef<HTMLElement | null>(null);
+  useDialogA11y(boxRef, onClose);
 
   return (
     <>
       <div className="l4-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()} />
-      <aside className="l4-drawer" role="dialog" aria-modal="true" aria-label={title}>
+      <aside ref={boxRef} className="l4-drawer" role="dialog" aria-modal="true" aria-label={title}>
         <div className="l4-drawer__head">
           <span>{title}</span>
           <button className="btn small ghost" style={{ marginInlineStart: "auto" }} onClick={onClose} aria-label="Close panel">
             esc ✕
           </button>
         </div>
-        <div className="l4-drawer__body">{children}</div>
+        <div tabIndex={0} className="l4-drawer__body">{children}</div>
         {footer && <div className="l4-drawer__foot">{footer}</div>}
       </aside>
     </>
@@ -283,7 +278,7 @@ export function JsonBlock({ value, label }: { value: unknown; label?: string }) 
   return (
     <div>
       {label && <div className="section-title">{label}</div>}
-      <pre className="l4-json">{text}</pre>
+      <pre tabIndex={0} className="l4-json">{text}</pre>
     </div>
   );
 }

@@ -12,6 +12,7 @@ export {
   TELEGRAM_STATUS_KEY,
   useApplyRuntimeConfig,
   useConfigFormQuery,
+  useModePreview,
   useModelSwap,
   useRuntimeDiagnosticsQuery,
   useRuntimeEffectiveQuery,
@@ -22,4 +23,4 @@ export {
   useTelegramStatusQuery,
   useTestTelegram,
 } from "./useCases";
-export type { ApplySteps, CommandOutcome } from "./useCases";
+export type { ApplySteps, CommandOutcome, ModePreviewV1 } from "./useCases";

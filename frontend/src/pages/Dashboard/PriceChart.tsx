@@ -8,11 +8,31 @@
  * with the legacy OHLC tooltip semantics. Frame drawing lives in
  * ./chartPainter.ts (pure Canvas2D, no state).
  *
- * Data discipline:
+ * TradingView-style view controls (2026-09-23):
+ *  - TIMEFRAME toolbar: 1m/3m/5m/10m/15m/30m/1h/4h/1D/1W request broker-
+ *    native bars per timeframe via /api/chart/history?timeframe= (backend
+ *    allowlist; the active chip follows the SERVED timeframe, never the
+ *    clicked one, so a backend that ignores the request cannot lie here).
+ *  - WHEEL ZOOM: continuous slot-count zoom anchored under the cursor
+ *    (wheel up = zoom in); shift/trackpad-X pans. Native non-passive
+ *    listener (React registers wheel as passive — onWheel cannot
+ *    preventDefault).
+ *  - DRAG PAN: pointer-capture drag through the fetched history and INTO
+ *    the empty future region (bounded to 40% of the view); new bars keep
+ *    sliding in only while pinned at the right edge (followLive), and the
+ *    LIVE chip jumps back to the latest bar.
+ *  - View state is a window model: left = absolute index of the first
+ *    slot, count = slot budget; `shown` fills the leading slots and the
+ *    tail stays empty (painter marks the data/future boundary).
+ *
+ * Data discipline (unchanged):
  *  - Candles come from /api/chart/history (broker-native with explicit
  *    ENGINE_STATE fallback provenance) — NEVER synthesized, NEVER gap-filled.
  *  - Zones / BOS / midlines / liquidity sweeps / order lines render ONLY
  *    from the backend `visual_overlays` payload; the chart computes no SMC.
+ *    Those overlays are computed by the engine on ITS native timeframe —
+ *    when a foreign timeframe is served the header discloses it instead of
+ *    implying the markers were computed on these bars.
  *  - EMA/trend overlay lines: the canonical snapshot and chart history carry
  *    NO indicator series (verified: server.py visual_overlays keys are
  *    rectangles/bos_lines/midlines/liq_markers/order_lines). Client-side
@@ -29,8 +49,33 @@ import type { OverlayLine, OverlayRect, OverlayOrderLines } from "../_shared/con
 import { useRealtimeVersion } from "@/hooks/useRealtime";
 import { formatPrice } from "@/lib/format";
 import { AXIS_W, PAD_LEFT, paintChart, readPalette, type PainterScene } from "./chartPainter";
+import { ChartSettingsProvider, useChartSettings } from "./chart/chartSettings";
+import { ChartLegend } from "./chart/ChartLegend";
+import { ChartTypeButton } from "./toolbar/ChartTypeButton";
+import { ChartOverlaysButton } from "./toolbar/ChartOverlaysButton";
+import { SnapshotButton } from "./toolbar/SnapshotButton";
+import { FullscreenButton } from "./toolbar/FullscreenButton";
 import "@/pages/_shared/pages.css";
 import "./market-console.css";
+
+/** [chip label, MT5 code] — the switcher set (backend allowlist is wider). */
+const TF_CHIPS: ReadonlyArray<readonly [string, string]> = [
+  ["1m", "M1"],
+  ["3m", "M3"],
+  ["5m", "M5"],
+  ["10m", "M10"],
+  ["15m", "M15"],
+  ["30m", "M30"],
+  ["1h", "H1"],
+  ["4h", "H4"],
+  ["1D", "D1"],
+  ["1W", "W1"],
+];
+
+const MIN_SLOTS = 20;
+/** Empty slots allowed past the last bar while panning into the future. */
+const maxFutureFor = (slots: number) => Math.floor(slots * 0.4);
+const clampInt = (v: number, lo: number, hi: number) => Math.min(Math.max(Math.round(v), lo), hi);
 
 export interface PriceChartProps {
   bars: Bar[];
@@ -38,7 +83,14 @@ export interface PriceChartProps {
   /** Backend provenance word for the bars (BROKER_NATIVE / ENGINE_STATE / UNAVAILABLE). */
   source: string | null;
   symbol: string | null;
+  /** SERVED timeframe from the backend response (the header chip's truth). */
   timeframe: string | null;
+  /** Timeframe to highlight NOW (requested while fetching, served when settled). */
+  activeTf?: string;
+  /** Chip click → parent refetches /api/chart/history?timeframe=. */
+  onTfChange?: (timeframeCode: string) => void;
+  /** Engine-native timeframe — set when the served one differs (overlay disclosure). */
+  engineTimeframe?: string | null;
   overlays?: {
     rectangles?: OverlayRect[];
     bos_lines?: OverlayLine[];
@@ -60,17 +112,30 @@ export interface PriceChartProps {
 }
 
 interface Hover {
+  /** SLOT index within the window (may exceed shown.length over future space). */
   idx: number;
   x: number;
   y: number;
 }
 
-export function PriceChart({
+interface View {
+  /** Slots spanned by the plot (the zoom level). */
+  visible: number;
+  /** Absolute index of the leftmost slot (meaningful when not followLive). */
+  left: number;
+  /** Pinned at the right edge: new bars keep sliding the window in. */
+  followLive: boolean;
+}
+
+function PriceChartInner({
   bars,
   digits,
   source,
   symbol,
   timeframe,
+  activeTf,
+  onTfChange,
+  engineTimeframe,
   overlays,
   liveBid,
   cursorIso,
@@ -80,30 +145,103 @@ export function PriceChart({
   error,
   onRetry,
 }: PriceChartProps) {
-  const [visible, setVisible] = useState(180);
+  const [view, setView] = useState<View>({ visible: 180, left: 0, followLive: true });
   const [hover, setHover] = useState<Hover | null>(null);
+  const [dragging, setDragging] = useState(false);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const dragRef = useRef<DragState | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const rtVersion = useRealtimeVersion();
+  const settings = useChartSettings();
+  const { chartKind, overlayVisible } = settings;
+  /** Overlay VISIBILITY filtering (lane-09: values stay engine-computed). */
+  const filteredOverlays = useMemo(() => {
+    if (!overlays) return overlays;
+    return {
+      rectangles: overlayVisible.zones ? overlays.rectangles : [],
+      bos_lines: overlayVisible.bos ? overlays.bos_lines : [],
+      midlines: overlayVisible.midlines ? overlays.midlines : [],
+      liq_markers: overlayVisible.liq ? overlays.liq_markers : [],
+      order_lines: overlayVisible.orderLines ? overlays.order_lines : null,
+    };
+  }, [overlays, overlayVisible]);
 
   // ---- data window (pure slice of backend bars — no gap fill, no synthesis)
-  const shown = useMemo(() => bars.filter((b) => b.time).slice(-visible), [bars, visible]);
+  const content = useMemo(() => bars.filter((b) => b.time), [bars]);
+  const len = content.length;
+
+  // Render-time mirrors for imperative handlers (wheel/drag listeners bind
+  // once and must never read a stale closure state).
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const lenRef = useRef(len);
+  lenRef.current = len;
+
+  const leftMax = Math.max(0, len + maxFutureFor(view.visible) - view.visible);
+  const effLeft = view.followLive
+    ? Math.max(0, len - view.visible)
+    : Math.min(Math.max(view.left, 0), leftMax);
+  const leftEffRef = useRef(effLeft);
+  leftEffRef.current = effLeft;
+
+  const shown = useMemo(
+    () => content.slice(effLeft, Math.min(len, effLeft + view.visible)),
+    [content, effLeft, len, view.visible],
+  );
+  const count = view.visible;
+
+  // ---- view mutations (all clamp + recompute followLive at the boundary)
+  const applyLeft = (nl: number) => {
+    const lenNow = lenRef.current;
+    setView((v) => {
+      const maxL = Math.max(0, lenNow + maxFutureFor(v.visible) - v.visible);
+      const c = Math.min(Math.max(Math.round(nl), 0), maxL);
+      return { ...v, left: c, followLive: c === Math.max(0, lenNow - v.visible) };
+    });
+  };
+
+  /** Zoom / preset: right-anchored while live, cursor-anchored while panned. */
+  const applyView = (nextVisible: number, rel = 0.5) => {
+    const lenNow = lenRef.current;
+    setView((v) => {
+      const vis = clampInt(nextVisible, MIN_SLOTS, Math.max(MIN_SLOTS, lenNow));
+      const liveNow = leftEffRef.current === Math.max(0, lenNow - v.visible);
+      let nl: number;
+      if (liveNow) {
+        nl = Math.max(0, lenNow - vis); // stay pinned to the latest bar
+      } else {
+        const abs = leftEffRef.current + rel * v.visible;
+        nl = Math.round(abs - rel * vis); // keep the bar under the cursor
+      }
+      const maxL = Math.max(0, lenNow + maxFutureFor(vis) - vis);
+      nl = Math.min(Math.max(nl, 0), maxL);
+      return { visible: vis, left: nl, followLive: nl === Math.max(0, lenNow - vis) };
+    });
+  };
+
+  // Timeframe switch (active chip changed) → snap back to the latest bar,
+  // like a TV timeframe change: the historical position of another TF's
+  // window is meaningless here.
+  useEffect(() => {
+    setView((v) => ({ ...v, followLive: true }));
+  }, [activeTf]);
 
   const { timeIndex, indexAtOrBefore } = useMemo(() => {
     const m = new Map<string, number>();
-    shown.forEach((b, i) => m.set(b.time, i));
-    // index of the LAST bar at-or-before a time string (string compare works
-    // on ISO timestamps; mirrors Web/replay_panel.js cursor search)
+    content.forEach((b, i) => m.set(b.time, i));
+    // ABSOLUTE index of the LAST bar at-or-before a time string (string
+    // compare works on ISO timestamps; mirrors Web/replay_panel.js cursor
+    // search). May point outside the visible window — the painter converts.
     const atOrBefore = (iso: string): number => {
       const probe = iso.slice(0, 19);
-      for (let i = shown.length - 1; i >= 0; i--) {
-        if ((shown[i]?.time ?? "").slice(0, 19) <= probe) return i;
+      for (let i = content.length - 1; i >= 0; i--) {
+        if ((content[i]?.time ?? "").slice(0, 19) <= probe) return i;
       }
       return -1;
     };
     return { timeIndex: m, indexAtOrBefore: atOrBefore };
-  }, [shown]);
+  }, [content]);
 
   // ---- target price scale (backend values + live bid + overlay extents only)
   const target = useMemo(() => {
@@ -121,14 +259,14 @@ export function PriceChart({
       lo = Math.min(lo, liveBid);
       hi = Math.max(hi, liveBid);
     }
-    for (const z of overlays?.rectangles ?? []) {
+    for (const z of filteredOverlays?.rectangles ?? []) {
       if (Number.isFinite(z.price_low)) lo = Math.min(lo, z.price_low);
       if (Number.isFinite(z.price_high)) hi = Math.max(hi, z.price_high);
     }
     if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
     const pad = (hi - lo) * 0.08 || 0.5; // legacy padding semantics
     return { lo: lo - pad, hi: hi + pad };
-  }, [shown, liveBid, overlays]);
+  }, [shown, liveBid, filteredOverlays]);
 
   // ---- ResizeObserver: CSS-pixel stage size drives the backing store
   useEffect(() => {
@@ -145,11 +283,47 @@ export function PriceChart({
     return () => ro.disconnect();
   }, []);
 
+  // ---- wheel: non-passive native listener (React registers wheel as
+  // passive, so onWheel cannot preventDefault and the page would scroll).
+  // Zoom is anchored under the cursor while panned, right-anchored at live;
+  // shift (or a dominant trackpad deltaX) pans instead of zooming.
+  const stageMounted = shown.length > 0;
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const plotW = rect.width - AXIS_W - PAD_LEFT;
+      if (plotW <= 0) return;
+      const v = viewRef.current;
+      const base = leftEffRef.current;
+      const horiz = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+      if (e.shiftKey || horiz) {
+        const deltaPx = horiz ? e.deltaX : e.deltaY;
+        const slots = Math.round((deltaPx * v.visible) / plotW);
+        if (slots !== 0) applyLeft(base + slots);
+        return;
+      }
+      const rel = Math.min(1, Math.max(0, (e.clientX - rect.left - PAD_LEFT) / plotW));
+      // wheel up (deltaY < 0) → fewer slots → zoom IN (conventional sign)
+      const factor = Math.exp(e.deltaY * 0.0016);
+      applyView(Math.round(v.visible * factor), rel);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+    // Rebinds with the stage mount (it renders only when bars exist).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageMounted]);
+
   // ---- scene consumed by the painter via refs (no RAF restart per frame)
   const sceneRef = useRef<PainterScene | null>(null);
   sceneRef.current = {
     shown,
-    overlays,
+    left: effLeft,
+    count,
+    kind: chartKind,
+    overlays: filteredOverlays,
     liveBid,
     cursorIso,
     digits,
@@ -263,18 +437,80 @@ export function PriceChart({
   // new SSE version or any data change → one smooth redraw pass
   useEffect(() => {
     kickRef.current?.(260);
-  }, [rtVersion.version, shown, target, liveBid, overlays, cursorIso, hover]);
+  }, [rtVersion.version, shown, target, liveBid, filteredOverlays, cursorIso, hover, chartKind]);
 
   const hovered = hover && hover.idx >= 0 ? shown[hover.idx] : null;
 
-  const headerNote = (
-    <span className="l4-chip-row" style={{ marginInlineStart: "auto" }}>
-      {[90, 180, 360, 720].map((o) => (
-        <button key={o} className={`btn small ${visible === o ? "primary" : "ghost"}`} onClick={() => setVisible(o)} title={`show last ${o} bars`}>
-          {o}
+  const statusChips = (
+    <>
+      <span className="l4-chip accent">{symbol ?? "—"}</span>
+      <span className="l4-chip">{timeframe ?? "—"}</span>
+      <span className={`l4-chip ${source === "BROKER_NATIVE" || source === "MT5" ? "good" : source === "UNAVAILABLE" ? "bad" : "warn"}`}>
+        {source ?? "UNAVAILABLE"}
+      </span>
+      {stale && <span className="l4-chip warn">TICK STALE</span>}
+      {engineTimeframe && timeframe && timeframe !== engineTimeframe && (
+        <span
+          className="l4-chip warn"
+          title="SMC overlays (zones / BOS / liquidity) are computed by the engine on its native timeframe — their time mapping on this chart is approximate"
+        >
+          overlays {engineTimeframe}-native
+        </span>
+      )}
+      {caption && <span className="timestamp-note">{caption}</span>}
+    </>
+  );
+
+  const toolRow = (
+    <div className="l4-chart__tools" role="toolbar" aria-label="chart timeframe and zoom controls">
+      <span className="l4-chip-row mc-tfrow" role="group" aria-label="chart timeframe">
+        {TF_CHIPS.map(([lbl, code]) => (
+          <button
+            key={code}
+            className={`btn small ${(activeTf ?? timeframe) === code ? "primary" : "ghost"}`}
+            onClick={() => onTfChange?.(code)}
+            title={`load broker-native ${lbl} (${code}) candles`}
+          >
+            {lbl}
+          </button>
+        ))}
+      </span>
+      <span className="l4-chip-row mc-toolset" role="group" aria-label="chart tools">
+        <ChartTypeButton />
+        <ChartOverlaysButton />
+        <SnapshotButton canvasRef={canvasRef} />
+        <FullscreenButton targetRef={stageRef} />
+      </span>
+      <span className="l4-chip-row" style={{ marginInlineStart: "auto" }}>
+        {[90, 180, 360, 720].map((o) => (
+          <button
+            key={o}
+            className={`btn small ${view.visible === o ? "primary" : "ghost"}`}
+            onClick={() => applyView(o)}
+            title={`show last ${o} bars`}
+          >
+            {o}
+          </button>
+        ))}
+        <button className="btn small ghost" onClick={() => applyView(Math.round(view.visible / 1.4))} title="zoom out (mouse wheel down)">
+          −
         </button>
-      ))}
-    </span>
+        <span className="mc-zoomval" title="visible slots (bars per screen width)">
+          {view.visible}
+        </span>
+        <button className="btn small ghost" onClick={() => applyView(Math.round(view.visible * 1.4))} title="zoom in (mouse wheel up)">
+          +
+        </button>
+        <button
+          className={`btn small ${view.followLive ? "primary" : "ghost"}`}
+          disabled={view.followLive}
+          onClick={() => setView((v) => ({ ...v, followLive: true }))}
+          title="jump back to the latest bar"
+        >
+          ◉ LIVE
+        </button>
+      </span>
+    </div>
   );
 
   const stateBlock = error ? (
@@ -300,33 +536,55 @@ export function PriceChart({
 
   return (
     <section className="l4-chart" aria-label="Price chart">
-      <div className="l4-chart__head">
-        <span className="l4-chip accent">{symbol ?? "—"}</span>
-        <span className="l4-chip">{timeframe ?? "—"}</span>
-        <span className={`l4-chip ${source === "BROKER_NATIVE" ? "good" : source === "UNAVAILABLE" ? "bad" : "warn"}`}>
-          {source ?? "UNAVAILABLE"}
-        </span>
-        {stale && <span className="l4-chip warn">TICK STALE</span>}
-        {caption && <span className="timestamp-note">{caption}</span>}
-        {headerNote}
-      </div>
+      <div className="l4-chart__head">{statusChips}</div>
+      {toolRow}
       {shown.length === 0 ? (
         stateBlock
       ) : (
         <div
           ref={stageRef}
-          className="mc-stage"
-          onMouseMove={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const px = e.clientX - rect.left;
-            const plotW = rect.width - AXIS_W - PAD_LEFT;
-            if (plotW <= 0) return;
-            const idx = Math.max(0, Math.min(shown.length - 1, Math.floor(((px - PAD_LEFT) / plotW) * shown.length)));
-            setHover({ idx, x: px, y: e.clientY - rect.top });
+          className={`mc-stage${dragging ? " mc-stage--dragging" : ""}`}
+          onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            dragRef.current = { x0: e.clientX, left0: leftEffRef.current, active: true };
+            setDragging(true);
           }}
-          onMouseLeave={() => setHover(null)}
+          onPointerMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const plotW = rect.width - AXIS_W - PAD_LEFT;
+            const px = e.clientX - rect.left;
+            if (plotW > 0) {
+              const idx = Math.max(
+                0,
+                Math.min(viewRef.current.visible - 1, Math.floor(((px - PAD_LEFT) / plotW) * viewRef.current.visible)),
+              );
+              setHover({ idx, x: px, y: e.clientY - rect.top });
+            }
+            const d = dragRef.current;
+            if (d?.active && plotW > 0) {
+              // drag content right → reveal the past; left → walk into the future
+              const slots = Math.round(((e.clientX - d.x0) * viewRef.current.visible) / plotW);
+              applyLeft(d.left0 - slots);
+            }
+          }}
+          onPointerUp={(e) => {
+            dragRef.current = null;
+            setDragging(false);
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+          }}
+          onPointerCancel={() => {
+            dragRef.current = null;
+            setDragging(false);
+          }}
+          onPointerLeave={() => setHover(null)}
         >
-          <canvas ref={canvasRef} aria-label={`${shown.length} ${timeframe ?? ""} candles for ${symbol ?? "market"}`} role="img" />
+          <canvas
+            ref={canvasRef}
+            aria-label={`${shown.length} ${timeframe ?? ""} candles for ${symbol ?? "market"} (wheel to zoom, drag to pan)`}
+            role="img"
+          />
+          <ChartLegend hovered={hovered ?? null} last={shown[shown.length - 1] ?? null} digits={digits} timeframe={timeframe} symbol={symbol} />
           {hovered && hover && (
             <div className="mc-tip" style={{ insetInlineStart: Math.min(hover.x + 15, Math.max(0, size.w - 190)), insetBlockStart: Math.min(hover.y + 15, Math.max(0, size.h - 96)) }}>
               <div className="mc-tip__row">
@@ -348,4 +606,21 @@ export function PriceChart({
       )}
     </section>
   );
+}
+
+/** Outer wrapper: every PriceChart owns its settings context (wave-2 —
+ *  presentation + visibility state only, lane-09 intact). */
+export function PriceChart(props: PriceChartProps) {
+  return (
+    <ChartSettingsProvider>
+      <PriceChartInner {...props} />
+    </ChartSettingsProvider>
+  );
+}
+
+/** Pointer-capture drag anchor (module-level so handlers never re-bind). */
+interface DragState {
+  x0: number;
+  left0: number;
+  active: boolean;
 }

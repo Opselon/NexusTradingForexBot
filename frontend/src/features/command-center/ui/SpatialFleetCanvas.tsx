@@ -15,7 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { EmptyState, ErrorState, Skeleton } from "@/components/primitives";
 import { formatNumber } from "@/lib/format";
-import { commandCenterQueries } from "../useCases";
+import { ccRetry, ccRetryDelay, commandCenterQueries } from "../useCases";
 import { num, spatialEmptyFacts, str, type CcSpatialDto, type CcSpatialNodeDto } from "../model";
 import { SpatialFleetEngine } from "./spatialEngine";
 import "./spatial.css";
@@ -48,7 +48,8 @@ export function SpatialFleetCanvas({
     queryKey: ["command-center", "spatial"],
     queryFn: ({ signal }) => commandCenterQueries.spatial(signal),
     refetchInterval: 30_000,
-    retry: false,
+    retry: ccRetry,
+    retryDelay: ccRetryDelay,
   });
 
   const payload = spatialQ.data?.available === true ? spatialQ.data : null;
@@ -174,10 +175,10 @@ export function SpatialFleetCanvas({
         <button className="btn small ghost" onClick={() => engineRef.current?.focusActive()}>focus live</button>
         <button className="btn small ghost" onClick={() => engineRef.current?.focusBlocked()}>focus terminal</button>
         <span className="spatial-legend" aria-hidden="true">
-          <i style={{ background: "#10b981" }} /> live
-          <i style={{ background: "#eab308" }} /> shadow
-          <i style={{ background: "#84cc16" }} /> validated
-          <i style={{ background: "#f43f5e" }} /> terminal
+          <i className="sl-live" /> live
+          <i className="sl-shadow" /> shadow
+          <i className="sl-validated" /> validated
+          <i className="sl-terminal" /> terminal
         </span>
       </div>
 

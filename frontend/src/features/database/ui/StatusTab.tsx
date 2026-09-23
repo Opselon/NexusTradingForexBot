@@ -300,7 +300,7 @@ export function StatusTab() {
             {md.domains && (
               <details className="dbc-raw" style={{ marginTop: 10 }}>
                 <summary>raw domain health payload</summary>
-                <div className="dbc-raw-body">
+                <div tabIndex={0} className="dbc-raw-body">
                   <JsonView value={md.domains} name="domains" depth={1} />
                 </div>
               </details>
@@ -336,7 +336,7 @@ export function StatusTab() {
             <HygieneBody hygiene={data} />
             <details className="dbc-raw" style={{ marginTop: 10 }}>
               <summary>raw hygiene payload</summary>
-              <div className="dbc-raw-body">
+              <div tabIndex={0} className="dbc-raw-body">
                 <JsonView value={data} name="hygiene" depth={1} />
               </div>
             </details>

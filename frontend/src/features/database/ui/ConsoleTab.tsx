@@ -65,12 +65,12 @@ function Grid({ columns, rows, small }: { columns: string[]; rows: Array<Record<
   if (columns.length === 0) return <div className="dbc-empty">No columns — the query returned no projection.</div>;
   if (rows.length === 0) return <div className="dbc-empty">No rows.</div>;
   return (
-    <div className={`dbc-grid ${small ? "sm" : ""}`}>
+    <div tabIndex={0} className={`dbc-grid ${small ? "sm" : ""}`}>
       <table>
         <thead>
           <tr>
             {columns.map((c) => (
-              <th key={c}>{c}</th>
+              <th key={c} scope="col">{c}</th>
             ))}
           </tr>
         </thead>
@@ -93,14 +93,14 @@ function Grid({ columns, rows, small }: { columns: string[]; rows: Array<Record<
 function ColumnsGrid({ columns }: { columns: ConsoleColumn[] }) {
   if (columns.length === 0) return <EmptyState message="The backend reported no columns for this table." />;
   return (
-    <div className="dbc-grid sm">
+    <div tabIndex={0} className="dbc-grid sm">
       <table>
         <thead>
           <tr>
-            <th>column</th>
-            <th>type</th>
-            <th>flags</th>
-            <th>default</th>
+            <th scope="col">column</th>
+            <th scope="col">type</th>
+            <th scope="col">flags</th>
+            <th scope="col">default</th>
           </tr>
         </thead>
         <tbody>
@@ -217,7 +217,7 @@ function ExplorerPanel() {
             <div className="dbc-console">
               <div className="dbc-side">
                 <div className="dbc-side-title">databases · {(data.databases ?? []).length}</div>
-                <div className="dbc-list">
+                <div tabIndex={0} className="dbc-list">
                   {(data.databases ?? []).map((d) => (
                     <button
                       key={d.name}
@@ -240,7 +240,7 @@ function ExplorerPanel() {
                 <FieldRow label="filter tables" hint={`${filteredTables.length} of ${tableRows.length} shown`}>
                   <TextField value={filter} onChange={setFilter} placeholder="substr…" />
                 </FieldRow>
-                <div className="dbc-list">
+                <div tabIndex={0} className="dbc-list">
                   {tables.isPending ? (
                     <Skeleton count={3} />
                   ) : tables.data && !tables.data.success ? (
@@ -394,7 +394,7 @@ function ExplorerPanel() {
                       {result.ok && <Grid columns={result.columns} rows={result.rows} small />}
                       <details className="dbc-raw" style={{ marginTop: 6 }}>
                         <summary>raw payload ({result.rows.length} rows kept)</summary>
-                        <div className="dbc-raw-body">
+                        <div tabIndex={0} className="dbc-raw-body">
                           <JsonView value={{ columns: result.columns, rows: result.rows.slice(0, 20) }} name="result" depth={1} />
                         </div>
                       </details>
@@ -434,14 +434,14 @@ function ApiKeysPanel({ paused }: { paused: boolean }) {
         <EmptyState message="No named keys stored." hint="Store a key below — the value is written straight to the OS secret store." />
       ) : (
         <>
-          <div className="dbc-grid">
+          <div tabIndex={0} className="dbc-grid">
             <table>
               <thead>
                 <tr>
-                  <th>name</th>
-                  <th>stored as</th>
-                  <th>state</th>
-                  <th>actions</th>
+                  <th scope="col">name</th>
+                  <th scope="col">stored as</th>
+                  <th scope="col">state</th>
+                  <th scope="col">actions</th>
                 </tr>
               </thead>
               <tbody>

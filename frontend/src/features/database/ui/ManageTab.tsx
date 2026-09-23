@@ -241,7 +241,7 @@ export function ManageTab() {
                 </div>
                 <details className="dbc-raw">
                   <summary>preview detail</summary>
-                  <div className="dbc-raw-body">
+                  <div tabIndex={0} className="dbc-raw-body">
                     <JsonView value={preview.data.body.preview} name="preview" />
                   </div>
                 </details>

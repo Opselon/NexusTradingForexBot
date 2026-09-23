@@ -96,7 +96,7 @@ export function RuntimeSnapshotSection() {
       ) : !d ? (
         <EmptyState message="No runtime snapshot returned." />
       ) : showJson ? (
-        <pre className="mkt-json">{JSON.stringify(d, null, 2)}</pre>
+        <pre tabIndex={0} className="mkt-json">{JSON.stringify(d, null, 2)}</pre>
       ) : (
         <div className="mkt-snapshot-grid">
           <div className="mkt-snapshot-tile">
