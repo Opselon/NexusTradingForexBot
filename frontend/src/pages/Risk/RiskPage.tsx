@@ -282,6 +282,12 @@ export default function RiskPage({ snapshot, nowMs }: Props) {
         <Panel title="Limit gauges (backend value vs backend limit)" right={<span className="timestamp-note">missing limit ⇒ indeterminate, never satisfied</span>}>
           {statusQuery.isPending && !statusQuery.data ? (
             <Skeleton count={3} />
+          ) : statusQuery.isError && !statusQuery.data ? (
+            <ErrorState
+              message={errorText(statusQuery.error, "Risk status endpoint failed for limit gauges.")}
+              requestId={statusQuery.error instanceof ApiError ? statusQuery.error.requestId : null}
+              onRetry={() => void statusQuery.refetch()}
+            />
           ) : (
             <div className="rsk-gauges">
               {ceilingRows.map((row) => (
@@ -309,6 +315,27 @@ export default function RiskPage({ snapshot, nowMs }: Props) {
           <div style={{ padding: 4 }}>
             <Skeleton count={4} />
           </div>
+        ) : limitRows.length === 0 && (statusQuery.isError || summaryQuery.isError) ? (
+          // A failed source that produced zero rows is an ERROR, not an empty
+          // payload — LimitMatrix's EmptyState would claim "no rows in payload".
+          <ErrorState
+            message={
+              statusQuery.isError
+                ? errorText(statusQuery.error, "Risk status endpoint failed.")
+                : errorText(summaryQuery.error, "Risk summary endpoint failed.")
+            }
+            requestId={
+              statusQuery.error instanceof ApiError
+                ? statusQuery.error.requestId
+                : summaryQuery.error instanceof ApiError
+                  ? summaryQuery.error.requestId
+                  : null
+            }
+            onRetry={() => {
+              if (statusQuery.isError) void statusQuery.refetch();
+              if (summaryQuery.isError) void summaryQuery.refetch();
+            }}
+          />
         ) : (
           <LimitMatrix rows={limitRows} />
         )}

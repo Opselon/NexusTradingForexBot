@@ -439,6 +439,12 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
       >
         {ordersQuery.isPending && !ordersQuery.data ? (
           <div style={{ padding: 12 }}><Skeleton count={4} /></div>
+        ) : ordersQuery.isError && !ordersQuery.data ? (
+          <ErrorState
+            message={ordersQuery.error instanceof ApiError ? ordersQuery.error.message : "Order flow endpoint unavailable."}
+            requestId={ordersQuery.error instanceof ApiError ? ordersQuery.error.requestId : null}
+            onRetry={() => void ordersQuery.refetch()}
+          />
         ) : ordersQuery.data?.available === false ? (
           <EmptyState message="Order flow unavailable." hint={ordersQuery.data.reason ?? "Ledger store not reachable — nothing inferred."} />
         ) : (ordersQuery.data?.rows?.length ?? 0) === 0 ? (
