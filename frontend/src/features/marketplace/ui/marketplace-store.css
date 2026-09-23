@@ -1,0 +1,498 @@
+/**
+ * features/marketplace/ui/marketplace-store.css
+ *
+ * PURPOSE:  Wave-6 storefront layer for the Marketplace tab — pack covers,
+ *           seed cards, rankings podium, data-derived filter chips, drawer
+ *           evidence polish. Visual-only; no behavior changes.
+ * OWNER:    uiux-w6-marketplace
+ * CONSUMES: theme.css tokens only (--bg/--bg-panel/--bg-inset/--border/
+ *           --border-strong/--text/--text-dim/--text-faint/--accent/
+ *           --accent-strong/--green/--green-dim/--red/--red-dim/--amber/
+ *           --amber-dim/--violet/--mono/--sans/--elev-1..3/--elevate-hi).
+ *           Drawer polish + responsive rules live in the companion sheet
+ *           marketplace-store-detail.css (split for the 500-line cap).
+ * PROVIDES: .mkt-store-* classes (prefix mkt-, second scoped sheet —
+ *           marketplace.css is intentionally left at its current size).
+ * INVARIANTS: color encodes state only, never a fabricated value; a missing
+ *           score renders NOT_AVAILABLE (no bar, no fake 0); chips are derived
+ *           from loaded data only; every existing control keeps working.
+ * EXTEND:   add a new .mkt-store-* block below; do not edit marketplace.css.
+ */
+
+/* ==========================================================================
+   Pack storefront cards — cover art + badge rail
+   ========================================================================== */
+.mkt-store-packs {
+  grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
+  gap: 12px;
+  display: grid;
+}
+
+.mkt-store-pack {
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  border-radius: 13px;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  transition: transform 0.16s ease-out, border-color 0.16s ease-out, box-shadow 0.16s ease-out;
+  display: flex;
+}
+
+/* Cover band: deterministic hue per pack id/family (token palette only) */
+.mkt-store-cover {
+  block-size: 74px;
+  border-block-end: 1px solid var(--border);
+  background: linear-gradient(120deg, rgba(65, 166, 242, 0.16), rgba(157, 123, 240, 0.13));
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.mkt-store-cover::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.045) 0 1px, transparent 1px 13px),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 13px);
+  opacity: 0.8;
+}
+
+/* Cover monogram — the pack initials, not an invented metric */
+.mkt-store-cover .monogram {
+  position: absolute;
+  inset-block-end: 8px;
+  inset-inline-end: 10px;
+  font-family: var(--mono);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: 0.06em;
+  color: rgba(219, 228, 238, 0.22);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  line-height: 1;
+}
+
+.mkt-store-pack.is-installed .mkt-store-cover {
+  background: linear-gradient(120deg, rgba(62, 207, 142, 0.16), rgba(65, 166, 242, 0.1));
+}
+
+.mkt-store-pack-body {
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px 13px 13px;
+  flex: 1;
+  display: flex;
+}
+
+.mkt-store-pack .name {
+  letter-spacing: 0.01em;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.mkt-store-pack .desc {
+  color: var(--text-dim);
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  flex: 1;
+  min-block-size: 30px;
+  font-size: 11px;
+  line-height: 1.45;
+  display: -webkit-box;
+  overflow: hidden;
+}
+
+/* Numeric meter for seed_count — raw number shown, label is the field name */
+.mkt-store-meter {
+  flex-direction: column;
+  gap: 4px;
+  display: flex;
+}
+
+.mkt-store-meter .lab {
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+}
+
+.mkt-store-meter .val {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mkt-store-track {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  block-size: 6px;
+  overflow: hidden;
+}
+
+/* Width is inline-styled from the real count vs. the page max — labeled derived */
+.mkt-store-track i {
+  display: block;
+  block-size: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+  border-radius: inherit;
+}
+
+.mkt-store-pack.is-installed .mkt-store-track i {
+  background: linear-gradient(90deg, var(--green), color-mix(in srgb, var(--green) 65%, rgba(255,255,255,0.35)));
+}
+
+.mkt-store-badge-rail {
+  border-block-start: 1px solid var(--border);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-block-start: 10px;
+  margin-block-start: 2px;
+  display: flex;
+}
+
+.mkt-store-badge-rail .btn {
+  flex-shrink: 0;
+  margin-inline-start: auto;
+}
+
+.mkt-store-installed-flag {
+  font-family: var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--green);
+  background: var(--green-dim);
+  border: 1px solid rgba(62, 207, 142, 0.4);
+  border-radius: 999px;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  font-size: 9.5px;
+  font-weight: 700;
+  display: inline-flex;
+}
+
+.mkt-store-installed-flag i {
+  background: var(--green);
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(62, 207, 142, 0.7);
+  inline-size: 6px;
+  block-size: 6px;
+}
+
+.mkt-store-pack:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--elev-2);
+  transform: translateY(-3px);
+}
+
+.mkt-store-pack:focus-within {
+  border-color: var(--accent);
+}
+
+/* ==========================================================================
+   Seed storefront grid (cards) + toggle
+   ========================================================================== */
+.mkt-store-viewtoggle {
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  border-radius: 8px;
+  padding: 2px;
+  display: inline-flex;
+}
+
+.mkt-store-viewtoggle button {
+  font-family: var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 9.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 0.14s, background 0.14s;
+}
+
+.mkt-store-viewtoggle button[aria-pressed="true"] {
+  color: var(--accent-strong);
+  background: var(--paper-blue-bg);
+}
+
+.mkt-store-viewtoggle button:hover:not([aria-pressed="true"]) {
+  color: var(--text);
+}
+
+.mkt-store-seeds {
+  grid-template-columns: repeat(auto-fill, minmax(252px, 1fr));
+  gap: 10px;
+  display: grid;
+}
+
+.mkt-store-seed {
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 45%), var(--bg-inset);
+  border-radius: 11px;
+  flex-direction: column;
+  gap: 8px;
+  text-align: start;
+  padding: 11px 12px;
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.15s ease-out, border-color 0.15s ease-out, box-shadow 0.15s ease-out;
+  display: flex;
+  overflow: hidden;
+}
+
+.mkt-store-seed::before {
+  content: "";
+  top: 0;
+  background: linear-gradient(90deg, transparent, rgba(65, 166, 242, 0.28), transparent);
+  block-size: 1px;
+  position: absolute;
+  inset-inline: 0;
+}
+
+.mkt-store-seed:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--elev-2);
+  transform: translateY(-2px);
+}
+
+.mkt-store-seed-head {
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  display: flex;
+}
+
+.mkt-store-seed .nm {
+  color: var(--text);
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.mkt-store-seed .id {
+  font-family: var(--mono);
+  color: var(--text-faint);
+  font-size: 9.5px;
+  margin-block-start: 2px;
+}
+
+.mkt-store-seed-meta {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  display: flex;
+}
+
+.mkt-store-seed .kv {
+  font-family: var(--mono);
+  color: var(--text-dim);
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+.mkt-store-seed-foot {
+  border-block-start: 1px solid var(--border);
+  padding-block-start: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mkt-store-seed-foot .mkt-actions {
+  margin-inline-start: auto;
+}
+
+/* ==========================================================================
+   Facet chips — derived only from loaded rows
+   ========================================================================== */
+.mkt-store-chips {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  display: flex;
+}
+
+.mkt-store-chip {
+  font-family: var(--mono);
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 0.14s, border-color 0.14s, background 0.14s;
+  display: inline-flex;
+}
+
+.mkt-store-chip:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.mkt-store-chip[aria-pressed="true"] {
+  color: var(--accent-strong);
+  background: var(--paper-blue-bg);
+  border-color: rgba(65, 166, 242, 0.45);
+}
+
+.mkt-store-chip .cnt {
+  font-weight: 800;
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+.mkt-store-chip[aria-pressed="true"] .cnt {
+  color: var(--accent-strong);
+}
+
+.mkt-store-chip .swatch {
+  border-radius: 50%;
+  inline-size: 6px;
+  block-size: 6px;
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(65, 166, 242, 0.6);
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Rankings podium
+   ========================================================================== */
+.mkt-store-podium {
+  gap: 9px;
+  margin-block-end: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.mkt-store-pod {
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 50%), var(--bg-inset);
+  border-radius: 12px;
+  flex-direction: column;
+  gap: 7px;
+  padding: 11px 12px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+}
+
+.mkt-store-pod::before {
+  content: "";
+  top: 0;
+  block-size: 2px;
+  position: absolute;
+  inset-inline: 0;
+  background: linear-gradient(90deg, transparent, var(--pod-glow, var(--accent)), transparent);
+  opacity: 0.9;
+}
+
+.mkt-store-pod.p1 {
+  --pod-glow: var(--accent);
+  border-color: rgba(65, 166, 242, 0.5);
+  background:
+    radial-gradient(220px 90px at 50% -30%, rgba(65, 166, 242, 0.14), transparent 70%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 50%), var(--bg-inset);
+  box-shadow: 0 0 22px -8px rgba(65, 166, 242, 0.4);
+}
+
+.mkt-store-pod.p2 {
+  --pod-glow: var(--violet);
+  border-color: rgba(157, 123, 240, 0.42);
+  background:
+    radial-gradient(220px 90px at 50% -30%, rgba(157, 123, 240, 0.11), transparent 70%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 50%), var(--bg-inset);
+}
+
+.mkt-store-pod.p3 {
+  --pod-glow: var(--amber);
+  border-color: rgba(235, 161, 63, 0.42);
+  background:
+    radial-gradient(220px 90px at 50% -30%, rgba(235, 161, 63, 0.1), transparent 70%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 50%), var(--bg-inset);
+}
+
+.mkt-store-pod .pos {
+  font-family: var(--mono);
+  letter-spacing: 0.08em;
+  color: var(--pod-glow, var(--accent));
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.mkt-store-pod .seed {
+  font-family: var(--mono);
+  color: var(--text);
+  overflow-wrap: anywhere;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.mkt-store-pod .total {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--pod-glow, var(--accent-strong));
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.mkt-store-pod .total.na {
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mkt-store-pod .fam {
+  font-family: var(--mono);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+/* Derived label from the actual ordering — rank word follows position */
+.mkt-store-pod .rankword {
+  font-family: var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  background: var(--bg-panel-2);
+  border-radius: 999px;
+  align-self: flex-start;
+  padding: 2px 8px;
+  font-size: 8.5px;
+  font-weight: 800;
+}
