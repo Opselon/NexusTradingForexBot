@@ -8,10 +8,11 @@ import { useI18n } from "@/stores/i18nStore";
 
 type Translator = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
 
-export function asErrorText(e: unknown, t: Translator): string {
-  if (e instanceof ApiError) return `${e.message}${e.requestId ? ` ${t("account.error.request_id", "(request_id: {id})", { id: e.requestId })}` : ""}`;
+export function asErrorText(e: unknown, t?: Translator): string {
+  const tr = t ?? useI18n.getState().t;
+  if (e instanceof ApiError) return `${e.message}${e.requestId ? ` ${tr("account.error.request_id", "(request_id: {id})", { id: e.requestId })}` : ""}`;
   if (e instanceof Error) return e.message;
-  return t("account.error.unknown", "unknown error");
+  return tr("account.error.unknown", "unknown error");
 }
 
 export function FreshnessNote({ updatedAtMs, label, staleAfterMs }: { updatedAtMs: number | null; label: string; staleAfterMs?: number }) {

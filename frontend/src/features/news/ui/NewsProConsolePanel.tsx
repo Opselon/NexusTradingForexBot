@@ -48,6 +48,7 @@ import {
 import type { ProConsoleEntry } from "../proTypes";
 import type { NewsAiAnalysisRow } from "../types";
 import { FreshnessNote, asErrorText } from "./shared";
+import { useI18n } from "@/stores/i18nStore";
 
 type ConfirmKind = "analyze-all" | "purge-soft" | "purge-hard" | "auto-prune" | null;
 
@@ -66,6 +67,7 @@ export function NewsProConsolePanel() {
 
   const [confirm, setConfirm] = useState<ConfirmKind>(null);
   const [note, setNote] = useState<{ text: string; err: boolean } | null>(null);
+  const t = useI18n((s) => s.t);
 
   /* Legacy startProConsole polls while the tab is visible; the React section
    * mounts per route, so poll from mount to unmount only. */
@@ -102,7 +104,7 @@ export function NewsProConsolePanel() {
     analyzeAll.mutate({ limit: 200 }, {
       onSuccess: (res) => {
         const v = analyzeAllVerdict(res);
-        setNote({ err: !v.ok, text: v.message });
+        setNote({ err: !v.ok, text: v.message(t) });
         setConfirm(null);
         void log.pollNow();
         void status.refetch();
@@ -118,7 +120,7 @@ export function NewsProConsolePanel() {
     purge.mutate({ hardDelete: hard, limit: 5000 }, {
       onSuccess: (res) => {
         const v = purgeVerdict(res);
-        setNote({ err: !v.ok, text: v.message });
+        setNote({ err: !v.ok, text: v.message(t) });
         setConfirm(null);
         void log.pollNow();
         void status.refetch();
@@ -134,7 +136,7 @@ export function NewsProConsolePanel() {
     prune.mutate(undefined, {
       onSuccess: (res) => {
         const v = autoPruneSafeVerdict(res);
-        setNote({ err: !v.ok, text: v.message });
+        setNote({ err: !v.ok, text: v.message(t) });
         setConfirm(null);
         void log.pollNow();
         void status.refetch();
@@ -335,6 +337,7 @@ export function NewsProConsolePanel() {
 
 /** One console entry — mirrors legacy `_proRow`: ts · LABEL · msg + answer/via/id extras. */
 function ConsoleRow({ entry: e }: { entry: ProConsoleEntry }) {
+  const t = useI18n((s) => s.t);
   const kind = e.kind ?? "log";
   const msg = e.msg ?? e.summary ?? "";
   const ts = String(e.ts ?? "").slice(11, 19);
@@ -342,7 +345,7 @@ function ConsoleRow({ entry: e }: { entry: ProConsoleEntry }) {
   return (
     <div className={`news-pro-row ${proKindTone(kind)}`}>
       <span className="ts">{ts || "—"}</span>
-      <span className="label">{proKindLabel(kind)}</span>
+      <span className="label">{proKindLabel(t, kind)}</span>
       <span className="msg" title={String(msg)}>{truncate(String(msg), 260)}</span>
       {answer && <span className="answer">{answer}</span>}
       {e.via && <span className="extra">via:{String(e.via)}</span>}

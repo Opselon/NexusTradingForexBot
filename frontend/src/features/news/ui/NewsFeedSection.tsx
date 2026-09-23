@@ -15,6 +15,7 @@ import { batchVerdict, directionOf, errorText, impactPct, NEWS_FILTERS, xauusdRe
 import type { NewsFeedArticle, NewsFilter } from "../types";
 import { ArticleDrawer } from "./ArticleDrawer";
 import { FreshnessNote, asErrorText } from "./shared";
+import { useI18n } from "@/stores/i18nStore";
 import "./news.css";
 
 export function NewsFeedSection() {
@@ -23,6 +24,7 @@ export function NewsFeedSection() {
   const [selected, setSelected] = useState<string | null>(null);
   const [pruneOpen, setPruneOpen] = useState(false);
   const [note, setNote] = useState<{ text: string; err: boolean } | null>(null);
+  const t = useI18n((s) => s.t);
 
   const feed = useNewsFeed(filter, limit);
   const aiStatus = useNewsAiStatus();
@@ -64,7 +66,7 @@ export function NewsFeedSection() {
     batch.mutate(ids, {
       onSuccess: (res) => {
         const v = batchVerdict(res);
-        setNote({ err: !v.ok, text: v.message });
+        setNote({ err: !v.ok, text: v.message(t) });
       },
       onError: (e) => setNote({ err: true, text: `Batch failed: ${asErrorText(e)}` }),
     });
