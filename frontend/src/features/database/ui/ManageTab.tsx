@@ -16,17 +16,13 @@
 import { useMemo, useState } from "react";
 import { MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import {
-  FieldRow,
   FreshnessCaption,
   JsonView,
   KeyValueList,
-  NumberField,
   ResultStrip,
-  SelectField,
-  TextField,
   TypedConfirmModal,
 } from "@/features/config/ui/kit";
-import { firstError, type FieldValues } from "@/features/config/validation";
+import { type FieldValues } from "@/features/config/validation";
 import {
   useDbBackup,
   useDbManageStatus,
@@ -39,8 +35,15 @@ import {
   useSwitchProvider,
   useTestDbConnection,
 } from "../useCases";
-import { PG_SSL_MODES, baselineFromStatus, formatBytes, pgSpecs, validatePgConfig } from "../model";
+import {
+  baselineFromStatus,
+  formatBytes,
+  mergeAdvancedBaseline,
+  validateAdvancedOptions,
+  validatePgConfig,
+} from "../model";
 import { providerHints, psycopgState } from "../uiLogic";
+import { ConnectionPanel } from "./ConnectionPanel";
 
 type StripResult = { ok: boolean; message: string; requestId: string | null };
 
@@ -58,7 +61,10 @@ export function ManageTab() {
   const md = manage.data;
   const psycopg = psycopgState(md?.postgresql_driver_available);
   const [values, setValues] = useState<FieldValues | null>(null);
-  const baseline = useMemo(() => baselineFromStatus(manage.data?.postgres), [manage.data]);
+  const baseline = useMemo(
+    () => mergeAdvancedBaseline(baselineFromStatus(manage.data?.postgres), manage.data),
+    [manage.data],
+  );
   const form = values ?? baseline;
   const [migrating, setMigrating] = useState(false);
   const [guard, setGuard] = useState<null | "backup" | "migrate">(null);
@@ -73,7 +79,10 @@ export function ManageTab() {
   const progress = useMigrationProgress(migrating);
   const report = useLastReport(migrating || (progress.data?.done ?? false));
 
-  const errors = validatePgConfig(form);
+  const errors = useMemo(
+    () => ({ ...validatePgConfig(form), ...validateAdvancedOptions(form) }),
+    [form],
+  );
   const invalid = Object.values(errors).some((m) => m.length > 0);
   const set = (k: string, v: string | boolean) => setValues((prev) => ({ ...(prev ?? baseline), [k]: v }));
 
@@ -150,35 +159,7 @@ export function ManageTab() {
               />
             </div>
 
-            <div className="dbc-section-title">connection</div>
-            <div className="l3-form" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 10 }}>
-              {pgSpecs().map((spec) => {
-                const err = firstError(errors, spec.key);
-                const v = form[spec.key];
-                return (
-                  <FieldRow
-                    key={spec.key}
-                    label={spec.label ?? spec.key}
-                    hint={spec.hint ?? spec.key}
-                    error={err}
-                    dirty={String(v ?? "") !== String(baseline[spec.key] ?? "")}
-                  >
-                    {spec.kind === "integer" ? (
-                      <NumberField value={String(v ?? "")} onChange={(x) => set(spec.key, x)} error={err} step="1" />
-                    ) : spec.kind === "enum" ? (
-                      <SelectField value={String(v ?? "")} onChange={(x) => set(spec.key, x)} options={PG_SSL_MODES} error={err} label={spec.key} />
-                    ) : (
-                      <TextField
-                        value={String(v ?? "")}
-                        onChange={(x) => set(spec.key, x)}
-                        error={err}
-                        placeholder={spec.secret ? "••• leave blank to keep the stored secret" : undefined}
-                      />
-                    )}
-                  </FieldRow>
-                );
-              })}
-            </div>
+            <ConnectionPanel manage={md} values={form} set={set} errors={errors} />
 
             <div className="dbc-section-title">actions</div>
             <div className="dbc-actions">
