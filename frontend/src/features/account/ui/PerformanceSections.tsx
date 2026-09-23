@@ -69,6 +69,26 @@ export function PeriodSeriesSection() {
   const [kind, setKind] = useState<PeriodKind>("DAY");
   const series = useAccountSeries(kind, 30);
 
+  // Backend series, memoized per response identity; the two derivations below
+  // read only it. `values` keeps its null gaps (Sparkline renders them as gaps).
+  const seriesData = series.data ?? [];
+  const seriesValues = useMemo(
+    () => seriesData.map((p) => (typeof p.net_pnl === "number" ? p.net_pnl : null)),
+    [seriesData],
+  );
+  const seriesRows = useMemo(
+    () =>
+      seriesData.map((p, i) => (
+        <div className="statline" key={`${p.key}-${i}`} style={{ fontSize: 11, justifyContent: "space-between" }}>
+          <span>{p.key ?? `#${i}`}</span>
+          <span>{p.total_trades ?? 0} trades</span>
+          <span className={(p.net_pnl ?? 0) >= 0 ? "tx-good" : "tx-bad"}>{moneyOrDash(p.net_pnl, true)}</span>
+          <span className="faint">wr {p.win_rate === null || p.win_rate === undefined ? DASH : `${p.win_rate.toFixed(0)}%`}</span>
+        </div>
+      )),
+    [seriesData],
+  );
+
   return (
     <Panel
       title={`Net PnL per ${kind.toLowerCase()} (last 30 consecutive periods)`}
@@ -95,7 +115,7 @@ export function PeriodSeriesSection() {
         <>
           <div className="spark-cell" style={{ gap: 14 }}>
             <Sparkline
-              values={(series.data ?? []).map((p) => (typeof p.net_pnl === "number" ? p.net_pnl : null))}
+              values={seriesValues}
               width={420}
               height={54}
               label={`net pnl per ${kind}`}
@@ -105,14 +125,7 @@ export function PeriodSeriesSection() {
             </div>
           </div>
           <div style={{ display: "grid", gap: 2, marginTop: 10, maxHeight: 220, overflowY: "auto" }}>
-            {(series.data ?? []).map((p, i) => (
-              <div className="statline" key={`${p.key}-${i}`} style={{ fontSize: 11, justifyContent: "space-between" }}>
-                <span>{p.key ?? `#${i}`}</span>
-                <span>{p.total_trades ?? 0} trades</span>
-                <span className={ (p.net_pnl ?? 0) >= 0 ? "tx-good" : "tx-bad" } >{moneyOrDash(p.net_pnl, true)}</span>
-                <span className="faint">wr {p.win_rate === null || p.win_rate === undefined ? DASH : `${p.win_rate.toFixed(0)}%`}</span>
-              </div>
-            ))}
+            {seriesRows}
           </div>
           <div className="tiny faint" style={{ marginTop: 6 }}>oldest → newest; the accounting worker keeps consecutive-period rows server-side.</div>
         </>

@@ -7,7 +7,7 @@
  * through the shared viz kit; nothing is resampled or smoothed client-side.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { DrawdownChart, EquityCurveChart, SignedBucketChart, type SignedBucket } from "@/components/viz";
 import { formatDateTime } from "@/lib/format";
@@ -24,15 +24,48 @@ const RANGES: Array<{ id: RangeId; label: string; days: number | null }> = [
   { id: "all", label: "all", days: null },
 ];
 
+/** Stable formatter identity (module scope) — lets the chart bail out of
+ *  re-renders instead of seeing a fresh inline arrow every render. */
+const fmtMoney = (v: number): string => moneyOrDash(v);
+
+/** Stable bucket caption identity for the per-trade waterfall. */
+const bucketLabel = (b: SignedBucket): string => (b.bucket_start ? formatDateTime(b.bucket_start) : "");
+
 export function AccountChartsSection() {
   const [range, setRange] = useState<RangeId>("all");
   const days = RANGES.find((r) => r.id === range)?.days ?? null;
   const curve = useEquityCurve(days);
   const growth = useAccountGrowth();
 
-  const points = curve.data?.equity_curve ?? [];
-  const cum = curve.data?.cumulative_pnl ?? [];
-  const maxDd = points.length ? Math.min(...points.map((p) => p.drawdown_pct ?? 0)) : null;
+  // Payload arrays + the derivations over them are computed ONCE per response
+  // identity (`curve.data` only changes when a fetch lands). Deps are exactly
+  // the values each derivation reads; the rendered points are unchanged.
+  const curveData = curve.data;
+  const points = useMemo(() => curveData?.equity_curve ?? [], [curveData]);
+  const cum = useMemo(() => curveData?.cumulative_pnl ?? [], [curveData]);
+  const maxDd = useMemo(
+    () => (points.length ? Math.min(...points.map((p) => p.drawdown_pct ?? 0)) : null),
+    [points],
+  );
+  const cumChartPoints = useMemo(
+    () => cum.map((c) => ({ timestamp: c.timestamp, balance: null, equity: c.cumulative_pnl })),
+    [cum],
+  );
+  const buckets = useMemo(
+    () =>
+      cum
+        .slice(0, 40)
+        .reverse()
+        .map<SignedBucket>((c) => ({
+          bucket_start: c.timestamp,
+          bullish: c.net_pnl > 0 ? c.net_pnl : 0,
+          bearish: c.net_pnl < 0 ? -c.net_pnl : 0,
+          neutral: 0,
+          article_count: 1,
+          top_title: `#${c.ticket ?? "?"} ${c.outcome ?? ""} · ${c.exit ?? ""}`.trim(),
+        })),
+    [cum],
+  );
 
   return (
     <Panel
@@ -60,7 +93,7 @@ export function AccountChartsSection() {
         <div className="grid cols-2">
           <section>
             <div className="section-title">equity (backend running peak shown dashed)</div>
-            <EquityCurveChart points={points} field="equity" showPeak formatValue={(v) => moneyOrDash(v)} />
+            <EquityCurveChart points={points} field="equity" showPeak formatValue={fmtMoney} />
             <div className="tiny faint" style={{ marginTop: 4 }}>
               {points.length} samples · {points[0] ? formatDateTime(points[0]?.timestamp ?? DASH) : DASH} → {points[points.length - 1] ? formatDateTime(points[points.length - 1]?.timestamp ?? DASH) : DASH}
             </div>
@@ -76,9 +109,9 @@ export function AccountChartsSection() {
               <EmptyState message="No closed trades to accumulate." />
             ) : (
               <EquityCurveChart
-                points={cum.map((c) => ({ timestamp: c.timestamp, balance: null, equity: c.cumulative_pnl }))}
+                points={cumChartPoints}
                 field="equity"
-                formatValue={(v) => moneyOrDash(v)}
+                formatValue={fmtMoney}
               />
             )}
             <div className="tiny faint" style={{ marginTop: 4 }}>{cum.length} closed-trade steps · reconciles with period net_pnl sums</div>
@@ -89,19 +122,9 @@ export function AccountChartsSection() {
               <EmptyState message="No per-trade rows." />
             ) : (
               <SignedBucketChart
-                buckets={cum
-                  .slice(0, 40)
-                  .reverse()
-                  .map<SignedBucket>((c) => ({
-                    bucket_start: c.timestamp,
-                    bullish: c.net_pnl > 0 ? c.net_pnl : 0,
-                    bearish: c.net_pnl < 0 ? -c.net_pnl : 0,
-                    neutral: 0,
-                    article_count: 1,
-                    top_title: `#${c.ticket ?? "?"} ${c.outcome ?? ""} · ${c.exit ?? ""}`.trim(),
-                  }))}
+                buckets={buckets}
                 emptyHint="no per-trade rows"
-                bucketLabel={(b) => (b.bucket_start ? formatDateTime(b.bucket_start) : "")}
+                bucketLabel={bucketLabel}
               />
             )}
             <div className="tiny faint" style={{ marginTop: 4 }}>green = winning trade net, red = losing trade net (backend values)</div>
@@ -119,7 +142,7 @@ export function AccountChartsSection() {
       ) : (growth.data ?? []).length === 0 ? (
         <EmptyState message="Growth history unavailable." hint="/api/account/growth returned no rows (non-SQLite backend or empty history)." />
       ) : (
-        <EquityCurveChart points={growth.data ?? []} field="balance" formatValue={(v) => moneyOrDash(v)} />
+        <EquityCurveChart points={growth.data ?? []} field="balance" formatValue={fmtMoney} />
       )}
       <FreshnessNote updatedAtMs={growth.dataUpdatedAt ?? null} label="growth" />
     </Panel>
