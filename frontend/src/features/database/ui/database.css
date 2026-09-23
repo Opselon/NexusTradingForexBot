@@ -1,0 +1,536 @@
+/* -------------------------------------------------------------------------
+ * Database tab (.dbc-*) — feature-scoped stylesheet.
+ *
+ * The React console has NO CSS framework: theme tokens only
+ * (styles/theme.css: --bg/--bg-panel/--border/--accent/--green/--red/
+ * --amber/--violet, --elev-1..3), logical properties so the RTL switch
+ * (`<html dir=fa>`) mirrors, and every selector namespaced so no other
+ * feature can be affected.  Imported by ui/DatabasePage.tsx.
+ * ---------------------------------------------------------------------- */
+
+/* -- page header --------------------------------------------------------- */
+.dbc-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.dbc-head h1 {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+.dbc-head .crumb {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.dbc-head .desc {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.dbc-head-actions {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* -- KPI strip ----------------------------------------------------------- */
+.dbc-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+.dbc-kpis .metric {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
+  padding: 10px 12px;
+  box-shadow: var(--elev-1);
+}
+.dbc-kpis .metric .v {
+  font-size: 15px;
+}
+.dbc-kpis .metric .s {
+  font-size: 10.5px;
+}
+
+/* -- backend hint band --------------------------------------------------- */
+.dbc-band {
+  display: grid;
+  gap: 6px;
+}
+.dbc-band-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  border: 1px solid rgba(235, 161, 63, 0.4);
+  border-inline-start: 3px solid var(--amber);
+  background: var(--amber-dim);
+  color: var(--amber);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.dbc-band-item .g {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+.dbc-band-item.bad {
+  border-color: rgba(242, 86, 77, 0.45);
+  border-inline-start-color: var(--red);
+  background: var(--red-dim);
+  color: #ff938c;
+}
+.dbc-band-item.info {
+  border-color: rgba(65, 166, 242, 0.4);
+  border-inline-start-color: var(--accent);
+  background: rgba(65, 166, 242, 0.1);
+  color: var(--accent-strong);
+}
+
+/* -- tabs ---------------------------------------------------------------- */
+.dbc-tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.dbc-tabmeta {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+/* -- generic layout helpers --------------------------------------------- */
+.dbc-stack {
+  display: grid;
+  gap: var(--panel-gap);
+}
+.dbc-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.dbc-row.end {
+  justify-content: flex-end;
+}
+.dbc-row.between {
+  justify-content: space-between;
+}
+.dbc-section-title {
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin: 12px 0 6px;
+}
+.dbc-note {
+  font-size: 12px;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  color: var(--text-dim);
+  padding: 8px 10px;
+}
+.dbc-note.good {
+  border-color: rgba(62, 207, 142, 0.35);
+  background: var(--green-dim);
+  color: var(--green);
+}
+.dbc-note.warn {
+  border-color: rgba(235, 161, 63, 0.4);
+  background: var(--amber-dim);
+  color: var(--amber);
+}
+.dbc-note.bad {
+  border-color: rgba(242, 86, 77, 0.45);
+  background: var(--red-dim);
+  color: #ff938c;
+}
+.dbc-note code,
+.dbc-band-item code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: inherit;
+}
+.dbc-hintline {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  opacity: 0.9;
+}
+
+/* -- provider chips ------------------------------------------------------ */
+.dbc-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dbc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+  padding: 5px 11px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  cursor: default;
+}
+.dbc-chip.active {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: rgba(65, 166, 242, 0.12);
+  box-shadow: 0 0 0 1px rgba(65, 166, 242, 0.25);
+}
+.dbc-chip .sub {
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+button.dbc-chip {
+  cursor: pointer;
+}
+button.dbc-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.dbc-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  background: var(--text-faint);
+}
+.dbc-dot.good {
+  background: var(--green);
+  box-shadow: 0 0 6px rgba(62, 207, 142, 0.7);
+}
+.dbc-dot.warn {
+  background: var(--amber);
+}
+.dbc-dot.bad {
+  background: var(--red);
+  box-shadow: 0 0 6px rgba(242, 86, 77, 0.6);
+}
+
+/* -- grids/tables -------------------------------------------------------- */
+.dbc-grid {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: auto;
+  max-height: min(52vh, 480px);
+  background: var(--bg-inset);
+}
+.dbc-grid.sm {
+  max-height: min(30vh, 260px);
+}
+.dbc-grid table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.dbc-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-panel-2);
+  color: var(--text-faint);
+  text-align: start;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.dbc-grid tbody td {
+  padding: var(--row-pad) 10px;
+  border-bottom: 1px solid rgba(28, 40, 54, 0.6);
+  color: var(--text);
+  white-space: nowrap;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dbc-grid tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+.dbc-grid tbody td.null {
+  color: var(--text-faint);
+  font-style: italic;
+}
+.dbc-grid tbody td.num {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+.dbc-empty {
+  padding: 18px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+/* -- console layout ------------------------------------------------------ */
+.dbc-console {
+  display: grid;
+  grid-template-columns: minmax(200px, 250px) minmax(0, 1fr);
+  gap: var(--panel-gap);
+  align-items: start;
+}
+.dbc-side {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  padding: 10px;
+  min-width: 0;
+}
+.dbc-side-title {
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.dbc-list {
+  display: grid;
+  gap: 4px;
+  max-height: 210px;
+  overflow: auto;
+}
+.dbc-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: start;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.dbc-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+.dbc-item.active {
+  border-color: var(--accent);
+  background: rgba(65, 166, 242, 0.12);
+  color: var(--accent-strong);
+}
+.dbc-item .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dbc-item .meta {
+  margin-inline-start: auto;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  flex-shrink: 0;
+}
+.dbc-item .meta.warn {
+  color: var(--amber);
+}
+.dbc-main {
+  display: grid;
+  gap: var(--panel-gap);
+  min-width: 0;
+}
+.dbc-blocker {
+  border: 1px solid rgba(242, 86, 77, 0.45);
+  border-radius: 8px;
+  background: var(--red-dim);
+  color: #ff938c;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.dbc-blocker .title {
+  font-weight: 700;
+}
+.dbc-blocker .hint {
+  color: var(--text);
+}
+
+/* -- SQL console --------------------------------------------------------- */
+.dbc-sql {
+  width: 100%;
+  min-height: 92px;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+}
+.dbc-sql:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(65, 166, 242, 0.15);
+}
+.dbc-result-note {
+  font-size: 11.5px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+.dbc-result-note.ok {
+  color: var(--green);
+}
+.dbc-result-note.fail {
+  color: #ff938c;
+}
+
+/* -- action groups ------------------------------------------------------- */
+.dbc-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.dbc-actions-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 6px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+.dbc-actions-label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding-inline: 4px;
+}
+
+/* -- progress ------------------------------------------------------------ */
+.dbc-progress {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+.dbc-progress .lab {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.dbc-progress .track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.dbc-progress .track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--green));
+  transition: width 0.4s ease;
+}
+
+/* -- raw payload disclosure --------------------------------------------- */
+.dbc-raw {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+  padding: 6px 10px;
+}
+.dbc-raw > summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-faint);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  user-select: none;
+}
+.dbc-raw > summary:hover {
+  color: var(--text);
+}
+.dbc-raw[open] > summary {
+  margin-bottom: 6px;
+  color: var(--text-dim);
+}
+.dbc-raw-body {
+  max-height: 260px;
+  overflow: auto;
+}
+
+/* -- storage / plan numbers --------------------------------------------- */
+.dbc-num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.dbc-sub {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+/* -- provider-truth band (configured vs effective) ----------------------- */
+.dbc-truth {
+  margin-top: 2px;
+}
+.dbc-evi {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dbc-evi li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--panel-raised);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.dbc-evi li.active {
+  border-color: var(--accent);
+}
+.dbc-evi-live {
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* -- responsive ---------------------------------------------------------- */
+@media (max-width: 1100px) {
+  .dbc-console {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dbc-grid {
+    max-height: min(46vh, 420px);
+  }
+}

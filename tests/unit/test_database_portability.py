@@ -709,6 +709,17 @@ class TestDbConsoleQueryGuard:
             assert body["success"] is False, f"expected rejection for bypass attempt: {bypass}"
 
     def test_query_readonly_authorizer_enforcement(self):
+        """Two independent layers must each reject a hostile statement.
+
+        Layer 1 — the verb allow-list guard (``_sql_guard.assert_safe_sql``,
+        driver-boundary) rejects ATTACH outright with ValueError before the
+        statement ever reaches SQLite; layer 2 — the C-level authorizer
+        (``_readonly_authorizer``, SQLITE_DENY -> sqlite3.DatabaseError)
+        denies mutative/DDL/ATTACH actions for any statement that does get
+        through. Both nets are asserted here: pinning only one of them let a
+        guard-tightening change silently desync this test from the driver
+        (observed 2026-09-23: ATTACH started raising ValueError first).
+        """
         import sqlite3
 
         from nexus_scalp.database.config import load_database_config
@@ -717,12 +728,25 @@ class TestDbConsoleQueryGuard:
         cfg = load_database_config("audit")
         drv = get_driver(cfg)
         try:
-            # query_readonly must raise sqlite3.DatabaseError on attempted mutative or
-            # DDL actions blocked by the C-level authorizer (SQLITE_DENY -> not authorized).
+            # Layer 2 — guard-allowed verb, C-level authorizer denial
+            # (SQLITE_DENY -> not authorized).
             with pytest.raises(sqlite3.DatabaseError):
                 drv.query_readonly("CREATE TABLE authorizer_test (id INT)")
-            with pytest.raises(sqlite3.DatabaseError):
+            # Layer 1 — ATTACH is rejected by the verb allow-list guard
+            # before the authorizer is ever consulted.
+            with pytest.raises(ValueError):
                 drv.query_readonly("ATTACH DATABASE ':memory:' AS aux")
+            # Layer 2 proved independently — the same ATTACH statement run
+            # against the raw connection under the authorizer must still be
+            # denied by SQLite itself (defense in depth: neither layer may
+            # be the only thing standing between ATTACH and the database).
+            conn = drv.connect()
+            try:
+                conn.set_authorizer(drv._readonly_authorizer)
+                with pytest.raises(sqlite3.DatabaseError):
+                    conn.execute("ATTACH DATABASE ':memory:' AS aux")
+            finally:
+                conn.close()
         finally:
             drv.close()
 

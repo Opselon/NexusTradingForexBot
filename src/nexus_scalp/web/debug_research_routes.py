@@ -65,6 +65,42 @@ class OutcomeRecoveryRequest(BaseModel):
     dry_run: bool = False
 
 
+# ---------------------------------------------------------------------------
+# PERF-DB-STATUS (2026-09-23): /api/db/status runs DatabaseMigrationEngine
+# .status() over audit (426MB) / news (241MB) / candle_intel on every poll;
+# the integrity probe alone measured 5-41s per domain cold, so the route
+# breached the frontend's 15s fetch timeout (live: "Request timed out",
+# request_id altui_*). Schema versions only change when migrations run
+# (CLI/engine startup) — never per poll — so the serialized payload is
+# TTL-cached for slightly longer than the UI's 30s poll interval. Failures
+# are never cached. Mirrors the PERF-HEALTH /health cache contract.
+# ---------------------------------------------------------------------------
+_DB_STATUS_TTL_SEC = 30.0
+# in-place mutable cache (same pattern as _PROBE_CACHE in
+# diagnostics_state_routes): {"at": monotonic, "payload": dict}
+_DB_STATUS_CACHE: dict[str, Any] = {}
+
+
+def invalidate_db_status_cache() -> None:
+    """Drop the cached /api/db/status payload (tests / mutation hooks)."""
+    _DB_STATUS_CACHE.clear()
+
+
+def _db_status_cached() -> dict[str, Any] | None:
+    if not _DB_STATUS_CACHE:
+        return None
+    at = float(_DB_STATUS_CACHE.get("at") or 0.0)
+    if (time.monotonic() - at) >= _DB_STATUS_TTL_SEC:
+        return None
+    payload = _DB_STATUS_CACHE.get("payload")
+    return payload if isinstance(payload, dict) else None
+
+
+def _db_status_store(payload: dict[str, Any]) -> None:
+    _DB_STATUS_CACHE.clear()
+    _DB_STATUS_CACHE.update({"at": time.monotonic(), "payload": payload})
+
+
 def register_debug_research_routes(
     app: Any, _err: Any, _log_err: Any, serialize_enums: Any
 ) -> None:
@@ -1751,6 +1787,10 @@ def register_debug_research_routes(
         count, integrity and last migration for every persistent domain.
         Read-only; never runs migrations from the API (§31).
         """
+        cached = _db_status_cached()
+        if cached is not None:
+            return cached
+
         from pathlib import Path as _Path
 
         from nexus_scalp.database.engine import DatabaseMigrationEngine, db_path_for_domain
@@ -1780,7 +1820,9 @@ def register_debug_research_routes(
                     "migration_state": "DB_MIGRATION_FAILED",
                     "error": "DB_MIGRATION_FAILED",
                 }
-        return serialize_enums({"available": True, "databases": out})
+        payload = serialize_enums({"available": True, "databases": out})
+        _db_status_store(payload)
+        return payload
 
     @app.get("/api/forensics/health")
     def get_forensic_health() -> dict[str, Any]:
