@@ -19,7 +19,7 @@
  *           that are already rendered somewhere on this panel.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { DrawdownChart, EquityCurveChart, SignedBucketChart, type SignedBucket } from "@/components/viz";
 import { formatDateTime } from "@/lib/format";
@@ -38,15 +38,48 @@ const RANGES: Array<{ id: RangeId; label: string; days: number | null }> = [
   { id: "all", label: "all", days: null },
 ];
 
+/** Stable formatter identity (module scope) — lets the chart bail out of
+ *  re-renders instead of seeing a fresh inline arrow every render. */
+const fmtMoney = (v: number): string => moneyOrDash(v);
+
+/** Stable bucket caption identity for the per-trade waterfall. */
+const bucketLabel = (b: SignedBucket): string => (b.bucket_start ? formatDateTime(b.bucket_start) : "");
+
 export function AccountChartsSection() {
   const [range, setRange] = useState<RangeId>("all");
   const days = RANGES.find((r) => r.id === range)?.days ?? null;
   const curve = useEquityCurve(days);
   const growth = useAccountGrowth();
 
-  const points = curve.data?.equity_curve ?? [];
-  const cum = curve.data?.cumulative_pnl ?? [];
-  const maxDd = points.length ? Math.min(...points.map((p) => p.drawdown_pct ?? 0)) : null;
+  // Payload arrays + the derivations over them are computed ONCE per response
+  // identity (`curve.data` only changes when a fetch lands). Deps are exactly
+  // the values each derivation reads; the rendered points are unchanged.
+  const curveData = curve.data;
+  const points = useMemo(() => curveData?.equity_curve ?? [], [curveData]);
+  const cum = useMemo(() => curveData?.cumulative_pnl ?? [], [curveData]);
+  const maxDd = useMemo(
+    () => (points.length ? Math.min(...points.map((p) => p.drawdown_pct ?? 0)) : null),
+    [points],
+  );
+  const cumChartPoints = useMemo(
+    () => cum.map((c) => ({ timestamp: c.timestamp, balance: null, equity: c.cumulative_pnl })),
+    [cum],
+  );
+  const buckets = useMemo(
+    () =>
+      cum
+        .slice(0, 40)
+        .reverse()
+        .map<SignedBucket>((c) => ({
+          bucket_start: c.timestamp,
+          bullish: c.net_pnl > 0 ? c.net_pnl : 0,
+          bearish: c.net_pnl < 0 ? -c.net_pnl : 0,
+          neutral: 0,
+          article_count: 1,
+          top_title: `#${c.ticket ?? "?"} ${c.outcome ?? ""} · ${c.exit ?? ""}`.trim(),
+        })),
+    [cum],
+  );
 
   const rangeLabel = (first?: string, last?: string) =>
     `${first ? formatDateTime(first) : DASH} → ${last ? formatDateTime(last) : DASH}`;
@@ -118,9 +151,9 @@ export function AccountChartsSection() {
               <EmptyState message="No closed trades to accumulate." />
             ) : (
               <EquityCurveChart
-                points={cum.map((c) => ({ timestamp: c.timestamp, balance: null, equity: c.cumulative_pnl }))}
+                points={cumChartPoints}
                 field="equity"
-                formatValue={(v) => moneyOrDash(v)}
+                formatValue={fmtMoney}
               />
             )}
             {cum.length > 0 && (
@@ -142,19 +175,9 @@ export function AccountChartsSection() {
               <EmptyState message="No per-trade rows." />
             ) : (
               <SignedBucketChart
-                buckets={cum
-                  .slice(0, 40)
-                  .reverse()
-                  .map<SignedBucket>((c) => ({
-                    bucket_start: c.timestamp,
-                    bullish: c.net_pnl > 0 ? c.net_pnl : 0,
-                    bearish: c.net_pnl < 0 ? -c.net_pnl : 0,
-                    neutral: 0,
-                    article_count: 1,
-                    top_title: `#${c.ticket ?? "?"} ${c.outcome ?? ""} · ${c.exit ?? ""}`.trim(),
-                  }))}
+                buckets={buckets}
                 emptyHint="no per-trade rows"
-                bucketLabel={(b) => (b.bucket_start ? formatDateTime(b.bucket_start) : "")}
+                bucketLabel={bucketLabel}
               />
             )}
           </Plate>
