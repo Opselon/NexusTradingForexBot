@@ -22,6 +22,7 @@ import {
   SPATIAL_LIVE_ZONES,
   SPATIAL_TERMINAL_ZONES,
   type CcSpatialDto,
+  type CcSpatialEvaluationDto,
   type CcSpatialNodeDto,
 } from "../model";
 
@@ -106,6 +107,22 @@ const hexToRgb = (hex: string): [number, number, number] => {
 const rgba = (hex: string, a: number): string => {
   const [r, g, b] = hexToRgb(hex);
   return `rgba(${r}, ${g}, ${b}, ${a})`;
+};
+
+/** perf: evaluation signature memoized per evaluation-OBJECT identity — the
+ *  spatial poll's structural sharing keeps identities stable when a node's
+ *  evaluation did not change, so update() compares cached strings instead of
+ *  re-running JSON.stringify twice per node on every 30s poll. The signature
+ *  string is byte-identical to the previous inline form (same array, same
+ *  fields), so flash triggering compares exactly what it did before. */
+const evalSigCache = new WeakMap<CcSpatialEvaluationDto, string>();
+const evalSig = (ev: CcSpatialNodeDto["evaluation"]): string | null => {
+  if (!ev) return null;
+  const hit = evalSigCache.get(ev);
+  if (hit !== undefined) return hit;
+  const sig = JSON.stringify([ev.current_stage, ev.gates, ev.progress]);
+  evalSigCache.set(ev, sig);
+  return sig;
 };
 
 export interface SpatialEngineOptions {
@@ -203,9 +220,6 @@ export class SpatialFleetEngine {
     for (const o of this.nodes) prevById[o.strategy_id] = o;
 
     const next: RenderNode[] = [];
-    // perf: evaluation signature (pure) hoisted out of the per-node loop.
-    const sig = (ev: CcSpatialNodeDto["evaluation"]): string | null =>
-      ev ? JSON.stringify([ev.current_stage, ev.gates, ev.progress]) : null;
     for (const n of incoming) {
       const z = n.zone || "DISCOVERED";
       const zi = rank[z] ?? 0;
@@ -260,7 +274,7 @@ export class SpatialFleetEngine {
 
       // Evaluation-progress flash: telemetry advanced but lifecycle zone did
       // NOT — brighten the internal ring, never relocate the node.
-      if (prev && sig(prev.evaluation) !== sig(model.evaluation) && model.evaluation) {
+      if (prev && evalSig(prev.evaluation) !== evalSig(model.evaluation) && model.evaluation) {
         this.flashes[sid] = { t0: performance.now(), dur: 1100 };
       }
       next.push(model);

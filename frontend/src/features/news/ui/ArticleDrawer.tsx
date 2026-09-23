@@ -61,11 +61,23 @@ export function ArticleDrawer({
   const art = detail.data?.article ?? null;
   const ana = detail.data?.analysis ?? analysis.data?.analysis ?? null;
   const ai = fallback?.ai_analysis ?? aiFromAnswers ?? null;
+  // perf: key_facts / uncertainties arrive as JSON array strings from the
+  // backend (db_analysis json.dumps) — decode once per analysis payload
+  // instead of parsing + re-parsing inside the render body.
+  const keyFacts = useMemo(() => decodeStringList(ai?.key_facts), [ai?.key_facts]);
+  const uncertainties = useMemo(() => decodeStringList(ai?.uncertainties), [ai?.uncertainties]);
   const impacts = detail.data?.impacts ?? [];
   const consensus = detail.data?.consensus ?? fallback?.consensus ?? null;
   const tradeLinks = detail.data?.trade_links ?? [];
   const related = detail.data?.related ?? [];
   const postEvents = detail.data?.post_event_validation ?? [];
+
+  // perf: pretty-printed block serialized once per payload identity instead of
+  // on every drawer render (the article/analysis queries refetch on focus).
+  const postEventsText = useMemo(
+    () => (postEvents.length > 0 ? JSON.stringify(postEvents, null, 2) : null),
+    [postEvents],
+  );
 
   return (
     <div className="news-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -198,15 +210,15 @@ export function ArticleDrawer({
                       <div className="tiny" style={{ color: "var(--red)", marginTop: 4 }}>{ai.error_detail}</div>
                     )}
                     {ai.insufficient_evidence && <div className="badge warn" style={{ marginTop: 4 }}>INSUFFICIENT EVIDENCE</div>}
-                    {decodeStringList(ai.key_facts).length > 0 && (
+                    {keyFacts.length > 0 && (
                       <div style={{ marginTop: 4 }}>
-                        {decodeStringList(ai.key_facts).map((f) => (
+                        {keyFacts.map((f) => (
                           <span className="fact" key={f}>{f}</span>
                         ))}
                       </div>
                     )}
-                    {decodeStringList(ai.uncertainties).length > 0 && (
-                      <div className="unc">uncertainties: {decodeStringList(ai.uncertainties).join("; ")}</div>
+                    {uncertainties.length > 0 && (
+                      <div className="unc">uncertainties: {uncertainties.join("; ")}</div>
                     )}
                   </div>
                   {proAnswers.isPending && !fallback?.ai_analysis && (
@@ -292,11 +304,11 @@ export function ArticleDrawer({
                 </section>
               )}
 
-              {postEvents.length > 0 && (
+              {postEventsText && (
                 <section>
                   <div className="section-title">Post-event validation</div>
                   <pre tabIndex={0} className="tiny inline-mono" style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, overflowX: "auto", margin: 0 }}>
-                    {JSON.stringify(postEvents, null, 2)}
+                    {postEventsText}
                   </pre>
                 </section>
               )}
