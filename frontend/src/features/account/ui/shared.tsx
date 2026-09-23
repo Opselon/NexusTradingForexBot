@@ -11,6 +11,15 @@ export function asErrorText(e: unknown): string {
   return "unknown error";
 }
 
+/** ErrorState props for a failed account read: plain message + the
+ *  request_id as its own prop (the ErrorState renders it as a chip), so the
+ *  id is structured text rather than buried in the message string. */
+export function errorProps(e: unknown): { message: string; requestId: string | null } {
+  if (e instanceof ApiError) return { message: e.message, requestId: e.requestId ?? null };
+  if (e instanceof Error) return { message: e.message, requestId: null };
+  return { message: "unknown error", requestId: null };
+}
+
 export function FreshnessNote({ updatedAtMs, label, staleAfterMs }: { updatedAtMs: number | null; label: string; staleAfterMs?: number }) {
   if (!updatedAtMs) return <span className="timestamp-note">{label}: never loaded</span>;
   const age = Date.now() - updatedAtMs;

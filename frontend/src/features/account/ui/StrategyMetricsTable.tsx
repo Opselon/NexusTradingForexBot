@@ -12,7 +12,7 @@
  * and a null numeric field renders "—" (no synthetic zeros, BUG-020 lineage).
  */
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import type { StrategyContribution } from "../types";
 import { formatNumber } from "@/lib/format";
 import { DASH, moneyOrDash, pctOrDash } from "./shared";
@@ -91,7 +91,7 @@ export interface StrategyMetricsTableProps {
   onCopy?: (id: string, ok: boolean) => void;
 }
 
-export function StrategyMetricsTable({ rows, onCopy }: StrategyMetricsTableProps) {
+function StrategyMetricsTableBase({ rows, onCopy }: StrategyMetricsTableProps) {
   const [sort, setSort] = useState<SortState>({ key: "net_pnl", dir: -1 });
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
@@ -239,6 +239,10 @@ export function StrategyMetricsTable({ rows, onCopy }: StrategyMetricsTableProps
     </div>
   );
 }
+
+/** memo: the dashboard's grid/list toggle (parent state) must not re-sort or
+ *  re-render the table when `rows` and `onCopy` are reference-stable. */
+export const StrategyMetricsTable = memo(StrategyMetricsTableBase);
 
 const LABELS: Record<SortKey, string> = {
   strategy_id: "strategy",

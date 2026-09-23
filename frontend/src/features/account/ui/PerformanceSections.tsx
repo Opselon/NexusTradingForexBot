@@ -9,14 +9,14 @@
  * the Telegram daily report consumes — same object, so UI and report agree.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { Sparkline } from "@/components/viz";
 import { formatDateTime } from "@/lib/format";
 import { useAccountPerformance, useAccountIntelligence, useAccountSeries } from "../hooks";
 import { ADVANCED_ROWS } from "../model";
 import type { PeriodKind } from "../types";
-import { DASH, FreshnessNote, asErrorText, moneyOrDash } from "./shared";
+import { DASH, FreshnessNote, errorProps, moneyOrDash } from "./shared";
 
 export function AdvancedMetricsSection() {
   const perf = useAccountPerformance();
@@ -30,7 +30,7 @@ export function AdvancedMetricsSection() {
       {perf.isPending ? (
         <Skeleton count={4} height={38} />
       ) : perf.isError ? (
-        <ErrorState message={asErrorText(perf.error)} onRetry={() => perf.refetch()} />
+        <ErrorState {...errorProps(perf.error)} onRetry={() => perf.refetch()} />
       ) : !a ? (
         <EmptyState message="No advanced metrics computed." hint="Needs closed trades in the accounting core." />
       ) : (
@@ -68,6 +68,12 @@ export function AdvancedMetricsSection() {
 export function PeriodSeriesSection() {
   const [kind, setKind] = useState<PeriodKind>("DAY");
   const series = useAccountSeries(kind, 30);
+  /* Sparkline series memoized — the 60 s poll re-renders this section but
+   * the values array only changes when the query itself returns new rows. */
+  const sparkValues = useMemo(
+    () => (series.data ?? []).map((p) => (typeof p.net_pnl === "number" ? p.net_pnl : null)),
+    [series.data],
+  );
 
   return (
     <Panel
@@ -88,14 +94,14 @@ export function PeriodSeriesSection() {
       {series.isPending ? (
         <Skeleton count={2} height={60} />
       ) : series.isError ? (
-        <ErrorState message={asErrorText(series.error)} onRetry={() => series.refetch()} />
+        <ErrorState {...errorProps(series.error)} onRetry={() => series.refetch()} />
       ) : (series.data ?? []).length === 0 ? (
         <EmptyState message="No periods returned." />
       ) : (
         <>
           <div className="spark-cell" style={{ gap: 14 }}>
             <Sparkline
-              values={(series.data ?? []).map((p) => (typeof p.net_pnl === "number" ? p.net_pnl : null))}
+              values={sparkValues}
               width={420}
               height={54}
               label={`net pnl per ${kind}`}
@@ -149,7 +155,7 @@ export function PerformanceIntelligenceSection() {
       {intel.isPending ? (
         <Skeleton count={2} height={44} />
       ) : intel.isError ? (
-        <ErrorState message={asErrorText(intel.error)} onRetry={() => intel.refetch()} />
+        <ErrorState {...errorProps(intel.error)} onRetry={() => intel.refetch()} />
       ) : !intel.data ? (
         <EmptyState message="No intelligence report." />
       ) : showReport ? (

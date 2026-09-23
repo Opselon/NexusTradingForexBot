@@ -19,12 +19,12 @@
  * strategy (backend owns lifecycle/confidence).
  */
 
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { EmptyState, ErrorState, Panel } from "@/components/primitives";
 import { ConfidenceGauge, ConfidenceMeter } from "@/components/viz";
 import { useAccountStrategies } from "../hooks";
 import { useUiStore } from "@/stores/uiStore";
-import { FreshnessNote, asErrorText } from "./shared";
+import { FreshnessNote, errorProps } from "./shared";
 import { StrategyMetricsTable } from "./StrategyMetricsTable";
 import { LossDistributionPanel } from "./LossDistributionPanel";
 import "./strategies-dashboard.css";
@@ -37,14 +37,25 @@ export function StrategiesDashboard() {
   const pushToast = useUiStore((s) => s.pushToast);
   const [view, setView] = useState<ConfidenceView>("grid");
 
-  const confidenceRows = rows.slice(0, 12);
-  const lossRows = rows.map((s) => ({
-    strategy_id: s.strategy_id,
-    loss_share: s.loss_share,
-    gross_loss: s.gross_loss,
-    trade_count: s.trade_count,
-    net_pnl: s.net_pnl,
-  }));
+  /* Derived arrays memoized — stable identities for LossDistributionPanel
+   * and the confidence lists across unrelated re-renders (view toggles). */
+  const confidenceRows = useMemo(() => rows.slice(0, 12), [rows]);
+  const lossRows = useMemo(
+    () =>
+      rows.map((s) => ({
+        strategy_id: s.strategy_id,
+        loss_share: s.loss_share,
+        gross_loss: s.gross_loss,
+        trade_count: s.trade_count,
+        net_pnl: s.net_pnl,
+      })),
+    [rows],
+  );
+  const handleCopy = useCallback(
+    (_id: string, ok: boolean) =>
+      pushToast(ok ? "ok" : "fail", ok ? "strategy id copied" : "copy failed — clipboard unavailable"),
+    [pushToast],
+  );
 
   return (
     <div className="sd-root">
@@ -56,19 +67,14 @@ export function StrategiesDashboard() {
           {strategies.isPending ? (
             <div className="sd-loading">loading contributions…</div>
           ) : strategies.isError ? (
-            <ErrorState message={asErrorText(strategies.error)} onRetry={() => strategies.refetch()} />
+            <ErrorState {...errorProps(strategies.error)} onRetry={() => strategies.refetch()} />
           ) : rows.length === 0 ? (
             <EmptyState
               message="NO STRATEGY EVIDENCE AVAILABLE"
               hint="Contributions need closed trades tagged with a strategy_id."
             />
           ) : (
-            <StrategyMetricsTable
-              rows={rows}
-              onCopy={(_id, ok) =>
-                pushToast(ok ? "ok" : "fail", ok ? "strategy id copied" : "copy failed — clipboard unavailable")
-              }
-            />
+            <StrategyMetricsTable rows={rows} onCopy={handleCopy} />
           )}
         </Panel>
       </div>

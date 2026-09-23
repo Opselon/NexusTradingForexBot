@@ -12,7 +12,7 @@ import { useState, type ChangeEvent } from "react";
 import { EmptyState, ErrorState, Panel } from "@/components/primitives";
 import { useLiveAccounting } from "../hooks";
 import { validatePlanInputs } from "../model";
-import { DASH, FreshnessNote, asErrorText, moneyOrDash, numOrDash, pctOrDash } from "./shared";
+import { DASH, FreshnessNote, errorProps, moneyOrDash, numOrDash, pctOrDash } from "./shared";
 
 const EMPTY = { equity: "", entry: "", stopLoss: "", riskPct: "" };
 
@@ -56,7 +56,7 @@ export function LiveAccountingSection() {
       {live.isPending ? (
         <div className="viz-empty">querying the risk engine…</div>
       ) : live.isError ? (
-        <ErrorState message={asErrorText(live.error)} onRetry={() => live.refetch()} />
+        <ErrorState {...errorProps(live.error)} onRetry={() => live.refetch()} />
       ) : !d?.available ? (
         <EmptyState message={d?.reason === "ENGINE_OFFLINE" ? "Trading engine offline — no accounting state to read." : d?.reason === "NO_LIVE_EQUITY" ? "No live equity available from the adapter." : "Live accounting unavailable."} hint="The console never estimates these numbers locally." />
       ) : (

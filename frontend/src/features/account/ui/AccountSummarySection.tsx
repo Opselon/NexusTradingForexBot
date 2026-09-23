@@ -12,7 +12,7 @@ import { formatDateTime } from "@/lib/format";
 import { useAccountPerformance, useAccountPeriod } from "../hooks";
 import { PERIOD_LABEL } from "../model";
 import type { PeriodKind } from "../types";
-import { DASH, FreshnessNote, asErrorText, moneyOrDash, numOrDash, pctOrDash } from "./shared";
+import { DASH, FreshnessNote, errorProps, moneyOrDash, numOrDash, pctOrDash } from "./shared";
 import "./account.css";
 
 const KINDS: Array<{ id: PeriodKind; label: string }> = (["DAY", "WEEK", "MONTH", "YEAR"] as PeriodKind[]).map((k) => ({
@@ -46,7 +46,7 @@ export function AccountSummarySection() {
         {perf.isPending ? (
           <Skeleton count={2} height={56} />
         ) : perf.isError ? (
-          <ErrorState message={asErrorText(perf.error)} onRetry={() => perf.refetch()} />
+          <ErrorState {...errorProps(perf.error)} onRetry={() => perf.refetch()} />
         ) : (
           <div className="acct-summary">
             <MetricCard label="balance" value={moneyOrDash(live?.balance)} tone="dim" sub={live?.currency || DASH} />
@@ -96,7 +96,7 @@ export function AccountSummarySection() {
         {period.isPending ? (
           <Skeleton count={3} height={40} />
         ) : period.isError ? (
-          <ErrorState message={asErrorText(period.error)} onRetry={() => period.refetch()} />
+          <ErrorState {...errorProps(period.error)} onRetry={() => period.refetch()} />
         ) : !p || p.has_data === false ? (
           <EmptyState message={`No closed trades recorded for this ${kind.toLowerCase()} yet.`} hint="The report is honest-empty: the backend says has_data=false." />
         ) : (

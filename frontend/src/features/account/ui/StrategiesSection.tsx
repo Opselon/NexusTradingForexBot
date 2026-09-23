@@ -8,7 +8,7 @@ import { DataTable, EmptyState, ErrorState, Panel } from "@/components/primitive
 import { Gauge, HeatBar } from "@/components/viz";
 import { formatNumber } from "@/lib/format";
 import { useAccountStrategies } from "../hooks";
-import { DASH, FreshnessNote, asErrorText, moneyOrDash, pctOrDash } from "./shared";
+import { DASH, FreshnessNote, errorProps, moneyOrDash, pctOrDash } from "./shared";
 
 export function StrategiesSection() {
   const strategies = useAccountStrategies();
@@ -22,7 +22,7 @@ export function StrategiesSection() {
       {strategies.isPending ? (
         <div className="viz-empty">loading contributions…</div>
       ) : strategies.isError ? (
-        <ErrorState message={asErrorText(strategies.error)} onRetry={() => strategies.refetch()} />
+        <ErrorState {...errorProps(strategies.error)} onRetry={() => strategies.refetch()} />
       ) : rows.length === 0 ? (
         <EmptyState message="NO STRATEGY EVIDENCE AVAILABLE" hint="Contributions need closed trades tagged with a strategy_id." />
       ) : (
