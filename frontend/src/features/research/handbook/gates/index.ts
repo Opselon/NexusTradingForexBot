@@ -10,12 +10,13 @@
  * into their chunk; this module re-exports that single definition.
  */
 import type { HandbookEntry } from "../types";
-import { staticValidationEntry } from "./staticValidation";
-import { backtestEntry } from "./backtest";
-import { walkForwardEntry } from "./walkForward";
-import { oosEntry } from "./oos";
-import { robustnessEntry } from "./robustness";
-import { scoringGateEntry } from "./scoringGate";
+import type { ScoringTranslate } from "../scoring";
+import { staticValidationEntry, staticValidationEntryTranslated } from "./staticValidation";
+import { backtestEntry, backtestEntryTranslated } from "./backtest";
+import { walkForwardEntry, walkForwardEntryTranslated } from "./walkForward";
+import { oosEntry, oosEntryTranslated } from "./oos";
+import { robustnessEntry, robustnessEntryTranslated } from "./robustness";
+import { scoringGateEntry, scoringGateEntryTranslated } from "./scoringGate";
 
 export {
   GATE_CHAIN,
@@ -118,6 +119,11 @@ export const chainOverviewEntry: HandbookEntry = {
   ],
 };
 
+/** Chain overview — translated variant (same id, translated prose). */
+export function chainOverviewEntryTranslated(t?: ScoringTranslate): HandbookEntry {
+  return { ...chainOverviewEntry, title: t?.("research.hb.gates.overview.title", chainOverviewEntry.title) ?? chainOverviewEntry.title, subtitle: t?.("research.hb.gates.overview.subtitle", chainOverviewEntry.subtitle) ?? chainOverviewEntry.subtitle };
+}
+
 /** All chain-kind entries in chain order (the overview rides along as topic). */
 export const pipelineEntries: HandbookEntry[] = [
   chainOverviewEntry,
@@ -128,3 +134,18 @@ export const pipelineEntries: HandbookEntry[] = [
   robustnessEntry,
   scoringGateEntry,
 ];
+
+// V5 i18n overlay — translator-aware variants of the static entries. Same ids,
+// translated prose. The overlay in ./content.ts swaps static for translated at
+// render time; the static pool still feeds search-count tests and deep-links.
+export function gatesTranslated(t?: ScoringTranslate): HandbookEntry[] {
+  return [
+    chainOverviewEntryTranslated(t),
+    staticValidationEntryTranslated(t),
+    backtestEntryTranslated(t),
+    walkForwardEntryTranslated(t),
+    oosEntryTranslated(t),
+    robustnessEntryTranslated(t),
+    scoringGateEntryTranslated(t),
+  ];
+}

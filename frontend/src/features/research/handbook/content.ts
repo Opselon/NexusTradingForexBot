@@ -32,27 +32,49 @@
  */
 
 import type { HandbookEntry } from "./types";
+import type { ScoringTranslate } from "./scoring";
+import { gatesTranslated } from "./gates";
 
 export type { HandbookEntry, Section, ParamRow, FaqItem, HandbookKind } from "./types";
 import { chainOverviewEntry, pipelineEntries } from "./gates";
-import { lifecycleEntries } from "./lifecycle";
-import { discoveryEntry } from "./discovery";
-import { scoringEntry } from "./scoring";
-import { economicsEntry } from "./economics";
-import { evidenceEntry } from "./evidence";
-import { operationsEntry, pipelineEntry } from "./operations";
-import { uiGuideEntry } from "./uiguide";
-import { masterFaqEntry } from "./faq";
-import { registryEntry } from "./registry";
-import { experimentsEntry } from "./experiments";
-import { glossaryEntry } from "./glossary";
-import { healthEntry } from "./health";
+import { lifecycleEntries, lifecycleTranslated } from "./lifecycle";
+import { discoveryEntry, discoveryTranslated } from "./discovery";
+import { scoringEntry, scoringEntryTranslated } from "./scoring";
+import { economicsEntry, economicsTranslated } from "./economics";
+import { evidenceEntry, evidenceTranslated } from "./evidence";
+import { operationsEntry, pipelineEntry, operationsTranslated } from "./operations";
+import { uiGuideEntry, uiguideTranslated } from "./uiguide";
+import { masterFaqEntry, faqTranslated } from "./faq";
+import { registryEntry, registryTranslated } from "./registry";
+import { experimentsEntry, experimentsTranslated } from "./experiments";
+import { glossaryEntry, glossaryTranslated } from "./glossary";
+import { healthEntry, healthTranslated } from "./health";
 
-/** Ordered display groups for the playbook TOC. */
+/** Every handbook entry, translator-aware. Static pool above stays byte-identical
+ *  for tests/search; this overlay swaps prose by id at render time. */
+function translatedEntries(t: ScoringTranslate): HandbookEntry[] {
+  return [
+    ...gatesTranslated(t),
+    ...lifecycleTranslated(t),
+    ...operationsTranslated(t),
+    ...glossaryTranslated(t),
+    ...uiguideTranslated(t),
+    ...healthTranslated(t),
+    ...evidenceTranslated(t),
+    ...discoveryTranslated(t),
+    economicsTranslated(t),
+    faqTranslated(t),
+    experimentsTranslated(t),
+    registryTranslated(t),
+    scoringEntryTranslated(t),
+  ];
+}
+
+/** Ordered display groups for the playbook TOC. labelKey feeds t() at render. */
 export const HANDBOOK_GROUPS = [
-  { key: "topic", label: "Big picture" },
-  { key: "gate", label: "Gate chain" },
-  { key: "state", label: "Lifecycle states" },
+  { key: "topic", label: "Big picture", labelKey: "research.hb.group.topic" },
+  { key: "gate", label: "Gate chain", labelKey: "research.hb.group.gate" },
+  { key: "state", label: "Lifecycle states", labelKey: "research.hb.group.state" },
 ] as const;
 
 const topicEntries: HandbookEntry[] = [
@@ -110,14 +132,19 @@ export function matchesQuery(entry: HandbookEntry, rawQuery: string): boolean {
   return q.split(" ").every((term) => haystack.includes(term));
 }
 
-/** Filter + group for the playbook view (groups keep TOC order). */
+/** Filter + group for the playbook view (groups keep TOC order).
+ *  Pass the store's t() to translate entry prose AND search in that language. */
 export function queryHandbook(
   rawQuery: string,
-): Array<{ key: string; label: string; entries: HandbookEntry[] }> {
+  t?: ScoringTranslate,
+): Array<{ key: string; label: string; labelKey: string; entries: HandbookEntry[] }> {
+  const overlay = t ? new Map(translatedEntries(t).map((e) => [e.id, e])) : null;
+  const pick = (e: HandbookEntry): HandbookEntry => overlay?.get(e.id) ?? e;
   return HANDBOOK_GROUPS.map((group) => ({
     key: group.key,
     label: group.label,
-    entries: HANDBOOK_ENTRIES.filter((e) => e.kind === group.key && matchesQuery(e, rawQuery)),
+    labelKey: group.labelKey,
+    entries: HANDBOOK_ENTRIES.map(pick).filter((e) => e.kind === group.key && matchesQuery(e, rawQuery)),
   })).filter((g) => g.entries.length > 0);
 }
 
@@ -125,9 +152,11 @@ export function countEntries(rawQuery = ""): number {
   return HANDBOOK_ENTRIES.filter((e) => matchesQuery(e, rawQuery)).length;
 }
 
-export function getEntry(id: string | undefined): HandbookEntry | undefined {
+export function getEntry(id: string | undefined, t?: ScoringTranslate): HandbookEntry | undefined {
   if (!id) return undefined;
-  return HANDBOOK_ENTRIES.find((e) => e.id === id);
+  const entry = HANDBOOK_ENTRIES.find((e) => e.id === id);
+  if (!entry || !t) return entry;
+  return translatedEntries(t).find((e) => e.id === id) ?? entry;
 }
 
 /** Lifecycle-state entries keyed by state id (DISCOVERED -> entry). */
