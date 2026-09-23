@@ -13,16 +13,22 @@
  * never by ad-hoc token probing.
  */
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import DashboardPage from "@/pages/Dashboard/DashboardPage";
-import TradingPage from "@/pages/Trading/TradingPage";
-import PositionsPage from "@/pages/Positions/PositionsPage";
-import RiskPage from "@/pages/Risk/RiskPage";
-import MLPage from "@/pages/ML/MLPage";
-import IntelligencePage from "@/pages/Intelligence/IntelligencePage";
-import AuditPage from "@/pages/Audit/AuditPage";
+// Wave 6 (perf): the seven legacy routes are code-split like the feature
+// registry — the entry chunk no longer carries every page up front. Same
+// modules, same default exports, same props/URLs; React.lazy defers only the
+// fetch. The Suspense+ErrorBoundary wrapper below mirrors the per-feature
+// route contract (legacy routes previously had neither — a render error was
+// uncaught).
+const DashboardPage = lazy(() => import("@/pages/Dashboard/DashboardPage"));
+const TradingPage = lazy(() => import("@/pages/Trading/TradingPage"));
+const PositionsPage = lazy(() => import("@/pages/Positions/PositionsPage"));
+const RiskPage = lazy(() => import("@/pages/Risk/RiskPage"));
+const MLPage = lazy(() => import("@/pages/ML/MLPage"));
+const IntelligencePage = lazy(() => import("@/pages/Intelligence/IntelligencePage"));
+const AuditPage = lazy(() => import("@/pages/Audit/AuditPage"));
 import type { EngineSnapshot } from "@/types/domain";
 import { engineApi } from "@/api/engineApi";
 import { useRealtimeSnapshot } from "@/hooks/useRealtimeSnapshot";
@@ -269,7 +275,7 @@ export function AppShell() {
           <div className="side-row" title={t("ux.shortcut.help", "Keyboard shortcuts")}>
             <span><kbd>alt</kbd> 1–9 · <kbd>ctrl</kbd>K</span>
           </div>
-          <button className="sidebar-toggle" onClick={toggleSidebar} title="Toggle sidebar (Alt+B)">
+          <button className="sidebar-toggle" onClick={toggleSidebar} title="Toggle sidebar (Alt+B)" aria-label="Toggle sidebar" aria-expanded={!collapsed}>
             {collapsed ? "»" : "«"}
           </button>
         </div>
@@ -334,8 +340,10 @@ export function AppShell() {
               onRetry={() => snapshotQuery.refetch()}
             />
           ) : (
-            <Routes>
-              <Route path="/" element={<DashboardRoute snapshot={snapshot} nowMs={nowMs} />} />
+            <ErrorBoundary label={routeLabel ?? "Console"} resetKey={routePathname}>
+              <Suspense fallback={<LoadingState label="Loading page…" />}>
+                <Routes>
+                  <Route path="/" element={<DashboardRoute snapshot={snapshot} nowMs={nowMs} />} />
               <Route path="/trading" element={<TradingRoute snapshot={snapshot} nowMs={nowMs} />} />
               <Route path="/positions" element={<PositionsRoute snapshot={snapshot} />} />
               <Route path="/risk" element={<RiskRoute snapshot={snapshot} />} />
@@ -355,8 +363,10 @@ export function AppShell() {
                   }
                 />
               ))}
-              <Route path="*" element={<ErrorState message="Unknown route" />} />
-            </Routes>
+                  <Route path="*" element={<ErrorState message="Unknown route" />} />
+                </Routes>
+              </Suspense>
+            </ErrorBoundary>
           )}
         </main>
       </div>

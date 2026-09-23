@@ -1,12 +1,23 @@
 /**
- * Intelligence — news / market-context / trade intelligence + structure.
- *
- * Stale or unavailable information is ALWAYS labeled as such (backend
- * provides `stale`, `freshness`, `available` flags). No investment decisions
- * or interpretations are computed in the frontend — raw backend signals only.
+ * PURPOSE:  Intelligence page — news state KPIs, structure context
+ *           (liquidity governor + mSLIE), regime readout, signal feed of
+ *           articles, and trade-autopsy cards.
+ * OWNER:    uiux-wave5-intel  (future edits to this file belong to this lane)
+ * CONSUMES: intelligenceApi + _shared/edgeApi queries, EngineSnapshot prop,
+ *           components/primitives + _shared/SectionState/_shared/widgets kit,
+ *           ./HeroHeader, ./KpiStrip, ./SignalFeed, ./AutopsyFeed,
+ *           ./signalBits (ScoreBar — KpiStrip + feeds).
+ * PROVIDES: default IntelligencePage (routed by app/AppShell IntelRoute).
+ * INVARIANTS: honest empty states, no fabricated data — stale/unavailable
+ *           backend flags are always rendered as such; raw backend signals
+ *           only, no frontend inference or invented fields.
+ * EXTEND:   new sections = a new Panel here (queries stay in this file);
+ *           feed/autopsy visuals live in SignalFeed/AutopsyFeed and the
+ *           itl- prefixed ./intelligence.css.
  *
  * Sections:
- *  - Hero header: endpoint provenance chips, live news-state pill, refresh-all
+ *  - Hero header + KPI strip live in ./HeroHeader + ./KpiStrip (lane-owned);
+ *    this file keeps queries, composition, structure/subsystem sections.
  *  - News state KPI strip + subsystem health (existing parity)
  *  - Liquidity governor panel — READ-ONLY render of /api/liquidity/state
  *    (the liquidity tab itself belongs to lane 5; this page only surfaces
@@ -15,6 +26,8 @@
  *    (structure/bias), liquidity map bands, last sweep
  *  - Regime readout — canonical snapshot regime + /api/v1/market/regime
  *    evidence (no inference yet renders as the backend's own note)
+ *  - Signal feed (article cards + filter chips + timeline rail) and
+ *    trade-autopsy cards (wave 5 intel upgrade)
  *  - Trade intelligence summary, articles, autopsies (parity)
  *
  * UI pass: presentation-only rework (hero, section grouping, tone badges).
@@ -27,30 +40,25 @@ import { useQuery } from "@tanstack/react-query";
 import { intelligenceApi } from "@/api/intelligenceApi";
 import { contextApi, marketApi2 } from "@/pages/_shared/edgeApi";
 import type { EngineSnapshot } from "@/types/domain";
-import { DataTable, EmptyState, ErrorState, MetricCard, Panel, SeverityBadge, Skeleton, StatusBadge } from "@/components/primitives";
+import { EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { AgeNote, SectionState, errorText, fmtAge, TriBadge } from "@/pages/_shared/SectionState";
 import { InfoChip } from "@/pages/_shared/widgets";
-import { downloadCsv, stampForFilename } from "@/pages/_shared/csv";
 import { formatDateTime, formatNumber, formatPct } from "@/lib/format";
 import { ApiError } from "@/types/api";
+import HeroHeader from "@/pages/Intelligence/HeroHeader";
+import KpiStrip from "@/pages/Intelligence/KpiStrip";
+import StructureViz, { RegimeEvidence, mslieBands } from "@/pages/Intelligence/StructureViz";
+import SignalFeed from "@/pages/Intelligence/SignalFeed";
+import AutopsyFeed from "@/pages/Intelligence/AutopsyFeed";
 import "@/pages/_shared/pages.css";
 import "@/pages/Intelligence/intelligence.css";
+import "@/pages/Intelligence/heroKpi.css";
+import "@/pages/Intelligence/structureViz.css";
+import "@/pages/Intelligence/feed.css";
 
 interface Props {
   snapshot?: EngineSnapshot | undefined;
 }
-
-/** Endpoints this page reads — provenance shown in the hero (never decoration). */
-const ENDPOINTS = [
-  "/api/news/state",
-  "/api/news/health",
-  "/api/news/latest",
-  "/api/intelligence/summary",
-  "/api/intelligence/autopsies",
-  "/api/liquidity/state",
-  "/api/mslie/status",
-  "/api/v1/market/regime",
-] as const;
 
 /** Echo a backend record's scalar fields as kv rows (objects collapsed). */
 function scalarRows(rec: Record<string, unknown> | null | undefined, max = 12): Array<[string, string]> {
@@ -134,80 +142,17 @@ export default function IntelligencePage({ snapshot }: Props) {
   /** Refresh every section at once — each query stays backend-authoritative. */
   const refreshAll = () => allQueries.forEach((q) => void q.refetch());
 
-  /** Hero pill tone restates the backend's own availability/staleness/state. */
-  const liveTone = !ns?.available ? "dim" : ns.stale ? "warn" : ns.state === "BREAKING" || ns.state === "HIGH_IMPACT" ? "bad" : "good";
 
   return (
     <div className="ix-page">
-      <header className="ix-hero">
-        <div className="ix-hero-main">
-          <div className="ix-kicker">
-            <span className="dot" aria-hidden="true" />
-            NEWS · STRUCTURE · REGIME
-          </div>
-          <h1 className="ix-title">
-            <span className="glyph" aria-hidden="true">≈</span>
-            <span className="word">Intelligence</span>
-          </h1>
-          <p className="ix-desc">
-            News flow, market structure and engine regime in one read — raw backend signals only. Stale or unavailable context is labeled as such,
-            never inferred or zero-filled in the frontend.
-          </p>
-          <div className="ix-endpoints" aria-label="endpoints surfaced by this page">
-            {ENDPOINTS.map((ep) => (
-              <span className="ix-ep" key={ep}>
-                {ep}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="ix-hero-side">
-          <span
-            className={`ix-livechip ${liveTone}`}
-            title="Backend news state + freshness from /api/news/state — displayed verbatim, never inferred."
-          >
-            <span className="d" aria-hidden="true" />
-            {ns?.available ? (ns.state ?? "—") : "NEWS UNAVAILABLE"}
-            <span className="fresh">{ns?.available ? (ns.stale ? "· STALE" : `· freshness ${ns.freshness ?? "—"}`) : "· subsystem offline"}</span>
-          </span>
-          <button className="btn small" onClick={refreshAll} disabled={anyFetching} aria-label="Refresh every intelligence section">
-            {anyFetching ? "⟳ Refreshing…" : "⟳ Refresh all"}
-          </button>
-        </div>
-      </header>
-
+      <HeroHeader ns={ns} anyFetching={anyFetching} refreshAll={refreshAll} />
       {ns?.stale && (
         <div className="ix-stale" role="alert">
           <span>⚠ News context is STALE per the backend — no recent fetch. Values above are not current market context.</span>
         </div>
       )}
 
-      <div className="grid cols-4 ix-kpis">
-        <MetricCard
-          label="News state (backend)"
-          value={stateQuery.isPending ? "…" : ns?.available ? (ns.state ?? "—") : "UNAVAILABLE"}
-          tone={ns?.stale ? undefined : ns?.state === "BREAKING" || ns?.state === "HIGH_IMPACT" ? "neg" : "dim"}
-          sub={ns?.available ? (ns.stale ? "⚠ backend marks context STALE" : `freshness ${ns.freshness ?? "—"}`) : "news subsystem disabled or offline"}
-        />
-        <MetricCard
-          label="Bullish / Bearish"
-          value={ns?.available ? `${formatPct((ns.bullish_score ?? 0) * 100, 0)} / ${formatPct((ns.bearish_score ?? 0) * 100, 0)}` : "—"}
-          tone="dim"
-          sub="backend-scored sentiment (display only)"
-        />
-        <MetricCard
-          label="Context confidence"
-          value={ns?.confidence === null || ns?.confidence === undefined ? "—" : formatPct(ns.confidence * 100, 0)}
-          tone="dim"
-          sub={`XAUUSD relevance ${ns?.xauusd_relevance === null || ns?.xauusd_relevance === undefined ? "—" : formatPct(ns.xauusd_relevance * 100, 0)}`}
-        />
-        <MetricCard
-          label="Active events"
-          value={ns?.active_event_count ?? "—"}
-          tone="dim"
-          sub={`context time ${ns?.timestamp ? formatDateTime(ns.timestamp) : "—"}`}
-        />
-      </div>
+      <KpiStrip ns={ns} pending={stateQuery.isPending} dataUpdatedAt={stateQuery.dataUpdatedAt} />
 
       {/* Structure context: liquidity governor + mSLIE (read-only here) */}
       <SectionLabel>Market structure</SectionLabel>
@@ -261,17 +206,7 @@ export default function IntelligencePage({ snapshot }: Props) {
               {(liq.pools?.length ?? 0) > 0 && (
                 <>
                   <div className="section-title ix-gap">Liquidity pools</div>
-                  <DataTable headers={[{ label: "Side" }, { label: "Price", num: true }, { label: "State" }, { label: "Source" }, { label: "Confirmed" }]}>
-                    {liq.pools!.slice(0, 8).map((p, i) => (
-                      <tr key={i}>
-                        <td><span className={`l4-chip ${String(p.side ?? "").toUpperCase() === "BUY" ? "good" : "bad"}`}>{p.side ?? "—"}</span></td>
-                        <td className="num">{p.price === null || p.price === undefined ? "—" : formatNumber(p.price, 2)}</td>
-                        <td>{p.state ?? "—"}</td>
-                        <td className="small">{p.source ?? "—"}</td>
-                        <td className="small">{p.confirmed_at ? formatDateTime(p.confirmed_at) : "—"}</td>
-                      </tr>
-                    ))}
-                  </DataTable>
+                  <StructureViz variant="pools" pools={liq.pools ?? []} bands={[]} />
                 </>
               )}
               <div className="l4-note ix-readnote">
@@ -309,16 +244,7 @@ export default function IntelligencePage({ snapshot }: Props) {
               {(ms.liquidity_map?.length ?? 0) > 0 && (
                 <>
                   <div className="section-title ix-gap">Liquidity map ({ms.liquidity_map!.length} bands)</div>
-                  <DataTable headers={[{ label: "Price range" }, { label: "Type" }, { label: "Touches", num: true }, { label: "Strength", num: true }]}>
-                    {ms.liquidity_map!.slice(0, 8).map((z, i) => (
-                      <tr key={i}>
-                        <td className="num">{String(z.low ?? "—")} – {String(z.high ?? "—")}</td>
-                        <td>{String(z.type ?? z.kind ?? "—")}</td>
-                        <td className="num">{String(z.touches ?? "—")}</td>
-                        <td className="num">{typeof z.strength === "number" ? z.strength.toFixed(2) : String(z.strength ?? "—")}</td>
-                      </tr>
-                    ))}
-                  </DataTable>
+                  <StructureViz variant="bands" pools={[]} bands={mslieBands(ms.liquidity_map)} />
                 </>
               )}
               {ms.last_sweep && (
@@ -366,6 +292,7 @@ export default function IntelligencePage({ snapshot }: Props) {
               emptyWhen={(d) => d.regime === null || d.regime === undefined}
             >
               {(d) => (
+                <>
                 <dl className="kv">
                   {scalarRows(d.regime, 14).map(([k, v]) => (
                     <div key={k} style={{ display: "contents" }}>
@@ -374,6 +301,9 @@ export default function IntelligencePage({ snapshot }: Props) {
                     </div>
                   ))}
                 </dl>
+                <div className="section-title ix-gap">evidence</div>
+                <RegimeEvidence evidence={d.evidence} />
+                </>
               )}
             </SectionState>
           </div>
@@ -434,81 +364,9 @@ export default function IntelligencePage({ snapshot }: Props) {
       </div>
 
       <SectionLabel>Feed &amp; forensics</SectionLabel>
-      <Panel
-        title="Latest canonical articles"
-        subtitle={<span className="inline-mono">/api/news/latest</span>}
-        tight
-        right={
-          articlesQuery.data?.articles && articlesQuery.data.articles.length > 0 ? (
-            <button
-              className="btn small ghost"
-              onClick={() =>
-                downloadCsv({
-                  filename: `nse-news-${stampForFilename()}.csv`,
-                  headers: ["article_id", "published_at", "source", "importance", "status", "title"],
-                  rows: (articlesQuery.data.articles ?? []).map((a) => [a.article_id, a.published_at ?? "", a.source_name ?? "", String(a.importance ?? ""), a.article_status ?? "", a.title]),
-                })
-              }
-              title="exports exactly the rows returned by /api/news/latest"
-            >
-              ⇩ CSV
-            </button>
-          ) : undefined
-        }
-      >
-        {articlesQuery.isPending ? (
-          <div className="ix-skel"><Skeleton count={3} /></div>
-        ) : articlesQuery.data?.available && articlesQuery.data.articles && articlesQuery.data.articles.length > 0 ? (
-          <DataTable headers={[{ label: "Published" }, { label: "Source" }, { label: "Title" }, { label: "Importance" }]}>
-            {articlesQuery.data.articles.map((a) => (
-              <tr key={a.article_id}>
-                <td className="small">{a.published_at ? formatDateTime(a.published_at) : "—"}</td>
-                <td>{a.source_name ?? "—"}</td>
-                <td className="ix-title-cell" title={a.title}>{a.title}</td>
-                <td>{a.importance === null || a.importance === undefined ? "—" : <SeverityBadge severity={String(a.importance)} />}</td>
-              </tr>
-            ))}
-          </DataTable>
-        ) : articlesQuery.isError ? (
-          <ErrorState message="News feed endpoint failed." onRetry={() => void articlesQuery.refetch()} />
-        ) : (
-          <EmptyState message="No articles available." hint="The feed endpoint answered with an empty list — the parser or the source may be warming up." />
-        )}
-      </Panel>
+      <SignalFeed query={articlesQuery} />
 
-      <Panel title="Recent trade autopsies (why trades won/lost)" subtitle={<span className="inline-mono">/api/intelligence/autopsies</span>} tight>
-        {autopsyQuery.isPending ? (
-          <div className="ix-skel"><Skeleton count={3} /></div>
-        ) : autopsyQuery.data?.available && autopsyQuery.data.autopsies && autopsyQuery.data.autopsies.length > 0 ? (
-          <DataTable
-            headers={[{ label: "Ticket" }, { label: "Strategy" }, { label: "Outcome" }, { label: "Realized R", num: true }, { label: "Exit reason" }]}
-          >
-            {autopsyQuery.data.autopsies.map((a, i) => (
-              <tr key={String(a.ticket ?? i)}>
-                <td className="small">{String(a.ticket ?? "—")}</td>
-                <td className="small">{a.strategy_id ?? "—"}</td>
-                <td>
-                  {a.outcome ? (
-                    <span className={`badge ${a.outcome.toUpperCase() === "WIN" ? "good" : a.outcome.toUpperCase() === "LOSS" ? "bad" : "neutral"}`}>
-                      {a.outcome}
-                    </span>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td className={`num ${a.realized_r !== null && a.realized_r !== undefined && a.realized_r >= 0 ? "pnl-pos" : "pnl-neg"}`}>
-                  {a.realized_r === null || a.realized_r === undefined ? "—" : a.realized_r.toFixed(2)}
-                </td>
-                <td>{a.exit_reason ?? "—"}</td>
-              </tr>
-            ))}
-          </DataTable>
-        ) : autopsyQuery.isError ? (
-          <ErrorState message="Autopsy endpoint failed." onRetry={() => void autopsyQuery.refetch()} />
-        ) : (
-          <EmptyState message="No autopsies recorded." />
-        )}
-      </Panel>
+      <AutopsyFeed query={autopsyQuery} />
     </div>
   );
 }

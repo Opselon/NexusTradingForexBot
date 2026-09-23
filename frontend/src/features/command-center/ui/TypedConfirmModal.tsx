@@ -16,6 +16,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { useDialogA11y } from "../../../components/useDialogA11y";
 import type { ReactNode } from "react";
 
 export function TypedConfirmModal({
@@ -42,27 +43,27 @@ export function TypedConfirmModal({
   const [typed, setTyped] = useState("");
   const armed = requireText === null || typed === requireText;
   const inputRef = useRef<HTMLInputElement>(null);
+  const boxRef = useRef<HTMLDivElement | null>(null);
   const resolveRef = useRef(onResolve);
   resolveRef.current = onResolve;
 
+  // Legacy escalation contract preserved: Esc only aborts (resolves false)
+  // while NOT busy — the shared hook adds focus-in/trap/restore + the
+  // stacked-dialog focus guard around it.
+  useDialogA11y(boxRef, () => resolveRef.current(false), { escEnabled: !busy });
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !busy) resolveRef.current(false);
-    };
-    window.addEventListener("keydown", onKey);
     const focusTimer = window.setTimeout(() => {
       (requireText ? inputRef.current : null)?.focus();
     }, 30);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.clearTimeout(focusTimer);
-    };
-  }, [busy, requireText]);
+    return () => window.clearTimeout(focusTimer);
+  }, [requireText]);
 
   return (
     <div className="modal-overlay tc-overlay" role="presentation">
       <div
         className={`modal tc-modal ${requireText ? "tc-typed" : ""}`}
+        ref={boxRef}
         role="alertdialog"
         aria-modal="true"
         aria-label={title}

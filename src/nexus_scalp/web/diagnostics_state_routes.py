@@ -62,6 +62,298 @@ class ToggleRuleRequest(BaseModel):
     parameters: dict[str, Any] | None = None
 
 
+# =====================================================================
+# PROVIDER TRUTH — configured vs effective (DATABASE TAB, 2026-09-23)
+# ---------------------------------------------------------------------
+# The tab's badge echoed ONLY `database.provider` from settings, so it
+# claimed `postgresql` while every panel on the tab was fed by local
+# SQLite files (hygiene sizes/plans read artifacts/*.db, schema state is
+# read from the SQLite artifacts DB) and the configured PostgreSQL
+# target did not answer.  These helpers MEASURE the effective provider
+# instead of assuming it: probe the configured target (15s cache so the
+# 30s panel poll stays cheap), then look at local file activity as
+# evidence of what is actually being written.
+#
+# Secret-safe: probe failures are rendered through db_console._fail(),
+# so exception TEXT (which may embed credentials) is never echoed —
+# known conditions get code + actionable sentence, unknown ones only
+# the exception type name.
+# =====================================================================
+
+_TRUTH_PROBE_TTL_S = 15.0
+_TRUTH_ACTIVE_WINDOW_S = 600  # a local .db written within 10 min = live traffic
+_TRUTH_DOMAINS = ("audit", "news", "candle_intel")
+_PROBE_CACHE: dict[str, Any] = {"at": 0.0, "target": "", "ok": None, "error": ""}
+
+
+def _local_sqlite_evidence() -> list[dict[str, Any]]:
+    """Local SQLite files behind this tab's panels, with recency evidence."""
+    from nexus_scalp.database.config import load_database_config
+
+    rows: list[dict[str, Any]] = []
+    now = time.time()
+    for domain in _TRUTH_DOMAINS:
+        try:
+            cfg = load_database_config(domain)
+            path = Path(cfg.sqlite_connect_path)
+        except Exception:
+            continue
+        try:
+            st = path.stat()
+        except OSError:
+            continue
+        age = max(0, int(now - st.st_mtime))
+        rows.append(
+            {
+                "name": domain,
+                "file": path.name,
+                "path": str(path),
+                "bytes": int(st.st_size),
+                "age_seconds": age,
+                "mtime_utc": datetime.fromtimestamp(st.st_mtime, UTC).isoformat(timespec="seconds"),
+                "active": age <= _TRUTH_ACTIVE_WINDOW_S,
+            }
+        )
+    return rows
+
+
+def _probe_postgres(cfg: Any) -> tuple[bool, str, str]:
+    """(reachable, target, safe_error) — measured, 15s cached per target."""
+    target = f"{cfg.host}:{cfg.port or 5432}/{cfg.database}"
+    now = time.monotonic()
+    cached_ok = _PROBE_CACHE.get("ok")
+    if (
+        cached_ok is not None
+        and _PROBE_CACHE.get("target") == target
+        and now - float(_PROBE_CACHE.get("at") or 0.0) < _TRUTH_PROBE_TTL_S
+    ):
+        return bool(cached_ok), target, str(_PROBE_CACHE.get("error") or "")
+
+    ok = False
+    error = ""
+    try:
+        from nexus_scalp.database.drivers import get_driver
+
+        driver = get_driver(cfg)
+        try:
+            ok = bool(driver.ping())
+        finally:
+            driver.close()
+        if not ok:
+            error = f"PostgreSQL at {target} did not answer the connection probe."
+    except Exception as exc:  # a probe must never raise into the route
+        from nexus_scalp.web.db_console import _fail
+
+        failed = _fail(exc, "probing the configured PostgreSQL target", cfg)
+        error = str(failed.get("error") or "connection probe failed")
+    _PROBE_CACHE.update({"at": now, "target": target, "ok": ok, "error": error})
+    return ok, target, error
+
+
+def _provider_truth(ui: dict[str, Any]) -> dict[str, Any]:
+    """Configured-vs-effective provider, measured (see section header).
+
+    `mismatch=True` is the state the user reported on 2026-09-23: badge
+    says postgresql, the data on the tab comes from sqlite.
+    """
+    configured = str(ui.get("provider") or "sqlite")
+    evidence = _local_sqlite_evidence()
+    active = [row for row in evidence if row.get("active")]
+    truth: dict[str, Any] = {
+        "configured": configured,
+        "effective": configured,
+        "mismatch": False,
+        "pg_reachable": None,
+        "pg_target": "",
+        "pg_error": "",
+        "evidence": evidence,
+        "note": "",
+        "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
+    }
+    if configured != "postgresql":
+        truth["note"] = (
+            "Configured provider is sqlite; the storage, hygiene and schema "
+            "panels read the local SQLite files listed as evidence."
+        )
+        return truth
+
+    from nexus_scalp.database.config import load_database_config
+
+    try:
+        cfg = load_database_config("audit")
+        reachable, target, error = _probe_postgres(cfg)
+    except Exception as exc:  # pragma: no cover - config edge
+        reachable, target, error = False, "", type(exc).__name__
+    truth["pg_reachable"] = reachable
+    truth["pg_target"] = target
+    truth["pg_error"] = error
+    if reachable:
+        truth["note"] = f"PostgreSQL answered at {target}."
+        return truth
+
+    if active:
+        truth["effective"] = "sqlite"
+        truth["mismatch"] = True
+        mins = _TRUTH_ACTIVE_WINDOW_S // 60
+        truth["note"] = (
+            f"Configured provider is postgresql but {target or 'the configured target'} "
+            f"did not answer; local SQLite files were written in the last {mins} minutes "
+            "(see evidence) — the data on this tab comes from sqlite."
+        )
+    else:
+        truth["effective"] = "unavailable"
+        truth["mismatch"] = True
+        truth["note"] = (
+            f"Configured provider is postgresql but {target or 'the configured target'} "
+            "did not answer and no local SQLite file was written recently — the data "
+            "shown may be stale."
+        )
+    return truth
+
+
+# PERF-DB-STATUS (2026-09-23): TTL cache for GET /api/db/hygiene — see the
+# inline comment in get_db_hygiene for the measured numbers. Failure payloads
+# are never stored here.
+_DB_HYGIENE_TTL_SEC = 30.0
+# in-place mutable cache (same pattern as _PROBE_CACHE): {"at": t, "payload": d}
+_DB_HYGIENE_CACHE: dict[str, Any] = {}
+
+
+def invalidate_db_hygiene_cache() -> None:
+    """Drop the cached /api/db/hygiene payload (tests / mutation hooks)."""
+    _DB_HYGIENE_CACHE.clear()
+
+
+def _db_hygiene_cached() -> dict[str, Any] | None:
+    if not _DB_HYGIENE_CACHE:
+        return None
+    at = float(_DB_HYGIENE_CACHE.get("at") or 0.0)
+    if (time.monotonic() - at) >= _DB_HYGIENE_TTL_SEC:
+        return None
+    payload = _DB_HYGIENE_CACHE.get("payload")
+    return payload if isinstance(payload, dict) else None
+
+
+def _db_hygiene_store(payload: dict[str, Any]) -> None:
+    _DB_HYGIENE_CACHE.clear()
+    _DB_HYGIENE_CACHE.update({"at": time.monotonic(), "payload": payload})
+
+
+# ---------------------------------------------------------------------------
+# TASK-CFGUI-001 — /alt/config tab contract hardening
+# ---------------------------------------------------------------------------
+
+
+def mask_secret_tail(value: str) -> str:
+    """BUG-072 display mask: star everything but the last 4 characters."""
+    text = str(value)
+    if len(text) <= 4:
+        return "*" * len(text)
+    return "*" * (len(text) - 4) + text[-4:]
+
+
+def mask_config_secrets(raw_data: dict[str, Any]) -> dict[str, Any]:
+    """Never serve plaintext credentials on GET /api/config.
+
+    BUG-072 (telegram bot_token) extended to the MT5 credential block and
+    the notification API key: every secret-shaped field this route may carry
+    is replaced by a display mask before the payload reaches a browser.
+    Values that already contain ``*`` (secure-store masks such as
+    ``telegram.token_masked``) are left untouched — never double-masked.
+    """
+    for section, field in (
+        ("telegram", "bot_token"),
+        ("mt5", "password"),
+        ("notification", "telegram_api_key"),
+    ):
+        block = raw_data.get(section)
+        if not isinstance(block, dict):
+            continue
+        value = block.get(field)
+        if isinstance(value, str) and value and "*" not in value:
+            block[field] = mask_secret_tail(value)
+    return raw_data
+
+
+def restore_masked_mt5_password(
+    raw_data: dict[str, Any], yaml_path: Path | None = None
+) -> dict[str, Any]:
+    """Round-trip guard for POST /api/config (pairs with mask_config_secrets).
+
+    GET serves a MASK for ``mt5.password`` and the legacy config form echoes
+    the whole mt5 block back verbatim (Web/app.js ``saveConfiguration`` ->
+    ``mt5: selectedConfig.mt5``). Persisting that mask would overwrite the
+    real credential in live.yaml — so masked/empty inbound passwords keep the
+    stored value instead; a real (unmasked) value is written as-is.
+    """
+    mt5 = raw_data.get("mt5")
+    if not isinstance(mt5, dict):
+        return raw_data
+    inbound = str(mt5.get("password") or "")
+    if inbound and "*" not in inbound:
+        return raw_data  # operator supplied a real credential — keep it
+    path = yaml_path or Path("configs/live.yaml")
+    stored = ""
+    try:
+        if path.exists():
+            with open(path, encoding="utf-8") as f:
+                current = yaml.safe_load(f) or {}
+            current_mt5 = current.get("mt5") if isinstance(current, dict) else None
+            if isinstance(current_mt5, dict):
+                stored = str(current_mt5.get("password") or "")
+    except Exception as exc:  # an unreadable copy must not block a save
+        logger.warning("[CONFIG] stored mt5.password unreadable during restore", exc_info=exc)
+        stored = ""
+    mt5["password"] = stored
+    return raw_data
+
+
+def current_execution_mode(engine: Any) -> str | None:
+    """Canonical current mode string ('LIVE', 'PAPER', ...) or None if unreadable."""
+    try:
+        mode = engine.config.execution.mode  # type: ignore[union-attr]
+    except Exception:
+        return None
+    value = getattr(mode, "value", mode)
+    text = str(value or "").strip().upper()
+    return text or None
+
+
+def dry_run_config_errors(engine: Any, key: str, value: Any) -> list[str]:
+    """Validate one dotted key/value against the apply path's own validator.
+
+    Runs ``build_runtime_configuration`` with NO persist step — the exact
+    field validators (type/range/enum/unknown-key) and cross-field constraints
+    that POST /api/runtime-config/apply enforces — so ``valid: true`` here
+    means "would be accepted there". When the engine (and its live snapshot)
+    is offline, bootstrap defaults form the base so validation still works.
+    """
+    from nexus_scalp.configuration.runtime_config import build_runtime_configuration
+
+    base = None
+    version = 0
+    store = getattr(engine, "runtime_config", None) if engine else None
+    if store is not None:
+        try:
+            base = store.get_snapshot()
+            version = int(store.get_version())
+        except Exception as exc:
+            logger.warning("[SETTINGS_VALIDATE] snapshot unreadable", exc_info=exc)
+    bootstrap = None
+    if base is None:
+        from nexus_scalp.configuration.config import AppConfig
+
+        bootstrap = AppConfig()
+    result = build_runtime_configuration(
+        version=version + 1,
+        base=base,
+        bootstrap=bootstrap,
+        updates={key: value},
+        source="SETTINGS_VALIDATE",
+    )
+    return list(result.errors)
+
+
 def register_diagnostics_state_routes(
     app: Any,
     _err: Any,
@@ -167,6 +459,16 @@ def register_diagnostics_state_routes(
     # TASK-11: Database health / hygiene state (real backend data — never fake).
     @app.get("/api/db/hygiene")
     def get_db_hygiene() -> dict[str, Any]:
+        # PERF-DB-STATUS (2026-09-23): plan_database() re-scans all three
+        # SQLite files (audit 426MB + news 241MB + candle_intel) on every
+        # call — measured ~9s per poll, running CONCURRENTLY with
+        # /api/db/status and pushing it past the 15s frontend timeout.
+        # Plans only change when a hygiene run happens (background worker /
+        # CLI, never via a web POST), so a short TTL cache is safe here;
+        # failures are never cached. Mirrors the PERF-HEALTH /health cache.
+        fresh = _db_hygiene_cached()
+        if fresh is not None:
+            return fresh
         try:
             from nexus_scalp.hygiene import WorkerMode
             from nexus_scalp.hygiene.worker_runner import DatabaseHygieneWorker
@@ -196,7 +498,9 @@ def register_diagnostics_state_routes(
                 quarantine["items"] = sched.quarantine.list(limit=20)
             except Exception as _rt_err:
                 _log_err(_rt_err, "db hygiene runtime status failed", endpoint="/api/db/hygiene")
-            return {"status": st, "plans": plans, "runtime": runtime, "quarantine": quarantine}
+            payload = {"status": st, "plans": plans, "runtime": runtime, "quarantine": quarantine}
+            _db_hygiene_store(payload)
+            return payload
         except Exception as exc:
             _log_err(exc, "db hygiene failed", endpoint="/api/db/hygiene")
             return {
@@ -1049,35 +1353,56 @@ def register_diagnostics_state_routes(
                 detail=f"Invalid execution mode '{req.mode}' (allowed: {', '.join(sorted(allowed))})",
             )
         target = ExecutionMode(wanted)
+        # TASK-CFGUI-001: /api/v1/runtime/mode documents the transition
+        # matrix as SERVER truth ("the SERVER remains authoritative") — but
+        # the route that actually APPLIES the mode never enforced it. Validate
+        # against the same matrix here; an illegal transition is refused
+        # before anything is swapped or persisted.
+        from nexus_scalp.web.api_v1.runtime import _validate_transition
+
+        check = _validate_transition(current_execution_mode(engine), wanted)
+        if not check["valid"]:
+            raise HTTPException(status_code=422, detail="; ".join(str(e) for e in check["errors"]))
         if hasattr(engine, "set_execution_mode"):
             result = engine.set_execution_mode(target, source="WEB_UI")
             if not result.get("success"):
                 raise HTTPException(status_code=500, detail=result)
         else:
             engine.config.execution.mode = target
-        from nexus_scalp.settings import load_settings_service
-
-        svc = getattr(engine, "settings_service", None) or load_settings_service()
-        saved = svc.db.set(
-            "execution.mode",
-            wanted,
-            value_type="str",
-            source="USER_SETTINGS",
-            actor="web",
-        )
         # RUNTIME CONFIGURATION: execution.mode is a persisted runtime value.
-        # Route through the versioned store so the snapshot/version/event
-        # stay consistent (the engine boot reads the settings DB anyway).
+        # Persist exactly ONCE: the versioned runtime store is the authority
+        # (it writes the same settings rows the engine boot hydrates from).
+        # The former unconditional db.set below double-wrote every mode
+        # switch — two audit rows + two version bumps per click (observed:
+        # execution.mode drifted to v86 while sibling keys sat at v41).
+        persisted = False
         if hasattr(engine, "runtime_config"):
-            engine.runtime_config.apply(
+            report = engine.runtime_config.apply(
                 {"execution.mode": wanted}, source="WEB_ENGINE_MODE", actor="web"
+            )
+            persisted = bool(getattr(report, "persisted", False)) or bool(
+                getattr(report, "runtime_applied", False)
+            )
+        else:
+            # Store-less fallback: the settings DB is the only persistence left.
+            from nexus_scalp.settings import load_settings_service
+
+            svc = getattr(engine, "settings_service", None) or load_settings_service()
+            persisted = bool(
+                svc.db.set(
+                    "execution.mode",
+                    wanted,
+                    value_type="str",
+                    source="USER_SETTINGS",
+                    actor="web",
+                )
             )
         return {
             "success": True,
             "mode": wanted,
             "engine_running": bool(getattr(engine, "_running", False)),
             "runtime_mode": getattr(engine, "_runtime_mode", wanted),
-            "persisted": bool(saved),
+            "persisted": persisted,
         }
 
     # =====================================================================
@@ -1101,12 +1426,46 @@ def register_diagnostics_state_routes(
 
     @app.get("/api/db/manage/status")
     def db_manage_status() -> dict[str, Any]:
-        """Active provider + per-domain health (DATABASE MANAGEMENT panel)."""
+        """Active provider + per-domain health (DATABASE MANAGEMENT panel).
+
+        Carries `postgresql_driver_available` and a `hints` list so the UI can
+        explain a broken state instead of showing a bare "Warning": the active
+        provider can be postgresql while psycopg is absent or the connection
+        configuration was never stored (both observed 2026-09-23), and those
+        two faults have different fixes.
+        """
         try:
+            from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
             from nexus_scalp.database.health import health_snapshot, load_ui_config
 
             health = health_snapshot()
             ui = load_ui_config()
+            pg_available = PostgreSQLDriver.available()
+            hints: list[str] = []
+            if ui["provider"] == "postgresql":
+                if not pg_available:
+                    hints.append(
+                        "Active provider is postgresql but psycopg is not installed: "
+                        "run `pip install 'nexus[postgres]'` or switch back to sqlite."
+                    )
+                if not ui["postgres"]:
+                    hints.append(
+                        "No PostgreSQL connection configuration is stored — fill in "
+                        "the form below and Save config before migrating."
+                    )
+                if (
+                    pg_available
+                    and ui["postgres"]
+                    and health.get("overall")
+                    not in (
+                        "Healthy",
+                        "OK",
+                    )
+                ):
+                    hints.append(
+                        "PostgreSQL is configured but the server did not answer "
+                        "its health probe — check that it is running."
+                    )
             return serialize_enums(
                 {
                     "success": True,
@@ -1116,6 +1475,9 @@ def register_diagnostics_state_routes(
                     "domains": health["domains"],
                     "postgres": ui["postgres"],
                     "password_set": ui["password_set"],
+                    "postgresql_driver_available": pg_available,
+                    "hints": hints,
+                    "provider_truth": _provider_truth(ui),
                 }
             )
         except Exception as e:
@@ -1466,7 +1828,9 @@ def register_diagnostics_state_routes(
             tg = raw_data.get("telegram") or {}
             tg["bot_token"] = snap.telegram.token_masked or ""
             raw_data["telegram"] = tg
-            return raw_data
+            # BUG-072 + TASK-CFGUI-001: mt5.password / notification key masked
+            # too — no secret-shaped field ever reaches the browser.
+            return mask_config_secrets(raw_data)
         # Engine offline: bootstrap YAML fallback (diagnostic only)
         live_config_path = Path("configs/live.yaml")
         if not live_config_path.exists():
@@ -1475,16 +1839,10 @@ def register_diagnostics_state_routes(
         with open(live_config_path, encoding="utf-8") as f:
             raw_data = yaml.safe_load(f) or {}
 
-        # BUG-072: never return the plaintext bot token to the browser.
-        # The UI receives a masked display value; real credentials live in
-        # the secure store and are exposed only as status.
-        tg = raw_data.get("telegram")
-        if isinstance(tg, dict) and tg.get("bot_token"):
-            token = str(tg["bot_token"])
-            tg["bot_token"] = (
-                "*" * (len(token) - 4) + token[-4:] if len(token) > 4 else "*" * len(token)
-            )
-        return raw_data
+        # BUG-072: never return plaintext credentials to the browser.
+        # The UI receives masked display values; real credentials live in
+        # the secure store / live.yaml and are exposed only as status.
+        return mask_config_secrets(raw_data)
 
     # POST /api/config
     @app.post("/api/config")
@@ -1543,6 +1901,11 @@ def register_diagnostics_state_routes(
                         "[TELEGRAM_CONFIG] event=REBUILT source=WEB_CONFIG configured=%s",
                         bool(sec_token and sec_admin),
                     )
+
+            # TASK-CFGUI-001: a MASKED mt5.password round-tripping from the
+            # config form must never overwrite the stored credential in
+            # live.yaml (pairs with mask_config_secrets on GET).
+            restore_masked_mt5_password(raw_config, live_config_path)
 
             # Write to disk atomically (compatibility projection; the
             # authoritative runtime state lives in the runtime config store)
@@ -1761,18 +2124,31 @@ def register_diagnostics_state_routes(
             )
         return result
 
-    # POST /api/settings/validate — server-side validation of a proposed value
+    # POST /api/settings/validate — server-side validation of a proposed value.
+    # TASK-CFGUI-001: previously this route answered `valid: true` for every
+    # key without ever seeing a value (mutability lookup only). It now dry-runs
+    # the proposed value through the runtime configuration builder — the SAME
+    # validator the apply path uses (type/range/enum/unknown-key/cross-field,
+    # zero side effects) — whenever the caller sends one, giving the UI's
+    # validate-before-apply gate real server-side verdicts to block on.
+    # Key-only calls stay mutability-only (backward compatible).
     @app.post("/api/settings/validate")
     def validate_setting(payload: dict[str, Any]) -> dict[str, Any]:
         key = str(payload.get("key") or "")
         from nexus_scalp.settings.service import MUTABILITY
 
         mutability = MUTABILITY.get(key, "HOT_RESTRICTED")
+        checked = "value" in payload
+        errors: list[str] = []
+        if checked and key:
+            errors = dry_run_config_errors(app.state.engine, key, payload.get("value"))
         return {
             "success": True,
             "key": key,
             "mutability": mutability,
-            "valid": True,
+            "valid": not errors,
+            "errors": errors,
+            "checked": checked,
         }
 
     # POST /api/telegram/test — sends a connectivity test message through the

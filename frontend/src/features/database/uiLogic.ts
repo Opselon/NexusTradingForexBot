@@ -1,0 +1,324 @@
+/**
+ * Database tab — pure presentation logic (no fetch, no React, no runtime
+ * imports).
+ *
+ * WHY SEPARATE: this module is imported verbatim by the CI-runnable
+ * `tests/js/database_console.test.js` (node 24 strips the TS types; the only
+ * imports here are `import type`, erased before resolution, so the `@/`
+ * alias never has to resolve). Anything here must therefore stay a pure
+ * derivation over backend payloads — it decides NOTHING the backend could
+ * decide, it only arranges and counts what the server said.
+ *
+ * Payload shapes come from producers, not guesses:
+ *   web/db_console.py        — databases/tables/rows/query/quick/apikeys
+ *   web/diagnostics_state_routes.py — /api/db/manage/status (+ hints)
+ *   web/diagnostics_state_routes.py — /api/db/hygiene (status/plans/runtime)
+ */
+
+import type { ConsoleDatabase, DbHygiene, DbManageStatus, DbStatus, SqliteEvidence } from "./api";
+
+/* ------------------------------------------------------------------ */
+/* Console explorer                                                    */
+/* ------------------------------------------------------------------ */
+
+/** A database the console can actually read right now. */
+export function isReachable(db: ConsoleDatabase | undefined | null): boolean {
+  return !!db && String(db.status ?? "").toUpperCase() === "CONNECTED";
+}
+
+/**
+ * Default selection for the explorer: the first REACHABLE database, never
+ * blindly `list[0]`.
+ *
+ * Observed 2026-09-23: the list is ordered audit/news/candle_intel/settings
+ * and the first three were postgresql while only `settings` (last) was
+ * sqlite+reachable — picking `list[0]` opened the console in a permanent
+ * "'audit' not reachable" state while a perfectly readable database sat
+ * one click away.
+ */
+export function pickDefaultDatabase(list: ConsoleDatabase[] | undefined | null): string | null {
+  if (!list || list.length === 0) return null;
+  const reachable = list.find(isReachable);
+  const chosen = reachable ?? list[0];
+  return chosen ? chosen.name : null;
+}
+
+/** Honest blocker for a database the console cannot read (null when reachable). */
+export function consoleBlocker(
+  db: ConsoleDatabase | undefined | null,
+): { message: string; hint?: string } | null {
+  if (!db) return null;
+  if (isReachable(db)) return null;
+  const where = db.path || (db.server ? `${db.server}/${db.database}` : db.name);
+  const why = String(db.status ?? "UNKNOWN");
+  return {
+    message: `'${db.name}' is ${why.replace(/_/g, " ").toLowerCase()} — ${where} could not be opened.`,
+    ...(db.hint ? { hint: String(db.hint) } : {}),
+  };
+}
+
+/** Dialect-appropriate starter SQL (the backend allow-list accepts both). */
+export function defaultSqlForProvider(provider: string | undefined | null): string {
+  if ((provider ?? "").toLowerCase().startsWith("postgres")) {
+    return "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name";
+  }
+  return "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name";
+}
+
+/** "rows 1–100 · page 1" style caption, honest about an empty page. */
+export function pageCaption(offset: number, shown: number): string {
+  if (shown === 0) return `empty page (offset ${offset})`;
+  return `rows ${offset + 1}–${offset + shown}`;
+}
+
+/** Truncation is a backend fact (`truncated` + `cap`); never re-inferred. */
+export function truncationNote(truncated: boolean | undefined, cap: number | undefined): string {
+  if (!truncated) return "";
+  return cap ? ` · truncated at the ${cap}-row cap` : " · truncated at the row cap";
+}
+
+/* ------------------------------------------------------------------ */
+/* Status tab                                                          */
+/* ------------------------------------------------------------------ */
+
+export interface PendingSchema {
+  /** Sum of `pending_count` across domains (null when nothing reported). */
+  pending: number | null;
+  /** Domains whose schema_version < expected_version. */
+  behind: string[];
+  /** Domains with tamper_detected === true. */
+  tampered: string[];
+}
+
+export function pendingSchema(status: DbStatus | undefined | null): PendingSchema {
+  const out: PendingSchema = { pending: null, behind: [], tampered: [] };
+  const dbs = status?.databases;
+  if (!dbs) return out;
+  let pending = 0;
+  for (const [domain, st] of Object.entries(dbs)) {
+    const p = typeof st.pending_count === "number" ? st.pending_count : 0;
+    pending += p;
+    if (p > 0) out.behind.push(domain);
+    if (st.tamper_detected === true) out.tampered.push(domain);
+  }
+  out.pending = pending;
+  return out;
+}
+
+/** Provider-level guidance the backend already computed (never re-derived). */
+export function providerHints(manage: DbManageStatus | undefined | null): string[] {
+  const hints = manage?.hints;
+  if (!Array.isArray(hints)) return [];
+  return hints.filter((h): h is string => typeof h === "string" && h.trim() !== "");
+}
+
+/* ------------------------------------------------------------------ */
+/* Hygiene tab (structured view over the raw JSON dump)                */
+/* ------------------------------------------------------------------ */
+
+export interface HygieneWorker {
+  state: string;
+  mode: string;
+  executionMode: string;
+  cycle: number | null;
+  lastScan: string;
+  lastSuccess: string;
+  lastFailure: string;
+  managed: string[];
+}
+
+export function hygieneWorker(h: DbHygiene | undefined | null): HygieneWorker | null {
+  const s = h?.status as Record<string, unknown> | undefined;
+  if (!s) return null;
+  const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
+  const str = (v: unknown): string => (typeof v === "string" ? v : "");
+  const managed = Array.isArray(s.managed_databases) ? (s.managed_databases as unknown[]) : [];
+  return {
+    state: str(s.state) || "UNKNOWN",
+    mode: str(s.mode) || "—",
+    executionMode: str(s.execution_mode) || "—",
+    cycle: num(s.cycle),
+    lastScan: str(s.last_scan),
+    lastSuccess: str(s.last_success),
+    lastFailure: str(s.last_failure),
+    managed: managed.map(String),
+  };
+}
+
+export interface StorageRow {
+  database: string;
+  bytes: number;
+  walBytes: number;
+}
+
+/** db_sizes -> table rows, sorted largest first (server order is not a promise). */
+export function hygieneStorage(h: DbHygiene | undefined | null): StorageRow[] {
+  const sizes = (h?.status as { db_sizes?: Record<string, { bytes?: number; wal_bytes?: number }> } | undefined)
+    ?.db_sizes;
+  if (!sizes) return [];
+  return Object.entries(sizes)
+    .map(([database, v]) => ({
+      database,
+      bytes: typeof v?.bytes === "number" ? v.bytes : 0,
+      walBytes: typeof v?.wal_bytes === "number" ? v.wal_bytes : 0,
+    }))
+    .sort((a, b) => b.bytes - a.bytes);
+}
+
+export function totalStorageBytes(h: DbHygiene | undefined | null): number | null {
+  const rows = hygieneStorage(h);
+  if (rows.length === 0) return null;
+  return rows.reduce((sum, r) => sum + r.bytes, 0);
+}
+
+export interface PlanRow {
+  database: string;
+  generatedAt: string;
+  tablesScanned: number | null;
+  duplicates: number | null;
+  exactDuplicates: number | null;
+  orphans: number | null;
+  retention: number | null;
+  deletes: number | null;
+  blocked: number | null;
+}
+
+/**
+ * plans -> table rows. The payload nests as
+ * `{<db>: {database, plan: {...}}}`; a missing/absent plan row stays absent
+ * (rendered as an empty state) — never zero-filled, because "no plan yet"
+ * and "a plan with zero candidates" mean different things to an operator.
+ */
+export function hygienePlanRows(h: DbHygiene | undefined | null): PlanRow[] {
+  const plans = (h?.plans ?? {}) as Record<string, Record<string, unknown>>;
+  return Object.entries(plans).map(([database, wrapper]) => {
+    const plan = (wrapper?.plan ?? wrapper ?? {}) as Record<string, unknown>;
+    const n = (k: string): number | null => (typeof plan[k] === "number" ? (plan[k] as number) : null);
+    const s = (k: string): string => (typeof plan[k] === "string" ? (plan[k] as string) : "");
+    return {
+      database,
+      generatedAt: s("generated_at"),
+      tablesScanned: n("tables_scanned"),
+      duplicates: n("duplicates_found"),
+      exactDuplicates: n("exact_duplicates"),
+      orphans: n("orphans_found"),
+      retention: n("retention_candidates"),
+      deletes: n("delete_candidates"),
+      blocked: n("blocked"),
+    };
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Provider truth — configured vs effective (2026-09-23)               */
+/* ------------------------------------------------------------------ */
+
+export interface ProviderTruth {
+  configured: string;
+  effective: string;
+  mismatch: boolean;
+  note: string;
+  pgTarget: string;
+  pgError: string;
+  evidence: SqliteEvidence[];
+  /** "backend"  = measured server-side by `_provider_truth` (probe +
+   *  file-activity evidence). "derived" = narrower client-side claim made
+   *  from an OLDER engine payload that has not been restarted into the new
+   *  shape — the band labels itself so nobody mistakes inference for
+   *  measurement. */
+  source: "backend" | "derived";
+}
+
+/**
+ * The 2026-09-23 complaint: "it shows postgres but data comes from sqlite".
+ *
+ * With `provider_truth` present we render the backend's measurement
+ * verbatim. Without it (engine not restarted yet) we derive ONLY what the
+ * payload proves: the configured provider and the connected-domain counts.
+ * We never guess a file the client cannot see.
+ */
+export function providerTruth(manage: DbManageStatus | undefined | null): ProviderTruth | null {
+  if (!manage) return null;
+  const truth = manage.provider_truth;
+  if (truth) {
+    return {
+      configured: truth.configured,
+      effective: truth.effective,
+      mismatch: Boolean(truth.mismatch),
+      note: truth.note ?? "",
+      pgTarget: truth.pg_target ?? "",
+      pgError: truth.pg_error ?? "",
+      evidence: truth.evidence ?? [],
+      source: "backend",
+    };
+  }
+  const configured = manage.provider ?? "unknown";
+  const domains = Object.values(manage.domains ?? {}) as Array<{ connected?: boolean }>;
+  const connected = domains.filter((d) => d && d.connected === true).length;
+  const base = {
+    configured,
+    pgTarget: "",
+    pgError: "",
+    evidence: [] as SqliteEvidence[],
+    source: "derived" as const,
+  };
+  if (configured !== "postgresql") {
+    return { ...base, effective: configured, mismatch: false, note: "" };
+  }
+  if (domains.length === 0) {
+    return { ...base, effective: "unknown", mismatch: false, note: "" };
+  }
+  if (connected === 0) {
+    return {
+      ...base,
+      effective: "sqlite",
+      mismatch: true,
+      note: `0 of ${domains.length} domains are connected to postgresql — this tab's schema, storage and hygiene panels are fed by the local SQLite files.`,
+    };
+  }
+  if (connected < domains.length) {
+    return {
+      ...base,
+      effective: "mixed",
+      mismatch: true,
+      note: `only ${connected} of ${domains.length} domains answered on postgresql — the others still serve their local SQLite files.`,
+    };
+  }
+  return { ...base, effective: "postgresql", mismatch: false, note: "" };
+}
+
+/** Tri-state psycopg presence. `undefined` means the payload predates the
+ *  field — the UI must say "not reported" instead of claiming "installed". */
+export function psycopgState(available: boolean | undefined | null): {
+  label: string;
+  tone: "good" | "bad" | "neutral";
+  sub: string;
+} {
+  if (available === true) {
+    return { label: "installed", tone: "good", sub: "required while the provider is postgresql" };
+  }
+  if (available === false) {
+    return {
+      label: "missing",
+      tone: "bad",
+      sub: "psycopg absent — postgres queries fail until installed or the provider switches back",
+    };
+  }
+  return {
+    label: "not reported",
+    tone: "neutral",
+    sub: "this backend build does not report driver presence",
+  };
+}
+
+/** Human recency label for evidence rows ("just now", "47s ago", "3h ago"). */
+export function ageLabel(seconds: number | undefined | null): string {
+  if (typeof seconds !== "number" || !isFinite(seconds) || seconds < 0) return "age unknown";
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${Math.round(seconds)}s ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}

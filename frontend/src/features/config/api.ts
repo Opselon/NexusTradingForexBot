@@ -3,9 +3,12 @@
  *
  * Endpoints verified in src/nexus_scalp/web/diagnostics_state_routes.py:
  *  POST /api/engine/mode                  — {mode} -> {success,mode,engine_running,runtime_mode,persisted}
+ *                                            (server enforces the transition matrix: 422 on an illegal move)
  *  GET  /api/v1/runtime/mode              — {mode,effective_mode,engine_attached,replaying} (v1 envelope)
- *  POST /api/v1/runtime/mode/validate     — proposed transition check (never applies)
- *  GET  /api/config                       — authoritative runtime snapshot (AppConfig dump, telegram masked)
+ *  POST /api/v1/runtime/mode/preview      — transition check + impact preview (never applies;
+ *                                            200 for valid AND invalid proposals — verdicts are DATA;
+ *                                            only a syntactically unknown mode 422s with the v1 error envelope)
+ *  GET  /api/config                       — authoritative runtime snapshot (AppConfig dump, ALL secrets masked)
  *  GET  /api/runtime-config               — effective store snapshot + diagnostics
  *  GET  /api/runtime-config/diagnostics   — persistent vs runtime version truth
  *  POST /api/runtime-config/apply         — {updates:{dotted.key:value}} -> ConfigurationApplyReport
@@ -13,7 +16,8 @@
  *  GET  /api/settings                     — {success,state,db_path,settings,recent_audit}
  *  GET  /api/settings/telegram/status     — masked telegram status + worker health
  *  POST /api/settings/telegram            — {enabled,bot_token,admin_id} -> {success,correlation_id,status}
- *  POST /api/settings/validate            — {key} -> {key,mutability,valid} (server-side mutability truth)
+ *  POST /api/settings/validate            — {key, value?} -> {key,mutability,valid,errors,checked}
+ *                                            value present = apply-path dry-run verdict; key-only = mutability truth
  *  POST /api/telegram/test                — real delivery, final worker verdict
  *
  * Feature-local typed surface over the stable `@/api/client` transport
@@ -41,12 +45,31 @@ export interface EngineModeResult {
   detail?: unknown;
 }
 
-export interface ModeValidationV1 {
-  valid: boolean;
-  current: string | null;
-  proposed: string;
-  errors: string[];
-  warnings: string[];
+/**
+ * TASK-CFGUI-001: real POST /api/v1/runtime/mode/preview envelope (v1
+ * {data: ...} unwrapped). The SERVER owns the transition matrix; every
+ * verdict is DATA — a legal move AND an illegal move both answer 200; only
+ * an unknown mode name 422s with the error envelope (apiErrorFromResponse).
+ * Replaces the flat ModeValidationV1 + /mode/validate pair: that route
+ * answers an ILLEGAL move with HTTP 422 + {data:{valid:false}}, which
+ * apiErrorFromResponse cannot read — the verdicts never reached the UI.
+ */
+export interface ModePreviewV1 {
+  validation: {
+    valid: boolean;
+    current_mode: string | null;
+    proposed_mode: string;
+    errors: string[];
+    warnings: string[];
+  };
+  impact: {
+    proposed_mode: string;
+    touches: string[];
+    matrix: Record<string, boolean>;
+    api_mutations_unlocked: unknown[];
+  };
+  /** Present and false only when validation failed (server says: do not apply). */
+  applies?: boolean;
 }
 
 /* ------------------------------ runtime config ------------------------------ */
@@ -158,10 +181,15 @@ export interface SettingsSnapshotDto {
 }
 
 export interface ValidateSettingResult {
-  success: boolean;
+  /** Legacy envelope field — the route itself answers with the fields below. */
+  success?: boolean;
   key: string;
   mutability: string;
   valid: boolean;
+  /** TASK-CFGUI-001: backend reason list when valid is false (value dry-run). */
+  errors?: string[];
+  /** TASK-CFGUI-001: true only when a proposed value was actually dry-run. */
+  checked?: boolean;
   error?: { code?: string; message?: string; request_id?: string };
 }
 
@@ -204,8 +232,14 @@ export const configApi = {
   runtimeMode: (signal?: AbortSignal): Promise<RuntimeModeV1> =>
     getV1<RuntimeModeV1>("/api/v1/runtime/mode", signal),
 
-  validateModeTransition: (mode: string): Promise<ModeValidationV1> =>
-    send<{ data: ModeValidationV1 }>("/api/v1/runtime/mode/validate", { mode }).then((env) => env.data),
+  /**
+   * TASK-CFGUI-001: server-side transition check + impact preview before the
+   * typed confirm. 200 for valid AND invalid proposals; verdicts are data
+   * (validation.valid/errors/warnings + impact.touches). The UI's matrix in
+   * model.ts is only a fast pre-filter — this is the server truth.
+   */
+  previewModeTransition: (mode: string): Promise<ModePreviewV1> =>
+    send<{ data: ModePreviewV1 }>("/api/v1/runtime/mode/preview", { mode }).then((env) => env.data),
 
   setEngineMode: (mode: string): Promise<EngineModeResult> => send<EngineModeResult>("/api/engine/mode", { mode }),
 
@@ -225,7 +259,14 @@ export const configApi = {
 
   settings: (signal?: AbortSignal): Promise<SettingsSnapshotDto> => getLegacy<SettingsSnapshotDto>("/api/settings", signal),
 
-  validateSetting: (key: string): Promise<ValidateSettingResult> => send<ValidateSettingResult>("/api/settings/validate", { key }),
+  /**
+   * TASK-CFGUI-001: the apply-path dry-run. WITH a value the server builds
+   * and validates the proposed configuration, answering {valid, errors[],
+   * checked:true}; key-only keeps the legacy {mutability} answer
+   * (checked:false) for probes that never send a value.
+   */
+  validateSetting: (key: string, value?: unknown): Promise<ValidateSettingResult> =>
+    send<ValidateSettingResult>("/api/settings/validate", value === undefined ? { key } : { key, value }),
 
   telegramStatus: (signal?: AbortSignal): Promise<TelegramStatusDto> =>
     getLegacy<TelegramStatusDto>("/api/settings/telegram/status", signal),

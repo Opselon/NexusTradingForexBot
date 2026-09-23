@@ -117,7 +117,7 @@ export function SnapshotsTab({ onSendToCompare }: { onSendToCompare: (id: string
           ) : detail.isError ? (
             <ErrorState message={detail.error instanceof Error ? detail.error.message : "snapshot read failed"} onRetry={() => void detail.refetch()} />
           ) : (
-            <div className="l3-scroll dbg-json">
+            <div tabIndex={0} className="l3-scroll dbg-json">
               <JsonView value={detail.data} name={detailId} />
             </div>
           )}

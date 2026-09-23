@@ -82,13 +82,33 @@ export default function DecisionDrawer({ decisionId, onClose }: { decisionId: st
             onRetry={() => void gatesQ.refetch()}
           />
         ) : (
-          <GateStepper
-            gates={(gatesQ.data?.gates ?? []).map((g) => ({
-              name: g.gate,
-              status: g.passed ? "PASS" : "FAIL",
-              reason: str(g.value) ?? "no value recorded",
-            }))}
-          />
+          (() => {
+            const gates = gatesQ.data?.gates ?? [];
+            if (gates.length === 0) return <EmptyState message="No gate trace recorded for this decision." />;
+            const pass = gates.filter((g) => g.passed).length;
+            const fail = gates.length - pass;
+            const firstFail = gates.find((g) => !g.passed);
+            return (
+              <>
+                <div className="aa-gate-sum">
+                  <span className="badge good">✓ {pass} pass</span>
+                  <span className={`badge ${fail > 0 ? "bad" : ""}`}>✕ {fail} fail</span>
+                  {firstFail && (
+                    <span className="tiny aa-firstfail" title={str(firstFail.value) ?? ""}>
+                      first failure: {firstFail.gate}
+                    </span>
+                  )}
+                </div>
+                <GateStepper
+                  gates={gates.map((g) => ({
+                    name: g.gate,
+                    status: g.passed ? "PASS" : "FAIL",
+                    reason: str(g.value) ?? "no value recorded",
+                  }))}
+                />
+              </>
+            );
+          })()
         )}
       </Panel>
 

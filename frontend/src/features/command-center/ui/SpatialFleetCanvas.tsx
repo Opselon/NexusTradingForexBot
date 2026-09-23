@@ -15,7 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { EmptyState, ErrorState, Skeleton } from "@/components/primitives";
 import { formatNumber } from "@/lib/format";
-import { commandCenterQueries } from "../useCases";
+import { ccRetry, ccRetryDelay, commandCenterQueries } from "../useCases";
 import { num, spatialEmptyFacts, str, type CcSpatialDto, type CcSpatialNodeDto } from "../model";
 import { SpatialFleetEngine } from "./spatialEngine";
 import "./spatial.css";
@@ -48,7 +48,8 @@ export function SpatialFleetCanvas({
     queryKey: ["command-center", "spatial"],
     queryFn: ({ signal }) => commandCenterQueries.spatial(signal),
     refetchInterval: 30_000,
-    retry: false,
+    retry: ccRetry,
+    retryDelay: ccRetryDelay,
   });
 
   const payload = spatialQ.data?.available === true ? spatialQ.data : null;
@@ -127,8 +128,15 @@ export function SpatialFleetCanvas({
     return () => cancelAnimationFrame(raf);
   }, [selectedId, visible]);
 
-  const selNode: CcSpatialNodeDto | null =
-    selectedId && payload ? (payload.nodes ?? []).find((n) => str(n.strategy_id) === selectedId) ?? null : null;
+  // perf: selected-node lookup derived only when payload/selection change
+  // (deps: payload, selectedId — every reactive value read).
+  const selNode: CcSpatialNodeDto | null = useMemo(
+    () =>
+      selectedId && payload
+        ? (payload.nodes ?? []).find((n) => str(n.strategy_id) === selectedId) ?? null
+        : null,
+    [payload, selectedId],
+  );
 
   const status: ViewportStatus = spatialQ.isPending
     ? "loading"

@@ -5,6 +5,7 @@
  * Stateless presentation component; owned state lives in ModelStudioPage.
  */
 
+import { useMemo } from "react";
 import { Panel } from "@/components/primitives";
 import {
   compareDatasetsByGranularity,
@@ -88,7 +89,8 @@ export function DatasetPipelinePanel({
   trainError,
   onTrain,
 }: DatasetPipelinePanelProps) {
-  const sortedDatasets = [...datasets].sort(compareDatasetsByGranularity);
+  // perf: dataset sort derived only when the datasets prop changes (dep: datasets).
+  const sortedDatasets = useMemo(() => [...datasets].sort(compareDatasetsByGranularity), [datasets]);
   const pct =
     trainProgress && trainProgress.epochs > 0
       ? Math.min(100, Math.round((trainProgress.epoch / trainProgress.epochs) * 100))
@@ -371,7 +373,7 @@ export function DatasetPipelinePanel({
                 ))}
               </div>
 
-              <div className="table-wrap" style={{ maxHeight: 420 }}>
+              <div tabIndex={0} className="table-wrap" style={{ maxHeight: 420 }}>
                 <table className="data-table">
                   <thead>
                     <tr>

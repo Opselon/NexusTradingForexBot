@@ -320,8 +320,27 @@ export function useProConsoleLog(opts: { limit?: number; pollMs?: number } = {})
   useEffect(() => {
     if (!polling) return;
     void poll();
-    const t = setInterval(() => void poll(), pollMs);
-    return () => clearInterval(t);
+    // perf: the 1.5s cursor poll is network + merge work — pause it while the
+    // tab is hidden; on return the interval restarts AND one poll runs
+    // immediately, so the log is never staler than one tick on resume.
+    let t: number | null =
+      document.visibilityState === "hidden" ? null : window.setInterval(() => void poll(), pollMs);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        if (t !== null) {
+          window.clearInterval(t);
+          t = null;
+        }
+      } else if (t === null) {
+        t = window.setInterval(() => void poll(), pollMs);
+        void poll();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (t !== null) window.clearInterval(t);
+    };
   }, [polling, poll, pollMs]);
 
   const start = useCallback(() => setPolling(true), []);

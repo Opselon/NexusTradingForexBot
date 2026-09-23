@@ -7,12 +7,13 @@
  * the trace actually reports (a missing commission is an UNKNOWN bar).
  */
 
-import { useEffect, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useDialogA11y } from "../../../components/useDialogA11y";
 import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { PnlWaterfall, buildTradeWaterfall } from "@/components/viz";
 import { formatDateTime, formatNumber, formatPrice } from "@/lib/format";
 import { useAccountTrades, useTradeForensics } from "../hooks";
-import { DASH, FreshnessNote, asErrorText, moneyOrDash, numOrDash } from "./shared";
+import { DASH, FreshnessNote, asErrorText, jsonInline, jsonPretty, moneyOrDash, numOrDash } from "./shared";
 
 const PAGE = 25;
 
@@ -94,19 +95,50 @@ export function TradesSection() {
 function TradeDetailDrawer({ ticket, onClose }: { ticket: number; onClose: () => void }) {
   const trace = useTradeForensics(ticket);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const boxRef = useRef<HTMLElement | null>(null);
+  useDialogA11y(boxRef, onClose);
 
   const d = trace.data;
 
+  // perf: the forensic JSON serializations run once per trace fetch instead of
+  // on every drawer render — deps are exactly the fields each body reads.
+  const orderEvents = useMemo(
+    () => (d?.order_events ?? []).map((ev) => ({ ev, text: jsonInline(ev).slice(0, 120) })),
+    [d?.order_events],
+  );
+  const contextJson = useMemo(
+    () =>
+      d
+        ? jsonPretty({
+            strategy_context: d.strategy_context,
+            model_context: d.model_context,
+            quality: d.quality,
+          })
+        : "",
+    [d],
+  );
+  const entryRiskKv = useMemo(
+    () => (
+      <>
+        {kvTitle("entry", d?.entry)}
+        {kvTitle("risk", d?.risk)}
+      </>
+    ),
+    [d?.entry, d?.risk],
+  );
+  const pathExitKv = useMemo(
+    () => (
+      <>
+        {kvTitle("position_path", d?.position_path)}
+        {kvTitle("exit", d?.exit)}
+      </>
+    ),
+    [d?.position_path, d?.exit],
+  );
+
   return (
     <div className="acct-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <aside className="acct-drawer" role="dialog" aria-modal="true" aria-label={`Trade ${ticket} forensics`}>
+      <aside ref={boxRef} className="acct-drawer" role="dialog" aria-modal="true" aria-label={`Trade ${ticket} forensics`}>
         <header aria-label="Trades">
           <span>Trade forensics</span>
           <span className="inline-mono tiny faint">#{ticket}</span>
@@ -165,12 +197,10 @@ function TradeDetailDrawer({ ticket, onClose }: { ticket: number; onClose: () =>
                 <div className="section-title">entry · risk · path · exit</div>
                 <div className="grid cols-2">
                   <dl className="kv">
-                    {kvTitle("entry", d.entry)}
-                    {kvTitle("risk", d.risk)}
+                    {entryRiskKv}
                   </dl>
                   <dl className="kv">
-                    {kvTitle("position_path", d.position_path)}
-                    {kvTitle("exit", d.exit)}
+                    {pathExitKv}
                   </dl>
                 </div>
               </section>
@@ -188,16 +218,16 @@ function TradeDetailDrawer({ ticket, onClose }: { ticket: number; onClose: () =>
                 </section>
               )}
 
-              {(d.order_events ?? []).length > 0 && (
+              {orderEvents.length > 0 && (
                 <section>
                   <div className="section-title">order events</div>
                   <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "retcode" }, { label: "detail" }]}>
-                    {(d.order_events ?? []).map((ev, i) => (
+                    {orderEvents.map(({ ev, text }, i) => (
                       <tr key={i}>
                         <td>{ev.timestamp ?? ev.at ? formatDateTime(String(ev.timestamp ?? ev.at)) : DASH}</td>
                         <td>{String(ev.event ?? ev.kind ?? "—")}</td>
                         <td>{String(ev.retcodes ?? ev.retcod ?? ev.retcode ?? DASH)}</td>
-                        <td className="tiny muted">{JSON.stringify(ev).slice(0, 120)}</td>
+                        <td className="tiny muted">{text}</td>
                       </tr>
                     ))}
                   </DataTable>
@@ -219,7 +249,7 @@ function TradeDetailDrawer({ ticket, onClose }: { ticket: number; onClose: () =>
                 <summary className="tiny muted" style={{ cursor: "pointer" }}>
                   strategy / model context + quality (raw)
                 </summary>
-                <pre>{JSON.stringify({ strategy_context: d.strategy_context, model_context: d.model_context, quality: d.quality }, null, 2)}</pre>
+                <pre>{contextJson}</pre>
               </details>
             </>
           )}
@@ -239,7 +269,7 @@ function kvTitle(title: string, obj: Record<string, unknown> | undefined) {
           <dt>
             {title}.{k}
           </dt>
-          <dd>{v === null || v === undefined || v === "" ? DASH : typeof v === "object" ? JSON.stringify(v) : String(v)}</dd>
+          <dd>{v === null || v === undefined || v === "" ? DASH : typeof v === "object" ? jsonInline(v) : String(v)}</dd>
         </div>
       ))}
     </>

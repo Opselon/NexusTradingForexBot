@@ -8,7 +8,7 @@
  * core/transport directly (commands go through ../model -> ../api -> @/api/client).
  */
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, memo, useRef, useState, type ReactNode } from "react";
 import { EmptyState, ErrorState, LoadingState } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
 import "./lane5.css";
@@ -50,8 +50,10 @@ export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-/** Bounded pretty-printer for backend JSON blobs — never throws. */
-export function JsonBlock({ value, maxChars = 4000 }: { value: unknown; maxChars?: number }) {
+/** Bounded pretty-printer for backend JSON blobs — never throws.
+ *  perf: memoized so the JSON.stringify only re-runs when value/maxChars
+ *  change, not on every parent render (output identical). */
+export const JsonBlock = memo(function JsonBlock({ value, maxChars = 4000 }: { value: unknown; maxChars?: number }) {
   if (value === null || value === undefined) {
     return <EmptyState message="Backend returned no payload for this block." />;
   }
@@ -63,11 +65,11 @@ export function JsonBlock({ value, maxChars = 4000 }: { value: unknown; maxChars
   }
   const clipped = text.length > maxChars ? `${text.slice(0, maxChars)}\n… (${text.length} chars, truncated)` : text;
   return (
-    <pre className="inline-mono small" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, maxHeight: 320, overflow: "auto" }}>
+    <pre tabIndex={0} className="inline-mono small" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, maxHeight: 320, overflow: "auto" }}>
       {clipped}
     </pre>
   );
-}
+});
 
 /** Query-state -> skeleton/loading/error mapping used by every lane-5 section. */
 export function SectionState<T>({
@@ -183,7 +185,7 @@ export function Drawer({
             close <kbd>esc</kbd>
           </button>
         </div>
-        <div className="panel-body" style={{ flex: "1 1 auto", overflow: "auto" }}>
+        <div tabIndex={0} className="panel-body" style={{ flex: "1 1 auto", overflow: "auto" }}>
           {children}
         </div>
         {footer && <div className="panel-body tight" style={{ flex: "0 0 auto", borderTop: "1px solid var(--border)" }}>{footer}</div>}

@@ -259,7 +259,7 @@ export function ModelRegistryPanel({
                 {verifyResult.all_passed ? "ALL PASSED" : "WARNINGS DETECTED"}
               </span>
             </div>
-            <div className="table-wrap">
+            <div tabIndex={0} className="table-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -300,7 +300,7 @@ export function ModelRegistryPanel({
                 {scalerResult.message || "No scaler vectors cataloged."}
               </div>
             ) : (
-              <div className="table-wrap" style={{ maxHeight: 220 }}>
+              <div tabIndex={0} className="table-wrap" style={{ maxHeight: 220 }}>
                 <table className="data-table">
                   <thead>
                     <tr>

@@ -599,7 +599,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
         : "";
 
   const report = env?.report;
-  const failures = failingChecks(report);
+  const failures = useMemo(() => failingChecks(report), [report]);
   const checks = Array.isArray(report?.checks) ? (report?.checks ?? []) : [];
   const trainingReady = Boolean(report?.training_ready);
   const firstFail = failures[0];
@@ -1171,7 +1171,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
             </div>
 
             {events.length > 0 ? (
-              <pre className="pv-log" aria-live="polite" ref={logRef} onScroll={onLogScroll}>
+              <pre tabIndex={0} className="pv-log" aria-live="polite" ref={logRef} onScroll={onLogScroll}>
                 {events.map(logLine).join("\n")}
               </pre>
             ) : null}
@@ -1188,7 +1188,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
                 ) : null}
                 <details>
                   <summary className="small muted">Raw result JSON</summary>
-                  <pre className="pv-json">{JSON.stringify(result, null, 2)}</pre>
+                  <pre tabIndex={0} className="pv-json">{JSON.stringify(result, null, 2)}</pre>
                 </details>
               </div>
             ) : null}
