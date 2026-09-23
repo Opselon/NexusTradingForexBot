@@ -18,9 +18,10 @@
  * on the shared theme tokens — no CSS framework (BUG-047 lineage).
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ShellPageProps } from "@/app/featureModule";
+import { ErrorState, LoadingState } from "@/components/primitives";
 
 import { positionAdviserApi } from "../api";
 import type {
@@ -35,17 +36,18 @@ import type {
 } from "../model";
 import { ACTIVATION_HELP, ACTIVATION_LADDER } from "../model";
 import "./position-adviser.css";
+import {
+  AdvisoryRow,
+  CheckItem,
+  MAJORITY_BASELINE_FALLBACK,
+  ModelCard,
+  TrialRow,
+  classNames,
+  fmt,
+  fmtTime,
+} from "./PositionAdviserRows";
 
 const REFRESH_MS = 3000;
-
-/** Majority-class baseline is what any constant classifier scores; a model that
- *  cannot beat it is shown BELOW BASELINE, never hidden. The server reports it
- *  per-sweep; this is the fallback constant when the sweep value is absent. */
-const MAJORITY_BASELINE_FALLBACK = 0.682;
-
-function classNames(...parts: (string | false | null | undefined)[]): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /** Per-rung state class for the big activation word + ladder highlight. */
 function stateClass(a: string): string {
@@ -60,38 +62,17 @@ function ladderIndex(a: string): number {
   return i < 0 ? 0 : i;
 }
 
-/** OOS accuracy vs the majority-class baseline: never silently green. */
-function belowBaseline(m: AdviserModelDto, baseline: number | null): boolean {
-  const ref = baseline ?? MAJORITY_BASELINE_FALLBACK;
-  return m.oos_accuracy != null && m.oos_accuracy < ref;
+/** Failure text of a legacy transport error — backend `detail` verbatim. */
+function errDetail(err: unknown): string {
+  const detail = (err as { detail?: string })?.detail ?? String(err);
+  return typeof detail === "string" ? detail : JSON.stringify(detail);
 }
 
-type DistSeg = { key: string; pct: number };
-
-/** OOS prediction distribution -> stacked meter segments (percent of total). */
-function distSegments(dist: Record<string, number>): DistSeg[] {
-  const total = Object.values(dist).reduce((s, v) => s + (v || 0), 0);
-  if (total <= 0) return [];
-  return Object.entries(dist)
-    .filter(([, v]) => (v || 0) > 0)
-    .map(([k, v]) => ({ key: k.toUpperCase(), pct: ((v || 0) / total) * 100 }));
-}
-
-function distClass(key: string): string {
-  if (key === "KEEP") return "keep";
-  if (key === "CLOSE") return "close";
-  if (key === "REDUCE") return "reduce";
-  return "other";
-}
-
-function fmt(n: number | null | undefined, digits = 4): string {
-  return typeof n === "number" && Number.isFinite(n) ? n.toFixed(digits) : "--";
-}
-
-function fmtTime(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleTimeString();
+/** Correlation id (ApiError.request_id / raw request_id) for ErrorState. */
+function errRid(err: unknown): string | null {
+  const e = err as { requestId?: unknown; request_id?: unknown };
+  const rid = e?.requestId ?? e?.request_id;
+  return typeof rid === "string" && rid !== "" ? rid : null;
 }
 
 export default function PositionAdviserPage(_props: ShellPageProps) {
@@ -104,8 +85,15 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
   const [checksAllPassed, setChecksAllPassed] = useState<boolean>(false);
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
+  const [errorRid, setErrorRid] = useState<string | null>(null);
   const [notice, setNotice] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
+  // Read rung (the 3s poll over status/models/advisories/datasets): its own
+  // error + request_id + last-success timestamp, separate from action errors.
+  const [readError, setReadError] = useState<string>("");
+  const [readRid, setReadRid] = useState<string | null>(null);
+  const [readAt, setReadAt] = useState<number>(0);
+  const readCtl = useRef<AbortController | null>(null);
 
   // The generator writes pos_ds_*.parquet to artifacts/datasets; the operator
   // picks one here instead of a hardcoded path, so a newly generated M1
@@ -122,41 +110,62 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
   const [tuneSeeds, setTuneSeeds] = useState<string>("42, 1337, 2024");
   const [tuneResult, setTuneResult] = useState<AdviserAutoTuneResponse | null>(null);
 
-  const firstDataset = datasets.length > 0 ? datasets[0] : null;
-  const effectiveDataset = trainDataset || (firstDataset ? firstDataset.path : "");
+  const effectiveDataset = useMemo(
+    () => trainDataset || (datasets[0]?.path ?? ""),
+    [trainDataset, datasets],
+  );
 
   const refresh = useCallback(async () => {
+    // Abort-then-start: an interval tick or an action-triggered refresh while
+    // the previous poll is still in flight would otherwise run an identical
+    // second copy of all four queries concurrently.
+    readCtl.current?.abort();
+    const ac = new AbortController();
+    readCtl.current = ac;
     try {
       const [s, m, a, ds] = await Promise.all([
-        positionAdviserApi.status(),
-        positionAdviserApi.models(),
-        positionAdviserApi.advisories(30),
-        positionAdviserApi.datasets(),
+        positionAdviserApi.status(ac.signal),
+        positionAdviserApi.models(ac.signal),
+        positionAdviserApi.advisories(30, ac.signal),
+        positionAdviserApi.datasets(ac.signal),
       ]);
+      if (ac.signal.aborted) return;
       setStatus(s);
       setModels(m.models || []);
       setActiveModelId(m.active_adviser_id || "");
       setAdvisories(a.advisories || []);
       setDatasets(ds.datasets || []);
-      setError("");
+      setReadError("");
+      setReadRid(null);
+      setReadAt(Date.now());
     } catch (err) {
       // The backend stays the source of truth; show its message verbatim.
-      const detail = (err as { detail?: string })?.detail ?? String(err);
-      setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+      if (ac.signal.aborted) return;
+      setReadError(errDetail(err));
+      setReadRid(errRid(err));
     } finally {
-      setLoading(false);
+      if (!ac.signal.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void refresh();
-    const id = window.setInterval(refresh, REFRESH_MS);
-    return () => window.clearInterval(id);
+    // Bounded poll: 3s, skipped while the document is hidden (the next tick
+    // resumes when visible); cleanup clears the interval AND aborts whatever
+    // read is in flight on unmount.
+    const id = window.setInterval(() => {
+      if (document.hidden) return;
+      void refresh();
+    }, REFRESH_MS);
+    return () => {
+      window.clearInterval(id);
+      readCtl.current?.abort();
+    };
   }, [refresh]);
 
   const runChecks = useCallback(async () => {
     setBusy(true);
-    setError("");
+    setError(""); setErrorRid(null);
     try {
       const res: ActivationChecksResponse = await positionAdviserApi.runChecks();
       setChecks(res.checks || []);
@@ -167,8 +176,8 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
         setNotice("All prerequisite checks passed. LIVE activation is available.");
       }
     } catch (err) {
-      const detail = (err as { detail?: string })?.detail ?? String(err);
-      setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+      setError(errDetail(err));
+      setErrorRid(errRid(err));
     } finally {
       setBusy(false);
     }
@@ -177,7 +186,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
   const onActivate = useCallback(
     async (target: AdviserActivation) => {
       setBusy(true);
-      setError("");
+      setError(""); setErrorRid(null);
       setNotice("");
       try {
         // LIVE requires the prerequisite checks; run them first if we have none.
@@ -196,8 +205,8 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
         setNotice(out.message || `activation set to ${target}`);
         await refresh();
       } catch (err) {
-        const detail = (err as { detail?: string })?.detail ?? String(err);
-        setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+        setError(errDetail(err));
+        setErrorRid(errRid(err));
       } finally {
         setBusy(false);
       }
@@ -207,15 +216,15 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
 
   const onUnload = useCallback(async () => {
     setBusy(true);
-    setError("");
+    setError(""); setErrorRid(null);
     setNotice("");
     try {
       const out = await positionAdviserApi.unload();
       setNotice(out.message || "adviser unloaded; activation reset to DISABLED");
       await refresh();
     } catch (err) {
-      const detail = (err as { detail?: string })?.detail ?? String(err);
-      setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+      setError(errDetail(err));
+      setErrorRid(errRid(err));
     } finally {
       setBusy(false);
     }
@@ -224,10 +233,11 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
   const onTrain = useCallback(async () => {
     if (!effectiveDataset) {
       setError("No position dataset available. Generate one in the Neural Studio first.");
+      setErrorRid(null);
       return;
     }
     setBusy(true);
-    setError("");
+    setError(""); setErrorRid(null);
     setNotice("");
     try {
       const out = await positionAdviserApi.train({
@@ -237,8 +247,8 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       setNotice(out.message || "training complete");
       await refresh();
     } catch (err) {
-      const detail = (err as { detail?: string })?.detail ?? String(err);
-      setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+      setError(errDetail(err));
+      setErrorRid(errRid(err));
     } finally {
       setBusy(false);
     }
@@ -247,6 +257,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
   const onAutoTune = useCallback(async () => {
     if (!effectiveDataset) {
       setError("No position dataset available. Generate one in the Neural Studio first.");
+      setErrorRid(null);
       return;
     }
     // Parse the comma-separated knob strings; malformed input fails loud here
@@ -267,15 +278,17 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       seeds = parseNums(tuneSeeds, (v) => parseInt(v, 10));
     } catch (err) {
       setError(`invalid auto-tune parameter: ${err}`);
+      setErrorRid(null);
       return;
     }
     if (lrs.length === 0 || bss.length === 0 || seeds.length === 0) {
       setError("auto-tune needs at least one learning rate, batch size, and seed.");
+      setErrorRid(null);
       return;
     }
 
     setBusy(true);
-    setError("");
+    setError(""); setErrorRid(null);
     setNotice("");
     setTuneResult(null);
     try {
@@ -298,8 +311,8 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       );
       await refresh();
     } catch (err) {
-      const detail = (err as { detail?: string })?.detail ?? String(err);
-      setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+      setError(errDetail(err));
+      setErrorRid(errRid(err));
     } finally {
       setBusy(false);
     }
@@ -308,7 +321,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
   const onLoad = useCallback(
     async (m: AdviserModelDto) => {
       setBusy(true);
-      setError("");
+      setError(""); setErrorRid(null);
       setNotice("");
       try {
         if (!m.has_scaler) {
@@ -323,8 +336,8 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
         setNotice(out.message || "adviser loaded; activation is still DISABLED until you enable it");
         await refresh();
       } catch (err) {
-        const detail = (err as { detail?: string })?.detail ?? String(err);
-        setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+        setError(errDetail(err));
+        setErrorRid(errRid(err));
       } finally {
         setBusy(false);
       }
@@ -337,6 +350,18 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
   const curIdx = ladderIndex(activation);
   const tuneBaseline = tuneResult?.majority_baseline_accuracy ?? null;
   const baselineRef = tuneBaseline ?? MAJORITY_BASELINE_FALLBACK;
+
+  // First load failed and NOTHING was ever fetched: the panels below would
+  // otherwise render empty rungs ("no checkpoints yet") that lie about an
+  // error. Show the failure with request_id + Retry instead.
+  const neverFetched = !loading && readAt === 0 && readError !== "";
+  if (neverFetched) {
+    return (
+      <div className="pa-page">
+        <ErrorState message={readError} requestId={readRid} onRetry={() => void refresh()} />
+      </div>
+    );
+  }
 
   return (
     <div className="pa-page">
@@ -372,10 +397,29 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
         </div>
       </header>
 
+      {/* Stale rung: backend freshness only — last successful client fetch +
+          the backend clock when the status payload carries one. The legacy
+          endpoints send no staleness verdict, so none is claimed. */}
+      <div className="pa-freshness" role="status">
+        {readAt > 0 ? `updated ${new Date(readAt).toLocaleTimeString()}` : "not fetched yet"}
+        {status?.now ? ` · backend clock ${fmtTime(status.now)}` : ""}
+        {` · GET status/models/advisories/datasets every ${REFRESH_MS / 1000}s while this tab is open (no backend staleness field)`}
+      </div>
+
+      {readError && readAt > 0 ? (
+        <ErrorState
+          message={readError}
+          requestId={readRid}
+          onRetry={() => void refresh()}
+        />
+      ) : null}
       {error ? (
         <div className="pa-notice err" role="alert">
           <span className="pa-notice-glyph">✕</span>
-          <span>{error}</span>
+          <span>
+            {error}
+            {errorRid ? <span className="pa-mono"> · request_id {errorRid}</span> : null}
+          </span>
         </div>
       ) : null}
       {notice ? (
@@ -456,15 +500,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
           {checks.length > 0 ? (
             <ul className="pa-checks">
               {checks.map((c) => (
-                <li key={c.name} className={classNames("pa-check", c.passed ? "ok" : "fail")}>
-                  <span className="pa-check-mark" aria-hidden="true">
-                    {c.passed ? "✓" : "✕"}
-                  </span>
-                  <span>
-                    <span className="pa-check-name">{c.name}</span>
-                    <span className="pa-check-detail"> — {c.detail}</span>
-                  </span>
-                </li>
+                <CheckItem key={c.name} c={c} />
               ))}
             </ul>
           ) : null}
@@ -500,11 +536,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       </div>
 
       {loading ? (
-        <div className="skeleton-line" aria-hidden="true">
-          <div className="skeleton" style={{ height: 120 }} />
-          <div className="skeleton" style={{ height: 92, width: "72%" }} />
-          <div className="skeleton" style={{ height: 92, width: "58%" }} />
-        </div>
+        <LoadingState label="Loading position adviser status, models and advisories…" />
       ) : (
         <div className="pa-split">
           {/* ------------------------------------------------------ training */}
@@ -538,7 +570,10 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                   ) : (
                     <div className="pa-empty-input">
                       <span>∅</span>
-                      <span>No position datasets yet — generate one in the Neural Studio (M1/M5 source).</span>
+                      <span>
+                        No position datasets yet — generate one in the Neural Studio (M1/M5 source).
+                        GET /api/position-adviser/datasets returned an empty list.
+                      </span>
                     </div>
                   )}
                 </div>
@@ -628,7 +663,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                   />
                 </div>
               </div>
-              <div className="pa-field-row" style={{ marginTop: 14 }}>
+              <div className="pa-field-row pa-tune-row">
                 <div className="pa-field">
                   <label htmlFor="pa-tune-seeds">Seeds</label>
                   <input
@@ -694,28 +729,9 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                         </tr>
                       </thead>
                       <tbody>
-                        {tuneResult.trials.map((t) => {
-                          const isWinner = t.model_id === tuneResult.best.model_id;
-                          return (
-                            <tr
-                              key={t.model_id}
-                              className={classNames(
-                                isWinner && "is-winner",
-                                t.failed && "is-failed",
-                              )}
-                            >
-                              <td className="mono-id">
-                                {t.failed ? "✗ " : isWinner ? "★ " : "· "}
-                                {t.model_id}
-                              </td>
-                              <td>{t.learning_rate}</td>
-                              <td>{t.batch_size}</td>
-                              <td>{t.seed}</td>
-                              <td>{t.failed ? "failed" : fmt(t.oos_loss)}</td>
-                              <td>{t.failed ? "—" : fmt(t.oos_accuracy)}</td>
-                            </tr>
-                          );
-                        })}
+                        {tuneResult.trials.map((t) => (
+                          <TrialRow key={t.model_id} t={t} bestModelId={tuneResult.best.model_id} />
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -751,77 +767,22 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
               <span>∅</span>
               <span>
                 No adviser checkpoints yet. Train one above — it lands in{" "}
-                {status?.config?.artifact_dir ?? "artifacts/position_adviser"}.
+                {status?.config?.artifact_dir ?? "artifacts/position_adviser"}. GET
+                /api/position-adviser/models returned an empty list.
               </span>
             </div>
           ) : (
             <div className="pa-models">
-              {models.map((m) => {
-                const isActive = m.model_id === activeModelId;
-                const isBelow = belowBaseline(m, tuneBaseline);
-                const segs = distSegments(m.oos_action_distribution || {});
-                return (
-                  <div key={m.model_id} className={classNames("pa-model", isActive && "is-active")}>
-                    <div className="pa-model-top">
-                      <span className="pa-model-id">{m.model_id}</span>
-                      {isActive ? <span className="badge good">LOADED</span> : null}
-                      {isBelow ? <span className="badge bad">BELOW BASELINE</span> : null}
-                      {!m.has_scaler ? <span className="badge warn">NO SCALER</span> : null}
-                    </div>
-                    <div className="pa-model-facts">
-                      <span>
-                        OOS acc <b>{fmt(m.oos_accuracy)}</b>
-                      </span>
-                      <span>
-                        OOS loss <b>{fmt(m.oos_loss)}</b>
-                      </span>
-                      <span>
-                        val loss <b>{fmt(m.best_val_loss)}</b>
-                      </span>
-                      <span>
-                        train/oos <b>{m.train_rows ?? "--"}/{m.oos_rows ?? "--"}</b>
-                      </span>
-                      <span>
-                        epochs <b>{m.epochs ?? "--"}</b>
-                      </span>
-                      {m.created_at ? <span title={m.created_at}>{fmtTime(m.created_at)}</span> : null}
-                    </div>
-                    {segs.length > 0 ? (
-                      <div className="pa-dist">
-                        <span className="pa-dist-lab">OOS predictions</span>
-                        <span className="pa-dist-track">
-                          {segs.map((s) => (
-                            <span
-                              key={s.key}
-                              className={classNames("pa-dist-seg", distClass(s.key))}
-                              style={{ width: `${s.pct}%` }}
-                              title={`${s.key}: ${s.pct.toFixed(1)}%`}
-                            />
-                          ))}
-                        </span>
-                        <span className="pa-dist-legend">
-                          {segs.map((s) => (
-                            <span key={s.key}>
-                              <i className={distClass(s.key)} />
-                              {s.key} {s.pct.toFixed(0)}%
-                            </span>
-                          ))}
-                        </span>
-                      </div>
-                    ) : null}
-                    <div>
-                      <button
-                        type="button"
-                        disabled={busy || !m.has_scaler}
-                        onClick={() => void onLoad(m)}
-                        className="pa-btn pa-btn-ghost"
-                      >
-                        {m.has_scaler ? "Load into live memory" : "No scaler sidecar — load refused"}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+              {models.map((m) => (
+                <ModelCard
+                  key={m.model_id}
+                  m={m}
+                  isActive={m.model_id === activeModelId}
+                  baseline={tuneBaseline}
+                  busy={busy}
+                  onLoad={onLoad}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -843,70 +804,15 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
               <span>∅</span>
               <span>
                 No advisories yet. Enable PAPER to start computing them without touching the decide
-                system, then LIVE once the checks pass.
+                system, then LIVE once the checks pass. GET /api/position-adviser/advisories?limit=30
+                returned an empty list.
               </span>
             </div>
           ) : (
             <div className="pa-feed">
-              {advisories.map((a) => {
-                const dist = distSegments(a.probabilities || {});
-                return (
-                  <div key={a.advisory_id} className="pa-feed-item">
-                    <div className="pa-feed-top">
-                      <span className="pa-feed-ticket">#{a.ticket}</span>
-                      <span
-                        className={classNames(
-                          "badge",
-                          a.action === "CLOSE"
-                            ? "bad"
-                            : a.action === "REDUCE"
-                              ? "warn"
-                              : "good",
-                        )}
-                      >
-                        {a.action}
-                      </span>
-                      <span className="pa-conf" title="adviser confidence">
-                        <span className="pa-conf-track">
-                          <i style={{ width: `${Math.max(0, Math.min(1, a.confidence)) * 100}%` }} />
-                        </span>
-                        <span className="pa-conf-val">{a.confidence.toFixed(3)}</span>
-                      </span>
-                      <span
-                        className={a.hold_score_adjustment < 0 ? "pa-hold-neg" : "pa-hold-zero"}
-                      >
-                        hold adj {a.hold_score_adjustment.toFixed(2)}
-                      </span>
-                      <span
-                        className={classNames(
-                          "badge",
-                          a.applied ? "good" : "neutral",
-                        )}
-                      >
-                        {a.applied ? "APPLIED" : "LOGGED ONLY"}
-                      </span>
-                      <span className="pa-feed-time">
-                        {a.latency_ms.toFixed(2)} ms · {fmtTime(a.evaluated_at)}
-                      </span>
-                    </div>
-                    {dist.length > 0 ? (
-                      <span className="pa-dist-track" style={{ height: 4 }}>
-                        {dist.map((s) => (
-                          <span
-                            key={s.key}
-                            className={classNames("pa-dist-seg", distClass(s.key))}
-                            style={{ width: `${s.pct}%` }}
-                            title={`${s.key}: ${s.pct.toFixed(1)}%`}
-                          />
-                        ))}
-                      </span>
-                    ) : null}
-                    {a.not_applied_reason ? (
-                      <div className="pa-feed-reason">{a.not_applied_reason}</div>
-                    ) : null}
-                  </div>
-                );
-              })}
+              {advisories.map((a) => (
+                <AdvisoryRow key={a.advisory_id} a={a} />
+              ))}
             </div>
           )}
         </div>

@@ -1196,6 +1196,26 @@
   }
 }
 
+/* ==========================================================================
+   Freshness line (stale rung) + tune row spacing
+   ========================================================================== */
+
+/* Honest freshness caption under the hero: last successful fetch time + the
+   backend clock when the status payload carries one. Colour never claims
+   staleness the backend did not report — this line is informational only. */
+.pa-freshness {
+  margin-top: -6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+}
+
+/* second knob row in the auto-tune panel (was an inline marginTop) */
+.pa-field-row.pa-tune-row {
+  margin-top: 14px;
+}
+
 /* honour the OS preference: the ladder/meter transitions are cosmetic */
 @media (prefers-reduced-motion: reduce) {
   .pa-page,
