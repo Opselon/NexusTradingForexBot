@@ -76,9 +76,11 @@ const TONE_NEUTRAL = new Set([
   "STOPPED", "UNKNOWN", "DISABLED", "SWEPT", "DISPLACED", "HOLD", "NEUTRAL",
 ]);
 
-/** Tone ONLY restates the backend word itself; unrecognised -> "unknown". */
+/** Tone ONLY restates the backend word itself; unrecognised -> "unknown".
+ *  typeof guard: pool `state` originates from a PoolState IntEnum upstream, so
+ *  a non-string runtime value must degrade to "unknown", never throw. */
 function wordTone(v: string | null | undefined): Tone {
-  if (v === null || v === undefined || v === "") return "unknown";
+  if (typeof v !== "string" || v === "") return "unknown";
   const w = v.toUpperCase();
   if (TONE_GOOD.has(w)) return "good";
   if (TONE_WARN.has(w)) return "warn";
@@ -87,9 +89,10 @@ function wordTone(v: string | null | undefined): Tone {
   return "unknown";
 }
 
-/** BUY/SELL colour restates the side word (PositionSideBadge precedent). */
+/** BUY/SELL colour restates the side word (PositionSideBadge precedent).
+ *  typeof guard: a non-string runtime side degrades to "unknown", never throws. */
 function sideTone(side: string | null | undefined): Tone {
-  const s = (side ?? "").toUpperCase();
+  const s = typeof side === "string" ? side.toUpperCase() : "";
   if (s.includes("BUY")) return "good";
   if (s.includes("SELL")) return "bad";
   return "unknown";
