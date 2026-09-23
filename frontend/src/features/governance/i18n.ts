@@ -144,4 +144,12 @@ export const MESSAGES: FeatureMessages = {
   "governance.th.acc": { fa: "دقت", de: "Genauigkeit", es: "precisión", ar: "الدقة", en: "acc" },
   "governance.th.dim": { fa: "بُعد", de: "Dim.", es: "dimensión", ar: "بُعد", en: "dim" },
   "governance.th.score": { fa: "امتیاز", de: "Punktwert", es: "puntuación", ar: "التقييم", en: "score" },
+  "governance.page.desc": { fa: "نردبان ارتقای مدل، دفتر تصمیم، هوش تجربه و بازبینی کالیبراسیون — هر وضعیت زیر را موتور حاکمیت سرو می‌کند؛ فرمان‌های اضطراری پشت تأیید و با الزام عامل اجرا می‌شوند.", de: "Modell-Aufstiegsleiter, Entscheidungsregister, Erfahrungsintelligenz und Kalibrierungsprüfung — jeder Status unten wird vom Governance-Engine bedient; Notfallbefehle sind bestätigungs- und aktorpflichtig.", es: "Escalera de ascenso del modelo, libro de decisiones, inteligencia de experiencias y revisión de calibración: cada estado lo sirve el motor de gobernanza; los comandos de emergencia exigen confirmación y actor.", ar: "سلّم ترقية النماذج وسجل القرارات وذكاء التجارب ومراجعة المواءمة — كل حالة أدناه يخدمها محرك الحوكمة؛ وأوامر الطوارئ مشروطة بالتأكيد وبوجود فاعل." },
+  "governance.freeze.unfrozen_title": { fa: "ارتقاها منجمد نشده — حکم بک‌اند از /api/models/governance/status", de: "Beförderungen nicht eingefroren — Backend-Urteil aus /api/models/governance/status", es: "ascensos no congelados — veredicto del backend de /api/models/governance/status", ar: "الترقيات غير مجمّدة — حكم الخادم من /api/models/governance/status" },
+  "governance.freeze.no_freeze": { fa: "بدون انجماد — ارتقاها فعال", de: "KEIN FREEZE — Beförderungen aktiv", es: "SIN CONGELACIÓN — ascensos activos", ar: "بدون تجميد — الترقية مفعّلة" },
+  "governance.hero.prov_a11y": { fa: "ریشه‌شناسی حاکمیت", de: "Governance-Herkunft", es: "procedencia de la gobernanza", ar: "أصل بيانات الحوكمة" },
+  "governance.hero.poll": { fa: "هر ۳۰ ثانیه", de: "Abfrage alle 30 s", es: "sondeo cada 30 s", ar: "استطلاع كل 30 ثانية" },
+  "governance.section.ladder": { fa: "نردبان ارتقا", de: "Aufstiegsleiter", es: "escalera de ascenso", ar: "سلّم الترقية" },
+  "governance.section.commands": { fa: "فرمان‌های اضطراری و نگهداری", de: "Notfall- und Wartungsbefehle", es: "comandos de emergencia y mantenimiento", ar: "أوامر الطوارئ والصيانة" },
+  "governance.section.ledgers": { fa: "دفترها و بازبینی", de: "Register und Prüfung", es: "libros y revisión", ar: "السجلات والمراجعة" },
 };
