@@ -45,6 +45,9 @@ function StatCell({ label, value, color, mono }: StatCellProps) {
 
 interface ModelRegistryPanelProps {
   models: ModelRecordDto[];
+  /** True while GET /api/model-studio/models is pending — the empty option
+   *  says "loading" instead of claiming no models exist. */
+  catalogLoading: boolean;
   activeModel: ActiveModelResponse["active_model"];
   selectedModelId: string;
   onSelectModelId: (id: string) => void;
@@ -67,6 +70,7 @@ interface ModelRegistryPanelProps {
 
 export function ModelRegistryPanel({
   models,
+  catalogLoading,
   activeModel,
   selectedModelId,
   onSelectModelId,
@@ -154,7 +158,13 @@ export function ModelRegistryPanel({
               onChange={(e) => onSelectModelId(e.target.value)}
               className="ms-select-styled"
             >
-              {models.length === 0 && <option value="">No registered models found</option>}
+              {models.length === 0 && (
+                <option value="">
+                  {catalogLoading
+                    ? "loading model catalog (GET /api/model-studio/models)…"
+                    : "No registered models found (GET /api/model-studio/models)"}
+                </option>
+              )}
               {models.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.is_active ? "★ " : ""}{m.id} [{m.dimension}D] {m.fine_tune_enabled ? "[FT:ON]" : "[FT:OFF]"} (loss: {m.final_loss?.toFixed(4) || "0.0000"})

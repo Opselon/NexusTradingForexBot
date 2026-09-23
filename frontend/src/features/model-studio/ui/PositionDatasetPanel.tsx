@@ -19,6 +19,9 @@ import {
 interface PositionDatasetPanelProps {
   dimension: number;
   datasets: ModelStudioDatasetItem[];
+  /** True while GET /api/model-studio/datasets is pending — the empty option
+   *  says "loading" instead of claiming no datasets exist. */
+  catalogLoading: boolean;
   posSource: string;
   onPosSourceChange: (path: string) => void;
   posMaxHolding: number;
@@ -42,6 +45,7 @@ const ACTION_COLORS: Record<OptimalAction, string> = {
 export function PositionDatasetPanel({
   dimension,
   datasets,
+  catalogLoading,
   posSource,
   onPosSourceChange,
   posMaxHolding,
@@ -77,7 +81,13 @@ export function PositionDatasetPanel({
               value={posSource}
               onChange={(e) => onPosSourceChange(e.target.value)}
             >
-              {sortedDatasets.length === 0 && <option value="">No staged datasets</option>}
+              {sortedDatasets.length === 0 && (
+                <option value="">
+                  {catalogLoading
+                    ? "loading dataset catalog (GET /api/model-studio/datasets)…"
+                    : "No staged datasets (GET /api/model-studio/datasets)"}
+                </option>
+              )}
               {sortedDatasets.map((d) => (
                 <option key={d.path} value={d.path}>
                   {d.name} ({d.size_display})

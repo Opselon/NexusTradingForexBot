@@ -12,9 +12,14 @@
  * (train/stress/benchmark) and a poll of the existing
  * GET /api/model-studio/train/progress endpoint so the pipeline panel can
  * render live epoch progress while the blocking train POST is in flight.
+ *
+ * Render cost (perf lane): every prop handed to a panel is stable — handlers
+ * are useCallback'd over their real deps and the six panels are memo-wrapped
+ * at the import site — so the 1.2s training-progress tick re-renders only
+ * DatasetPipelinePanel instead of the whole screen.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import "./model-studio.css";
 
@@ -32,13 +37,22 @@ import type {
   StressTestResultRow,
   VerifyModelResponse,
 } from "../model";
-import { ModelStudioHeader } from "./ModelStudioHeader";
-import { ModelInferencePanel } from "./ModelInferencePanel";
-import { ModelRegistryPanel } from "./ModelRegistryPanel";
-import { DatasetPipelinePanel } from "./DatasetPipelinePanel";
-import { PositionDatasetPanel } from "./PositionDatasetPanel";
-import { ModelStressBenchPanel } from "./ModelStressBenchPanel";
+import { ModelStudioHeader as ModelStudioHeaderBase } from "./ModelStudioHeader";
+import { ModelInferencePanel as ModelInferencePanelBase } from "./ModelInferencePanel";
+import { ModelRegistryPanel as ModelRegistryPanelBase } from "./ModelRegistryPanel";
+import { DatasetPipelinePanel as DatasetPipelinePanelBase } from "./DatasetPipelinePanel";
+import { PositionDatasetPanel as PositionDatasetPanelBase } from "./PositionDatasetPanel";
+import { ModelStressBenchPanel as ModelStressBenchPanelBase } from "./ModelStressBenchPanel";
 import { useModelStudioData } from "./useModelStudioData";
+
+/* memo at the call site: identical components, but they skip re-renders when
+ * their props are unchanged (stable callbacks make that effective). */
+const ModelStudioHeader = memo(ModelStudioHeaderBase);
+const ModelInferencePanel = memo(ModelInferencePanelBase);
+const ModelRegistryPanel = memo(ModelRegistryPanelBase);
+const DatasetPipelinePanel = memo(DatasetPipelinePanelBase);
+const PositionDatasetPanel = memo(PositionDatasetPanelBase);
+const ModelStressBenchPanel = memo(ModelStressBenchPanelBase);
 
 /** Poll cadence for the live training-progress endpoint (visual only). */
 const TRAIN_POLL_MS = 1200;
@@ -62,6 +76,10 @@ export default function ModelStudioPage() {
     fetchModels,
     fetchActiveModel,
     refreshAll,
+    isLoading,
+    loadError,
+    loadErrorSource,
+    refetchAll,
   } = useModelStudioData();
   const [dimension, setDimension] = useState<number>(50);
   const [loading, setLoading] = useState<boolean>(false);
@@ -123,16 +141,15 @@ export default function ModelStudioPage() {
 
   // Live training-progress poll handle (cleared on completion/unmount).
   const trainPollRef = useRef<number | null>(null);
-  const stopTrainPolling = () => {
+  const stopTrainPolling = useCallback(() => {
     if (trainPollRef.current !== null) {
       window.clearInterval(trainPollRef.current);
       trainPollRef.current = null;
     }
-  };
-  useEffect(() => stopTrainPolling, []);
+  }, []);
+  useEffect(() => stopTrainPolling, [stopTrainPolling]);
 
-
-  const handleHotLoad = async () => {
+  const handleHotLoad = useCallback(async (): Promise<void> => {
     if (!selectedModelId) return;
     setHotLoadBusy(true);
     setHotLoadError("");
@@ -153,9 +170,9 @@ export default function ModelStudioPage() {
     } finally {
       setHotLoadBusy(false);
     }
-  };
+  }, [selectedModelId, enableFineTune, attachScaler, fetchModels, fetchActiveModel, fetchOverview]);
 
-  const handleVerifyModel = async () => {
+  const handleVerifyModel = useCallback(async (): Promise<void> => {
     if (!selectedModelId) return;
     setVerifyBusy(true);
     setVerifyResult(null);
@@ -167,9 +184,9 @@ export default function ModelStudioPage() {
     } finally {
       setVerifyBusy(false);
     }
-  };
+  }, [selectedModelId]);
 
-  const handleRollback = async () => {
+  const handleRollback = useCallback(async (): Promise<void> => {
     if (!confirm("Roll back to previous active champion model from history?")) return;
     setRollbackBusy(true);
     try {
@@ -183,9 +200,9 @@ export default function ModelStudioPage() {
     } finally {
       setRollbackBusy(false);
     }
-  };
+  }, [fetchModels, fetchActiveModel, fetchOverview]);
 
-  const handleInspectScaler = async () => {
+  const handleInspectScaler = useCallback(async (): Promise<void> => {
     if (!selectedModelId) return;
     try {
       const res = await modelStudioApi.inspectScaler(selectedModelId);
@@ -193,9 +210,9 @@ export default function ModelStudioPage() {
     } catch (err) {
       console.error("Inspect scaler failed:", err);
     }
-  };
+  }, [selectedModelId]);
 
-  const handleFetch70d = async () => {
+  const handleFetch70d = useCallback(async (): Promise<void> => {
     try {
       const d = await modelStudioApi.fetch70d();
       setComponents70(d.slots || []);
@@ -204,9 +221,9 @@ export default function ModelStudioPage() {
     } catch (err) {
       console.error("Failed to fetch 70D:", err);
     }
-  };
+  }, []);
 
-  const handleInference = async () => {
+  const handleInference = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
       const d = await modelStudioApi.predict({
@@ -224,9 +241,9 @@ export default function ModelStudioPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [dimension, useLive, noise, threshold]);
 
-  const handleStressTest = async () => {
+  const handleStressTest = useCallback(async (): Promise<void> => {
     setStressBusy(true);
     try {
       const d = await modelStudioApi.stressTest(dimension);
@@ -236,9 +253,9 @@ export default function ModelStudioPage() {
     } finally {
       setStressBusy(false);
     }
-  };
+  }, [dimension]);
 
-  const handleBenchmark = async () => {
+  const handleBenchmark = useCallback(async (): Promise<void> => {
     setBenchBusy(true);
     try {
       setBenchStats(await modelStudioApi.benchmark(dimension, 100));
@@ -247,9 +264,9 @@ export default function ModelStudioPage() {
     } finally {
       setBenchBusy(false);
     }
-  };
+  }, [dimension]);
 
-  const handleStartTrain = async () => {
+  const handleStartTrain = useCallback(async (): Promise<void> => {
     setTrainError("");
     setTrainStatus("");
     setTrainProgress(null);
@@ -286,9 +303,9 @@ export default function ModelStudioPage() {
       stopTrainPolling();
       setTrainBusy(false);
     }
-  };
+  }, [selectedDataset, dimension, epochs, learningRate, stopTrainPolling]);
 
-  const handleDownloadDataset = async () => {
+  const handleDownloadDataset = useCallback(async (): Promise<void> => {
     setDlBusy(true);
     setDlError("");
     setDlResult(null);
@@ -306,9 +323,9 @@ export default function ModelStudioPage() {
     } finally {
       setDlBusy(false);
     }
-  };
+  }, [dlSymbol, dlTimeframe, dlBars, dlSource, fetchDatasets]);
 
-  const handleInspectFeatures = async () => {
+  const handleInspectFeatures = useCallback(async (): Promise<void> => {
     setInspectBusy(true);
     setInspectError("");
     try {
@@ -323,9 +340,9 @@ export default function ModelStudioPage() {
     } finally {
       setInspectBusy(false);
     }
-  };
+  }, [selectedDataset, dimension]);
 
-  const handleGeneratePositionDataset = async () => {
+  const handleGeneratePositionDataset = useCallback(async (): Promise<void> => {
     setPosBusy(true);
     setPosError("");
     setPosResult(null);
@@ -344,7 +361,19 @@ export default function ModelStudioPage() {
     } finally {
       setPosBusy(false);
     }
-  };
+  }, [posSource, dimension, posMaxHolding, posTargetAtr, posFriction, fetchDatasets]);
+
+  /* Stable adapters for value-coercing panel inputs (setState is stable, the
+   * `n || fallback` guard is not — one useCallback each, no per-render arrow). */
+  const handleNoiseChange = useCallback((n: number) => setNoise(n || 0), []);
+  const handleThresholdChange = useCallback((t: number) => setThreshold(t || 0.35), []);
+  const handleDlSymbolChange = useCallback((v: string) => setDlSymbol(v.toUpperCase()), []);
+  const handleDlBarsChange = useCallback((n: number) => setDlBars(n || 10000), []);
+  const handleEpochsChange = useCallback((n: number) => setEpochs(n || 3), []);
+  const handleLearningRateChange = useCallback((n: number) => setLearningRate(n || 0.0005), []);
+  const handlePosMaxHoldingChange = useCallback((n: number) => setPosMaxHolding(n || 30), []);
+  const handlePosTargetAtrChange = useCallback((n: number) => setPosTargetAtr(n || 2.0), []);
+  const handlePosFrictionChange = useCallback((n: number) => setPosFriction(n || 0.25), []);
 
   return (
     <div className="ms-container">
@@ -354,6 +383,10 @@ export default function ModelStudioPage() {
         overview={overview}
         activeModel={activeModel}
         onRefresh={refreshAll}
+        loading={isLoading}
+        loadError={loadError}
+        loadErrorSource={loadErrorSource}
+        onRetry={refetchAll}
       />
 
       <ModelInferencePanel
@@ -361,9 +394,9 @@ export default function ModelStudioPage() {
         useLive={useLive}
         onToggleUseLive={setUseLive}
         noise={noise}
-        onNoiseChange={(n) => setNoise(n || 0)}
+        onNoiseChange={handleNoiseChange}
         threshold={threshold}
-        onThresholdChange={(t) => setThreshold(t || 0.35)}
+        onThresholdChange={handleThresholdChange}
         loading={loading}
         onRunInference={handleInference}
         predictData={predictData}
@@ -375,6 +408,7 @@ export default function ModelStudioPage() {
 
       <ModelRegistryPanel
         models={models}
+        catalogLoading={isLoading}
         activeModel={activeModel}
         selectedModelId={selectedModelId}
         onSelectModelId={setSelectedModelId}
@@ -398,14 +432,15 @@ export default function ModelStudioPage() {
       <DatasetPipelinePanel
         dimension={dimension}
         datasets={datasets}
+        catalogLoading={isLoading}
         selectedDataset={selectedDataset}
         onSelectDataset={setSelectedDataset}
         dlSymbol={dlSymbol}
-        onDlSymbolChange={(v) => setDlSymbol(v.toUpperCase())}
+        onDlSymbolChange={handleDlSymbolChange}
         dlTimeframe={dlTimeframe}
         onDlTimeframeChange={setDlTimeframe}
         dlBars={dlBars}
-        onDlBarsChange={(n) => setDlBars(n || 10000)}
+        onDlBarsChange={handleDlBarsChange}
         dlSource={dlSource}
         onDlSourceChange={setDlSource}
         dlBusy={dlBusy}
@@ -417,9 +452,9 @@ export default function ModelStudioPage() {
         inspectResult={inspectResult}
         inspectError={inspectError}
         epochs={epochs}
-        onEpochsChange={(n) => setEpochs(n || 3)}
+        onEpochsChange={handleEpochsChange}
         learningRate={learningRate}
-        onLearningRateChange={(n) => setLearningRate(n || 0.0005)}
+        onLearningRateChange={handleLearningRateChange}
         trainBusy={trainBusy}
         trainProgress={trainProgress}
         trainStatus={trainStatus}
@@ -430,14 +465,15 @@ export default function ModelStudioPage() {
       <PositionDatasetPanel
         dimension={dimension}
         datasets={datasets}
+        catalogLoading={isLoading}
         posSource={posSource}
         onPosSourceChange={setPosSource}
         posMaxHolding={posMaxHolding}
-        onPosMaxHoldingChange={(n) => setPosMaxHolding(n || 30)}
+        onPosMaxHoldingChange={handlePosMaxHoldingChange}
         posTargetAtr={posTargetAtr}
-        onPosTargetAtrChange={(n) => setPosTargetAtr(n || 2.0)}
+        onPosTargetAtrChange={handlePosTargetAtrChange}
         posFriction={posFriction}
-        onPosFrictionChange={(n) => setPosFriction(n || 0.25)}
+        onPosFrictionChange={handlePosFrictionChange}
         posBusy={posBusy}
         onGenerate={handleGeneratePositionDataset}
         posResult={posResult}

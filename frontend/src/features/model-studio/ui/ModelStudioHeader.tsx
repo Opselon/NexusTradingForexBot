@@ -1,3 +1,5 @@
+import { ErrorState, Skeleton } from "@/components/primitives";
+import { ApiError } from "@/types/api";
 import type { ActiveModelResponse, ModelStudioOverviewDto } from "../model";
 
 interface ModelStudioHeaderProps {
@@ -6,6 +8,13 @@ interface ModelStudioHeaderProps {
   overview: ModelStudioOverviewDto | null;
   activeModel: ActiveModelResponse["active_model"];
   onRefresh: () => void;
+  /** True while any boot read (overview/datasets/models/active) is pending. */
+  loading?: boolean;
+  /** First failing boot read, or null. */
+  loadError?: unknown;
+  /** Endpoint of the failing boot read (shown verbatim in the error block). */
+  loadErrorSource?: string | null;
+  onRetry?: () => void;
 }
 
 export function ModelStudioHeader({
@@ -14,6 +23,10 @@ export function ModelStudioHeader({
   overview,
   activeModel,
   onRefresh,
+  loading = false,
+  loadError = null,
+  loadErrorSource = null,
+  onRetry,
 }: ModelStudioHeaderProps) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -104,24 +117,38 @@ export function ModelStudioHeader({
               Engine Inferences
             </span>
             <span className="inline-mono small" style={{ color: "var(--green)", fontWeight: 700 }}>
-              {activeModel?.inference_count?.toLocaleString() ?? 0}
+              {activeModel?.inference_count != null ? activeModel.inference_count.toLocaleString() : "—"}
             </span>
           </div>
         </div>
       </div>
 
-      {/* KPI Overview Deck */}
+      {/* Boot state — the four catalog reads are query-driven now: pending
+          shows a skeleton, a failed read shows its endpoint + Retry instead
+          of a silently blank deck. */}
+      {loadError !== null && loadError !== undefined ? (
+        <ErrorState
+          message={`${loadErrorSource ?? "Model Studio boot read"} failed: ${loadError instanceof Error ? loadError.message : "request failed"}`}
+          requestId={loadError instanceof ApiError ? loadError.requestId : null}
+          onRetry={onRetry}
+        />
+      ) : loading && !overview ? (
+        <Skeleton count={2} height={56} />
+      ) : null}
+
+      {/* KPI Overview Deck — every value is the backend's overview DTO; absent
+          fields render "—" (never a guessed architecture/source/device). */}
       <div className="ms-metrics-grid">
         <div className="ms-metric-card">
           <div className="ms-metric-label">Architecture</div>
-          <div className="ms-metric-value">{overview?.architecture || "ScalpNet"}</div>
+          <div className="ms-metric-value">{overview?.architecture ?? "—"}</div>
           <div className="ms-metric-sub">Layer Spec</div>
         </div>
 
         <div className="ms-metric-card">
           <div className="ms-metric-label">Model Source</div>
-          <div className="ms-metric-value tx-accent"  title={overview?.model_source || "ONLINE"}>
-            {overview?.model_source || "ONLINE"}
+          <div className="ms-metric-value tx-accent"  title={overview?.model_source ?? ""}>
+            {overview?.model_source ?? "—"}
           </div>
           <div className="ms-metric-sub">Memory State</div>
         </div>
@@ -146,18 +173,16 @@ export function ModelStudioHeader({
 
         <div className="ms-metric-card">
           <div className="ms-metric-label">Execution Device</div>
-          <div className="ms-metric-value">{overview?.device ? overview.device.toUpperCase() : "CPU"}</div>
+          <div className="ms-metric-value">{overview?.device ? overview.device.toUpperCase() : "—"}</div>
           <div className="ms-metric-sub">PyTorch Runtime</div>
         </div>
 
         <div className="ms-metric-card">
           <div className="ms-metric-label">Scaler Status</div>
           <div className="ms-metric-value tx-good" >
-            {overview?.scaler_stats?.status || "READY"}
+            {overview?.scaler_stats?.status ?? "—"}
           </div>
-          <div className="ms-metric-sub">
-            Clamped: {overview?.scaler_stats?.clamped_cols ?? 0} cols
-          </div>
+          <div className="ms-metric-sub">Clamped: {overview?.scaler_stats?.clamped_cols ?? "—"} cols</div>
         </div>
       </div>
     </div>

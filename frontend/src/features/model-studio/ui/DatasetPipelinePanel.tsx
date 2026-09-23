@@ -19,6 +19,9 @@ import {
 interface DatasetPipelinePanelProps {
   dimension: number;
   datasets: ModelStudioDatasetItem[];
+  /** True while GET /api/model-studio/datasets is pending — the empty option
+   *  says "loading" instead of claiming no datasets exist. */
+  catalogLoading: boolean;
   selectedDataset: string;
   onSelectDataset: (path: string) => void;
   // ingestion
@@ -60,6 +63,7 @@ const STATUS_CLASS: Record<string, string> = {
 export function DatasetPipelinePanel({
   dimension,
   datasets,
+  catalogLoading,
   selectedDataset,
   onSelectDataset,
   dlSymbol,
@@ -212,7 +216,13 @@ export function DatasetPipelinePanel({
                 value={selectedDataset}
                 onChange={(e) => onSelectDataset(e.target.value)}
               >
-                {sortedDatasets.length === 0 && <option value="">No staged datasets</option>}
+                {sortedDatasets.length === 0 && (
+                  <option value="">
+                    {catalogLoading
+                      ? "loading dataset catalog (GET /api/model-studio/datasets)…"
+                      : "No staged datasets (GET /api/model-studio/datasets)"}
+                  </option>
+                )}
                 {sortedDatasets.map((d) => (
                   <option key={d.path} value={d.path}>
                     {d.name} ({d.size_display})
