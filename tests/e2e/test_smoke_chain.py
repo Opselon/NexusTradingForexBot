@@ -55,7 +55,6 @@ from __future__ import annotations
 import math
 import os
 import sqlite3
-import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -107,6 +106,7 @@ from nexus_scalp.risk.risk_engine import RiskEngine
 from nexus_scalp.settings.service import SettingsDatabase
 from nexus_scalp.signals.policy import SignalPolicy
 from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
+from tests.e2e.chain_clock import ChainClock
 
 # ---------------------------------------------------------------------------
 # pretty helpers
@@ -139,6 +139,18 @@ def _ok(msg: str) -> None:
 def _info(msg: str) -> None:
     print(f"       ·   {msg}")
 
+
+# ---------------------------------------------------------------------------
+# DETERMINISTIC INSTRUMENTATION CLOCK (ML-QA-004)
+# ---------------------------------------------------------------------------
+# Stage timings printed by the chain are instrumentation for the human reading
+# the CI log, never an asserted measurement. A real wall clock made the whole
+# suite host-scheduler-dependent for zero contract value; ChainClock advances
+# a fixed, deterministic amount per lap so the log reads identically on every
+# runner. Genuine liveness budgets (the < 5s worker-tick sentinels in the
+# phase batteries) are separately pinned to CPU time — see
+# tests/e2e/chain_clock.py and docs/ml-system/test_determinism_roster.md.
+_CLOCK = ChainClock()
 
 # ---------------------------------------------------------------------------
 # deterministic fixtures
@@ -335,7 +347,6 @@ def test_smoke_full_chain(tmp_path) -> None:
     next stage. Failure at stage N never masks the evidence from stages < N
     (fail-loud with stage-tagged messages).
     """
-    t_wall0 = time.monotonic()
     _banner(
         "🔥  NSE SMOKE CHAIN — end-to-end (Tick → Features → Model → Policy → Risk → Execution → Ledger → API)"
     )
@@ -344,7 +355,6 @@ def test_smoke_full_chain(tmp_path) -> None:
     # 01 — Market data: TickData invariants + BarAggregator
     # ------------------------------------------------------------------
     print("\n┌─ 01 · MARKET DATA ─────────────────────────────────────────────")
-    t0 = time.monotonic()
     tick = TickData(timestamp=T0, **XAU_TICK_KW)
     assert tick.spread_points == pytest.approx(0.05), "spread must be ask-bid"
     assert tick.timestamp.tzinfo is not None, "tick must be UTC-aware"
@@ -370,13 +380,12 @@ def test_smoke_full_chain(tmp_path) -> None:
     _ok(
         f"TickData OK — spread={tick.spread_points}  bars={len(all_bars)} (aggregator produced {len(completed)} boundaries)"
     )
-    _info(f"stage 01 in {(time.monotonic() - t0) * 1000:.1f} ms")
+    _info(f"stage 01 in {_CLOCK.elapsed_ms():.1f} ms")
 
     # ------------------------------------------------------------------
     # 02 — Features 50D: ScalpFeatureEngine → FeatureVector → 50D tensor
     # ------------------------------------------------------------------
     print("\n┌─ 02 · FEATURES 50D ────────────────────────────────────────────")
-    t0 = time.monotonic()
     engine = ScalpFeatureEngine(symbol="XAUUSD")
     fv = engine.compute_from_bars(all_bars, tick)
     # cold-start fallback is valid: engine returns a bounded vector even on
@@ -393,13 +402,12 @@ def test_smoke_full_chain(tmp_path) -> None:
     s50 = FEATURE_SCHEMAS.resolve("scalp_v1")
     assert s50.dimension == 50 and s50.is_active, "ACTIVE_SCHEMA_ID must be scalp_v1=50D"
     _ok(f"50D tensor OK — dim=50  finite & bounded  atr={fv.atr_m1:.2f}  schema={s50.schema_id}")
-    _info(f"stage 02 in {(time.monotonic() - t0) * 1000:.1f} ms  sample feat_0..2={tensor50[:3]}")
+    _info(f"stage 02 in {_CLOCK.elapsed_ms():.1f} ms  sample feat_0..2={tensor50[:3]}")
 
     # ------------------------------------------------------------------
     # 03 — Features 70D: assemble_70d + hash contract
     # ------------------------------------------------------------------
     print("\n┌─ 03 · FEATURES 70D ASSEMBLY ───────────────────────────────────")
-    t0 = time.monotonic()
     snap = assemble_70d(
         base50=tensor50,
         news10=list(NEWS_NEUTRAL_10D),
@@ -422,13 +430,12 @@ def test_smoke_full_chain(tmp_path) -> None:
     with pytest.raises(ValueError):
         assemble_70d(base50=tensor50, news10=None, liquidity10=list(LIQUIDITY_NEUTRAL_10D))  # type: ignore[arg-type]
     _ok(f"70D OK — dim=70  hash={h1}  layout Base|News|Liquidity correct")
-    _info(f"stage 03 in {(time.monotonic() - t0) * 1000:.1f} ms")
+    _info(f"stage 03 in {_CLOCK.elapsed_ms():.1f} ms")
 
     # ------------------------------------------------------------------
     # 04 — Model: ScalpNet forward → 4-class distribution
     # ------------------------------------------------------------------
     print("\n┌─ 04 · MODEL (ScalpNet) ────────────────────────────────────────")
-    t0 = time.monotonic()
     model = ScalpNet(num_features=50, num_classes=4)
     model.eval()
     with torch.no_grad():
@@ -451,13 +458,12 @@ def test_smoke_full_chain(tmp_path) -> None:
     _ok(
         f"ScalpNet OK — logits {logits.squeeze().tolist()} → probs {[round(x, 3) for x in probs_list]}"
     )
-    _info(f"stage 04 in {(time.monotonic() - t0) * 1000:.1f} ms  hidden=128 heads=4")
+    _info(f"stage 04 in {_CLOCK.elapsed_ms():.1f} ms  hidden=128 heads=4")
 
     # ------------------------------------------------------------------
     # 05 — Policy: SignalPolicy → TradeProposal (+ EXEC-id + confidence)
     # ------------------------------------------------------------------
     print("\n┌─ 05 · POLICY (SignalPolicy) ───────────────────────────────────")
-    t0 = time.monotonic()
     policy = SignalPolicy()
     policy.confidence_threshold = 0.10
     policy.algo_config.min_risk_reward_ratio = 0.10  # permissive for smoke
@@ -566,14 +572,13 @@ def test_smoke_full_chain(tmp_path) -> None:
     )
     _ok(f"NO_TRADE branch OK — {flat.reason_code}")
     _info(
-        f"stage 05 in {(time.monotonic() - t0) * 1000:.1f} ms  SL={proposal.stop_loss:.2f} TP={proposal.take_profit:.2f}"
+        f"stage 05 in {_CLOCK.elapsed_ms():.1f} ms  SL={proposal.stop_loss:.2f} TP={proposal.take_profit:.2f}"
     )
 
     # ------------------------------------------------------------------
     # 06 — Risk: RiskEngine sizing (1% not 10%, HARD_MAX_LOTS)
     # ------------------------------------------------------------------
     print("\n┌─ 06 · RISK ENGINE ─────────────────────────────────────────────")
-    t0 = time.monotonic()
     risk = RiskEngine(RiskConfig(risk_per_trade_pct=1.0))
     verdict = risk.evaluate_proposal(
         proposal=proposal,
@@ -604,13 +609,12 @@ def test_smoke_full_chain(tmp_path) -> None:
         is None
     )
     _ok(f"Risk OK — volume={verdict.volume} lots  (1% sizing, cap {HARD_MAX_LOTS})")
-    _info(f"stage 06 in {(time.monotonic() - t0) * 1000:.1f} ms")
+    _info(f"stage 06 in {_CLOCK.elapsed_ms():.1f} ms")
 
     # ------------------------------------------------------------------
     # 07 — Execution: OrderLifecycleManager paper dispatch
     # ------------------------------------------------------------------
     print("\n┌─ 07 · EXECUTION (OrderLifecycleManager, paper) ────────────────")
-    t0 = time.monotonic()
     db_path = os.path.join(str(tmp_path), "smoke_chain.db")
     audit = AuditRepository(db_url=f"sqlite:///{db_path}")
     paper = _PaperAdapter()
@@ -629,13 +633,12 @@ def test_smoke_full_chain(tmp_path) -> None:
     # adapter still reports 0 positions, but dispatch idempotency already proves
     # the duplicate guard — exposure test is covered in test_smoke_exposure_guard
     _ok("Execution OK — dispatched ticket stream, duplicate blocked, audit queued")
-    _info(f"stage 07 in {(time.monotonic() - t0) * 1000:.1f} ms  volume={verdict.volume}")
+    _info(f"stage 07 in {_CLOCK.elapsed_ms():.1f} ms  volume={verdict.volume}")
 
     # ------------------------------------------------------------------
     # 08 — Accounting: ledger + snapshots
     # ------------------------------------------------------------------
     print("\n┌─ 08 · ACCOUNTING / LEDGER ─────────────────────────────────────")
-    t0 = time.monotonic()
     # open ledger row (mirrors critical_suite heartbeat but with smoke ticket)
     now_iso = T0.isoformat()
     audit.log_ledger_opened(
@@ -686,13 +689,12 @@ def test_smoke_full_chain(tmp_path) -> None:
     finally:
         conn.close()
     _ok(f"Accounting OK — signals={sigs} executions={execs} ledger={ledgers} snapshots={snaps}")
-    _info(f"stage 08 in {(time.monotonic() - t0) * 1000:.1f} ms  ticket=9001001")
+    _info(f"stage 08 in {_CLOCK.elapsed_ms():.1f} ms  ticket=9001001")
 
     # ------------------------------------------------------------------
     # 09 — Web / API v1: envelope, pagination, health, X-Request-ID
     # ------------------------------------------------------------------
     print("\n┌─ 09 · WEB / API v1 ────────────────────────────────────────────")
-    t0 = time.monotonic()
     from fastapi.testclient import TestClient
 
     from nexus_scalp.web.api_v1_wiring import create_v1_app
@@ -745,15 +747,15 @@ def test_smoke_full_chain(tmp_path) -> None:
     assert r.status_code in (200, 404)  # "/" may redirect; just prove the app boots
     client.close()
     dash_client.close()
-    _info(f"stage 09 in {(time.monotonic() - t0) * 1000:.1f} ms  v1 routes verified")
+    _info(f"stage 09 in {_CLOCK.elapsed_ms():.1f} ms  v1 routes verified")
 
     # ------------------------------------------------------------------
     # 10 — Chain summary
     # ------------------------------------------------------------------
-    wall_ms = (time.monotonic() - t_wall0) * 1000
+    wall_ms = _CLOCK.elapsed_ms()
     audit.close()
     print("\n" + "─" * BANNER_W)
-    print(f"  ✅  SMOKE CHAIN PASSED — {wall_ms:.0f} ms wall")
+    print(f"  ✅  SMOKE CHAIN PASSED — {wall_ms:.0f} ms (instrumentation clock, deterministic)")
     print(
         f"      tick {tick.symbol} {tick.bid}/{tick.ask}  →  50D {len(tensor50)}  →  70D {len(vec70)}"
     )
@@ -982,7 +984,6 @@ def _make_ticks(classifier: MarketRegimeClassifier, n: int) -> list[TickData]:
 def test_smoke_regime_classifier() -> None:
     """STAGE 11 — Regime Guardian: classify_tick reachable, diagnostics real."""
     _banner("🌡️  STAGE 11 · REGIME CLASSIFIER (MarketRegimeClassifier)")
-    t0 = time.monotonic()
     clf = MarketRegimeClassifier(symbol="XAUUSD", rolling_seconds=300)
     ticks = _make_ticks(clf, 12)
     state = clf.classify_tick(ticks[-1])
@@ -997,13 +998,12 @@ def test_smoke_regime_classifier() -> None:
     _ok(
         f"Regime OK — {len(ticks)} ticks → {state.regime_type.value} p={state.regime_probability:.2f}"
     )
-    _info(f"stage 11 in {(time.monotonic() - t0) * 1000:.1f} ms  reason={state.reason.value}")
+    _info(f"stage 11 in {_CLOCK.elapsed_ms():.1f} ms  reason={state.reason.value}")
 
 
 def test_smoke_liquidity_real_10d(tmp_path) -> None:
     """STAGE 12 — real causal liquidity 10D via compute_liquidity_features."""
     _banner("💧 STAGE 12 · LIQUIDITY 10D (compute_liquidity_features, causal)")
-    t0 = time.monotonic()
     bars = _make_bars(70)
     decision_at = bars[-1].timestamp
     liq = compute_liquidity_features(
@@ -1024,13 +1024,12 @@ def test_smoke_liquidity_real_10d(tmp_path) -> None:
     v_past = liq_past.as_vector()
     assert len(v_past) == 10 and all(math.isfinite(x) and -3.0 <= x <= 3.0 for x in v_past)
     _ok(f"Liquidity 10D OK — causal, bounded, decision_at={decision_at.isoformat()}")
-    _info(f"stage 12 in {(time.monotonic() - t0) * 1000:.1f} ms  bsl={v[0]:.3f} ssl={v[1]:.3f}")
+    _info(f"stage 12 in {_CLOCK.elapsed_ms():.1f} ms  bsl={v[0]:.3f} ssl={v[1]:.3f}")
 
 
 def test_smoke_news_context_and_gate(tmp_path) -> None:
     """STAGE 13 — News: fresh DB → cache cold start → gate on proposal."""
     _banner("📰 STAGE 13 · NEWS CONTEXT + NEWS GATE (hermetic)")
-    t0 = time.monotonic()
     db_path = os.path.join(str(tmp_path), "smoke_news.db")
     news_db = NewsDatabase(db_path=db_path)
     cache = NewsContextCache(db=news_db)
@@ -1062,14 +1061,13 @@ def test_smoke_news_context_and_gate(tmp_path) -> None:
     assert v2.decision == NewsGateDecision.IGNORE
     assert v2.reason in ("NON_ENTRY_ACTION_NOT_GATED", "NEWS_UNAVAILABLE_OR_STALE")
     _ok(f"News OK — cold start honest (available=False), gate IGNORE ({verdict.reason})")
-    _info(f"stage 13 in {(time.monotonic() - t0) * 1000:.1f} ms  news_adjustment={adj}")
+    _info(f"stage 13 in {_CLOCK.elapsed_ms():.1f} ms  news_adjustment={adj}")
     news_db.close()
 
 
 def test_smoke_mslie_perception(tmp_path) -> None:
     """STAGE 14 — MSLIE: market structure perception over synthetic bars."""
     _banner("🧭 STAGE 14 · MSLIE (MarketStructureEngine)")
-    t0 = time.monotonic()
     bars = _make_bars(70)
     engine = MarketStructureEngine(symbol="XAUUSD", timeframe="M1")
     vec = engine.analyze_market(
@@ -1087,15 +1085,12 @@ def test_smoke_mslie_perception(tmp_path) -> None:
     _ok(
         f"MSLIE OK — structure={vec.structure} bias={int(vec.bias)} conf={vec.structure_confidence:.2f}"
     )
-    _info(
-        f"stage 14 in {(time.monotonic() - t0) * 1000:.1f} ms  engine_latency_ms={engine.last_latency_ms}"
-    )
+    _info(f"stage 14 in {_CLOCK.elapsed_ms():.1f} ms  engine_latency_ms={engine.last_latency_ms}")
 
 
 def test_smoke_rule_matrix(tmp_path) -> None:
     """STAGE 15 — RuleMatrixEngine over disposable AuditRepository."""
     _banner("📐 STAGE 15 · RULE MATRIX (30+ rule registry)")
-    t0 = time.monotonic()
     db_path = os.path.join(str(tmp_path), "smoke_rules.db")
     repo = AuditRepository(db_url=f"sqlite:///{db_path}")
     rm = RuleMatrixEngine(repo)
@@ -1113,13 +1108,12 @@ def test_smoke_rule_matrix(tmp_path) -> None:
     assert prop is None, "no rules enabled → no custom proposal"
     repo.close()
     _ok("RuleMatrix OK — registry strict, defaults disabled, eval path safe")
-    _info(f"stage 15 in {(time.monotonic() - t0) * 1000:.1f} ms")
+    _info(f"stage 15 in {_CLOCK.elapsed_ms():.1f} ms")
 
 
 def test_smoke_experience_intelligence(tmp_path) -> None:
     """STAGE 16 — Experience gate: fail-safe verdict, no order authority."""
     _banner("🧠 STAGE 16 · EXPERIENCE INTELLIGENCE (pre-trade gate)")
-    t0 = time.monotonic()
     db_path = os.path.join(str(tmp_path), "smoke_exp.db")
     repo = AuditRepository(db_url=f"sqlite:///{db_path}")
     ledger = ExperienceLedger(repo)
@@ -1159,13 +1153,12 @@ def test_smoke_experience_intelligence(tmp_path) -> None:
     _ok(
         f"Experience OK — {decision.action.value} qualifies={decision.qualifies_trade} (no order authority)"
     )
-    _info(f"stage 16 in {(time.monotonic() - t0) * 1000:.1f} ms  strategy={decision.strategy_id}")
+    _info(f"stage 16 in {_CLOCK.elapsed_ms():.1f} ms  strategy={decision.strategy_id}")
 
 
 def test_smoke_runtime_config_and_settings(tmp_path) -> None:
     """STAGE 17 — RuntimeConfigStore snapshot + SettingsDatabase roundtrip."""
     _banner("⚙️  STAGE 17 · RUNTIME CONFIG + SETTINGS DB")
-    t0 = time.monotonic()
     from nexus_scalp.configuration.runtime_config import RuntimeConfigStore
 
     cfg = AppConfig.load_from_yaml(REPO_ROOT / "configs" / "base.yaml")
@@ -1185,13 +1178,12 @@ def test_smoke_runtime_config_and_settings(tmp_path) -> None:
     assert health is not None
     sdb.close()
     _ok(f"RuntimeConfig OK — snapshot v{snap.version}; Settings OK — typed roundtrip 42")
-    _info(f"stage 17 in {(time.monotonic() - t0) * 1000:.1f} ms")
+    _info(f"stage 17 in {_CLOCK.elapsed_ms():.1f} ms")
 
 
 def test_smoke_incidents_store(tmp_path) -> None:
     """STAGE 18 — Incident store: schema, save, read-back, dedup fingerprint."""
     _banner("🚨 STAGE 18 · INCIDENT STORE (hermetic)")
-    t0 = time.monotonic()
     db_path = tmp_path / "smoke_incidents.db"
     store = IncidentStore(db_path=str(db_path))
     store.ensure_schema()
@@ -1214,13 +1206,12 @@ def test_smoke_incidents_store(tmp_path) -> None:
     store.delete_by_id(iid)
     assert store.get(iid) is None, "delete must remove incident"
     _ok(f"Incidents OK — save/read/count/delete verified (id={iid[:12]}…)")
-    _info(f"stage 18 in {(time.monotonic() - t0) * 1000:.1f} ms")
+    _info(f"stage 18 in {_CLOCK.elapsed_ms():.1f} ms")
 
 
 def test_smoke_observability_aggregator() -> None:
     """STAGE 19 — Observability contract: aggregate repeats, flush summary."""
     _banner("📊 STAGE 19 · OBSERVABILITY (EventBatchAggregator contract)")
-    t0 = time.monotonic()
     agg = EventBatchAggregator()
     lines: list[str] = []
     first = agg.add(event="SMOKE_TEST_EVENT", reason="synthetic", stage="stage19", recoverable=True)
@@ -1244,13 +1235,12 @@ def test_smoke_observability_aggregator() -> None:
     assert metrics["first_occurrences"] == 2
     assert metrics["dropped_events"] == 0, "protected evidence must never drop"
     _ok("Observability OK — 10 events → 2 signatures, flush produced summary, 0 dropped")
-    _info(f"stage 19 in {(time.monotonic() - t0) * 1000:.1f} ms")
+    _info(f"stage 19 in {_CLOCK.elapsed_ms():.1f} ms")
 
 
 def test_smoke_important_files_integrity() -> None:
     """STAGE 20 — whole-project file integrity: entrypoints, core modules, registries."""
     _banner("🗂️  STAGE 20 · IMPORTANT FILES INTEGRITY (whole project)")
-    t0 = time.monotonic()
     required = (
         "NexusTradingForexBot.py",
         "main.py",
@@ -1299,13 +1289,12 @@ def test_smoke_important_files_integrity() -> None:
     bugs_size = (REPO_ROOT / "agents" / "bugs.md").stat().st_size
     assert bugs_size > 10_000, f"agents/bugs.md suspiciously small ({bugs_size}B)"
     _ok(f"File integrity OK — {len(required)} important files present, entrypoints compile")
-    _info(f"stage 20 in {(time.monotonic() - t0) * 1000:.1f} ms  bugs.md={bugs_size // 1024}KB")
+    _info(f"stage 20 in {_CLOCK.elapsed_ms():.1f} ms  bugs.md={bugs_size // 1024}KB")
 
 
 def test_smoke_critical_suite_manifest_wiring() -> None:
     """STAGE 21 — the smoke chain itself must stay wired into the quality gate."""
     _banner("🔗 STAGE 21 · QUALITY-GATE WIRING (critical suite + CI)")
-    t0 = time.monotonic()
     crit = (REPO_ROOT / "tests" / "critical_suite.txt").read_text(encoding="utf-8")
     assert "tests/e2e/test_smoke_chain.py" in crit, "smoke chain must stay in critical_suite.txt"
     assert "tests/unit/test_smoke_self.py" in crit, (
@@ -1319,4 +1308,4 @@ def test_smoke_critical_suite_manifest_wiring() -> None:
     self_test = (REPO_ROOT / "tests" / "unit" / "test_smoke_self.py").read_text(encoding="utf-8")
     assert "critical_ids" in self_test, "self-test must guard registry completeness"
     _ok("Gate wiring OK — chain + self-tests in critical_suite, CI smoke jobs present")
-    _info(f"stage 21 in {(time.monotonic() - t0) * 1000:.1f} ms")
+    _info(f"stage 21 in {_CLOCK.elapsed_ms():.1f} ms")
