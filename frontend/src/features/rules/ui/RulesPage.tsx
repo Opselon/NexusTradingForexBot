@@ -13,6 +13,7 @@
 
 import { useMemo, useState } from "react";
 import { useUiStore } from "@/stores/uiStore";
+import { useI18n } from "@/stores/i18nStore";
 import { ConfirmModal, DataTable, EmptyState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { FieldRow, FreshnessCaption, NumberField, PollControl, QuerySection, ResultStrip, TextField, usePolling } from "@/features/config/ui/kit";
 import "@/features/config/ui/kit.css";
@@ -45,14 +46,34 @@ export default function RulesPage(props: ShellPageProps) {
   const query = useRulesQuery(poll.paused);
   const toggle = useToggleRule();
   const pushToast = useUiStore((s) => s.pushToast);
+  const t = useI18n((s) => s.t);
+
+  const statusLabels: Record<string, string> = {
+    all: t("rules.status_filter.all", "ALL"),
+    enabled: t("rules.status_filter.enabled", "ENABLED"),
+    disabled: t("rules.status_filter.disabled", "DISABLED"),
+  };
+  const sortLabel = (id: RuleSortKey) =>
+    id === "name"
+      ? t("rules.sort.name", "name")
+      : id === "category"
+        ? t("rules.sort.category", "category")
+        : t("rules.sort.status", "status");
 
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState<RuleStatusFilter>("all");
   const [sort, setSort] = useState<RuleSort>({ key: "category", dir: "asc" });
-  const [pending, setPending] = useState<{ rule: RuleVO; enable: boolean; parameters: Record<string, unknown> | null; label: string } | null>(null);
+  const [pending, setPending] = useState<{ rule: RuleVO; enable: boolean; parameters: Record<string, unknown> | null } | null>(null);
   const [result, setResult] = useState<RuleCommandOutcome | null>(null);
   const [editing, setEditing] = useState<{ rule: RuleVO; draft: Draft } | null>(null);
+  const pendingTitle = pending
+    ? pending.parameters
+      ? t("rules.confirm.save_title", "Save parameters for \"{name}\"", { name: pending.rule.name })
+      : pending.enable
+        ? t("rules.confirm.enable_title", "Enable rule \"{name}\"", { name: pending.rule.name })
+        : t("rules.confirm.disable_title", "Disable rule \"{name}\"", { name: pending.rule.name })
+    : "";
 
   const rows = useMemo(() => {
     const all = query.data ?? [];
@@ -98,7 +119,7 @@ export default function RulesPage(props: ShellPageProps) {
       return;
     }
     const parameters = paramPayload(rule, editing.draft);
-    setPending({ rule, enable: rule.enabled, parameters, label: `Save parameters for "${rule.name}"` });
+    setPending({ rule, enable: rule.enabled, parameters });
   };
 
   const SORT_KEYS: Array<{ id: RuleSortKey; label: string }> = [
@@ -110,23 +131,26 @@ export default function RulesPage(props: ShellPageProps) {
   return (
     <div className="l3-wrap">
       <div className="l3-head">
-        <h1>Rules</h1>
-        <span className="crumb">SAFETY &amp; GOVERNANCE</span>
-        <span className="desc">Trading rule matrix — enablement + thresholds (legacy tab-rules)</span>
+        <h1>{t("nav.feature.rules", "Rules")}</h1>
+        <span className="crumb">{t("ux.sidebar.features.safety", "Safety & governance")}</span>
+        <span className="desc">{t("rules.page.desc", "Trading rule matrix — enablement + thresholds (legacy tab-rules)")}</span>
       </div>
       <div className="l3-note">
-        Rules gate the live order path. Every change is confirmed, sent to <span className="inline-mono">/api/rules/toggle</span>,
-        and the table is re-read from the backend — the UI never assumes success. The rule cache is refreshed server-side
-        (rule_matrix) on accepted toggles.
+        {t("rules.note.before_route", "Rules gate the live order path. Every change is confirmed, sent to")}{" "}
+        <span className="inline-mono">/api/rules/toggle</span>
+        {t(
+          "rules.note.after_route",
+          ", and the table is re-read from the backend — the UI never assumes success. The rule cache is refreshed server-side (rule_matrix) on accepted toggles.",
+        )}
       </div>
 
       <QuerySection<RuleVO[]>
-        title="Rule matrix"
+        title={t("rules.panel.matrix", "Rule matrix")}
         accent
         query={query}
         skeletonRows={6}
-        emptyMessage="Backend returned zero rules (trading_rules_config empty or PostgreSQL provider)."
-        emptyHint="The rule store seeds with SQLite; on other providers the repository returns []. This is reported, not hidden."
+        emptyMessage={t("rules.empty.rules_zero", "Backend returned zero rules (trading_rules_config empty or PostgreSQL provider).")}
+        emptyHint={t("rules.empty.rules_zero_hint", "The rule store seeds with SQLite; on other providers the repository returns []. This is reported, not hidden.")}
         right={
           <>
             <FreshnessCaption fetchedAtMs={query.dataUpdatedAt || null} nowMs={props.nowMs} intervalMs={30_000} stale={poll.paused} />
@@ -137,23 +161,38 @@ export default function RulesPage(props: ShellPageProps) {
         {(all) => (
           <div>
             <div className="l3-rules-summary">
-              <MetricCard label="rules" value={counts.total} sub={`${all.length} rows from /api/rules`} />
-              <MetricCard label="enabled" value={counts.enabled} tone="pos" sub={`${counts.disabled} disabled`} />
-              <MetricCard label="categories" value={cats.length} sub={cats.slice(0, 3).join(" · ") || "—"} />
-              <MetricCard label="bad parameters" value={counts.broken} tone={counts.broken ? "neg" : "dim"} sub="stored JSON unparseable" />
+              <MetricCard label={t("rules.metric.rules", "rules")} value={counts.total} sub={t("rules.metric.rules_sub", "{n} rows from /api/rules", { n: all.length })} />
+              <MetricCard
+                label={t("rules.metric.enabled", "enabled")}
+                value={counts.enabled}
+                tone="pos"
+                sub={t("rules.metric.enabled_sub", "{n} disabled", { n: counts.disabled })}
+              />
+              <MetricCard label={t("rules.metric.categories", "categories")} value={cats.length} sub={cats.slice(0, 3).join(" · ") || "—"} />
+              <MetricCard
+                label={t("rules.metric.bad_params", "bad parameters")}
+                value={counts.broken}
+                tone={counts.broken ? "neg" : "dim"}
+                sub={t("rules.metric.bad_params_sub", "stored JSON unparseable")}
+              />
             </div>
 
             <div className="l3-toolbar">
               <input
                 className="input"
                 style={{ minWidth: 240 }}
-                placeholder="search rule / category / parameter…"
+                placeholder={t("rules.toolbar.search_ph", "search rule / category / parameter…")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                aria-label="Search rules"
+                aria-label={t("rules.toolbar.search_a11y", "Search rules")}
               />
-              <select className="select" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Filter by category">
-                <option value="all">ALL CATEGORIES</option>
+              <select
+                className="select"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                aria-label={t("rules.toolbar.category_a11y", "Filter by category")}
+              >
+                <option value="all">{t("rules.toolbar.all_categories", "ALL CATEGORIES")}</option>
                 {cats.map((c) => (
                   <option key={c} value={c}>
                     {c}
@@ -163,39 +202,42 @@ export default function RulesPage(props: ShellPageProps) {
               <span className="segmented" role="tablist">
                 {STATUS_OPTIONS.map((o) => (
                   <button key={o.id} role="tab" aria-selected={status === o.id} className={status === o.id ? "active" : ""} onClick={() => setStatus(o.id)}>
-                    {o.label}
+                    {statusLabels[o.id]}
                   </button>
                 ))}
               </span>
               <span className="l3-poll">
-                <span className="timestamp-note">sort</span>
+                <span className="timestamp-note">{t("rules.toolbar.sort", "sort")}</span>
                 {SORT_KEYS.map((k) => (
                   <button
                     key={k.id}
                     className={`btn small ghost ${sort.key === k.id ? "" : "l3-unsorted"}`}
                     onClick={() => toggleSort(k.id)}
-                    title={`sort by ${k.label}`}
+                    title={t("rules.toolbar.sort_by", "sort by {key}", { key: sortLabel(k.id) })}
                   >
-                    {k.label}
+                    {sortLabel(k.id)}
                     {sort.key === k.id ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}
                   </button>
                 ))}
               </span>
               <span className="timestamp-note">
-                {rows.length}/{all.length} shown
+                {t("rules.toolbar.shown", "{shown}/{total} shown", { shown: rows.length, total: all.length })}
               </span>
             </div>
 
             {rows.length === 0 ? (
-              <EmptyState message="No rules match the current filter." hint="Clear the search box or switch the category." />
+              <EmptyState
+                message={t("rules.empty.no_match", "No rules match the current filter.")}
+                hint={t("rules.empty.no_match_hint", "Clear the search box or switch the category.")}
+              />
             ) : (
               <DataTable
                 headers={[
-                  { label: "RULE" },
-                  { label: "CATEGORY" },
-                  { label: "STATUS" },
-                  { label: "PARAMETERS / THRESHOLDS" },
-                  { label: "ACTIONS" },
+                  { label: t("rules.th.rule", "RULE") },
+                  { label: t("rules.th.category", "CATEGORY") },
+                  { label: t("rules.th.status", "STATUS") },
+                  { label: t("rules.th.params", "PARAMETERS / THRESHOLDS") },
+                  { label: t("rules.th.actions", "ACTIONS") },
                 ]}
               >
                 {rows.map((rule) => (
@@ -203,13 +245,18 @@ export default function RulesPage(props: ShellPageProps) {
                     <td className="inline-mono" title={rule.name}>{rule.name}</td>
                     <td>{rule.category}</td>
                     <td>
-                      <StatusBadge status={rule.enabled ? "ACTIVE" : "STOPPED"} label={rule.enabled ? "enabled" : "disabled"} />
+                      <StatusBadge
+                        status={rule.enabled ? "ACTIVE" : "STOPPED"}
+                        label={rule.enabled ? t("rules.row.enabled", "enabled") : t("rules.row.disabled", "disabled")}
+                      />
                     </td>
                     <td>
                       {rule.paramsError ? (
-                        <span className="badge bad" title={rule.paramsError}>PARAMS PARSE ERROR</span>
+                        <span className="badge bad" title={rule.paramsError}>
+                          {t("rules.row.params_error", "PARAMS PARSE ERROR")}
+                        </span>
                       ) : rule.params.length === 0 ? (
-                        <span className="faint">no parameters</span>
+                        <span className="faint">{t("rules.row.no_params", "no parameters")}</span>
                       ) : (
                         <div className="l3-rule-params">
                           {rule.params.map((p) => (
@@ -223,14 +270,14 @@ export default function RulesPage(props: ShellPageProps) {
                     <td>
                       <div className="l3-row-actions">
                         <button className="btn small" onClick={() => openParams(rule)} disabled={rule.params.length === 0}>
-                          Edit…
+                          {t("rules.action.edit", "Edit…")}
                         </button>
                         <button
                           className={`btn small ${rule.enabled ? "danger" : "primary"}`}
-                          onClick={() => setPending({ rule, enable: !rule.enabled, parameters: null, label: `${rule.enabled ? "DISABLE" : "ENABLE"} rule "${rule.name}"` })}
+                          onClick={() => setPending({ rule, enable: !rule.enabled, parameters: null })}
                           disabled={toggle.isPending}
                         >
-                          {rule.enabled ? "Disable…" : "Enable…"}
+                          {rule.enabled ? t("rules.action.disable", "Disable…") : t("rules.action.enable", "Enable…")}
                         </button>
                       </div>
                     </td>
@@ -249,8 +296,10 @@ export default function RulesPage(props: ShellPageProps) {
             />
             {result && (
               <div className="tiny faint" style={{ marginTop: 4 }}>
-                {result.requestId ? `request_id: ${result.requestId} · ` : ""}
-                table state above is the fresh backend read{result.ok ? " (refetched after the accepted change)." : " (unchanged — the command was refused)."}
+                {result.requestId ? t("rules.result.request_id", "request_id: {id} · ", { id: result.requestId }) : ""}
+                {result.ok
+                  ? t("rules.result.ok", "table state above is the fresh backend read (refetched after the accepted change).")
+                  : t("rules.result.refused", "table state above is the fresh backend read (unchanged — the command was refused).")}
               </div>
             )}
             {query.isFetching && rows.length > 0 && <Skeleton count={1} height={10} />}
@@ -259,10 +308,14 @@ export default function RulesPage(props: ShellPageProps) {
       </QuerySection>
 
       {editing && (
-        <Panel title={`Parameters — ${editing.rule.name}`} accent right={<span className="timestamp-note">numeric parameters must be ≥ 0 · empty payload never sent</span>}>
+        <Panel
+          title={t("rules.params.title", "Parameters — {name}", { name: editing.rule.name })}
+          accent
+          right={<span className="timestamp-note">{t("rules.params.hint", "numeric parameters must be ≥ 0 · empty payload never sent")}</span>}
+        >
           <div className="l3-form" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", display: "grid" }}>
             {editing.rule.params.map((p) => (
-              <FieldRow key={p.key} label={p.key} hint={p.kind === "number" && p.threshold ? "threshold" : p.kind}>
+              <FieldRow key={p.key} label={p.key} hint={p.kind === "number" && p.threshold ? t("rules.params.threshold", "threshold") : p.kind}>
                 {p.kind === "number" ? (
                   <NumberField
                     value={editing.draft[p.key] ?? ""}
@@ -279,9 +332,11 @@ export default function RulesPage(props: ShellPageProps) {
             ))}
           </div>
           <div className="l3-toolbar" style={{ marginTop: 10, justifyContent: "flex-end" }}>
-            <button className="btn" onClick={() => setEditing(null)}>Cancel</button>
+            <button className="btn" onClick={() => setEditing(null)}>
+              {t("rules.action.cancel", "Cancel")}
+            </button>
             <button className="btn primary" onClick={saveParams} disabled={toggle.isPending}>
-              Save parameters…
+              {t("rules.action.save", "Save parameters…")}
             </button>
           </div>
         </Panel>
@@ -289,9 +344,9 @@ export default function RulesPage(props: ShellPageProps) {
 
       {pending && (
         <ConfirmModal
-          title={pending.label}
+          title={pendingTitle}
           danger={pending.enable === false}
-          confirmLabel={pending.enable ? "Enable rule" : "Disable rule"}
+          confirmLabel={pending.enable ? t("rules.confirm.enable_label", "Enable rule") : t("rules.confirm.disable_label", "Disable rule")}
           busy={toggle.isPending}
           onCancel={() => setPending(null)}
           onConfirm={() => void runCommand()}
@@ -299,9 +354,15 @@ export default function RulesPage(props: ShellPageProps) {
           <div className="confirm-box">
             <div className="note">
               {pending.enable
-                ? "Enabling this rule re-opens a gate on the live decision path. The backend stores the change and force-refreshes the rule matrix."
-                : `Disabling "${pending.rule.name}" removes its protection from every subsequent evaluation. Category: ${pending.rule.category}.`}
-              {pending.parameters ? " The edited parameter set will be persisted with the enable flag." : ""}
+                ? t(
+                    "rules.confirm.enable_body",
+                    "Enabling this rule re-opens a gate on the live decision path. The backend stores the change and force-refreshes the rule matrix.",
+                  )
+                : t("rules.confirm.disable_body", "Disabling \"{name}\" removes its protection from every subsequent evaluation. Category: {category}.", {
+                    name: pending.rule.name,
+                    category: pending.rule.category,
+                  })}
+              {pending.parameters ? t("rules.confirm.params_note", " The edited parameter set will be persisted with the enable flag.") : ""}
             </div>
             <div className="row">
               <span className="inline-mono">{pending.rule.name}</span>

@@ -1,15 +1,69 @@
-/**
- * i18n messages — scope: features/rules
- * OWNER: lane for this scope (see CONTRACT.md) (i18n wave). DATA-ONLY file: no logic, only the type import.
- *
- * Format (enforced by tests/js/frontend_i18n_parity.test.js):
- *   "<key>": { fa: "...", de: "...", es: "...", ar: "..." },
- * - Key namespace: "rules.<area>.<name>" (lowercase, dot-separated).
- * - en is identity: the English source string lives at the call site —
- *   t("rules.x.y", "English source") — do NOT add `en` entries here.
- * - Registered centrally by src/lib/i18nMessages.ts (pre-wired; never edit
- *   that file). Components never import this file; they call t() instead.
- */
+/** i18n messages — scope: features/rules (i18n wave). DATA-ONLY file. */
 import type { FeatureMessages } from "@/lib/i18n";
 
-export const MESSAGES: FeatureMessages = {};
+export const MESSAGES: FeatureMessages = {
+  "rules.action.cancel": { fa: "انصراف", de: "Abbrechen", es: "Cancelar", ar: "إلغاء" },
+  "rules.action.disable": { fa: "غیرفعال‌سازی…", de: "Deaktivieren…", es: "Desactivar…", ar: "تعطيل…" },
+  "rules.action.edit": { fa: "ویرایش…", de: "Bearbeiten…", es: "Editar…", ar: "تحرير…" },
+  "rules.action.enable": { fa: "فعال‌سازی…", de: "Aktivieren…", es: "Activar…", ar: "تفعيل…" },
+  "rules.action.save": { fa: "ذخیره پارامترها…", de: "Parameter speichern…", es: "Guardar parámetros…", ar: "حفظ المعاملات…" },
+  "rules.confirm.disable_body": { fa: "غیرفعال‌سازی «{name}» محافظتش را از هر ارزیابی بعدی برمی‌دارد. دسته: {category}.", de: "Das Deaktivieren von \"{name}\" entfernt seinen Schutz aus jeder folgenden Bewertung. Kategorie: {category}.", es: "Desactivar \"{name}\" elimina su protección de cada evaluación posterior. Categoría: {category}.", ar: "يعطّل \"{name}\" حمايته من كل تقييم لاحق. الفئة: {category}." },
+  "rules.confirm.disable_label": { fa: "غیرفعال‌سازی قانون", de: "Regel deaktivieren", es: "Desactivar regla", ar: "تعطيل القاعدة" },
+  "rules.confirm.disable_title": { fa: "غیرفعال‌سازی قانون «{name}»", de: "Regel \"{name}\" deaktivieren", es: "Desactivar la regla \"{name}\"", ar: "تعطيل القاعدة \"{name}\"" },
+  "rules.confirm.enable_body": { fa: "فعال‌سازی این قانون دروازه‌ای را در مسیر تصمیم زنده دوباره باز می‌کند. بک‌اند تغییر را ذخیره و ماتریس قوانین را بازخوانی می‌کند.", de: "Diese Regel zu aktivieren öffnet wieder ein Gate auf dem Live-Entscheidungspfad. Das Backend speichert die Änderung und lädt die Regelmatrix neu.", es: "Activar esta regla reabre una compuerta en la ruta de decisión en vivo. El backend guarda el cambio y fuerza la recarga de la matriz de reglas.", ar: "تفعيل هذه القاعدة يعيد فتح بوابة في مسار القرار الحي. يخزّن الخادم التغيير ويُعيد تحميل مصفوفة القواعد." },
+  "rules.confirm.enable_label": { fa: "فعال‌سازی قانون", de: "Regel aktivieren", es: "Activar regla", ar: "تفعيل القاعدة" },
+  "rules.confirm.enable_title": { fa: "فعال‌سازی قانون «{name}»", de: "Regel \"{name}\" aktivieren", es: "Activar la regla \"{name}\"", ar: "تفعيل القاعدة \"{name}\"" },
+  "rules.confirm.params_note": { fa: " مجموعه پارامترهای ویرایش‌شده همراه با پرچم فعال‌سازی ذخیره می‌شود.", de: " Der bearbeitete Parametersatz wird mit dem Aktivierungsflag gespeichert.", es: " El conjunto de parámetros editado se guardará junto con el indicador de activación.", ar: " ستُحفظ مجموعة المعاملات المعدَّلة مع علامة التفعيل." },
+  "rules.confirm.save_title": { fa: "ذخیره پارامترهای «{name}»", de: "Parameter für \"{name}\" speichern", es: "Guardar parámetros de \"{name}\"", ar: "حفظ معاملات \"{name}\"" },
+  "rules.empty.no_match": { fa: "هیچ قانونی با فیلتر فعلی منطبق نیست.", de: "Keine Regel passt zum aktuellen Filter.", es: "ninguna regla coincide con el filtro actual.", ar: "لا توجد قاعدة مطابقة لعامل الترشيح الحالي." },
+  "rules.empty.no_match_hint": { fa: "کادر جست‌وجو را پاک کنید یا دسته را عوض کنید.", de: "Suchfeld leeren oder Kategorie wechseln.", es: "borra el cuadro de búsqueda o cambia la categoría.", ar: "امسح مربع البحث أو بدّل الفئة." },
+  "rules.empty.rules_zero": { fa: "بک‌اند صفر قانون برگرداند (trading_rules_config خالی یا ارائه‌دهنده PostgreSQL).", de: "Das Backend gab null Regeln zurück (trading_rules_config leer oder PostgreSQL-Provider).", es: "el backend devolvió cero reglas (trading_rules_config vacío o proveedor PostgreSQL).", ar: "أعاد الخادم صفر قاعدة (trading_rules_config فارغ أو مزوّد PostgreSQL)." },
+  "rules.empty.rules_zero_hint": { fa: "انبار قوانین با SQLite آغاز می‌شود؛ در ارائه‌دهنده‌های دیگر مخزن [] برمی‌گرداند. این گزارش می‌شود، نه پنهان.", de: "Die Regelbasis startet mit SQLite; bei anderen Providern gibt das Repository []. Dies wird berichtet, nicht verborgen.", es: "el almacén de reglas se inicializa con SQLite; en otros proveedores el repositorio devuelve []. Esto se informa, no se oculta.", ar: "يبدأ مخزن القواعد بـ SQLite؛ وعند المزوّدين الآخرين يعيد المستودع []. يُبلَّغ عن ذلك ولا يُخفى." },
+  "rules.metric.bad_params": { fa: "پارامترهای خراب", de: "fehlerhafte Parameter", es: "parámetros erróneos", ar: "معاملات تالفة" },
+  "rules.metric.bad_params_sub": { fa: "JSON ذخیره‌شده قابل پردازش نیست", de: "gespeichertes JSON nicht parsebar", es: "JSON almacenado no analizable", ar: "‏JSON المخزن غير قابل للتحليل" },
+  "rules.metric.categories": { fa: "دسته‌ها", de: "Kategorien", es: "categorías", ar: "الفئات" },
+  "rules.metric.enabled": { fa: "فعال", de: "aktiviert", es: "activadas", ar: "مفعّلة" },
+  "rules.metric.enabled_sub": { fa: "{n} غیرفعال", de: "{n} deaktiviert", es: "{n} desactivadas", ar: "{n} معطّلة" },
+  "rules.metric.rules": { fa: "قوانین", de: "Regeln", es: "reglas", ar: "القواعد" },
+  "rules.metric.rules_sub": { fa: "{n} ردیف از /api/rules", de: "{n} Zeilen aus /api/rules", es: "{n} filas de /api/rules", ar: "{n} سطر من /api/rules" },
+  "rules.model.not_object": { fa: "پارامترهای ذخیره‌شده شیء JSON نیستند", de: "gespeicherte Parameter sind kein JSON-Objekt", es: "los parámetros almacenados no son un objeto JSON", ar: "المعاملات المخزنة ليست كائن JSON" },
+  "rules.model.uncategorized": { fa: "بدون دسته", de: "OHNE KATEGORIE", es: "SIN CATEGORÍA", ar: "بدون فئة" },
+  "rules.model.unparseable": { fa: "JSON قابل تجزیه نیست", de: "JSON nicht parsebar", es: "JSON no analizable", ar: "JSON غير قابل للتحليل" },
+  "rules.note.after_route": { fa: "، و جدول دوباره از بک‌اند خوانده می‌شود — رابط کاربری هرگز موفقیت را فرض نمی‌کند. کش قوانین در سمت سرور (rule_matrix) هنگام پذیرش تغییرات بازخوانی می‌شود.", de: ", und die Tabelle wird vom Backend neu gelesen — die UI unterstellt nie Erfolg. Der Regel-Cache wird serverseitig (rule_matrix) bei akzeptierten Toggles aktualisiert.", es: ", y la tabla se relee desde el backend: la interfaz nunca asume éxito. La caché de reglas se refresca en el servidor (rule_matrix) con los toggles aceptados.", ar: "، وتُعاد قراءة الجدول من الخادم — الواجهة لا تفترض النجاح. يُحدَّث ذاكرة القواعد على الخادم (rule_matrix) عند التبديلات المقبولة." },
+  "rules.note.before_route": { fa: "قوانین مسیر سفارش زنده را دروازه‌بانی می‌کنند. هر تغییر تأیید می‌شود و به", de: "Regeln steuern den Live-Orderpfad. Jede Änderung wird bestätigt und an", es: "Las reglas controlan la ruta de órdenes en vivo. Cada cambio se confirma y se envía a", ar: "تقيّد القواعد مسار الأوامر الحي. يُؤكَّد كل تغيير ويرسل إلى" },
+  "rules.outcome.disabled": { fa: "قانون «{name}» غیرفعال شد — توسط بک‌اند تأیید شد.", de: "Regel \"{name}\" DEAKTIVIERT — vom Backend bestätigt.", es: "Regla \"{name}\" DESACTIVADA: confirmada por el backend.", ar: "القاعدة \"{name}\" معطَّلة — أكدتها الخادم." },
+  "rules.outcome.enabled": { fa: "قانون «{name}» فعال شد — توسط بک‌اند تأیید شد.", de: "Regel \"{name}\" AKTIVIERT — vom Backend bestätigt.", es: "Regla \"{name}\" ACTIVADA: confirmada por el backend.", ar: "القاعدة \"{name}\" مُفعَّلة — أكدتها الخادم." },
+  "rules.outcome.failed": { fa: "دستور قانون ناموفق بود.", de: "Regelbefehl fehlgeschlagen.", es: "falló el comando de la regla.", ar: "فشل أمر القاعدة." },
+  "rules.outcome.refused": { fa: "بک‌اند تغییر قانون را رد کرد.", de: "Das Backend hat die Regeländerung abgelehnt.", es: "el backend rechazó el cambio de regla.", ar: "رفض الخادم تغيير القاعدة." },
+  "rules.page.desc": { fa: "ماتریس قوانین معاملاتی — فعال‌سازی + آستانه‌ها (tab-rules قدیمی)", de: "Handelsregel-Matrix · Aktivierung + Schwellenwerte (Legacy tab-rules)", es: "matriz de reglas de trading: activación + umbrales (tab-legado)", ar: "مصفوفة قواعد التداول: التفعيل + العتبات (tab-rules القديم)" },
+  "rules.panel.matrix": { fa: "ماتریس قوانین", de: "Regelmatrix", es: "matriz de reglas", ar: "مصفوفة القواعد" },
+  "rules.params.hint": { fa: "پارامترهای عددی باید ≥ 0 باشند · محتوای خالی هرگز ارسال نمی‌شود", de: "numerische Parameter müssen ≥ 0 sein · leere Nutzlast wird nie gesendet", es: "los parámetros numéricos deben ser ≥ 0 · nunca se envía una carga vacía", ar: "يجب أن تكون المعاملات الرقمية ≥ 0 · لا تُرسل حمولة فارغة أبدًا" },
+  "rules.params.threshold": { fa: "آستانه", de: "Schwellenwert", es: "umbral", ar: "عتبة" },
+  "rules.params.title": { fa: "پارامترها — {name}", de: "Parameter — {name}", es: "Parámetros — {name}", ar: "المعاملات — {name}" },
+  "rules.query.no_rows": { fa: "بک‌اند هیچ ردیف قانونی برنگرداند.", de: "Das Backend gab keine Regelzeilen zurück.", es: "el backend no devolvió filas de reglas.", ar: "لم يُعِد الخادم أي سطر قواعد." },
+  "rules.result.ok": { fa: "جدول بالا بازخوانی تازه از بک‌اند است (پس از تغییر پذیرفته‌شده بازخوانی شد).", de: "Die Tabelle oben ist die frische Backend-Lesung (nach der akzeptierten Änderung neu geladen).", es: "la tabla de arriba es la lectura fresca del backend (recargada tras el cambio aceptado).", ar: "الجدول أعلاه قراءة حديثة من الخادم (أُعيد التحميل بعد التغيير المقبول)." },
+  "rules.result.refused": { fa: "جدول بالا بازخوانی تازه از بک‌اند است (بدون تغییر — دستور رد شد).", de: "Die Tabelle oben ist die frische Backend-Lesung (unverändert — der Befehl wurde abgelehnt).", es: "la tabla de arriba es la lectura fresca del backend (sin cambios: el comando fue rechazado).", ar: "الجدول أعلاه قراءة حديثة من الخادم (دون تغيير — رُفض الأمر)." },
+  "rules.result.request_id": { fa: "شناسه درخواست: {id} · ", de: "Anfrage-ID: {id} · ", es: "id de solicitud: {id} · ", ar: "معرّف الطلب: {id} · " },
+  "rules.row.disabled": { fa: "غیرفعال", de: "deaktiviert", es: "desactivada", ar: "معطّلة" },
+  "rules.row.enabled": { fa: "فعال", de: "aktiviert", es: "activada", ar: "مفعّلة" },
+  "rules.row.no_params": { fa: "بدون پارامتر", de: "keine Parameter", es: "sin parámetros", ar: "لا معاملات" },
+  "rules.row.params_error": { fa: "خطای تجزیه پارامترها", de: "PARAMETER-PARSE-FEHLER", es: "ERROR DE ANÁLISIS DE PARÁMETROS", ar: "خطأ تحليل المعاملات" },
+  "rules.sort.category": { fa: "دسته", de: "Kategorie", es: "categoría", ar: "الفئة" },
+  "rules.sort.name": { fa: "نام", de: "Name", es: "nombre", ar: "الاسم" },
+  "rules.sort.status": { fa: "وضعیت", de: "Status", es: "estado", ar: "الحالة" },
+  "rules.status_filter.all": { fa: "همه", de: "ALLE", es: "TODOS", ar: "الكل" },
+  "rules.status_filter.disabled": { fa: "غیرفعال", de: "DEAKTIVIERT", es: "DESACTIVADAS", ar: "معطّلة" },
+  "rules.status_filter.enabled": { fa: "فعال", de: "AKTIVIERT", es: "ACTIVADAS", ar: "مفعّلة" },
+  "rules.th.actions": { fa: "اقدامات", de: "AKTIONEN", es: "ACCIONES", ar: "الإجراءات" },
+  "rules.th.category": { fa: "دسته", de: "KATEGORIE", es: "CATEGORÍA", ar: "الفئة" },
+  "rules.th.params": { fa: "پارامترها / آستانه‌ها", de: "PARAMETER / SCHWELLENWERTE", es: "PARÁMETROS / UMBRALES", ar: "المعاملات / العتبات" },
+  "rules.th.rule": { fa: "قانون", de: "REGEL", es: "REGLA", ar: "القاعدة" },
+  "rules.th.status": { fa: "وضعیت", de: "STATUS", es: "ESTADO", ar: "الحالة" },
+  "rules.toolbar.all_categories": { fa: "همه دسته‌ها", de: "ALLE KATEGORIEN", es: "TODAS LAS CATEGORÍAS", ar: "كل الفئات" },
+  "rules.toolbar.category_a11y": { fa: "بر اساس دسته فیلتر کنید", de: "nach Kategorie filtern", es: "filtrar por categoría", ar: "ترشيح حسب الفئة" },
+  "rules.toolbar.search_a11y": { fa: "جست‌وجوی قوانین", de: "Regeln durchsuchen", es: "buscar reglas", ar: "البحث في القواعد" },
+  "rules.toolbar.search_ph": { fa: "جست‌وجوی قانون / دسته / پارامتر…", de: "Regel / Kategorie / Parameter suchen…", es: "buscar regla / categoría / parámetro…", ar: "ابحث عن قاعدة / فئة / معامل…" },
+  "rules.toolbar.shown": { fa: "{shown}/{total} نمایش داده شده", de: "{shown}/{total} angezeigt", es: "{shown}/{total} mostrados", ar: "{shown}/{total} معروض" },
+  "rules.toolbar.sort": { fa: "مرتب‌سازی", de: "sortieren", es: "ordenar", ar: "ترتيب" },
+  "rules.toolbar.sort_by": { fa: "مرتب‌سازی بر اساس {key}", de: "sortieren nach {key}", es: "ordenar por {key}", ar: "ترتيب حسب {key}" },
+};

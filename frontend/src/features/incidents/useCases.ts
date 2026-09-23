@@ -7,6 +7,7 @@
  * envelope; `available:false` renders the backend reason verbatim.
  */
 
+import { useI18n } from "@/stores/i18nStore";
 import { incidentsApi, type IncidentFilters } from "./api";
 import { commandVerdict, toIncidentVo, type DiagnosticsReconcileDto, type IncidentDto } from "./model";
 
@@ -28,9 +29,14 @@ export const incidentsUseCases = {
   reconcileVerdict: (res: DiagnosticsReconcileDto): { ok: boolean; message: string } => {
     const v = commandVerdict(res);
     if (!v.ok) return v;
+    // Lazy store read: verdict copy resolves in the active language at call time.
+    const t = useI18n.getState().t;
     return {
       ok: true,
-      message: `forensic audit complete — discovered ${String(res.incidents_discovered ?? 0)}, reconciled ${String(res.incidents_reconciled ?? 0)}`,
+      message: t("incidents.reconcile.result", "forensic audit complete — discovered {discovered}, reconciled {reconciled}", {
+        discovered: String(res.incidents_discovered ?? 0),
+        reconciled: String(res.incidents_reconciled ?? 0),
+      }),
     };
   },
 };
