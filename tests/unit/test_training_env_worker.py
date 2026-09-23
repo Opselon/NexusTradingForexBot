@@ -208,14 +208,21 @@ time.sleep(60)
     monkeypatch.setattr(dispatch, "worker_script", lambda: fixture)
     monkeypatch.setattr(dispatch, "CANCEL_GRACE_SECONDS", 0.05)
     cancel = threading.Event()
-    started = time.monotonic()
-    out = dispatch.run_training_worker(
-        pipeline.TrainingRequest(tmp_path / "x", cancel_event=cancel),
-        training_env.EnvironmentReport(training_ready=True, environment={"python": sys.executable}),
-        lambda e: cancel.set(),
-    )
+    # CPU-time bound (ML-QA-004): the cancellation grace is 0.05 s real time,
+    # so a cancelled run consumes milliseconds of CPU regardless of scheduler
+    # load. A wall-clock bound here previously tripped on co-tenant runners.
+    from tests.e2e.chain_clock import budget_cpu_ms
+
+    with budget_cpu_ms(5000.0) as sw:
+        out = dispatch.run_training_worker(
+            pipeline.TrainingRequest(tmp_path / "x", cancel_event=cancel),
+            training_env.EnvironmentReport(
+                training_ready=True, environment={"python": sys.executable}
+            ),
+            lambda e: cancel.set(),
+        )
     assert out["outcome"] == "CANCELLED"
-    assert time.monotonic() - started < 5
+    assert sw.consumed_ms < 5000.0
 
 
 @pytest.mark.parametrize(
