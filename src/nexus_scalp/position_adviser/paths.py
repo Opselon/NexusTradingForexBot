@@ -141,10 +141,29 @@ def sanitize_name(raw: str | None, *, fallback: str) -> str:
     return m.group(0) if m is not None else fallback
 
 
+def resolve_within_trusted_roots(raw: str | Path, roots: list[Path], *, label: str) -> Path | None:
+    """Canonicalize ``raw`` and return it only when inside one of ``roots``.
+
+    This is the containment sanitizer: ``Path.resolve`` follows symlinks and
+    normalizes ``..``, so the returned value is a real, absolute path that
+    cannot name anything outside its root via traversal or a symlink escape.
+    Returns ``None`` when the resolved path is outside every root (fail-closed)
+    or cannot be resolved at all.
+    """
+    try:
+        resolved = Path(raw).expanduser().resolve()
+    except (OSError, ValueError):
+        return None
+    if any(resolved.is_relative_to(root.resolve()) for root in roots):
+        return resolved
+    return None
+
+
 __all__ = [
     "ADVISER_ROOT",
     "AdviserPathError",
     "resolve_under_root",
+    "resolve_within_trusted_roots",
     "sanitize_name",
     "sanitize_rel_path",
     "sanitize_repo_relative",

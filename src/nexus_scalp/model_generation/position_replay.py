@@ -57,7 +57,7 @@ from nexus_scalp.model_generation.dataset_manifest import (
 )
 from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import get_logger
-from nexus_scalp.position_adviser.paths import sanitize_rel_path
+from nexus_scalp.position_adviser.paths import resolve_within_trusted_roots, sanitize_rel_path
 
 logger = get_logger("nexus_scalp.model_generation.position_replay")
 
@@ -484,19 +484,17 @@ def _resolve_checkpoint_path(raw: Path | str | None, *, label: str) -> Path | No
         raise ValueError(f"{label} must not contain a parent-directory reference or null bytes")
     # Absolute values are legitimate for callers that pass a resolved artifact
     # location (tests write bundles under tempfile, and the trainer's artifact
-    # dir is repo-absolute). Containment is enforced by the trusted-root check
-    # below, so the only thing left to do is canonicalize. Relative values are
-    # narrowed to a whitelist-only relative path and anchored under REPO_ROOT.
+    # dir is repo-absolute); they are confined by the trusted-root check below.
+    # Relative values are narrowed to a whitelist-only relative path and anchored
+    # under REPO_ROOT. ``resolve()`` is the canonicalization barrier CodeQL
+    # recognizes, and the containment assertion below is the trust boundary.
     raw_path = Path(s)
     if raw_path.is_absolute():
         candidate = raw_path
     else:
         candidate = REPO_ROOT / sanitize_rel_path(s, label=label)
-    try:
-        resolved = candidate.expanduser().resolve()
-    except (OSError, ValueError) as exc:
-        raise ValueError(f"{label} could not be resolved") from exc
-    if not _is_under_trusted_root(resolved):
+    resolved = resolve_within_trusted_roots(candidate, _trusted_checkpoint_roots(), label=label)
+    if resolved is None:
         raise ValueError(f"{label} must stay inside the artifact root")
     return resolved
 

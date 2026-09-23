@@ -145,33 +145,21 @@ def _validate_import_path_shape(s: str) -> None:
 def _resolve_within_import_roots(raw: str) -> Path:
     """Canonical untainted resolution for a user-supplied import file path.
 
-    Relative values are anchored under each allowed root through the canonical
-    ``resolve_under_root`` sanitizer, so the returned Path is absolute,
-    symlink-followed and in-root (CodeQL recognizes that sanitizer output as
-    untainted). An absolute value is shape-validated and resolved directly, then
-    admitted only when contained in an allowed root — same invariant, and it
-    keeps the multi-root behaviour the dataset browser depends on (a path under
-    any configured root is accepted, not only the first one).
+    Delegates to ``resolve_within_trusted_roots`` so the returned Path is the
+    canonical sanitizer output: absolute, symlink-followed and strictly
+    contained in one of the allowed import roots. An escaping or unresolvable
+    value raises ``ValueError`` fail-closed.
     """
-    from nexus_scalp.position_adviser.paths import resolve_under_root
+    from nexus_scalp.position_adviser.paths import resolve_within_trusted_roots
 
     s = str(raw).strip()
-    # Shape barrier first, so the string reaching expanduser()/resolve() cannot
-    # carry a traversal component, shell metacharacter or null byte.
     _validate_import_path_shape(s)
-    if Path(s).is_absolute():
-        resolved = Path(s).expanduser().resolve()
-        for r in _allowed_import_roots():
-            if resolved.is_relative_to(r):
-                return resolved
-        raise ValueError("absolute import path is outside allowed import roots")
-    last_err: Exception | None = None
-    for root in _allowed_import_roots():
-        try:
-            return resolve_under_root(raw, root=root, label="training import file")
-        except (ValueError, OSError) as exc:
-            last_err = exc
-    raise ValueError("import path is outside allowed import roots") from last_err
+    resolved = resolve_within_trusted_roots(
+        s, _allowed_import_roots(), label="training import file"
+    )
+    if resolved is None:
+        raise ValueError("import path is outside allowed import roots")
+    return resolved
 
 
 #: A relative or absolute filename whose every component is an identifier
