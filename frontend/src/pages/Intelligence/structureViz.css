@@ -10,3 +10,207 @@
  * EXTEND:   new structure visuals = new `.ixviz-*` rules here.
  */
 
+/* ------------------------------ shared shell ------------------------------ */
+
+.ixviz {
+  display: grid;
+  gap: 8px;
+}
+
+/* honest empty note — an empty payload array is reported, never charted */
+.ixviz-empty {
+  margin: 0;
+  padding: 13px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-inset);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* tone chip — the TEXT is always the verbatim backend word; the class only
+   restates it (good/warn/bad/neutral/unknown from the word whitelist) */
+.ixviz-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+  white-space: nowrap;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ixviz-chip.is-good {
+  background: var(--green-dim);
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 45%, transparent);
+}
+.ixviz-chip.is-warn {
+  background: var(--amber-dim);
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+}
+.ixviz-chip.is-bad {
+  background: var(--red-dim);
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
+}
+.ixviz-chip.is-neutral {
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+  border-color: var(--border-strong);
+}
+.ixviz-chip.is-unknown {
+  background: var(--bg-panel-2);
+  color: var(--text-faint);
+  border-color: var(--border);
+}
+
+/* small mono meta text (source / confirmed_at / captions) */
+.ixviz-meta {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* scale provenance footer — cites the payload min/max the positions use */
+.ixviz-scale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding-block-start: 6px;
+  border-block-start: 1px dashed var(--border);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.ixviz-scale b {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------ price ladder ------------------------------ */
+
+.ixviz-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.ixviz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border-block-end: 1px solid var(--border);
+  font-size: 12px;
+  animation: ixvizIn 0.25s ease-out both;
+}
+.ixviz-row:last-child {
+  border-block-end: 0;
+}
+.ixviz-row:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+/* raw price text — fixed column so live values never jitter the rail */
+.ixviz-price {
+  flex: 0 0 auto;
+  inline-size: 92px;
+  text-align: end;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* the rail the marker rides: hairline track across the row */
+.ixviz-rail {
+  position: relative;
+  flex: 1 1 120px;
+  min-inline-size: 80px;
+  block-size: 16px;
+}
+.ixviz-rail::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--border-strong) 10%,
+    var(--border-strong) 90%,
+    transparent
+  );
+}
+
+/* marker dot — inline-start offset comes from the payload min/max scale */
+.ixviz-dot {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: var(--glow-blue);
+}
+.ixviz-dot.is-good {
+  background: var(--green);
+  box-shadow: var(--glow-green);
+}
+.ixviz-dot.is-bad {
+  background: var(--red);
+  box-shadow: var(--glow-red);
+}
+.ixviz-dot.is-warn {
+  background: var(--amber);
+  box-shadow: var(--glow-amber);
+}
+.ixviz-dot.is-neutral,
+.ixviz-dot.is-unknown {
+  background: var(--text-dim);
+  box-shadow: none;
+}
+
+@keyframes ixvizIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ixviz-row,
+  .ixviz-band-row,
+  .ixviz-ev {
+    animation: none;
+  }
+  .ixviz-seg {
+    transition: none;
+  }
+}
