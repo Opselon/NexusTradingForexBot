@@ -155,8 +155,8 @@ export function NewsProConsolePanel() {
       right={
         <>
           <span className={`news-pro-badge ${autoOn ? "on" : ""}`} title="auto-analysis toggle (backend /api/news/auto-analysis) + LLM routing">{badge}</span>
-          <button className="btn small" onClick={() => { void log.pollNow(); void status.refetch(); void answers.refetch(); }}>
-            Refresh
+          <button className="btn small" onClick={() => { void log.pollNow(); void status.refetch(); void answers.refetch(); }} disabled={status.isFetching || answers.isFetching}>
+            {status.isFetching || answers.isFetching ? "refreshing…" : "Refresh"}
           </button>
           <button className="btn small primary" onClick={() => setConfirm("analyze-all")} disabled={busy}>
             {analyzeAll.isPending ? "draining…" : "Analyze ALL"}
@@ -168,7 +168,7 @@ export function NewsProConsolePanel() {
             {prune.isPending ? "pruning…" : "Auto-prune"}
           </button>
           <button className="btn small" onClick={() => setConfirm("purge-soft")} disabled={busy}>
-            Purge junk (count)
+            {purge.isPending ? "purging…" : "Purge junk (count)"}
           </button>
           <button className="btn small danger" onClick={() => setConfirm("purge-hard")} disabled={busy}>
             {purge.isPending ? "purging…" : "Hard purge"}

@@ -1,0 +1,364 @@
+/**
+ * Health feature styles — modern operator UI for the subsystem health matrix.
+ *
+ * PURPOSE
+ *   Presentation layer for the health page: operator hero (kicker row, visible
+ *   <h1>, one-line description, provenance/status side restating backend state
+ *   the page already fetches), section grouping labels with endpoint
+ *   provenance, and polish for the matrix cells / metric cards / toolbar. This
+ *   is a VIEW-LAYER pass only: every query, refetchInterval, retry, enabled
+ *   flag, mutation, empty/error/stale branch and rendered value is untouched
+ *   (see HealthPage.tsx — the DOM still carries the same data).
+ *
+ * OWNER
+ *   lane1 — branch ui/lane1-hero-health (wave nse-uiux-w8).
+ *
+ * CONSUMES
+ *   theme.css :root tokens only: --bg/--bg-panel/--bg-panel-2/--bg-inset,
+ *   --elevate-hi/--elev-1, --border/--border-strong, --text/--text-dim/
+ *   --text-faint, --accent/--accent-strong, --green/--red/--amber and their
+ *   *-dim variants, --violet, --mono/--sans, --card-pad, --panel-gap.
+ *   Lane-3 shared kit classes .l3-wrap / .l3-note / .l3-toolbar /
+ *   .l3-health-cell / .l3-health-grid are READ-ONLY (owned by config/ui) —
+ *   this file only adds namespaced .hl-* rules beside them.
+ *
+ * PROVIDES
+ *   .hl-page, .hl-hero (+ ::after top light-line), .hl-kicker, .hl-title,
+ *   .hl-mark, .hl-desc, .hl-hero-side, .hl-pill, .hl-chips, .hl-chip,
+ *   .hl-note, .hl-section, .hl-section-label (.lbl / .src), .hl-sublabel,
+ *   .hl-toolbar, .hl-segmented, .hl-metrics, .hl-cell, .hl-cell-metrics.
+ *
+ * INVARIANTS
+ *   - Hand-written CSS only (no framework); theme tokens only, every color is
+ *     a token or an rgba()/color-mix() of one — no rogue hex.
+ *   - Logical properties (inline-size, margin-inline, inset-inline, padding
+ *     …) so the RTL console (fa/ar) mirrors.
+ *   - Namespaced .hl-* only: nothing here can leak onto another feature page.
+ *   - ADDITIVE selectors: kit.css keeps its own rules; .hl-cell restyles the
+ *     same DOM nodes (paired selectors are written 0-3-0 on purpose so they
+ *     win over the kit's 0-2-0 without relying on import order).
+ *   - No new network call, no timing change, no value fabrication: the hero
+ *     pills/chips re-display state HealthPage.tsx already reads.
+ *
+ * EXTEND
+ *   New health-only presentation rules go here. Shared primitives belong in
+ *   components/primitives or features/config/ui/kit — do not fork them.
+ */
+
+/* ------------------------------ page shell ------------------------------ */
+.hl-page {
+  display: grid;
+  gap: var(--panel-gap);
+  animation: pageIn 0.18s ease-out;
+}
+
+/* ------------------------------ hero ------------------------------ */
+.hl-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(460px 190px at 5% -40%, rgba(62, 207, 142, 0.16), transparent 70%),
+    radial-gradient(400px 170px at 95% -30%, rgba(65, 166, 242, 0.15), transparent 70%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 45%),
+    var(--bg-panel);
+  box-shadow: var(--elev-1);
+}
+.hl-hero::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(62, 207, 142, 0.55), rgba(65, 166, 242, 0.45), transparent);
+}
+.hl-hero-main { min-inline-size: 0; }
+
+.hl-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.hl-kicker .dot {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(62, 207, 142, 0.85);
+  animation: livePulse 2.6s ease-in-out infinite;
+}
+.hl-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 9px 0 5px;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.hl-mark {
+  inline-size: 32px;
+  block-size: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--green);
+  background: linear-gradient(140deg, rgba(62, 207, 142, 0.2), rgba(65, 166, 242, 0.18));
+  border: 1px solid rgba(62, 207, 142, 0.42);
+  border-radius: 9px;
+  box-shadow: 0 0 14px rgba(62, 207, 142, 0.16), 0 4px 10px rgba(0, 0, 0, 0.35);
+}
+.hl-title .word { color: var(--text); }
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .hl-title .word {
+    background: linear-gradient(115deg, var(--text) 35%, var(--accent-strong));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+.hl-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  max-inline-size: 80ch;
+}
+
+/* provenance / status side — every value below is state the page already
+ * fetched (v1 verdict, probe fallback, readiness, engine loop, cell counts,
+ * poll cadence). Nothing is invented and nothing extra is requested. */
+.hl-hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 9px;
+}
+.hl-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  background: var(--bg-inset);
+}
+.hl-pill .d {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.hl-pill.good {
+  color: var(--green);
+  background: rgba(62, 207, 142, 0.08);
+  border-color: rgba(62, 207, 142, 0.4);
+}
+.hl-pill.good .d { background: var(--green); box-shadow: 0 0 6px rgba(62, 207, 142, 0.85); }
+.hl-pill.warn {
+  color: var(--amber);
+  background: var(--amber-dim);
+  border-color: rgba(235, 161, 63, 0.42);
+}
+.hl-pill.warn .d { background: var(--amber); box-shadow: 0 0 6px rgba(235, 161, 63, 0.8); }
+.hl-pill.bad {
+  color: var(--red);
+  background: var(--red-dim);
+  border-color: rgba(242, 86, 77, 0.48);
+}
+.hl-pill.bad .d { background: var(--red); box-shadow: 0 0 6px rgba(242, 86, 77, 0.85); }
+.hl-pill.neutral { color: var(--text-dim); }
+
+.hl-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.hl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+.hl-chip.pos { color: var(--green); border-color: rgba(62, 207, 142, 0.38); }
+.hl-chip.neg { color: var(--red); border-color: rgba(242, 86, 77, 0.42); }
+.hl-chip.dim { color: var(--text-faint); }
+
+/* ------------------------------ honesty note ------------------------------ */
+/* additive next to kit's .l3-note: same DOM, same copy, tighter card look */
+.hl-note.l3-note {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  border: 1px solid var(--border);
+  border-inline-start: 3px solid var(--accent);
+  border-radius: 10px;
+  box-shadow: var(--elev-1);
+}
+.hl-note.l3-note::before {
+  content: "ℹ";
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--accent-strong);
+}
+
+/* ------------------------------ sections ------------------------------ */
+.hl-section {
+  display: grid;
+  gap: 8px;
+  margin-block-start: 2px;
+}
+.hl-section-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-inline: 2px;
+}
+.hl-section-label .lbl {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.hl-section-label .lbl::after {
+  content: "";
+  display: inline-block;
+  inline-size: 14px;
+  block-size: 1px;
+  margin-inline-start: 8px;
+  vertical-align: middle;
+  background: var(--border-strong);
+}
+.hl-section-label .src {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-inline-start: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+/* sub-labels inside panels (replaces the bare .section-title rows) */
+.hl-sublabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-block-start: 10px;
+  margin-block-end: 4px;
+}
+.hl-sublabel:first-child { margin-block-start: 0; }
+
+/* ------------------------------ toolbar ------------------------------ */
+/* additive next to kit's .l3-toolbar: keeps the same single-row layout,
+ * only the inline margin moves here (same 8px) and the tabs get a card look */
+.hl-toolbar.l3-toolbar { margin-block-end: 8px; }
+/* domain-chip row inside the capabilities panel (was an inline marginTop) */
+.hl-page .l3-rule-params { margin-block-start: 6px; }
+.hl-segmented.segmented {
+  margin-inline-start: auto;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+}
+.hl-segmented.segmented button {
+  border-radius: 6px;
+}
+.hl-segmented.segmented button.active {
+  background: rgba(65, 166, 242, 0.14);
+  color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px rgba(65, 166, 242, 0.35);
+}
+
+/* ------------------------------ metric cards ------------------------------ */
+.hl-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+@media (max-width: 640px) {
+  .hl-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ------------------------------ matrix cells ------------------------------ */
+/* additive next to kit's .l3-health-cell: same DOM + classes, deeper card
+ * finish (tinted surface, elevation, hover) — the kit's own level borders and
+ * .stale opacity stay in force. */
+.l3-health-cell.hl-cell {
+  border-radius: 12px;
+  border-width: 1px;
+  box-shadow: var(--elev-1);
+  transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+  background:
+    linear-gradient(180deg, var(--elevate-hi), transparent 55%),
+    var(--bg-panel);
+}
+.l3-health-cell.hl-cell:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--elev-2);
+}
+.l3-health-cell.hl-cell .name { gap: 9px; }
+.l3-health-cell.hl-cell .detail { min-block-size: 30px; }
+.l3-health-cell.hl-cell.good {
+  border-color: rgba(62, 207, 142, 0.45);
+  background:
+    linear-gradient(180deg, rgba(62, 207, 142, 0.07), transparent 60%),
+    var(--bg-panel);
+}
+.l3-health-cell.hl-cell.warn {
+  border-color: rgba(235, 161, 63, 0.5);
+  background:
+    linear-gradient(180deg, rgba(235, 161, 63, 0.07), transparent 60%),
+    var(--bg-panel);
+}
+.l3-health-cell.hl-cell.bad {
+  border-color: rgba(242, 86, 77, 0.55);
+  background:
+    linear-gradient(180deg, rgba(242, 86, 77, 0.08), transparent 60%),
+    var(--bg-panel);
+}
+.l3-health-cell.hl-cell.stale { border-style: dashed; }
+
+/* ------------------------------ motion ------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  .hl-page { animation: none; }
+  .hl-kicker .dot { animation: none; }
+  .l3-health-cell.hl-cell { transition: none; }
+  .l3-health-cell.hl-cell:hover { transform: none; }
+}

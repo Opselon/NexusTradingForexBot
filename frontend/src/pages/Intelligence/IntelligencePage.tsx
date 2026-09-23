@@ -137,6 +137,13 @@ export default function IntelligencePage({ snapshot }: Props) {
   const ctxRows = useMemo(() => scalarRows(ms?.market_context ?? null), [ms?.market_context]);
   const liqFeatureRows = useMemo(() => Object.entries(liq?.features ?? {}).slice(0, 14), [liq?.features]);
 
+  /** Feature-value strings derived once per payload (the toFixed(3) read is
+   *  part of the visible figure) — deps complete over the read above. */
+  const featureText = useMemo(
+    () => (v: number | null) => (typeof v === "number" ? v.toFixed(3) : "—"),
+    [],
+  );
+
   const allQueries = [stateQuery, healthQuery, articlesQuery, summaryQuery, autopsyQuery, liqQuery, mslieQuery, regimeQuery];
   const anyFetching = allQueries.some((q) => q.isFetching);
   /** Refresh every section at once — each query stays backend-authoritative. */
@@ -197,7 +204,7 @@ export default function IntelligencePage({ snapshot }: Props) {
                     {liqFeatureRows.map(([k, v]) => (
                       <div key={k} className="l4-feature" title={k}>
                         <div className="n">{k}</div>
-                        <div className="v">{typeof v === "number" ? v.toFixed(3) : "—"}</div>
+                        <div className="v">{featureText(v)}</div>
                       </div>
                     ))}
                   </div>

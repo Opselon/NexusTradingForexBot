@@ -217,10 +217,21 @@ jobs:
             feature_schema = "scalp_v1"; installer_version = "1.0.0"
           } | ConvertTo-Json
           [System.IO.File]::WriteAllText((Join-Path $PWD "build-info.json"), $info, (New-Object System.Text.UTF8Encoding($false)))
+      - name: Generate application icon
+        shell: pwsh
+        run: |
+          # EU-RELEASE-001: canonical branded icon from frontend/public/icon-512.png.
+          # Both PyInstaller steps below and the Inno Setup installer consume it;
+          # without it every shipped EXE + Start Menu entry carries PyInstaller's
+          # generic placeholder.
+          python scripts/build/generate_app_icon.py
+          if ($LASTEXITCODE -ne 0) { throw "application icon generation failed" }
+          if (-not (Test-Path "installer\NexusScalpEngine.ico")) { throw "installer\NexusScalpEngine.ico missing after generation" }
       - name: PyInstaller onedir
         shell: pwsh
         run: |
           python -m PyInstaller --noconfirm --clean --onedir --name NexusScalpEngine `
+            --icon "installer\NexusScalpEngine.ico" `
             --add-data "$PWD\Web;Web" --add-data "$PWD\configs;configs" `
             --add-data "$PWD\docs;docs" --add-data "$PWD\build-info.json;." `
             --collect-submodules "uvicorn" --collect-submodules "fastapi" `
@@ -238,6 +249,7 @@ jobs:
           # polars/torch) exactly like the onedir EXE. build-info.json is
           # stamped so version identity is truthful in the frozen binary.
           python -m PyInstaller --noconfirm --clean --onefile --name NexusScalpEngine-CLI `
+            --icon "installer\NexusScalpEngine.ico" `
             --add-data "$PWD\build-info.json;." `
             --collect-submodules "uvicorn" --collect-submodules "fastapi" `
             --hidden-import "MetaTrader5" --hidden-import "torch" --hidden-import "polars" `

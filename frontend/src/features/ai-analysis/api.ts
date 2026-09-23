@@ -15,9 +15,7 @@ import type {
   DecisionExplanationDto,
   DecisionStatsDto,
   IndicatorSummaryDto,
-  IndicatorsSnapshotPart,
   NoTradeReasonsDto,
-  PivotsDto,
   Shadow70dDto,
   SignalDto,
 } from "./model";
@@ -64,18 +62,6 @@ export const aiAnalysisApi = {
 
   indicatorsSummary: (p: IndicatorParams, signal?: AbortSignal): Promise<IndicatorSummaryDto> =>
     getV1<IndicatorSummaryDto>(`/api/v1/indicators/summary${qs(p)}`, signal),
-
-  indicatorsGauges: (p: IndicatorParams, signal?: AbortSignal) =>
-    getV1<IndicatorsSnapshotPart>(`/api/v1/indicators/gauges${qs(p)}`, signal),
-
-  indicatorsOscillators: (p: IndicatorParams, signal?: AbortSignal) =>
-    getV1<IndicatorsSnapshotPart>(`/api/v1/indicators/oscillators${qs(p)}`, signal),
-
-  indicatorsMovingAverages: (p: IndicatorParams, signal?: AbortSignal) =>
-    getV1<IndicatorsSnapshotPart>(`/api/v1/indicators/moving-averages${qs(p)}`, signal),
-
-  indicatorsPivots: (p: IndicatorParams, signal?: AbortSignal): Promise<PivotsDto> =>
-    getV1<PivotsDto>(`/api/v1/indicators/pivots${qs(p)}`, signal),
 
   shadow70d: (signal?: AbortSignal): Promise<Shadow70dDto> => getV1<Shadow70dDto>("/api/v1/shadow/70d", signal),
 };

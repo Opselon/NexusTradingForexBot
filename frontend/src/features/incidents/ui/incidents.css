@@ -1,0 +1,448 @@
+/**
+ * Incidents feature styles — modern operator hero + section presentation.
+ *
+ * PURPOSE: presentation-only upgrade for the incidents forensic console
+ *   (/incidents, legacy tab-incidents). Hero + section labels + hierarchy +
+ *   list/drawer polish. Zero behavior change: queries, polling, mutations,
+ *   gates, and every rendered value are untouched in the TSX.
+ *
+ * OWNER: lane-2 · branch ui/lane2-hero-incidents · worktree nse-w8/w8-lane2.
+ *
+ * CONSUMES: theme.css :root tokens only (--bg, --bg-panel, --bg-inset,
+ *   --elevate-hi, --border, --border-strong, --text, --text-dim, --text-faint,
+ *   --accent, --accent-strong, --green, --red, --amber, --violet, --mono,
+ *   --sans, --panel-gap, --card-pad, --elev-1 …) and the shared primitives
+ *   (@/components/primitives: Panel, DataTable, MetricCard, StatusBadge,
+ *   SeverityBadge, EmptyState, ErrorState, Skeleton, Segmented, ConfirmModal)
+ *   plus lane5Kit (Drawer, InfoRow, JsonBlock, StatusPill, DistBars,
+ *   FreshnessCaption). No primitive is forked or re-styled globally.
+ *
+ * PROVIDES: .inc-* namespace — page frame, operator hero (gradient wash +
+ *   top light-line + provenance rail), endpoint contract chips, stat strip,
+ *   section labels, tab rail, list/panel wrappers, drawer tab/evidence polish.
+ *
+ * INVARIANTS:
+ *   - every color is a theme token, or an rgba()/color-mix() of one (no rogue hex);
+ *   - logical properties only (inline-size, margin-inline, inset-inline …) so the
+ *     RTL console (fa/ar) mirrors;
+ *   - selectors are additive and namespaced — nothing here can reach another
+ *     feature page or the shell;
+ *   - semantics stay backend-authoritative: color only ever restates a status
+ *     word the backend already sent; missing/null renders as `—`, never a fake;
+ *   - motion is decorative-only and neutralized by theme's reduced-motion block.
+ *
+ * EXTEND: lane-2 appends incident-only presentation rules here (never in
+ *   theme.css / shell.css — those are shared and read-only for this lane).
+ */
+
+/* ------------------------------------------------------------------ *
+ * 1. Page frame + entrance
+ * ------------------------------------------------------------------ */
+
+.inc-page {
+  display: grid;
+  gap: var(--panel-gap);
+  animation: incPageIn 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes incPageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.inc-sec {
+  display: grid;
+  gap: 10px;
+  animation: incSecIn 0.2s ease-out both;
+}
+
+@keyframes incSecIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* tab body re-mounts on tab change (Segmented switches branches) → cross-fade */
+.inc-tabbody {
+  display: grid;
+  gap: 12px;
+  animation: incTabIn 0.18s ease-out both;
+}
+
+@keyframes incTabIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ------------------------------------------------------------------ *
+ * 2. Hero header — accent bloom + top hairline + provenance rail
+ * ------------------------------------------------------------------ */
+
+.inc-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(480px 200px at 92% -32%, rgba(242, 86, 77, 0.14), transparent 70%),
+    radial-gradient(360px 170px at 4% -26%, rgba(65, 166, 242, 0.16), transparent 70%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 45%),
+    var(--bg-panel);
+  box-shadow: var(--elev-1);
+}
+
+.inc-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(65, 166, 242, 0.55), rgba(242, 86, 77, 0.4), transparent);
+}
+
+.inc-hero-main {
+  display: grid;
+  gap: 8px;
+  align-content: center;
+  min-width: 320px;
+  flex: 1 1 460px;
+}
+
+.inc-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.inc-kicker-bar {
+  inline-size: 18px;
+  block-size: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--red), var(--amber));
+  box-shadow: 0 0 8px rgba(242, 86, 77, 0.65);
+}
+
+.inc-kicker-dot {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 8px rgba(242, 86, 77, 0.85);
+  animation: incLivePulse 2.6s ease-in-out infinite;
+}
+
+@keyframes incLivePulse {
+  0%, 100% { opacity: 0.55; box-shadow: 0 0 5px rgba(242, 86, 77, 0.4); }
+  50% { opacity: 1; box-shadow: 0 0 12px rgba(242, 86, 77, 0.8); }
+}
+
+.inc-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 0;
+  font-size: clamp(19px, 2.2vw, 25px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.inc-title-mark {
+  inline-size: 30px;
+  block-size: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 800;
+  color: color-mix(in srgb, var(--red) 22%, white);
+  background: linear-gradient(135deg, rgba(242, 86, 77, 0.26), rgba(235, 161, 63, 0.22));
+  border: 1px solid rgba(242, 86, 77, 0.45);
+  box-shadow: 0 0 14px rgba(242, 86, 77, 0.2), 0 4px 10px rgba(0, 0, 0, 0.35);
+}
+
+.inc-title .word { color: var(--text); }
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .inc-title .word {
+    background: linear-gradient(115deg, var(--text) 35%, var(--accent-strong));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+.inc-desc {
+  margin: 0;
+  max-inline-size: 78ch;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.inc-hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex: 0 1 auto;
+}
+
+.inc-prov {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(94px, auto);
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgba(8, 12, 18, 0.72);
+  overflow: hidden;
+  align-self: center;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.inc-prov-cell {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 9px 13px;
+  border-inline-start: 1px solid var(--border);
+}
+
+.inc-prov-cell:first-child { border-inline-start: none; }
+
+.inc-prov-k {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.inc-prov-v {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  max-inline-size: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inc-prov-v.dim { color: var(--text-dim); }
+.inc-prov-v.neg { color: var(--red); }
+.inc-prov-v.warn { color: var(--amber); }
+
+.inc-prov-fresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  max-inline-size: 100%;
+}
+
+/* ------------------------------------------------------------------ *
+ * 3. Endpoint contract chips (static routes the page serves)
+ * ------------------------------------------------------------------ */
+
+.inc-endpoints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block-start: 2px;
+}
+
+.inc-ep {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--text-dim);
+  background: rgba(10, 15, 22, 0.75);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 9px;
+  transition: border-color 0.12s ease, color 0.12s ease, transform 0.12s ease;
+}
+
+.inc-ep:hover {
+  border-color: rgba(242, 86, 77, 0.5);
+  color: color-mix(in srgb, var(--red) 22%, white);
+  transform: translateY(-1px);
+}
+
+.inc-ep::before {
+  content: "›";
+  color: var(--red);
+  margin-inline-end: 5px;
+}
+
+/* ------------------------------------------------------------------ *
+ * 4. Stat strip (wraps the 4 shared MetricCards — cards untouched)
+ * ------------------------------------------------------------------ */
+
+.inc-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 1100px) {
+  .inc-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .inc-stats { grid-template-columns: 1fr; }
+}
+
+/* ------------------------------------------------------------------ *
+ * 5. Section labels
+ * ------------------------------------------------------------------ */
+
+.inc-sec-label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.inc-sec-rule {
+  flex: 1 1 auto;
+  block-size: 1px;
+  background: linear-gradient(90deg, var(--border-strong), transparent);
+  opacity: 0.75;
+}
+
+.inc-sec-hint {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+/* ------------------------------------------------------------------ *
+ * 6. Tab rail (wraps the shared Segmented — component untouched)
+ * ------------------------------------------------------------------ */
+
+.inc-tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.inc-tabs .segmented {
+  box-shadow: 0 4px 14px -12px rgba(0, 0, 0, 0.8);
+  background: linear-gradient(180deg, var(--bg-inset), transparent), var(--bg-panel);
+}
+
+.inc-tabs-note {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.inc-list-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .inc-list-grid { grid-template-columns: 1fr; }
+}
+
+/* incident id cell: mono + clipped + hover-reveal via title (title attr kept) */
+.inc-id {
+  max-inline-size: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ *
+ * 7. Drawer polish (Drawer + queries unchanged — classes only)
+ * ------------------------------------------------------------------ */
+
+.inc-drawer-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-block-end: 10px;
+  padding-block-end: 10px;
+  border-block-end: 1px solid var(--border);
+}
+
+.inc-ev {
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  padding: 5px 9px !important;
+  background: color-mix(in srgb, var(--bg-inset) 82%, transparent);
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.inc-ev:hover {
+  border-color: color-mix(in srgb, var(--red) 38%, var(--border)) !important;
+}
+
+.inc-ev > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.inc-ev > summary::-webkit-details-marker { display: none; }
+
+.inc-ev > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-inline-end: 6px;
+  color: var(--accent);
+  transition: transform 0.14s ease;
+}
+
+.inc-ev[open] > summary::before {
+  transform: rotate(90deg);
+  color: var(--red);
+}
+
+.inc-trace {
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  padding: 7px 9px !important;
+  background: color-mix(in srgb, var(--bg-inset) 82%, transparent);
+  transition: border-color 0.14s ease;
+}
+
+.inc-trace:hover {
+  border-color: color-mix(in srgb, var(--violet) 38%, var(--border)) !important;
+}
+
+/* ------------------------------------------------------------------ *
+ * 8. Density mode: keep the hero airy even when body.dense tightens rows
+ * ------------------------------------------------------------------ */
+
+body.dense .inc-stats { gap: 8px; }
+body.dense .inc-hero { padding: 14px 16px 12px; }

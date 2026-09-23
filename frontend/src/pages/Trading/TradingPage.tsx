@@ -33,16 +33,9 @@ import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import { operatorApi } from "@/pages/_shared/edgeApi";
 import type { OperatorOrderRow } from "@/pages/_shared/contracts";
 import type { EngineSnapshot, Position } from "@/types/domain";
-import {
-  ConfirmModal,
-  EmptyState,
-  ErrorState,
-  Panel,
-  PositionSideBadge,
-  Skeleton,
-  StatusBadge,
-} from "@/components/primitives";
+import { ConfirmModal, EmptyState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { AgeNote, SectionState } from "@/pages/_shared/SectionState";
+import { ReconPanel } from "./ReconPanel";
 import { InfoChip, SortableTable, type Column } from "@/pages/_shared/widgets";
 import { downloadCsv, stampForFilename } from "@/pages/_shared/csv";
 import CommandDeck from "@/pages/Trading/CommandDeck";
@@ -51,15 +44,8 @@ import TradingHero from "@/pages/Trading/TradingHero";
 import { LIVE_CONFIRM_TEXT } from "@/pages/Trading/tradingConsts";
 import { useI18n } from "@/stores/i18nStore";
 import { formatDateTime, formatNumber, formatPrice } from "@/lib/format";
-import { ApiError } from "@/types/api";
 import "@/pages/_shared/pages.css";
 import "@/pages/Trading/trading.css";
-
-interface Props {
-  snapshot: EngineSnapshot | undefined;
-  nowMs: number;
-}
-
 
 type ReconRow = {
   ticket: string;
@@ -67,6 +53,12 @@ type ReconRow = {
   broker: Position | null;
   state: "MATCHED" | "ENGINE_ONLY" | "BROKER_ONLY";
 };
+
+interface Props {
+  snapshot: EngineSnapshot | undefined;
+  nowMs: number;
+}
+
 
 export default function TradingPage({ snapshot, nowMs }: Props) {
   const engineCmd = useMutationFeedback();
@@ -91,13 +83,6 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
     retry: false,
   });
 
-  const ledgerOpenQuery = useQuery({
-    queryKey: ["ledger-open"],
-    queryFn: ({ signal }) => positionsApi.ledgerHistory({ limit: 100, status: "OPEN" }, signal),
-    refetchInterval: 20_000,
-    retry: 1,
-  });
-
   const execQuery = useQuery({
     queryKey: ["execution-history", execPage],
     queryFn: ({ signal }) => positionsApi.executionHistory({ page: execPage, page_size: 15 }, signal),
@@ -105,32 +90,19 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
     retry: 1,
   });
 
-  // ---- reconciliation (engine ledger OPEN vs broker positions) ------------
-  const recon = useMemo<ReconRow[]>(() => {
-    const engineRows = ledgerOpenQuery.data ?? [];
-    const brokerRows: Position[] = mt5Query.data?.positions ?? snapshot?.positions ?? [];
-    const byTicket = new Map<string, ReconRow>();
-    for (const e of engineRows) {
-      if (e.ticket === null) continue;
-      byTicket.set(String(e.ticket), {
-        ticket: String(e.ticket),
-        engine: { symbol: e.symbol, direction: e.direction, volume: e.volume },
-        broker: null,
-        state: "ENGINE_ONLY",
-      });
+  // Latency strings derived once per order slice — the same toFixed(1) read
+  // the render did, hoisted so a table-wide re-render does not redo it. Keyed
+  // by ROW REFERENCE (SortableTable sorts/filters, so the render index is not
+  // the row's index in this array); the fallback recomputes the exact original
+  // expression, so a miss renders byte-identically too. Deps read only the
+  // query data above.
+  const latencyText = useMemo(() => {
+    const byRow = new Map<OperatorOrderRow, string>();
+    for (const r of ordersQuery.data?.rows ?? []) {
+      byRow.set(r, typeof r.latency === "number" ? r.latency.toFixed(1) : "—");
     }
-    for (const b of brokerRows) {
-      if (b.ticket === null) continue;
-      const key = String(b.ticket);
-      const prev = byTicket.get(key);
-      if (prev) {
-        byTicket.set(key, { ...prev, broker: b, state: "MATCHED" });
-      } else {
-        byTicket.set(key, { ticket: key, engine: null, broker: b, state: "BROKER_ONLY" });
-      }
-    }
-    return [...byTicket.values()].sort((a, b) => Number(b.state === "MATCHED") - Number(a.state === "MATCHED"));
-  }, [ledgerOpenQuery.data, mt5Query.data, snapshot?.positions]);
+    return byRow;
+  }, [ordersQuery.data]);
 
   const orderCols = useMemo<Array<Column<OperatorOrderRow>>>(
     () => [
@@ -142,11 +114,11 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
       { key: "price", label: "Price", num: true, sortValue: (r) => r.price, render: (r) => formatPrice(r.price, snapshot?.price_digits ?? 2) },
       { key: "sl", label: "SL", num: true, sortValue: (r) => r.stop_loss, render: (r) => (r.stop_loss ? formatPrice(r.stop_loss) : "—") },
       { key: "tp", label: "TP", num: true, sortValue: (r) => r.take_profit, render: (r) => (r.take_profit ? formatPrice(r.take_profit) : "—") },
-      { key: "lat", label: "Latency ms", num: true, sortValue: (r) => r.latency, render: (r) => (typeof r.latency === "number" ? r.latency.toFixed(1) : "—") },
+      { key: "lat", label: "Latency ms", num: true, sortValue: (r) => r.latency, render: (r) => latencyText.get(r) ?? (typeof r.latency === "number" ? r.latency.toFixed(1) : "—") },
       { key: "mode", label: "Mode", sortValue: (r) => r.execution_mode, render: (r) => <StatusBadge status={String(r.execution_mode ?? null)} /> },
       { key: "reason", label: "Reason", render: (r) => <span className="small muted" title={r.reason ?? undefined}>{r.reason?.slice(0, 42) ?? "—"}</span> },
     ],
-    [snapshot?.price_digits],
+    [snapshot?.price_digits, latencyText],
   );
 
   if (!snapshot) {
@@ -178,6 +150,40 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
       setModeTarget("");
     }
   };
+
+
+  const ledgerOpenQuery = useQuery({
+    queryKey: ["ledger-open"],
+    queryFn: ({ signal }) => positionsApi.ledgerHistory({ limit: 100, status: "OPEN" }, signal),
+    retry: 1,
+  });
+
+  // ---- reconciliation (engine ledger OPEN vs broker positions) ------------
+  const recon = useMemo<ReconRow[]>(() => {
+    const engineRows = ledgerOpenQuery.data ?? [];
+    const brokerRows: Position[] = mt5Query.data?.positions ?? snapshot?.positions ?? [];
+    const byTicket = new Map<string, ReconRow>();
+    for (const e of engineRows) {
+      if (e.ticket === null) continue;
+      byTicket.set(String(e.ticket), {
+        ticket: String(e.ticket),
+        engine: { symbol: e.symbol, direction: e.direction, volume: e.volume },
+        broker: null,
+        state: "ENGINE_ONLY",
+      });
+    }
+    for (const b of brokerRows) {
+      if (b.ticket === null) continue;
+      const key = String(b.ticket);
+      const prev = byTicket.get(key);
+      if (prev) {
+        byTicket.set(key, { ...prev, broker: b, state: "MATCHED" });
+      } else {
+        byTicket.set(key, { ticket: key, engine: null, broker: b, state: "BROKER_ONLY" });
+      }
+    }
+    return [...byTicket.values()].sort((a, b) => Number(b.state === "MATCHED") - Number(a.state === "MATCHED"));
+  }, [ledgerOpenQuery.data, mt5Query.data, snapshot?.positions]);
 
   const drift = recon.filter((r) => r.state !== "MATCHED");
   const matched = recon.length - drift.length;
@@ -253,81 +259,13 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
         )}
       </Panel>
 
-      {/* Virtual ↔ real reconciliation */}
-      <Panel
-        title="Virtual ⇄ real reconciliation"
-        right={
-          <>
-            <InfoChip k="matched" v={matched} tone={drift.length === 0 && matched > 0 ? "good" : ""} />
-            <InfoChip k="drift" v={drift.length} tone={drift.length > 0 ? "bad" : ""} />
-          </>
-        }
-        tight
-      >
-        <div className="l4-note" style={{ padding: "8px 12px 0" }}>
-          Engine ledger OPEN rows (/api/account/trades?status=OPEN) matched by ticket against broker positions (/api/mt5/status).
-          {mt5Query.isPending ? " broker read pending…" : mt5Query.isError ? " ⚠ broker read FAILED — positions below fall back to the canonical snapshot." : ""}
-        </div>
-        {ledgerOpenQuery.isPending ? (
-          <div style={{ padding: 12 }}><Skeleton count={3} /></div>
-        ) : ledgerOpenQuery.isError ? (
-          <ErrorState
-            message={ledgerOpenQuery.error instanceof ApiError ? ledgerOpenQuery.error.message : "Engine ledger unavailable"}
-            requestId={ledgerOpenQuery.error instanceof ApiError ? ledgerOpenQuery.error.requestId : null}
-            onRetry={() => void ledgerOpenQuery.refetch()}
-          />
-        ) : recon.length === 0 ? (
-          <EmptyState message="Nothing to reconcile — no open ledger rows and no broker positions." hint="A clean, consistent EMPTY. Not a hidden drift." />
-        ) : (
-          <SortableTable
-            columns={[
-              { key: "ticket", label: "Ticket", sortValue: (r) => r.ticket, render: (r) => r.ticket },
-              {
-                key: "engine",
-                label: "Engine ledger",
-                sortValue: (r) => r.engine?.symbol ?? null,
-                render: (r) =>
-                  r.engine ? `${r.engine.symbol ?? "—"} ${r.engine.direction ?? "?"} ${formatNumber(r.engine.volume)}` : <span className="faint">absent</span>,
-              },
-              {
-                key: "broker",
-                label: "Broker position",
-                sortValue: (r) => r.broker?.symbol ?? null,
-                render: (r) =>
-                  r.broker ? (
-                    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                      {r.broker.symbol ?? "—"} <PositionSideBadge type={r.broker.type} /> {formatNumber(r.broker.volume)} @ {formatPrice(r.broker.price_open)}
-                    </span>
-                  ) : (
-                    <span className="faint">absent</span>
-                  ),
-              },
-              {
-                key: "state",
-                label: "State",
-                sortValue: (r) => r.state,
-                render: (r) => (
-                  <span className={`l4-chip ${r.state === "MATCHED" ? "good" : "warn"}`}>
-                    {r.state === "MATCHED" ? "✓ ticket+symbol" : r.state === "ENGINE_ONLY" ? "ENGINE ONLY (not on broker)" : "BROKER ONLY (untracked)"}
-                  </span>
-                ),
-              },
-            ]}
-            rows={recon}
-            rowKey={(r) => r.ticket}
-            emptyMessage="No rows."
-            maxHeight={320}
-          />
-        )}
-        {drift.length > 0 && (
-          <div className="confirm-box" style={{ marginInline: 12, marginBlock: 12, borderColor: "rgba(235,161,63,0.5)" }}>
-            <span>
-              <b>{drift.length} unreconciled row(s).</b> ENGINE ONLY usually means the broker rejected/closed without the ledger catching the deal yet;
-              BROKER ONLY means a position the engine did not open (manual terminal action or restart gap). Investigate before enabling new risk.
-            </span>
-          </div>
-        )}
-      </Panel>
+      {/* Virtual real reconciliation — extracted verbatim to
+          ReconPanel.tsx (line law); mt5Query stays here because the
+          Pending-orders panel reads it too. */}
+      <ReconPanel
+        snapshot={snapshot}
+        mt5Query={mt5Query}
+      />
 
 
       {/* Execution history (v1 audit_executions) */}
