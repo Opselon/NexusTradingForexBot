@@ -1,0 +1,3 @@
+/* commandDeck.css — lane-owned styles for tr-deck-* (see lane contract). Theme tokens
+   only, logical properties (RTL-safe), namespace tr-deck*, hover lift scoped,
+   reduced-motion respected. Shared baseline lives in ./trading.css (read-only). */

@@ -1,0 +1,3 @@
+/* tradingHero.css — lane-owned styles for tr-hero-* (see lane contract). Theme tokens
+   only, logical properties (RTL-safe), namespace tr-hero*, hover lift scoped,
+   reduced-motion respected. Shared baseline lives in ./trading.css (read-only). */

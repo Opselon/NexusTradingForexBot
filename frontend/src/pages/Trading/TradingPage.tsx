@@ -12,15 +12,15 @@
  * NOT implemented (no backend route exists): manual order placement, order
  * cancel. The UI refuses to fake such actions.
  *
- * Upgraded sections (tab-account / control-center parity inside this page):
- *  - dispatch order flow (GET /api/operator/orders — audit_orders rows +
- *    backend latency stats) with CSV export
- *  - virtual/real reconciliation: engine ledger rows vs broker positions
- *    (/api/account/trades vs /api/mt5/status), matched by ticket — a drift
- *    is shown as drift, never auto-hidden
- *  - execution history (GET /api/v1/execution/history, paginated)
- *  - SMC/ICT readout: the overlay objects the engine computed
- *    (visual_overlays) + the algo config the engine runs with
+ * Wave-2 architecture: this file is the composition root — it owns the
+ * queries, the reconciliation and the honest states; the presentation lives
+ * in lane-owned components:
+ *  - ./TradingHero        hero header + KPI strip (lane A)
+ *  - ./CommandDeck        engine + execution-mode controls (lane B)
+ *  - ./MarketReadout      market state, pending orders, SMC/ICT overlays (lane C)
+ * The dispatch order flow, the reconciliation table and the execution
+ * history stay in this file (sortable tables + honest states; a styling
+ * pass is a follow-up, not a deletion).
  * Every verdict/result is the backend's own reply; every section carries
  * skeleton / error+retry / honest-empty states.
  */
@@ -37,7 +37,6 @@ import {
   ConfirmModal,
   EmptyState,
   ErrorState,
-  MetricCard,
   Panel,
   PositionSideBadge,
   Skeleton,
@@ -46,23 +45,21 @@ import {
 import { AgeNote, SectionState } from "@/pages/_shared/SectionState";
 import { InfoChip, SortableTable, type Column } from "@/pages/_shared/widgets";
 import { downloadCsv, stampForFilename } from "@/pages/_shared/csv";
+import CommandDeck from "@/pages/Trading/CommandDeck";
+import MarketReadout from "@/pages/Trading/MarketReadout";
+import TradingHero from "@/pages/Trading/TradingHero";
+import { LIVE_CONFIRM_TEXT } from "@/pages/Trading/tradingConsts";
 import { useI18n } from "@/stores/i18nStore";
-import { formatDateTime, formatNumber, formatPct, formatPrice, formatTime } from "@/lib/format";
+import { formatDateTime, formatNumber, formatPrice, formatTime } from "@/lib/format";
 import { ApiError } from "@/types/api";
 import "@/pages/_shared/pages.css";
+import "@/pages/Trading/trading.css";
 
 interface Props {
   snapshot: EngineSnapshot | undefined;
   nowMs: number;
 }
 
-const LIVE_CONFIRM_TEXT = "LIVE";
-
-const MODE_IMPACT: Record<string, string> = {
-  PAPER: "Simulated fills only — no real orders reach the broker.",
-  SHADOW: "Signals are computed but never dispatched as orders.",
-  LIVE: "The engine will dispatch REAL orders to the connected broker account.",
-};
 
 type ReconRow = {
   ticket: string;
@@ -162,7 +159,6 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
     );
   }
 
-  const running = snapshot.engine_running;
   const currentMode = (snapshot.runtime_mode ?? snapshot.execution_mode ?? "").toUpperCase();
 
   const toggleEngine = async (active: boolean): Promise<void> => {
@@ -186,142 +182,23 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
   const drift = recon.filter((r) => r.state !== "MATCHED");
   const matched = recon.length - drift.length;
 
+  /** Refetch ONLY the already-wired queries — no new fetches, ever. */
+  const refreshAll = (): void => {
+    void mt5Query.refetch();
+    void ordersQuery.refetch();
+    void ledgerOpenQuery.refetch();
+    void execQuery.refetch();
+  };
+  const anyFetching = mt5Query.isFetching || ordersQuery.isFetching || ledgerOpenQuery.isFetching || execQuery.isFetching;
+
   return (
     <div>
-      <div className="grid cols-4">
-        <MetricCard label="Engine loop" value={running ? "RUNNING" : "STOPPED"} tone={running ? "pos" : "dim"} sub="backend-authoritative (state_version climbs while running)" />
-        <MetricCard label="Execution mode" value={currentMode || "—"} tone={currentMode.startsWith("LIVE") ? "neg" : "dim"} sub={`data_source: ${snapshot.data_source ?? "—"}`} />
-        <MetricCard label="Broker adapter" value={snapshot.adapter_class ?? "—"} tone="dim" sub={String(snapshot.health.details.mt5 ?? "")} />
-        <MetricCard
-          label="Terminal trading"
-          value={snapshot.account.trade_allowed === null ? "—" : snapshot.account.trade_allowed ? "ALLOWED" : "RESTRICTED"}
-          tone={snapshot.account.trade_allowed === true ? "pos" : snapshot.account.trade_allowed === false ? "neg" : "dim"}
-          sub="broker terminal trade_allowed"
-        />
-      </div>
 
-      <div className="grid cols-2" style={{ marginTop: 14 }}>
-        <Panel title="Engine commands" accent>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn primary" disabled={engineCmd.state.running || running} onClick={() => void toggleEngine(true)}>
-              ▶ Start engine
-            </button>
-            <button className="btn danger" disabled={engineCmd.state.running || !running} onClick={() => setStopConfirm(true)}>
-              ■ Stop engine
-            </button>
-          </div>
-          {engineCmd.state.lastMessage && (
-            <div className={`cmd-result ${engineCmd.state.lastResult ? "ok" : "fail"}`}>
-              {engineCmd.state.lastResult ? "✓" : "✕"} {engineCmd.state.lastMessage}
-            </div>
-          )}
-          <div className="small muted" style={{ marginTop: 10 }}>
-            Result comes from the backend response — the UI never assumes a command succeeded before confirmation, and the authoritative engine state on the left updates from the next snapshot.
-          </div>
-        </Panel>
+      <TradingHero snapshot={snapshot} mt5Positions={mt5Query.data?.positions?.length ?? 0} pendingOrders={mt5Query.data?.orders?.length ?? 0} matched={matched} drift={drift.length} nowMs={nowMs} refreshAll={refreshAll} anyFetching={anyFetching} engineCmd={engineCmd} />
 
-        <Panel title="Execution mode (PAPER ⇄ LIVE)" accent>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <select aria-label="Target execution mode" className="select" value={modeTarget} onChange={(e) => { setModeTarget(e.target.value); setShowLiveConfirm(e.target.value === "LIVE"); }}>
-              <option value="">select mode…</option>
-              <option value="PAPER">PAPER (simulation adapter)</option>
-              <option value="SHADOW">SHADOW (no execution)</option>
-              <option value="LIVE">LIVE (real capital)</option>
-            </select>
-            <button
-              className={`btn ${modeTarget === "LIVE" ? "danger" : "primary"}`}
-              disabled={!modeTarget || modeCmd.state.running || (modeTarget === "LIVE" && liveConfirm !== LIVE_CONFIRM_TEXT) || modeTarget === currentMode}
-              onClick={() => void submitMode()}
-            >
-              Apply mode
-            </button>
-            <span className="l4-chip">current {currentMode || "—"}</span>
-          </div>
-          {modeTarget && MODE_IMPACT[modeTarget] && (
-            <div className="l4-note" style={{ marginTop: 8 }}>{MODE_IMPACT[modeTarget]}</div>
-          )}
-          {showLiveConfirm && modeTarget === "LIVE" && (
-            <div className="confirm-box">
-              <div>
-                <b>{t("ux.mode.live_warning", "Real money is at risk. This affects your live broker account.")}</b>{" "}
-                {t("ux.mode.body", "This changes how the engine executes orders.")}{" "}
-                <span className="muted">{MODE_IMPACT.LIVE}</span>
-              </div>
-              <div className="row">
-                <input
-                  className="input"
-                  style={{ width: 200 }}
-                  aria-label="LIVE confirmation phrase" placeholder={t("ux.confirm.type", "Type {w} to enable confirmation", { w: LIVE_CONFIRM_TEXT })}
-                  value={liveConfirm}
-                  onChange={(e) => setLiveConfirm(e.target.value.toUpperCase())}
-                />
-                <span className="note">confirmation is relayed with the command; backend validation still applies</span>
-              </div>
-            </div>
-          )}
-          {modeCmd.state.lastMessage && (
-            <div className={`cmd-result ${modeCmd.state.lastResult ? "ok" : "fail"}`}>
-              {modeCmd.state.lastResult ? "✓" : "✕"} {modeCmd.state.lastMessage}
-            </div>
-          )}
-        </Panel>
-      </div>
+      <CommandDeck snapshot={snapshot} engineCmd={engineCmd} modeCmd={modeCmd} onStart={() => void toggleEngine(true)} onStop={() => setStopConfirm(true)} onApplyMode={() => void submitMode()} modeTarget={modeTarget} setModeTarget={setModeTarget} liveConfirm={liveConfirm} setLiveConfirm={setLiveConfirm} showLiveConfirm={showLiveConfirm} setShowLiveConfirm={setShowLiveConfirm} currentMode={currentMode} t={t} />
 
-      <div className="grid cols-2">
-        <Panel
-          title="Market / execution state"
-          right={<AgeNote label="tick age" ageSec={snapshot.diagnostics.tick_age_sec} />}
-        >
-          <dl className="kv">
-            <dt>symbol</dt>
-            <dd>{snapshot.symbol ?? "—"}</dd>
-            <dt>bid / ask</dt>
-            <dd>{formatPrice(snapshot.bid, snapshot.price_digits ?? 2)} / {formatPrice(snapshot.ask, snapshot.price_digits ?? 2)}</dd>
-            <dt>spread</dt>
-            <dd>{snapshot.spread === null ? "—" : `${formatNumber(snapshot.spread)} pts`}</dd>
-            <dt>tick stale</dt>
-            <dd>{snapshot.tick_stale ? <span className="badge warn">STALE</span> : <span className="badge good">FRESH</span>}</dd>
-            <dt>regime</dt>
-            <dd>{snapshot.regime ?? "—"}</dd>
-            <dt>AI proposal</dt>
-            <dd>{snapshot.ai_decision ?? "—"} {snapshot.ai_confidence !== null ? `(${formatPct(snapshot.ai_confidence * 100, 1)})` : ""}</dd>
-            <dt>proposal blocked by</dt>
-            <dd>{snapshot.ai_reason ?? "—"}</dd>
-            <dt>proposal age</dt>
-            <dd>{snapshot.diagnostics.proposal_age_sec === null ? "—" : `${snapshot.diagnostics.proposal_age_sec.toFixed(1)}s`}</dd>
-          </dl>
-        </Panel>
-
-        <Panel title="Pending orders (broker)" tight>
-          {mt5Query.data?.orders && mt5Query.data.orders.length > 0 ? (
-            <div tabIndex={0} className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr><th scope="col">Ticket</th><th scope="col">Type</th><th scope="col">Volume</th><th scope="col">Price</th><th scope="col">State</th><th scope="col">Setup</th></tr>
-                </thead>
-                <tbody>
-                  {mt5Query.data.orders.map((o, i) => (
-                    <tr key={o.ticket ?? i}>
-                      <td>{o.ticket ?? "—"}</td>
-                      <td>{String(o.type ?? "—")}</td>
-                      <td className="num">{formatNumber(o.volume_current)}</td>
-                      <td className="num">{formatPrice(o.price_open)}</td>
-                      <td>{String(o.state ?? "—")}</td>
-                      <td>{formatTime(o.time_setup)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : mt5Query.isPending ? (
-            <div style={{ padding: 14 }}><Skeleton count={3} /></div>
-          ) : mt5Query.isError ? (
-            <ErrorState message="Pending orders unavailable (MT5 status endpoint failed)." onRetry={() => void mt5Query.refetch()} />
-          ) : (
-            <EmptyState message="No pending orders on the broker account." />
-          )}
-        </Panel>
-      </div>
+      <MarketReadout snapshot={snapshot} mt5Query={mt5Query} ordersQuery={ordersQuery} />
 
       {/* Dispatch order flow — audit_orders + backend latency stats */}
       <Panel
