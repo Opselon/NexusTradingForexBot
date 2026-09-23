@@ -86,6 +86,16 @@ else:
 
 logger = logging.getLogger(__name__)
 
+# DECISION-TRACE OBSERVER (observability only). Guarded import (BUG-311
+# rule): if pure observability code ever faults, live trading must never
+# see it — this module then simply runs untraced.
+try:
+    import time as _trace_time
+
+    from nexus_scalp.observability.trace_observer import trace_observer as _trace_obsv
+except Exception:  # pragma: no cover - observability failure isolation
+    _trace_obsv = None  # type: ignore[assignment]
+
 # ---------------------------------------------------------------------------
 # BUG-226: OFFICIAL MQL5 trade-server return-code map.
 #
@@ -1344,6 +1354,31 @@ class DirectMT5Adapter(IMT5Port):
             )
             request["type_filling"] = mt5.ORDER_FILLING_FOK
 
+        # DECISION-TRACE: broker-gateway evidence. SENT is emitted ONLY here,
+        # immediately before the real terminal call — reaching MT5 is a fact
+        # this call site can prove (§24: never imply MT5 was reached from an
+        # internal "execution allowed" event). Timing covers send->response.
+        _trace_t0 = 0
+        if _trace_obsv is not None and _trace_obsv.active:
+            _trace_t0 = _trace_time.perf_counter_ns()
+            _trace_obsv.emit(
+                stage="MT5",
+                component="mt5_adapter",
+                event_type="MT5_SEND",
+                status="SENT",
+                symbol=order.symbol,
+                detail={
+                    "gateway": "direct_mt5",
+                    "order_id": order.order_id,
+                    "order_type": order.order_type.value,
+                    "volume": order.volume,
+                    "price": order.price,
+                    "sl": order.stop_loss,
+                    "tp": order.take_profit,
+                    "magic": order.magic_number,
+                    "comment": order.comment,
+                },
+            )
         result = mt5.order_send(request)
         if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
             retcode = result.retcode if result else mt5.last_error()
@@ -1354,6 +1389,25 @@ class DirectMT5Adapter(IMT5Port):
                 retcode,
                 translated_err,
             )
+            if _trace_obsv is not None and _trace_obsv.active:
+                _trace_obsv.emit(
+                    stage="MT5",
+                    component="mt5_adapter",
+                    event_type="MT5_RESPONSE",
+                    status="REJECTED",
+                    symbol=order.symbol,
+                    latency_us=(_trace_time.perf_counter_ns() - _trace_t0) // 1000
+                    if _trace_t0
+                    else None,
+                    detail={
+                        "gateway": "direct_mt5",
+                        "reached": True,
+                        "order_id": order.order_id,
+                        "retcode": str(retcode),
+                        "error": str(translated_err),
+                        "success": False,
+                    },
+                )
             return False
 
         logger.info(
@@ -1364,6 +1418,26 @@ class DirectMT5Adapter(IMT5Port):
             result.price,
             order.volume,
         )
+        if _trace_obsv is not None and _trace_obsv.active:
+            _trace_obsv.emit(
+                stage="MT5",
+                component="mt5_adapter",
+                event_type="MT5_RESPONSE",
+                status="ACCEPTED",
+                symbol=order.symbol,
+                latency_us=(_trace_time.perf_counter_ns() - _trace_t0) // 1000
+                if _trace_t0
+                else None,
+                detail={
+                    "gateway": "direct_mt5",
+                    "reached": True,
+                    "order_id": order.order_id,
+                    "ticket": int(result.order) if result.order else None,
+                    "fill_price": float(result.price) if result.price else None,
+                    "retcode": str(result.retcode),
+                    "success": True,
+                },
+            )
         return True
 
     def execute_market_order(

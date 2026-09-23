@@ -36,6 +36,19 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.application.live.tick_pipeline")
 
+# DECISION-TRACE OBSERVER (observability only, INV-018). Guarded import
+# (BUG-311 rule): a fault in pure observability code must never be able to
+# break the tick hot path — if the module cannot import, tracing is simply
+# absent and trading continues.
+try:
+    from nexus_scalp.observability.trace_contract import proposal_summary as _proposal_summary
+    from nexus_scalp.observability.trace_observer import trace_observer as _trace
+except Exception:  # pragma: no cover - observability failure isolation
+    _trace = None  # type: ignore[assignment]
+
+    def _proposal_summary(proposal, *, status, trace_id=None):  # type: ignore[misc]
+        return {}
+
 
 class TickPipeline:
     """Post-policy pipeline stages (composition root: LiveEngine)."""
@@ -353,6 +366,55 @@ class TickPipeline:
                 self.om._last_chart_snapshot_overlays = real_overlays
                 self.om._last_chart_snapshot_time = time.time()
                 self.om.server_state.update_live_visuals(bars_list, real_overlays)
+
+        # DECISION-TRACE: post-policy stage evidence + the always-on decision
+        # record for NO_TRADE. Nothing downstream can resurrect a NO_TRADE
+        # (the executor's suppression branches only fire on actionable
+        # proposals), so this record is terminal; actionable proposals are
+        # recorded by DecisionExecutor as non-terminal APPROVED.
+        if _trace is not None:
+            if _trace.active:
+                _trace.emit(
+                    stage="POST_POLICY",
+                    component="tick_pipeline",
+                    event_type="POST_POLICY_GATES",
+                    status="OBSERVED",
+                    symbol=proposal.symbol,
+                    decision_id=str(proposal.execution_id or proposal.request_id or "")
+                    or None,
+                    detail={
+                        "decision_stage": proposal.decision_stage,
+                        "freshness_blocked": bool(_fresh_blocked),
+                        "experience_decision": str(
+                            getattr(self.om, "_last_experience_decision", "") or ""
+                        )
+                        or None,
+                        "suitability": str(
+                            getattr(self.om, "_last_suitability_verdict", "") or ""
+                        )
+                        or None,
+                        "news_decision": str(getattr(self.om, "_last_news_gate", "") or "")
+                        or None,
+                    },
+                )
+            _act_val = (
+                proposal.action.value
+                if hasattr(proposal.action, "value")
+                else str(proposal.action)
+            )
+            if _act_val == "NO_TRADE":
+                _nt_blocked = bool(
+                    getattr(proposal, "blocked_by", None)
+                    or getattr(proposal, "rejection_reason", None)
+                )
+                _trace.emit_decision(
+                    summary=_proposal_summary(
+                        proposal, status="REJECTED" if _nt_blocked else "NO_TRADE"
+                    ),
+                    detail={"freshness_blocked": bool(_fresh_blocked)},
+                    terminal=True,
+                    component="tick_pipeline",
+                )
         return proposal
 
     def run_pre_policy_stages(
@@ -375,6 +437,19 @@ class TickPipeline:
                 with policy + post-policy stages. `proposal` is the fresh
                 policy evaluation result.
         """
+        # DECISION-TRACE: open the per-market-decision trace at pipeline
+        # entry (the market event that starts the causal chain). No-op
+        # unless an observer session is ACTIVE — zero detail work when OFF.
+        if _trace is not None and _trace.active:
+            _trace.begin_trace(
+                symbol=tick.symbol,
+                detail={
+                    "bid": float(tick.bid),
+                    "ask": float(tick.ask),
+                    "tick_timestamp": tick.timestamp.isoformat(),
+                    "is_new_bar": bool(is_new_bar),
+                },
+            )
         # RUNTIME CONFIGURATION: re-sync services each tick. This is
         # cheap (two attribute assignments from an immutable snapshot)
         # and guarantees a UI save is reflected on the very next
@@ -398,6 +473,17 @@ class TickPipeline:
         fv = self.om.feature_engine.compute_from_bars(
             completed_bars=completed_bars, current_tick=tick
         )
+        # DECISION-TRACE: observed feature-build stage (count evidence only;
+        # the tensor itself is captured at the inference stage).
+        if _trace is not None and _trace.active:
+            _trace.emit(
+                stage="FEATURES",
+                component="tick_pipeline",
+                event_type="FEATURE_BUILD",
+                status="OBSERVED",
+                symbol=tick.symbol,
+                detail={"completed_bars": len(completed_bars), "is_new_bar": bool(is_new_bar)},
+            )
         # TASK-02-70D-INTEGRATION: liquidity snapshot from COMPLETED bars.
         # BUG-169 (2026-08-31, live latency forensics): the governor is
         # IDEMPOTENT per completed-bar series — its only inputs are the
@@ -444,6 +530,12 @@ class TickPipeline:
             self.om._on_new_bar(tick=tick, fv=fv, last_bar=completed_bars[-1])
 
         # Regime state (Module 1)
+        # DECISION-TRACE: capture the pre-classification regime so a real
+        # transition can be evidenced (previous vs current) without one.
+        _trace_prev_regime = None
+        if _trace is not None and _trace.active:
+            _prev_rs = getattr(self.om, "_regime_last_state", None)
+            _trace_prev_regime = getattr(getattr(_prev_rs, "regime_type", None), "value", None)
         # BUG-169: skip RE-EVALUATION for a duplicate tick (identical
         # bid/ask + timestamp). The metrics are functionally idempotent,
         # but classify_tick() PUSHES the duplicate into its rolling
@@ -482,6 +574,25 @@ class TickPipeline:
             # PROVEN fresh by a successful classify_tick() call.
             self.om._regime_state_classified_at = time.time()
 
+        # DECISION-TRACE: observed regime state + honest transition evidence.
+        if _trace is not None and _trace.active:
+            _reg_val = getattr(getattr(regime_state, "regime_type", None), "value", None)
+            _reg_detail: dict = {
+                "regime": _reg_val,
+                "confidence": getattr(regime_state, "regime_probability", None),
+            }
+            if _trace_prev_regime is not None:
+                _reg_detail["previous_regime"] = _trace_prev_regime
+                _reg_detail["transition"] = bool(_trace_prev_regime != _reg_val)
+            _trace.emit(
+                stage="REGIME",
+                component="regime_classifier",
+                event_type="REGIME_STATE",
+                status="OBSERVED",
+                symbol=tick.symbol,
+                detail=_reg_detail,
+            )
+
         # Manage open positions
         # NOTE (Phase 15 exit audit): `probs` and `regime_state` are threaded
         # into position management so the in-trade exit evaluation sees the
@@ -508,6 +619,17 @@ class TickPipeline:
                     "[INFERENCE] in-trade inference failed (isolated, positions still managed)",
                     error=str(infer_err),
                 )
+                # DECISION-TRACE: non-terminal ERROR — the pipeline continues
+                # with probs=None (this failure does not end the decision).
+                if _trace is not None and _trace.active:
+                    _trace.emit(
+                        stage="INFERENCE",
+                        component="inference",
+                        event_type="MODEL_INFERENCE",
+                        status="ERROR",
+                        symbol=tick.symbol,
+                        detail={"error": str(infer_err), "context": "in_trade_inference"},
+                    )
                 probs_for_mgmt = None
         active_positions = self.om.order_manager.manage_active_positions(
             symbol=tick.symbol,
@@ -569,6 +691,16 @@ class TickPipeline:
                     reason_code="HTF_WARMUP_INCOMPLETE",
                 )
                 self.om.audit.log_signal(proposal)
+                # DECISION-TRACE: terminal record for the fail-closed warmup
+                # rejection (no policy stage ran — decision_stage carries the
+                # runtime's own reason_code).
+                if _trace is not None:
+                    _trace.emit_decision(
+                        summary=_proposal_summary(proposal, status="REJECTED"),
+                        detail={"context": "warmup_gate"},
+                        terminal=True,
+                        component="tick_pipeline",
+                    )
                 self.om._last_tick = tick
                 self.om._last_fv = fv
                 self.om._last_regime_state = regime_state
@@ -590,7 +722,23 @@ class TickPipeline:
             and self.om.warmup_state == "READY"
             and _liq_ok
         ):
-            probs = self.om._infer_probabilities(fv=fv)
+            try:
+                probs = self.om._infer_probabilities(fv=fv)
+            except Exception as infer_err:
+                # DECISION-TRACE: terminal ERROR — this exception leaves the
+                # pipeline (hot-path circuit breaker), so the trace path
+                # genuinely ends here. Re-raise preserves fail-loud.
+                if _trace is not None and _trace.active:
+                    _trace.emit(
+                        stage="INFERENCE",
+                        component="inference",
+                        event_type="MODEL_INFERENCE",
+                        status="ERROR",
+                        symbol=tick.symbol,
+                        terminal=True,
+                        detail={"error": str(infer_err), "context": "decision_inference"},
+                    )
+                raise
         else:
             probs = probs_for_mgmt
 
@@ -611,4 +759,35 @@ class TickPipeline:
             force_log=force_log,
             order_manager=self.om.order_manager,
         )
+        # DECISION-TRACE: the policy gate evaluation is evidenced by the
+        # proposal itself (decision_stage / blocked_by / reason_code /
+        # risk_checks pairs are the runtime's own gate record).
+        if _trace is not None and _trace.active:
+            _p_blocked = bool(
+                getattr(proposal, "blocked_by", None)
+                or getattr(proposal, "rejection_reason", None)
+            )
+            _trace.emit(
+                stage="POLICY",
+                component="signal_policy",
+                event_type="GATE_EVALUATION",
+                status="REJECT" if _p_blocked else "PASS",
+                symbol=proposal.symbol,
+                decision_id=str(proposal.execution_id or proposal.request_id or "") or None,
+                detail={
+                    "decision_stage": proposal.decision_stage,
+                    "blocked_by": proposal.blocked_by,
+                    "reason_code": proposal.reason_code,
+                    "rejection_reason": proposal.rejection_reason,
+                    "action": proposal.action,
+                    "model_action": proposal.model_action,
+                    "confidence": proposal.confidence,
+                    "regime": proposal.regime,
+                    "regime_confidence": proposal.regime_confidence,
+                    "guardian_status": proposal.guardian_status,
+                    "execution_path": proposal.execution_mode,
+                    "risk_checks": proposal.risk_checks,
+                    "request_id": proposal.request_id,
+                },
+            )
         return True, fv, proposal, probs, regime_state, active_positions, current_pos_count
