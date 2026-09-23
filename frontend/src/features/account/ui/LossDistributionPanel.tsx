@@ -10,6 +10,7 @@
  * UNKNOWN row (dashed cell) — never a zero bar that could be read as healthy.
  */
 
+import { useMemo } from "react";
 import { clampRatio } from "@/components/viz/geometry";
 import "./loss-distribution.css";
 
@@ -63,13 +64,23 @@ export function LossDistributionPanel({
   maxRows = 8,
   emptyHint = "no strategy carries recorded loss",
 }: LossDistributionPanelProps) {
-  const withShare = rows.filter((r) => r.loss_share !== null && r.loss_share !== undefined);
-  const sorted = [...withShare].sort((a, b) => (b.loss_share ?? 0) - (a.loss_share ?? 0));
-  const unknown = rows.filter((r) => r.loss_share === null || r.loss_share === undefined);
-  const maxShare = sorted.length ? (sorted[0]?.loss_share ?? 0) : 0;
-  const totalShare = sorted.reduce((acc, r) => acc + (r.loss_share ?? 0), 0);
-  const shown = sorted.slice(0, maxRows);
-  const hidden = sorted.length - shown.length;
+  // perf: filter + rank once per (rows, maxRows), not on every parent render.
+  const { sorted, unknown, maxShare, totalShare, shown, hidden } = useMemo(() => {
+    const withShare = rows.filter((r) => r.loss_share !== null && r.loss_share !== undefined);
+    const sortedRows = [...withShare].sort((a, b) => (b.loss_share ?? 0) - (a.loss_share ?? 0));
+    const unknownRows = rows.filter((r) => r.loss_share === null || r.loss_share === undefined);
+    const max = sortedRows.length ? (sortedRows[0]?.loss_share ?? 0) : 0;
+    const total = sortedRows.reduce((acc, r) => acc + (r.loss_share ?? 0), 0);
+    const shownRows = sortedRows.slice(0, maxRows);
+    return {
+      sorted: sortedRows,
+      unknown: unknownRows,
+      maxShare: max,
+      totalShare: total,
+      shown: shownRows,
+      hidden: sortedRows.length - shownRows.length,
+    };
+  }, [rows, maxRows]);
 
   if (sorted.length === 0 && unknown.length === 0) {
     return <div className="ld-empty">{emptyHint}</div>;
