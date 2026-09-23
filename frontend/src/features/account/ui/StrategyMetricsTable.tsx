@@ -16,7 +16,26 @@ import { useMemo, useState } from "react";
 import type { StrategyContribution } from "../types";
 import { formatNumber } from "@/lib/format";
 import { DASH, moneyOrDash, pctOrDash } from "./shared";
+import { useI18n } from "@/stores/i18nStore";
 import "./strategy-table.css";
+
+type Translator = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
+/** Numeric column captions (LABELS, translated for display). */
+function metricLabelT(key: SortKey, t: Translator): string {
+  switch (key) {
+    case "strategy_id": return t("account.sth.strategy", "strategy");
+    case "trade_count": return t("account.sth.trades", "trades");
+    case "net_pnl": return t("account.sth.net_pnl", "net PnL");
+    case "win_rate": return t("account.sth.win_pct", "win %");
+    case "profit_factor": return t("account.sth.pf", "PF");
+    case "average_r": return t("account.sth.avg_r", "avg R");
+    case "loss_share": return t("account.smt.loss_shr", "loss shr");
+    case "confidence": return t("account.smt.conf", "conf");
+    case "expectancy_r": return t("account.smt.exp_r", "exp R");
+    default: return key;
+  }
+}
 
 type SortKey =
   | "strategy_id"
@@ -92,6 +111,7 @@ export interface StrategyMetricsTableProps {
 }
 
 export function StrategyMetricsTable({ rows, onCopy }: StrategyMetricsTableProps) {
+  const t = useI18n((s) => s.t);
   const [sort, setSort] = useState<SortState>({ key: "net_pnl", dir: -1 });
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
@@ -132,7 +152,7 @@ export function StrategyMetricsTable({ rows, onCopy }: StrategyMetricsTableProps
   if (rows.length === 0) {
     return (
       <div className="st-empty">
-        NO STRATEGY EVIDENCE AVAILABLE — contributions need closed trades tagged with a strategy_id.
+        {t("account.smt.no_evidence", "NO STRATEGY EVIDENCE AVAILABLE — contributions need closed trades tagged with a strategy_id.")}
       </div>
     );
   }
@@ -147,20 +167,20 @@ export function StrategyMetricsTable({ rows, onCopy }: StrategyMetricsTableProps
           <input
             className="st-search-input"
             type="search"
-            placeholder="filter by strategy id…"
+            placeholder={t("account.smt.filter_ph", "filter by strategy id…")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            aria-label="Filter strategies by id"
+            aria-label={t("account.smt.filter_aria", "Filter strategies by id")}
           />
           {query && (
-            <button className="st-search-clear" onClick={() => setQuery("")} aria-label="Clear filter">
+            <button className="st-search-clear" onClick={() => setQuery("")} aria-label={t("account.smt.clear_aria", "Clear filter")}>
               ✕
             </button>
           )}
         </div>
         <div className="st-count">
           <span className="st-count-n">{sorted.length}</span>
-          <span className="st-count-l">/ {rows.length} shown</span>
+          <span className="st-count-l">{t("account.smt.shown", "/ {total} shown", { total: String(rows.length) })}</span>
         </div>
       </div>
 
@@ -168,19 +188,19 @@ export function StrategyMetricsTable({ rows, onCopy }: StrategyMetricsTableProps
         <table className="st-table">
           <thead>
             <tr>
-              <th className="st-th" style={{ textAlign: "left" }}>strategy</th>
+              <th className="st-th" style={{ textAlign: "start" }}>{t("account.sth.strategy", "strategy")}</th>
               {NUMERIC.map((k) => (
                 <th
                   key={k}
                   className={`st-th st-num ${sort.key === k ? "st-active" : ""}`}
                   onClick={() => toggleSort(k)}
-                  title={`sort by ${k}`}
+                  title={t("account.smt.sort_by", "sort by {key}", { key: k })}
                 >
-                  <span className="st-th-label">{LABELS[k]}</span>
+                  <span className="st-th-label">{metricLabelT(k, t)}</span>
                   <span className="st-sort-ico">{sort.key === k ? (sort.dir === 1 ? "▲" : "▼") : "↕"}</span>
                 </th>
               ))}
-              <th className="st-th" style={{ textAlign: "left" }}>lifecycle</th>
+              <th className="st-th" style={{ textAlign: "start" }}>{t("account.sth.lifecycle", "lifecycle")}</th>
             </tr>
           </thead>
           <tbody>
@@ -190,8 +210,8 @@ export function StrategyMetricsTable({ rows, onCopy }: StrategyMetricsTableProps
                   <button
                     className="st-id-btn"
                     onClick={() => handleCopy(s.strategy_id)}
-                    title={copied === s.strategy_id ? "copied!" : `copy ${s.strategy_id}`}
-                    aria-label={`Copy strategy id ${s.strategy_id}`}
+                    title={copied === s.strategy_id ? t("account.smt.copied", "copied!") : t("account.smt.copy", "copy {id}", { id: s.strategy_id })}
+                    aria-label={t("account.smt.copy_aria", "Copy strategy id {id}", { id: s.strategy_id })}
                   >
                     <span className="st-id">{truncateId(s.strategy_id)}</span>
                     <span className="st-copy-ico">{copied === s.strategy_id ? "✓" : "⧉"}</span>
@@ -239,14 +259,4 @@ export function StrategyMetricsTable({ rows, onCopy }: StrategyMetricsTableProps
   );
 }
 
-const LABELS: Record<SortKey, string> = {
-  strategy_id: "strategy",
-  trade_count: "trades",
-  net_pnl: "net PnL",
-  win_rate: "win %",
-  profit_factor: "PF",
-  average_r: "avg R",
-  loss_share: "loss shr",
-  confidence: "conf",
-  expectancy_r: "exp R",
-};
+

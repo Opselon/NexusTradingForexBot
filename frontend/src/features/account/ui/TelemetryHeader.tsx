@@ -17,6 +17,7 @@ import { useAccountPerformance, useAccountPeriod } from "../hooks";
 import { useUiStore } from "@/stores/uiStore";
 import { DASH, moneyOrDash } from "./shared";
 import { formatAgeMs } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import "./telemetry-header.css";
 
 const STALE_AFTER_MS = 45_000;
@@ -32,6 +33,7 @@ function nowUtc(): string {
 }
 
 export function TelemetryHeader() {
+  const t = useI18n((s) => s.t);
   const perf = useAccountPerformance();
   const day = useAccountPeriod("DAY");
   const pushToast = useUiStore((s) => s.pushToast);
@@ -58,48 +60,49 @@ export function TelemetryHeader() {
     if (updated === undefined) return;
     const bad = updated === 0 ? false : Date.now() - updated > STALE_AFTER_MS;
     setStale(bad);
-    if (bad) pushToast("fail", `Accounting core data is stale (${formatAgeMs(Date.now() - updated)})`);
-  }, [perf.dataUpdatedAt, pushToast]);
+    if (bad) pushToast("fail", t("account.telemetry.stale_toast", "Accounting core data is stale ({age})", { age: formatAgeMs(Date.now() - updated) }));
+  }, [perf.dataUpdatedAt, pushToast, t]);
 
   const latencyMs = tickAge === null ? null : Math.round(tickAge * 1000);
 
   return (
     <header className="th-root" role="banner">
       <div className="th-left">
-        <span className={`th-pill ${online ? "th-live" : "th-down"}`} title={source ?? "adapter unavailable"}>
+        <span className={`th-pill ${online ? "th-live" : "th-down"}`} title={source ?? t("account.telemetry.adapter_unavailable", "adapter unavailable")}>
           <span className="th-dot" aria-hidden="true" />
-          <span className="th-pill-state">{online ? "LIVE ENGINE" : "DISCONNECTED"}</span>
+          <span className="th-pill-state">{online ? t("account.telemetry.live_engine", "LIVE ENGINE") : t("account.telemetry.disconnected", "DISCONNECTED")}</span>
           {online && (
             <span className="th-pill-lat">
-              LATENCY&nbsp;{latencyMs === null ? DASH : `${latencyMs}ms`}
+              {t("account.telemetry.latency", "LATENCY")}&nbsp;{latencyMs === null ? DASH : `${latencyMs}ms`}
             </span>
           )}
         </span>
 
-        <span className="th-tag" title="Symbol and timeframe served by the accounting core">
+        <span className="th-tag" title={t("account.telemetry.tag_title", "Symbol and timeframe served by the accounting core")}>
           {SYMBOL}<span className="th-tag-sep">·</span>{TIMEFRAME}
         </span>
 
         <span className={`th-market ${market?.state === "UNKNOWN" ? "th-market-unknown" : ""}`}>
-          MARKET&nbsp;{market?.state ?? DASH}
+          {t("account.telemetry.market", "MARKET")}&nbsp;{market?.state ?? DASH}
         </span>
         {market?.reason && <span className="th-reason">{market.reason}</span>}
       </div>
 
       <div className="th-right">
         {stale && (
-          <span className="th-stale" title="Accounting core has not refreshed inside the staleness window">
+          <span className="th-stale" title={t("account.telemetry.stale_title", "Accounting core has not refreshed inside the staleness window")}>
             <span className="th-warn-dot" aria-hidden="true" />
-            STALE&nbsp;{perf.dataUpdatedAt ? formatAgeMs(Date.now() - perf.dataUpdatedAt) : DASH}
+            {t("account.telemetry.stale", "STALE")}&nbsp;{perf.dataUpdatedAt ? formatAgeMs(Date.now() - perf.dataUpdatedAt) : DASH}
           </span>
         )}
         <span className="th-eq">
-          <span className="th-eq-l">EQUITY</span>
-          <span className={`th-eq-v ${online ? "" : "dim"}`}>{moneyOrDash(live?.equity)}</span>
+          <span className="th-eq-l">{t("account.telemetry.equity", "EQUITY")}</span>
+          <span dir="ltr" className={`th-eq-v ${online ? "" : "dim"}`}>{moneyOrDash(live?.equity)}</span>
         </span>
         <span className="th-eq">
-          <span className="th-eq-l">FLOAT</span>
+          <span className="th-eq-l">{t("account.telemetry.float", "FLOAT")}</span>
           <span
+            dir="ltr"
             className={`th-eq-v ${
               live?.floating_pnl == null ? "dim" : live.floating_pnl >= 0 ? "pos" : "neg"
             }`}
@@ -107,7 +110,7 @@ export function TelemetryHeader() {
             {moneyOrDash(live?.floating_pnl, true)}
           </span>
         </span>
-        <span className="th-clock" title="Wall clock (client), not market data">
+        <span className="th-clock" title={t("account.telemetry.clock_title", "Wall clock (client), not market data")}>
           {utc}
         </span>
       </div>

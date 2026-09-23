@@ -25,6 +25,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ShellPageProps } from "@/app/featureModule";
 import { EmptyState, ErrorState, LoadingState, Panel, Segmented } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { provisioningApi } from "../api";
 import type {
   EnvCheck,
@@ -54,20 +55,24 @@ function CheckRow({
   label,
   ok,
   note,
+  okLabel,
+  failLabel,
 }: {
   label: string;
   ok: boolean | null | undefined;
   note: string | null | undefined;
+  okLabel: string;
+  failLabel: string;
 }) {
   return (
     <div className="kv-row">
       <dt className="inline-mono small">{label}</dt>
-      <dd style={{ textAlign: "left", display: "flex", gap: 8, alignItems: "baseline" }}>
+      <dd style={{ textAlign: "start", display: "flex", gap: 8, alignItems: "baseline" }}>
         <span
           className={classNames("badge", ok === null || ok === undefined ? "unknown" : ok ? "good" : "bad")}
           style={{ flex: "0 0 auto" }}
         >
-          {ok === null || ok === undefined ? "—" : ok ? "OK" : "FAIL"}
+          {ok === null || ok === undefined ? "—" : ok ? okLabel : failLabel}
         </span>
         {note ? <span className="muted small">{note}</span> : null}
       </dd>
@@ -76,6 +81,7 @@ function CheckRow({
 }
 
 export default function ProvisioningPage(_props: ShellPageProps) {
+  const t = useI18n((s) => s.t);
   const [status, setStatus] = useState<ProvisioningStatusResponse | null>(null);
   const [env, setEnv] = useState<ProvisioningEnvironmentResponse | null>(null);
   const [backend, setBackend] = useState<TrainBackend>("auto");
@@ -140,9 +146,9 @@ export default function ProvisioningPage(_props: ShellPageProps) {
         if (!p.active) {
           setTraining(false);
           setResult(p.result ?? null);
-          if (p.cancelled) setNotice("Run cancelled — observed at the epoch boundary.");
+          if (p.cancelled) setNotice(t("provisioning.notice.run_cancelled", "Run cancelled — observed at the epoch boundary."));
           else if (!p.success) setError(codeOf(p));
-          else setNotice("Run finished.");
+          else setNotice(t("provisioning.notice.run_finished", "Run finished."));
         }
       } catch (err) {
         if (!cancelled) setError(errText(err));
@@ -154,7 +160,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [training]);
+  }, [training, t]);
 
   const onInstall = useCallback(async () => {
     setInstalling(true);
@@ -165,7 +171,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
       if (!out.success) {
         setError(codeOf(out) + (out.remedy ? ` — ${out.remedy}` : ""));
       } else {
-        setNotice("Environment install finished.");
+        setNotice(t("provisioning.notice.install_done", "Environment install finished."));
         await refreshEnv(backend);
       }
     } catch (err) {
@@ -173,7 +179,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
     } finally {
       setInstalling(false);
     }
-  }, [backend, refreshEnv]);
+  }, [backend, refreshEnv, t]);
 
   const onOfficial = useCallback(async () => {
     setOfficialBusy(true);
@@ -184,7 +190,11 @@ export default function ProvisioningPage(_props: ShellPageProps) {
       if (!out.success) {
         setError(codeOf(out) + (out.remedy ? ` — ${out.remedy}` : ""));
       } else {
-        setNotice(out.ok ? "Official model installed and servable." : "Official model downloaded; see the status slot.");
+        setNotice(
+          out.ok
+            ? t("provisioning.notice.official_ready", "Official model installed and servable.")
+            : t("provisioning.notice.official_downloaded", "Official model downloaded; see the status slot."),
+        );
         await refreshStatus();
       }
     } catch (err) {
@@ -192,7 +202,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
     } finally {
       setOfficialBusy(false);
     }
-  }, [refreshStatus]);
+  }, [refreshStatus, t]);
 
   const onTrain = useCallback(async () => {
     setError("");
@@ -216,21 +226,25 @@ export default function ProvisioningPage(_props: ShellPageProps) {
         return;
       }
       setTraining(true);
-      setNotice("Training run started.");
+      setNotice(t("provisioning.notice.train_started", "Training run started."));
     } catch (err) {
       setError(errText(err));
     }
-  }, [source, filePath, candles, folds, epochs, backend, prepareEnvironment]);
+  }, [source, filePath, candles, folds, epochs, backend, prepareEnvironment, t]);
 
   const onCancel = useCallback(async () => {
     setError("");
     try {
       const out = await provisioningApi.trainCancel();
-      setNotice(out.cancel === "REQUESTED" ? "Cancel requested — observed at the next epoch boundary." : "No active run to cancel.");
+      setNotice(
+        out.cancel === "REQUESTED"
+          ? t("provisioning.notice.cancel_requested", "Cancel requested — observed at the next epoch boundary.")
+          : t("provisioning.notice.no_run", "No active run to cancel."),
+      );
     } catch (err) {
       setError(errText(err));
     }
-  }, []);
+  }, [t]);
 
   const busy = installing || officialBusy || training;
   const report = env?.report;
@@ -238,26 +252,39 @@ export default function ProvisioningPage(_props: ShellPageProps) {
   const trainingReady = Boolean(report?.training_ready);
   const recommended = status?.recommended;
   const allowedRoots = status?.allowed_import_roots ?? [];
+  const okLabel = t("provisioning.check.ok", "OK");
+  const failLabel = t("provisioning.check.fail", "FAIL");
 
   return (
     <div className="pv-page">
       {/* ------------------------------------------------------------- header */}
       <Panel
-        title="First-Run Model Preparation"
+        title={t("provisioning.panel.title", "First-Run Model Preparation")}
         accent
         right={
           <span className={classNames("badge", trainingReady ? "good" : report ? "warn" : "unknown")}>
-            {report ? (trainingReady ? "ENV READY" : "ENV NOT READY") : "ENV —"}
+            {report ? (
+              trainingReady ? (
+                t("provisioning.badge.ready", "ENV READY")
+              ) : (
+                t("provisioning.badge.not_ready", "ENV NOT READY")
+              )
+            ) : (
+              t("provisioning.badge.unknown", "ENV —")
+            )}
           </span>
         }
       >
         <p className="small muted">
-          Prepare a servable model before the engine runs. Environment check is discovery only —
-          installing is an explicit, consented action. One local training run at a time.
+          {t(
+            "provisioning.panel.intro",
+            "Prepare a servable model before the engine runs. Environment check is discovery only — installing is an explicit, consented action. One local training run at a time.",
+          )}
         </p>
         {recommended ? (
           <div className="banner info pv-banner" role="status">
-            Recommended next action: <span className="inline-mono">{String(recommended)}</span>
+            {t("provisioning.banner.recommended", "Recommended next action:")}{" "}
+            <span className="inline-mono">{String(recommended)}</span>
           </div>
         ) : null}
       </Panel>
@@ -272,7 +299,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
       <div className="pv-grid">
         {/* ------------------------------------------------ environment card */}
         <Panel
-          title="Training Environment"
+          title={t("provisioning.env.title", "Training Environment")}
           right={
             <Segmented
               options={TRAIN_BACKENDS.map((b) => ({ id: b, label: b.toUpperCase() }))}
@@ -282,7 +309,9 @@ export default function ProvisioningPage(_props: ShellPageProps) {
           }
         >
           <p className="small muted">
-            Backend <span className="inline-mono">{backend}</span> — discovery only, nothing is installed by this check.
+            {t("provisioning.env.backend_label", "Backend")}{" "}
+            <span className="inline-mono">{backend}</span>{" "}
+            {t("provisioning.env.backend_discovery", "— discovery only, nothing is installed by this check.")}
           </p>
 
           {env ? (
@@ -290,32 +319,44 @@ export default function ProvisioningPage(_props: ShellPageProps) {
               <CheckRow
                 label="python"
                 ok={Boolean(env.environment?.python)}
-                note={env.environment?.python ? String(env.environment.python) : "not detected"}
+                note={env.environment?.python ? String(env.environment.python) : t("provisioning.env.not_detected", "not detected")}
+                okLabel={okLabel}
+                failLabel={failLabel}
               />
               <CheckRow
                 label="pytorch"
                 ok={Boolean(env.environment?.torch)}
-                note={env.environment?.torch ? String(env.environment.torch) : "not detected"}
+                note={env.environment?.torch ? String(env.environment.torch) : t("provisioning.env.not_detected", "not detected")}
+                okLabel={okLabel}
+                failLabel={failLabel}
               />
               <CheckRow
                 label="cuda"
                 ok={env.environment?.cuda ?? null}
-                note={env.environment?.gpu_name ? String(env.environment.gpu_name) : "no GPU required"}
+                note={env.environment?.gpu_name ? String(env.environment.gpu_name) : t("provisioning.env.no_gpu", "no GPU required")}
+                okLabel={okLabel}
+                failLabel={failLabel}
               />
-              <CheckRow label="training_ready" ok={trainingReady} note={trainingReady ? "can train now" : "blocked"} />
+              <CheckRow
+                label="training_ready"
+                ok={trainingReady}
+                note={trainingReady ? t("provisioning.env.can_train", "can train now") : t("provisioning.env.blocked", "blocked")}
+                okLabel={okLabel}
+                failLabel={failLabel}
+              />
             </dl>
           ) : (
-            <LoadingState label="Resolving environment…" />
+            <LoadingState label={t("provisioning.env.resolving", "Resolving environment…")} />
           )}
 
           {failures.length > 0 ? (
             <div className="pv-callout bad">
-              <div className="head">Blocking checks</div>
+              <div className="head">{t("provisioning.env.blocking", "Blocking checks")}</div>
               <ul>
                 {failures.map((f, i) => (
                   <li key={`${f.stage}-${i}`}>
                     <span className="inline-mono">{f.stage}</span>:{" "}
-                    <span className="inline-mono">{f.code || "FAIL"}</span>
+                    <span className="inline-mono">{f.code || failLabel}</span>
                     {f.remedy ? <span className="muted"> — {f.remedy}</span> : null}
                   </li>
                 ))}
@@ -329,49 +370,61 @@ export default function ProvisioningPage(_props: ShellPageProps) {
               className="btn"
               disabled={busy}
               onClick={() => void onInstall()}
-              title="Explicit opt-in: installs pinned python/torch for the chosen backend"
+              title={t("provisioning.env.install_title", "Explicit opt-in: installs pinned python/torch for the chosen backend")}
             >
-              {installing ? "Installing…" : "Install training stack"}
+              {installing ? t("provisioning.env.installing", "Installing…") : t("provisioning.env.install", "Install training stack")}
             </button>
             <span className="small muted">
-              Explicit opt-in (pinned variants). Training never auto-starts from here.
+              {t("provisioning.env.install_hint", "Explicit opt-in (pinned variants). Training never auto-starts from here.")}
             </span>
           </div>
         </Panel>
 
         {/* ------------------------------------------------ official model card */}
-        <Panel title="Official Model">
+        <Panel title={t("provisioning.official.title", "Official Model")}>
           <p className="small muted">
-            Download and verify the published model bundle. Nothing is installed unless every
-            verification check passes.
+            {t(
+              "provisioning.official.intro",
+              "Download and verify the published model bundle. Nothing is installed unless every verification check passes.",
+            )}
           </p>
           {status?.slot ? (
             <dl className="kv pv-list">
               {Object.entries(status.slot).slice(0, 6).map(([k, v]) => (
-                <CheckRow key={k} label={k} ok={isOkValue(v)} note={fmtValue(v)} />
+                <CheckRow key={k} label={k} ok={isOkValue(v)} note={fmtValue(v)} okLabel={okLabel} failLabel={failLabel} />
               ))}
             </dl>
           ) : (
-            <EmptyState message="No slot state yet." hint="The recommended action appears in the header once known." />
+            <EmptyState
+              message={t("provisioning.official.empty", "No slot state yet.")}
+              hint={t("provisioning.official.empty_hint", "The recommended action appears in the header once known.")}
+            />
           )}
           <div className="pv-toolbar">
             <button type="button" className="btn" disabled={busy} onClick={() => void onOfficial()}>
-              {officialBusy ? "Downloading…" : "Download & verify official model"}
+              {officialBusy
+                ? t("provisioning.official.downloading", "Downloading…")
+                : t("provisioning.official.download", "Download & verify official model")}
             </button>
           </div>
         </Panel>
       </div>
 
       {/* ---------------------------------------------------------- train card */}
-      <Panel title="Local Training Run">
+      <Panel title={t("provisioning.train.title", "Local Training Run")}>
         <p className="small muted">
-          Train a model from an imported file or from broker-borrowed history. Validation is
-          server side; broker source requires an explicit candle count.
+          {t(
+            "provisioning.train.intro",
+            "Train a model from an imported file or from broker-borrowed history. Validation is server side; broker source requires an explicit candle count.",
+          )}
         </p>
 
         <div className="pv-toolbar">
           <Segmented
-            options={TRAIN_SOURCES.map((s) => ({ id: s, label: s === "file" ? "Import file" : "Broker history" }))}
+            options={TRAIN_SOURCES.map((s) => ({
+              id: s,
+              label: s === "file" ? t("provisioning.train.source_file", "Import file") : t("provisioning.train.source_broker", "Broker history"),
+            }))}
             value={source}
             onChange={setSource}
           />
@@ -385,20 +438,20 @@ export default function ProvisioningPage(_props: ShellPageProps) {
         {source === "file" ? (
           <div className="pv-field">
             <label className="small muted" htmlFor="prov-file">
-              Dataset file (CSV/Parquet) — must be inside an allowed import root
+              {t("provisioning.train.file_label", "Dataset file (CSV/Parquet) — must be inside an allowed import root")}
             </label>
             <input
               id="prov-file"
               type="text"
               className="input pv-file"
-              placeholder="e.g. data/XAUUSD_M1.csv"
+              placeholder={t("provisioning.train.file_ph", "e.g. data/XAUUSD_M1.csv")}
               value={filePath}
               onChange={(e) => setFilePath(e.target.value)}
               disabled={busy}
             />
             {allowedRoots.length > 0 ? (
               <div className="small muted">
-                Allowed roots:{" "}
+                {t("provisioning.train.allowed_roots", "Allowed roots:")}{" "}
                 {allowedRoots.map((r, i) => (
                   <span key={r} className="inline-mono">
                     {r}
@@ -410,7 +463,9 @@ export default function ProvisioningPage(_props: ShellPageProps) {
           </div>
         ) : (
           <div className="pv-field">
-            <label className="small muted">Candles (most recent N bars — chronological tail)</label>
+            <label className="small muted">
+              {t("provisioning.train.candles_label", "Candles (most recent N bars — chronological tail)")}
+            </label>
             <div>
               <Segmented options={CANDLE_OPTIONS} value={candles} onChange={setCandles} />
             </div>
@@ -419,7 +474,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
 
         <div className="pv-toolbar end">
           <label className="small muted">
-            Folds
+            {t("provisioning.train.folds", "Folds")}
             <input
               type="number"
               className="input pv-num"
@@ -431,7 +486,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
             />
           </label>
           <label className="small muted">
-            Epochs
+            {t("provisioning.train.epochs", "Epochs")}
             <input
               type="number"
               className="input pv-num"
@@ -449,7 +504,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
               onChange={(e) => setPrepareEnvironment(e.target.checked)}
               disabled={busy}
             />
-            Prepare environment if not ready (explicit consent)
+            {t("provisioning.train.consent", "Prepare environment if not ready (explicit consent)")}
           </label>
         </div>
 
@@ -460,16 +515,16 @@ export default function ProvisioningPage(_props: ShellPageProps) {
             disabled={busy || (source === "file" && !filePath)}
             onClick={() => void onTrain()}
           >
-            {training ? "Training…" : "Start training run"}
+            {training ? t("provisioning.train.training", "Training…") : t("provisioning.train.start", "Start training run")}
           </button>
           <button type="button" className="btn" disabled={!training} onClick={() => void onCancel()}>
-            Cancel run
+            {t("provisioning.train.cancel", "Cancel run")}
           </button>
         </div>
 
         {events.length > 0 ? (
           <div className="pv-field">
-            <div className="small faint uppercase font-bold">Progress</div>
+            <div className="small faint uppercase font-bold">{t("provisioning.train.progress", "Progress")}</div>
             <pre className="pv-log" aria-live="polite">
               {events
                 .map((e) => `[${e.stage}] ${String(e.status)} — ${String(e.message ?? "")}`)
@@ -480,7 +535,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
 
         {result ? (
           <div className="pv-callout ok">
-            <div className="head">Run result</div>
+            <div className="head">{t("provisioning.train.result", "Run result")}</div>
             <pre className="pv-json">{JSON.stringify(result, null, 2)}</pre>
           </div>
         ) : null}
@@ -488,4 +543,3 @@ export default function ProvisioningPage(_props: ShellPageProps) {
     </div>
   );
 }
-

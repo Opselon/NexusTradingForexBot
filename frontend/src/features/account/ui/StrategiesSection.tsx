@@ -9,36 +9,38 @@ import { Gauge, HeatBar } from "@/components/viz";
 import { formatNumber } from "@/lib/format";
 import { useAccountStrategies } from "../hooks";
 import { DASH, FreshnessNote, asErrorText, moneyOrDash, pctOrDash } from "./shared";
+import { useI18n } from "@/stores/i18nStore";
 
 export function StrategiesSection() {
+  const t = useI18n((s) => s.t);
   const strategies = useAccountStrategies();
   const rows = strategies.data?.strategies ?? [];
 
   return (
     <Panel
-      title={`Strategy contributions (${rows.length})`}
-      right={<FreshnessNote updatedAtMs={strategies.dataUpdatedAt ?? null} label="strategies" />}
+      title={t("account.strat.title", "Strategy contributions ({count})", { count: String(rows.length) })}
+      right={<FreshnessNote updatedAtMs={strategies.dataUpdatedAt ?? null} label={t("account.fresh.strategies", "strategies")} />}
     >
       {strategies.isPending ? (
-        <div className="viz-empty">loading contributions…</div>
+        <div className="viz-empty">{t("account.strat.loading", "loading contributions…")}</div>
       ) : strategies.isError ? (
-        <ErrorState message={asErrorText(strategies.error)} onRetry={() => strategies.refetch()} />
+        <ErrorState message={asErrorText(strategies.error, t)} onRetry={() => strategies.refetch()} />
       ) : rows.length === 0 ? (
-        <EmptyState message="NO STRATEGY EVIDENCE AVAILABLE" hint="Contributions need closed trades tagged with a strategy_id." />
+        <EmptyState message={t("account.strat.no_evidence", "NO STRATEGY EVIDENCE AVAILABLE")} hint={t("account.strat.no_evidence_hint", "Contributions need closed trades tagged with a strategy_id.")} />
       ) : (
         <>
           <DataTable
             headers={[
-              { label: "strategy" },
-              { label: "trades", num: true },
-              { label: "net PnL", num: true },
-              { label: "win %", num: true },
-              { label: "PF", num: true },
-              { label: "avg R", num: true },
-              { label: "loss share", num: true },
-              { label: "lifecycle" },
-              { label: "confidence", num: true },
-              { label: "expectancy R", num: true },
+              { label: t("account.sth.strategy", "strategy") },
+              { label: t("account.sth.trades", "trades"), num: true },
+              { label: t("account.sth.net_pnl", "net PnL"), num: true },
+              { label: t("account.sth.win_pct", "win %"), num: true },
+              { label: t("account.sth.pf", "PF"), num: true },
+              { label: t("account.sth.avg_r", "avg R"), num: true },
+              { label: t("account.sth.loss_share", "loss share"), num: true },
+              { label: t("account.sth.lifecycle", "lifecycle") },
+              { label: t("account.sth.confidence", "confidence"), num: true },
+              { label: t("account.sth.expectancy_r", "expectancy R"), num: true },
             ]}
           >
             {rows.map((s) => (
@@ -60,18 +62,18 @@ export function StrategiesSection() {
           </DataTable>
           <div className="grid cols-2" style={{ marginTop: 12 }}>
             <div>
-              <div className="section-title">loss responsibility (share of account loss)</div>
+              <div className="section-title">{t("account.strat.loss_resp", "loss responsibility (share of account loss)")}</div>
               <HeatBar
                 invert
                 items={rows
                   .filter((s) => s.loss_share !== null && s.loss_share !== undefined)
-                  .map((s) => ({ label: s.strategy_id, value: s.loss_share ?? null, caption: `${((s.loss_share ?? 0) * 100).toFixed(1)}%`, title: `net ${moneyOrDash(s.net_pnl, true)}` }))}
-                emptyHint="no strategy carries recorded loss"
+                  .map((s) => ({ label: s.strategy_id, value: s.loss_share ?? null, caption: `${((s.loss_share ?? 0) * 100).toFixed(1)}%`, title: t("account.strat.heat_net", "net {net}", { net: moneyOrDash(s.net_pnl, true) }) }))}
+                emptyHint={t("account.strat.no_loss", "no strategy carries recorded loss")}
                 scaleCaptions={["0%", "100%"]}
               />
             </div>
             <div>
-              <div className="section-title">registry confidence (strategy intelligence)</div>
+              <div className="section-title">{t("account.strat.reg_conf", "registry confidence (strategy intelligence)")}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {rows.slice(0, 4).map((s) => (
                   <Gauge
@@ -84,9 +86,9 @@ export function StrategiesSection() {
                     format={(v) => v.toFixed(2)}
                   />
                 ))}
-                {rows.length === 0 && <EmptyState message="no rows" />}
+                {rows.length === 0 && <EmptyState message={t("account.strat.no_rows", "no rows")} />}
               </div>
-              <div className="tiny faint">DISCOVERED = observed but unscored family (informational, not an error).</div>
+              <div className="tiny faint">{t("account.strat.discovered_note", "DISCOVERED = observed but unscored family (informational, not an error).")}</div>
             </div>
           </div>
         </>

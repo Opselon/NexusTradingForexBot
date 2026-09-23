@@ -15,12 +15,11 @@
   border: 1px solid transparent;
   background: var(--bg-inset);
   cursor: default;
-  transition: border-color 0.12s ease, background-color 0.12s ease, transform 0.12s ease;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
 }
 .ld-row:hover {
   background: var(--bg-panel-2);
   border-color: var(--border-strong);
-  transform: translateX(2px);
 }
 .ld-row[data-tone="bad"] { box-shadow: inset 3px 0 0 var(--red); }
 .ld-row[data-tone="warn"] { box-shadow: inset 3px 0 0 var(--amber); }

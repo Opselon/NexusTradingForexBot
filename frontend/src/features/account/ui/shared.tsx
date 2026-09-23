@@ -4,20 +4,24 @@
 
 import { formatAgeMs } from "@/lib/format";
 import { ApiError } from "@/types/api";
+import { useI18n } from "@/stores/i18nStore";
 
-export function asErrorText(e: unknown): string {
-  if (e instanceof ApiError) return `${e.message}${e.requestId ? ` (request_id: ${e.requestId})` : ""}`;
+type Translator = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
+export function asErrorText(e: unknown, t: Translator): string {
+  if (e instanceof ApiError) return `${e.message}${e.requestId ? ` ${t("account.error.request_id", "(request_id: {id})", { id: e.requestId })}` : ""}`;
   if (e instanceof Error) return e.message;
-  return "unknown error";
+  return t("account.error.unknown", "unknown error");
 }
 
 export function FreshnessNote({ updatedAtMs, label, staleAfterMs }: { updatedAtMs: number | null; label: string; staleAfterMs?: number }) {
-  if (!updatedAtMs) return <span className="timestamp-note">{label}: never loaded</span>;
+  const t = useI18n((s) => s.t);
+  if (!updatedAtMs) return <span className="timestamp-note">{t("account.freshness.never", "{label}: never loaded", { label })}</span>;
   const age = Date.now() - updatedAtMs;
   const bad = staleAfterMs !== undefined && age > staleAfterMs;
   return (
-    <span className="timestamp-note" style={bad ? { color: "var(--amber)" } : undefined} title={`cache age ${Math.round(age / 1000)}s`}>
-      {label} · {formatAgeMs(age)} ago{bad ? " ⚠" : ""}
+    <span className="timestamp-note" style={bad ? { color: "var(--amber)" } : undefined} title={t("account.freshness.cache_age", "cache age {seconds}s", { seconds: String(Math.round(age / 1000)) })}>
+      {t("account.freshness.ago", "{label} · {age} ago", { label, age: formatAgeMs(age) })}{bad ? " ⚠" : ""}
     </span>
   );
 }

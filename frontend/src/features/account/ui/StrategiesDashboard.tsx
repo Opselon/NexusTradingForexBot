@@ -25,6 +25,7 @@ import { ConfidenceGauge, ConfidenceMeter } from "@/components/viz";
 import { useAccountStrategies } from "../hooks";
 import { useUiStore } from "@/stores/uiStore";
 import { FreshnessNote, asErrorText } from "./shared";
+import { useI18n } from "@/stores/i18nStore";
 import { StrategyMetricsTable } from "./StrategyMetricsTable";
 import { LossDistributionPanel } from "./LossDistributionPanel";
 import "./strategies-dashboard.css";
@@ -32,6 +33,7 @@ import "./strategies-dashboard.css";
 type ConfidenceView = "grid" | "list";
 
 export function StrategiesDashboard() {
+  const t = useI18n((s) => s.t);
   const strategies = useAccountStrategies();
   const rows = strategies.data?.strategies ?? [];
   const pushToast = useUiStore((s) => s.pushToast);
@@ -50,23 +52,23 @@ export function StrategiesDashboard() {
     <div className="sd-root">
       <div className="sd-main">
         <Panel
-          title={`Strategy contributions (${rows.length})`}
-          right={<FreshnessNote updatedAtMs={strategies.dataUpdatedAt ?? null} label="strategies" />}
+          title={t("account.strat.title", "Strategy contributions ({count})", { count: String(rows.length) })}
+          right={<FreshnessNote updatedAtMs={strategies.dataUpdatedAt ?? null} label={t("account.fresh.strategies", "strategies")} />}
         >
           {strategies.isPending ? (
-            <div className="sd-loading">loading contributions…</div>
+            <div className="sd-loading">{t("account.strat.loading", "loading contributions…")}</div>
           ) : strategies.isError ? (
-            <ErrorState message={asErrorText(strategies.error)} onRetry={() => strategies.refetch()} />
+            <ErrorState message={asErrorText(strategies.error, t)} onRetry={() => strategies.refetch()} />
           ) : rows.length === 0 ? (
             <EmptyState
-              message="NO STRATEGY EVIDENCE AVAILABLE"
-              hint="Contributions need closed trades tagged with a strategy_id."
+              message={t("account.strat.no_evidence", "NO STRATEGY EVIDENCE AVAILABLE")}
+              hint={t("account.strat.no_evidence_hint", "Contributions need closed trades tagged with a strategy_id.")}
             />
           ) : (
             <StrategyMetricsTable
               rows={rows}
               onCopy={(_id, ok) =>
-                pushToast(ok ? "ok" : "fail", ok ? "strategy id copied" : "copy failed — clipboard unavailable")
+                pushToast(ok ? "ok" : "fail", ok ? t("account.sd.copied", "strategy id copied") : t("account.sd.copy_failed", "copy failed — clipboard unavailable"))
               }
             />
           )}
@@ -75,28 +77,28 @@ export function StrategiesDashboard() {
 
       <div className="sd-side">
         <Panel
-          title="Registry confidence"
+          title={t("account.sd.reg_confidence", "Registry confidence")}
           right={
-            <div className="sd-view-toggle" role="group" aria-label="Confidence view">
+            <div className="sd-view-toggle" role="group" aria-label={t("account.sd.view_aria", "Confidence view")}>
               <button
                 className={view === "grid" ? "active" : ""}
                 onClick={() => setView("grid")}
                 aria-pressed={view === "grid"}
               >
-                grid
+                {t("account.sd.view_grid", "grid")}
               </button>
               <button
                 className={view === "list" ? "active" : ""}
                 onClick={() => setView("list")}
                 aria-pressed={view === "list"}
               >
-                list
+                {t("account.sd.view_list", "list")}
               </button>
             </div>
           }
         >
           {confidenceRows.length === 0 ? (
-            <EmptyState message="no confidence scores" />
+            <EmptyState message={t("account.sd.no_scores", "no confidence scores")} />
           ) : view === "grid" ? (
             <div className="cg-grid">
               {confidenceRows.map((s) => (
@@ -116,11 +118,11 @@ export function StrategiesDashboard() {
             </div>
           )}
           <div className="sd-note tiny faint">
-            DISCOVERED = observed but unscored family (informational, not an error). Tier: ≥0.70 HIGH · ≥0.50 MID · &lt;0.50 LOW.
+            {t("account.sd.tier_note", "DISCOVERED = observed but unscored family (informational, not an error). Tier: ≥0.70 HIGH · ≥0.50 MID · <0.50 LOW.")}
           </div>
         </Panel>
 
-        <Panel title="Loss responsibility" subtitle="share of account gross loss, ranked">
+        <Panel title={t("account.sd.loss_resp", "Loss responsibility")} subtitle={t("account.sd.loss_resp_sub", "share of account gross loss, ranked")}>
           <LossDistributionPanel rows={lossRows} />
         </Panel>
       </div>
