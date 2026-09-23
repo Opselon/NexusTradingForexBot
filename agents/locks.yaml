@@ -54,6 +54,13 @@ exclusive_locks:
     since: 2026-09-21
     task: ML-TRAIN-003
     expiry: 2026-09-21
+  - path: docs/ml-system/test_determinism_roster.md
+    owner: AGENT-QA
+    exclusive: true
+    scope: ML-QA-003 test determinism census roster — RELEASED (task DONE, PR opened)
+    since: 2026-09-23
+    task: ML-QA-003
+    expiry: 2026-09-23
 # - src/nexus_scalp/model_generation/architectures.py + tests/unit/test_causal_conv_invariants.py
 #   (ML-ARCH-002, AGENT-ML-ARCH) — released, PR #351 opened
 
