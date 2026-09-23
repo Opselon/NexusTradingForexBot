@@ -10,6 +10,12 @@
   color: var(--text-dim, #8398ad);
   pointer-events: none;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  /* single row — never wraps onto a second line; clip/ellipsize instead */
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(100% - 24px);
 }
 
 .lg-legend__sym {
@@ -26,6 +32,12 @@
   font-weight: 700;
 }
 
+.lg-legend__vals {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .lg-legend__vals b {
   color: var(--text, #dbe4ee);
 }
@@ -36,4 +48,18 @@
 
 .lg-legend .down {
   color: var(--red, #f2564d);
+}
+
+/* lane C: delta % vs open (up/down colored via the rules above) + forming
+   bar close countdown — muted mono, small leading gap, no wrap */
+.lg-legend__delta,
+.lg-legend__count {
+  margin-inline-start: 2px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.lg-legend__count {
+  color: var(--text-dim, #8398ad);
+  opacity: 0.9;
 }
