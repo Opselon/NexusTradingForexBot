@@ -125,7 +125,6 @@ export class NseRealtimeClient {
   private retryTimer: number | null = null;
   private watchdogTimer: number | null = null;
   private closedByUser = false;
-  private hardFailures = 0;
   /** Wall-clock of the last stream open — the CONNECTING watchdog anchor. */
   private connectedAt: number | null = null;
   /** Names of the sections carried by the most recent accepted tick frame. */
@@ -173,6 +172,13 @@ export class NseRealtimeClient {
     // lesson in the legacy dashboard). If no frame arrives within the
     // heartbeat grace, force a reconnect so the UI state machine stays
     // honest.
+    //
+    // IDEMPOTENT (perf lane 1): every consumer hook calls start() on mount
+    // (shell + banner + panels), so creating an interval per call leaked one
+    // 5 s timer per mount forever — the handle was overwritten, so stop()
+    // could only ever clear the newest one. Exactly one watchdog exists per
+    // client lifetime: created here, torn down in stop().
+    if (this.watchdogTimer !== null) return;
     this.watchdogTimer = window.setInterval(() => {
       if (this.closedByUser) return;
       if (this.state !== "connected") return;
@@ -195,8 +201,17 @@ export class NseRealtimeClient {
 
   stop(): void {
     this.closedByUser = true;
-    if (this.retryTimer !== null) window.clearTimeout(this.retryTimer);
-    if (this.watchdogTimer !== null) window.clearInterval(this.watchdogTimer);
+    // Null the handles after clearing: a stale non-null retryTimer would make
+    // scheduleReconnect() early-return forever, and a stale watchdogTimer
+    // would make a later start() believe a watchdog is still running.
+    if (this.retryTimer !== null) {
+      window.clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    if (this.watchdogTimer !== null) {
+      window.clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
     this.es?.close();
     this.es = null;
     this.setState("disconnected");
@@ -204,6 +219,12 @@ export class NseRealtimeClient {
 
   /** Manual retry (banner button). */
   reconnectNow(): void {
+    // Drop any queued backoff retry first — otherwise a manual retry can race
+    // a scheduled one and open a second stream attempt after this one.
+    if (this.retryTimer !== null) {
+      window.clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
     this.es?.close();
     this.es = null;
     this.setState("reconnecting");
@@ -214,7 +235,15 @@ export class NseRealtimeClient {
     if (this.state === state) return;
     this.state = state;
     const status = this.currentStatus();
-    for (const l of this.statusListeners) l(status);
+    for (const l of this.statusListeners) {
+      // Fan-out isolation (parity with the core event bus): one throwing
+      // subscriber must never stop delivery to the rest or kill the feed.
+      try {
+        l(status);
+      } catch (err) {
+        console.error("[core/realtime] status listener failed", err);
+      }
+    }
     coreEvents.publish("realtime:status", status);
     coreEvents.publish("realtime:connection", state);
   }
@@ -232,8 +261,13 @@ export class NseRealtimeClient {
 
     es.onopen = () => {
       this.reconnectAttempts = 0;
-      this.hardFailures = 0;
       this.connectedAt = Date.now();
+      // The stream is live — a backoff retry queued before it opened must not
+      // fire later and tear down a healthy connection.
+      if (this.retryTimer !== null) {
+        window.clearTimeout(this.retryTimer);
+        this.retryTimer = null;
+      }
       // A new stream is a new server generation: an engine restart rewinds
       // state_version (v18000 -> v900 on the observed restart), and the
       // out-of-order guard would drop EVERY frame against the old baseline
@@ -258,7 +292,6 @@ export class NseRealtimeClient {
       if (this.state === "connected") this.setState("reconnecting");
       this.reconnectAttempts += 1;
       if (this.reconnectAttempts > 5) {
-        this.hardFailures += 1;
         this.setState("failed");
       } else {
         this.setState("reconnecting");
@@ -310,7 +343,16 @@ export class NseRealtimeClient {
     }
     const snap = this.snapshot;
     if (snap) {
-      for (const l of this.listeners) l(snap);
+      for (const l of this.listeners) {
+        // Isolated fan-out: a throwing subscriber cannot starve the others or
+        // the bus publish below (this path runs on EVERY accepted frame — no
+        // intermediate array/closure allocation, just the try boundary).
+        try {
+          l(snap);
+        } catch (err) {
+          console.error("[core/realtime] snapshot listener failed", err);
+        }
+      }
       coreEvents.publish("realtime:snapshot", snap);
     }
     // setStatus, NOT setState: once connected, the state does not change on
@@ -324,7 +366,13 @@ export class NseRealtimeClient {
   /** Notify status subscribers without a state transition. */
   private publishStatus(): void {
     const status = this.currentStatus();
-    for (const l of this.statusListeners) l(status);
+    for (const l of this.statusListeners) {
+      try {
+        l(status);
+      } catch (err) {
+        console.error("[core/realtime] status listener failed", err);
+      }
+    }
     coreEvents.publish("realtime:status", status);
   }
 
