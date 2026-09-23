@@ -190,7 +190,9 @@ export default function DependencyPage(props: ShellPageProps) {
   const repo = summaryQ.data?.repository ?? {};
   const health = summaryQ.data?.health ?? {};
   const hotspots = summaryQ.data?.hotspots ?? [];
-  const verdict = summaryHealth(summaryQ.data);
+  // perf: the health verdict is a pure function of the summary payload
+  // (the only reactive value read) — memoized so refetch ticks don't rebuild it.
+  const verdict = useMemo(() => summaryHealth(summaryQ.data), [summaryQ.data]);
   const hotSet = useMemo(() => hotspotIdSet(hotspots), [hotspots]);
   const kcounts = useMemo(() => kindCounts(nodes), [nodes]);
   const metricsMap: MetricsMap | undefined = metricsQ.data?.metrics;
@@ -200,6 +202,9 @@ export default function DependencyPage(props: ShellPageProps) {
     () => sortNodes(filtered, sort.key, sort.dir, metricsMap),
     [filtered, sort, metricsMap],
   );
+  // perf: the matrix renders the first 400 sorted rows — sliced once per
+  // sorted-list change instead of on every parent render (same rows).
+  const sortedTop = useMemo(() => sorted.slice(0, 400), [sorted]);
   const maxScore = useMemo(
     () => hotspots.reduce((m, h) => Math.max(m, hotspotScore(h) ?? 0), 0),
     [hotspots],
@@ -377,7 +382,7 @@ export default function DependencyPage(props: ShellPageProps) {
                 />
               ) : (
                 <NodeMatrix
-                  rows={sorted.slice(0, 400)}
+                  rows={sortedTop}
                   metrics={metricsMap}
                   hotSet={hotSet}
                   q={query}
@@ -1249,8 +1254,12 @@ function ImpactExplorer({
   });
 
   const data = q.data;
-  const rows = impactRowsNSE(data);
-  const peak = rows.reduce((m, r) => Math.max(m, r.ids.length), 0);
+  // perf: blast-radius rows/peak/foreign-total are pure functions of the
+  // impact payload (the only reactive value read) — derived once per payload
+  // instead of per parent render (the flatMap below is the heavy one).
+  const rows = useMemo(() => impactRowsNSE(data), [data]);
+  const peak = useMemo(() => rows.reduce((m, r) => Math.max(m, r.ids.length), 0), [rows]);
+  const foreignTotal = useMemo(() => rows.reduce((s, r) => s + r.foreign, 0), [rows]);
   const kind = impactWord(data?.impact_kind);
   const level = impactLevel(data?.impact_kind);
 
@@ -1302,7 +1311,7 @@ function ImpactExplorer({
           )}
           {rows.some((r) => r.foreign > 0) && (
             <div className="dp-blast-note">
-              {rows.reduce((s, r) => s + r.foreign, 0)} stdlib/external leaves excluded from the
+              {foreignTotal} stdlib/external leaves excluded from the
               bars (not NSE architecture).
             </div>
           )}
