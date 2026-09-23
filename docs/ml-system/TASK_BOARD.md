@@ -73,7 +73,8 @@
 - [ML-CI-002](tasks/ML-CI-002.md) — ML Contract & Canonical Documentation Drift Prevention CI Gate `[P3 | DONE (PR #346, squash 6bb1ffbe) | AGENT-QA]`
 - [ML-QA-003](tasks/ML-QA-003.md) — Test Determinism Census & Push-Gate Exposure Roster `[P2 | DONE (PR #402) | AGENT-QA]`
 - [ML-QA-004](tasks/ML-QA-004.md) — Push-Gate Timing Determinism Remediation (injected clock + CPU-time budgets) `[P2 | DONE (PR #402) | AGENT-QA]`
-- [ML-QA-005](tasks/ML-QA-005.md) — Merge-Marker Residue Guard (diff3 arm leak on SSOT metadata) `[P2 | DONE (PR pending) | AGENT-QA]`
+- [ML-QA-005](tasks/ML-QA-005.md) — Merge-Marker Residue Guard (diff3 arm leak on SSOT metadata) `[P2 | DONE (PR #405) | AGENT-QA]`
+- [ML-QA-006](tasks/ML-QA-006.md) — Duplicate Canonical Task-Row Detector (SSOT table gate) `[P2 | DONE (PR pending) | AGENT-QA]`
 - [ML-UI-001](tasks/ML-UI-001.md) — End-to-End Model UX & CLI Verification (Training, Predict & Confidence Trust) `[P1 | DONE | AGENT-UI]`
 - [ML-UI-002](tasks/ML-UI-002.md) — Model Studio E2E Dataset Ingestion, 50D/70D Normalization & Layer-2 Position Management Generator `[P1 | DONE | AGENT-UI]`
 - [ML-UI-003](tasks/ML-UI-003.md) — AI Hub: Model Registry, SQLite Catalog & Live Runtime Hot-Loader `[P1 | DONE | AGENT-UI]`
