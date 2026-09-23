@@ -18,7 +18,7 @@
  * sessionStorage — it is never listed, matched, or removed here.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { version as UI_VERSION } from "../../../package.json";
 import type { EngineSnapshot } from "@/types/domain";
 import { useUiStore } from "@/stores/uiStore";
@@ -162,7 +162,10 @@ export default function SettingsPage({ snapshot }: Props) {
     pushToast("ok", `Local UI prefs cleared (${removed.length} key${removed.length === 1 ? "" : "s"})`);
   };
 
-  const versioningEntries = Object.entries(snapshot?.versioning ?? {});
+  const versioningEntries = useMemo(
+    () => Object.entries(snapshot?.versioning ?? {}),
+    [snapshot?.versioning],
+  );
 
   return (
     <div className="set-wrap">

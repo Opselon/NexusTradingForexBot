@@ -14,8 +14,8 @@
  * docs/audit/wave_20260914/09_indicators_ui.md §5).
  */
 
-import type { ReactNode } from "react";
 import { useMemo } from "react";
+import type { ReactNode } from "react";
 import { Panel } from "@/components/primitives";
 import { formatTime } from "@/lib/format";
 import "./market-console.css";
