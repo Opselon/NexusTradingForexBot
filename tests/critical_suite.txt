@@ -486,3 +486,4 @@ tests/unit/test_zero_friction_guard_e1.py
 tests/unit/test_git_governance.py
 tests/unit/test_attention_ablation.py
 tests/unit/test_ml_qa_004_determinism_remediation.py
+tests/unit/test_merge_marker_residue.py
