@@ -42,6 +42,18 @@ SRC_DIR = CURRENT_DIR / "src"
 if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+# WINDOWS-UX-001 (taskbar identity): NSE is launched as ``python`` /
+# ``python NexusTradingForexBot.py`` from the source tree, so without an
+# explicit AppUserModelID the taskbar falls back to the interpreter image
+# name ("python"). Pin the identity BEFORE the banner/window appears; the
+# shell keys the taskbar entry on this ID, so a later title change would
+# leave a stale "python" group. Non-Windows: no-op. Failure-isolated.
+from nexus_scalp.platform.windows_identity import (
+    apply_windows_identity,
+)
+
+apply_windows_identity()
+
 import uvicorn
 from rich import box
 from rich.align import Align
@@ -87,6 +99,8 @@ def _version_tag() -> str:
 
 def display_startup_banner() -> None:
     """First visible frame — gradient hero (no animation deps)."""
+    # WINDOWS-UX-001: Ensure console title matches visible taskbar branding
+    console.set_window_title("NexusTraderBot")
     tag = _version_tag()
     title = Text("NEXUS SCALP ENGINE", style="bold cyan")
     title.append(f"  {tag}", style="dim cyan")
