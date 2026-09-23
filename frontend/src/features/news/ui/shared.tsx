@@ -73,6 +73,18 @@ export function FreshnessNote({ updatedAtMs, label, staleAfterMs }: { updatedAtM
   );
 }
 
+/**
+ * Note text: either a plain string built with the `t` in scope at the call
+ * site, or a lazy `(t) => string` closure resolved on every render — so an
+ * already-visible note re-translates on a language switch.
+ */
+export type NoteText = string | ((t: TFunc) => string);
+
+/** Resolve a note for display in the ACTIVE language. */
+export function noteText(text: NoteText | null | undefined, t: TFunc): string | null {
+  return typeof text === "function" ? text(t) : text ?? null;
+}
+
 /** Section shell: pending -> skeleton, error -> retry, empty -> message, else children. */
 export type QueryLike<T> = {
   isPending: boolean;
