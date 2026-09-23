@@ -34,7 +34,13 @@ import type {
   AdviserAdvisoryDto,
 } from "../model";
 import { ACTIVATION_HELP, ACTIVATION_LADDER } from "../model";
+import { useI18n } from "@/stores/i18nStore";
 import "./position-adviser.css";
+
+/** Callback-safe translator: reads the live language at call time, so event
+ *  handlers never render a message in a language that has since changed. */
+const tr = (key: string, fallback: string, vars?: Record<string, string | number>): string =>
+  useI18n.getState().t(key, fallback, vars);
 
 const REFRESH_MS = 3000;
 
@@ -95,6 +101,14 @@ function fmtTime(iso: string | null | undefined): string {
 }
 
 export default function PositionAdviserPage(_props: ShellPageProps) {
+  const t = useI18n((s) => s.t);
+  /** Activation-help copy — model.ts keeps the English source, translated here. */
+  const activationHelp = (a: AdviserActivation): string =>
+    a === "PAPER"
+      ? t("position-adviser.activation.help_paper", ACTIVATION_HELP.PAPER)
+      : a === "LIVE"
+        ? t("position-adviser.activation.help_live", ACTIVATION_HELP.LIVE)
+        : t("position-adviser.activation.help_disabled", ACTIVATION_HELP.DISABLED);
   const [status, setStatus] = useState<AdviserStatusResponse | null>(null);
   const [models, setModels] = useState<AdviserModelDto[]>([]);
   const [activeModelId, setActiveModelId] = useState<string>("");
@@ -162,9 +176,9 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       setChecks(res.checks || []);
       setChecksAllPassed(Boolean(res.all_passed));
       if (!res.all_passed) {
-        setNotice("One or more prerequisite checks failed or could not run — LIVE stays unavailable.");
+        setNotice(tr("position-adviser.checks.failed_notice", "One or more prerequisite checks failed or could not run — LIVE stays unavailable."));
       } else {
-        setNotice("All prerequisite checks passed. LIVE activation is available.");
+        setNotice(tr("position-adviser.checks.passed_notice", "All prerequisite checks passed. LIVE activation is available."));
       }
     } catch (err) {
       const detail = (err as { detail?: string })?.detail ?? String(err);
@@ -193,7 +207,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
             ? { activation: target, checks: supplied.map((c) => ({ ...c, evidence: c.evidence ?? {} })) }
             : { activation: target };
         const out = await positionAdviserApi.activate(payload);
-        setNotice(out.message || `activation set to ${target}`);
+        setNotice(out.message || tr("position-adviser.activation.set_notice", "activation set to {target}", { target }));
         await refresh();
       } catch (err) {
         const detail = (err as { detail?: string })?.detail ?? String(err);
@@ -211,7 +225,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
     setNotice("");
     try {
       const out = await positionAdviserApi.unload();
-      setNotice(out.message || "adviser unloaded; activation reset to DISABLED");
+      setNotice(out.message || tr("position-adviser.activation.unloaded_notice", "adviser unloaded; activation reset to DISABLED"));
       await refresh();
     } catch (err) {
       const detail = (err as { detail?: string })?.detail ?? String(err);
@@ -223,7 +237,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
 
   const onTrain = useCallback(async () => {
     if (!effectiveDataset) {
-      setError("No position dataset available. Generate one in the Neural Studio first.");
+      setError(tr("position-adviser.train.no_dataset", "No position dataset available. Generate one in the Neural Studio first."));
       return;
     }
     setBusy(true);
@@ -234,7 +248,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
         dataset_path: effectiveDataset,
         epochs: trainEpochs,
       });
-      setNotice(out.message || "training complete");
+      setNotice(out.message || tr("position-adviser.train.complete", "training complete"));
       await refresh();
     } catch (err) {
       const detail = (err as { detail?: string })?.detail ?? String(err);
@@ -246,7 +260,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
 
   const onAutoTune = useCallback(async () => {
     if (!effectiveDataset) {
-      setError("No position dataset available. Generate one in the Neural Studio first.");
+      setError(tr("position-adviser.train.no_dataset", "No position dataset available. Generate one in the Neural Studio first."));
       return;
     }
     // Parse the comma-separated knob strings; malformed input fails loud here
@@ -266,11 +280,11 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       bss = parseNums(tuneBatchSizes, (v) => parseInt(v, 10));
       seeds = parseNums(tuneSeeds, (v) => parseInt(v, 10));
     } catch (err) {
-      setError(`invalid auto-tune parameter: ${err}`);
+      setError(tr("position-adviser.tune.invalid_param", "invalid auto-tune parameter: {e}", { e: String(err) }));
       return;
     }
     if (lrs.length === 0 || bss.length === 0 || seeds.length === 0) {
-      setError("auto-tune needs at least one learning rate, batch size, and seed.");
+      setError(tr("position-adviser.tune.needs_inputs", "auto-tune needs at least one learning rate, batch size, and seed."));
       return;
     }
 
@@ -293,7 +307,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       setNotice(
         `${out.message}` +
           (baseline != null
-            ? ` (majority-class baseline ${baseline.toFixed(4)} — ${out.beats_majority_baseline ? "beats" : "does NOT beat"} it)`
+            ? tr("position-adviser.tune.baseline_suffix", " (majority-class baseline {b} — {verdict} it)", { b: baseline.toFixed(4), verdict: out.beats_majority_baseline ? tr("position-adviser.tune.beats", "beats") : tr("position-adviser.tune.does_not_beat", "does NOT beat") })
             : ""),
       );
       await refresh();
@@ -312,7 +326,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       setNotice("");
       try {
         if (!m.has_scaler) {
-          setError("This checkpoint has no companion scaler sidecar; load refused.");
+          setError(tr("position-adviser.load.no_scaler", "This checkpoint has no companion scaler sidecar; load refused."));
           return;
         }
         const out = await positionAdviserApi.load({
@@ -320,7 +334,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
           scaler_path: m.scaler_path,
           model_id: m.model_id,
         });
-        setNotice(out.message || "adviser loaded; activation is still DISABLED until you enable it");
+        setNotice(out.message || tr("position-adviser.load.loaded_notice", "adviser loaded; activation is still DISABLED until you enable it"));
         await refresh();
       } catch (err) {
         const detail = (err as { detail?: string })?.detail ?? String(err);
@@ -348,25 +362,23 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
           </span>
           <div className="pa-title-wrap">
             <h2 className="pa-title">
-              Layer-2 Position Decision Adviser
-              <span className={classNames("pa-state", stateClass(activation))} title="current activation rung">
+              {t("position-adviser.page.title", "Layer-2 Position Decision Adviser")}
+              <span className={classNames("pa-state", stateClass(activation))} title={t("position-adviser.a11y.current_rung", "current activation rung")}>
                 <span className="pa-state-dot" aria-hidden="true" />
                 {activation}
               </span>
             </h2>
             <p className="pa-title-subtitle">
-              Optional, opt-in. When enabled it can only make a keep/close verdict MORE conservative —
-              it never opens, sizes, extends, or weakens a position. Default is DISABLED, so the decide
-              system runs exactly as before.
+              {t("position-adviser.page.subtitle", "Optional, opt-in. When enabled it can only make a keep/close verdict MORE conservative — it never opens, sizes, extends, or weakens a position. Default is DISABLED, so the decide system runs exactly as before.")}
             </p>
           </div>
         </div>
         <div className="pa-hero-right">
-          <div className="pa-rung-help">{ACTIVATION_HELP[activation as AdviserActivation]}</div>
+          <div className="pa-rung-help">{activationHelp(activation as AdviserActivation)}</div>
           {status?.last_error ? (
             <div className="pa-notice err" role="alert">
               <span className="pa-notice-glyph">!</span>
-              <span>last adviser error: {String(status.last_error)}</span>
+              <span>{t("position-adviser.hero.last_error", "last adviser error: {e}", { e: String(status.last_error) })}</span>
             </div>
           ) : null}
         </div>
@@ -389,10 +401,9 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       <section className="pa-panel">
         <div className="pa-panel-head">
           <span className="pa-dot" aria-hidden="true" />
-          <span className="pa-panel-title">Activation Ladder</span>
+          <span className="pa-panel-title">{t("position-adviser.panel.activation_ladder", "Activation Ladder")}</span>
           <span className="pa-panel-sub">
-            Each step must be verified with real broker/position checks before the next becomes
-            selectable. A LIVE activation that skips the checks is refused by the server.
+            {t("position-adviser.panel.activation_ladder_sub", "Each step must be verified with real broker/position checks before the next becomes selectable. A LIVE activation that skips the checks is refused by the server.")}
           </span>
         </div>
         <div className="pa-panel-body">
@@ -422,11 +433,11 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                   aria-pressed={isCurrent}
                 >
                   <span className="pa-step-name">{a}</span>
-                  <span className="pa-step-hint">{ACTIVATION_HELP[a].split(".")[0]}.</span>
+                  <span className="pa-step-hint">{activationHelp(a).split(".")[0]}.</span>
                   {needsChecks ? (
-                    <span className="pa-step-note">checks required</span>
+                    <span className="pa-step-note">{t("position-adviser.step.checks_required", "checks required")}</span>
                   ) : isCurrent ? (
-                    <span className="pa-step-note">current</span>
+                    <span className="pa-step-note">{t("position-adviser.step.current", "current")}</span>
                   ) : null}
                 </button>
               );
@@ -439,7 +450,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
               onClick={() => void runChecks()}
               className="pa-btn pa-btn-ghost"
             >
-              {busy ? "Running…" : "Run Broker & Position Checks"}
+              {busy ? t("position-adviser.action.running", "Running…") : t("position-adviser.action.run_checks", "Run Broker & Position Checks")}
             </button>
             {status && Boolean(status.model_id) && activation !== "DISABLED" ? (
               <button
@@ -447,9 +458,9 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                 disabled={busy}
                 onClick={() => void onUnload()}
                 className="pa-btn pa-btn-danger"
-                title="unload the in-memory adviser and reset activation to DISABLED"
+                title={t("position-adviser.action.unload_title", "unload the in-memory adviser and reset activation to DISABLED")}
               >
-                Unload & Disable
+                {t("position-adviser.action.unload", "Unload & Disable")}
               </button>
             ) : null}
           </div>
@@ -474,28 +485,28 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       {/* ----------------------------------------------------- live counters */}
       <div className="pa-metrics">
         <div className="pa-metric">
-          <div className="k">Loaded model</div>
+          <div className="k">{t("position-adviser.metric.loaded_model", "Loaded model")}</div>
           <div className={classNames("v", status?.model_id ? "" : "dim")}>
-            {status?.model_id || "NONE"}
+            {status?.model_id || t("position-adviser.metric.none", "NONE")}
           </div>
-          <div className="s">weights sha {status?.weights_sha256 ? status.weights_sha256.slice(0, 12) : "—"}</div>
+          <div className="s">{t("position-adviser.metric.weights_sha", "weights sha {v}", { v: status?.weights_sha256 ? status.weights_sha256.slice(0, 12) : "—" })}</div>
         </div>
         <div className="pa-metric">
-          <div className="k">Feature dim</div>
+          <div className="k">{t("position-adviser.metric.feature_dim", "Feature dim")}</div>
           <div className="v">{status?.feature_dim != null ? String(status.feature_dim) : "--"}</div>
-          <div className="s">input width</div>
+          <div className="s">{t("position-adviser.metric.input_width", "input width")}</div>
         </div>
         <div className="pa-metric">
-          <div className="k">Applied</div>
+          <div className="k">{t("position-adviser.metric.applied", "Applied")}</div>
           <div className={classNames("v", (status?.applied_count ?? 0) > 0 ? "good" : "dim")}>
             {String(status?.applied_count ?? 0)}
           </div>
-          <div className="s">hold-score penalties</div>
+          <div className="s">{t("position-adviser.metric.hold_penalties", "hold-score penalties")}</div>
         </div>
         <div className="pa-metric">
-          <div className="k">Evaluated</div>
+          <div className="k">{t("position-adviser.metric.evaluated", "Evaluated")}</div>
           <div className="v">{String(status?.evaluated_count ?? 0)}</div>
-          <div className="s">refused: {String(status?.refused_count ?? 0)}</div>
+          <div className="s">{t("position-adviser.metric.refused", "refused: {n}", { n: String(status?.refused_count ?? 0) })}</div>
         </div>
       </div>
 
@@ -511,17 +522,15 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
           <section className="pa-panel">
             <div className="pa-panel-head">
               <span className="pa-dot" aria-hidden="true" />
-              <span className="pa-panel-title">Build / Fine-Tune an Adviser</span>
+              <span className="pa-panel-title">{t("position-adviser.panel.build", "Build / Fine-Tune an Adviser")}</span>
               <span className="pa-panel-sub">
-                Trains on a generated Position dataset (KEEP / CLOSE / REDUCE labels). OOS accuracy is
-                measured on a held-out split that the trainer never fits — a model below the
-                majority-class baseline is reported as such, never hidden.
+                {t("position-adviser.panel.build_sub", "Trains on a generated Position dataset (KEEP / CLOSE / REDUCE labels). OOS accuracy is measured on a held-out split that the trainer never fits — a model below the majority-class baseline is reported as such, never hidden.")}
               </span>
             </div>
             <div className="pa-panel-body">
               <div className="pa-form">
                 <div className="pa-field">
-                  <label htmlFor="pa-train-dataset">Position dataset</label>
+                  <label htmlFor="pa-train-dataset">{t("position-adviser.field.position_dataset", "Position dataset")}</label>
                   {datasets.length > 0 ? (
                     <select
                       id="pa-train-dataset"
@@ -538,13 +547,13 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                   ) : (
                     <div className="pa-empty-input">
                       <span>∅</span>
-                      <span>No position datasets yet — generate one in the Neural Studio (M1/M5 source).</span>
+                      <span>{t("position-adviser.train.no_datasets_hint", "No position datasets yet — generate one in the Neural Studio (M1/M5 source).")}</span>
                     </div>
                   )}
                 </div>
                 <div className="pa-field-row">
                   <div className="pa-field narrow">
-                    <label htmlFor="pa-train-epochs">Epochs</label>
+                    <label htmlFor="pa-train-epochs">{t("position-adviser.field.epochs", "Epochs")}</label>
                     <input
                       id="pa-train-epochs"
                       type="number"
@@ -561,7 +570,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                     onClick={() => void onTrain()}
                     className="pa-btn pa-btn-primary"
                   >
-                    {busy ? "Training…" : "Train Adviser"}
+                    {busy ? t("position-adviser.action.training", "Training…") : t("position-adviser.action.train", "Train Adviser")}
                   </button>
                 </div>
               </div>
@@ -572,19 +581,15 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
           <section className="pa-panel">
             <div className="pa-panel-head">
               <span className="pa-dot violet" aria-hidden="true" />
-              <span className="pa-panel-title">✦ Auto Mode — Find the Best Adviser</span>
+              <span className="pa-panel-title">{t("position-adviser.panel.auto_mode", "✦ Auto Mode — Find the Best Adviser")}</span>
               <span className="pa-panel-sub">
-                Runs a bounded grid sweep over learning rate, batch size and seed, then keeps the model
-                with the lowest <strong>out-of-sample loss</strong> — the only split the trainer never
-                fits or early-stops on — and loads it. Losing checkpoints are pruned; the winner and its
-                real OOS metrics are reported below. A sweep that cannot beat the majority-class
-                baseline is shown as such, never hidden.
+                {t("position-adviser.panel.auto_mode_sub", "Runs a bounded grid sweep over learning rate, batch size and seed, then keeps the model with the lowest out-of-sample loss — the only split the trainer never fits or early-stops on — and loads it. Losing checkpoints are pruned; the winner and its real OOS metrics are reported below. A sweep that cannot beat the majority-class baseline is shown as such, never hidden.")}
               </span>
             </div>
             <div className="pa-panel-body">
               <div className="pa-grid-4">
                 <div className="pa-field">
-                  <label htmlFor="pa-tune-epochs">Epochs / trial</label>
+                  <label htmlFor="pa-tune-epochs">{t("position-adviser.field.epochs_trial", "Epochs / trial")}</label>
                   <input
                     id="pa-tune-epochs"
                     type="number"
@@ -596,7 +601,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                   />
                 </div>
                 <div className="pa-field">
-                  <label htmlFor="pa-tune-trials">Max trials</label>
+                  <label htmlFor="pa-tune-trials">{t("position-adviser.field.max_trials", "Max trials")}</label>
                   <input
                     id="pa-tune-trials"
                     type="number"
@@ -608,7 +613,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                   />
                 </div>
                 <div className="pa-field">
-                  <label htmlFor="pa-tune-lrs">Learning rates</label>
+                  <label htmlFor="pa-tune-lrs">{t("position-adviser.field.learning_rates", "Learning rates")}</label>
                   <input
                     id="pa-tune-lrs"
                     type="text"
@@ -618,7 +623,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                   />
                 </div>
                 <div className="pa-field">
-                  <label htmlFor="pa-tune-bs">Batch sizes</label>
+                  <label htmlFor="pa-tune-bs">{t("position-adviser.field.batch_sizes", "Batch sizes")}</label>
                   <input
                     id="pa-tune-bs"
                     type="text"
@@ -630,7 +635,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
               </div>
               <div className="pa-field-row" style={{ marginTop: 14 }}>
                 <div className="pa-field">
-                  <label htmlFor="pa-tune-seeds">Seeds</label>
+                  <label htmlFor="pa-tune-seeds">{t("position-adviser.field.seeds", "Seeds")}</label>
                   <input
                     id="pa-tune-seeds"
                     type="text"
@@ -645,35 +650,35 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                   onClick={() => void onAutoTune()}
                   className="pa-btn pa-btn-violet"
                 >
-                  {busy ? "Sweeping…" : "▶ Auto-Tune & Load Best"}
+                  {busy ? t("position-adviser.action.sweeping", "Sweeping…") : t("position-adviser.action.auto_tune", "▶ Auto-Tune & Load Best")}
                 </button>
               </div>
 
               {tuneResult ? (
                 <div className="pa-winner">
                   <div className="pa-winner-top">
-                    <span className="pa-winner-label">Winner</span>
+                    <span className="pa-winner-label">{t("position-adviser.winner.label", "Winner")}</span>
                     <span className="pa-winner-name">{String(tuneResult.best.model_id ?? "--")}</span>
                     {tuneResult.loaded ? (
-                      <span className="badge good">LOADED</span>
+                      <span className="badge good">{t("position-adviser.badge.loaded", "LOADED")}</span>
                     ) : (
-                      <span className="badge warn">NOT LOADED</span>
+                      <span className="badge warn">{t("position-adviser.badge.not_loaded", "NOT LOADED")}</span>
                     )}
                     {tuneResult.beats_majority_baseline ? (
-                      <span className="badge good">BEATS BASELINE</span>
+                      <span className="badge good">{t("position-adviser.badge.beats_baseline", "BEATS BASELINE")}</span>
                     ) : (
-                      <span className="badge bad">BELOW MAJORITY BASELINE</span>
+                      <span className="badge bad">{t("position-adviser.badge.below_majority", "BELOW MAJORITY BASELINE")}</span>
                     )}
                   </div>
                   <div className="pa-facts">
                     <span className="pa-fact">
-                      OOS loss <b>{fmt(tuneResult.best.oos_loss)}</b>
+                      {t("position-adviser.label.oos_loss", "OOS loss")} <b>{fmt(tuneResult.best.oos_loss)}</b>
                     </span>
                     <span className="pa-fact">
-                      OOS acc <b>{fmt(tuneResult.best.oos_accuracy)}</b>
+                      {t("position-adviser.label.oos_acc", "OOS acc")} <b>{fmt(tuneResult.best.oos_accuracy)}</b>
                     </span>
                     <span className="pa-fact">
-                      majority baseline <b>{fmt(tuneResult.majority_baseline_accuracy)}</b>
+                      {t("position-adviser.label.majority_baseline", "majority baseline")} <b>{fmt(tuneResult.majority_baseline_accuracy)}</b>
                     </span>
                     <span className="pa-fact">
                       lr <b>{String(tuneResult.best.learning_rate ?? "--")}</b> · bs{" "}
@@ -685,34 +690,34 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                     <table className="pa-table">
                       <thead>
                         <tr>
-                          <th>Trial</th>
+                          <th>{t("position-adviser.label.trial", "Trial")}</th>
                           <th>lr</th>
                           <th>bs</th>
                           <th>seed</th>
-                          <th>OOS loss</th>
-                          <th>OOS acc</th>
+                          <th>{t("position-adviser.label.oos_loss", "OOS loss")}</th>
+                          <th>{t("position-adviser.label.oos_acc", "OOS acc")}</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {tuneResult.trials.map((t) => {
-                          const isWinner = t.model_id === tuneResult.best.model_id;
+                        {tuneResult.trials.map((trial) => {
+                          const isWinner = trial.model_id === tuneResult.best.model_id;
                           return (
                             <tr
-                              key={t.model_id}
+                              key={trial.model_id}
                               className={classNames(
                                 isWinner && "is-winner",
-                                t.failed && "is-failed",
+                                trial.failed && "is-failed",
                               )}
                             >
                               <td className="mono-id">
-                                {t.failed ? "✗ " : isWinner ? "★ " : "· "}
-                                {t.model_id}
+                                {trial.failed ? "✗ " : isWinner ? "★ " : "· "}
+                                {trial.model_id}
                               </td>
-                              <td>{t.learning_rate}</td>
-                              <td>{t.batch_size}</td>
-                              <td>{t.seed}</td>
-                              <td>{t.failed ? "failed" : fmt(t.oos_loss)}</td>
-                              <td>{t.failed ? "—" : fmt(t.oos_accuracy)}</td>
+                              <td>{trial.learning_rate}</td>
+                              <td>{trial.batch_size}</td>
+                              <td>{trial.seed}</td>
+                              <td>{trial.failed ? t("position-adviser.label.failed", "failed") : fmt(trial.oos_loss)}</td>
+                              <td>{trial.failed ? "—" : fmt(trial.oos_accuracy)}</td>
                             </tr>
                           );
                         })}
@@ -722,7 +727,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                   {tuneResult.best.load_error ? (
                     <div className="pa-notice warn">
                       <span className="pa-notice-glyph">!</span>
-                      <span>The sweep succeeded but loading the winner failed: {String(tuneResult.best.load_error)}</span>
+                      <span>{t("position-adviser.tune.load_error", "The sweep succeeded but loading the winner failed: {e}", { e: String(tuneResult.best.load_error) })}</span>
                     </div>
                   ) : null}
                 </div>
@@ -736,13 +741,13 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       <section className="pa-panel">
         <div className="pa-panel-head">
           <span className="pa-dot" aria-hidden="true" />
-          <span className="pa-panel-title">Trained Advisers</span>
+          <span className="pa-panel-title">{t("position-adviser.panel.trained", "Trained Advisers")}</span>
           <span className="pa-panel-sub">
-            Checkpoints in{" "}
+            {t("position-adviser.models.sub_prefix", "Checkpoints in")}{" "}
             <span className="pa-mono">{status?.config?.artifact_dir ?? "artifacts/position_adviser"}</span>{" "}
-            — the majority-class baseline is{" "}
-            <span className="pa-mono">{baselineRef.toFixed(4)}</span>; anything below it is flagged,
-            never hidden.
+            {t("position-adviser.models.sub_mid", "— the majority-class baseline is")}{" "}
+            <span className="pa-mono">{baselineRef.toFixed(4)}</span>
+            {t("position-adviser.models.sub_suffix", "; anything below it is flagged, never hidden.")}
           </span>
         </div>
         <div className="pa-panel-body">
@@ -750,8 +755,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
             <div className="pa-empty-input">
               <span>∅</span>
               <span>
-                No adviser checkpoints yet. Train one above — it lands in{" "}
-                {status?.config?.artifact_dir ?? "artifacts/position_adviser"}.
+                {t("position-adviser.models.empty", "No adviser checkpoints yet. Train one above — it lands in {dir}.", { dir: status?.config?.artifact_dir ?? "artifacts/position_adviser" })}
               </span>
             </div>
           ) : (
@@ -764,31 +768,31 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                   <div key={m.model_id} className={classNames("pa-model", isActive && "is-active")}>
                     <div className="pa-model-top">
                       <span className="pa-model-id">{m.model_id}</span>
-                      {isActive ? <span className="badge good">LOADED</span> : null}
-                      {isBelow ? <span className="badge bad">BELOW BASELINE</span> : null}
-                      {!m.has_scaler ? <span className="badge warn">NO SCALER</span> : null}
+                      {isActive ? <span className="badge good">{t("position-adviser.badge.loaded", "LOADED")}</span> : null}
+                      {isBelow ? <span className="badge bad">{t("position-adviser.badge.below_baseline", "BELOW BASELINE")}</span> : null}
+                      {!m.has_scaler ? <span className="badge warn">{t("position-adviser.badge.no_scaler", "NO SCALER")}</span> : null}
                     </div>
                     <div className="pa-model-facts">
                       <span>
-                        OOS acc <b>{fmt(m.oos_accuracy)}</b>
+                        {t("position-adviser.label.oos_acc", "OOS acc")} <b>{fmt(m.oos_accuracy)}</b>
                       </span>
                       <span>
-                        OOS loss <b>{fmt(m.oos_loss)}</b>
+                        {t("position-adviser.label.oos_loss", "OOS loss")} <b>{fmt(m.oos_loss)}</b>
                       </span>
                       <span>
-                        val loss <b>{fmt(m.best_val_loss)}</b>
+                        {t("position-adviser.label.val_loss", "val loss")} <b>{fmt(m.best_val_loss)}</b>
                       </span>
                       <span>
-                        train/oos <b>{m.train_rows ?? "--"}/{m.oos_rows ?? "--"}</b>
+                        {t("position-adviser.label.train_oos", "train/oos")} <b>{m.train_rows ?? "--"}/{m.oos_rows ?? "--"}</b>
                       </span>
                       <span>
-                        epochs <b>{m.epochs ?? "--"}</b>
+                        {t("position-adviser.label.epochs", "epochs")} <b>{m.epochs ?? "--"}</b>
                       </span>
                       {m.created_at ? <span title={m.created_at}>{fmtTime(m.created_at)}</span> : null}
                     </div>
                     {segs.length > 0 ? (
                       <div className="pa-dist">
-                        <span className="pa-dist-lab">OOS predictions</span>
+                        <span className="pa-dist-lab">{t("position-adviser.label.oos_predictions", "OOS predictions")}</span>
                         <span className="pa-dist-track">
                           {segs.map((s) => (
                             <span
@@ -816,7 +820,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                         onClick={() => void onLoad(m)}
                         className="pa-btn pa-btn-ghost"
                       >
-                        {m.has_scaler ? "Load into live memory" : "No scaler sidecar — load refused"}
+                        {m.has_scaler ? t("position-adviser.action.load_live", "Load into live memory") : t("position-adviser.action.load_refused", "No scaler sidecar — load refused")}
                       </button>
                     </div>
                   </div>
@@ -831,10 +835,12 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       <section className="pa-panel">
         <div className="pa-panel-head">
           <span className="pa-dot" aria-hidden="true" />
-          <span className="pa-panel-title">Live Advisories</span>
+          <span className="pa-panel-title">{t("position-adviser.panel.advisories", "Live Advisories")}</span>
           <span className="pa-panel-sub">
-            Enable PAPER to start computing them without touching the decide system, then LIVE once the
-            checks pass. {advisories.length > 0 ? `most recent ${advisories.length} shown` : ""}
+            {t("position-adviser.feed.sub", "Enable PAPER to start computing them without touching the decide system, then LIVE once the checks pass.")}{" "}
+            {advisories.length > 0
+              ? t("position-adviser.feed.recent_shown", "most recent {n} shown", { n: String(advisories.length) })
+              : ""}
           </span>
         </div>
         <div className="pa-panel-body">
@@ -842,8 +848,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
             <div className="pa-empty-input">
               <span>∅</span>
               <span>
-                No advisories yet. Enable PAPER to start computing them without touching the decide
-                system, then LIVE once the checks pass.
+                {t("position-adviser.feed.empty", "No advisories yet. Enable PAPER to start computing them without touching the decide system, then LIVE once the checks pass.")}
               </span>
             </div>
           ) : (
@@ -866,7 +871,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                       >
                         {a.action}
                       </span>
-                      <span className="pa-conf" title="adviser confidence">
+                      <span className="pa-conf" title={t("position-adviser.a11y.adviser_confidence", "adviser confidence")}>
                         <span className="pa-conf-track">
                           <i style={{ width: `${Math.max(0, Math.min(1, a.confidence)) * 100}%` }} />
                         </span>
@@ -875,7 +880,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                       <span
                         className={a.hold_score_adjustment < 0 ? "pa-hold-neg" : "pa-hold-zero"}
                       >
-                        hold adj {a.hold_score_adjustment.toFixed(2)}
+                        {t("position-adviser.feed.hold_adj", "hold adj {v}", { v: a.hold_score_adjustment.toFixed(2) })}
                       </span>
                       <span
                         className={classNames(
@@ -883,7 +888,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                           a.applied ? "good" : "neutral",
                         )}
                       >
-                        {a.applied ? "APPLIED" : "LOGGED ONLY"}
+                        {a.applied ? t("position-adviser.badge.applied", "APPLIED") : t("position-adviser.badge.logged_only", "LOGGED ONLY")}
                       </span>
                       <span className="pa-feed-time">
                         {a.latency_ms.toFixed(2)} ms · {fmtTime(a.evaluated_at)}

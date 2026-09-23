@@ -55,8 +55,7 @@
   content: "";
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
+  inset-inline: 0;
   height: 2px;
   background: linear-gradient(90deg, var(--accent), var(--violet), var(--green));
   opacity: 0.85;
@@ -66,8 +65,8 @@
 .pa-hero::after {
   content: "⚖";
   position: absolute;
-  right: -6px;
-  bottom: -22px;
+  inset-inline-end: -6px;
+  inset-block-end: -22px;
   font-size: 132px;
   line-height: 1;
   opacity: 0.045;
@@ -267,14 +266,15 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 12px 14px 12px 40px;
+  padding-block: 12px;
+  padding-inline: 40px 14px;
   border-radius: 9px;
   border: 1px solid var(--border);
   background: var(--bg-inset);
   color: var(--text-dim);
   cursor: pointer;
   font-family: var(--sans);
-  text-align: left;
+  text-align: start;
   transition: border-color 0.14s ease, background 0.14s ease, color 0.14s ease, transform 0.1s ease;
   min-height: 56px;
 }
@@ -283,7 +283,7 @@
 .pa-step::before {
   content: attr(data-step);
   position: absolute;
-  left: 12px;
+  inset-inline-start: 12px;
   top: 50%;
   transform: translateY(-50%);
   width: 20px;
@@ -305,7 +305,7 @@
   content: "";
   position: absolute;
   top: 50%;
-  right: -11px;
+  inset-inline-end: -11px;
   width: 12px;
   height: 2px;
   transform: translateY(-50%);
@@ -488,7 +488,7 @@
   content: "";
   position: absolute;
   top: 0;
-  left: 0;
+  inset-inline-start: 0;
   width: 100%;
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(65, 166, 242, 0.3), transparent);
@@ -800,7 +800,7 @@
   top: 0;
   z-index: 1;
   padding: 8px 12px;
-  text-align: left;
+  text-align: start;
   font-size: 9.5px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -960,7 +960,7 @@
   width: 8px;
   height: 8px;
   border-radius: 2px;
-  margin-right: 4px;
+  margin-inline-end: 4px;
   vertical-align: -1px;
 }
 
@@ -1000,7 +1000,7 @@
 }
 
 .pa-feed-time {
-  margin-left: auto;
+  margin-inline-start: auto;
   color: var(--text-faint);
   font-size: 10px;
 }
@@ -1008,7 +1008,7 @@
 .pa-feed-reason {
   font-size: 10.5px;
   color: var(--text-faint);
-  padding-left: 2px;
+  padding-inline-start: 2px;
 }
 
 /* confidence meter */
@@ -1040,7 +1040,7 @@
   font-size: 10.5px;
   color: var(--text-dim);
   min-width: 40px;
-  text-align: right;
+  text-align: end;
 }
 
 /* actions row under the ladder (Run checks / Unload) */
@@ -1121,8 +1121,8 @@
   .pa-step::after {
     top: auto;
     bottom: -11px;
-    right: auto;
-    left: 21px;
+    inset-inline-end: auto;
+    inset-inline-start: 21px;
     width: 2px;
     height: 12px;
   }
@@ -1178,7 +1178,7 @@
   }
 
   .pa-feed-time {
-    margin-left: 0;
+    margin-inline-start: 0;
   }
 }
 
@@ -1188,7 +1188,8 @@
   }
 
   .pa-step {
-    padding: 10px 12px 10px 38px;
+    padding-block: 10px;
+    padding-inline: 38px 12px;
   }
 
   .pa-table {
