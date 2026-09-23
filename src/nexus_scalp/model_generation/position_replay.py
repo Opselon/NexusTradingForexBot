@@ -477,19 +477,23 @@ def _resolve_checkpoint_path(raw: Path | str | None, *, label: str) -> Path | No
     s = str(raw).strip()
     if not s or "\x00" in s:
         raise ValueError(f"{label} is empty or malformed")
-    # SEC: sanitize the string BEFORE any Path is constructed so the traversal
-    # check is visible to the data-flow analysis as the boundary, and so no
-    # escape form reaches expanduser()/resolve(). When the input is already
-    # absolute, verify it lies inside one of the trusted roots before resolving;
-    # when relative, narrow to root-relative via sanitize_rel_path and anchor
-    # under REPO_ROOT. Either way, traversal segments (..) and nulls are refused.
-    if any(part == ".." for part in Path(s).parts):
-        raise ValueError(f"{label} must not contain a parent-directory reference")
-    candidate = Path(s).expanduser()
-    if not candidate.is_absolute():
+    # SEC: The string is sanitized BEFORE it is used to open anything: this
+    # rejects null bytes and ``..`` segments outright, so no traversal form can
+    # reach the path machinery below.
+    if any(part == ".." for part in Path(s).parts) or "\x00" in s:
+        raise ValueError(f"{label} must not contain a parent-directory reference or null bytes")
+    # Absolute values are legitimate for callers that pass a resolved artifact
+    # location (tests write bundles under tempfile, and the trainer's artifact
+    # dir is repo-absolute). Containment is enforced by the trusted-root check
+    # below, so the only thing left to do is canonicalize. Relative values are
+    # narrowed to a whitelist-only relative path and anchored under REPO_ROOT.
+    raw_path = Path(s)
+    if raw_path.is_absolute():
+        candidate = raw_path
+    else:
         candidate = REPO_ROOT / sanitize_rel_path(s, label=label)
     try:
-        resolved = candidate.resolve()
+        resolved = candidate.expanduser().resolve()
     except (OSError, ValueError) as exc:
         raise ValueError(f"{label} could not be resolved") from exc
     if not _is_under_trusted_root(resolved):

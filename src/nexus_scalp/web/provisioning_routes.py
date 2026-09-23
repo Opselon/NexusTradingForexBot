@@ -156,6 +156,9 @@ def _resolve_within_import_roots(raw: str) -> Path:
     from nexus_scalp.position_adviser.paths import resolve_under_root
 
     s = str(raw).strip()
+    # Shape barrier first, so the string reaching expanduser()/resolve() cannot
+    # carry a traversal component, shell metacharacter or null byte.
+    _validate_import_path_shape(s)
     if Path(s).is_absolute():
         resolved = Path(s).expanduser().resolve()
         for r in _allowed_import_roots():
