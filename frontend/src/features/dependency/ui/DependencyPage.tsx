@@ -377,7 +377,7 @@ function NodeDetail({ data }: { data: DependencyNodeDetailResponse }) {
           {(data.dependencies ?? []).length === 0 ? (
             <EmptyState message="No outgoing dependencies." />
           ) : (
-            <ul className="tiny inline-mono" style={{ maxHeight: 160, overflow: "auto", margin: 0, paddingInlineStart: 16 }}>
+            <ul tabIndex={0} className="tiny inline-mono" style={{ maxHeight: 160, overflow: "auto", margin: 0, paddingInlineStart: 16 }}>
               {(data.dependencies ?? []).map((d) => (
                 <li key={d}>{d}</li>
               ))}
@@ -389,7 +389,7 @@ function NodeDetail({ data }: { data: DependencyNodeDetailResponse }) {
           {(data.dependents ?? []).length === 0 ? (
             <EmptyState message="No incoming dependents." />
           ) : (
-            <ul className="tiny inline-mono" style={{ maxHeight: 160, overflow: "auto", margin: 0, paddingInlineStart: 16 }}>
+            <ul tabIndex={0} className="tiny inline-mono" style={{ maxHeight: 160, overflow: "auto", margin: 0, paddingInlineStart: 16 }}>
               {(data.dependents ?? []).map((d) => (
                 <li key={d}>{d}</li>
               ))}
@@ -512,7 +512,7 @@ function ImpactExplorer({ nodePath }: { nodePath: string }) {
           {(q.data?.impacted ?? []).length === 0 ? (
             <EmptyState message="No downstream impact recorded." />
           ) : (
-            <ul className="tiny inline-mono" style={{ maxHeight: 200, overflow: "auto", margin: 0, paddingInlineStart: 16 }}>
+            <ul tabIndex={0} className="tiny inline-mono" style={{ maxHeight: 200, overflow: "auto", margin: 0, paddingInlineStart: 16 }}>
               {(q.data?.impacted ?? []).map((p, i) => (
                 <li key={i}>{String(p)}</li>
               ))}

@@ -225,7 +225,7 @@ export function NewsProConsolePanel() {
         </span>
       </div>
       {log.error && <div className="news-status-line err">console: {log.error}</div>}
-      <div className="news-pro-log" ref={logRef}>
+      <div tabIndex={0} className="news-pro-log" ref={logRef}>
         {log.entries.length === 0 ? (
           <div className="news-pro-log-empty">
             {log.polling

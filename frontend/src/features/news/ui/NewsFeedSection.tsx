@@ -146,7 +146,7 @@ export function NewsFeedSection() {
           hint={filter === "IRRELEVANT" ? "Nothing was pruned — the auto-prune pass marks unrelated stories here." : 'Use "Fetch news" above, or wait for the ingestion worker.'}
         />
       ) : (
-        <div className="news-list">
+        <div tabIndex={0} className="news-list">
           {articles.map((a) => (
             <ArticleRow
               key={a.article_id}

@@ -174,7 +174,7 @@ export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: numb
 
         {/* Ranked setups (radar.setups = backend's ranked top-5 list, verbatim) */}
         {r && r.setups && r.setups.length > 0 && (
-          <div className="mc-radar__setups">
+          <div tabIndex={0} className="mc-radar__setups">
             <span className="mc-radar__k">Ranked setups (backend order)</span>
             <ul>
               {r.setups.map((s, i) => {
