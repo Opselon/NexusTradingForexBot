@@ -16,32 +16,50 @@
  * playbook is documentation; queries above are the data.
  */
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import {
   DataTable,
   EmptyState,
+  ErrorState,
   MetricCard,
   Panel,
   Segmented,
   Skeleton,
   StatusBadge,
 } from "@/components/primitives";
+import { ApiError } from "@/types/api";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { DistBars, FreshnessCaption, GateStepper, InfoRow, StatusPill } from "./lane5Kit";
 import { registryCounters, obj, str, type Row } from "../model";
 import { researchQueries, researchUseCases } from "../useCases";
-import { GATE_CHAIN } from "../handbook";
+import { GATE_CHAIN } from "../handbook/gates/chain";
 import ResearchCommands from "./ResearchCommands";
-import StrategyDrawer from "./StrategyDrawer";
-import StrategyPlaybook from "./StrategyPlaybook";
 import "./research.css";
+
+/* Inner splits (perf lane): the drawer and the playbook (static handbook,
+ * ~140 kB of docs text) render only behind state — chunk loads on first
+ * open behind LOCAL Suspense boundaries, never the shell's shared one. */
+const StrategyDrawer = lazy(() => import("./StrategyDrawer"));
+const StrategyPlaybook = lazy(() => import("./StrategyPlaybook"));
 
 type Tab = "registry" | "queue" | "worker" | "analytics" | "history" | "datasets" | "playbook";
 
 const PAGE_SIZE_HINT = "bounded server-side (limit params enforced by the backend)";
+
+/** Failed research read: message + request_id + Retry (never collapsed into
+ *  an empty state or a red text line). */
+function QueryError({ error, source, onRetry }: { error: unknown; source: string; onRetry: () => void }) {
+  return (
+    <ErrorState
+      message={error instanceof Error ? error.message : `${source} failed`}
+      requestId={error instanceof ApiError ? error.requestId : null}
+      onRetry={onRetry}
+    />
+  );
+}
 
 /** One-line role per chain node in the hero pipeline map (handbook text). */
 const GATE_META: Record<string, string> = {
@@ -268,6 +286,8 @@ export default function ResearchPage(props: ShellPageProps) {
       >
         {summaryQ.isPending ? (
           <Skeleton count={2} />
+        ) : summaryQ.isError ? (
+          <QueryError error={summaryQ.error} source="/api/research/summary" onRetry={() => void summaryQ.refetch()} />
         ) : (
           <div className="rs-rail" role="group" aria-label="Filter registry by lifecycle state">
             {counters.length === 0 ? (
@@ -326,6 +346,8 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title={`Registry list ${lifecycle ? `· ${lifecycle}` : ""}`} right={<span className="tiny muted">{PAGE_SIZE_HINT}</span>} tight>
             {registryQ.isPending ? (
               <Skeleton count={4} />
+            ) : registryQ.isError ? (
+              <QueryError error={registryQ.error} source="/api/research/registry" onRetry={() => void registryQ.refetch()} />
             ) : unavailable(registryQ.data) ?? (
               <>
                 {registry.length === 0 ? (
@@ -372,6 +394,8 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title="Gate queue census" right={<FreshnessCaption timestamp={null} isFetching={queueQ.isFetching} error={queueQ.isError} />} tight>
             {queueQ.isPending ? (
               <Skeleton count={3} />
+            ) : queueQ.isError ? (
+              <QueryError error={queueQ.error} source="/api/research/queue" onRetry={() => void queueQ.refetch()} />
             ) : unavailable(queueQ.data) ?? (
               <div className="grid cols-2">
                 <div>
@@ -405,6 +429,8 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title="Worker heartbeat + diagnostics" right={<FreshnessCaption timestamp={null} isFetching={workerQ.isFetching || !workerQ.isFetched} error={workerQ.isError} />} tight>
             {workerQ.isPending ? (
               <Skeleton count={3} />
+            ) : workerQ.isError ? (
+              <QueryError error={workerQ.error} source="/api/research/worker" onRetry={() => void workerQ.refetch()} />
             ) : unavailable(workerQ.data) ?? (
               <div className="grid cols-2">
                 <div>
@@ -426,6 +452,8 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title="Failure heatmap + families" right={<FreshnessCaption timestamp={null} isFetching={analyticsQ.isFetching} error={analyticsQ.isError} />} tight>
             {analyticsQ.isPending ? (
               <Skeleton count={3} />
+            ) : analyticsQ.isError ? (
+              <QueryError error={analyticsQ.error} source="/api/research/analytics" onRetry={() => void analyticsQ.refetch()} />
             ) : unavailable(analyticsQ.data) ?? (
               <div className="grid cols-2">
                 <div>
@@ -450,6 +478,8 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title="Retention (live vs archive — archive-only contract)" tight>
             {historyQ.isPending ? (
               <Skeleton count={2} />
+            ) : historyQ.isError ? (
+              <QueryError error={historyQ.error} source="/api/research/history" onRetry={() => void historyQ.refetch()} />
             ) : unavailable(historyQ.data) ?? (
               <dl className="kv">
                 {Object.entries(obj(historyQ.data?.retention)).map(([k, v]) => (
@@ -465,9 +495,11 @@ export default function ResearchPage(props: ShellPageProps) {
             {datasetsQ.isPending ? (
               <Skeleton count={3} />
             ) : datasetsQ.isError ? (
-              <div className="small tx-bad">
-                {datasetsQ.error instanceof Error ? datasetsQ.error.message : "request failed"}
-              </div>
+              <QueryError
+                error={datasetsQ.error}
+                source="/api/v1/research/datasets"
+                onRetry={() => void datasetsQ.refetch()}
+              />
             ) : (datasetsQ.data?.datasets ?? []).length === 0 ? (
               <EmptyState message="No datasets derived from runs yet." />
             ) : (
@@ -489,12 +521,18 @@ export default function ResearchPage(props: ShellPageProps) {
             right={<span className="tiny muted">documentation · compiled from backend source</span>}
             tight
           >
-            <StrategyPlaybook />
+            <Suspense fallback={<Skeleton count={6} height={40} />}>
+              <StrategyPlaybook />
+            </Suspense>
           </Panel>
         )}
       </div>
 
-      {selected && <StrategyDrawer strategyId={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <Suspense fallback={<Skeleton count={4} height={64} />}>
+          <StrategyDrawer strategyId={selected} onClose={() => setSelected(null)} />
+        </Suspense>
+      )}
     </div>
   );
 }
@@ -512,6 +550,8 @@ function ResearchDiagMini() {
       <div className="section-title">blocked / failed gates (diagnostics)</div>
       {diagQ.isPending ? (
         <Skeleton count={2} />
+      ) : diagQ.isError ? (
+        <QueryError error={diagQ.error} source="/api/research/diagnostics" onRetry={() => void diagQ.refetch()} />
       ) : blocked.length === 0 ? (
         <EmptyState message="No blocked gates reported." />
       ) : (

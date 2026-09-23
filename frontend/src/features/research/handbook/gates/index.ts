@@ -13,15 +13,9 @@ import { oosEntry } from "./oos";
 import { robustnessEntry } from "./robustness";
 import { scoringGateEntry } from "./scoringGate";
 
-/** Canonical chain order — mirrors evidence.py::GATE_CHAIN verbatim. */
-export const GATE_CHAIN = [
-  "STATIC_VALIDATION",
-  "BACKTEST",
-  "WALK_FORWARD",
-  "OOS",
-  "ROBUSTNESS",
-  "SCORING",
-] as const;
+/** Canonical chain order — lives in ./chain (split for bundle size) and is
+ *  re-exported here so all consumers/tests keep loading it from gates/index. */
+export { GATE_CHAIN } from "./chain";
 
 /** Gates REQUIRED for a VALIDATED verdict — mirrors REQUIRED_GATES_FOR_VALIDATION. */
 export const REQUIRED_FOR_VALIDATED = [
