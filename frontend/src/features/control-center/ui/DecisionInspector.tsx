@@ -17,8 +17,10 @@ import { formatDateTime } from "@/lib/format";
 import { Drawer, InfoRow, JsonBlock } from "../../research/ui/lane5Kit";
 import { arr, bool, notRecorded, num, obj, str } from "../model";
 import { controlCenterQueries } from "../useCases";
+import { useI18n } from "@/stores/i18nStore";
 
 export function DecisionInspector({ id, onClose }: { id: number; onClose: () => void }) {
+  const t = useI18n((s) => s.t);
   const detailQ = useQuery({
     queryKey: ["control-center", "decision", id],
     queryFn: ({ signal }) => controlCenterQueries.decisionDetail(id, signal),
@@ -27,25 +29,25 @@ export function DecisionInspector({ id, onClose }: { id: number; onClose: () => 
   const d = obj(detailQ.data?.decision);
   const probs = obj(d.probabilities);
   return (
-    <Drawer title={`Decision #${id} — evidence`} onClose={onClose}>
+    <Drawer title={t("control-center.inspector.title", "Decision #{id} — evidence", { id })} onClose={onClose}>
       {detailQ.isPending ? (
         <Skeleton count={4} />
       ) : detailQ.data?.available === false ? (
-        <EmptyState message={str(obj(detailQ.data?.error).reason) ?? "decision not found"} />
+        <EmptyState message={str(obj(detailQ.data?.error).reason) ?? t("control-center.empty.decision_not_found", "decision not found")} />
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
-          <Panel title="Ledger row" tight>
+          <Panel title={t("control-center.panel.ledger_row", "Ledger row")} tight>
             <dl className="kv">
-              <InfoRow label="action / mode" value={`${notRecorded(str(d.action))} / ${notRecorded(str(d.execution_mode))}`} />
-              <InfoRow label="confidence" value={notRecorded(str(d.confidence))} />
+              <InfoRow label={t("control-center.label.action_mode", "action / mode")} value={`${notRecorded(str(d.action))} / ${notRecorded(str(d.execution_mode))}`} />
+              <InfoRow label={t("control-center.label.confidence", "confidence")} value={notRecorded(str(d.confidence))} />
               <InfoRow label="stage / blocked_by" value={`${notRecorded(str(d.decision_stage))} / ${notRecorded(str(d.blocked_by))}`} />
-              <InfoRow label="reason" value={notRecorded(str(d.reason_code))} />
+              <InfoRow label={t("control-center.label.reason", "reason")} value={notRecorded(str(d.reason_code))} />
               <InfoRow label="request_id" value={<span className="inline-mono tiny">{notRecorded(str(d.request_id))}</span>} />
             </dl>
           </Panel>
-          <Panel title="Model probabilities (NOT RECORDED when absent)" tight>
+          <Panel title={t("control-center.panel.model_probs", "Model probabilities (NOT RECORDED when absent)")} tight>
             {bool(d.payload_ok) === false ? (
-              <EmptyState message="payload unparseable — kept with payload_ok:false (never fabricated)" />
+              <EmptyState message={t("control-center.empty.payload_unparseable", "payload unparseable — kept with payload_ok:false (never fabricated)")} />
             ) : (
               <dl className="kv">
                 <InfoRow label="P(buy)" value={notRecorded(str(probs.buy))} />
@@ -57,14 +59,14 @@ export function DecisionInspector({ id, onClose }: { id: number; onClose: () => 
               </dl>
             )}
           </Panel>
-          <Panel title={`Correlated orders (${arr(d.orders).length})`} tight>
+          <Panel title={t("control-center.inspector.correlated_orders", "Correlated orders ({n})", { n: arr(d.orders).length })} tight>
             <div className="tiny muted" style={{ marginBottom: 6 }}>
-              correlation method: {notRecorded(str(d.correlation_method))}
+              {t("control-center.inspector.correlation_method", "correlation method: {v}", { v: notRecorded(str(d.correlation_method)) })}
             </div>
             {arr(d.orders).length === 0 ? (
-              <EmptyState message="No correlated dispatch rows." />
+              <EmptyState message={t("control-center.empty.no_correlated", "No correlated dispatch rows.")} />
             ) : (
-              <DataTable headers={[{ label: "ts" }, { label: "ticket" }, { label: "action" }, { label: "latency" }]}>
+              <DataTable headers={[{ label: t("control-center.th.ts", "ts") }, { label: t("control-center.th.ticket", "ticket") }, { label: t("control-center.th.action", "action") }, { label: t("control-center.th.latency", "latency") }]}>
                 {arr(d.orders).map((o, i) => (
                   <tr key={i}>
                     <td className="tiny">{formatDateTime(str(o.timestamp))}</td>
@@ -76,7 +78,7 @@ export function DecisionInspector({ id, onClose }: { id: number; onClose: () => 
               </DataTable>
             )}
           </Panel>
-          <Panel title="Raw evidence payload" tight>
+          <Panel title={t("control-center.panel.raw_payload", "Raw evidence payload")} tight>
             <JsonBlock value={d.payload ?? d} maxChars={5000} />
           </Panel>
         </div>

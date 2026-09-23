@@ -96,4 +96,5 @@ export const MESSAGES: FeatureMessages = {
   "position-adviser.feed.hold_adj": { fa: "تنظیم نگه {v}", de: "Hold-Anpassung {v}", es: "ajuste de mantenimiento {v}", ar: "تعديل الاحتفاظ {v}" },
   "position-adviser.badge.applied": { fa: "اعمال‌شده", de: "ANGEWANDT", es: "APLICADO", ar: "مُطبَّق" },
   "position-adviser.badge.logged_only": { fa: "فقط ثبت‌شده", de: "NUR PROTOKOLLIERT", es: "SOLO REGISTRADO", ar: "مُسجَّل فقط" },
+  "position-adviser.page.hero_aria": { fa: "مشاور پوزیشن", de: "Positionsberater", es: "asesor de posiciones", ar: "مستشار المراكز" },
 };

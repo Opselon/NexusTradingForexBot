@@ -22,6 +22,7 @@ import { Segmented } from "@/components/primitives";
 import { FreshnessCaption } from "../../research/ui/lane5Kit";
 import { bool, obj, str } from "../model";
 import { controlCenterQueries } from "../useCases";
+import { useI18n } from "@/stores/i18nStore";
 import { ActionRack } from "./ActionRack";
 import { DecisionInspector } from "./DecisionInspector";
 import { EventTape } from "./EventTape";
@@ -40,6 +41,7 @@ type Tab = "overview" | "decisions" | "funnel" | "no-trade" | "orders" | "calibr
 
 export default function ControlCenterPage(props: ShellPageProps) {
   void props;
+  const t = useI18n((s) => s.t);
   const [tab, setTab] = useState<Tab>("overview");
   const [hours, setHours] = useState<number | undefined>(72);
   const [actionFilter, setActionFilter] = useState("");
@@ -63,7 +65,8 @@ export default function ControlCenterPage(props: ShellPageProps) {
   const mode = String(rt.runtime_mode ?? rt.execution_mode ?? "UNKNOWN").toUpperCase();
   const isLive = mode.startsWith("LIVE");
   const engineKnown = engineField !== null && !summaryQ.isPending && !summaryQ.isError && s?.available !== false;
-  const summaryError = summaryQ.error instanceof Error ? summaryQ.error.message : "operator/summary request failed";
+  const summaryError =
+    summaryQ.error instanceof Error ? summaryQ.error.message : t("control-center.err.summary", "operator/summary request failed");
 
   const refreshAll = () => {
     void qc.invalidateQueries({ queryKey: ["control-center"] });
@@ -73,9 +76,9 @@ export default function ControlCenterPage(props: ShellPageProps) {
   return (
     <div className="ctl-page">
       <div className="page-head ctl-head">
-        <h2>Control Center</h2>
-        <span className="muted small">operator evidence console (read-only ledger views + guarded engine control)</span>
-        <span className={`badge ${isLive ? "bad" : "good"}`} title="mode banner">
+        <h2>{t("nav.feature.control-center", "Control Center")}</h2>
+        <span className="muted small">{t("control-center.page.subtitle", "operator evidence console (read-only ledger views + guarded engine control)")}</span>
+        <span className={`badge ${isLive ? "bad" : "good"}`} title={t("control-center.a11y.mode_banner", "mode banner")}>
           {mode}
         </span>
         <FreshnessCaption
@@ -88,18 +91,18 @@ export default function ControlCenterPage(props: ShellPageProps) {
 
       {isLive && (
         <div className="banner down" role="alert">
-          LIVE mode dispatches real orders to the broker. Verify risk state before any operator action.
+          {t("control-center.banner.live", "LIVE mode dispatches real orders to the broker. Verify risk state before any operator action.")}
         </div>
       )}
 
       <Segmented
         options={[
-          { id: "overview" as const, label: "Overview" },
-          { id: "decisions" as const, label: "Decisions" },
-          { id: "funnel" as const, label: "Funnel" },
-          { id: "no-trade" as const, label: "NO_TRADE" },
-          { id: "orders" as const, label: "Orders" },
-          { id: "calibration" as const, label: "Calibration" },
+          { id: "overview" as const, label: t("control-center.tab.overview", "Overview") },
+          { id: "decisions" as const, label: t("control-center.tab.decisions", "Decisions") },
+          { id: "funnel" as const, label: t("control-center.tab.funnel", "Funnel") },
+          { id: "no-trade" as const, label: t("control-center.tab.no_trade", "NO_TRADE") },
+          { id: "orders" as const, label: t("control-center.tab.orders", "Orders") },
+          { id: "calibration" as const, label: t("control-center.tab.calibration", "Calibration") },
         ]}
         value={tab}
         onChange={setTab}
