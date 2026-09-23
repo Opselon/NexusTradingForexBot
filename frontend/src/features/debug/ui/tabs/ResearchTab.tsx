@@ -6,7 +6,7 @@
  * Research feature — nothing rendered here can change research state.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FreshnessCaption, JsonView, PollControl, QuerySection, usePolling } from "@/features/config/ui/kit";
 import { useResearchRead } from "../../hooks";
 
@@ -20,6 +20,11 @@ export function ResearchTab() {
   const params: Record<string, string> = strategyId.trim() ? { strategy_id: strategyId.trim() } : {};
   const needsId = kind === "trace";
   const read = useResearchRead<Record<string, unknown>>(kind, params, !needsId || Object.keys(params).length > 0, poll.paused);
+
+  // Stringify once per data identity: the render below + QuerySection's
+  // children re-run on every parent render, and this envelope is only
+  // re-serialized when the payload actually changes (same JSON bytes).
+  const errorText = useMemo(() => JSON.stringify(read.data?.error) ?? "", [read.data?.error]);
 
   return (
     <QuerySection<Record<string, unknown>>
@@ -50,7 +55,7 @@ export function ResearchTab() {
           </div>
           {data.available === false && <div className="l3-note warn">available=false — research engine is not attached (engine offline or module absent).</div>}
           {typeof data.error !== "undefined" && data.error !== null && (
-            <div className="l3-note bad">backend error envelope: {JSON.stringify(data.error)}</div>
+            <div className="l3-note bad">backend error envelope: {errorText}</div>
           )}
           <div tabIndex={0} className="l3-scroll dbg-json">
             <JsonView value={data} name={kind} />
