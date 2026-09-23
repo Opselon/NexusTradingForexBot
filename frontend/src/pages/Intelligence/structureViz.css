@@ -1,0 +1,12 @@
+/*
+ * PURPOSE:  Structure visualisations for /alt/intelligence (pool ladder, band map, regime evidence).
+ * OWNER:    ui/w2-lane-b  (future edits to this file belong to this lane)
+ * CONSUMES: theme.css tokens; classes consumed by ./StructureViz (lane B).
+ * PROVIDES: styling for the structure visualisation components.
+ * INVARIANTS: theme tokens only (theme.css :root), logical properties (RTL-
+ *           safe), lane-prefixed additive selectors only — never a global
+ *           primitive restyle; every colour is a token or an rgba()/
+ *           color-mix() of one; reduced-motion honored for animation.
+ * EXTEND:   new structure visuals = new `.ixviz-*` rules here.
+ */
+
