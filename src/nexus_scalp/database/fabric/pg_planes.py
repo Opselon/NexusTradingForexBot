@@ -96,9 +96,12 @@ class PgPool:
             return False
 
     def open(self) -> None:
-        if self._pool is not None or self._closed:
-            return
+        if self._pool is not None and not self._closed:
+            return  # already open
         psycopg_pool = self._require_psycopg_pool()
+        # A pool that was closed before may be reopened: clear the sentinel so
+        # the fresh psycopg_pool is accepted (close() sets it permanently).
+        self._closed = False
         kwargs: dict[str, Any] = {
             "min_size": self._limits.min_size,
             "max_size": self._limits.max_size,
@@ -113,12 +116,20 @@ class PgPool:
             # connection; raising there makes the pool discard and replace it.
             # The probe interval is the pool's own scheduling concern.
             kwargs["check"] = self._pool_check
+        # The password is NEVER embedded in the DSN the pool holds: psycopg
+        # takes it as a separate connection parameter, resolved from the
+        # OS-backed secret store exactly as the existing driver does.  The
+        # pool's conninfo therefore carries only the non-secret parts and the
+        # credential is injected per connection attempt.
+        conninfo, connect_kwargs = _split_dsn_secret(self._dsn)
         self._pool = psycopg_pool.ConnectionPool(
-            conninfo=self._dsn,
+            conninfo=conninfo,
             name=self._name,
             configure=self._configure_connection,
-            # The pool owns the real DSN; expose the masked form for
-            # diagnostics instead (never the password).
+            # psycopg_pool forwards ``kwargs`` to psycopg.connect, which is
+            # how the password reaches the auth exchange: it must NOT live in
+            # the conninfo the pool retains.
+            kwargs=connect_kwargs,
             **kwargs,
         )
         logger.debug(
@@ -174,14 +185,24 @@ class PgPool:
         """Readiness probe: raise if the connection is dead.
 
         psycopg_pool calls this before lending a connection; an exception
-        makes the pool discard and replace the connection.
+        makes the pool discard and replace the connection.  The probe runs
+        BEFORE ``configure`` on a fresh connection, so the connection is
+        still in its default (autocommit-off) state: an executed statement
+        opens a transaction the pool then has to roll back.  Run the probe
+        in an explicit autocommit context to leave the connection clean.
         """
         try:
+            was_autocommit = conn.autocommit
+            if not was_autocommit:
+                conn.autocommit = True
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
+            if not was_autocommit:
+                conn.autocommit = False
         except Exception:
             # The pool treats a raised check as "unhealthy" and reconnects.
-            conn.close()
+            with contextlib_suppress():
+                conn.close()
             raise
 
     # -- checkout ---------------------------------------------------------
@@ -329,6 +350,9 @@ class PgWritePlane:
         return self._pool
 
     def open(self) -> None:
+        # PgPool.open() is idempotent (no-op when already open or closed) and
+        # constructs the psycopg_pool lazily, so callers must open before any
+        # checkout or the pool has nothing to lend.
         self._pool.open()
 
     def close(self) -> None:
@@ -345,6 +369,49 @@ class PgWritePlane:
         translated = PostgreSQLDriver.translate_sql(sql)
         with self._pool.connection() as conn, conn.cursor() as cur:
             cur.execute(translated, tuple(args))
+            # The pool lends connections with autocommit OFF (the psycopg
+            # default); without an explicit commit the write is discarded when
+            # the connection is returned. Financial rows must never be
+            # silently dropped, so commit before returning to the pool.
+            conn.commit()
+
+    def execute_batch(self, statements: Sequence[tuple[str, Sequence[Sequence[Any]]]]) -> None:
+        """Apply one batched transaction: grouped statements, one commit.
+
+        Implements the audit write plane's backend contract: the whole batch
+        commits atomically, and any exception leaves the connection rolled
+        back so the caller's row-level salvage starts from a clean slate.
+        """
+        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+
+        with self._pool.connection() as conn:
+            try:
+                for query, rows in statements:
+                    translated = PostgreSQLDriver.translate_sql(query)
+                    with conn.cursor() as cur:
+                        if len(rows) == 1:
+                            cur.execute(translated, tuple(rows[0]))
+                        else:
+                            cur.executemany(translated, [tuple(r) for r in rows])
+                conn.commit()
+            except Exception:
+                with contextlib_suppress():
+                    conn.rollback()
+                raise
+
+    def execute_one(self, query: str, args: Sequence[Any]) -> None:
+        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+
+        translated = PostgreSQLDriver.translate_sql(query)
+        with self._pool.connection() as conn:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(translated, tuple(args))
+                conn.commit()
+            except Exception:
+                with contextlib_suppress():
+                    conn.rollback()
+                raise
 
     def executemany(self, sql: str, seq: Sequence[Sequence[Any]]) -> None:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
@@ -352,6 +419,7 @@ class PgWritePlane:
         translated = PostgreSQLDriver.translate_sql(sql)
         with self._pool.connection() as conn, conn.cursor() as cur:
             cur.executemany(translated, [tuple(a) for a in seq])
+            conn.commit()
 
 
 @contextmanager
@@ -361,6 +429,67 @@ def contextlib_suppress() -> Iterator[None]:
 
     with contextlib.suppress(Exception):
         yield
+
+
+def _split_dsn_secret(dsn: str) -> tuple[str, dict[str, Any]]:
+    """Split a DSN into a password-free conninfo + a psycopg ``password`` kwarg.
+
+    psycopg v3 rejects a password inside ``conninfo`` for pooled connections
+    (it never reaches the auth exchange), so the credential must be supplied
+    as its own parameter.  A DSN with no password yields an empty kwarg dict.
+    """
+    if not dsn:
+        return "", {}
+    if "=" in dsn and "://" not in dsn:
+        # libpq key=value form (host=... port=... dbname=... user=...).
+        # psycopg refuses a password inside ``conninfo`` for pooled
+        # connections, so lift it out into its own kwarg and leave the
+        # rest of the string untouched.
+        import shlex
+
+        try:
+            tokens = shlex.split(dsn)
+        except ValueError:
+            tokens = dsn.split()
+        pw = None
+        kept = []
+        for part in tokens:
+            if part.startswith("password="):
+                pw = part[len("password=") :]
+            else:
+                kept.append(part)
+        return " ".join(kept), ({"password": pw} if pw else {})
+    if "://" in dsn:
+        from urllib.parse import urlparse, urlunparse
+
+        p = urlparse(dsn)
+        password = p.password or ""
+        if not password:
+            return dsn, {}
+        # Rebuild netloc WITHOUT the password, keeping host + port: libpq
+        # needs the host to dial, and urlunparse drops a hostname that is
+        # only present in the original netloc string.
+        host = p.hostname or ""
+        netloc = p.username or ""
+        if host:
+            netloc = f"{netloc}@{host}"
+        if p.port:
+            netloc = f"{netloc}:{p.port}"
+        clean = urlunparse((p.scheme, netloc, p.path, p.params, p.query, p.fragment))
+        return clean, {"password": password}
+    # keyword form: "host=... password=[REDACTED]"
+    parts: list[str] = []
+    password = ""
+    for pair in dsn.split():
+        if "=" not in pair:
+            parts.append(pair)
+            continue
+        key, value = pair.split("=", 1)
+        if key.strip().lower() == "password":
+            password = value.strip()
+        else:
+            parts.append(pair)
+    return " ".join(parts), ({"password": password} if password else {})
 
 
 def _sanitize_app_name(name: str) -> str:

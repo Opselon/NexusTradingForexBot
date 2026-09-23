@@ -44,6 +44,7 @@ from nexus_scalp.database.fabric.consistency import (
 )
 from nexus_scalp.database.fabric.health_states import DatabaseHealthState, HealthProbe
 from nexus_scalp.database.fabric.metrics import FabricMetrics
+from nexus_scalp.database.fabric.pg_planes import PoolLimits
 from nexus_scalp.database.fabric.routing import ConsistencyRouter
 from nexus_scalp.observability.logging import get_logger
 
@@ -388,6 +389,38 @@ class DatabaseFabric:
         for k, v in stats.items():
             m.set_gauge(f"write_{k}", int(v))
 
+    def write_backend(self, domain: str) -> Any:
+        """The pooled write backend for a domain (provider-specific)."""
+        return self._write_plane_for(domain)
+
+    def read_backend(self, domain: str) -> Any:
+        """The pooled read backend for a domain (provider-specific)."""
+        return self._read_plane_for(domain)
+
+    def _write_plane_for(self, domain: str) -> Any:
+        from nexus_scalp.database.fabric.pg_planes import PgWritePlane
+
+        return PgWritePlane(self._domain_dsn(domain), self._pg_pool_limits(domain))
+
+    def _read_plane_for(self, domain: str) -> Any:
+        from nexus_scalp.database.fabric.pg_planes import PgReadPlane
+
+        return PgReadPlane(self._domain_dsn(domain), self._pg_pool_limits(domain))
+
+    def _pg_pool_limits(self, domain: str) -> Any:
+        from nexus_scalp.database.fabric.pg_planes import PoolLimits
+
+        limits = getattr(self._domain_cfg, "pool_limits", None)
+        if limits is not None:
+            return limits
+        return PoolLimits(min_size=2, max_size=8)
+
+    def _domain_dsn(self, domain: str) -> str:
+        cfg = self._domain_cfg
+        if domain != self.domain:
+            return ""
+        return getattr(cfg, "dsn", "") or ""
+
 
 def _default_fabric_config() -> FabricConfig:
     """Resolve the default fabric config (SQLite zero-config)."""
@@ -432,6 +465,65 @@ def _pg_database(dsn: str) -> str:
 
 def _pg_user(dsn: str) -> str:
     return _pg_dsn_parts(dsn).get("user", "") or "postgres"
+
+
+# -- Domain backend registry ----------------------------------------------
+# Per-domain pooled write backends for providers that need a pool (Phase 6).
+# A domain is "provisioned" when the operator has pointed it at a provider
+# through the fabric configuration; until then it resolves to None and the
+# consumer refuses to write instead of silently dropping (Phase 24).
+
+_DOMAIN_BACKENDS: dict[str, Any] = {}
+_DOMAIN_BACKEND_LOCK = threading.Lock()
+
+
+def register_domain_backend(domain: str, backend: Any) -> None:
+    """Register a pooled write backend for a domain (idempotent)."""
+    with _DOMAIN_BACKEND_LOCK:
+        _DOMAIN_BACKENDS[domain] = backend
+
+
+def unregister_domain_backend(domain: str) -> None:
+    with _DOMAIN_BACKEND_LOCK:
+        _DOMAIN_BACKENDS.pop(domain, None)
+
+
+def get_domain_backend(domain: str, readonly: bool = False) -> Any:
+    """Resolve the pooled backend for a provisioned domain, else None.
+
+    Returns None when the domain is not provisioned for a pooled provider so
+    callers can fail loudly rather than silently no-op (the pre-fabric
+    behaviour).  SQLite domains never need this: their writer connection is
+    owned by the consumer.
+    """
+    with _DOMAIN_BACKEND_LOCK:
+        return _DOMAIN_BACKENDS.get(domain)
+
+
+def provision_domain(domain: str, dsn: str, **pool_kwargs: Any) -> Any:
+    """Provision a domain on a pooled provider and return its backend.
+
+    Builds the domain's fabric (write + read pools) from a DSN, opens it,
+    registers its write backend, and returns it.  Idempotent: re-provisioning
+    replaces the pools and closes the old ones.
+    """
+    cfg = FabricConfig.for_postgresql(
+        dsn,
+        pool_limits=PoolLimits(
+            min_size=int(pool_kwargs.get("min_size", 2)),
+            max_size=int(pool_kwargs.get("max_size", 10)),
+        ),
+    )
+    domain_cfg = cfg.for_domain(domain)
+    existing = get_domain_backend(domain)
+    if existing is not None:
+        with contextlib_suppress():
+            existing.close()
+    fabric = DatabaseFabric(domain, domain_cfg)
+    fabric.open()
+    backend = fabric.write_backend(domain)
+    register_domain_backend(domain, backend)
+    return backend
 
 
 @contextmanager
