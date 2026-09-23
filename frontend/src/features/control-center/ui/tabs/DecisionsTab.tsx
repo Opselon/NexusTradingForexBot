@@ -9,6 +9,7 @@
  *             inspect-disabled; confidence never rendered when null (NOT RECORDED).
  * EXTEND:   new filter = a qs() field that api.ts already declares.
  */
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
@@ -32,6 +33,37 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
       controlCenterQueries.decisions({ hours, action: actionFilter || undefined, search: search || undefined, limit: 100 }, signal),
     retry: false,
   });
+
+  // perf: rows derivation (identity guard on the payload array) + the row
+  // map chain memoized together — the parent page re-renders on every 15s
+  // summary tick while this payload is unchanged, and the chain is the hot
+  // path (up to 100 rows x decisionKey + formatters).
+  const rows = useMemo(() => decisionsQ.data?.rows ?? [], [decisionsQ.data]);
+  const rowEls = useMemo(
+    () =>
+      rows.map((r: OperatorDecisionRow) => (
+        <tr key={controlCenterUseCases.decisionKey(r)}>
+          <td className="num tiny">{r.id ?? "—"}</td>
+          <td className="small">{r.symbol ?? "—"}</td>
+          <td>
+            <StatusBadge status={r.action} />
+          </td>
+          <td className="num tiny">{r.confidence == null ? "NOT RECORDED" : formatNumber(r.confidence, 3)}</td>
+          <td className="tiny">{r.decision_stage ?? "—"}</td>
+          <td className="tiny">{r.blocked_by ?? ""}</td>
+          <td className="tiny muted" title={r.reason_code ?? ""}>
+            {(r.reason_code ?? "—").slice(0, 20)}
+          </td>
+          <td className="tiny">{formatDateTime(r.generated_at)}</td>
+          <td>
+            <button className="btn small ghost" disabled={r.payload_ok === false} onClick={() => onInspect(num(r.id) ?? null)}>
+              {r.payload_ok === false ? "payload ✗" : "inspect"}
+            </button>
+          </td>
+        </tr>
+      )),
+    [rows, onInspect],
+  );
 
   return (
     <Panel
@@ -86,7 +118,7 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
         />
       ) : decisionsQ.data?.available === false ? (
         <EmptyState message="ledger unavailable" />
-      ) : (decisionsQ.data?.rows ?? []).length === 0 ? (
+      ) : rows.length === 0 ? (
         <EmptyState message="No decisions match the filters." />
       ) : (
         <DataTable
@@ -102,27 +134,7 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
             { label: "" },
           ]}
         >
-          {(decisionsQ.data?.rows ?? []).map((r: OperatorDecisionRow) => (
-            <tr key={controlCenterUseCases.decisionKey(r)}>
-              <td className="num tiny">{r.id ?? "—"}</td>
-              <td className="small">{r.symbol ?? "—"}</td>
-              <td>
-                <StatusBadge status={r.action} />
-              </td>
-              <td className="num tiny">{r.confidence == null ? "NOT RECORDED" : formatNumber(r.confidence, 3)}</td>
-              <td className="tiny">{r.decision_stage ?? "—"}</td>
-              <td className="tiny">{r.blocked_by ?? ""}</td>
-              <td className="tiny muted" title={r.reason_code ?? ""}>
-                {(r.reason_code ?? "—").slice(0, 20)}
-              </td>
-              <td className="tiny">{formatDateTime(r.generated_at)}</td>
-              <td>
-                <button className="btn small ghost" disabled={r.payload_ok === false} onClick={() => onInspect(num(r.id) ?? null)}>
-                  {r.payload_ok === false ? "payload ✗" : "inspect"}
-                </button>
-              </td>
-            </tr>
-          ))}
+          {rowEls}
         </DataTable>
       )}
       <div className="tiny faint" style={{ marginTop: 6 }}>

@@ -338,7 +338,12 @@ function ConsoleRow({ entry: e }: { entry: ProConsoleEntry }) {
   const kind = e.kind ?? "log";
   const msg = e.msg ?? e.summary ?? "";
   const ts = String(e.ts ?? "").slice(11, 19);
-  const answer = e.answer ? JSON.stringify(e.answer).slice(0, 220) : "";
+  // perf: the answer slice is serialized once per entry identity; each entry
+  // remounts/re-renders when the 1.5s log poll appends new rows.
+  const answer = useMemo(
+    () => (e.answer ? JSON.stringify(e.answer).slice(0, 220) : ""),
+    [e.answer],
+  );
   return (
     <div className={`news-pro-row ${proKindTone(kind)}`}>
       <span className="ts">{ts || "—"}</span>
