@@ -1,0 +1,198 @@
+/* ==========================================================================
+ * features/marketplace/ui/marketplace-store-detail.css
+ * Companion sheet to marketplace-store.css (split to honor the 500-line
+ * file cap; both sheets are mkt- prefixed and token-only).
+ * Contents: score bar, drawer evidence polish, responsive rules.
+ * ========================================================================== */
+
+/* ==========================================================================
+   Score bar in rankings table (raw number always printed next to it)
+   ========================================================================== */
+.mkt-store-scorebar {
+  align-items: center;
+  gap: 8px;
+  display: flex;
+}
+
+.mkt-store-scorebar .track {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  inline-size: 84px;
+  block-size: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.mkt-store-scorebar .track i {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+}
+
+.mkt-store-scorebar.na .track i { background: var(--border-strong); }
+
+/* ==========================================================================
+   Drawer polish — evidence sections + monospace key figures
+   ========================================================================== */
+.mkt-drawer .body section.mkt-store-evidence {
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, var(--elevate-hi), transparent 40%),
+    var(--bg-inset);
+  border-radius: 11px;
+  padding: 12px 14px;
+}
+
+.mkt-store-evidence .section-title,
+.mkt-store-evidence-title {
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  border-block-end: 1px solid var(--border);
+  margin-block-end: 9px;
+  padding-block-end: 6px;
+  font-size: 9.5px;
+  font-weight: 800;
+  font-family: var(--mono);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.mkt-store-evidence-title .pill {
+  font-family: var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: var(--text-dim);
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  margin-inline-start: auto;
+  padding: 1px 8px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+/* Key-figure strip: monospace, only real payload values */
+.mkt-store-keyfigs {
+  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.mkt-store-keyfig {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 8px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  display: flex;
+}
+
+.mkt-store-keyfig .k {
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-size: 8.5px;
+  font-weight: 700;
+  font-family: var(--mono);
+}
+
+.mkt-store-keyfig .v {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.mkt-store-keyfig .v.dim { color: var(--text-faint); font-weight: 700; }
+
+.mkt-store-statline {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-block-start: 6px;
+  display: flex;
+}
+
+/* Timeline rail for lifecycle events */
+.mkt-store-timeline {
+  border-inline-start: 1px solid var(--border-strong);
+  flex-direction: column;
+  gap: 0;
+  padding-inline-start: 14px;
+  display: flex;
+}
+
+.mkt-store-tl-item {
+  border-block-end: 1px solid var(--border);
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 0 8px;
+  position: relative;
+  display: flex;
+}
+
+.mkt-store-tl-item:last-child { border-block-end: 0; }
+
+.mkt-store-tl-item::before {
+  content: "";
+  inset-inline-start: -19px;
+  inset-block-start: 12px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(65, 166, 242, 0.55);
+  inline-size: 7px;
+  block-size: 7px;
+  position: absolute;
+}
+
+.mkt-store-tl-item .flow {
+  font-family: var(--mono);
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.mkt-store-tl-item .meta {
+  font-family: var(--mono);
+  color: var(--text-faint);
+  font-size: 9.5px;
+}
+
+.mkt-store-tl-item .why {
+  color: var(--text-dim);
+  font-size: 10.5px;
+}
+
+/* Monospace figure emphasis inside tables */
+.mkt-drawer .body .mkt-store-mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+@media (max-width: 1080px) {
+  .mkt-store-podium { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  .mkt-store-packs,
+  .mkt-store-seeds { grid-template-columns: 1fr; }
+  .mkt-store-keyfigs { grid-template-columns: 1fr 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mkt-store-pack,
+  .mkt-store-seed { transition: none !important; }
+  .mkt-store-pack:hover,
+  .mkt-store-seed:hover { transform: none !important; }
+}

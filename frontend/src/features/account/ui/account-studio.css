@@ -1,0 +1,271 @@
+/**
+ * PURPOSE:  analytics-studio styles — hero KPI rail, grid plates, and
+ *           distribution panels for the account feature (wave 6).
+ * OWNER:    uiux-w6-account  (future edits belong to this lane)
+ * CONSUMES: nothing (pure CSS over theme.css tokens)
+ * PROVIDES: .acc-kpi-*, .acc-plate-*, .acc-dist-* classes
+ * INVARIANTS: tokens ONLY (theme.css families: --green, --red, --amber,
+ *           --accent, --bg, --border; rgba() of tokens is the one allowed
+ *           exception); class prefix acc-; logical properties (RTL-safe);
+ *           animations stay under 0.35s and honor theme.css's reduced-motion
+ *           guard. NO bare hex — anywhere.
+ * EXTEND:   append a numbered section. Tabular widgets (trades heat table +
+ *           strategy cards) live in account-studio-grid.css so each sheet
+ *           stays under the 500-line rule.
+ */
+
+/* ============================ 1. hero KPI rail ============================ */
+
+.acc-kpi-rail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(168px, 100%), 1fr));
+  gap: 10px;
+}
+
+/* One KPI card. The left rail is an emphasis bar whose color follows the
+   signed tone (data-tone -> token colors below). */
+.acc-kpi {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 45%), var(--bg-panel);
+  box-shadow: var(--elev-1);
+  overflow: hidden;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.acc-kpi:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--elev-2);
+}
+/* tone rail: always a token color, opacity encodes only the on-screen sign */
+.acc-kpi::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 3px;
+  background: var(--text-faint);
+  opacity: 0.35;
+}
+.acc-kpi[data-tone="pos"]::before { background: var(--green); opacity: 0.9; }
+.acc-kpi[data-tone="neg"]::before { background: var(--red); opacity: 0.9; }
+.acc-kpi[data-tone="warn"]::before { background: var(--amber); opacity: 0.85; }
+
+.acc-kpi-k {
+  font-size: 9.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* "derived" badge — required by the honesty law for client-computed deltas */
+.acc-kpi-derived {
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--amber);
+  background: var(--amber-dim);
+  border: 1px solid var(--amber-dim);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.acc-kpi-v {
+  font-family: var(--mono);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  line-height: 1.2;
+}
+.acc-kpi-v.pos { color: var(--green); text-shadow: 0 0 16px var(--green-dim); }
+.acc-kpi-v.neg { color: var(--red); }
+.acc-kpi-v.warn { color: var(--amber); }
+.acc-kpi-v.dim { color: var(--text-dim); }
+
+/* delta line under the value: change vs another loaded field, labeled derived */
+.acc-kpi-d {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.acc-kpi-d .pos { color: var(--green); }
+.acc-kpi-d .neg { color: var(--red); }
+.acc-kpi-d.dim { color: var(--text-faint); }
+
+.acc-kpi-s {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================ 2. grid plates ============================= */
+/* Framing for the existing charts: a recessed plate with a faint engineering
+   grid, so the shared viz kit reads as one instrument panel. Chart geometry
+   itself is untouched (components/viz stays read-only). */
+
+.acc-plate-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 1100px) { .acc-plate-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.acc-plate {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, var(--elevate-hi), transparent 40%),
+    repeating-linear-gradient(0deg, transparent 0 23px, rgba(255, 255, 255, 0.022) 23px 24px),
+    repeating-linear-gradient(90deg, transparent 0 23px, rgba(255, 255, 255, 0.022) 23px 24px),
+    var(--bg-inset);
+  padding: 10px 12px 8px;
+  min-inline-size: 0;
+}
+/* corner ticks — the "instrument" affordance, pure decoration */
+.acc-plate::before,
+.acc-plate::after {
+  content: "";
+  position: absolute;
+  inline-size: 9px;
+  block-size: 9px;
+  border: 1px solid var(--border-strong);
+  pointer-events: none;
+}
+.acc-plate::before { inset-block-start: 5px; inset-inline-start: 5px; border-right: none; border-bottom: none; }
+.acc-plate::after { inset-block-end: 5px; inset-inline-end: 5px; border-left: none; border-top: none; }
+
+.acc-plate-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-block-end: 6px;
+}
+.acc-plate-t {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.acc-plate-m {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+.acc-plate-f {
+  margin-block-start: 5px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* emphasis bars: a compact magnitude strip under a chart/panel, driven by
+   on-screen values only (no fabricated series). */
+.acc-emph {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  block-size: 26px;
+  margin-block-start: 6px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.018);
+}
+.acc-emph i {
+  flex: 1 1 0;
+  min-inline-size: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--border-strong);
+  transition: height 0.3s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s ease;
+}
+.acc-emph i.pos { background: color-mix(in srgb, var(--green) 78%, transparent); }
+.acc-emph i.neg { background: color-mix(in srgb, var(--red) 78%, transparent); }
+.acc-emph i.flat { background: var(--border-strong); }
+/* indexed mode: zero-baseline is meaningless for level series (equity/balance),
+   so heights are min..max scaled and the color stays neutral accent */
+.acc-emph i.mono { background: color-mix(in srgb, var(--accent) 55%, var(--border-strong)); }
+/* a null sample renders as an empty slot — never a synthetic bar */
+.acc-emph i.gap { opacity: 0.2; }
+
+/* ======================= 3. distribution panels ========================= */
+/* For metrics that exist only as aggregate scalars: a ranked distribution
+   strip instead of a fake timeseries (honesty law §3). */
+
+.acc-dist {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.acc-dist-row {
+  display: grid;
+  grid-template-columns: minmax(96px, max-content) minmax(60px, 1fr) 74px;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+.acc-dist-lab {
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 9.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acc-dist-track {
+  position: relative;
+  block-size: 9px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.acc-dist-fill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  border-radius: 4px;
+  transition: inline-size 0.35s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s ease;
+}
+.acc-dist-fill.pos { background: linear-gradient(90deg, var(--green-dim), var(--green)); }
+.acc-dist-fill.neg { background: linear-gradient(90deg, var(--red-dim), var(--red)); }
+.acc-dist-fill.dim { background: linear-gradient(90deg, rgba(131, 152, 173, 0.3), var(--text-dim)); }
+.acc-dist-fill.warn { background: linear-gradient(90deg, var(--amber-dim), var(--amber)); }
+.acc-dist-track.unknown {
+  background: repeating-linear-gradient(45deg, transparent 0 5px, rgba(255, 255, 255, 0.05) 5px 10px);
+}
+.acc-dist-val {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.acc-dist-val.pos { color: var(--green); }
+.acc-dist-val.neg { color: var(--red); }
+.acc-dist-val.dim { color: var(--text-faint); }
+.acc-dist-val.warn { color: var(--amber); }

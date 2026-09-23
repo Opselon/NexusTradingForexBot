@@ -1,10 +1,22 @@
 /**
  * Charts section — equity curve, drawdown, growth, cumulative PnL.
  *
- * The series come from the accounting core (`/api/account/equity-curve`
- * carries drawdown already computed with the ONE methodology; `/growth`
- * carries audit-snapshot balance/equity). This panel only renders those rows
- * through the shared viz kit; nothing is resampled or smoothed client-side.
+ * PURPOSE:  frame the four backend series in analytics-studio grid plates
+ *           (recessed surface, engineering grid, corner ticks) and add
+ *           emphasis bars derived from the SAME loaded samples; the shared
+ *           viz kit still draws the actual charts.
+ * OWNER:    uiux-w6-account
+ * CONSUMES: useEquityCurve/useAccountGrowth, components/viz (EquityCurveChart,
+ *           DrawdownChart, SignedBucketChart), studio-math-react (Plate,
+ *           EmphBars/EmphLevel), shared formatters
+ * PROVIDES: AccountChartsSection (page section)
+ * INVARIANTS: nothing is resampled or smoothed client-side — series come from
+ *           /api/account/equity-curve (drawdown computed backend, one
+ *           methodology) and /api/account/growth (audit snapshots); empty →
+ *           the original EmptyState strings; the range buttons re-query
+ *           unchanged.
+ * EXTEND:   add plates, not new math; emphasis bars may only scale samples
+ *           that are already rendered somewhere on this panel.
  */
 
 import { useState } from "react";
@@ -13,6 +25,8 @@ import { DrawdownChart, EquityCurveChart, SignedBucketChart, type SignedBucket }
 import { formatDateTime } from "@/lib/format";
 import { useAccountGrowth, useEquityCurve } from "../hooks";
 import { DASH, FreshnessNote, asErrorText, moneyOrDash } from "./shared";
+import { EmphBars, EmphLevel, Plate } from "./studio-math-react";
+import "./account-studio.css";
 
 type RangeId = "7" | "30" | "90" | "365" | "all";
 
@@ -33,6 +47,9 @@ export function AccountChartsSection() {
   const points = curve.data?.equity_curve ?? [];
   const cum = curve.data?.cumulative_pnl ?? [];
   const maxDd = points.length ? Math.min(...points.map((p) => p.drawdown_pct ?? 0)) : null;
+
+  const rangeLabel = (first?: string, last?: string) =>
+    `${first ? formatDateTime(first) : DASH} → ${last ? formatDateTime(last) : DASH}`;
 
   return (
     <Panel
@@ -57,21 +74,46 @@ export function AccountChartsSection() {
       ) : points.length === 0 ? (
         <EmptyState message="No accounting snapshots stored yet." hint="Equity/drawdown charts appear once the accounting worker records snapshots." />
       ) : (
-        <div className="grid cols-2">
-          <section>
-            <div className="section-title">equity (backend running peak shown dashed)</div>
+        <div className="acc-plate-grid">
+          <Plate
+            title="equity (backend running peak shown dashed)"
+            meta={`${points.length} samples`}
+            footer={rangeLabel(points[0]?.timestamp, points[points.length - 1]?.timestamp)}
+          >
             <EquityCurveChart points={points} field="equity" showPeak formatValue={(v) => moneyOrDash(v)} />
-            <div className="tiny faint" style={{ marginTop: 4 }}>
-              {points.length} samples · {points[0] ? formatDateTime(points[0]?.timestamp ?? DASH) : DASH} → {points[points.length - 1] ? formatDateTime(points[points.length - 1]?.timestamp ?? DASH) : DASH}
+            <div className="tiny faint" style={{ marginBlockStart: 5 }}>
+              emphasis bars: per-sample equity move scaled to the largest move in view (derived from the samples above)
             </div>
-          </section>
-          <section>
-            <div className="section-title">drawdown % (one methodology — accounting core)</div>
+            <EmphBars
+              bars={points.map((pt, i) => {
+                if (i === 0) return { value: null as number | null };
+                const prev = points[i - 1];
+                const a = pt.equity;
+                const b = prev?.equity ?? null;
+                if (a === null || b === null) return { value: null as number | null };
+                return { value: a - b };
+              })}
+              minPct={8}
+            />
+          </Plate>
+
+          <Plate
+            title="drawdown % (one methodology — accounting core)"
+            meta={maxDd === null ? DASH : `worst ${maxDd.toFixed(2)}%`}
+            footer="worst sample in view shown in meta · depth comes from the accounting core, never recomputed here"
+          >
             <DrawdownChart points={points} maxDrawdownPct={maxDd} />
-            <div className="tiny faint" style={{ marginTop: 4 }}>worst sample in view: {maxDd === null ? DASH : `${maxDd.toFixed(2)}%`}</div>
-          </section>
-          <section>
-            <div className="section-title">cumulative realized PnL (per closed trade)</div>
+            <EmphBars
+              bars={points.map((pt) => ({ value: pt.drawdown_pct ?? null, tone: "neg" as const }))}
+              minPct={8}
+            />
+          </Plate>
+
+          <Plate
+            title="cumulative realized PnL (per closed trade)"
+            meta={`${cum.length} steps`}
+            footer="reconciles with period net_pnl sums"
+          >
             {cum.length === 0 ? (
               <EmptyState message="No closed trades to accumulate." />
             ) : (
@@ -81,10 +123,21 @@ export function AccountChartsSection() {
                 formatValue={(v) => moneyOrDash(v)}
               />
             )}
-            <div className="tiny faint" style={{ marginTop: 4 }}>{cum.length} closed-trade steps · reconciles with period net_pnl sums</div>
-          </section>
-          <section>
-            <div className="section-title">per-trade PnL contributions (last {Math.min(cum.length, 40)})</div>
+            {cum.length > 0 && (
+              <>
+                <div className="tiny faint" style={{ marginBlockStart: 5 }}>
+                  emphasis bars: each closed trade&apos;s net PnL, scaled to the largest |net| on this range (backend values)
+                </div>
+                <EmphBars bars={cum.map((c) => ({ value: c.net_pnl }))} minPct={8} />
+              </>
+            )}
+          </Plate>
+
+          <Plate
+            title={`per-trade PnL contributions (last ${Math.min(cum.length, 40)})`}
+            meta={cum.length ? `${Math.min(cum.length, 40)} of ${cum.length}` : DASH}
+            footer="green = winning trade net, red = losing trade net (backend values)"
+          >
             {cum.length === 0 ? (
               <EmptyState message="No per-trade rows." />
             ) : (
@@ -104,23 +157,35 @@ export function AccountChartsSection() {
                 bucketLabel={(b) => (b.bucket_start ? formatDateTime(b.bucket_start) : "")}
               />
             )}
-            <div className="tiny faint" style={{ marginTop: 4 }}>green = winning trade net, red = losing trade net (backend values)</div>
-          </section>
+          </Plate>
         </div>
       )}
 
-      <div className="section-title" style={{ marginTop: 12 }}>
-        balance/equity growth (audit_account_snapshots)
-      </div>
-      {growth.isPending ? (
-        <Skeleton count={1} height={120} />
-      ) : growth.isError ? (
-        <ErrorState message={asErrorText(growth.error)} onRetry={() => growth.refetch()} />
-      ) : (growth.data ?? []).length === 0 ? (
-        <EmptyState message="Growth history unavailable." hint="/api/account/growth returned no rows (non-SQLite backend or empty history)." />
-      ) : (
-        <EquityCurveChart points={growth.data ?? []} field="balance" formatValue={(v) => moneyOrDash(v)} />
-      )}
+      <Plate
+        title="balance/equity growth (audit_account_snapshots)"
+        meta={`${(growth.data ?? []).length} snapshots`}
+        footer={
+          growth.isError || growth.isPending || (growth.data ?? []).length === 0
+            ? undefined
+            : rangeLabel((growth.data ?? [])[0]?.timestamp, (growth.data ?? [])[(growth.data ?? []).length - 1]?.timestamp)
+        }
+      >
+        {growth.isPending ? (
+          <Skeleton count={1} height={120} />
+        ) : growth.isError ? (
+          <ErrorState message={asErrorText(growth.error)} onRetry={() => growth.refetch()} />
+        ) : (growth.data ?? []).length === 0 ? (
+          <EmptyState message="Growth history unavailable." hint="/api/account/growth returned no rows (non-SQLite backend or empty history)." />
+        ) : (
+          <>
+            <EquityCurveChart points={growth.data ?? []} field="balance" formatValue={(v) => moneyOrDash(v)} />
+            <EmphLevel values={(growth.data ?? []).map((g) => g.balance)} minPct={10} />
+            <div className="tiny faint" style={{ marginBlockStart: 5 }}>
+              emphasis strip: audit balance levels (min→max scale, backend snapshots only)
+            </div>
+          </>
+        )}
+      </Plate>
       <FreshnessNote updatedAtMs={growth.dataUpdatedAt ?? null} label="growth" />
     </Panel>
   );
