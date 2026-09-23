@@ -8,13 +8,16 @@
  * Presentation only; no fetch, no commands.
  */
 
-import type { CSSProperties } from "react";
+import { useMemo, type CSSProperties } from "react";
 import type { RuleVO } from "../model";
 
 export function RulesStats({ all, cats }: { all: RuleVO[]; cats: string[] }) {
-  const total = all.length;
-  const enabled = all.filter((r) => r.enabled).length;
-  const broken = all.filter((r) => r.paramsError).length;
+  // perf(7): two filter passes over the payload rows — memoized per `all`
+  // identity so unrelated page re-renders don't re-scan the whole matrix.
+  const { total, enabled, broken } = useMemo(() => {
+    const en = all.filter((r) => r.enabled).length;
+    return { total: all.length, enabled: en, broken: all.filter((r) => r.paramsError).length };
+  }, [all]);
   const pct = total > 0 ? Math.round((enabled / total) * 100) : 0;
 
   return (

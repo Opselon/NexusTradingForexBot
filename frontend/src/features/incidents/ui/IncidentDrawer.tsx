@@ -21,7 +21,7 @@
  *           never add a network call (this wave is UI-only).
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { EmptyState, ErrorState, MetricCard, Panel, Skeleton, SeverityBadge, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
@@ -37,11 +37,11 @@ type Tab = "detail" | "timeline" | "traces" | "report";
 
 /** Timeline tab: backend events as a vertical rail (newest first, as before). */
 function TimelineRail({ inc }: { inc: IncidentDto }) {
-  const events = arr(inc.timeline);
-  if (events.length === 0) return <EmptyState message="No timeline events recorded." />;
-  return (
-    <ol className="inc-rail">
-      {events
+  // perf(7): the rail's slice/reverse/map chain is memoized on the exact
+  // payload array it reads — identical <li> rows, rebuilt only on payload change.
+  const items = useMemo(
+    () =>
+      arr(inc.timeline)
         .slice()
         .reverse()
         .slice(0, 100)
@@ -63,9 +63,11 @@ function TimelineRail({ inc }: { inc: IncidentDto }) {
               </div>
             </li>
           );
-        })}
-    </ol>
+        }),
+    [inc?.timeline],
   );
+  if (arr(inc.timeline).length === 0) return <EmptyState message="No timeline events recorded." />;
+  return <ol className="inc-rail">{items}</ol>;
 }
 
 export default function IncidentDrawer({ incidentId, onClose }: { incidentId: string; onClose: () => void }) {
@@ -92,6 +94,47 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
   const impact = obj(inc?.impact);
   const evidence = arr(inc?.evidence);
   const sev = inc ? sevClass(inc.severity) : "unknown";
+
+  // perf(7): payload-array chains (entries/slice/reverse/map) memoized with
+  // deps = the exact incident arrays they read — identical rows, no rebuild
+  // while the payload identity holds (tab switches reuse the memo too).
+  const impactRows = useMemo(
+    () =>
+      Object.entries(impact)
+        .slice(0, 16)
+        .map(([k, v]) => <InfoRow key={k} label={k} value={typeof v === "object" ? "…" : String(v)} />),
+    [impact],
+  );
+  const evidenceRows = useMemo(
+    () =>
+      arr(inc?.evidence)
+        .slice(0, 12)
+        .map((e, i) => (
+          <details key={i}>
+            <summary className="tiny">
+              {evKind(e) || `evidence ${i + 1}`} · {formatDateTime(evAt(e) || null)}
+            </summary>
+            <div style={{ marginTop: 4 }}>
+              <JsonBlock value={e} maxChars={1500} />
+            </div>
+          </details>
+        )),
+    [inc?.evidence],
+  );
+  const valueTraceRows = useMemo(
+    () =>
+      arr(inc?.value_traces).map((t: Row, i: number) => (
+        <details key={i}>
+          <summary className="small">
+            <b>{str(t.field) ?? "field"}</b> · <span className="muted tiny">{str(t.source) ?? "—"}</span>
+          </summary>
+          <div style={{ marginTop: 4 }}>
+            <JsonBlock value={t.hops ?? t} maxChars={1200} />
+          </div>
+        </details>
+      )),
+    [inc?.value_traces],
+  );
 
   return (
     <Drawer title={`Incident ${incidentId}`} onClose={onClose}>
@@ -175,11 +218,7 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
                   {Object.keys(impact).length === 0 ? (
                     <EmptyState message="no impact payload" />
                   ) : (
-                    <dl className="kv" style={{ padding: "10px 14px" }}>
-                      {Object.entries(impact).slice(0, 16).map(([k, v]) => (
-                        <InfoRow key={k} label={k} value={typeof v === "object" ? "…" : String(v)} />
-                      ))}
-                    </dl>
+                    <dl className="kv" style={{ padding: "10px 14px" }}>{impactRows}</dl>
                   )}
                   <div className="tiny muted" style={{ margin: "6px 14px 10px" }}>
                     affected: {arr(inc.affected_records).length} records · {arr(inc.affected_models).length} models · tags{" "}
@@ -194,16 +233,7 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
                     </div>
                   ) : (
                     <div style={{ display: "grid", gap: 6, padding: "10px 14px" }}>
-                      {evidence.slice(0, 12).map((e, i) => (
-                        <details key={i}>
-                          <summary className="tiny">
-                            {evKind(e) || `evidence ${i + 1}`} · {formatDateTime(evAt(e) || null)}
-                          </summary>
-                          <div style={{ marginTop: 4 }}>
-                            <JsonBlock value={e} maxChars={1500} />
-                          </div>
-                        </details>
-                      ))}
+                      {evidenceRows}
                     </div>
                   )}
                 </Panel>
@@ -252,16 +282,7 @@ export default function IncidentDrawer({ incidentId, onClose }: { incidentId: st
                   </div>
                 ) : (
                   <div style={{ display: "grid", gap: 8, padding: "10px 14px" }}>
-                    {arr(inc.value_traces).map((t: Row, i: number) => (
-                      <details key={i}>
-                        <summary className="small">
-                          <b>{str(t.field) ?? "field"}</b> · <span className="muted tiny">{str(t.source) ?? "—"}</span>
-                        </summary>
-                        <div style={{ marginTop: 4 }}>
-                          <JsonBlock value={t.hops ?? t} maxChars={1200} />
-                        </div>
-                      </details>
-                    ))}
+                    {valueTraceRows}
                   </div>
                 )}
               </Panel>
