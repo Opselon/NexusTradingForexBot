@@ -1,0 +1,326 @@
+/**
+ * Governance feature styles — modern operator hero + section polish (wave nse-uiux-w8).
+ *
+ * PURPOSE
+ *   Presentation-only upgrade for the /governance page: an operator hero
+ *   (visible h1, kicker, description, provenance/status side that makes the
+ *   emergency freeze/unfreeze verdict unmistakable) plus clear section labels
+ *   and tightened ladder / ledger / review styling. Structure follows the
+ *   merged heroes: rules/ui/rules.css (.rl-hero) and marketplace hero.
+ *
+ * OWNER
+ *   lane 4 — branch ui/lane4-hero-governance, worktree w8-lane4.
+ *   Namespaced .gv-* so nothing here can reach another feature page.
+ *
+ * CONSUMES
+ *   theme.css :root tokens (--bg*, --border*, --text*, --accent*, --green*,
+ *   --red*, --amber*, --violet, --mono, --sans, --elev-1, --glow-*, --red-dim,
+ *   --green-dim, --amber-dim, --paper-blue-bg, --live-red-bg) and the theme
+ *   keyframes (pageIn, livePulse). Shared kit components (Panel, DataTable,
+ *   MetricCard, StatusBadge, EmptyState, Skeleton, Segmented, ConfirmModal and
+ *   lane5Kit's GateStepper / DistBars / StatusPill / FreshnessCaption /
+ *   InfoRow / JsonBlock / CommandResultLine) keep their own classes — these
+ *   rules are additive wrappers only.
+ *
+ * PROVIDES
+ *   .gv-page           grid wrapper (replaces the bare <div>)
+ *   .gv-hero           hero container: gradient wash + top light-line + elev-1
+ *   .gv-hero-main      left column (kicker / h1 / desc)
+ *   .gv-kicker         uppercase 10px letterspaced label + live dot
+ *   .gv-title          visible <h1> (gradient word, aria-safe)
+ *   .gv-desc           one-line description of what the page shows
+ *   .gv-hero-side      right column: provenance + freeze status
+ *   .gv-freeze         emergency freeze banner (prominent, backend word verbatim)
+ *   .gv-ep             endpoint chip (read-only provenance, no new fetch)
+ *   .gv-metrics        4-up metric strip
+ *   .gv-sec            section label + body wrapper (groups existing Panels)
+ *   .gv-sec-label      uppercase section label
+ *   .gv-cmd-bar        emergency + rebuild command toolbar
+ *   .gv-cmd-note       the note under the toolbar
+ *   .gv-ledger-reason  truncated reason cell (title carries the full text)
+ *   .gv-reg-item       registry snapshot category card
+ *   .gv-review-grid    two-column review split
+ *   .gv-review-sub     in-section sub-label (calibration buckets / drift)
+ *
+ * INVARIANTS
+ *   - Presentation layer ONLY. No query key, refetchInterval, retry, enabled
+ *     flag, mutation, ConfirmModal gate, actor flow or rendered value is
+ *     changed here — the CSS never encodes data logic.
+ *   - Theme tokens only; every color is a token or an rgba()/color-mix() of
+ *     one. No rogue hex.
+ *   - CSS logical properties (inline-size, margin-inline, inset-inline …) so
+ *     the RTL console (fa/ar) mirrors.
+ *   - The freeze banner RESTATES the backend word verbatim ("frozen by
+ *     emergency gate" / "EMERGENCY FREEZE ACTIVE" from governance/status);
+ *     it never computes a verdict of its own.
+ *   - prefers-reduced-motion freezes decorative animation only (data updates
+ *     are plain text and unaffected).
+ *
+ * EXTEND
+ *   Further governance sections should reuse .gv-sec/.gv-sec-label and add
+ *   rules below, keeping the .gv-* namespace.
+ */
+
+/* ------------------------------ Page ------------------------------ */
+.gv-page {
+  display: grid;
+  gap: var(--panel-gap);
+  animation: pageIn 0.18s ease-out;
+}
+
+/* ------------------------------ Hero ------------------------------ */
+.gv-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(460px 190px at 6% -40%, rgba(65, 166, 242, 0.17), transparent 70%),
+    radial-gradient(380px 170px at 94% -30%, rgba(157, 123, 240, 0.14), transparent 70%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 45%),
+    var(--bg-panel);
+  box-shadow: var(--elev-1);
+}
+.gv-hero::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(65, 166, 242, 0.55), rgba(157, 123, 240, 0.45), transparent);
+}
+.gv-hero-main { min-width: 0; }
+.gv-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.gv-kicker .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(65, 166, 242, 0.85);
+  animation: livePulse 2s ease-in-out infinite;
+}
+.gv-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 8px 0 5px;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.gv-title .gv-mark {
+  inline-size: 30px;
+  block-size: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(65, 166, 242, 0.45);
+  box-shadow: 0 0 14px rgba(65, 166, 242, 0.18), 0 4px 10px rgba(0, 0, 0, 0.35);
+  flex: none;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  background: color-mix(in srgb, var(--bg-inset), transparent 35%);
+}
+.gv-title .word { color: var(--text); }
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .gv-title .word {
+    background: linear-gradient(115deg, var(--text) 35%, var(--accent-strong));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+.gv-desc { margin: 0; font-size: 12px; color: var(--text-dim); max-width: 78ch; }
+
+/* Provenance + status side ------------------------------------------ */
+.gv-hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 9px;
+}
+.gv-eps {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.gv-ep {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--bg-inset), transparent 40%);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+.gv-ep .d {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px rgba(62, 207, 142, 0.85);
+  flex: none;
+}
+.gv-ep.bad .d { background: var(--red); box-shadow: 0 0 6px rgba(242, 86, 77, 0.85); }
+.gv-ep.bad { color: var(--red); border-color: color-mix(in srgb, var(--red), transparent 55%); }
+
+/* Emergency freeze banner — the loudest object on the page when active.
+   Text stays the backend's own word; only the visual weight is ours. */
+.gv-freeze {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 10px;
+  padding: 7px 13px;
+  border: 1px solid color-mix(in srgb, var(--green), transparent 55%);
+  background: var(--green-dim);
+  color: var(--green);
+  box-shadow: var(--glow-green);
+}
+.gv-freeze .ico { font-size: 13px; flex: none; }
+.gv-freeze.on {
+  border-color: color-mix(in srgb, var(--red), transparent 40%);
+  background: var(--live-red-bg);
+  color: var(--red);
+  box-shadow: var(--glow-red);
+}
+.gv-freeze.on .ico { animation: livePulse 1.6s ease-in-out infinite; }
+
+/* ------------------------------ Metrics strip ------------------------------ */
+.gv-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/* ------------------------------ Sections ------------------------------ */
+.gv-sec {
+  display: grid;
+  gap: 10px;
+}
+.gv-sec-label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.gv-sec-label .idx {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  letter-spacing: 0.02em;
+}
+.gv-sec-label .ln {
+  flex: 1;
+  block-size: 1px;
+  background: linear-gradient(90deg, var(--border-strong), transparent);
+}
+.gv-sec-body { display: grid; gap: 12px; }
+
+/* ------------------------------ Command toolbar ------------------------------ */
+.gv-cmd-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.gv-cmd-note {
+  font-size: 11px;
+  color: var(--text-dim);
+  border-inline-start: 2px solid var(--border-strong);
+  padding-inline-start: 10px;
+}
+.gv-cmd-wrap {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-inset), transparent 55%);
+}
+
+/* ------------------------------ Tables / ledger polish ------------------------------ */
+/* Reason cell: clamp to two lines; the full backend text stays in title=. */
+.gv-ledger-reason {
+  max-width: 46ch;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.gv-ledger-reason:hover { -webkit-line-clamp: unset; }
+
+/* Registry snapshot category cards ------------------------------ */
+.gv-reg-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: color-mix(in srgb, var(--bg-inset), transparent 40%);
+}
+.gv-reg-item .row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+/* ------------------------------ Review ------------------------------ */
+.gv-review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.gv-review-sub {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin: 4px 0 8px;
+}
+
+/* ------------------------------ Reduced motion ------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  .gv-kicker .dot,
+  .gv-freeze.on .ico,
+  .gv-page { animation: none; }
+}
+
+/* ------------------------------ Narrow screens ------------------------------ */
+@media (max-width: 1080px) {
+  .gv-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gv-review-grid { grid-template-columns: minmax(0, 1fr); }
+  .gv-hero-side { align-items: flex-start; }
+  .gv-eps { justify-content: flex-start; }
+}
