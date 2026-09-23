@@ -14,8 +14,10 @@ import { DistBars, useDebounced } from "../../research/ui/lane5Kit";
 import { arr, str } from "../model";
 import { commandCenterQueries, useTimeMachineFrame } from "../useCases";
 import { ccRetry, ccRetryDelay } from "../useCases";
+import { useI18n } from "@/stores/i18nStore";
 
 export function TimeMachine() {
+  const t = useI18n((s) => s.t);
   const boundsQ = useQuery({
     queryKey: ["command-center", "tm-bounds"],
     queryFn: ({ signal }) => commandCenterQueries.tmBounds(signal),
@@ -44,11 +46,11 @@ export function TimeMachine() {
     return [...byZone.entries()].map(([label, count]) => ({ label, count }));
   }, [frame]);
 
-  if (boundsQ.isPending) return <Panel title="Time machine"><Skeleton count={3} /></Panel>;
+  if (boundsQ.isPending) return <Panel title={t("command-center.panel.time_machine", "Time machine")}><Skeleton count={3} /></Panel>;
   if (!bounds || !range) {
     return (
-      <Panel title="Time machine" tight>
-        <EmptyState message="No historical events yet" hint={boundsQ.data?.reason ?? "timemachine/bounds answered available:false — nothing to scrub"} />
+      <Panel title={t("command-center.panel.time_machine", "Time machine")} tight>
+        <EmptyState message={t("command-center.empty.no_history", "No historical events yet")} hint={boundsQ.data?.reason ?? t("command-center.empty.no_history_hint", "timemachine/bounds answered available:false — nothing to scrub")} />
       </Panel>
     );
   }
@@ -57,8 +59,8 @@ export function TimeMachine() {
 
   return (
     <Panel
-      title="Time machine — fleet state at an instant"
-      right={<span className="tiny muted">{formatDateTime(debouncedIso)} · {String(bounds.total_events ?? 0)} events in range</span>}
+      title={t("command-center.panel.time_machine_title", "Time machine — fleet state at an instant")}
+      right={<span className="tiny muted">{formatDateTime(debouncedIso)} · {t("command-center.tm.events_in_range", "{n} events in range", { n: String(bounds.total_events ?? 0) })}</span>}
       tight
     >
       <div style={{ display: "grid", gap: 8 }}>
@@ -70,28 +72,28 @@ export function TimeMachine() {
           value={effectiveMs ?? range.hi}
           onChange={(e) => setSliderMs(Number(e.target.value))}
           style={{ width: "100%", accentColor: "var(--accent)" }}
-          aria-label="timeline scrubber"
+          aria-label={t("command-center.a11y.timeline_scrubber", "timeline scrubber")}
         />
         <div style={{ display: "flex", justifyContent: "space-between" }} className="tiny faint">
           <span>{formatDateTime(bounds.earliest)}</span>
           <span>{formatTime(debouncedIso ?? bounds.latest)}</span>
           <span>{formatDateTime(bounds.latest)}</span>
         </div>
-        {frameQ.isFetching && <div className="tiny muted">frame loading (lazy, debounced 350 ms)…</div>}
+        {frameQ.isFetching && <div className="tiny muted">{t("command-center.tm.frame_loading", "frame loading (lazy, debounced 350 ms)…")}</div>}
         {frame?.available === false ? (
-          <EmptyState message={frame.reason ?? "frame not available"} />
+          <EmptyState message={frame.reason ?? t("command-center.tm.frame_unavailable", "frame not available")} />
         ) : (
           <div className="grid cols-2" style={{ marginTop: 6 }}>
             <div>
-              <div className="section-title">zone census at instant</div>
+              <div className="section-title">{t("command-center.tm.zone_census", "zone census at instant")}</div>
               <DistBars rows={zoneRows} />
             </div>
             <div>
-              <div className="section-title">transitions in this frame (±60 s)</div>
+              <div className="section-title">{t("command-center.tm.transitions", "transitions in this frame (±60 s)")}</div>
               {transitions.length === 0 ? (
-                <EmptyState message="No lifecycle transition happened at this instant." />
+                <EmptyState message={t("command-center.empty.no_transitions", "No lifecycle transition happened at this instant.")} />
               ) : (
-                <DataTable headers={[{ label: "strategy" }, { label: "→" }, { label: "actor" }, { label: "reason" }]}>
+                <DataTable headers={[{ label: t("command-center.th.strategy", "strategy") }, { label: "→" }, { label: t("command-center.th.actor", "actor") }, { label: t("command-center.th.reason", "reason") }]}>
                   {transitions.slice(0, 12).map((t, i) => (
                     <tr key={i}>
                       <td className="inline-mono tiny">{str(t.strategy_id)?.slice(0, 12) ?? "—"}</td>
