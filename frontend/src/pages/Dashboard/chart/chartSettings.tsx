@@ -40,13 +40,17 @@ export function ChartSettingsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Serialized here (not in an effect body) so the write is a cheap memo
+  // lookup: the string is recomputed only when the settings actually change.
+  const stored = useMemo(() => JSON.stringify({ chartKind, overlayVisible }), [chartKind, overlayVisible]);
+
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ chartKind, overlayVisible }));
+      localStorage.setItem(STORAGE_KEY, stored);
     } catch {
       /* private mode — settings just do not persist */
     }
-  }, [chartKind, overlayVisible]);
+  }, [stored]);
 
   const value = useMemo<ChartSettingsValue>(
     () => ({
