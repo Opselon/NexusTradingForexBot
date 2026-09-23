@@ -7,6 +7,7 @@
  */
 
 import { accountApi, type RiskPlanParams } from "./api";
+import { useI18n } from "@/stores/i18nStore";
 import { toGrowthPoints, toTradeVM, type TradeVM } from "./model";
 import type { GrowthPoint } from "./types";
 import type {
@@ -19,7 +20,7 @@ import type {
 
 export class AccountingUnavailableError extends Error {
   constructor(reason: string) {
-    super(`Accounting core unavailable (${reason}) — no numbers are shown because none exist server-side.`);
+    super(useI18n.getState().t("account.usecase.unavailable", "Accounting core unavailable ({reason}) — no numbers are shown because none exist server-side.", { reason }));
     this.name = "AccountingUnavailableError";
   }
 }
@@ -81,7 +82,7 @@ export const accountQueries = {
     accountApi.tradeForensics(ticket as number | string, signal).then((res) => {
       if (!res.found) {
         const note = (res.notes ?? []).join(", ");
-        throw new Error(note ? `Trace not found — backend notes: ${note}` : "Trace not found in the accounting ledger.");
+        throw new Error(note ? useI18n.getState().t("account.usecase.trace_notes", "Trace not found — backend notes: {notes}", { notes: note }) : useI18n.getState().t("account.usecase.trace_missing", "Trace not found in the accounting ledger."));
       }
       return res;
     }),
