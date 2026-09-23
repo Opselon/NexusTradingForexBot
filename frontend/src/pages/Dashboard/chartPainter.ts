@@ -197,6 +197,14 @@ export function paintChart(
   ctx.rect(0, 0, w - AXIS_W, h - PAD_BOTTOM);
   ctx.clip();
 
+  // wave-3 perf guard: with an active static-layer cache, paintStaticLayers
+  // below paints (cold) or blits (warm) the entire static half first, so the
+  // backdrop->volume stages are skipped and only dynamic stages re-paint.
+  const layerActive = Boolean(cache);
+  const shownBars = sc.shown;
+  const kind: ChartKind = sc.kind ?? "candles";
+  if (!layerActive) {
+
   // SMC zones — ONLY from the backend overlay payload (verbatim prices)
   for (const z of sc.overlays?.rectangles ?? []) {
     let zx = PAD_LEFT;
@@ -275,8 +283,6 @@ export function paintChart(
   }
 
   // candles — green/red per backend OHLC, forming bar dashed accent border
-  const shownBars = sc.shown;
-  const kind: ChartKind = sc.kind ?? "candles";
   for (let i = 0; kind === "candles" && i < shownBars.length; i++) {
     const c = shownBars[i];
     if (!c || c.open === null || c.close === null || c.high === null || c.low === null) continue; // honest gap
@@ -302,9 +308,12 @@ export function paintChart(
       ctx.setLineDash([]);
     }
   }
-  if (kind !== "candles") paintSeries(kind, ctx, sc, geom, pal, mono);
-  paintVolume(ctx, sc, geom, pal, mono);
-  // wave-3 seam: static-layer cache (Lane A; no-op returns true = repaint-as-today)
+    if (kind !== "candles") paintSeries(kind, ctx, sc, geom, pal, mono);
+    paintVolume(ctx, sc, geom, pal, mono);
+  } // end static half (skipped when the cache layer delivers it)
+
+  // wave-3 static-layer cache: cold repaints the layer, warm blits it —
+  // identical pixels inside the clip; dynamic stages always re-paint.
   if (cache) paintStaticLayers(ctx, sc, geom, pal, mono, cache);
 
   // live quote line (snapshot bid — never drawn when null)
