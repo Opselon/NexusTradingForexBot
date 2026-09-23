@@ -25,6 +25,8 @@ from __future__ import annotations
 from typing import TypedDict
 from urllib.parse import unquote
 
+from typing_extensions import TypeIs
+
 #: Schemes accepted on both sides of the wire (contract §3.1).
 #: Mirrors ``DatabaseProvider.parse``'s postgres-family set exactly.
 PG_URL_SCHEMES: frozenset[str] = frozenset({"postgresql", "postgres", "pgsql"})
@@ -207,6 +209,15 @@ def parse_pg_url(raw: str) -> ParsedPgConfig | ParseFailure:
     fields["ssl_mode"] = _normalize_ssl_mode(str(fields["ssl_mode"]))
 
     return fields  # type: ignore[return-value]
+
+
+def is_parse_failure(result: ParsedPgConfig | ParseFailure) -> TypeIs[ParseFailure]:
+    """Discriminate the parse_pg_url union for type checkers.
+
+    mypy does not narrow a TypedDict union from a literal `in` test, so the
+    routes layer guards with this TypeGuard instead of `"reason" in parsed`.
+    """
+    return "reason" in result
 
 
 def build_pg_url(cfg: ParsedPgConfig) -> str:

@@ -85,12 +85,12 @@ export function ManageTab() {
     () => ({ ...validatePgConfig(form), ...validateAdvancedOptions(form) }),
     [form],
   );
-  const invalid = Object.values(errors).some((m) => m.length > 0);
+  const invalid = useMemo(() => Object.values(errors).some((m) => m.length > 0), [errors]);
   const set = (k: string, v: string | boolean) => setValues((prev) => ({ ...(prev ?? baseline), [k]: v }));
 
   const pct = Math.round(Math.max(0, Math.min(1, progress.data?.progress ?? 0)) * 100);
   const jobDone = progress.data?.done === true;
-  const hints = providerHints(manage.data);
+  const hints = useMemo(() => providerHints(manage.data), [manage.data]);
   // Last connection-test outcome, client-held for the switch modal: null means
   // "never tested this session" — the readiness checklist scores it INFO, never pass.
   const testResult =

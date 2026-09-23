@@ -14,7 +14,7 @@
  * wrapper, class names and styling moved. Styling: ./liquidity.css (.liq-*).
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import {
@@ -66,11 +66,40 @@ export default function LiquidityPage(props: ShellPageProps) {
 
   const s = stateQ.data;
   const enabled = bool(s?.enabled) ?? false;
-  const zones = arr(mslieQ.data?.liquidity_map).map(toZoneRow);
+  // perf(7): map + sort chains over the MSLIE/state payloads — deps are the
+  // exact arrays the tables read; model-compat rows are derived per payload.
+  const zones = useMemo(() => arr(mslieQ.data?.liquidity_map).map(toZoneRow), [mslieQ.data]);
+  const rankedZones = useMemo(
+    () => [...zones].sort((a, b) => (b.probability ?? 0) - (a.probability ?? 0)).slice(0, 20),
+    [zones],
+  );
   const sweep = obj(mslieQ.data?.last_sweep);
-  const pools = arr(s?.pools);
+  const pools = useMemo(() => arr(s?.pools), [s]);
   const featureNames = s?.feature_names ?? Object.keys(obj(s?.features));
   const featureMap = obj(s?.features);
+  const compatRows = useMemo(
+    () =>
+      Object.entries(obj(s?.model_compatibility))
+        .slice(0, 6)
+        .map(([k, v]) => (
+          <InfoRow key={k} label={k} value={typeof v === "object" ? "…" : String(v)} />
+        )),
+    [s],
+  );
+  const poolRows = useMemo(
+    () =>
+      pools.slice(0, 24).map((p, i) => (
+        <tr key={i}>
+          <td className="tiny">{str(p.side) ?? "—"}</td>
+          <td className="tiny">{str(p.source) ?? "—"}</td>
+          <td>
+            <StatusPill status={str(p.state)} />
+          </td>
+          <td className="num tiny">{formatPrice(num(p.price), 2)}</td>
+        </tr>
+      )),
+    [pools],
+  );
 
   return (
     <div className="liq-page">
@@ -184,11 +213,7 @@ export default function LiquidityPage(props: ShellPageProps) {
         </div>
         {s?.model_compatibility && (
           <dl className="kv" style={{ marginTop: 8 }}>
-            {Object.entries(obj(s.model_compatibility))
-              .slice(0, 6)
-              .map(([k, v]) => (
-                <InfoRow key={k} label={k} value={typeof v === "object" ? "…" : String(v)} />
-              ))}
+            {compatRows}
           </dl>
         )}
         <CommandResultLine state={cmd.state} />
@@ -236,16 +261,7 @@ export default function LiquidityPage(props: ShellPageProps) {
               )
             ) : (
               <DataTable headers={[{ label: "side" }, { label: "source" }, { label: "state" }, { label: "price", num: true }]}>
-                {pools.slice(0, 24).map((p, i) => (
-                  <tr key={i}>
-                    <td className="tiny">{str(p.side) ?? "—"}</td>
-                    <td className="tiny">{str(p.source) ?? "—"}</td>
-                    <td>
-                      <StatusPill status={str(p.state)} />
-                    </td>
-                    <td className="num tiny">{formatPrice(num(p.price), 2)}</td>
-                  </tr>
-                ))}
+                {poolRows}
               </DataTable>
             )}
           </Panel>
@@ -293,9 +309,7 @@ export default function LiquidityPage(props: ShellPageProps) {
                       { label: "rank" },
                     ]}
                   >
-                    {[...zones]
-                      .sort((a, b) => (b.probability ?? 0) - (a.probability ?? 0))
-                      .slice(0, 20)
+                    {rankedZones
                       .map((z, i) => (
                         <tr key={i}>
                           <td className="tiny">{z.side ?? "—"}</td>

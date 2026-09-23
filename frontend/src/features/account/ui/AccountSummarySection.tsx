@@ -64,7 +64,6 @@ export function AccountSummarySection() {
   // the dep array is exactly the single field this line reads.
   const worker = perf.data?.worker;
   const workerLine = useMemo(() => (worker ? JSON.stringify(worker).slice(0, 220) : null), [worker]);
-
   return (
     <>
       <Panel

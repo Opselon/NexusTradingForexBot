@@ -109,11 +109,30 @@ export function ReplayPanel({ onCursorMove }: { onCursorMove?: (iso: string | nu
   }, []);
 
   // Poll cursor state while a session exists (cheap, cursor-bounded payload).
+  // perf: the 2s cursor poll is a network read — pause it while the tab is
+  // hidden; on return the interval restarts AND one refresh runs immediately,
+  // so the cursor strip is never staler than one tick on resume.
   useEffect(() => {
     if (!replayId) return;
     void refreshState();
-    const t = window.setInterval(() => void refreshState(), 2_000);
-    return () => window.clearInterval(t);
+    let t: number | null =
+      document.visibilityState === "hidden" ? null : window.setInterval(() => void refreshState(), 2_000);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        if (t !== null) {
+          window.clearInterval(t);
+          t = null;
+        }
+      } else if (t === null) {
+        t = window.setInterval(() => void refreshState(), 2_000);
+        void refreshState();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (t !== null) window.clearInterval(t);
+    };
   }, [replayId, refreshState]);
 
   /** One command runner: reply decides the wording, payloads handled inline. */

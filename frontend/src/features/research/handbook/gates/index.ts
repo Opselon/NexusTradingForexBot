@@ -4,6 +4,10 @@
  * The chain order here MUST match evidence.py::GATE_CHAIN; tests/js/
  * research_handbook.test.js re-reads the Python source and fails the
  * build's test gate if the two ever drift.
+ *
+ * The chain CONSTANTS themselves live in ../gateChain.ts (prose-free) so
+ * non-handbook importers can read GATE_CHAIN without pulling the gate prose
+ * into their chunk; this module re-exports that single definition.
  */
 import type { HandbookEntry } from "../types";
 import { staticValidationEntry } from "./staticValidation";
@@ -13,43 +17,13 @@ import { oosEntry } from "./oos";
 import { robustnessEntry } from "./robustness";
 import { scoringGateEntry } from "./scoringGate";
 
-/** Canonical chain order — mirrors evidence.py::GATE_CHAIN verbatim. */
-export const GATE_CHAIN = [
-  "STATIC_VALIDATION",
-  "BACKTEST",
-  "WALK_FORWARD",
-  "OOS",
-  "ROBUSTNESS",
-  "SCORING",
-] as const;
-
-/** Gates REQUIRED for a VALIDATED verdict — mirrors REQUIRED_GATES_FOR_VALIDATION. */
-export const REQUIRED_FOR_VALIDATED = [
-  "BACKTEST",
-  "WALK_FORWARD",
-  "OOS",
-  "ROBUSTNESS",
-  "SCORING",
-] as const;
-
-/** Every GateStatus the backend may emit — mirrors evidence.py::GateStatus. */
-export const GATE_STATUSES = [
-  "PENDING",
-  "QUEUED",
-  "RUNNING",
-  "PASSED",
-  "FAILED",
-  "SKIPPED",
-  "BLOCKED",
-  "ERROR",
-  "CANCELLED",
-] as const;
-
-/** Terminal gate statuses — mirrors evidence.py::_TERMINAL_GATE. */
-export const TERMINAL_GATE_STATUSES = ["PASSED", "FAILED", "CANCELLED"] as const;
-
-/** Failure classes — mirrors evidence.py::FailureClass. */
-export const FAILURE_CLASSES = ["TECHNICAL", "RESEARCH", "DATA", "UNKNOWN"] as const;
+export {
+  GATE_CHAIN,
+  REQUIRED_FOR_VALIDATED,
+  GATE_STATUSES,
+  TERMINAL_GATE_STATUSES,
+  FAILURE_CLASSES,
+} from "../gateChain";
 
 export const chainOverviewEntry: HandbookEntry = {
   id: "topic/gates",

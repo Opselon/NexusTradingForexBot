@@ -7,6 +7,7 @@
  * Stateless presentation component; owned state lives in ModelStudioPage.
  */
 
+import { useMemo } from "react";
 import { Panel } from "@/components/primitives";
 import type { BenchmarkResponse, StressTestResultRow } from "../model";
 
@@ -29,8 +30,27 @@ export function ModelStressBenchPanel({
   benchStats,
   onRunBenchmark,
 }: ModelStressBenchPanelProps) {
-  const passed = stressResults.filter((r) => r.passed).length;
+  const passed = useMemo(() => stressResults.filter((r) => r.passed).length, [stressResults]);
   const allPassed = stressResults.length > 0 && passed === stressResults.length;
+  // Latency percentile ladder + widths derive only from benchStats; deps are
+  // exactly that payload, so the ladder is rebuilt only on a benchmark result.
+  const ladder = useMemo(() => {
+    if (!benchStats) return null;
+    const max = Math.max(
+      benchStats.latency_p50_ms,
+      benchStats.latency_p90_ms,
+      benchStats.latency_p99_ms,
+      1e-9,
+    );
+    return {
+      max,
+      bars: [
+        { l: "P50", v: benchStats.latency_p50_ms, c: "var(--green)" },
+        { l: "P90", v: benchStats.latency_p90_ms, c: "var(--accent-strong)" },
+        { l: "P99", v: benchStats.latency_p99_ms, c: "var(--amber)" },
+      ],
+    };
+  }, [benchStats]);
 
   return (
     <div className="ms-grid-half">
@@ -156,41 +176,28 @@ export function ModelStressBenchPanel({
                 <div className="tiny uppercase font-bold" style={{ color: "var(--accent-strong)", marginBottom: 8 }}>
                   Percentile Ladder
                 </div>
-                {(() => {
-                  const max = Math.max(
-                    benchStats.latency_p50_ms,
-                    benchStats.latency_p90_ms,
-                    benchStats.latency_p99_ms,
-                    1e-9,
-                  );
-                  const bars = [
-                    { l: "P50", v: benchStats.latency_p50_ms, c: "var(--green)" },
-                    { l: "P90", v: benchStats.latency_p90_ms, c: "var(--accent-strong)" },
-                    { l: "P99", v: benchStats.latency_p99_ms, c: "var(--amber)" },
-                  ];
-                  return (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {bars.map((b) => (
-                        <div key={b.l} className="ms-prob-row">
-                          <div className="ms-prob-meta">
-                            <span style={{ color: b.c }}>{b.l}</span>
-                            <span className="tx-dim" >{b.v.toFixed(3)} ms</span>
-                          </div>
-                          <div className="ms-prob-track">
-                            <div
-                              className="ms-prob-fill"
-                              style={{
-                                width: `${Math.min(100, (b.v / max) * 100)}%`,
-                                background: b.c,
-                                boxShadow: `0 0 10px ${b.c}55`,
-                              }}
-                            />
-                          </div>
+                {ladder ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {ladder.bars.map((b) => (
+                      <div key={b.l} className="ms-prob-row">
+                        <div className="ms-prob-meta">
+                          <span style={{ color: b.c }}>{b.l}</span>
+                          <span className="tx-dim" >{b.v.toFixed(3)} ms</span>
                         </div>
-                      ))}
-                    </div>
-                  );
-                })()}
+                        <div className="ms-prob-track">
+                          <div
+                            className="ms-prob-fill"
+                            style={{
+                              width: `${Math.min(100, (b.v / ladder.max) * 100)}%`,
+                              background: b.c,
+                              boxShadow: `0 0 10px ${b.c}55`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
 
               <div className="tiny faint">

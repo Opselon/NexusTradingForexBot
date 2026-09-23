@@ -12,7 +12,7 @@
  * rendered from /api/db/manage/status only.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Segmented, StatusBadge } from "@/components/primitives";
 import { FreshnessCaption } from "@/features/config/ui/kit";
 import "@/features/config/ui/kit.css";
@@ -44,7 +44,9 @@ export default function DatabasePage(props: ShellPageProps) {
   const [tab, setTab] = useState<TabId>("status");
   const manage = useDbManageStatus();
   const provider = manage.data?.provider;
-  const truth = providerTruth(manage.data);
+  // Branchy derivation over the manage payload (provider_truth + domain
+  // walk) — memoized per response identity; same object, same verdict.
+  const truth = useMemo(() => providerTruth(manage.data), [manage.data]);
   const psycopg = psycopgState(manage.data?.postgresql_driver_available);
   // mismatch = the 2026-09-23 complaint: badge says postgres, data is sqlite
   const mismatch = Boolean(truth?.mismatch);

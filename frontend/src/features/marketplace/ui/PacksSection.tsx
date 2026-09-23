@@ -14,7 +14,7 @@
  * EXTEND:   add a pack facet by reading MktPack fields only — never invent.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ConfirmModal, EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { useInstallPack, useMktPacks } from "../hooks";
 import { validateInstallCount } from "../model";
@@ -33,9 +33,11 @@ export function PacksSection() {
 
   const validation = validateInstallCount(countRaw);
   const list = packs.data?.packs ?? [];
-  const installedCount = list.filter((p) => p.installed).length;
-  // Derived scale for the count meter: page max seed_count (0-safe).
-  const maxSeeds = list.reduce((m, p) => Math.max(m, p.seed_count || 0), 0);
+  // perf: the installed count (filter over the pack list) derives once per
+  // fetched list instead of on every render of the catalog grid.
+  const installedCount = useMemo(() => list.filter((p) => p.installed).length, [list]);
+  // perf(7): page max computed once per pack list (same 0-safe reduce).
+  const maxSeeds = useMemo(() => list.reduce((m, p) => Math.max(m, p.seed_count || 0), 0), [list]);
 
   const confirmInstall = (): void => {
     if (!target || validation.value === null) return;

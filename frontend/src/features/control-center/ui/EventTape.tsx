@@ -14,6 +14,7 @@
  * EXTEND:   new column = an existing OperatorDecisionRow field only; never a
  *           synthesized event stream or fabricated timestamp.
  */
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
@@ -46,7 +47,10 @@ export function EventTape({ onInspect }: { onInspect: (id: number | null) => voi
     retry: false,
     refetchInterval: 30_000,
   });
-  const rows = tapeQ.data?.rows ?? [];
+  // perf: memo the row view-model per payload identity — the 1s useNow tick
+  // re-renders this panel every second; decisionKey + the row cells derive
+  // once per payload, only the ticking age cell recomputes.
+  const rows = useMemo(() => tapeQ.data?.rows ?? [], [tapeQ.data]);
 
   return (
     <Panel

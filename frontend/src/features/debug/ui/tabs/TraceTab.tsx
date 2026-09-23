@@ -7,7 +7,7 @@
  * misleading "0 stages" empty state.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { useTraceQuery } from "../../hooks";
 import { traceTimeline } from "../../model";
@@ -17,7 +17,9 @@ export function TraceTab() {
   const [submitted, setSubmitted] = useState<string | null>(null);
   const trace = useTraceQuery(submitted);
   const shapeOk = id.trim() === "" || /^[A-Za-z0-9_-]{4,}$/.test(id.trim());
-  const timeline = trace.data ? traceTimeline(trace.data) : [];
+  // traceTimeline walks every signal/order row (parse + sort): memo deps are
+  // exactly the payload it reads, so unrelated re-renders never rebuild it.
+  const timeline = useMemo(() => (trace.data ? traceTimeline(trace.data) : []), [trace.data]);
   const rowCount = (trace.data?.signal?.length ?? 0) + (trace.data?.orders?.length ?? 0);
 
   return (

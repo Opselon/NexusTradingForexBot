@@ -32,6 +32,7 @@ from fastapi import APIRouter, Request
 from nexus_scalp.database.connection_url import (
     ParsedPgConfig,
     ParseFailure,
+    is_parse_failure,
     parse_pg_url,
 )
 from nexus_scalp.observability.logging import get_logger
@@ -108,7 +109,7 @@ def parse_url(payload: dict[str, Any], request: Request) -> dict[str, Any]:
                 request_id,
             )
         parsed = parse_pg_url(raw)
-        if "reason" in parsed:
+        if is_parse_failure(parsed):
             reason: str = parsed["reason"]
             return _err("DB_URL_PARSE_FAILED", reason, request_id)
 

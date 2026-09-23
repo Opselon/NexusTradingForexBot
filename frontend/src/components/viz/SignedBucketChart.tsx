@@ -6,6 +6,7 @@
  * backend's own sums; nothing is smoothed or extrapolated.
  */
 
+import { useMemo } from "react";
 import { extent, fmtCompact, scaleLinear } from "./geometry";
 import "./viz.css";
 
@@ -30,17 +31,26 @@ export interface SignedBucketChartProps {
 const W = 640;
 
 export function SignedBucketChart({ buckets, height = 180, emptyHint = "no timeline buckets from the backend", bucketLabel }: SignedBucketChartProps) {
-  if (buckets.length === 0) return <div className="viz-empty">{emptyHint}</div>;
-  const ups = buckets.map((b) => Math.max(0, b.bullish ?? 0));
-  const downs = buckets.map((b) => Math.max(0, b.bearish ?? 0));
-  const neut = buckets.map((b) => Math.max(0, b.neutral ?? 0));
-  const ext = extent([...ups, ...downs, ...neut, 0]) ?? [0, 1];
-  const maxAbs = Math.max(ext[1], 1e-9);
-  const padT = 10;
-  const padB = 20;
-  const toY = scaleLinear(-maxAbs, maxAbs, height - padB, padT);
-  const step = W / buckets.length;
-  const barW = Math.max(3, Math.min(26, step * 0.6));
+  // Bars derive from `buckets` (identity changes only when a fetch lands);
+  // memoizing keeps an unchanged timeline from being re-walked on every parent
+  // render. The emitted SVG (and each <title> caption) is byte-identical.
+  const geo = useMemo(() => {
+    if (buckets.length === 0) return null;
+    const ups = buckets.map((b) => Math.max(0, b.bullish ?? 0));
+    const downs = buckets.map((b) => Math.max(0, b.bearish ?? 0));
+    const neut = buckets.map((b) => Math.max(0, b.neutral ?? 0));
+    const ext = extent([...ups, ...downs, ...neut, 0]) ?? [0, 1];
+    const maxAbs = Math.max(ext[1], 1e-9);
+    const padT = 10;
+    const padB = 20;
+    const toY = scaleLinear(-maxAbs, maxAbs, height - padB, padT);
+    const step = W / buckets.length;
+    const barW = Math.max(3, Math.min(26, step * 0.6));
+    return { toY, step, barW };
+  }, [buckets, height]);
+
+  if (geo === null) return <div className="viz-empty">{emptyHint}</div>;
+  const { toY, step, barW } = geo;
   const fmt = (v: number) => fmtCompact(v, 2);
   const label = bucketLabel ?? ((b: SignedBucket) => (b.bucket_start ? new Date(b.bucket_start).toLocaleString("en-GB", { hour12: false }) : ""));
   return (

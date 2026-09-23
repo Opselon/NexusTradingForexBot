@@ -10,6 +10,7 @@
  * EXTEND:   new rail cell = one <RailCell label value/> line fed by a direct
  *           model.ts field; never derive a cell the backend does not send.
  */
+import { useMemo } from "react";
 import { Skeleton } from "@/components/primitives";
 import { formatAgeMs, formatDateTime } from "@/lib/format";
 import { bool, notRecorded, num, obj, str, type OperatorSummaryDto } from "../model";
@@ -38,7 +39,11 @@ function RailCell({ label, value }: { label: string; value: string }) {
 }
 
 export function HeroStrip({ summary, pending, error, errorMessage, onRetry }: HeroStripProps) {
-  const rt = obj(summary?.runtime);
+  // perf: the runtime object identity is stable across the 15s summary poll
+  // unless the backend actually changed it — memo the tone derivations so a
+  // re-render reuses the identical tone/text objects (cheap pure helpers, but
+  // they run per render and feed memoized children below).
+  const rt = useMemo(() => obj(summary?.runtime), [summary]);
   const eng = engineTone(bool(rt.engine_running));
   const tick = tickTone(rt);
   const mode = modeTone(String(rt.runtime_mode ?? rt.execution_mode ?? "UNKNOWN").toUpperCase());
