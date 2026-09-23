@@ -303,9 +303,26 @@ class DatabaseMigrationEngine:
     # ------------------------------------------------------------------
 
     def _integrity(self) -> str:
+        """Two-tier integrity probe (PERF-DB-STATUS, 2026-09-23).
+
+        A full ``PRAGMA integrity_check`` on the live audit.db (426MB) was
+        measured at 5-41s per call and news.db (241MB) at 1.9-5s — this ran
+        on EVERY /api/db/status poll (3 domains) and blew the frontend's
+        15s fetch timeout (live symptom: the schema panel showed
+        "Request timed out"). ``PRAGMA quick_check`` measures ~0.1-1.6s
+        with the page cache warm and still catches page/structure
+        corruption; whenever it flags ANYTHING we escalate to the full
+        integrity_check, so a healthy fast path never weakens the verdict
+        for a real problem. The deep authority is untouched: nexus doctor
+        / HealthEngine / forensics still run full integrity sweeps on
+        demand (PERF-HEALTH pinned the same split for /health).
+        """
         try:
             con = self._connect(timeout=5.0)
             try:
+                quick = str(con.execute("PRAGMA quick_check").fetchone()[0])
+                if quick == "ok":
+                    return "ok"
                 return str(con.execute("PRAGMA integrity_check").fetchone()[0])
             finally:
                 con.close()
