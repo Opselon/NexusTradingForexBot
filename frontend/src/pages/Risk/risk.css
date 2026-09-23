@@ -1,0 +1,246 @@
+/**
+ * PURPOSE:  Scoped stylesheet for the Risk page (radial limit gauges, stress/
+ *           limits matrix, derived hero strip, freshness chips).
+ * OWNER:    uiux-wave5-risk  (future edits to this file belong to this lane)
+ * CONSUMES: theme.css tokens only (--green/--amber/--red/--accent, surfaces,
+ *           borders, --mono) — no hardcoded hex; the two rgba() literals are
+ *           the documented alpha gradients of --amber/--red in riskThresholds
+ *           (inline cell tints) and mirrored here for borders.
+ * PROVIDES: .rsk-* classes consumed by RiskPage.tsx and its colocated parts.
+ * INVARIANTS: every selector is rsk- prefixed and additive — no other
+ *             feature's markup or theme rule is touched; tone colours are
+ *             status restatements, never fabricated verdicts; RTL-safe via
+ *             logical properties (inset-inline-start, margin-inline…).
+ * EXTEND:   add rules under the section they belong to; keep the rsk- prefix
+ *           and theme tokens so a theme swap cascades in untouched.
+ */
+
+/* ------------------------------------------------------------------ *
+ * 1. Derived hero strip + freshness chips
+ * ------------------------------------------------------------------ */
+
+.rsk-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 45%), var(--bg-panel);
+}
+
+.rsk-strip__tag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  background: rgba(65, 166, 242, 0.1);
+  border: 1px solid rgba(65, 166, 242, 0.45);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.rsk-strip__src {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-inline-start: auto;
+}
+
+.rsk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.rsk-chip b { font-weight: 700; }
+.rsk-chip.zero { opacity: 0.6; }
+
+.rsk-chip.tone-ok { color: var(--green); background: var(--green-dim); border-color: rgba(62, 207, 142, 0.4); }
+.rsk-chip.tone-warn { color: var(--amber); background: var(--amber-dim); border-color: rgba(235, 161, 63, 0.45); }
+.rsk-chip.tone-down { color: var(--red); background: var(--red-dim); border-color: rgba(242, 86, 77, 0.5); }
+.rsk-chip.tone-unknown { color: var(--text-faint); background: var(--bg-panel-2); border-color: var(--border); }
+
+.rsk-probes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.rsk-fresh__lab {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.rsk-fresh.tone-warn { border-color: rgba(235, 161, 63, 0.55); color: var(--amber); }
+.rsk-fresh.tone-down { border-color: rgba(242, 86, 77, 0.6); color: var(--red); box-shadow: 0 0 10px -4px var(--red); }
+
+/* ------------------------------------------------------------------ *
+ * 2. Radial limit gauges (inline SVG arcs)
+ * ------------------------------------------------------------------ */
+
+.rsk-gauges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+.rsk-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 50%), var(--bg-inset);
+  text-align: center;
+  min-inline-size: 0;
+}
+
+.rsk-gauge svg { display: block; }
+
+.rsk-gauge__track { stroke: var(--border-strong); }
+/* indeterminate ring: no comparable backend limit — never a clean arc */
+.rsk-gauge.tone-unknown .rsk-gauge__track { stroke-dasharray: 4 5; }
+
+.rsk-gauge__arc { stroke: var(--green); }
+.rsk-gauge.tone-warn .rsk-gauge__arc { stroke: var(--amber); }
+.rsk-gauge.tone-down .rsk-gauge__arc { stroke: var(--red); }
+.rsk-gauge.tone-unknown .rsk-gauge__arc { stroke: var(--text-faint); }
+
+.rsk-gauge__value {
+  font-family: var(--mono);
+  font-weight: 600;
+  fill: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.rsk-gauge.tone-ok .rsk-gauge__value { fill: var(--green); }
+.rsk-gauge.tone-warn .rsk-gauge__value { fill: var(--amber); }
+.rsk-gauge.tone-down .rsk-gauge__value { fill: var(--red); }
+
+.rsk-gauge__pct {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  fill: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.rsk-gauge__lab {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.rsk-gauge__cap { font-size: 10px; color: var(--text-faint); max-inline-size: 210px; }
+.rsk-gauge__cap.indeterminate { color: var(--amber); }
+
+/* arc sweep / colour morph is decorative only — opt-in for reduced motion */
+@media (prefers-reduced-motion: no-preference) {
+  .rsk-gauge__arc { transition: stroke-dasharray 0.4s ease, stroke 0.3s ease; }
+}
+
+/* ------------------------------------------------------------------ *
+ * 3. Stress / limits matrix (responsive CSS grid, sticky headers)
+ * ------------------------------------------------------------------ */
+
+.rsk-matrix {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.7fr) repeat(3, minmax(88px, 1fr));
+  overflow: auto;
+  max-block-size: min(52vh, 460px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+}
+
+.rsk-mx__h {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-panel-2);
+  color: var(--text-faint);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+/* row wrapper dissolves into the grid so cells stay direct grid items
+   (keeps both the ARIA row structure and sticky positioning intact) */
+.rsk-mx__row { display: contents; }
+
+.rsk-mx__rowh {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 10px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  border-inline-end: 1px solid var(--border);
+}
+
+.rsk-mx__rowh:hover { background: var(--bg-panel-2); }
+.rsk-mx__name { font-size: 11.5px; color: var(--text); }
+.rsk-mx__field {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.rsk-mx__cell {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  text-align: right;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* local hover affordance (title attr carries the full payload tooltip) */
+.rsk-mx__cell:hover { outline: 1px solid var(--border-strong); outline-offset: -1px; }
+
+.rsk-mx__cell.tone-ok { color: var(--green); }
+.rsk-mx__cell.tone-warn { color: var(--amber); }
+.rsk-mx__cell.tone-down { color: var(--red); }
+.rsk-mx__cell.tone-unknown { color: var(--text-faint); }
+.rsk-mx__unk { font-size: 10.5px; letter-spacing: 0.04em; }
+
+@media (max-width: 720px) {
+  .rsk-matrix { grid-template-columns: minmax(118px, 1.4fr) repeat(3, minmax(66px, 1fr)); }
+  .rsk-mx__cell, .rsk-mx__h { padding: 6px 7px; font-size: 11px; }
+}
+
+/* ------------------------------------------------------------------ *
+ * 4. Gate-matrix numeric cell tint (depth past the soft threshold)
+ * ------------------------------------------------------------------ */
+
+.rsk-cell {
+  display: inline-block;
+  min-inline-size: 46px;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
