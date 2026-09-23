@@ -269,3 +269,13 @@ export interface AdviserAutoTuneResponse {
   loaded: boolean;
   executed_at: string;
 }
+
+/**
+ * Backend `detail` (or the raw error) as the exact operator-facing message.
+ * One definition instead of the seven inline copies in PositionAdviserPage;
+ * same expression, same output — only ever evaluated on the error path.
+ */
+export function errorDetailText(err: unknown): string {
+  const detail = (err as { detail?: string })?.detail ?? String(err);
+  return typeof detail === "string" ? detail : JSON.stringify(detail);
+}
