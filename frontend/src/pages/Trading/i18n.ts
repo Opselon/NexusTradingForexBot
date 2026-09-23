@@ -122,4 +122,8 @@ export const MESSAGES: FeatureMessages = {
   "trading.th.type": { fa: "نوع", de: "Typ", es: "Tipo", ar: "النوع" },
   "trading.th.vol": { fa: "حجم", de: "Volumen", es: "Volumen", ar: "الحجم" },
   "trading.th.volume": { fa: "حجم", de: "Volumen", es: "Volumen", ar: "الحجم" },
+  "trading.csv.btn": { fa: "⇩ CSV", de: "⇩ CSV", es: "⇩ CSV", ar: "⇩ CSV" },
+  "trading.pager.prev": { fa: "صفحه قبلی", de: "Vorherige Seite", es: "Página anterior", ar: "الصفحة السابقة" },
+  "trading.pager.next": { fa: "صفحه بعدی", de: "Nächste Seite", es: "Página siguiente", ar: "الصفحة التالية" },
+  "trading.smc.config_text": { fa: "SL buffer ×{a} · min RR {b} · conf ≥ {c} · FVG sens {d} · OB lookback {e} میله", de: "SL-Buffer ×{a} · min. RR {b} · conf ≥ {c} · FVG-Sens {d} · OB-Lookback {e} Bars", es: "SL buffer ×{a} · RR mín {b} · conf ≥ {c} · sens FVG {d} · lookback OB {e} barras", ar: "SL buffer ×{a} · RR الدنيا {b} · conf ≥ {c} · حساسية FVG {d} · OB lookback {e} شرائح" },
 };
