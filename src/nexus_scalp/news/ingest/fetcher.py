@@ -16,6 +16,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from nexus_scalp.news.admission import AdmissionDecision, NewsAdmissionGateway
 from nexus_scalp.news.database import NewsDatabase
 from nexus_scalp.news.ingest.deduplicator import (
     NewsDeduplicator,
@@ -236,19 +237,36 @@ class NewsFetcher:
 
 
 class NewsIngestor:
-    """Applies dedup + normalization + persistence for fetched items."""
+    """Applies dedup + normalization + admission + persistence for fetched items."""
 
-    def __init__(self, db: NewsDatabase, deduplicator: NewsDeduplicator | None = None) -> None:
+    def __init__(
+        self,
+        db: NewsDatabase,
+        deduplicator: NewsDeduplicator | None = None,
+        admission_gateway: NewsAdmissionGateway | None = None,
+    ) -> None:
         self.db = db
         self.deduplicator = deduplicator or NewsDeduplicator(
             merge_window_sec=SYNDICATION_WINDOW_SEC
         )
+        # Pre-DB admission gate (news-admission-gate): optional by default so
+        # existing tests and callers keep their exact behavior; NewsEngine
+        # constructs one and passes it here. Never None in production.
+        self.admission_gateway = admission_gateway
 
     def ingest_source_items(
         self, source_config: dict[str, Any], result: SourceFetchResult
     ) -> dict[str, int]:
         """Ingests fetched items; returns counts for observability."""
-        stats = {"new": 0, "duplicate": 0, "merged_evidence": 0, "skipped": 0}
+        stats = {
+            "new": 0,
+            "duplicate": 0,
+            "merged_evidence": 0,
+            "skipped": 0,
+            "admitted": 0,
+            "quarantined": 0,
+            "rejected": 0,
+        }
         source_id = source_config["source_id"]
         source_name = source_config.get("name", source_id)
         now_ts = time.time()
@@ -277,6 +295,18 @@ class NewsIngestor:
                 stats["duplicate"] += 1
                 continue
 
+            # ---- STAGE 2b: exact-URL guard (news-admission-gate §7) --------
+            # Same source already carries this URL with the SAME summary: a
+            # re-poll, never a new story (see find_article_by_source_url).
+            # A changed summary at the same URL is a content REVISION and must
+            # still create a new version row (test_12 contract).
+            with contextlib.suppress(Exception):
+                by_url = self.db.find_article_by_source_url(source_id, canonical["url"])
+                if by_url and (by_url.get("summary") or "") == (canonical["summary"] or ""):
+                    self.db.add_evidence_source(by_url["article_id"], source_id)
+                    stats["duplicate"] += 1
+                    continue
+
             # Syndication / rewritten headline within the merge window.
             dup_id = self.deduplicator.find_duplicate_title(
                 title_hash=canonical["title_hash"],
@@ -288,6 +318,54 @@ class NewsIngestor:
                 self.db.add_evidence_source(dup_id, source_id)
                 stats["merged_evidence"] += 1
                 continue
+
+            # ---- PRE-DB ADMISSION GATE (news-admission-gate) -----------------
+            # Progressive-cost evaluation BEFORE any insert_article call.
+            # Deterministic: same item + same source -> same decision, so the
+            # verdict is cached by article_hash and never recomputed on retry.
+            if self.admission_gateway is not None:
+                verdict = self.admission_gateway.evaluate(canonical, source_config)
+                reasons = ";".join(verdict.reason_codes) or "LOW_INFORMATION_VALUE"
+                if verdict.decision == AdmissionDecision.REJECT:
+                    # Tombstone via the existing junk-hash path: recoverable,
+                    # same mechanism auto-prune uses (never a hard delete).
+                    with contextlib.suppress(Exception):
+                        self.db.remember_junk_hash(
+                            article_hash, title=title, reason=f"admission:{reasons}"
+                        )
+                    stats["rejected"] += 1
+                    logger.info(
+                        "[NEWS_ADMISSION_REJECTED] score=%.3f reasons=%s source=%s title=%.60s",
+                        verdict.score,
+                        reasons,
+                        source_id,
+                        title,
+                    )
+                    continue
+                if verdict.decision == AdmissionDecision.QUARANTINE:
+                    # Persist OUT of the active feed (article_status=QUARANTINE)
+                    # so it stays available for threshold tuning but never
+                    # reaches the analysis queue or the live news context.
+                    quarantine_admit = True
+                    stats["quarantined"] += 1
+                    logger.info(
+                        "[NEWS_ADMISSION_QUARANTINE] score=%.3f reasons=%s source=%s title=%.60s",
+                        verdict.score,
+                        reasons,
+                        source_id,
+                        title,
+                    )
+                else:
+                    quarantine_admit = False
+                    stats["admitted"] += 1
+                    logger.debug(
+                        "[NEWS_ADMISSION_ADMIT] score=%.3f reasons=%s title=%.60s",
+                        verdict.score,
+                        reasons,
+                        title,
+                    )
+            else:
+                quarantine_admit = False
 
             # Brand-new canonical article.
             article_id = f"news_{uuid.uuid4().hex[:12]}"
@@ -325,6 +403,21 @@ class NewsIngestor:
                     "created_at": datetime.now(UTC).isoformat(),
                 }
             )
+            # Pre-DB admission (news-admission-gate): a QUARANTINE verdict is
+            # persisted recoverably but transitioned OUT of the active feed so
+            # the analysis queue and the live news context never see it.
+            # set_article_status writes the audit row (explainability) and the
+            # insert above used the column default 'ACTIVE'.
+            if quarantine_admit:
+                with contextlib.suppress(Exception):
+                    self.db.set_article_status(
+                        article_id,
+                        "QUARANTINE",
+                        reason=f"admission:{reasons if self.admission_gateway else ''}",
+                        actor="admission_gateway",
+                        rule_version="news-admission-v1",
+                        operation="ADMISSION_QUARANTINE",
+                    )
             # DETERMINISTIC HIGH-IMPACT CLASSIFICATION (market-context P0 5A):
             # obvious scheduled-release identities (CPI/NFP/FOMC/...) are
             # tagged here — zero LLM cost — so the AI path can skip them.
