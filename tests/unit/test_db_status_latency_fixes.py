@@ -77,9 +77,7 @@ def test_integrity_quick_check_first_when_healthy(tmp_path, monkeypatch) -> None
     )
 
 
-def test_integrity_escalates_to_full_check_when_quick_flags(
-    tmp_path, monkeypatch
-) -> None:
+def test_integrity_escalates_to_full_check_when_quick_flags(tmp_path, monkeypatch) -> None:
     eng = _engine(tmp_path)
     con = _FakeCon(
         {
@@ -94,9 +92,7 @@ def test_integrity_escalates_to_full_check_when_quick_flags(
     assert con.sqls == ["PRAGMA quick_check", "PRAGMA integrity_check"]
 
 
-def test_integrity_reports_full_check_failure_verdict(
-    tmp_path, monkeypatch
-) -> None:
+def test_integrity_reports_full_check_failure_verdict(tmp_path, monkeypatch) -> None:
     eng = _engine(tmp_path)
     con = _FakeCon(
         {
@@ -235,9 +231,7 @@ def test_hygiene_route_serves_second_poll_from_cache(monkeypatch) -> None:
 
     # cache must expire: age it out and the next poll recomputes
     if routes._DB_HYGIENE_CACHE:
-        routes._DB_HYGIENE_CACHE["at"] = (
-            time.monotonic() - (routes._DB_HYGIENE_TTL_SEC + 1.0)
-        )
+        routes._DB_HYGIENE_CACHE["at"] = time.monotonic() - (routes._DB_HYGIENE_TTL_SEC + 1.0)
     client.get("/api/db/hygiene")
     assert calls["worker_ctor"] == 2, "stale entry must be recomputed"
 
