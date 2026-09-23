@@ -10,9 +10,9 @@
  * green truth). Failed reads fail their cell, never the page.
  */
 
-import { useState } from "react";
-import { DataTable, EmptyState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
-import { Dot, FreshnessCaption, KeyValueList, MonoValue, PollControl, ResultStrip, usePolling } from "@/features/config/ui/kit";
+import { useMemo, useState } from "react";
+import { DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
+import { Dot, FreshnessCaption, KeyValueList, MonoValue, PollControl, usePolling } from "@/features/config/ui/kit";
 import "@/features/config/ui/kit.css";
 import { formatAgeMs } from "@/lib/format";
 import type { ShellPageProps } from "@/app/featureModule";
@@ -63,9 +63,11 @@ function FailedCell({ name, error, onRetry }: { name: string; error: unknown; on
   return (
     <div className="l3-health-cell bad">
       <div className="name"><span>{name}</span><Dot status="ERROR" /></div>
-      <StatusBadge status="ERROR" />
-      <div className="detail">{error instanceof Error ? error.message : "read failed"}</div>
-      <div><button className="btn small" onClick={onRetry}>Retry</button></div>
+      <ErrorState
+        message={error instanceof Error ? error.message : `${name} read failed`}
+        requestId={(error as { requestId?: string } | null)?.requestId ?? null}
+        onRetry={onRetry}
+      />
     </div>
   );
 }
@@ -89,54 +91,73 @@ export default function HealthPage(props: ShellPageProps) {
   const version = useVersion(poll.paused);
   const capabilities = useCapabilities(poll.paused);
 
-  const cells: MatrixCell[] = [];
-  if (debug.data) for (const sub of debug.data.subsystems) cells.push(cellFromSubsystem(sub, "debug/health", debug.dataUpdatedAt || null));
-  if (system.data) {
-    const sys = system.data;
-    for (const check of sys.checks) cells.push(cellFromCheck(check, "v1/system", system.dataUpdatedAt || null));
-  }
-  if (workers.data) for (const w of workers.data.workers) cells.push(cellFromWorker(w, workers.dataUpdatedAt || null));
-  if (mt5.data) {
-    cells.push({
-      id: "mt5:connection",
-      name: "MT5 broker",
-      status: mt5.data.available ? "CONNECTED" : "DISCONNECTED",
-      level: mt5.data.available ? "good" : "bad",
-      detail: mt5.data.available ? "" : String(mt5.data.reason ?? mt5.data.error_state ?? "adapter unavailable"),
-      metrics: Object.entries(mt5.data.connection ?? {}).slice(0, 4),
-      fetchedAtMs: mt5.dataUpdatedAt || null,
-      source: "mt5",
-    });
-  }
-  if (news.data) {
-    cells.push({
-      id: "news:subsystem",
-      name: "News intelligence",
-      status: news.data.available ? (news.data.enabled ? "ACTIVE" : "IDLE") : "UNAVAILABLE",
-      level: news.data.available ? "good" : "neutral",
-      detail: news.data.available ? String(news.data.worker ?? "") : "news module not attached",
-      metrics: Object.entries(news.data.health ?? {}).slice(0, 4),
-      fetchedAtMs: news.dataUpdatedAt || null,
-      source: "news",
-    });
-  }
-  if (forensics.data) {
-    cells.push({
-      id: "forensics:matrix",
-      name: "Forensic checks",
-      status: forensics.data.available ? "ACTIVE" : "UNAVAILABLE",
-      level: forensics.data.available ? "good" : "neutral",
-      detail: String((forensics.data.error as { message?: string } | undefined)?.message ?? ""),
-      metrics: [],
-      fetchedAtMs: forensics.dataUpdatedAt || null,
-      source: "forensics",
-    });
-  }
+  // Derived matrix: rebuilt only when one of the contributing reads changes
+  // (the shell ticks nowMs every second — re-deriving 40+ cells per tick is
+  // pure waste; the per-cell AGE still ticks through cellTone(nowMs)).
+  const cells: MatrixCell[] = useMemo(() => {
+    const out: MatrixCell[] = [];
+    if (debug.data) for (const sub of debug.data.subsystems) out.push(cellFromSubsystem(sub, "debug/health", debug.dataUpdatedAt || null));
+    if (system.data) {
+      const sys = system.data;
+      for (const check of sys.checks) out.push(cellFromCheck(check, "v1/system", system.dataUpdatedAt || null));
+    }
+    if (workers.data) for (const w of workers.data.workers) out.push(cellFromWorker(w, workers.dataUpdatedAt || null));
+    if (mt5.data) {
+      out.push({
+        id: "mt5:connection",
+        name: "MT5 broker",
+        status: mt5.data.available ? "CONNECTED" : "DISCONNECTED",
+        level: mt5.data.available ? "good" : "bad",
+        detail: mt5.data.available ? "" : String(mt5.data.reason ?? mt5.data.error_state ?? "adapter unavailable"),
+        metrics: Object.entries(mt5.data.connection ?? {}).slice(0, 4),
+        fetchedAtMs: mt5.dataUpdatedAt || null,
+        source: "mt5",
+      });
+    }
+    if (news.data) {
+      out.push({
+        id: "news:subsystem",
+        name: "News intelligence",
+        status: news.data.available ? (news.data.enabled ? "ACTIVE" : "IDLE") : "UNAVAILABLE",
+        level: news.data.available ? "good" : "neutral",
+        detail: news.data.available ? String(news.data.worker ?? "") : "news module not attached",
+        metrics: Object.entries(news.data.health ?? {}).slice(0, 4),
+        fetchedAtMs: news.dataUpdatedAt || null,
+        source: "news",
+      });
+    }
+    if (forensics.data) {
+      out.push({
+        id: "forensics:matrix",
+        name: "Forensic checks",
+        status: forensics.data.available ? "ACTIVE" : "UNAVAILABLE",
+        level: forensics.data.available ? "good" : "neutral",
+        detail: String((forensics.data.error as { message?: string } | undefined)?.message ?? ""),
+        metrics: [],
+        fetchedAtMs: forensics.dataUpdatedAt || null,
+        source: "forensics",
+      });
+    }
+    return out;
+  }, [
+    debug.data,
+    debug.dataUpdatedAt,
+    system.data,
+    system.dataUpdatedAt,
+    workers.data,
+    workers.dataUpdatedAt,
+    mt5.data,
+    mt5.dataUpdatedAt,
+    news.data,
+    news.dataUpdatedAt,
+    forensics.data,
+    forensics.dataUpdatedAt,
+  ]);
   const failed: Array<{ name: string; error: unknown; retry: () => void }> = [];
   for (const [name, q] of [["debug/health", debug], ["v1 system health", system], ["readiness", readiness], ["workers", workers], ["mt5", mt5], ["news", news], ["forensics", forensics], ["probe /health", probe], ["runtime", runtime], ["status", status], ["version", version], ["capabilities", capabilities]] as const) {
     if (q.isError) failed.push({ name, error: q.error, retry: () => void q.refetch() });
   }
-  const summary = matrixSummary(cells);
+  const summary = useMemo(() => matrixSummary(cells), [cells]);
   const overall =
     summary.bad > 0 ? "DEGRADED-FAIL" : summary.warn > 0 ? "WARNING" : summary.good > 0 ? "HEALTHY" : "UNKNOWN";
 
@@ -203,7 +224,11 @@ export default function HealthPage(props: ShellPageProps) {
           {readiness.isPending ? (
             <Skeleton count={4} />
           ) : readiness.isError ? (
-            <ResultStrip result={{ running: false, lastResult: false, lastMessage: readiness.error instanceof Error ? readiness.error.message : "readiness failed" }} />
+            <ErrorState
+              message={readiness.error instanceof Error ? readiness.error.message : "readiness request failed"}
+              requestId={(readiness.error as { requestId?: string } | null)?.requestId ?? null}
+              onRetry={() => void readiness.refetch()}
+            />
           ) : readiness.data ? (
             <>
               <div className="section-title">required (must PASS for READY) · {readiness.data.required_layers.length}</div>
@@ -253,7 +278,15 @@ export default function HealthPage(props: ShellPageProps) {
             <FailedCell name="workers" error={workers.error} onRetry={() => void workers.refetch()} />
           )}
           <div className="section-title" style={{ marginTop: 10 }}>runtime</div>
-          {runtime.data ? (
+          {runtime.isPending ? (
+            <Skeleton count={2} />
+          ) : runtime.isError ? (
+            <ErrorState
+              message={runtime.error instanceof Error ? runtime.error.message : "runtime request failed"}
+              requestId={(runtime.error as { requestId?: string } | null)?.requestId ?? null}
+              onRetry={() => void runtime.refetch()}
+            />
+          ) : runtime.data ? (
             <KeyValueList
               rows={[
                 ["engine", runtime.data.engine_running ? <span key="e" className="badge good">RUNNING</span> : <span key="e" className="badge neutral">STOPPED</span>],
@@ -265,7 +298,7 @@ export default function HealthPage(props: ShellPageProps) {
               ]}
             />
           ) : (
-            <Skeleton count={2} />
+            <EmptyState message="Runtime payload empty." hint="/api/v1/system/runtime returned no body" />
           )}
         </Panel>
       )}

@@ -13,7 +13,7 @@
  * the RTL switch (`<html dir=fa>`) mirrors correctly.
  */
 
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useDialogA11y } from "../../../components/useDialogA11y";
 import { useUiStore } from "@/stores/uiStore";
 import { formatAgeMs } from "@/lib/format";
@@ -522,4 +522,21 @@ export function MonoValue({ value }: { value: unknown }) {
 
 export function SectionGrid({ children, cols = 2 }: { children: ReactNode; cols?: 2 | 3 | 4 }) {
   return <div className={`grid cols-${cols}`}>{children}</div>;
+}
+
+/* ------------------------------------------------------------------ */
+/* Debounced filter values (keystroke -> query key)                    */
+/* ------------------------------------------------------------------ */
+
+/** Delay a fast-changing value (search box, filter input) before it reaches a
+ *  React Query key, so typing fires ONE request per settled value instead of
+ *  one per keystroke. The input keeps the raw value (instant UI); only the
+ *  fetch side sees the delayed one. Timer is cleared on unmount/re-key. */
+export function useDebouncedValue<T>(value: T, delayMs = 300): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(id);
+  }, [value, delayMs]);
+  return debounced;
 }
