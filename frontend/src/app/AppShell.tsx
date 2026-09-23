@@ -155,9 +155,36 @@ export function AppShell() {
   useEffect(() => onCore("auth:changed", () => setAuthExpiredAt(getAuthState().lastUnauthorizedAt)), []);
 
   // 1s ticker for data-age display (visual only).
+  // perf: pause while the tab is hidden — nowMs is Date.now()-derived (nothing
+  // accumulates, so pausing cannot corrupt it); on return run one immediate
+  // tick so no displayed age is ever stale by a whole interval. Visible
+  // cadence unchanged (OUTPUT-IDENTICAL: same values, same freshness timing).
   useEffect(() => {
-    const t = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(t);
+    if (document.visibilityState === "hidden") return;
+    let alive = true;
+    let timer: number | null = window.setInterval(tickNow, 1000);
+    function tickNow(): void {
+      if (alive) setNowMs(Date.now());
+    }
+    const onVisibility = (): void => {
+      if (document.visibilityState === "hidden") {
+        if (timer !== null) {
+          window.clearInterval(timer);
+          timer = null;
+        }
+        return;
+      }
+      if (timer === null && alive) {
+        tickNow();
+        timer = window.setInterval(tickNow, 1000);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      alive = false;
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (timer !== null) window.clearInterval(timer);
+    };
   }, []);
 
   // Density class on <body> — CSS custom properties cascade from there.
