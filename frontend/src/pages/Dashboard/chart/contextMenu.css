@@ -35,6 +35,41 @@
   background: var(--border, #1c2836);
 }
 
+/* ---- Wave-3 Lane D additions (chart context menu) ---- */
+/* .cx-menu stays fixed-position: the .l4-chart ancestor guard clips absolute
+   popovers, and no ancestor establishes a containing block, so fixed places the
+   menu from the viewport edge at the cursor — exactly what clientX/Y gives. */
+.cx-menu__group { /* presentational grouping for chart-type / overlay lists */
+  display: block;
+}
+
+.cx-menu__label {
+  padding: 3px 8px 1px;
+  font-size: 9px;
+  line-height: 1.5;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint, #708699);
+  user-select: none;
+}
+
+.cx-menu__item[aria-checked="true"] {
+  color: var(--accent, #41a6f2);
+}
+
+.cx-menu__item[aria-checked="true"]::before {
+  content: "✓ ";
+}
+
+.cx-menu__item:focus-visible {
+  outline: 2px solid var(--accent, #41a6f2);
+  outline-offset: -2px;
+}
+
+.cx-menu {
+  outline: none;
+}
+
 .cx-perf {
   position: absolute;
   inset-block-start: 6px;
