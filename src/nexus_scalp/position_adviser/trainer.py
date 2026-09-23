@@ -568,11 +568,12 @@ def train_position_adviser(
         "weights_sha256": sha,
         "created_at": datetime.now(UTC).isoformat(),
     }
-    # SEC (py/path-injection #1148): the manifest write re-derives its location
-    # from the untainted sanitizer output (``out`` + sanitized ``mid``) instead
-    # of trusting the joined symbol carried from the request parameter, so the
-    # value this opens is provably the file the trainer itself just named.
-    _manifest_target = out / f"{mid}.meta.json"
+    # SEC (py/path-injection #1148): the manifest write resolves the target
+    # under the untainted output directory via resolve_under_root, so the sink
+    # operates on a canonicalized in-root path that CodeQL recognizes as safe.
+    _manifest_target = resolve_under_root(
+        f"{mid}.meta.json", root=out, label="position adviser manifest"
+    )
     with _manifest_target.open("w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 

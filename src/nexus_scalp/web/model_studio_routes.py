@@ -1031,7 +1031,14 @@ def execute_stress_test(req: ModelStudioStressRequest, engine: Any = None) -> di
             }
         )
     except Exception as err:
-        results.append({"test": "ZERO_VARIANCE", "passed": False, "detail": str(err)})
+        logger.warning("model-studio stress-test ZERO_VARIANCE failed", exc_info=err)
+        results.append(
+            {
+                "test": "ZERO_VARIANCE",
+                "passed": False,
+                "detail": "Test evaluation raised an internal exception",
+            }
+        )
 
     # 2. Flash Crash (+/- 1e6)
     x_shock = np.full((1, dim), 1e6, dtype=np.float32)
@@ -1046,7 +1053,14 @@ def execute_stress_test(req: ModelStudioStressRequest, engine: Any = None) -> di
             }
         )
     except Exception as err:
-        results.append({"test": "FLASH_CRASH_SHOCK", "passed": False, "detail": str(err)})
+        logger.warning("model-studio stress-test FLASH_CRASH_SHOCK failed", exc_info=err)
+        results.append(
+            {
+                "test": "FLASH_CRASH_SHOCK",
+                "passed": False,
+                "detail": "Test evaluation raised an internal exception",
+            }
+        )
 
     # 3. Non-finite inputs (NaN injection)
     x_nan = np.zeros((1, dim), dtype=np.float32)
@@ -1063,7 +1077,14 @@ def execute_stress_test(req: ModelStudioStressRequest, engine: Any = None) -> di
             }
         )
     except Exception as err:
-        results.append({"test": "NAN_INJECTION_DEFENSE", "passed": False, "detail": str(err)})
+        logger.warning("model-studio stress-test NAN_INJECTION_DEFENSE failed", exc_info=err)
+        results.append(
+            {
+                "test": "NAN_INJECTION_DEFENSE",
+                "passed": False,
+                "detail": "Test evaluation raised an internal exception",
+            }
+        )
 
     # 4. Dimension Boundary
     schema = active_schema()

@@ -142,6 +142,35 @@ def _validate_import_path_shape(s: str) -> None:
         raise ValueError("import path has characters outside the safe set")
 
 
+def _resolve_within_import_roots(raw: str) -> Path:
+    """Canonical untainted resolution for a user-supplied import file path.
+
+    Relative values are anchored under each allowed root through the canonical
+    ``resolve_under_root`` sanitizer, so the returned Path is absolute,
+    symlink-followed and in-root (CodeQL recognizes that sanitizer output as
+    untainted). An absolute value is shape-validated and resolved directly, then
+    admitted only when contained in an allowed root — same invariant, and it
+    keeps the multi-root behaviour the dataset browser depends on (a path under
+    any configured root is accepted, not only the first one).
+    """
+    from nexus_scalp.position_adviser.paths import resolve_under_root
+
+    s = str(raw).strip()
+    if Path(s).is_absolute():
+        resolved = Path(s).expanduser().resolve()
+        for r in _allowed_import_roots():
+            if resolved.is_relative_to(r):
+                return resolved
+        raise ValueError("absolute import path is outside allowed import roots")
+    last_err: Exception | None = None
+    for root in _allowed_import_roots():
+        try:
+            return resolve_under_root(raw, root=root, label="training import file")
+        except (ValueError, OSError) as exc:
+            last_err = exc
+    raise ValueError("import path is outside allowed import roots") from last_err
+
+
 #: A relative or absolute filename whose every component is an identifier
 #: segment. Anchored and bounded so no traversal, drive letter or UNC prefix can
 #: survive; ``\\`` and ``/`` are both admitted as separators only BETWEEN safe
@@ -182,7 +211,10 @@ def _allowed_import_path(raw: str) -> Path:
     # the operator chose; either way every component must be a safe identifier
     # segment, so separators can smuggle no traversal.
     _validate_import_path_shape(s)
-    p = Path(s).expanduser().resolve()
+    # Resolve through the canonical safe-path sanitizer so the resulting Path
+    # is recognized as untainted (canonicalized + in-root) before the suffix /
+    # containment checks below read it.
+    p = _resolve_within_import_roots(s)
     if p.suffix.lower() not in (".csv", ".parquet"):
         raise ValueError("unsupported file type (accepted: .csv, .parquet)")
     roots = _allowed_import_roots()
@@ -481,13 +513,13 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
         if source not in ("file", "broker"):
             return _err(code="TRAIN_INPUT_REJECTED", detail="source must be file or broker")
         try:
-            file = None if source == "broker" else _allowed_import_path(str(body.get("file", "")))
-        except ValueError as ve:
-            return _err(code="TRAIN_INPUT_REJECTED", detail=str(ve))
-        try:
             req_backend = _backend(body.get("backend"))
         except ValueError:
             return _err(code="TRAIN_BACKEND_INVALID", message="accepted: auto | cpu | cuda")
+        try:
+            file = None if source == "broker" else _allowed_import_path(str(body.get("file", "")))
+        except ValueError as ve:
+            return _err(code="TRAIN_INPUT_REJECTED", detail=str(ve))
         from nexus_scalp.model_provisioning.dataset_source import validate_dataset_request
 
         symbol = str(body.get("symbol", "XAUUSD"))

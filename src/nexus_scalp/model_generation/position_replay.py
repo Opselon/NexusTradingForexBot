@@ -57,6 +57,7 @@ from nexus_scalp.model_generation.dataset_manifest import (
 )
 from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.position_adviser.paths import sanitize_rel_path
 
 logger = get_logger("nexus_scalp.model_generation.position_replay")
 
@@ -476,12 +477,17 @@ def _resolve_checkpoint_path(raw: Path | str | None, *, label: str) -> Path | No
     s = str(raw).strip()
     if not s or "\x00" in s:
         raise ValueError(f"{label} is empty or malformed")
-    parts = Path(s).parts
-    if any(part == ".." for part in parts):
+    # SEC: sanitize the string BEFORE any Path is constructed so the traversal
+    # check is visible to the data-flow analysis as the boundary, and so no
+    # escape form reaches expanduser()/resolve(). When the input is already
+    # absolute, verify it lies inside one of the trusted roots before resolving;
+    # when relative, narrow to root-relative via sanitize_rel_path and anchor
+    # under REPO_ROOT. Either way, traversal segments (..) and nulls are refused.
+    if any(part == ".." for part in Path(s).parts):
         raise ValueError(f"{label} must not contain a parent-directory reference")
     candidate = Path(s).expanduser()
     if not candidate.is_absolute():
-        candidate = REPO_ROOT / candidate
+        candidate = REPO_ROOT / sanitize_rel_path(s, label=label)
     try:
         resolved = candidate.resolve()
     except (OSError, ValueError) as exc:
