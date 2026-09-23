@@ -135,6 +135,20 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
     return [...byTicket.values()].sort((a, b) => Number(b.state === "MATCHED") - Number(a.state === "MATCHED"));
   }, [ledgerOpenQuery.data, mt5Query.data, snapshot?.positions]);
 
+  // Latency strings derived once per order slice — the same toFixed(1) read
+  // the render did, hoisted so a table-wide re-render does not redo it. Keyed
+  // by ROW REFERENCE (SortableTable sorts/filters, so the render index is not
+  // the row's index in this array); the fallback recomputes the exact original
+  // expression, so a miss renders byte-identically too. Deps read only the
+  // query data above.
+  const latencyText = useMemo(() => {
+    const byRow = new Map<OperatorOrderRow, string>();
+    for (const r of ordersQuery.data?.rows ?? []) {
+      byRow.set(r, typeof r.latency === "number" ? r.latency.toFixed(1) : "—");
+    }
+    return byRow;
+  }, [ordersQuery.data]);
+
   const orderCols = useMemo<Array<Column<OperatorOrderRow>>>(
     () => [
       { key: "time", label: "Time", sortValue: (r) => r.timestamp, render: (r) => (r.timestamp ? formatDateTime(r.timestamp) : "—") },
@@ -145,11 +159,11 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
       { key: "price", label: "Price", num: true, sortValue: (r) => r.price, render: (r) => formatPrice(r.price, snapshot?.price_digits ?? 2) },
       { key: "sl", label: "SL", num: true, sortValue: (r) => r.stop_loss, render: (r) => (r.stop_loss ? formatPrice(r.stop_loss) : "—") },
       { key: "tp", label: "TP", num: true, sortValue: (r) => r.take_profit, render: (r) => (r.take_profit ? formatPrice(r.take_profit) : "—") },
-      { key: "lat", label: "Latency ms", num: true, sortValue: (r) => r.latency, render: (r) => (typeof r.latency === "number" ? r.latency.toFixed(1) : "—") },
+      { key: "lat", label: "Latency ms", num: true, sortValue: (r) => r.latency, render: (r) => latencyText.get(r) ?? (typeof r.latency === "number" ? r.latency.toFixed(1) : "—") },
       { key: "mode", label: "Mode", sortValue: (r) => r.execution_mode, render: (r) => <StatusBadge status={String(r.execution_mode ?? null)} /> },
       { key: "reason", label: "Reason", render: (r) => <span className="small muted" title={r.reason ?? undefined}>{r.reason?.slice(0, 42) ?? "—"}</span> },
     ],
-    [snapshot?.price_digits],
+    [snapshot?.price_digits, latencyText],
   );
 
   if (!snapshot) {

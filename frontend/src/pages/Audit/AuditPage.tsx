@@ -116,6 +116,18 @@ export default function AuditPage() {
   const ledgerRows = useMemo(() => ledgerQuery.data?.items ?? [], [ledgerQuery.data]);
   const incidentRows = useMemo(() => incidentsQuery.data?.items ?? [], [incidentsQuery.data]);
 
+  /** Derived once per ledger page instead of on each render — identical
+   *  expression and identical output; deps complete over the row read. Keyed
+   *  by ROW REFERENCE (the DataTable is a plain map over rows, so index and
+   *  row stay aligned — but a sort/filter elsewhere keeps this correct). */
+  const ledgerPriceText = useMemo(() => {
+    const byRow = new Map<AuditLedgerRow, string>();
+    for (const r of ledgerRows) {
+      byRow.set(r, r.entry_price === null ? "—" : r.entry_price.toFixed(2));
+    }
+    return byRow;
+  }, [ledgerRows]);
+
   // Export rows are part of the CSV button's output, so the serialization is
   // hoisted here (recomputed only when the page's own rows change) rather than
   // rebuilt on every render. Byte-identical to the inline expression it
@@ -259,7 +271,7 @@ export default function AuditPage() {
                   <td>{row.symbol ?? "—"}</td>
                   <td>{row.direction ?? "—"}</td>
                   <td className="num">{formatNumber(row.volume)}</td>
-                  <td className="num">{row.entry_price === null ? "—" : row.entry_price.toFixed(2)}</td>
+                  <td className="num">{ledgerPriceText.get(row) ?? (row.entry_price === null ? "—" : row.entry_price.toFixed(2))}</td>
                   <td>{row.status ?? "—"}</td>
                   <td className={`num ${row.pnl !== null && row.pnl >= 0 ? "pnl-pos" : "pnl-neg"}`}>{formatMoney(row.pnl)}</td>
                   <td>{row.timestamp ? formatDateTime(row.timestamp) : "—"}</td>
