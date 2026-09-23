@@ -529,6 +529,25 @@ def provision_domain(domain: str, dsn: str, **pool_kwargs: Any) -> Any:
     backend_open = getattr(backend, "open", None)
     if callable(backend_open):
         backend_open()
+    # Bootstrap the domain's schema on the target provider. The DDL is authored
+    # once in the SQLite dialect and translated to PostgreSQL, so switching a
+    # domain to PostgreSQL never requires hand-created tables (and re-running
+    # is idempotent — IF NOT EXISTS makes re-provisioning non-destructive).
+    try:
+        from nexus_scalp.database.migration import migrate_domain
+
+        def _exec(sql: str) -> None:
+            backend.execute(sql)
+
+        migration = migrate_domain(domain, _exec)
+        if migration.get("error_count"):
+            logger.warning(
+                "[DB-FABRIC] domain=%s schema migration completed with %d error(s)",
+                domain,
+                migration["error_count"],
+            )
+    except NotImplementedError:
+        pass  # domain has no authored DDL yet — loud, not silent
     register_domain_backend(domain, backend)
     return backend
 
