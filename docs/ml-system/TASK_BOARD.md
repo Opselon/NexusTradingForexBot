@@ -71,6 +71,7 @@
 - [ML-OBS-002](tasks/ML-OBS-002.md) — Online Fine-Tuning Safe Sandbox, Quarantine Buffer & Circuit Breakers `[P3 | BLOCKED | AGENT-OBSERVABILITY | HUMAN DECISION]`
 - [ML-CI-001](tasks/ML-CI-001.md) — CI Model Training Smoke vs Real Validation Gap `[P2 | DONE (PR pending) | AGENT-QA]`
 - [ML-CI-002](tasks/ML-CI-002.md) — ML Contract & Canonical Documentation Drift Prevention CI Gate `[P3 | DONE (PR #346, squash 6bb1ffbe) | AGENT-QA]`
+- [ML-QA-005](tasks/ML-QA-005.md) — Merge-Marker Residue Guard (diff3 arm leak on SSOT metadata) `[P2 | DONE (PR pending) | AGENT-QA]`
 - [ML-UI-001](tasks/ML-UI-001.md) — End-to-End Model UX & CLI Verification (Training, Predict & Confidence Trust) `[P1 | DONE | AGENT-UI]`
 - [ML-UI-002](tasks/ML-UI-002.md) — Model Studio E2E Dataset Ingestion, 50D/70D Normalization & Layer-2 Position Management Generator `[P1 | DONE | AGENT-UI]`
 - [ML-UI-003](tasks/ML-UI-003.md) — AI Hub: Model Registry, SQLite Catalog & Live Runtime Hot-Loader `[P1 | DONE | AGENT-UI]`

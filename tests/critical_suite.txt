@@ -483,3 +483,4 @@ tests/unit/test_wft_time_based_purge.py
 tests/unit/test_winner_protection_geometry_sprint.py
 tests/unit/test_zero_friction_guard_e1.py
 tests/unit/test_git_governance.py
+tests/unit/test_merge_marker_residue.py
