@@ -371,7 +371,12 @@ try {
     if ($dist -match '^\s*(\d+)\s+(\d+)\s*$') {
         $behind = [int]$Matches[1]; $ahead = [int]$Matches[2]
         if ($behind -gt 0) {
-            Write-Warn "Branch BEHIND upstream by $behind commit(s) - pull/rebase before pushing."
+            # Divergence is a STOP, not a warning (agents/git_governance.md §4).
+            # A branch behind origin must never be pushed forward blindly — it
+            # either gets ff-synced (local main only, see the mirror procedure)
+            # or the task branch gets `git merge origin/main` INTO it.
+            Write-Fail "git-divergence" "Branch BEHIND upstream by $behind commit(s). SYNC FIRST (fetch + merge origin/main into the task branch, or ff-only for main); do not push a stale base." 1
+            return
         } elseif ($ahead -gt 0) {
             Write-Info "Branch ahead of upstream by $ahead commit(s) (will be pushed)."
         } else {
@@ -382,6 +387,22 @@ try {
     }
 } catch {
     Write-Warn "Remote check skipped (network/unavailable): $($_.Exception.Message)"
+}
+
+# Canonical gate delegation: this script is the local quality gate, not the git
+# governance gate. Branch identity, main-mirror state, worktree ownership and
+# naming are owned by scripts/git/preflight.py (agents/git_governance.md).
+# Run it here so a human pushing through beforePush.ps1 gets the same STOP
+# conditions an agent gets — including "am I on main?" and "does another
+# worktree own this branch?". It is read-only: it never mutates the tree.
+$preflight = Join-Path $RepoRoot "scripts/git/preflight.py"
+if (Test-Path $preflight) {
+    Write-Info "Running git governance preflight (scripts/git/preflight.py)..."
+    & $VenvPy $preflight --offline --for-push
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "governance-preflight" "Git governance preflight BLOCKED the push (see output above). Resolve the state; do NOT reset or force it away." $LASTEXITCODE
+        return
+    }
 }
 
 # =============================================================================

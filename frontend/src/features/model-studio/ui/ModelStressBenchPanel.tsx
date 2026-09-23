@@ -8,7 +8,6 @@
  */
 
 import { Panel } from "@/components/primitives";
-import { useI18n } from "@/stores/i18nStore";
 import type { BenchmarkResponse, StressTestResultRow } from "../model";
 
 interface ModelStressBenchPanelProps {
@@ -30,7 +29,6 @@ export function ModelStressBenchPanel({
   benchStats,
   onRunBenchmark,
 }: ModelStressBenchPanelProps) {
-  const t = useI18n((s) => s.t);
   const passed = stressResults.filter((r) => r.passed).length;
   const allPassed = stressResults.length > 0 && passed === stressResults.length;
 
@@ -38,19 +36,13 @@ export function ModelStressBenchPanel({
     <div className="ms-grid-half">
       {/* Adversarial stress battery */}
       <Panel
-        title={t("model-studio.stress.battery_title", "Adversarial Stress Battery")}
-        subtitle={t(
-          "model-studio.stress.battery_subtitle",
-          "Extreme volatility, missing-feature, and outlier contamination survival.",
-        )}
+        title="Adversarial Stress Battery"
+        subtitle="Extreme volatility, missing-feature, and outlier contamination survival."
         accent
         right={
           stressResults.length > 0 ? (
             <span className={`badge ${allPassed ? "good" : "warn"}`}>
-              {t("model-studio.stress.passed_badge", "{p} / {n} PASSED", {
-                p: passed,
-                n: stressResults.length,
-              })}
+              {passed} / {stressResults.length} PASSED
             </span>
           ) : null
         }
@@ -58,30 +50,23 @@ export function ModelStressBenchPanel({
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <button onClick={onRunStress} disabled={stressBusy} className="ms-btn-action ms-btn-primary">
-              {stressBusy
-                ? t("model-studio.stress.run_busy", "⏳ Running Battery…")
-                : t("model-studio.stress.run_idle", "☣ Run Stress Battery")}
+              {stressBusy ? "⏳ Running Battery…" : "☣ Run Stress Battery"}
             </button>
-            <span className="tiny faint inline-mono">
-              {t("model-studio.contract.tensor", "{d}D tensor contract", { d: dimension })}
-            </span>
+            <span className="tiny faint inline-mono">{dimension}D tensor contract</span>
           </div>
 
           {stressResults.length === 0 ? (
             <div className="tiny faint" style={{ textAlign: "center", padding: "32px 0" }}>
-              {t(
-                "model-studio.stress.empty",
-                "No stress results yet — run the battery to audit the champion under adversarial conditions.",
-              )}
+              No stress results yet — run the battery to audit the champion under adversarial conditions.
             </div>
           ) : (
-            <div className="table-wrap" style={{ maxHeight: 380 }}>
+            <div tabIndex={0} className="table-wrap" style={{ maxHeight: 380 }}>
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>{t("model-studio.stress.th_test", "Adversarial Test")}</th>
-                    <th style={{ textAlign: "center" }}>{t("model-studio.verdict.verdict", "Verdict")}</th>
-                    <th>{t("model-studio.verdict.detail", "Diagnostic Detail")}</th>
+                    <th scope="col">Adversarial Test</th>
+                    <th scope="col" style={{ textAlign: "center" }}>Verdict</th>
+                    <th scope="col">Diagnostic Detail</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -90,12 +75,10 @@ export function ModelStressBenchPanel({
                       <td style={{ fontWeight: 600, color: "var(--text)" }}>{r.test}</td>
                       <td style={{ textAlign: "center" }}>
                         <span className={`badge ${r.passed ? "good" : "bad"}`}>
-                          {r.passed
-                            ? t("model-studio.verdict.pass", "PASS")
-                            : t("model-studio.verdict.fail", "FAIL")}
+                          {r.passed ? "PASS" : "FAIL"}
                         </span>
                       </td>
-                      <td className="tiny" style={{ color: "var(--text-dim)" }}>{r.detail}</td>
+                      <td className="tiny tx-dim" >{r.detail}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -107,18 +90,13 @@ export function ModelStressBenchPanel({
 
       {/* Latency benchmark */}
       <Panel
-        title={t("model-studio.stress.bench_title", "Inference Latency Benchmark")}
-        subtitle={t(
-          "model-studio.stress.bench_subtitle",
-          "100-pass forward-pass profile — percentile latency and sustained throughput.",
-        )}
+        title="Inference Latency Benchmark"
+        subtitle="100-pass forward-pass profile — percentile latency and sustained throughput."
         accent
         right={
           benchStats ? (
             <span className={`badge ${benchStats.sla_passed ? "good" : "warn"}`}>
-              {benchStats.sla_passed
-                ? t("model-studio.stress.sla_pass", "SLA PASS")
-                : t("model-studio.stress.sla_breach", "SLA BREACH")}
+              {benchStats.sla_passed ? "SLA PASS" : "SLA BREACH"}
             </span>
           ) : null
         }
@@ -126,21 +104,14 @@ export function ModelStressBenchPanel({
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <button onClick={onRunBenchmark} disabled={benchBusy} className="ms-btn-action ms-btn-success">
-              {benchBusy
-                ? t("model-studio.stress.bench_busy", "⏳ Benchmarking…")
-                : t("model-studio.stress.bench_idle", "⏱ Run 100-Pass Benchmark")}
+              {benchBusy ? "⏳ Benchmarking…" : "⏱ Run 100-Pass Benchmark"}
             </button>
-            <span className="tiny faint inline-mono">
-              {t("model-studio.contract.tensor", "{d}D tensor contract", { d: dimension })}
-            </span>
+            <span className="tiny faint inline-mono">{dimension}D tensor contract</span>
           </div>
 
           {!benchStats ? (
             <div className="tiny faint" style={{ textAlign: "center", padding: "32px 0" }}>
-              {t(
-                "model-studio.stress.empty_bench",
-                "No benchmark profile yet — run 100 passes to measure P50 / P90 / P99 latency headroom.",
-              )}
+              No benchmark profile yet — run 100 passes to measure P50 / P90 / P99 latency headroom.
             </div>
           ) : (
             <>
@@ -152,23 +123,11 @@ export function ModelStressBenchPanel({
                 }}
               >
                 {[
+                  { l: "P50 Latency", v: benchStats.latency_p50_ms.toFixed(3) + " ms", c: "var(--green)" },
+                  { l: "P90 Latency", v: benchStats.latency_p90_ms.toFixed(3) + " ms", c: "var(--accent-strong)" },
+                  { l: "P99 Latency", v: benchStats.latency_p99_ms.toFixed(3) + " ms", c: "var(--amber)" },
                   {
-                    l: t("model-studio.stress.stat_p50", "P50 Latency"),
-                    v: benchStats.latency_p50_ms.toFixed(3) + " ms",
-                    c: "var(--green)",
-                  },
-                  {
-                    l: t("model-studio.stress.stat_p90", "P90 Latency"),
-                    v: benchStats.latency_p90_ms.toFixed(3) + " ms",
-                    c: "var(--accent-strong)",
-                  },
-                  {
-                    l: t("model-studio.stress.stat_p99", "P99 Latency"),
-                    v: benchStats.latency_p99_ms.toFixed(3) + " ms",
-                    c: "var(--amber)",
-                  },
-                  {
-                    l: t("model-studio.stress.stat_throughput", "Throughput"),
+                    l: "Throughput",
                     v: benchStats.throughput_inferences_per_sec.toLocaleString() + " /s",
                     c: "var(--violet)",
                   },
@@ -195,7 +154,7 @@ export function ModelStressBenchPanel({
               {/* Percentile ladder visualization */}
               <div>
                 <div className="tiny uppercase font-bold" style={{ color: "var(--accent-strong)", marginBottom: 8 }}>
-                  {t("model-studio.stress.ladder_title", "Percentile Ladder")}
+                  Percentile Ladder
                 </div>
                 {(() => {
                   const max = Math.max(
@@ -215,7 +174,7 @@ export function ModelStressBenchPanel({
                         <div key={b.l} className="ms-prob-row">
                           <div className="ms-prob-meta">
                             <span style={{ color: b.c }}>{b.l}</span>
-                            <span style={{ color: "var(--text-dim)" }}>{b.v.toFixed(3)} ms</span>
+                            <span className="tx-dim" >{b.v.toFixed(3)} ms</span>
                           </div>
                           <div className="ms-prob-track">
                             <div
@@ -235,11 +194,8 @@ export function ModelStressBenchPanel({
               </div>
 
               <div className="tiny faint">
-                {t(
-                  "model-studio.stress.footer",
-                  "{n} iterations at {d}D — tail latency at P99 must stay inside the engine's signal validity window or the SLA gate fails.",
-                  { n: benchStats.iterations, d: benchStats.dimension },
-                )}
+                {benchStats.iterations} iterations at {benchStats.dimension}D — tail latency at P99 must stay
+                inside the engine's signal validity window or the SLA gate fails.
               </div>
             </>
           )}

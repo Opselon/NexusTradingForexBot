@@ -8,7 +8,6 @@
  */
 
 import { useState } from "react";
-import { useI18n } from "@/stores/i18nStore";
 import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
 import { useMktRepairs, useMktSnapshot } from "../hooks";
@@ -16,55 +15,39 @@ import { repairOutcomeOf } from "../model";
 import { FreshnessNote, asErrorText } from "./shared";
 
 export function RepairsSection() {
-  const t = useI18n((s) => s.t);
   const [seed, setSeed] = useState("");
   const [applied, setApplied] = useState("");
   const repairs = useMktRepairs(applied);
 
   return (
     <Panel
-      title={t("marketplace.repairs.title", "Repair & evolution history ({n})", { n: (repairs.data ?? []).length })}
+      title={`Repair & evolution history (${(repairs.data ?? []).length})`}
       right={
         <>
           <input
             className="input"
             style={{ width: 170 }}
-            placeholder={t("marketplace.repairs.filter_ph", "filter by seed id…")}
+            placeholder="filter by seed id…"
             value={seed}
             onChange={(e) => setSeed(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && setApplied(seed.trim())}
-            aria-label={t("marketplace.repairs.filter_aria", "repair seed filter")}
+            aria-label="repair seed filter"
           />
           <button className="btn small ghost" onClick={() => setApplied(seed.trim())}>
-            {t("marketplace.repairs.filter", "Filter")}
+            Filter
           </button>
-          <FreshnessNote updatedAtMs={repairs.dataUpdatedAt ?? null} label={t("marketplace.fresh.repairs", "repairs")} />
+          <FreshnessNote updatedAtMs={repairs.dataUpdatedAt ?? null} label="repairs" />
         </>
       }
     >
       {repairs.isPending ? (
         <Skeleton count={4} height={20} />
       ) : repairs.isError ? (
-        <ErrorState message={asErrorText(repairs.error, t)} onRetry={() => repairs.refetch()} />
+        <ErrorState message={asErrorText(repairs.error)} onRetry={() => repairs.refetch()} />
       ) : (repairs.data ?? []).length === 0 ? (
-        <EmptyState
-          message={
-            applied
-              ? t("marketplace.repairs.empty_filtered", "No repair records for {s}.", { s: applied })
-              : t("marketplace.repairs.empty", "No repair runs recorded.")
-          }
-          hint={t("marketplace.repairs.empty_hint", "Trigger a repair from the seeds table — records append as PENDING and settle after research.")}
-        />
+        <EmptyState message={applied ? `No repair records for ${applied}.` : "No repair runs recorded."} hint="Trigger a repair from the seeds table — records append as PENDING and settle after research." />
       ) : (
-        <DataTable
-          headers={[
-            { label: t("marketplace.th.created", "created") },
-            { label: t("marketplace.th.parent_child", "parent → child") },
-            { label: t("marketplace.th.trigger", "trigger") },
-            { label: t("marketplace.th.status", "status") },
-            { label: t("marketplace.th.outcome", "outcome") },
-          ]}
-        >
+        <DataTable headers={[{ label: "created" }, { label: "parent → child" }, { label: "trigger" }, { label: "status" }, { label: "outcome" }]}>
           {(repairs.data ?? []).map((r) => {
             const out = repairOutcomeOf(r);
             return (
@@ -75,7 +58,7 @@ export function RepairsSection() {
                 </td>
                 <td>{String(r.trigger ?? "—")}</td>
                 <td>
-                  <StatusBadge status={String(r.status ?? t("marketplace.status.unknown", "UNKNOWN"))} />
+                  <StatusBadge status={String(r.status ?? "UNKNOWN")} />
                 </td>
                 <td className="tiny muted" title={out ? JSON.stringify(out) : undefined}>
                   {out ? JSON.stringify(out).slice(0, 90) : r.outcome ? String(r.outcome).slice(0, 90) : "—"}
@@ -90,19 +73,18 @@ export function RepairsSection() {
 }
 
 export function RuntimeSnapshotSection() {
-  const t = useI18n((s) => s.t);
   const snap = useMktSnapshot();
   const [showJson, setShowJson] = useState(false);
   const d = snap.data;
 
   return (
     <Panel
-      title={t("marketplace.snap.title", "Runtime snapshot store")}
+      title="Runtime snapshot store"
       right={
         <>
-          <span className="badge neutral">{t("marketplace.snap.version", "version {v}", { v: d?.version ?? "—" })}</span>
+          <span className="badge neutral">version {d?.version ?? "—"}</span>
           <button className="btn small ghost" onClick={() => setShowJson((v) => !v)}>
-            {showJson ? t("marketplace.snap.summary", "summary") : t("marketplace.snap.raw", "raw")}
+            {showJson ? "summary" : "raw"}
           </button>
         </>
       }
@@ -110,37 +92,37 @@ export function RuntimeSnapshotSection() {
       {snap.isPending ? (
         <Skeleton count={2} height={40} />
       ) : snap.isError ? (
-        <ErrorState message={asErrorText(snap.error, t)} onRetry={() => snap.refetch()} />
+        <ErrorState message={asErrorText(snap.error)} onRetry={() => snap.refetch()} />
       ) : !d ? (
-        <EmptyState message={t("marketplace.snap.empty", "No runtime snapshot returned.")} />
+        <EmptyState message="No runtime snapshot returned." />
       ) : showJson ? (
-        <pre className="mkt-json" dir="ltr">{JSON.stringify(d, null, 2)}</pre>
+        <pre tabIndex={0} className="mkt-json">{JSON.stringify(d, null, 2)}</pre>
       ) : (
         <div className="mkt-snapshot-grid">
           <div className="mkt-snapshot-tile">
-            <div className="k">{t("marketplace.snap.k_version", "Version")}</div>
+            <div className="k">Version</div>
             <div className="v">{String(d.version)}</div>
           </div>
           <div className="mkt-snapshot-tile">
-            <div className="k">{t("marketplace.snap.k_enabled", "Enabled seeds")}</div>
+            <div className="k">Enabled seeds</div>
             <div className="v">{(d.enabled_set ?? []).length}</div>
           </div>
           <div className="mkt-snapshot-tile">
-            <div className="k">{t("marketplace.snap.k_source", "Source")}</div>
+            <div className="k">Source</div>
             <div className="v">{d.source || "—"}</div>
           </div>
           <div className="mkt-snapshot-tile">
-            <div className="k">{t("marketplace.snap.k_created", "Created")}</div>
+            <div className="k">Created</div>
             <div className="v">{d.created_at ? formatDateTime(d.created_at) : "—"}</div>
           </div>
         </div>
       )}
       {(d?.enabled_set ?? []).length === 0 ? (
-        <EmptyState message={t("marketplace.snap.empty_set", "The runtime enabled set is empty — no seed is active in the engine right now.")} />
+        <EmptyState message="The runtime enabled set is empty — no seed is active in the engine right now." />
       ) : (
         <div className="mkt-enabled-chips" style={{ marginTop: 10 }}>
           {(d?.enabled_set ?? []).map((id) => (
-            <span className="mkt-enabled-chip" key={id} title={t("marketplace.snap.chip_title", "enabled in runtime set v{v}", { v: String(d?.version ?? "?") })}>
+            <span className="mkt-enabled-chip" key={id} title={`enabled in runtime set v${String(d?.version ?? "?")}`}>
               <i aria-hidden="true" />
               {id}
             </span>
@@ -148,12 +130,10 @@ export function RuntimeSnapshotSection() {
         </div>
       )}
       <div className="tiny faint" style={{ marginTop: 10 }}>
-        {t(
-          "marketplace.snap.footer",
-          "immutable versioned set (RuntimeConfig pattern) — the console reads it; enablement flows through the gated seed commands, never a direct write.",
-        )}
+        immutable versioned set (RuntimeConfig pattern) — the console reads it; enablement flows
+        through the gated seed commands, never a direct write.
       </div>
-      <FreshnessNote updatedAtMs={snap.dataUpdatedAt ?? null} label={t("marketplace.fresh.snapshot", "snapshot")} />
+      <FreshnessNote updatedAtMs={snap.dataUpdatedAt ?? null} label="snapshot" />
     </Panel>
   );
 }

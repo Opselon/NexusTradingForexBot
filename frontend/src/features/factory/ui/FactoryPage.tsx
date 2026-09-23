@@ -8,12 +8,6 @@
  * All backend /api/factory/* routes exist; when the factory is not mounted
  * the routes answer {available:false, reason:"FACTORY_UNAVAILABLE"} and the
  * UI renders that verbatim per section (never a fabricated board).
- *
- * i18n: command labels are (t) => string closures resolved when shown; the
- * result line stored by useMutationFeedback resolves with the language
- * active at command time (shared component API takes a string). Backend
- * enums/reasons (StatusPill/StatusBadge inputs, FACTORY_*, lifecycle) stay
- * verbatim — the shared badges tone-map on those exact strings.
  */
 
 import { useState } from "react";
@@ -32,23 +26,21 @@ import {
 } from "@/components/primitives";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import { formatDateTime, formatNumber } from "@/lib/format";
-import { useI18n } from "@/stores/i18nStore";
 import { CommandResultLine, FreshnessCaption, InfoRow, JsonBlock, StatusPill } from "../../research/ui/lane5Kit";
-import { arr, bool, num, obj, str, type FactoryCommandDto, type Row, type Translate } from "../model";
+import { arr, bool, num, obj, str, type FactoryCommandDto, type Row } from "../model";
 import { factoryQueries, factoryUseCases } from "../useCases";
 
 type Tab = "generations" | "candidates" | "benchmarks" | "failures" | "ranking" | "memory" | "console";
 
-const RANK_DIMS = ["OVERALL", "SHARPE", "EXPECTANCY", "STABILITY"] as const;
+const RANK_DIMS = ["OVERALL", "SHARPE", "EXPECTANCY", "STABILITY"];
 
 export default function FactoryPage(props: ShellPageProps) {
   void props;
-  const t = useI18n((s) => s.t);
   const [tab, setTab] = useState<Tab>("generations");
   const [genFilter, setGenFilter] = useState("");
   const [dim, setDim] = useState("OVERALL");
   const [size, setSize] = useState("20");
-  const [pending, setPending] = useState<{ label: (t: Translate) => string; danger: boolean; run: () => Promise<FactoryCommandDto> } | null>(null);
+  const [pending, setPending] = useState<{ label: string; danger: boolean; run: () => Promise<FactoryCommandDto> } | null>(null);
   const cmd = useMutationFeedback();
   const qc = useQueryClient();
 
@@ -115,181 +107,99 @@ export default function FactoryPage(props: ShellPageProps) {
   const runCmd = async (label: string, fn: () => Promise<FactoryCommandDto>) => {
     await cmd.run(async () => {
       const v = factoryUseCases.verdict(await fn());
-      // Resolved with the language active when the command runs (the shared
-      // CommandResultLine state holds a string); backend verdict text passes
-      // through inside v.message(t).
-      return { ok: v.ok, success: v.ok, message: `${label}: ${v.message(t)}`, status: v.ok ? 200 : 500 };
+      return { ok: v.ok, success: v.ok, message: `${label}: ${v.message}`, status: v.ok ? 200 : 500 };
     });
     void qc.invalidateQueries({ queryKey: ["factory"] });
   };
 
-  const ask = (label: (t: Translate) => string, danger: boolean, run: () => Promise<FactoryCommandDto>) =>
-    setPending({ label, danger, run });
-
-  const dimLabels: Record<string, string> = {
-    OVERALL: t("factory.dim.overall", "OVERALL"),
-    SHARPE: t("factory.dim.sharpe", "SHARPE"),
-    EXPECTANCY: t("factory.dim.expectancy", "EXPECTANCY"),
-    STABILITY: t("factory.dim.stability", "STABILITY"),
-  };
-
-  const mountedReason = statusQ.data?.reason ?? t("factory.banner_no_reason", "backend answered available:false");
+  const ask = (label: string, danger: boolean, run: () => Promise<FactoryCommandDto>) => setPending({ label, danger, run });
 
   return (
     <div>
       <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <h2>{t("nav.feature.factory", "Strategy Factory")}</h2>
-        <span className="muted small">
-          {t(
-            "factory.subtitle",
-            "autonomous evolution control room — never touches the live path",
-          )}
-        </span>
-        <FreshnessCaption
-          timestamp={null}
-          source={t("factory.fresh_source", "factory store")}
-          isFetching={statusQ.isFetching}
-          error={statusQ.isError}
-        />
+        <h2>Strategy Factory</h2>
+        <span className="muted small">autonomous evolution control room — never touches the live path</span>
+        <FreshnessCaption timestamp={null} source="factory store" isFetching={statusQ.isFetching} error={statusQ.isError} />
       </div>
 
       {!mounted && !statusQ.isPending && (
         <div className="banner stale" role="status">
-          {t("factory.banner_1", "Strategy Factory not mounted — {reason}.", { reason: mountedReason })}{" "}
-          {t(
-            "factory.banner_2",
-            "Every section below shows the backend\'s own unavailability verdict; no data is simulated.",
-          )}
+          Strategy Factory not mounted — {statusQ.data?.reason ?? "backend answered available:false"}. Every section below shows the backend's own
+          unavailability verdict; no data is simulated.
         </div>
       )}
 
       <div className="grid cols-4">
+        <MetricCard label="loop state" value={<StatusBadge status={str(loop.state) ?? "UNKNOWN"} />} sub={`generation ${str(loop.current_generation) ?? "—"}`} tone={bool(loop.kill_requested) ? "neg" : "dim"} />
         <MetricCard
-          label={t("factory.metric_loop", "loop state")}
-          value={<StatusBadge status={str(loop.state) ?? "UNKNOWN"} />}
-          sub={t("factory.metric_loop_sub", "generation {g}", { g: str(loop.current_generation) ?? "—" })}
-          tone={bool(loop.kill_requested) ? "neg" : "dim"}
-        />
-        <MetricCard
-          label={t("factory.metric_provider", "LLM provider")}
+          label="LLM provider"
           value={<StatusBadge status={bool(provider.available) ? "READY" : "UNAVAILABLE"} />}
-          sub={t("factory.metric_provider_sub", "{model} · {key}", {
-            model: str(provider.model) ?? t("factory.no_model", "no model"),
-            key: bool(obj(llmQ.data?.status).api_key_present)
-              ? t("factory.key_set", "key set")
-              : t("factory.key_missing", "key missing"),
-          })}
+          sub={`${str(provider.model) ?? "no model"} · ${bool(obj(llmQ.data?.status).api_key_present) ? "key set" : "key missing"}`}
         />
         <MetricCard
-          label={t("factory.metric_usage", "provider usage")}
+          label="provider usage"
           value={formatNumber(num(usage.requests) ?? 0, 0)}
-          sub={t("factory.metric_usage_sub", "errors {e} · prompt {v}", {
-            e: String(num(usage.errors) ?? 0),
-            v: str(provider.prompt_version) ?? "—",
-          })}
+          sub={`errors ${String(num(usage.errors) ?? 0)} · prompt ${str(provider.prompt_version) ?? "—"}`}
           tone="dim"
         />
         <MetricCard
-          label={t("factory.metric_clusters", "clone clusters")}
-          value={t("factory.metric_clusters_value", "{n} ({m} pathological)", {
-            n: String(num(loop.clone_clusters_tracked) ?? 0),
-            m: String(num(loop.clone_clusters_pathological) ?? 0),
-          })}
+          label="clone clusters"
+          value={`${String(num(loop.clone_clusters_tracked) ?? 0)} (${String(num(loop.clone_clusters_pathological) ?? 0)} pathological)`}
           tone="dim"
-          sub={t("factory.metric_clusters_sub", "operator evidence is cumulative (persisted)")}
+          sub="operator evidence is cumulative (persisted)"
         />
       </div>
 
-      <Panel title={t("factory.loop_panel", "Loop control + generate")} accent tight>
+      <Panel title="Loop control + generate" accent tight>
         {statusQ.isPending ? (
           <Skeleton count={2} />
         ) : (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             <label className="tiny muted" htmlFor="factory-size">
-              {t("factory.size_label", "size")}
+              size
             </label>
             <input id="factory-size" className="input" style={{ width: 70 }} value={size} onChange={(e) => setSize(e.target.value)} />
-            <button
-              className="btn small primary"
-              disabled={cmd.state.running}
-              onClick={() =>
-                ask(
-                  (t) => t("factory.cmd.generate_label", "Generate generation"),
-                  false,
-                  () => factoryUseCases.generate(num(Number(size)) ?? undefined),
-                )
-              }
-            >
-              {t("factory.cmd.generate", "⚒ generate")}
+            <button className="btn small primary" disabled={cmd.state.running} onClick={() => ask("Generate generation", false, () => factoryUseCases.generate(num(Number(size)) ?? undefined))}>
+              ⚒ generate
             </button>
-            <button
-              className="btn small"
-              disabled={cmd.state.running || !mounted}
-              onClick={() => ask((t) => t("factory.cmd.loop_start_label", "Start autonomous loop"), true, factoryUseCases.loopStart)}
-            >
-              {t("factory.cmd.loop_start", "▶ loop start")}
+            <button className="btn small" disabled={cmd.state.running || !mounted} onClick={() => ask("Start autonomous loop", true, factoryUseCases.loopStart)}>
+              ▶ loop start
             </button>
-            <button
-              className="btn small"
-              disabled={cmd.state.running || !mounted}
-              onClick={() => ask((t) => t("factory.cmd.pause_label", "Pause loop"), false, factoryUseCases.loopPause)}
-            >
-              {t("factory.cmd.pause", "⏸ pause")}
+            <button className="btn small" disabled={cmd.state.running || !mounted} onClick={() => ask("Pause loop", false, factoryUseCases.loopPause)}>
+              ⏸ pause
             </button>
-            <button
-              className="btn small"
-              disabled={cmd.state.running || !mounted}
-              onClick={() => ask((t) => t("factory.cmd.resume_label", "Resume loop"), false, factoryUseCases.loopResume)}
-            >
-              {t("factory.cmd.resume", "⏵ resume")}
+            <button className="btn small" disabled={cmd.state.running || !mounted} onClick={() => ask("Resume loop", false, factoryUseCases.loopResume)}>
+              ⏵ resume
             </button>
-            <button
-              className="btn small danger"
-              disabled={cmd.state.running || !mounted}
-              onClick={() => ask((t) => t("factory.cmd.stop_label", "STOP loop (kill switch)"), true, factoryUseCases.loopStop)}
-            >
-              {t("factory.cmd.stop", "■ loop stop")}
+            <button className="btn small danger" disabled={cmd.state.running || !mounted} onClick={() => ask("STOP loop (kill switch)", true, factoryUseCases.loopStop)}>
+              ■ loop stop
             </button>
-            <button
-              className="btn small ghost"
-              disabled={cmd.state.running || !mounted}
-              onClick={() => ask((t) => t("factory.cmd.provider_test_label", "Provider connectivity test"), false, factoryUseCases.providerTest)}
-            >
-              {t("factory.cmd.provider_test", "provider test")}
+            <button className="btn small ghost" disabled={cmd.state.running || !mounted} onClick={() => ask("Provider connectivity test", false, factoryUseCases.providerTest)}>
+              provider test
             </button>
           </div>
         )}
         <div className="tiny muted" style={{ marginTop: 6 }}>
-          {t(
-            "factory.loop_hint",
-            "generate creates candidates that enter validation only (never live); loop start primes the real evaluation worker (generate→validate→evaluate→complete). Provider test never returns secret values.",
-          )}
+          generate creates candidates that enter validation only (never live); loop start primes the real evaluation worker (generate→validate→
+          evaluate→complete). Provider test never returns secret values.
         </div>
         <CommandResultLine state={cmd.state} />
       </Panel>
 
       <div style={{ marginBlock: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <input
-          className="input"
-          style={{ width: 200 }}
-          placeholder={t("factory.gen_filter_placeholder", "generation id filter")}
-          value={genFilter}
-          onChange={(e) => setGenFilter(e.target.value)}
-        />
-        <span className="tiny faint">
-          {t("factory.gen_filter_hint", "filters candidates / benchmarks / events")}
-        </span>
+        <input className="input" style={{ width: 200 }} aria-label="Generation id filter" placeholder="generation id filter" value={genFilter} onChange={(e) => setGenFilter(e.target.value)} />
+        <span className="tiny faint">filters candidates / benchmarks / events</span>
       </div>
 
       <Segmented
         options={[
-          { id: "generations" as const, label: t("factory.tab.generations", "Generations") },
-          { id: "candidates" as const, label: t("factory.tab.candidates", "Candidates") },
-          { id: "benchmarks" as const, label: t("factory.tab.benchmarks", "Benchmarks") },
-          { id: "failures" as const, label: t("factory.tab.failures", "Failures") },
-          { id: "ranking" as const, label: t("factory.tab.ranking", "Ranking") },
-          { id: "memory" as const, label: t("factory.tab.memory", "Evolution memory") },
-          { id: "console" as const, label: t("factory.tab.console", "Console") },
+          { id: "generations" as const, label: "Generations" },
+          { id: "candidates" as const, label: "Candidates" },
+          { id: "benchmarks" as const, label: "Benchmarks" },
+          { id: "failures" as const, label: "Failures" },
+          { id: "ranking" as const, label: "Ranking" },
+          { id: "memory" as const, label: "Evolution memory" },
+          { id: "console" as const, label: "Console" },
         ]}
         value={tab}
         onChange={setTab}
@@ -297,26 +207,17 @@ export default function FactoryPage(props: ShellPageProps) {
 
       <div style={{ marginTop: 12 }}>
         {tab === "generations" && (
-          <Panel title={t("factory.panel_generations", "Generations (newest first)")} tight>
+          <Panel title="Generations (newest first)" tight>
             {generationsQ.isPending ? (
               <Skeleton count={4} />
             ) : generationsQ.isError ? (
-              <ErrorState message={t("factory.err_generations", "generations endpoint failed")} onRetry={() => void generationsQ.refetch()} />
+              <ErrorState message="generations endpoint failed" onRetry={() => void generationsQ.refetch()} />
             ) : generationsQ.data?.available === false ? (
-              <EmptyState message={t("factory.not_mounted", "Factory not mounted")} hint={generationsQ.data.reason ?? "FACTORY_UNAVAILABLE"} />
+              <EmptyState message="Factory not mounted" hint={generationsQ.data.reason ?? "FACTORY_UNAVAILABLE"} />
             ) : gens.length === 0 ? (
-              <EmptyState message={t("factory.empty_generations", "No generations yet — press Generate.")} />
+              <EmptyState message="No generations yet — press Generate." />
             ) : (
-              <DataTable
-                headers={[
-                  { label: t("factory.h_generation", "generation") },
-                  { label: t("factory.h_mode", "mode") },
-                  { label: t("factory.h_state", "state") },
-                  { label: t("factory.h_size", "size"), num: true },
-                  { label: t("factory.h_created", "created") },
-                  { label: "" },
-                ]}
-              >
+              <DataTable headers={[{ label: "generation" }, { label: "mode" }, { label: "state" }, { label: "size", num: true }, { label: "created" }, { label: "" }]}>
                 {gens.map((g) => (
                   <tr key={g.id}>
                     <td className="inline-mono tiny" title={g.id}>
@@ -333,15 +234,9 @@ export default function FactoryPage(props: ShellPageProps) {
                       <button
                         className="btn small ghost"
                         disabled={cmd.state.running || g.state === "COMPLETED"}
-                        onClick={() =>
-                          ask(
-                            (t) => t("factory.cmd.complete_label", "Complete {id}", { id: g.id.slice(0, 10) }),
-                            false,
-                            () => factoryUseCases.complete(g.id),
-                          )
-                        }
+                        onClick={() => ask(`Complete ${g.id.slice(0, 10)}`, false, () => factoryUseCases.complete(g.id))}
                       >
-                        {t("factory.cmd.complete", "complete")}
+                        complete
                       </button>
                     </td>
                   </tr>
@@ -352,23 +247,15 @@ export default function FactoryPage(props: ShellPageProps) {
         )}
 
         {tab === "candidates" && (
-          <Panel title={t("factory.panel_candidates", "Candidates (per generation filter)")} tight>
+          <Panel title="Candidates (per generation filter)" tight>
             {candidatesQ.isPending ? (
               <Skeleton count={4} />
             ) : candidatesQ.data?.available === false ? (
-              <EmptyState message={t("factory.not_mounted", "Factory not mounted")} hint={candidatesQ.data.reason ?? "FACTORY_UNAVAILABLE"} />
+              <EmptyState message="Factory not mounted" hint={candidatesQ.data.reason ?? "FACTORY_UNAVAILABLE"} />
             ) : arr(candidatesQ.data?.candidates).length === 0 ? (
-              <EmptyState message={t("factory.empty_candidates", "No candidates for this selection.")} />
+              <EmptyState message="No candidates for this selection." />
             ) : (
-              <DataTable
-                headers={[
-                  { label: t("factory.h_candidate", "candidate") },
-                  { label: t("factory.h_generation", "generation") },
-                  { label: t("factory.h_lifecycle", "lifecycle") },
-                  { label: t("factory.h_score", "score"), num: true },
-                  { label: "" },
-                ]}
-              >
+              <DataTable headers={[{ label: "candidate" }, { label: "generation" }, { label: "lifecycle" }, { label: "score", num: true }, { label: "" }]}>
                 {arr(candidatesQ.data?.candidates)
                   .slice(0, 100)
                   .map((c: Row, i: number) => {
@@ -382,18 +269,8 @@ export default function FactoryPage(props: ShellPageProps) {
                         </td>
                         <td className="num tiny">{num(c.score) === null ? "—" : formatNumber(num(c.score)!, 3)}</td>
                         <td>
-                          <button
-                            className="btn small ghost"
-                            disabled={cmd.state.running || !cid}
-                            onClick={() =>
-                              ask(
-                                (t) => t("factory.cmd.evaluate_label", "Evaluate {id}", { id: cid.slice(0, 10) }),
-                                false,
-                                () => factoryUseCases.evaluate(cid),
-                              )
-                            }
-                          >
-                            {t("factory.cmd.evaluate", "evaluate")}
+                          <button className="btn small ghost" disabled={cmd.state.running || !cid} onClick={() => ask(`Evaluate ${cid.slice(0, 10)}`, false, () => factoryUseCases.evaluate(cid))}>
+                            evaluate
                           </button>
                         </td>
                       </tr>
@@ -405,23 +282,15 @@ export default function FactoryPage(props: ShellPageProps) {
         )}
 
         {tab === "benchmarks" && (
-          <Panel title={t("factory.panel_benchmarks", "Strategy-aware benchmarks (per-candidate backtests)")} tight>
+          <Panel title="Strategy-aware benchmarks (per-candidate backtests)" tight>
             {benchmarksQ.isPending ? (
               <Skeleton count={4} />
             ) : benchmarksQ.data?.available === false ? (
-              <EmptyState message={t("factory.not_mounted", "Factory not mounted")} hint={benchmarksQ.data.reason ?? ""} />
+              <EmptyState message="Factory not mounted" hint={benchmarksQ.data.reason ?? ""} />
             ) : arr(benchmarksQ.data?.benchmarks).length === 0 ? (
-              <EmptyState message={t("factory.empty_benchmarks", "No benchmark rows for this selection.")} />
+              <EmptyState message="No benchmark rows for this selection." />
             ) : (
-              <DataTable
-                headers={[
-                  { label: t("factory.h_candidate", "candidate") },
-                  { label: t("factory.h_coverage", "coverage"), num: true },
-                  { label: t("factory.h_decision", "decision") },
-                  { label: t("factory.h_oos", "oos") },
-                  { label: t("factory.h_robust", "robust") },
-                ]}
-              >
+              <DataTable headers={[{ label: "candidate" }, { label: "coverage", num: true }, { label: "decision" }, { label: "oos" }, { label: "robust" }]}>
                 {arr(benchmarksQ.data?.benchmarks)
                   .slice(0, 60)
                   .map((b: Row, i: number) => (
@@ -441,21 +310,15 @@ export default function FactoryPage(props: ShellPageProps) {
         )}
 
         {tab === "failures" && (
-          <Panel title={t("factory.panel_failures", "Failure ledger")} tight>
+          <Panel title="Failure ledger" tight>
             {failuresQ.isPending ? (
               <Skeleton count={3} />
             ) : failuresQ.data?.available === false ? (
-              <EmptyState message={t("factory.not_mounted", "Factory not mounted")} hint={failuresQ.data.reason ?? ""} />
+              <EmptyState message="Factory not mounted" hint={failuresQ.data.reason ?? ""} />
             ) : arr(failuresQ.data?.failures).length === 0 ? (
-              <EmptyState message={t("factory.empty_failures", "No recorded failures.")} />
+              <EmptyState message="No recorded failures." />
             ) : (
-              <DataTable
-                headers={[
-                  { label: t("factory.h_at", "at") },
-                  { label: t("factory.h_stage", "stage") },
-                  { label: t("factory.h_reason", "reason") },
-                ]}
-              >
+              <DataTable headers={[{ label: "at" }, { label: "stage" }, { label: "reason" }]}>
                 {arr(failuresQ.data?.failures)
                   .slice(0, 80)
                   .map((f: Row, i: number) => (
@@ -474,12 +337,12 @@ export default function FactoryPage(props: ShellPageProps) {
 
         {tab === "ranking" && (
           <Panel
-            title={t("factory.panel_ranking", "Registry survivors ranked by {dim}", { dim: dimLabels[dim] ?? dim })}
+            title={`Registry survivors ranked by ${dim}`}
             right={
-              <select className="select" style={{ width: 130 }} value={dim} onChange={(e) => setDim(e.target.value)}>
+              <select aria-label="Rank dimension" className="select" style={{ width: 130 }} value={dim} onChange={(e) => setDim(e.target.value)}>
                 {RANK_DIMS.map((d) => (
                   <option key={d} value={d}>
-                    {dimLabels[d] ?? d}
+                    {d}
                   </option>
                 ))}
               </select>
@@ -489,16 +352,9 @@ export default function FactoryPage(props: ShellPageProps) {
             {rankingQ.isPending ? (
               <Skeleton count={4} />
             ) : rankingQ.data?.available === false ? (
-              <EmptyState message={t("factory.not_mounted", "Factory not mounted")} hint={rankingQ.data.reason ?? ""} />
+              <EmptyState message="Factory not mounted" hint={rankingQ.data.reason ?? ""} />
             ) : (
-              <DataTable
-                headers={[
-                  { label: "#" },
-                  { label: t("factory.h_strategy", "strategy") },
-                  { label: t("factory.h_lifecycle", "lifecycle") },
-                  { label: t("factory.h_value", "value"), num: true },
-                ]}
-              >
+              <DataTable headers={[{ label: "#" }, { label: "strategy" }, { label: "lifecycle" }, { label: "value", num: true }]}>
                 {arr(rankingQ.data?.ranked).map((r: Row, i: number) => (
                   <tr key={i}>
                     <td className="num tiny">{i + 1}</td>
@@ -515,11 +371,11 @@ export default function FactoryPage(props: ShellPageProps) {
         )}
 
         {tab === "memory" && (
-          <Panel title={t("factory.panel_memory", "Structured evolution memory (next-generation input)")} tight>
+          <Panel title="Structured evolution memory (next-generation input)" tight>
             {memoryQ.isPending ? (
               <Skeleton count={3} />
             ) : memoryQ.data?.available === false ? (
-              <EmptyState message={t("factory.not_mounted", "Factory not mounted")} hint={memoryQ.data.reason ?? ""} />
+              <EmptyState message="Factory not mounted" hint={memoryQ.data.reason ?? ""} />
             ) : (
               <JsonBlock value={memoryQ.data?.memory} maxChars={6000} />
             )}
@@ -527,21 +383,15 @@ export default function FactoryPage(props: ShellPageProps) {
         )}
 
         {tab === "console" && (
-          <Panel title={t("factory.panel_console", "Factory event console")} tight>
+          <Panel title="Factory event console" tight>
             {eventsQ.isPending ? (
               <Skeleton count={4} />
             ) : eventsQ.data?.available === false ? (
-              <EmptyState message={t("factory.not_mounted", "Factory not mounted")} hint={eventsQ.data.reason ?? ""} />
+              <EmptyState message="Factory not mounted" hint={eventsQ.data.reason ?? ""} />
             ) : arr(eventsQ.data?.events).length === 0 ? (
-              <EmptyState message={t("factory.empty_events", "No events.")} />
+              <EmptyState message="No events." />
             ) : (
-              <DataTable
-                headers={[
-                  { label: t("factory.h_at", "at") },
-                  { label: t("factory.h_event", "event") },
-                  { label: t("factory.h_detail", "detail") },
-                ]}
-              >
+              <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "detail" }]}>
                 {arr(eventsQ.data?.events)
                   .slice(0, 100)
                   .map((e: Row, i: number) => (
@@ -560,93 +410,53 @@ export default function FactoryPage(props: ShellPageProps) {
       </div>
 
       <div style={{ height: 12 }} />
-      <Panel title={t("factory.panel_llm", "LLM provider config (safe status — secrets never round-trip)")} tight>
+      <Panel title="LLM provider config (safe status — secrets never round-trip)" tight>
         {llmQ.isPending ? (
           <Skeleton count={2} />
         ) : llmQ.data?.available === false ? (
-          <EmptyState message={t("factory.empty_llm", "Factory not mounted — llm-config has no backend data.")} />
+          <EmptyState message="Factory not mounted — llm-config has no backend data." />
         ) : (
           <dl className="kv">
-            <InfoRow
-              label="api_key_present"
-              value={
-                bool(obj(llmQ.data?.status).api_key_present)
-                  ? t("factory.key_present", "yes (masked)")
-                  : t("factory.key_absent", "no")
-              }
-            />
+            <InfoRow label="api_key_present" value={bool(obj(llmQ.data?.status).api_key_present) ? "yes (masked)" : "no"} />
             <InfoRow label="base_url" value={str(obj(llmQ.data?.status).base_url) ?? "—"} />
-            <InfoRow label={t("factory.f_model", "model")} value={str(obj(llmQ.data?.status).model) ?? "—"} />
-            <InfoRow
-              label={t("factory.f_temperature", "temperature")}
-              value={formatNumber(num(obj(llmQ.data?.status).temperature) ?? NaN, 2)}
-            />
-            <InfoRow
-              label={t("factory.f_enabled", "factory enabled")}
-              value={<StatusPill status={str(obj(llmQ.data?.status).factory_enabled) ?? str(obj(llmQ.data?.status).enabled) ?? "—"} />}
-            />
+            <InfoRow label="model" value={str(obj(llmQ.data?.status).model) ?? "—"} />
+            <InfoRow label="temperature" value={formatNumber(num(obj(llmQ.data?.status).temperature) ?? NaN, 2)} />
+            <InfoRow label="factory enabled" value={<StatusPill status={str(obj(llmQ.data?.status).factory_enabled) ?? str(obj(llmQ.data?.status).enabled) ?? "—"} />} />
           </dl>
         )}
-        <div className="row" style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <span className="tiny muted">
-            {t("factory.chg_note", "strategy factory feature (CHG-0034 single user control):")}
-          </span>
-          <button
-            className="btn small primary"
-            disabled={cmd.state.running}
-            onClick={() =>
-              ask((t) => t("factory.cmd.enable_label", "Enable factory provider"), false, () => factoryUseCases.providerToggle(true))
-            }
-          >
-            {t("common.enable", "enable")}
-          </button>
-          <button
-            className="btn small danger"
-            disabled={cmd.state.running}
-            onClick={() =>
-              ask((t) => t("factory.cmd.disable_label", "Disable factory provider"), true, () => factoryUseCases.providerToggle(false))
-            }
-          >
-            {t("common.disable", "disable")}
-          </button>
-          <span className="tiny faint">
-            {t(
-              "factory.toggle_hint",
-              "enabling validates config without a network probe; disabling stops new provider requests only.",
-            )}
-          </span>
-        </div>
-        <div className="tiny faint" style={{ marginTop: 6 }}>
-          {t(
-            "factory.apikey_note",
-            "Editing the API key deliberately stays out of the alt UI surface (masked-only contract, parity with legacy); configure via the settings route owned by the Config feature.",
-          )}
-        </div>
+          <div className="row" style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <span className="tiny muted">strategy factory feature (CHG-0034 single user control):</span>
+            <button className="btn small primary" disabled={cmd.state.running} onClick={() => ask("Enable factory provider", false, () => factoryUseCases.providerToggle(true))}>
+              enable
+            </button>
+            <button className="btn small danger" disabled={cmd.state.running} onClick={() => ask("Disable factory provider", true, () => factoryUseCases.providerToggle(false))}>
+              disable
+            </button>
+            <span className="tiny faint">enabling validates config without a network probe; disabling stops new provider requests only.</span>
+          </div>
+          <div className="tiny faint" style={{ marginTop: 6 }}>
+            Editing the API key deliberately stays out of the alt UI surface (masked-only contract, parity with legacy); configure via the settings
+            route owned by the Config feature.
+          </div>
       </Panel>
 
       {pending && (
         <ConfirmModal
-          title={t("factory.confirm_title", "Confirm: {cmd}", { cmd: pending.label(t) })}
+          title={`Confirm: ${pending.label}`}
           danger={pending.danger}
-          confirmLabel={t("factory.confirm_send", "Send command")}
+          confirmLabel="Send command"
           busy={cmd.state.running}
           onCancel={() => setPending(null)}
           onConfirm={async () => {
             const p = pending;
             setPending(null);
-            await runCmd(p.label(t), p.run);
+            await runCmd(p.label, p.run);
           }}
         >
           <div className="small">
             {pending.danger
-              ? t(
-                  "factory.confirm_danger",
-                  "This changes the autonomous loop control state on the backend. The factory never touches the live trading path, but loop start keeps generating/validating candidates until paused/stopped.",
-                )
-              : t(
-                  "factory.confirm_plain",
-                  "Command goes to the factory backend; its response decides the outcome.",
-                )}
+              ? "This changes the autonomous loop control state on the backend. The factory never touches the live trading path, but loop start keeps generating/validating candidates until paused/stopped."
+              : "Command goes to the factory backend; its response decides the outcome."}
           </div>
         </ConfirmModal>
       )}

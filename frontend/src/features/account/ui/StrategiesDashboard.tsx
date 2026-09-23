@@ -111,7 +111,7 @@ export function StrategiesDashboard() {
               ))}
             </div>
           ) : (
-            <div className="sd-meter-list">
+            <div tabIndex={0} className="sd-meter-list">
               {confidenceRows.map((s) => (
                 <ConfidenceMeter key={s.strategy_id} value={s.confidence} label={s.strategy_id} />
               ))}

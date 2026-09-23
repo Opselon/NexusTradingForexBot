@@ -5,27 +5,27 @@
  * Command flow for a settings change (validate-before-apply, hard rule):
  *   1. client validation (features/config/validation.ts) — invalid payloads
  *      are NEVER sent;
- *   2. POST /api/settings/validate {key} for every changed key — server-side
- *      mutability/validity truth (RESTART_REQUIRED / SECRET / READ_ONLY keys
- *      surface inline; a refusal blocks the apply);
- *   3. POST /api/runtime-config/apply with the surviving dotted updates — the
- *      engine's ConfigurationApplyReport decides success;
+ *   2. POST /api/settings/validate {key, value} for every changed key — the
+ *      server dry-runs the PROPOSED VALUE (real payload, not just a label)
+ *      and answers mutability truth (invalid / RESTART_REQUIRED / SECRET /
+ *      READ_ONLY keys surface inline; a refusal blocks the apply);
+ *   3. POST /api/runtime-config/apply with the surviving HOT updates —
+ *      RESTART_REQUIRED keys are excluded from the payload and named in the
+ *      report (never silently dropped), the engine's ConfigurationApplyReport
+ *      decides success;
  *   4. on any accepted/refused result the related queries are invalidated so
  *      the UI re-reads the backend (refetch-on-result, never assume).
  */
 
 import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
-import { configApi, type ConfigDto } from "./api";
+import { configApi, type ConfigDto, type ModePreviewV1 } from "./api";
 import {
-  DEFAULT_RULES,
   backendMessage,
   hasErrors,
-  identityT,
   serverErrorsToFieldErrors,
   validateFields,
   type FieldErrors,
   type FieldValues,
-  type Translate,
 } from "./validation";
 import { runtimeConfigSpecs } from "./model";
 
@@ -101,7 +101,7 @@ export interface CommandOutcome {
   raw?: unknown;
 }
 
-function outcomeFrom(body: unknown, okMessage: string, failFallback: string, t: Translate, fieldErrors?: FieldErrors): CommandOutcome {
+function outcomeFrom(body: unknown, okMessage: string, failFallback: string, fieldErrors?: FieldErrors): CommandOutcome {
   const ok = (() => {
     if (!body || typeof body !== "object") return false;
     const b = body as Record<string, unknown>;
@@ -110,7 +110,7 @@ function outcomeFrom(body: unknown, okMessage: string, failFallback: string, t: 
     return !b.error;
   })();
   const detail = body as { detail?: unknown; error?: unknown } | null;
-  const serverErrors = ok ? undefined : serverErrorsToFieldErrors(detail ?? {}, t);
+  const serverErrors = ok ? undefined : serverErrorsToFieldErrors(detail ?? {});
   return {
     ok,
     message: ok ? okMessage : backendMessage(body, failFallback),
@@ -146,10 +146,9 @@ export interface ApplySteps {
  */
 export async function validateAndApplyChanges(
   changes: FieldValues,
-  t: Translate = identityT,
 ): Promise<ApplySteps> {
-  const specs = runtimeConfigSpecs(t);
-  const clientErrors = validateFields(specs, changes, DEFAULT_RULES, t);
+  const specs = runtimeConfigSpecs();
+  const clientErrors = validateFields(specs, changes);
   if (hasErrors(clientErrors)) {
     return { clientErrors, serverErrors: {}, restartRequired: [], outcome: null, sent: false };
   }
@@ -159,46 +158,61 @@ export async function validateAndApplyChanges(
   const sendable: FieldValues = {};
   for (const key of Object.keys(changes)) {
     try {
-      const v = await configApi.validateSetting(key);
+      // TASK-CFGUI-001: send the PROPOSED VALUE so the backend dry-runs the
+      // real payload (it previously answered valid:true without ever seeing
+      // a value — a round-tripped lie the apply path then discovered late).
+      const v = await configApi.validateSetting(key, changes[key]);
       if (!v || v.valid === false) {
-        serverErrors[key] = [v?.error?.message ?? t("config.apply.marked_invalid", "backend marked \"{key}\" invalid", { key })];
+        serverErrors[key] =
+          Array.isArray(v?.errors) && v.errors.length > 0
+            ? v.errors
+            : [v?.error?.message ?? `backend marked "${key}" invalid`];
         continue;
       }
       const mut = String(v.mutability ?? "").toUpperCase();
       if (mut === "READ_ONLY") {
-        serverErrors[key] = [t("config.apply.read_only", "backend mutability READ_ONLY — cannot be changed at runtime")];
+        serverErrors[key] = ["backend mutability READ_ONLY — cannot be changed at runtime"];
         continue;
       }
-      if (mut === "RESTART_REQUIRED") restartRequired.push(key);
+      if (mut === "RESTART_REQUIRED") {
+        // TASK-CFGUI-001: restart-bound keys are EXCLUDED from the hot-apply
+        // payload (they stay local edits and are named in the report below) —
+        // never silently dropped, never shipped through a gate meant for
+        // hot-reloadable keys.
+        restartRequired.push(key);
+        continue;
+      }
       sendable[key] = changes[key];
     } catch (e) {
-      serverErrors[key] = [e instanceof Error ? e.message : t("config.apply.validate_failed", "server validate call failed")];
+      serverErrors[key] = [e instanceof Error ? e.message : "server validate call failed"];
     }
   }
 
   const blocked = Object.keys(serverErrors).length > 0;
-  if (blocked || restartRequired.length > 0 || Object.keys(sendable).length === 0) {
+  if (blocked || Object.keys(sendable).length === 0) {
     return {
       clientErrors,
       serverErrors,
       restartRequired,
       sent: false,
       outcome: blocked
-        ? { ok: false, message: t("config.apply.server_refused", "Server refused one or more keys — nothing was applied (atomic gate)."), requestId: null }
+        ? { ok: false, message: "Server refused one or more keys — nothing was applied (atomic gate).", requestId: null }
         : restartRequired.length > 0
           ? {
               ok: false,
-              message: t("config.apply.restart_required", "Keys {keys} need a restart — apply blocked for the whole batch.", {
-                keys: restartRequired.join(", "),
-              }),
+              message: `Needs restart — not applied: ${restartRequired.join(", ")}. These stay as local edits; the hot apply gate never receives restart-bound keys.`,
               requestId: null,
             }
-          : { ok: false, message: t("config.apply.no_sendable", "No sendable changes after validation."), requestId: null },
+          : { ok: false, message: "No sendable changes after validation.", requestId: null },
     };
   }
 
   try {
     const report = await configApi.applyRuntime(sendable);
+    const restartNote =
+      restartRequired.length > 0
+        ? ` Not sent (restart required, still local edits): ${restartRequired.join(", ")}.`
+        : "";
     return {
       clientErrors,
       serverErrors,
@@ -206,13 +220,10 @@ export async function validateAndApplyChanges(
       sent: true,
       outcome: outcomeFrom(
         report,
-        report.runtime_applied
-          ? `${t("config.apply.applied_runtime", "Applied at runtime — configuration v{v}", { v: report.configuration_version })}${
-              report.persisted ? ` (${t("config.apply.persisted", "persisted")})` : ""
-            }.`
-          : t("config.apply.saved_not_applied", "Saved but NOT applied: {reason}.", { reason: report.reason || t("config.apply.engine_offline_reason", "engine offline") }),
-        t("config.apply.refused_backend", "Backend refused the apply."),
-        t,
+        (report.runtime_applied
+          ? `Applied at runtime — configuration v${report.configuration_version}${report.persisted ? " (persisted)" : ""}.`
+          : `Saved but NOT applied: ${report.reason || "engine offline"}.`) + restartNote,
+        "Backend refused the apply.",
       ),
     };
   } catch (e) {
@@ -224,7 +235,7 @@ export async function validateAndApplyChanges(
       sent: true,
       outcome: {
         ok: false,
-        message: body?.message ?? t("config.apply.request_failed", "Apply request failed."),
+        message: body?.message ?? "Apply request failed.",
         requestId: body?.requestId ?? null,
         fieldErrors: serverErrorsToFieldErrors({ detail: body?.message ?? "" }),
       },
@@ -232,10 +243,10 @@ export async function validateAndApplyChanges(
   }
 }
 
-export function useApplyRuntimeConfig(t: Translate = identityT) {
+export function useApplyRuntimeConfig() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (changes: FieldValues) => validateAndApplyChanges(changes, t),
+    mutationFn: (changes: FieldValues) => validateAndApplyChanges(changes),
     onSettled: (steps) => {
       // Refetch-on-result: the versioned store is the authority after any
       // settled attempt (accepted OR refused — a partial apply must re-read).
@@ -253,25 +264,28 @@ export function useApplyRuntimeConfig(t: Translate = identityT) {
 /* Engine mode + model swap + telegram                                 */
 /* ------------------------------------------------------------------ */
 
-export function useSetEngineMode(t: Translate = identityT) {
+/**
+ * TASK-CFGUI-001: server-side preview for the mode-switch confirm modal —
+ * POST /api/v1/runtime/mode/preview (200 for valid AND invalid proposals;
+ * the verdict is the response data, never an HTTP guess).
+ */
+export function useModePreview() {
+  return useMutation({
+    mutationFn: (mode: string): Promise<ModePreviewV1> => configApi.previewModeTransition(mode),
+  });
+}
+
+export function useSetEngineMode() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (mode: string): Promise<CommandOutcome> => {
       try {
         const body = await configApi.setEngineMode(mode);
-        return outcomeFrom(
-          body,
-          t("config.mode.accepted", "Mode switch accepted: {mode} (persisted={persisted}).", {
-            mode: body.mode ?? mode,
-            persisted: String(body.persisted === true),
-          }),
-          t("config.mode.refused", "Backend refused the mode switch."),
-          t,
-        );
+        return outcomeFrom(body, `Mode switch accepted: ${body.mode ?? mode} (persisted=${String(body.persisted === true)}).`, "Backend refused the mode switch.");
       } catch (e) {
         return {
           ok: false,
-          message: e instanceof Error ? e.message : t("config.mode.failed", "Mode switch failed."),
+          message: e instanceof Error ? e.message : "Mode switch failed.",
           requestId: (e as { requestId?: string } | null)?.requestId ?? null,
         };
       }
@@ -285,7 +299,7 @@ export function useSetEngineMode(t: Translate = identityT) {
   });
 }
 
-export function useModelSwap(t: Translate = identityT) {
+export function useModelSwap() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (artifact: string): Promise<CommandOutcome> => {
@@ -295,14 +309,14 @@ export function useModelSwap(t: Translate = identityT) {
         return {
           ok,
           message: ok
-            ? `${t("config.swap.completed", "Model hot-swap completed for {artifact}", { artifact })}${body.correlation_id ? ` (${body.correlation_id})` : ""}.`
-            : backendMessage(body, t("config.swap.refused", "Model swap refused.")),
+            ? `Model hot-swap completed for ${artifact}${body.correlation_id ? ` (${body.correlation_id})` : ""}.`
+            : backendMessage(body, "Model swap refused."),
           requestId: body.correlation_id ?? null,
         };
       } catch (e) {
         return {
           ok: false,
-          message: e instanceof Error ? e.message : t("config.swap.failed", "Model swap failed."),
+          message: e instanceof Error ? e.message : "Model swap failed.",
           requestId: (e as { requestId?: string } | null)?.requestId ?? null,
         };
       }
@@ -313,22 +327,17 @@ export function useModelSwap(t: Translate = identityT) {
   });
 }
 
-export function useSaveTelegram(t: Translate = identityT) {
+export function useSaveTelegram() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (payload: { enabled: boolean; bot_token: string; admin_id: string }): Promise<CommandOutcome> => {
       try {
         const body = await configApi.saveTelegram(payload);
-        return outcomeFrom(
-          body,
-          `${t("config.tg.saved", "Telegram settings saved")} (${body.correlation_id ?? t("config.tg.no_corr", "no correlation id")}).`,
-          t("config.tg.refused_save", "Backend refused the telegram save."),
-          t,
-        );
+        return outcomeFrom(body, `Telegram settings saved (${body.correlation_id ?? "no correlation id"}).`, "Backend refused the telegram save.");
       } catch (e) {
         return {
           ok: false,
-          message: e instanceof Error ? e.message : t("config.tg.save_failed", "Telegram save failed."),
+          message: e instanceof Error ? e.message : "Telegram save failed.",
           requestId: (e as { requestId?: string } | null)?.requestId ?? null,
         };
       }
@@ -342,24 +351,20 @@ export function useSaveTelegram(t: Translate = identityT) {
   });
 }
 
-export function useTestTelegram(t: Translate = identityT) {
+export function useTestTelegram() {
   return useMutation({
     mutationFn: async (): Promise<CommandOutcome> => {
       try {
         const body = await configApi.testTelegram();
         return outcomeFrom(
           body,
-          t("config.tg.delivery_ok", "Delivery confirmed — message_id {id} (correlation {c}).", {
-            id: String(body.message_id ?? "?"),
-            c: body.correlation_id ?? "—",
-          }),
-          t("config.tg.delivery_failed", "Telegram test delivery failed."),
-          t,
+          `Delivery confirmed — message_id ${String(body.message_id ?? "?")} (correlation ${body.correlation_id ?? "—"}).`,
+          "Telegram test delivery failed.",
         );
       } catch (e) {
         return {
           ok: false,
-          message: e instanceof Error ? e.message : t("config.tg.test_failed", "Telegram test failed."),
+          message: e instanceof Error ? e.message : "Telegram test failed.",
           requestId: (e as { requestId?: string } | null)?.requestId ?? null,
         };
       }
@@ -367,5 +372,5 @@ export function useTestTelegram(t: Translate = identityT) {
   });
 }
 
-/** Re-export the raw DTO type for pages that need it. */
-export type { ConfigDto };
+/** Re-export DTO types for pages that need them. */
+export type { ConfigDto, ModePreviewV1 };

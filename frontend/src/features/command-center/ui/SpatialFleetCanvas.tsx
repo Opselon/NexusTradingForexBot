@@ -15,7 +15,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { EmptyState, ErrorState, Skeleton } from "@/components/primitives";
 import { formatNumber } from "@/lib/format";
-import { useI18n } from "@/stores/i18nStore";
 import { commandCenterQueries } from "../useCases";
 import { num, spatialEmptyFacts, str, type CcSpatialDto, type CcSpatialNodeDto } from "../model";
 import { SpatialFleetEngine } from "./spatialEngine";
@@ -34,7 +33,6 @@ export function SpatialFleetCanvas({
   /** explicit "open inspector" from the selection card. */
   onInspect: (strategyId: string) => void;
 }) {
-  const t = useI18n((s) => s.t);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<SpatialFleetEngine | null>(null);
@@ -150,11 +148,7 @@ export function SpatialFleetCanvas({
 
   return (
     <div className="spatial-wrap" ref={wrapRef}>
-      <canvas
-        ref={canvasRef}
-        className="spatial-canvas"
-        aria-label={t("command-center.a11y.spatial_canvas", "Spatial fleet map (2.5D)")}
-      />
+      <canvas ref={canvasRef} className="spatial-canvas" role="img" aria-label="Spatial fleet map (2.5D)" />
 
       {/* camera toolbar (legacy scc-fit-all / reset / focus set) */}
       <div className="spatial-tools">
@@ -165,35 +159,25 @@ export function SpatialFleetCanvas({
             setLifecycleFilter(e.target.value);
             fittedRef.current = false;
           }}
-          aria-label={t("command-center.a11y.lifecycle_filter", "lifecycle filter")}
+          aria-label="lifecycle filter"
         >
-          <option value="">{t("command-center.filter.zone_all", "zone: all")}</option>
+          <option value="">zone: all</option>
           {zoneOptions.map((z) => (
             <option key={z} value={z}>
               {z}
             </option>
           ))}
         </select>
-        <button className="btn small ghost" onClick={() => engineRef.current?.fitAll()}>
-          {t("command-center.cam.fit_all", "fit all")}
-        </button>
-        <button className="btn small ghost" onClick={() => engineRef.current?.resetCamera()}>
-          {t("command-center.cam.reset", "reset cam")}
-        </button>
-        <button className="btn small ghost" onClick={() => engineRef.current?.focusSelected()}>
-          {t("command-center.cam.focus_sel", "focus sel.")}
-        </button>
-        <button className="btn small ghost" onClick={() => engineRef.current?.focusActive()}>
-          {t("command-center.cam.focus_live", "focus live")}
-        </button>
-        <button className="btn small ghost" onClick={() => engineRef.current?.focusBlocked()}>
-          {t("command-center.cam.focus_terminal", "focus terminal")}
-        </button>
+        <button className="btn small ghost" onClick={() => engineRef.current?.fitAll()}>fit all</button>
+        <button className="btn small ghost" onClick={() => engineRef.current?.resetCamera()}>reset cam</button>
+        <button className="btn small ghost" onClick={() => engineRef.current?.focusSelected()}>focus sel.</button>
+        <button className="btn small ghost" onClick={() => engineRef.current?.focusActive()}>focus live</button>
+        <button className="btn small ghost" onClick={() => engineRef.current?.focusBlocked()}>focus terminal</button>
         <span className="spatial-legend" aria-hidden="true">
-          <i style={{ background: "#10b981" }} /> {t("command-center.legend.live", "live")}
-          <i style={{ background: "#eab308" }} /> {t("command-center.legend.shadow", "shadow")}
-          <i style={{ background: "#84cc16" }} /> {t("command-center.legend.validated", "validated")}
-          <i style={{ background: "#f43f5e" }} /> {t("command-center.legend.terminal", "terminal")}
+          <i className="sl-live" /> live
+          <i className="sl-shadow" /> shadow
+          <i className="sl-validated" /> validated
+          <i className="sl-terminal" /> terminal
         </span>
       </div>
 
@@ -202,12 +186,12 @@ export function SpatialFleetCanvas({
         <div className="spatial-tip" style={{ left: tipPos.x + 18, top: tipPos.y - 10 }} role="status">
           <div className="tip-id inline-mono">{str(selNode.strategy_id) ?? "—"}</div>
           <dl className="kv tiny">
-            <dt>{t("command-center.tip.zone", "zone")}</dt><dd>{str(selNode.zone) ?? "—"}</dd>
-            <dt>{t("command-center.tip.eligibility", "eligibility")}</dt><dd>{str(selNode.eligibility_state) ?? "UNKNOWN"}</dd>
-            <dt>{t("command-center.tip.samples", "samples")}</dt><dd>{selNode.size_hint === undefined || selNode.size_hint === null ? "—" : String(selNode.size_hint)}</dd>
-            <dt>{t("command-center.tip.confidence", "confidence")}</dt><dd>{num(selNode.confidence) === null ? "—" : formatNumber(selNode.confidence, 3)}</dd>
-            <dt>{t("command-center.tip.health_elev", "health (elev.)")}</dt><dd>{num(selNode.elevation) === null ? "NOT_MEASURED" : formatNumber(selNode.elevation, 1)}</dd>
-            <dt>{t("command-center.tip.eval_stage", "eval stage")}</dt><dd>{str(selNode.evaluation?.current_stage) ?? "—"}</dd>
+            <dt>zone</dt><dd>{str(selNode.zone) ?? "—"}</dd>
+            <dt>eligibility</dt><dd>{str(selNode.eligibility_state) ?? "UNKNOWN"}</dd>
+            <dt>samples</dt><dd>{selNode.size_hint === undefined || selNode.size_hint === null ? "—" : String(selNode.size_hint)}</dd>
+            <dt>confidence</dt><dd>{num(selNode.confidence) === null ? "—" : formatNumber(selNode.confidence, 3)}</dd>
+            <dt>health (elev.)</dt><dd>{num(selNode.elevation) === null ? "NOT_MEASURED" : formatNumber(selNode.elevation, 1)}</dd>
+            <dt>eval stage</dt><dd>{str(selNode.evaluation?.current_stage) ?? "—"}</dd>
           </dl>
           <button
             className="btn small primary"
@@ -216,7 +200,7 @@ export function SpatialFleetCanvas({
               if (id) onInspectRef.current(id);
             }}
           >
-            {t("command-center.action.open_inspector", "open inspector")}
+            open inspector
           </button>
         </div>
       )}
@@ -224,16 +208,10 @@ export function SpatialFleetCanvas({
       {/* honest empty overlay (legacy showSpatialEmptyState — no fabricated counts) */}
       {status === "empty" && (
         <div className="spatial-empty" role="status">
-          <p className="sp-empty-title">{t("command-center.empty.no_visible_title", "NO VISIBLE STRATEGIES")}</p>
-          <p className="sp-empty-line">
-            {t("command-center.empty.backend_strategies", "Backend strategies: {n}", { n: empty.backendTotal })}
-          </p>
-          <p className="sp-empty-line">
-            {t("command-center.empty.current_filter", "Current filter: {f}", { f: empty.filter === "ALL" ? t("command-center.filter.all", "ALL") : empty.filter })}
-          </p>
-          <p className="sp-empty-line">
-            {t("command-center.empty.matching", "Matching: {m}", { m: empty.matching })}
-          </p>
+          <p className="sp-empty-title">NO VISIBLE STRATEGIES</p>
+          <p className="sp-empty-line">Backend strategies: {empty.backendTotal}</p>
+          <p className="sp-empty-line">Current filter: {empty.filter}</p>
+          <p className="sp-empty-line">Matching: {empty.matching}</p>
         </div>
       )}
       {status === "loading" && (
@@ -242,7 +220,7 @@ export function SpatialFleetCanvas({
       {status === "error" && (
         <div className="spatial-state">
           <ErrorState
-            message={spatialQ.error instanceof Error ? spatialQ.error.message : t("command-center.err.spatial", "spatial endpoint failed")}
+            message={spatialQ.error instanceof Error ? spatialQ.error.message : "spatial endpoint failed"}
             onRetry={() => void spatialQ.refetch()}
           />
         </div>
@@ -250,11 +228,8 @@ export function SpatialFleetCanvas({
       {status === "unavailable" && (
         <div className="spatial-state">
           <EmptyState
-            message={t("command-center.empty.research_unavailable", "Research engine unavailable")}
-            hint={
-              spatialQ.data?.reason ??
-              t("command-center.empty.spatial_hint", "RESEARCH_ENGINE_UNAVAILABLE — /api/command-center/spatial answered available:false")
-            }
+            message="Research engine unavailable"
+            hint={spatialQ.data?.reason ?? "RESEARCH_ENGINE_UNAVAILABLE — /api/command-center/spatial answered available:false"}
           />
         </div>
       )}

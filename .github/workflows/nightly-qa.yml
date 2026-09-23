@@ -116,8 +116,16 @@ jobs:
                  -q --tb=short `
                  --junitxml="$CI_RESULTS_DIR/chaos/junit.xml" `
                  > "$CI_RESULTS_DIR/chaos/pytest.txt" 2>&1
-          echo "CHAOS_RC=$LASTEXITCODE" >> "$GITHUB_ENV"
-          if ($LASTEXITCODE -ne 0) { echo "::error::lifecycle chaos failed" }
+          $chaos_rc = $LASTEXITCODE
+          echo "CHAOS_RC=$chaos_rc" >> "$GITHUB_ENV"
+          if ($chaos_rc -ne 0) {
+            echo "::error::lifecycle chaos failed (exit $chaos_rc)"
+            # This is a GATING chaos lane, not an advisory one: a red chaos
+            # suite must fail the job, not merely annotate it. Leaving the
+            # job green on a failure is the silent-bypass class this repo's
+            # own audits hunt (see ci_final_gate.py's missing=fail-closed).
+            exit $chaos_rc
+          }
 
       - name: Upload chaos evidence
         if: always()

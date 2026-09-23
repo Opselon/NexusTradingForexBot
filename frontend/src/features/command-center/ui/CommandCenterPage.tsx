@@ -22,7 +22,6 @@ import {
   StatusBadge,
 } from "@/components/primitives";
 import { formatDateTime, formatNumber, formatTime } from "@/lib/format";
-import { useI18n } from "@/stores/i18nStore";
 import { DistBars, Drawer, FreshnessCaption, GateStepper, InfoRow, JsonBlock, StatusPill, useDebounced, useNow } from "../../research/ui/lane5Kit";
 import { arr, num, obj, str, stuckRows, type CcFleetRowDto } from "../model";
 import { commandCenterQueries, commandCenterUseCases, useTimeMachineFrame } from "../useCases";
@@ -32,7 +31,6 @@ type View = "spatial" | "fleet" | "timemachine";
 
 export default function CommandCenterPage(props: ShellPageProps) {
   void props;
-  const t = useI18n((s) => s.t);
   const nowMs = useNow(5000);
   const [view, setView] = useState<View>("spatial");
   const [lifecycle, setLifecycle] = useState("");
@@ -58,52 +56,38 @@ export default function CommandCenterPage(props: ShellPageProps) {
   return (
     <div>
       <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <h2>{t("nav.feature.command-center", "Command Center")}</h2>
-        <span className="muted small">
-          {t("command-center.page.subtitle", "strategy fleet · spatial map · inspector · execution safety · time machine")}
-        </span>
+        <h2>Command Center</h2>
+        <span className="muted small">strategy fleet · spatial map · inspector · execution safety · time machine</span>
         <FreshnessCaption timestamp={null} source="research engine projection" isFetching={overviewQ.isFetching || fleetQ.isFetching} error={overviewQ.isError} />
       </div>
 
       {/* ---- overview KPI strip ---- */}
       <div className="grid cols-4">
         <MetricCard
-          label={t("command-center.kpi.strategies", "strategies")}
+          label="strategies"
           value={overviewQ.isPending ? "…" : String(overview?.total_strategies ?? "—")}
           tone="dim"
-          sub={t("command-center.kpi.running_evaluations", "running evaluations {n}", {
-            n: String(overview?.running_evaluations ?? 0),
-          })}
+          sub={`running evaluations ${String(overview?.running_evaluations ?? 0)}`}
         />
+        <MetricCard label="execution eligible" value={String(overview?.execution_eligible_count ?? "—")} tone={overview?.execution_eligible_count ? "pos" : "dim"} sub="eligibility YES (domain authority)" />
+        <MetricCard label="blocked" value={String(overview?.blocked_count ?? "—")} tone={overview?.blocked_count ? "neg" : "dim"} sub="eligibility BLOCKED" />
         <MetricCard
-          label={t("command-center.kpi.execution_eligible", "execution eligible")}
-          value={String(overview?.execution_eligible_count ?? "—")}
-          tone={overview?.execution_eligible_count ? "pos" : "dim"}
-          sub={t("command-center.kpi.eligibility_yes", "eligibility YES (domain authority)")}
-        />
-        <MetricCard
-          label={t("command-center.kpi.blocked", "blocked")}
-          value={String(overview?.blocked_count ?? "—")}
-          tone={overview?.blocked_count ? "neg" : "dim"}
-          sub={t("command-center.kpi.eligibility_blocked", "eligibility BLOCKED")}
-        />
-        <MetricCard
-          label={t("command-center.kpi.terminal_states", "terminal states")}
+          label="terminal states"
           value={`${String(obj(overview?.terminal).REJECTED ?? 0)}R / ${String(obj(overview?.terminal).DEGRADED ?? 0)}D`}
           tone="dim"
-          sub={t("command-center.kpi.retired_excluded", "retired excluded from pipeline census")}
+          sub="retired excluded from pipeline census"
         />
       </div>
 
       <div style={{ height: 12 }} />
       <div className="grid cols-2">
-        <Panel title={t("command-center.panel.lifecycle_census", "Lifecycle census")} tight>
+        <Panel title="Lifecycle census" tight>
           <DistBars
             rows={Object.entries(obj(overview?.by_lifecycle)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 }))}
             tone="var(--green)"
           />
         </Panel>
-        <Panel title={t("command-center.panel.eval_pipeline", "Evaluation pipeline (counts across registry)")} tight>
+        <Panel title="Evaluation pipeline (counts across registry)" tight>
           <DistBars
             rows={Object.entries(obj(overview?.evaluation_pipeline)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 }))}
             tone="var(--amber)"
@@ -112,15 +96,8 @@ export default function CommandCenterPage(props: ShellPageProps) {
       </div>
 
       {stuckRows(overview ?? undefined).length > 0 && (
-        <Panel title={t("command-center.panel.stuck", "Stuck strategies (hours in non-terminal state)")} tight>
-          <DataTable
-            headers={[
-              { label: t("command-center.th.strategy", "strategy") },
-              { label: t("command-center.th.state", "state") },
-              { label: t("command-center.th.hours", "hours"), num: true },
-              { label: "" },
-            ]}
-          >
+        <Panel title="Stuck strategies (hours in non-terminal state)" tight>
+          <DataTable headers={[{ label: "strategy" }, { label: "state" }, { label: "hours", num: true }, { label: "" }]}>
             {stuckRows(overview ?? undefined).map((s) => (
               <tr key={s.strategy_id}>
                 <td className="inline-mono tiny">{s.strategy_id.slice(0, 16)}</td>
@@ -130,7 +107,7 @@ export default function CommandCenterPage(props: ShellPageProps) {
                 <td className="num tiny">{s.hours === null ? "—" : formatNumber(s.hours, 1)}</td>
                 <td>
                   <button className="btn small ghost" onClick={() => setInspectId(s.strategy_id)}>
-                    {t("command-center.action.inspect", "inspect")}
+                    inspect
                   </button>
                 </td>
               </tr>
@@ -142,9 +119,9 @@ export default function CommandCenterPage(props: ShellPageProps) {
       <div style={{ marginBlock: 12 }}>
         <Segmented
           options={[
-            { id: "spatial" as const, label: t("command-center.view.spatial", "Spatial 2.5D map") },
-            { id: "fleet" as const, label: t("command-center.view.fleet", "Fleet grid") },
-            { id: "timemachine" as const, label: t("command-center.panel.time_machine", "Time machine") },
+            { id: "spatial" as const, label: "Spatial 2.5D map" },
+            { id: "fleet" as const, label: "Fleet grid" },
+            { id: "timemachine" as const, label: "Time machine" },
           ]}
           value={view}
           onChange={setView}
@@ -152,7 +129,7 @@ export default function CommandCenterPage(props: ShellPageProps) {
       </div>
 
       {view === "spatial" && (
-        <Panel title={t("command-center.panel.spatial", "Spatial fleet map — lifecycle strata (Canvas2D 2.5D)")} tight>
+        <Panel title="Spatial fleet map — lifecycle strata (Canvas2D 2.5D)" tight>
           <div style={{ padding: 10 }}>
             <SpatialFleetCanvas
               selectedId={inspectId}
@@ -165,19 +142,19 @@ export default function CommandCenterPage(props: ShellPageProps) {
 
       {view === "fleet" && (
         <Panel
-          title={t("command-center.panel.fleet", "Fleet ({rows} rows, risk-first order)", { rows: String(fleetQ.data?.count ?? 0) })}
+          title={`Fleet (${String(fleetQ.data?.count ?? 0)} rows, risk-first order)`}
           right={
             <div style={{ display: "flex", gap: 6 }}>
-              <select className="select" style={{ width: 150 }} value={lifecycle} onChange={(e) => setLifecycle(e.target.value)}>
-                <option value="">{t("command-center.filter.lifecycle_any", "lifecycle: any")}</option>
+              <select aria-label="Lifecycle filter" className="select" style={{ width: 150 }} value={lifecycle} onChange={(e) => setLifecycle(e.target.value)}>
+                <option value="">lifecycle: any</option>
                 {["DISCOVERED", "VALIDATED", "SHADOW", "ACTIVE", "REJECTED", "DEGRADED", "RETIRED"].map((l) => (
                   <option key={l} value={l}>
                     {l}
                   </option>
                 ))}
               </select>
-              <select className="select" style={{ width: 140 }} value={executionFilter} onChange={(e) => setExecutionFilter(e.target.value)}>
-                <option value="">{t("command-center.filter.eligibility_any", "eligibility: any")}</option>
+              <select aria-label="Eligibility filter" className="select" style={{ width: 140 }} value={executionFilter} onChange={(e) => setExecutionFilter(e.target.value)}>
+                <option value="">eligibility: any</option>
                 {["YES", "BLOCKED", "CONDITIONAL", "UNKNOWN"].map((l) => (
                   <option key={l} value={l}>
                     {l}
@@ -191,28 +168,25 @@ export default function CommandCenterPage(props: ShellPageProps) {
           {fleetQ.isPending ? (
             <Skeleton count={6} />
           ) : fleetQ.isError ? (
-            <ErrorState message={fleetQ.error instanceof Error ? fleetQ.error.message : t("command-center.err.fleet", "fleet failed")} onRetry={() => void fleetQ.refetch()} />
+            <ErrorState message={fleetQ.error instanceof Error ? fleetQ.error.message : "fleet failed"} onRetry={() => void fleetQ.refetch()} />
           ) : fleetQ.data?.available === false ? (
-            <EmptyState
-              message={t("command-center.empty.research_unavailable", "Research engine unavailable")}
-              hint={fleetQ.data.reason ?? "RESEARCH_ENGINE_UNAVAILABLE"}
-            />
+            <EmptyState message="Research engine unavailable" hint={fleetQ.data.reason ?? "RESEARCH_ENGINE_UNAVAILABLE"} />
           ) : rows.length === 0 ? (
-            <EmptyState message={t("command-center.empty.no_strategies", "No strategies match the filters.")} />
+            <EmptyState message="No strategies match the filters." />
           ) : (
             <div className="table-wrap" style={{ maxHeight: 560 }}>
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>{t("command-center.th.strategy", "strategy")}</th>
-                    <th>{t("command-center.th.lifecycle", "lifecycle")}</th>
-                    <th className="num">{t("command-center.th.conf", "conf")}</th>
-                    <th className="num">{t("command-center.th.samples", "samples")}</th>
-                    <th className="num">{t("command-center.th.health", "health")}</th>
-                    <th>{t("command-center.th.eligibility", "eligibility")}</th>
-                    <th>{t("command-center.th.reason", "reason")}</th>
-                    <th>{t("command-center.th.updated", "updated")}</th>
-                    <th />
+                    <th scope="col">strategy</th>
+                    <th scope="col">lifecycle</th>
+                    <th scope="col" className="num">conf</th>
+                    <th scope="col" className="num">samples</th>
+                    <th scope="col" className="num">health</th>
+                    <th scope="col">eligibility</th>
+                    <th scope="col">reason</th>
+                    <th scope="col">updated</th>
+                    <th scope="col" />
                   </tr>
                 </thead>
                 <tbody>
@@ -236,7 +210,7 @@ export default function CommandCenterPage(props: ShellPageProps) {
                       <td className="tiny">{r.updated_at ? formatDateTime(r.updated_at) : "—"}</td>
                       <td>
                         <button className="btn small ghost" onClick={() => setInspectId(str(r.strategy_id) ?? "")}>
-                          {t("command-center.action.inspector", "inspector")}
+                          inspector
                         </button>
                       </td>
                     </tr>
@@ -260,7 +234,6 @@ export default function CommandCenterPage(props: ShellPageProps) {
 /* -------------------------------------------------------------------- */
 
 function TimeMachine() {
-  const t = useI18n((s) => s.t);
   const boundsQ = useQuery({
     queryKey: ["command-center", "tm-bounds"],
     queryFn: ({ signal }) => commandCenterQueries.tmBounds(signal),
@@ -277,19 +250,11 @@ function TimeMachine() {
   const debouncedIso = useDebounced(effectiveMs === null ? null : new Date(effectiveMs).toISOString(), 350);
   const frameQ = useTimeMachineFrame(debouncedIso);
 
-  if (boundsQ.isPending)
-    return (
-      <Panel title={t("command-center.panel.time_machine", "Time machine")}>
-        <Skeleton count={3} />
-      </Panel>
-    );
+  if (boundsQ.isPending) return <Panel title="Time machine"><Skeleton count={3} /></Panel>;
   if (!bounds || !range) {
     return (
-      <Panel title={t("command-center.panel.time_machine", "Time machine")} tight>
-        <EmptyState
-          message={t("command-center.empty.no_history", "No historical events yet")}
-          hint={boundsQ.data?.reason ?? t("command-center.empty.no_history_hint", "timemachine/bounds answered available:false — nothing to scrub")}
-        />
+      <Panel title="Time machine" tight>
+        <EmptyState message="No historical events yet" hint={boundsQ.data?.reason ?? "timemachine/bounds answered available:false — nothing to scrub"} />
       </Panel>
     );
   }
@@ -302,13 +267,8 @@ function TimeMachine() {
 
   return (
     <Panel
-      title={t("command-center.panel.time_machine_title", "Time machine — fleet state at an instant")}
-      right={
-        <span className="tiny muted">
-          {formatDateTime(debouncedIso)} ·{" "}
-          {t("command-center.tm.events_in_range", "{n} events in range", { n: String(bounds.total_events ?? 0) })}
-        </span>
-      }
+      title="Time machine — fleet state at an instant"
+      right={<span className="tiny muted">{formatDateTime(debouncedIso)} · {String(bounds.total_events ?? 0)} events in range</span>}
       tight
     >
       <div style={{ display: "grid", gap: 8 }}>
@@ -320,35 +280,28 @@ function TimeMachine() {
           value={effectiveMs ?? range.hi}
           onChange={(e) => setSliderMs(Number(e.target.value))}
           style={{ width: "100%", accentColor: "var(--accent)" }}
-          aria-label={t("command-center.a11y.timeline_scrubber", "timeline scrubber")}
+          aria-label="timeline scrubber"
         />
         <div style={{ display: "flex", justifyContent: "space-between" }} className="tiny faint">
           <span>{formatDateTime(bounds.earliest)}</span>
           <span>{formatTime(debouncedIso ?? bounds.latest)}</span>
           <span>{formatDateTime(bounds.latest)}</span>
         </div>
-        {frameQ.isFetching && <div className="tiny muted">{t("command-center.tm.frame_loading", "frame loading (lazy, debounced 350 ms)…")}</div>}
+        {frameQ.isFetching && <div className="tiny muted">frame loading (lazy, debounced 350 ms)…</div>}
         {frame?.available === false ? (
-          <EmptyState message={frame.reason ?? t("command-center.tm.frame_unavailable", "frame not available")} />
+          <EmptyState message={frame.reason ?? "frame not available"} />
         ) : (
           <div className="grid cols-2" style={{ marginTop: 6 }}>
             <div>
-              <div className="section-title">{t("command-center.tm.zone_census", "zone census at instant")}</div>
+              <div className="section-title">zone census at instant</div>
               <DistBars rows={[...byZone.entries()].map(([label, count]) => ({ label, count }))} />
             </div>
             <div>
-              <div className="section-title">{t("command-center.tm.transitions", "transitions in this frame (±60 s)")}</div>
+              <div className="section-title">transitions in this frame (±60 s)</div>
               {transitions.length === 0 ? (
-                <EmptyState message={t("command-center.empty.no_transitions", "No lifecycle transition happened at this instant.")} />
+                <EmptyState message="No lifecycle transition happened at this instant." />
               ) : (
-                <DataTable
-                  headers={[
-                    { label: t("command-center.th.strategy", "strategy") },
-                    { label: "→" },
-                    { label: t("command-center.th.actor", "actor") },
-                    { label: t("command-center.th.reason", "reason") },
-                  ]}
-                >
+                <DataTable headers={[{ label: "strategy" }, { label: "→" }, { label: "actor" }, { label: "reason" }]}>
                   {transitions.slice(0, 12).map((t, i) => (
                     <tr key={i}>
                       <td className="inline-mono tiny">{str(t.strategy_id)?.slice(0, 12) ?? "—"}</td>
@@ -374,7 +327,6 @@ function TimeMachine() {
 /* -------------------------------------------------------------------- */
 
 function InspectorDrawer({ strategyId, onClose }: { strategyId: string; onClose: () => void }) {
-  const t = useI18n((s) => s.t);
   const inspectorQ = useQuery({
     queryKey: ["command-center", "inspector", strategyId],
     queryFn: ({ signal }) => commandCenterQueries.inspector(strategyId, signal),
@@ -400,46 +352,30 @@ function InspectorDrawer({ strategyId, onClose }: { strategyId: string; onClose:
   const gates = obj(obj(snap?.evaluation).gates);
 
   return (
-    <Drawer title={t("command-center.inspector.title", "Inspector — {id}", { id: strategyId })} onClose={onClose}>
+    <Drawer title={`Inspector — ${strategyId}`} onClose={onClose}>
       {inspectorQ.isPending ? (
         <Skeleton count={5} />
       ) : inspectorQ.data?.available === false ? (
-        <EmptyState
-          message={str(inspectorQ.data.error) ?? t("command-center.empty.strategy_not_found", "strategy not found")}
-          hint={t("command-center.empty.strategy_not_found_hint", "inspector answers STRATEGY_NOT_FOUND for unknown ids")}
-        />
+        <EmptyState message={str(inspectorQ.data.error) ?? "strategy not found"} hint="inspector answers STRATEGY_NOT_FOUND for unknown ids" />
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
-          <Panel title={t("command-center.panel.execution_safety", "Execution safety (CAN-THIS-TRADE)")} accent tight>
+          <Panel title="Execution safety (CAN-THIS-TRADE)" accent tight>
             {safetyQ.isPending ? (
               <Skeleton />
             ) : safetyQ.isError ? (
-              <ErrorState message={t("command-center.err.safety", "execution-safety endpoint failed")} onRetry={() => void safetyQ.refetch()} />
+              <ErrorState message="execution-safety endpoint failed" onRetry={() => void safetyQ.refetch()} />
             ) : (
               <div className="decision-card">
                 <div>
-                  <div className={`big ${ee.can_trade === true ? "buy" : "sell"}`}>
-                    {ee.can_trade === true
-                      ? t("command-center.decision.yes", "YES")
-                      : ee.can_trade === false
-                        ? t("command-center.decision.no", "NO")
-                        : "—"}
-                  </div>
+                  <div className={`big ${ee.can_trade === true ? "buy" : "sell"}`}>{ee.can_trade === true ? "YES" : ee.can_trade === false ? "NO" : "—"}</div>
                   <div className="why-detail tiny">{str(ee.lifecycle) ?? "—"}</div>
                 </div>
                 <div style={{ flex: 1 }}>
                   <dl className="kv">
                     <InfoRow label="eligibility_state" value={<StatusBadge status={str(ee.eligibility_state)} />} />
-                    <InfoRow label={t("command-center.label.reason", "reason")} value={str(ee.reason) ?? "—"} />
+                    <InfoRow label="reason" value={str(ee.reason) ?? "—"} />
                     <InfoRow label="required_gate" value={str(ee.required_gate) ?? "—"} />
-                    <InfoRow
-                      label={t("command-center.label.blockers", "blockers")}
-                      value={
-                        arr(ee.blockers).length === 0
-                          ? t("command-center.label.none", "none")
-                          : t("command-center.label.listed", "{n} listed", { n: String(arr(ee.blockers).length) })
-                      }
-                    />
+                    <InfoRow label="blockers" value={arr(ee.blockers).length === 0 ? "none" : `${arr(ee.blockers).length} listed`} />
                   </dl>
                   {arr(ee.blockers).map((b, i) => (
                     <div key={i} className="tiny muted">
@@ -451,9 +387,9 @@ function InspectorDrawer({ strategyId, onClose }: { strategyId: string; onClose:
             )}
           </Panel>
 
-          <Panel title={t("command-center.panel.evaluation", "Evaluation (transient telemetry — not lifecycle)")} tight>
+          <Panel title="Evaluation (transient telemetry — not lifecycle)" tight>
             {Object.keys(gates).length === 0 ? (
-              <EmptyState message={t("command-center.empty.no_evaluation", "No evaluation running / recorded.")} />
+              <EmptyState message="No evaluation running / recorded." />
             ) : (
               <GateStepper
                 gates={Object.entries(gates).map(([k, v]) => ({ name: k, status: str(v) ?? "UNKNOWN" }))}
@@ -462,11 +398,11 @@ function InspectorDrawer({ strategyId, onClose }: { strategyId: string; onClose:
           </Panel>
 
           <div className="grid cols-2">
-            <Panel title={t("command-center.panel.debug_intel", "Debug intelligence (backend-computed)")} tight>
+            <Panel title="Debug intelligence (backend-computed)" tight>
               <dl className="kv">
-                <InfoRow label={t("command-center.label.anomaly_score", "anomaly score")} value={formatNumber(num(debug.anomaly_score) ?? NaN, 3)} />
-                <InfoRow label={t("command-center.label.validation_consistency", "validation consistency")} value={formatNumber(num(debug.validation_consistency) ?? NaN, 3)} />
-                <InfoRow label={t("command-center.label.debug_priority", "debug priority")} value={formatNumber(num(debug.debug_priority) ?? NaN, 3)} />
+                <InfoRow label="anomaly score" value={formatNumber(num(debug.anomaly_score) ?? NaN, 3)} />
+                <InfoRow label="validation consistency" value={formatNumber(num(debug.validation_consistency) ?? NaN, 3)} />
+                <InfoRow label="debug priority" value={formatNumber(num(debug.debug_priority) ?? NaN, 3)} />
               </dl>
               {arr(debug.hints).length > 0 && (
                 <ul className="tiny muted" style={{ margin: "6px 0 0", paddingInlineStart: 16 }}>
@@ -476,9 +412,9 @@ function InspectorDrawer({ strategyId, onClose }: { strategyId: string; onClose:
                 </ul>
               )}
             </Panel>
-            <Panel title={t("command-center.panel.evidence", "Evidence completeness")} tight>
+            <Panel title="Evidence completeness" tight>
               {Object.keys(completeness).length === 0 ? (
-                <EmptyState message={t("command-center.empty.completeness_missing", "completeness not reported")} />
+                <EmptyState message="completeness not reported" />
               ) : (
                 <dl className="kv">
                   {Object.entries(completeness).slice(0, 10).map(([k, v]) => (
@@ -490,24 +426,16 @@ function InspectorDrawer({ strategyId, onClose }: { strategyId: string; onClose:
           </div>
 
           {Object.keys(attribution).length > 0 && (
-            <Panel title={t("command-center.panel.ai_attribution", "AI attribution (explainability)")} tight>
+            <Panel title="AI attribution (explainability)" tight>
               <JsonBlock value={attribution} maxChars={2500} />
             </Panel>
           )}
 
-          <Panel title={t("command-center.panel.decision_timeline", "Decision timeline ({n})", { n: String(events.length) })} tight>
+          <Panel title={`Decision timeline (${events.length})`} tight>
             {events.length === 0 ? (
-              timelineQ.isPending ? <Skeleton /> : <EmptyState message={t("command-center.empty.no_timeline", "No timeline events.")} />
+              timelineQ.isPending ? <Skeleton /> : <EmptyState message="No timeline events." />
             ) : (
-              <DataTable
-                headers={[
-                  { label: t("command-center.th.at", "at") },
-                  { label: t("command-center.th.event", "event") },
-                  { label: t("command-center.th.from", "from") },
-                  { label: t("command-center.th.to", "to") },
-                  { label: t("command-center.th.actor", "actor") },
-                ]}
-              >
+              <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "from" }, { label: "to" }, { label: "actor" }]}>
                 {events.slice(0, 60).map((e, i) => (
                   <tr key={i}>
                     <td className="tiny">{formatDateTime(str(e.timestamp) ?? str(e.at))}</td>
@@ -521,7 +449,7 @@ function InspectorDrawer({ strategyId, onClose }: { strategyId: string; onClose:
             )}
           </Panel>
 
-          <Panel title={t("command-center.panel.invariant", "Invariant check")} tight>
+          <Panel title="Invariant check" tight>
             <JsonBlock value={snap?.invariant_check} maxChars={1500} />
           </Panel>
         </div>

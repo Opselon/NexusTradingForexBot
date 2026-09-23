@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useDialogA11y } from "./useDialogA11y";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useI18n } from "@/stores/i18nStore";
@@ -94,6 +95,9 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
   const [selected, setSelected] = useState(0);
   const [recents, setRecents] = useState<string[]>(() => readRecents());
   const inputRef = useRef<HTMLInputElement>(null);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  // Trap + focus restore; Esc stays owned by the input (query must survive Esc? no — Esc clears/closes there).
+  useDialogA11y(boxRef, () => setOpen(false), { escEnabled: false, initialFocus: false });
   const listRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -218,12 +222,17 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
       style={{ alignItems: "flex-start", paddingTop: "12vh" }}
       onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}
     >
-      <div className="modal cp-modal" role="dialog" aria-modal="true" aria-label={t("ux.shortcut.palette", "Command palette")}>
+      <div ref={boxRef} className="modal cp-modal" role="dialog" aria-modal="true" aria-label="Command palette">
         <div className="cp-searchrow">
           <span className="cp-glyph" aria-hidden="true">⌘</span>
           <input
             ref={inputRef}
             className="palette-input cp-input"
+            role="combobox"
+                        aria-expanded="true"
+                        aria-controls="cp-listbox"
+                        aria-activedescendant={`cp-opt-${selected}`}
+                        aria-label="Search commands"
             placeholder={t("ux.palette.placeholder", "Search commands… (e.g. “signal”, “position”, “diagnostics”)")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -236,7 +245,7 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
           />
           <span className="cp-count tiny faint inline-mono">{filtered.length ? `${filtered.length}` : "0"}</span>
         </div>
-        <div className="palette-list cp-list" ref={listRef} role="listbox">
+        <div className="palette-list cp-list" id="cp-listbox" ref={listRef} role="listbox" aria-label="Commands">
           {filtered.length === 0 ? (
             <div className="palette-empty">{t("ux.palette.empty", "No results")}</div>
           ) : (
@@ -256,6 +265,7 @@ export function CommandPalette({ onOpenHelp }: { onOpenHelp: () => void }) {
                   <div
                     role="option"
                     aria-selected={i === selected}
+                    id={`cp-opt-${i}`}
                     data-idx={i}
                     className={`palette-item cp-item ${i === selected ? "selected" : ""}`}
                     onClick={() => runAt(i)}

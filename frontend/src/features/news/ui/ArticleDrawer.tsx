@@ -2,18 +2,15 @@
  * Article drawer — full detail from GET /api/news/{id} + analysis from
  * GET /api/news/analysis/{id}. Both endpoints are read on open; the drawer
  * shows each block only when the backend provided it (no placeholder rows).
- *
- * Pure snake_case field names (importance_score, analyzed_at, …) render
- * verbatim as technical identifiers; natural-language labels translate.
  */
 
-import { useEffect, useMemo } from "react";
+import { useMemo, useRef } from "react";
+import { useDialogA11y } from "../../../components/useDialogA11y";
 import { DataTable, EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber, formatPct } from "@/lib/format";
 import { HeatBar } from "@/components/viz";
-import { useI18n } from "@/stores/i18nStore";
 import { useNewsAnalysis, useNewsArticle, useNewsProAnswers } from "../hooks";
-import { decodeStringList, dirWord } from "../model";
+import { decodeStringList } from "../model";
 import type { NewsAiAnalysisRow, NewsFeedArticle } from "../types";
 import { asErrorText } from "./shared";
 
@@ -44,7 +41,6 @@ export function ArticleDrawer({
   onClose: () => void;
   onAnalyze: (force: boolean) => void;
 }) {
-  const t = useI18n((s) => s.t);
   const detail = useNewsArticle(articleId);
   const analysis = useNewsAnalysis(articleId);
   /* GET /api/news/{id} carries no ai_analysis block (verified in
@@ -59,13 +55,8 @@ export function ArticleDrawer({
     return rows.find((r) => r.article_id === articleId) ?? null;
   }, [proAnswers.data, articleId]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const boxRef = useRef<HTMLElement | null>(null);
+  useDialogA11y(boxRef, onClose);
 
   const art = detail.data?.article ?? null;
   const ana = detail.data?.analysis ?? analysis.data?.analysis ?? null;
@@ -78,24 +69,19 @@ export function ArticleDrawer({
 
   return (
     <div className="news-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <aside
-        className="news-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-label={t("news.article.aria", "News article detail")}
-      >
-        <header>
-          <span>{t("news.article.header", "Article detail")}</span>
+      <aside ref={boxRef} className="news-drawer" role="dialog" aria-modal="true" aria-label="News article detail">
+        <header aria-label="Article">
+          <span>Article detail</span>
           <span className="inline-mono tiny faint">#{articleId.slice(0, 10)}</span>
           <button className="btn small close" onClick={onClose}>
-            {t("common.close", "Close")} <kbd>esc</kbd>
+            Close <kbd>esc</kbd>
           </button>
         </header>
         <div className="body">
           {detail.isPending ? (
             <Skeleton count={5} height={40} />
           ) : detail.isError ? (
-            <ErrorState message={asErrorText(detail.error, t)} onRetry={() => detail.refetch()} />
+            <ErrorState message={asErrorText(detail.error)} onRetry={() => detail.refetch()} />
           ) : (
             <>
               <section>
@@ -118,36 +104,36 @@ export function ArticleDrawer({
                 ) : null}
                 <div className="news-actions">
                   <button className="btn small primary" onClick={() => onAnalyze(false)} disabled={busy}>
-                    {busy ? t("news.feed.analyzing", "analyzing…") : t("news.feed.analyze_ai", "Analyze with AI")}
+                    {busy ? "analyzing…" : "Analyze with AI"}
                   </button>
                   <button className="btn small" onClick={() => onAnalyze(true)} disabled={busy}>
-                    {t("news.article.force_reanalyze", "Force re-analyze")}
+                    Force re-analyze
                   </button>
                   <button className="btn small ghost" onClick={() => detail.refetch()}>
-                    {t("news.article.reload", "Reload detail")}
+                    Reload detail
                   </button>
                 </div>
                 {analyzeNote && <div className="news-status-line" style={{ marginTop: 6 }}>{analyzeNote}</div>}
               </section>
 
               <section>
-                <div className="section-title">{t("news.article.det_title", "Deterministic analysis")}</div>
+                <div className="section-title">Deterministic analysis</div>
                 {ana ? (
                   <>
                     <dl className="kv">
-                      <dt>{t("news.article.f_direction", "direction")}</dt>
-                      <dd>{dirWord(t, String(ana.direction ?? "PENDING"))}</dd>
+                      <dt>direction</dt>
+                      <dd>{String(ana.direction ?? "PENDING")}</dd>
                       <dt>importance_score</dt>
                       <dd>{ana.importance_score != null ? ratio(ana.importance_score) : "—"}</dd>
-                      <dt>{t("news.article.f_relevance", "relevance XAUUSD / USD")}</dt>
+                      <dt>relevance XAUUSD / USD</dt>
                       <dd>
                         {ratio(ana.relevance_to_xauusd)} / {ratio(ana.relevance_to_usd)}
                       </dd>
-                      <dt>{t("news.article.f_impact_conf", "impact_strength / confidence")}</dt>
+                      <dt>impact_strength / confidence</dt>
                       <dd>
                         {formatNumber(ana.impact_strength, 3)} / {formatNumber(ana.confidence, 3)}
                       </dd>
-                      <dt>{t("news.article.f_horizon_novelty", "horizon · novelty")}</dt>
+                      <dt>horizon · novelty</dt>
                       <dd>
                         {ana.horizon ?? "—"} · {ana.novelty ?? "—"}
                       </dd>
@@ -155,7 +141,7 @@ export function ArticleDrawer({
                       <dd>{ana.analyzed_at ? formatDateTime(ana.analyzed_at) : "—"}</dd>
                       {ana.surprise_assessment && (
                         <>
-                          <dt>{t("news.article.f_surprise", "surprise")}</dt>
+                          <dt>surprise</dt>
                           <dd style={{ textAlign: "start" }}>{ana.surprise_assessment}</dd>
                         </>
                       )}
@@ -165,53 +151,44 @@ export function ArticleDrawer({
                 ) : analysis.isPending ? (
                   <Skeleton count={2} />
                 ) : analysis.isError ? (
-                  <ErrorState message={asErrorText(analysis.error, t)} onRetry={() => analysis.refetch()} />
+                  <ErrorState message={asErrorText(analysis.error)} onRetry={() => analysis.refetch()} />
                 ) : (
-                  <EmptyState
-                    message={t("news.article.det_empty", "No deterministic analysis stored for this article yet.")}
-                    hint={t("news.article.det_empty_hint", "Analyze with AI or wait for the worker (auto-analysis toggle).")}
-                  />
+                  <EmptyState message="No deterministic analysis stored for this article yet." hint="Analyze with AI or wait for the worker (auto-analysis toggle)." />
                 )}
                 {analysis.data?.run && (
                   <div className="tiny faint inline-mono" style={{ marginTop: 6 }}>
-                    {t("news.article.run_line", "run {id} · {status} · {provider}", {
-                      id: String(analysis.data.run.run_id ?? "—"),
-                      status: String(analysis.data.run.status ?? "—"),
-                      provider: String(analysis.data.run.provider ?? "local"),
-                    })}
-                    {analysis.data.run.error
-                      ? ` · ${t("news.article.run_error", "error: {e}", { e: String(analysis.data.run.error) })}`
-                      : ""}
+                    run {String(analysis.data.run.run_id ?? "—")} · {String(analysis.data.run.status ?? "—")} · {String(analysis.data.run.provider ?? "local")}
+                    {analysis.data.run.error ? ` · error: ${String(analysis.data.run.error)}` : ""}
                   </div>
                 )}
               </section>
 
               {ai ? (
                 <section>
-                  <div className="section-title">{t("news.article.ai_title_verbatim", "AI analysis (LLM) — verdict fields verbatim")}</div>
+                  <div className="section-title">AI analysis (LLM) — verdict fields verbatim</div>
                   <div className="news-ai-card">
                     <div className="statline">
                       <StatusBadge status={ai.analysis_status ?? "UNKNOWN"} />
-                      {ai.sentiment && <span>{t("news.article.sentiment", "sentiment {s}", { s: ai.sentiment })}</span>}
+                      {ai.sentiment && <span>sentiment {ai.sentiment}</span>}
                       {ai.provider && <span>{ai.provider}{ai.model ? ` ${ai.model}` : ""}</span>}
                       {ai.analysis_version && <span>v{ai.analysis_version}</span>}
                     </div>
                     <dl className="kv" style={{ marginTop: 6 }}>
-                      <dt>{t("news.article.f_verdict", "verdict (summary)")}</dt>
+                      <dt>verdict (summary)</dt>
                       <dd style={{ textAlign: "start" }}>{verbatim(ai.summary)}</dd>
-                      <dt>{t("news.article.f_impact", "impact")}</dt>
+                      <dt>impact</dt>
                       <dd style={{ textAlign: "start" }}>{verbatim(ai.potential_market_impact)}</dd>
-                      <dt>{t("news.article.f_confidence", "confidence")}</dt>
+                      <dt>confidence</dt>
                       <dd>{ana?.confidence != null ? formatPct(ana.confidence * 100, 0) : "—"}</dd>
-                      <dt>{t("news.article.f_sentiment_importance", "sentiment / importance")}</dt>
+                      <dt>sentiment / importance</dt>
                       <dd>
                         {verbatim(ai.sentiment)} / {verbatim(ai.importance_assessment)}
                       </dd>
-                      <dt>{t("news.article.f_market_relevance", "market / XAUUSD relevance")}</dt>
+                      <dt>market / XAUUSD relevance</dt>
                       <dd style={{ textAlign: "start" }}>
                         {verbatim(ai.market_relevance)} / {verbatim(ai.xauusd_relevance)}
                       </dd>
-                      <dt>{t("news.article.f_analyzed_provider", "analyzed_at · provider/model")}</dt>
+                      <dt>analyzed_at · provider/model</dt>
                       <dd>
                         {ai.analyzed_at ? formatDateTime(ai.analyzed_at) : "—"} ·{" "}
                         {[ai.provider, ai.model].filter(Boolean).join(" ") || "—"}
@@ -220,11 +197,7 @@ export function ArticleDrawer({
                     {ai.analysis_status === "failed" && ai.error_detail && (
                       <div className="tiny" style={{ color: "var(--red)", marginTop: 4 }}>{ai.error_detail}</div>
                     )}
-                    {ai.insufficient_evidence && (
-                      <div className="badge warn" style={{ marginTop: 4 }}>
-                        {t("news.feed.insufficient_evidence", "INSUFFICIENT EVIDENCE")}
-                      </div>
-                    )}
+                    {ai.insufficient_evidence && <div className="badge warn" style={{ marginTop: 4 }}>INSUFFICIENT EVIDENCE</div>}
                     {decodeStringList(ai.key_facts).length > 0 && (
                       <div style={{ marginTop: 4 }}>
                         {decodeStringList(ai.key_facts).map((f) => (
@@ -233,110 +206,74 @@ export function ArticleDrawer({
                       </div>
                     )}
                     {decodeStringList(ai.uncertainties).length > 0 && (
-                      <div className="unc">
-                        {t("news.article.uncertainties", "uncertainties: {list}", {
-                          list: decodeStringList(ai.uncertainties).join("; "),
-                        })}
-                      </div>
+                      <div className="unc">uncertainties: {decodeStringList(ai.uncertainties).join("; ")}</div>
                     )}
                   </div>
                   {proAnswers.isPending && !fallback?.ai_analysis && (
-                    <div className="tiny faint" style={{ marginTop: 4 }}>
-                      {t("news.article.reading_answers", "reading latest AI answers…")}
-                    </div>
+                    <div className="tiny faint" style={{ marginTop: 4 }}>reading latest AI answers…</div>
                   )}
                 </section>
               ) : (
                 <section>
-                  <div className="section-title">{t("news.article.ai_title", "AI analysis (LLM)")}</div>
+                  <div className="section-title">AI analysis (LLM)</div>
                   <EmptyState
-                    message={t("news.article.ai_empty", "No AI analysis stored for this article.")}
-                    hint={t(
-                      "news.article.ai_empty_hint",
-                      "Press \"Analyze with AI\" above — the feed/drawer refresh with whatever the backend returns (queued jobs fill in on the next worker pass).",
-                    )}
+                    message="No AI analysis stored for this article."
+                    hint='Press "Analyze with AI" above — the feed/drawer refresh with whatever the backend returns (queued jobs fill in on the next worker pass).'
                   />
                 </section>
               )}
 
               <section>
-                <div className="section-title">{t("news.article.impacts_title", "Asset impacts")}</div>
+                <div className="section-title">Asset impacts</div>
                 {impacts.length === 0 ? (
-                  <EmptyState message={t("news.article.impacts_empty", "No impact records for this article.")} />
+                  <EmptyState message="No impact records for this article." />
                 ) : (
                   <HeatBar
                     items={impacts.map((im) => ({
-                      label: `${im.asset ?? "—"}${im.direction ? ` ${dirWord(t, im.direction)}` : ""}`.trim(),
+                      label: `${im.asset ?? "—"} ${im.direction ?? ""}`.trim(),
                       value: im.relevance ?? null,
-                      caption: t(
-                        "news.article.impact_caption",
-                        "{p} · s {strength}",
-                        {
-                          p:
-                            (im.relevance ?? 0) * 100 > 0
-                              ? `${formatPct((im.relevance ?? 0) * 100, 0)}`
-                              : "—",
-                          strength: formatNumber(im.strength, 2),
-                        },
-                      ),
+                      caption: `${(im.relevance ?? 0) * 100 > 0 ? `${formatPct((im.relevance ?? 0) * 100, 0)}` : "—"} · s ${formatNumber(im.strength, 2)}`,
                       tone: im.direction === "BULLISH" ? "pos" : im.direction === "BEARISH" ? "bad" : "neu",
-                      title: t(
-                        "news.article.impact_title",
-                        "{direction} · strength {s} · confidence {c}",
-                        {
-                          direction: dirWord(t, im.direction ?? "NEUTRAL"),
-                          s: formatNumber(im.strength, 3),
-                          c: formatNumber(im.confidence, 3),
-                        },
-                      ),
+                      title: `${im.direction ?? "NEUTRAL"} · strength ${formatNumber(im.strength, 3)} · confidence ${formatNumber(im.confidence, 3)}`,
                     }))}
-                    scaleCaptions={["0", t("news.article.scale_relevance", "relevance 1.0")]}
+                    scaleCaptions={["0", "relevance 1.0"]}
                   />
                 )}
               </section>
 
               <section>
-                <div className="section-title">{t("news.article.consensus_title", "Consensus across sources")}</div>
+                <div className="section-title">Consensus across sources</div>
                 {consensus ? (
                   <dl className="kv">
-                    <dt>{t("news.article.f_sources", "sources / independent")}</dt>
+                    <dt>sources / independent</dt>
                     <dd>
                       {consensus.source_count ?? "—"} / {consensus.independent_count ?? "—"}
                     </dd>
-                    <dt>{t("news.article.f_agreement", "agreement / conflict")}</dt>
+                    <dt>agreement / conflict</dt>
                     <dd>
                       {ratio(consensus.agreement)} / {ratio(consensus.conflict)}
                     </dd>
-                    <dt>{t("news.article.f_weighted", "weighted direction")}</dt>
+                    <dt>weighted direction</dt>
                     <dd>{consensus.weighted_direction ?? "—"}</dd>
-                    <dt>{t("news.article.f_confidence", "confidence")}</dt>
+                    <dt>confidence</dt>
                     <dd>{ratio(consensus.confidence)}</dd>
                   </dl>
                 ) : (
-                  <EmptyState
-                    message={t("news.article.consensus_empty", "No consensus record (single-source story or not evaluated).")}
-                  />
+                  <EmptyState message="No consensus record (single-source story or not evaluated)." />
                 )}
               </section>
 
               <section>
-                <div className="section-title">{t("news.article.linkage_title", "Trade linkage (news → decisions)")}</div>
+                <div className="section-title">Trade linkage (news → decisions)</div>
                 {tradeLinks.length === 0 ? (
-                  <EmptyState message={t("news.article.linkage_empty", "This article is not linked to any trade record.")} />
+                  <EmptyState message="This article is not linked to any trade record." />
                 ) : (
-                  <DataTable
-                    headers={[
-                      { label: t("news.article.h_trade", "trade") },
-                      { label: t("news.article.h_strategy", "strategy") },
-                      { label: t("news.article.h_link", "link") },
-                      { label: t("news.article.h_at", "at") },
-                    ]}
-                  >
+                  <DataTable headers={[{ label: "trade" }, { label: "strategy" }, { label: "link" }, { label: "at" }]}>
                     {tradeLinks.map((l, i) => (
                       <tr key={i}>
                         <td>{String(l.trade_id ?? l.ticket ?? "—")}</td>
                         <td>{String(l.strategy_id ?? "—")}</td>
-                        <td>{String(l.link_type ?? (l.linked_at ? t("news.article.linked", "linked") : "—"))}</td>
+                        <td>{String(l.link_type ?? (l.linked_at ? "linked" : "—"))}</td>
                         <td>{formatDateTime(String(l.linked_at ?? ""))}</td>
                       </tr>
                     ))}
@@ -346,7 +283,7 @@ export function ArticleDrawer({
 
               {related.length > 0 && (
                 <section>
-                  <div className="section-title">{t("news.article.related_title", "Related coverage")}</div>
+                  <div className="section-title">Related coverage</div>
                   <ul className="small muted" style={{ margin: 0, paddingInlineStart: 16 }}>
                     {related.map((r, i) => (
                       <li key={i}>{String(r.title ?? r.article_id ?? "—")}</li>
@@ -357,8 +294,8 @@ export function ArticleDrawer({
 
               {postEvents.length > 0 && (
                 <section>
-                  <div className="section-title">{t("news.article.post_event_title", "Post-event validation")}</div>
-                  <pre className="tiny inline-mono" style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, overflowX: "auto", margin: 0 }}>
+                  <div className="section-title">Post-event validation</div>
+                  <pre tabIndex={0} className="tiny inline-mono" style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, overflowX: "auto", margin: 0 }}>
                     {JSON.stringify(postEvents, null, 2)}
                   </pre>
                 </section>

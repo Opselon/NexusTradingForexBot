@@ -409,7 +409,7 @@ function ReadingTable({
       {!show || list.length === 0 ? (
         <div className="ic-empty">{empty}</div>
       ) : (
-        <div className="ic-scroll">
+        <div tabIndex={0} className="ic-scroll">
           <table className="ic-table">
             <thead>
               <tr>
@@ -474,7 +474,7 @@ function PivotMatrixPanel({ pivots, show }: { pivots: IndicatorPivots | undefine
           )}
         </div>
       ) : (
-        <div className="ic-scroll">
+        <div tabIndex={0} className="ic-scroll">
           <table className="ic-table ic-pivot-table">
             <thead>
               <tr>

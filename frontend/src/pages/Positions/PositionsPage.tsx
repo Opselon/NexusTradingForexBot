@@ -1,41 +1,55 @@
 /**
- * Positions — live backend position state + close command.
+ * PURPOSE:  Positions — live backend position state + close / SL-TP commands,
+ *           upgraded to a trade-style blotter (side rails, magnitude-ramped
+ *           P&L, derived aggregate strip, density toggle, keyboard rows).
+ * OWNER:    uiux-wave5-positions  (future edits to this file belong to this lane)
+ * CONSUMES: positionsApi (v1 open positions; ledger history lives in
+ *           ./LedgerPanel), tradingApi
+ *           (close/modify via the OrderLifecycleManager), EngineSnapshot prop,
+ *           kit primitives, pages/_shared widgets, positions.css.
+ * PROVIDES: default PositionsPage (routed at /positions by AppShell), which
+ *           composes ./AggregateStrip, ./BlotterTable and ./LedgerPanel.
+ * INVARIANTS: honest empty/loading/error states, no fabricated data; the
+ *             backend response decides every command outcome (confirmation
+ *             dialogs only prevent mis-clicks); derived figures are labeled
+ *             "derived"; no user-visible control or string may stop working.
+ * EXTEND:   new columns go in the `columns` useMemo and must read fields that
+ *           exist on Position/AuditLedgerRow; new aggregates belong in
+ *           AggregateStrip with a proven flag; styles live in positions.css
+ *           under the pos- prefix (this file keeps the shared kit read-only).
  *
  * Data: canonical snapshot positions (engine-merged) cross-checked with the
- * v1 adapter endpoint. Close goes through the OrderLifecycleManager
- * (backend-authoritative); results are NEVER assumed — backend response
- * decides, and a confirmation dialog protects the destructive action.
- *
- * Table upgrade (parity bar): sortable columns, ticket/symbol filter, sticky
- * header (theme), a floating-PnL summary header derived by plain arithmetic
- * over backend per-position values only, and a broker-vs-adapter
- * cross-check count so a drift between the two reads is visible, not hidden.
- * The closed-trade ledger gained its own filter, pagination slice, and a
- * client-side CSV export of exactly the rows the backend returned.
+ * v1 adapter endpoint. The floating-PnL summary is plain arithmetic over
+ * backend per-position values only, and a broker-vs-adapter cross-check count
+ * keeps drift between the two reads visible, not hidden. The closed-trade
+ * ledger keeps its status filter, pagination slice, and a client-side CSV
+ * export of exactly the rows the backend returned.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { positionsApi } from "@/api/positionsApi";
 import { tradingApi } from "@/api/tradingApi";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
-import type { AuditLedgerRow, EngineSnapshot, Position } from "@/types/domain";
+import type { EngineSnapshot, Position } from "@/types/domain";
 import {
   ConfirmModal,
   EmptyState,
   ErrorState,
-  LoadingState,
   MetricCard,
   Panel,
   PositionSideBadge,
+  Skeleton,
 } from "@/components/primitives";
-import { AgeNote } from "@/pages/_shared/SectionState";
-import { SortableTable, type Column } from "@/pages/_shared/widgets";
-import { downloadCsv, stampForFilename } from "@/pages/_shared/csv";
-import { formatDateTime, formatNumber, formatPnl, formatPrice } from "@/lib/format";
+import { type Column } from "@/pages/_shared/widgets";
+import { formatDateTime, formatNumber, formatPnl, formatPrice, positionSide } from "@/lib/format";
 import { ApiError } from "@/types/api";
-import { useI18n } from "@/stores/i18nStore";
+import BlotterTable from "./BlotterTable";
+import AggregateStrip from "./AggregateStrip";
+import LedgerPanel from "./LedgerPanel";
+import { readDensity, writeDensity, type Density } from "./density";
 import "@/pages/_shared/pages.css";
+import "@/pages/Positions/positions.css";
 
 interface Props {
   snapshot: EngineSnapshot | undefined;
@@ -57,18 +71,36 @@ function posKey(p: Position, i: number): string {
   return String(p.ticket ?? `${p.symbol}-${i}`);
 }
 
-function ledgerMatches(a: { ticket: number | null }, b: Position): boolean {
-  return a.ticket !== null && a.ticket === b.ticket;
+/** Row rail class — restates Position.type (0=BUY/long, 1=SELL/short). */
+function posRowClass(p: Position): string | undefined {
+  const side = positionSide(p.type);
+  return side === "BUY" ? "pos-row--long" : side === "SELL" ? "pos-row--short" : undefined;
+}
+
+/** Same predicate the table filter has always used — ticket / symbol / side
+ *  text; `q` arrives lower-cased exactly as before. */
+function matchPosFilter(p: Position, q: string): boolean {
+  return (
+    String(p.ticket ?? "").includes(q) ||
+    (p.symbol ?? "").toLowerCase().includes(q) ||
+    (p.type === 0 || String(p.type).toUpperCase().includes("BUY") ? "buy" : "sell").includes(q)
+  );
 }
 
 export default function PositionsPage({ snapshot }: Props) {
-  const t = useI18n((s) => s.t);
   const queryClient = useQueryClient();
   const closeCmd = useMutationFeedback();
   const modifyCmd = useMutationFeedback();
   const [closeDialog, setCloseDialog] = useState<CloseDialog | null>(null);
   const [modifyDialog, setModifyDialog] = useState<ModifyDialog | null>(null);
-  const [ledgerStatus, setLedgerStatus] = useState("");
+  // Display-only preferences (client state, persisted under the lane key).
+  const [density, setDensity] = useState<Density>(readDensity);
+  const [posFilter, setPosFilter] = useState("");
+
+  const applyDensity = (d: Density): void => {
+    setDensity(d);
+    writeDensity(d);
+  };
 
   const positionsQuery = useQuery({
     queryKey: ["v1-positions"],
@@ -77,20 +109,30 @@ export default function PositionsPage({ snapshot }: Props) {
     retry: 1,
   });
 
-  const historyQuery = useQuery({
-    queryKey: ["ledger-history", ledgerStatus],
-    queryFn: ({ signal }) => positionsApi.ledgerHistory({ limit: 200, status: ledgerStatus || undefined }, signal),
-    refetchInterval: 30_000,
-    retry: 1,
-  });
-
   const livePositions: Position[] = positionsQuery.data?.positions ?? snapshot?.positions ?? [];
-  const adapterSource = positionsQuery.data ? t("positions.source.v1", "v1 adapter") : snapshot ? t("positions.source.snapshot", "canonical snapshot (v1 endpoint pending)") : "—";
+  const adapterSource = positionsQuery.data ? "v1 adapter" : snapshot ? "canonical snapshot (v1 endpoint pending)" : "—";
   // Cross-check: broker positions carried inside the canonical snapshot vs
   // the v1 endpoint — a visible count, not a silent preference.
   const snapshotCount = snapshot?.positions?.length ?? null;
   const v1Count = positionsQuery.data?.positions.length ?? null;
   const crossMismatch = snapshotCount !== null && v1Count !== null && snapshotCount !== v1Count;
+
+  /** Rows currently visible in the blotter (page-level filter) — the strip
+   *  aggregates THESE rows, so it always matches what is on screen. */
+  const visiblePositions = useMemo(() => {
+    const q = posFilter.trim().toLowerCase();
+    return q ? livePositions.filter((p) => matchPosFilter(p, q)) : livePositions;
+  }, [livePositions, posFilter]);
+
+  /** Largest |profit| on screen — the P&L colour ramp keys its intensity to
+   *  it (derived display logic; no displayed value is changed by this). */
+  const maxAbsPnl = useMemo(() => {
+    let m = 0;
+    for (const p of visiblePositions) {
+      if (typeof p.profit === "number" && Number.isFinite(p.profit)) m = Math.max(m, Math.abs(p.profit));
+    }
+    return m;
+  }, [visiblePositions]);
 
   const totals = useMemo(() => {
     let floating = 0;
@@ -113,23 +155,62 @@ export default function PositionsPage({ snapshot }: Props) {
 
   const columns = useMemo<Array<Column<Position>>>(
     () => [
-      { key: "ticket", label: t("positions.th.ticket", "Ticket"), sortValue: (p) => p.ticket, render: (p) => p.ticket ?? "—" },
-      { key: "symbol", label: t("positions.th.symbol", "Symbol"), sortValue: (p) => p.symbol, render: (p) => p.symbol ?? "—" },
-      { key: "side", label: t("positions.th.side", "Side"), sortValue: (p) => (Number(p.type) === 0 ? "BUY" : Number(p.type) === 1 ? "SELL" : "—"), render: (p) => <PositionSideBadge type={p.type} /> },
-      { key: "volume", label: t("positions.th.volume", "Volume"), num: true, sortValue: (p) => p.volume, render: (p) => formatNumber(p.volume) },
-      { key: "entry", label: t("positions.th.entry", "Entry"), num: true, sortValue: (p) => p.price_open, render: (p) => formatPrice(p.price_open, snapshot?.price_digits ?? 2) },
-      { key: "current", label: t("positions.th.current", "Current"), num: true, sortValue: (p) => p.price_current, render: (p) => formatPrice(p.price_current, snapshot?.price_digits ?? 2) },
-      { key: "sl", label: t("positions.th.sl", "SL"), num: true, sortValue: (p) => p.sl, render: (p) => (p.sl ? formatPrice(p.sl) : "—") },
-      { key: "tp", label: t("positions.th.tp", "TP"), num: true, sortValue: (p) => p.tp, render: (p) => (p.tp ? formatPrice(p.tp) : "—") },
+      { key: "ticket", label: "Ticket", sortValue: (p) => p.ticket, render: (p) => p.ticket ?? "—" },
+      { key: "symbol", label: "Symbol", sortValue: (p) => p.symbol, render: (p) => p.symbol ?? "—" },
+      {
+        key: "side",
+        label: "Side",
+        sortValue: (p) => (Number(p.type) === 0 ? "BUY" : Number(p.type) === 1 ? "SELL" : "—"),
+        render: (p) => {
+          const side = positionSide(p.type);
+          const label = side === "BUY" ? "long" : side === "SELL" ? "short" : "—";
+          const dataSide = side === "BUY" ? "long" : side === "SELL" ? "short" : "unknown";
+          return (
+            <span className="pos-side-cell">
+              <PositionSideBadge type={p.type} />
+              <span className="pos-side-cell__sub" data-side={dataSide} title={`${label} — trade reading of the ${side} side field`}>
+                {label}
+              </span>
+            </span>
+          );
+        },
+      },
+      { key: "volume", label: "Volume", num: true, sortValue: (p) => p.volume, render: (p) => formatNumber(p.volume) },
+      { key: "entry", label: "Entry", num: true, sortValue: (p) => p.price_open, render: (p) => formatPrice(p.price_open, snapshot?.price_digits ?? 2) },
+      { key: "current", label: "Current", num: true, sortValue: (p) => p.price_current, render: (p) => formatPrice(p.price_current, snapshot?.price_digits ?? 2) },
+      { key: "sl", label: "SL", num: true, sortValue: (p) => p.sl, render: (p) => (p.sl ? formatPrice(p.sl) : "—") },
+      { key: "tp", label: "TP", num: true, sortValue: (p) => p.tp, render: (p) => (p.tp ? formatPrice(p.tp) : "—") },
       {
         key: "pnl",
-        label: t("positions.th.pnl", "PnL"),
+        label: "PnL",
         num: true,
         sortValue: (p) => p.profit,
-        render: (p) => <span className={(p.profit ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"}>{formatPnl(p.profit)}</span>,
+        render: (p) => {
+          const v = p.profit;
+          if (v === null || v === undefined || !Number.isFinite(v)) {
+            return (
+              <span className="faint" title="no numeric profit value in the payload — nothing is rendered in its place">
+                —
+              </span>
+            );
+          }
+          // Signed ramp: hue from the sign, alpha from |value| vs the largest
+          // |P&L| currently on screen (55%..100% of the theme token).
+          const intensity = maxAbsPnl > 0 ? Math.sqrt(Math.abs(v) / maxAbsPnl) : 0;
+          const mix = Math.round((55 + 45 * intensity) * 100) / 100;
+          return (
+            <span
+              className={`pos-pnl ${v >= 0 ? "pos-pnl--up" : "pos-pnl--down"}${intensity >= 0.8 ? " pos-pnl--hot" : ""}`}
+              style={{ "--pos-pnl-mix": `${mix}%` } as CSSProperties}
+              title={`backend profit field — sign colours it, intensity ${Math.round(intensity * 100)}% of the largest |P&L| on screen (derived display)`}
+            >
+              {formatPnl(v)}
+            </span>
+          );
+        },
       },
-      { key: "swap", label: t("positions.th.swap", "Swap"), num: true, sortValue: (p) => p.swap, render: (p) => formatNumber(p.swap) },
-      { key: "time", label: t("positions.th.opened", "Opened"), sortValue: (p) => (typeof p.time === "number" ? p.time : p.time), render: (p) => formatDateTime(p.time) },
+      { key: "swap", label: "Swap", num: true, sortValue: (p) => p.swap, render: (p) => formatNumber(p.swap) },
+      { key: "time", label: "Opened", sortValue: (p) => (typeof p.time === "number" ? p.time : p.time), render: (p) => formatDateTime(p.time) },
       {
         key: "actions",
         label: "",
@@ -141,43 +222,32 @@ export default function PositionsPage({ snapshot }: Props) {
                 onClick={() =>
                   setModifyDialog({
                     ticket: p.ticket as number,
-                    summary: t("positions.dialog.modify_summary", "{sym} {side} {vol} lots @ {price}", {
-                      sym: p.symbol ?? "?",
-                      side: Number(p.type) === 0 ? "BUY" : Number(p.type) === 1 ? "SELL" : "?",
-                      vol: formatNumber(p.volume),
-                      price: formatPrice(p.price_open),
-                    }),
+                    summary: `${p.symbol ?? "?"} ${Number(p.type) === 0 ? "BUY" : Number(p.type) === 1 ? "SELL" : "?"} ${formatNumber(p.volume)} lots @ ${formatPrice(p.price_open)}`,
                     sl: p.sl !== null && p.sl !== undefined && p.sl !== 0 ? String(p.sl) : "",
                     tp: p.tp !== null && p.tp !== undefined && p.tp !== 0 ? String(p.tp) : "",
                   })
                 }
               >
-                {t("positions.btn.sl_tp", "SL/TP")}
+                SL/TP
               </button>
               <button
                 className="btn small danger"
                 onClick={() =>
                   setCloseDialog({
                     ticket: p.ticket as number,
-                    summary: t("positions.dialog.close_summary", "{sym} {side} {vol} lots @ {price} · floating {fl}", {
-                      sym: p.symbol ?? "?",
-                      side: Number(p.type) === 0 ? "BUY" : Number(p.type) === 1 ? "SELL" : "?",
-                      vol: formatNumber(p.volume),
-                      price: formatPrice(p.price_open),
-                      fl: formatPnl(p.profit),
-                    }),
+                    summary: `${p.symbol ?? "?"} ${Number(p.type) === 0 ? "BUY" : Number(p.type) === 1 ? "SELL" : "?"} ${formatNumber(p.volume)} lots @ ${formatPrice(p.price_open)} · floating ${formatPnl(p.profit)}`,
                   })
                 }
               >
-                {t("common.close", "Close")}
+                Close
               </button>
             </span>
           ) : (
-            <span className="faint small">{t("positions.actions.no_ticket", "no ticket")}</span>
+            <span className="faint small">no ticket</span>
           ),
       },
     ],
-    [snapshot?.price_digits, t],
+    [snapshot?.price_digits, maxAbsPnl],
   );
 
   const confirmClose = async (): Promise<void> => {
@@ -208,59 +278,39 @@ export default function PositionsPage({ snapshot }: Props) {
     }
   };
 
-  const ledgerCols = useMemo<Array<Column<AuditLedgerRow>>>(
-    () => [
-      { key: "ticket", label: t("positions.th.ticket", "Ticket"), sortValue: (r) => r.ticket, render: (r) => r.ticket ?? "—" },
-      { key: "symbol", label: t("positions.th.symbol", "Symbol"), sortValue: (r) => r.symbol, render: (r) => r.symbol ?? "—" },
-      { key: "dir", label: t("positions.th.dir", "Dir"), sortValue: (r) => r.direction, render: (r) => r.direction ?? "—" },
-      { key: "vol", label: t("positions.th.volume", "Volume"), num: true, sortValue: (r) => r.volume, render: (r) => formatNumber(r.volume) },
-      { key: "entry", label: t("positions.th.entry", "Entry"), num: true, sortValue: (r) => r.entry_price, render: (r) => formatPrice(r.entry_price) },
-      { key: "status", label: t("positions.th.status", "Status"), sortValue: (r) => r.status, render: (r) => r.status ?? "—" },
-      {
-        key: "pnl",
-        label: t("positions.th.pnl", "PnL"),
-        num: true,
-        sortValue: (r) => r.pnl,
-        render: (r) => <span className={(r.pnl ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"}>{formatPnl(r.pnl)}</span>,
-      },
-      { key: "time", label: t("positions.th.closed", "Closed"), sortValue: (r) => r.timestamp, render: (r) => formatDateTime(r.timestamp) },
-    ],
-    [t],
-  );
-
   return (
     <div>
       {/* PnL summary header — arithmetic over backend per-position values */}
       <div className="grid cols-4">
         <MetricCard
-          label={t("positions.metric.floating", "Floating PnL")}
-          value={totals.count === 0 ? "—" : totals.proven ? formatPnl(totals.floating) : t("positions.status.partial", "PARTIAL")}
+          label="Floating PnL"
+          value={totals.count === 0 ? "—" : totals.proven ? formatPnl(totals.floating) : "PARTIAL"}
           tone={totals.count === 0 ? "dim" : totals.floating >= 0 ? "pos" : "neg"}
-          sub={totals.proven ? t("positions.metric.floating_sub", "Σ of backend profit fields") : t("positions.metric.partial_sub", "some rows carry no profit value — sum withheld")}
+          sub={totals.proven ? "Σ of backend profit fields" : "some rows carry no profit value — sum withheld"}
         />
-        <MetricCard label={t("positions.metric.open", "Open positions")} value={totals.count} sub={t("positions.metric.volume_sub", "volume {n} lots", { n: formatNumber(totals.volume) })} tone="dim" />
-        <MetricCard label={t("positions.metric.winners", "Winners / losers")} value={`${totals.wins} / ${totals.losses}`} sub={t("positions.metric.winners_sub", "by backend floating sign (display only)")} tone="dim" />
+        <MetricCard label="Open positions" value={totals.count} sub={`volume ${formatNumber(totals.volume)} lots`} tone="dim" />
+        <MetricCard label="Winners / losers" value={`${totals.wins} / ${totals.losses}`} sub="by backend floating sign (display only)" tone="dim" />
         <MetricCard
-          label={t("positions.metric.crosscheck", "Adapter cross-check")}
-          value={crossMismatch ? t("positions.status.mismatch", "MISMATCH") : v1Count !== null ? t("positions.status.match", "MATCH") : "—"}
+          label="Adapter cross-check"
+          value={crossMismatch ? "MISMATCH" : v1Count !== null ? "MATCH" : "—"}
           tone={crossMismatch ? "neg" : "dim"}
-          sub={t("positions.metric.crosscheck_sub", "snapshot {a} vs v1 {b} positions", { a: String(snapshotCount ?? "—"), b: String(v1Count ?? "—") })}
+          sub={`snapshot ${snapshotCount ?? "—"} vs v1 ${v1Count ?? "—"} positions`}
         />
       </div>
 
       {closeDialog && (
         <ConfirmModal
-          title={t("positions.close.title", "Close position #{n}", { n: closeDialog.ticket })}
-          confirmLabel={t("positions.close.confirm", "Confirm close")}
+          title={`Close position #${closeDialog.ticket}`}
+          confirmLabel="Confirm close"
           busy={closeCmd.state.running}
           onConfirm={() => void confirmClose()}
           onCancel={() => setCloseDialog(null)}
         >
           <div>
-            {t("positions.close.body", "Close position #{n} at market via the OrderLifecycleManager.", { n: closeDialog.ticket })}
+            Close position <b className="inline-mono">#{closeDialog.ticket}</b> at market via the OrderLifecycleManager.
             <div className="small" style={{ marginTop: 6 }}>{closeDialog.summary}</div>
             <div className="small muted" style={{ marginTop: 6 }}>
-              {t("positions.close.note", "The backend may refuse (guardian, state, connectivity) — the response decides, this dialog only prevents mis-clicks.")}
+              The backend may refuse (guardian, state, connectivity) — the response decides, this dialog only prevents mis-clicks.
             </div>
           </div>
           {closeCmd.state.lastMessage && (
@@ -273,9 +323,9 @@ export default function PositionsPage({ snapshot }: Props) {
 
       {modifyDialog && (
         <ConfirmModal
-          title={t("positions.modify.title", "Modify SL/TP · position #{n}", { n: modifyDialog.ticket })}
+          title={`Modify SL/TP · position #${modifyDialog.ticket}`}
           danger={false}
-          confirmLabel={t("positions.modify.confirm", "Send modify")}
+          confirmLabel="Send modify"
           busy={modifyCmd.state.running}
           onConfirm={() => void confirmModify()}
           onCancel={() => setModifyDialog(null)}
@@ -284,16 +334,17 @@ export default function PositionsPage({ snapshot }: Props) {
             <div className="small">{modifyDialog.summary}</div>
             <div className="row" style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
               <label className="l4-replay__field" style={{ display: "grid", gap: 3 }}>
-                <span className="l4-note">{t("positions.modify.sl_label", "stop loss (0 = clear)")}</span>
+                <span className="l4-note">stop loss (0 = clear)</span>
                 <input className="input" style={{ inlineSize: 130 }} inputMode="decimal" value={modifyDialog.sl} onChange={(e) => setModifyDialog((d) => (d ? { ...d, sl: e.target.value } : d))} />
               </label>
               <label className="l4-replay__field" style={{ display: "grid", gap: 3 }}>
-                <span className="l4-note">{t("positions.modify.tp_label", "take profit (0 = clear)")}</span>
+                <span className="l4-note">take profit (0 = clear)</span>
                 <input className="input" style={{ inlineSize: 130 }} inputMode="decimal" value={modifyDialog.tp} onChange={(e) => setModifyDialog((d) => (d ? { ...d, tp: e.target.value } : d))} />
               </label>
             </div>
             <div className="small muted" style={{ marginTop: 8 }}>
-              {t("positions.modify.note", "Sent as {ticket, stop_loss, take_profit} to POST /api/positions/modify — the OrderLifecycleManager validates against the broker symbol spec and the enforce_stop_loss gate and may refuse; the reply decides.")}
+              Sent as {`{ticket, stop_loss, take_profit}`} to POST /api/positions/modify — the OrderLifecycleManager validates against the broker symbol spec and the
+              enforce_stop_loss gate and may refuse; the reply decides.
             </div>
             {modifyCmd.state.lastMessage && (
               <div className={`cmd-result ${modifyCmd.state.lastResult ? "ok" : "fail"}`}>
@@ -305,11 +356,29 @@ export default function PositionsPage({ snapshot }: Props) {
       )}
 
       <Panel
-        title={t("positions.panel.open", "Open positions ({n})", { n: livePositions.length })}
+        title={`Open positions (${livePositions.length})`}
         right={
           <>
-            <span className="timestamp-note">{t("positions.source.label", "source: {src}", { src: adapterSource })}{snapshot ? ` · ${t("positions.source.snapshot_version", "snapshot v{n}", { n: snapshot.state_version })}` : ""}</span>
-            <button className="btn small ghost" onClick={() => void positionsQuery.refetch()} disabled={positionsQuery.isFetching}>
+            <span className="timestamp-note">source: {adapterSource}{snapshot ? ` · snapshot v${snapshot.state_version}` : ""}</span>
+            <span className="pos-density" role="group" aria-label="row density">
+              <button
+                className="btn small ghost pos-density__btn"
+                aria-pressed={density === "comfortable"}
+                title="comfortable row padding (theme default)"
+                onClick={() => applyDensity("comfortable")}
+              >
+                Comfortable
+              </button>
+              <button
+                className="btn small ghost pos-density__btn"
+                aria-pressed={density === "compact"}
+                title="compact row padding — cells and columns are never hidden"
+                onClick={() => applyDensity("compact")}
+              >
+                Compact
+              </button>
+            </span>
+            <button aria-label="Refresh positions" className="btn small ghost" onClick={() => void positionsQuery.refetch()} disabled={positionsQuery.isFetching}>
               ⟳
             </button>
           </>
@@ -317,91 +386,47 @@ export default function PositionsPage({ snapshot }: Props) {
         tight
       >
         {positionsQuery.isPending && livePositions.length === 0 ? (
-          <LoadingState label={t("positions.loading.positions", "Reading broker adapter…")} />
+          <div className="pos-loading">
+            <span className="pos-loading__label">Reading broker adapter…</span>
+            <Skeleton count={5} />
+          </div>
         ) : positionsQuery.isError && livePositions.length === 0 ? (
           <ErrorState
-            message={positionsQuery.error instanceof ApiError ? positionsQuery.error.message : t("positions.error.positions", "Position endpoint unavailable")}
+            message={positionsQuery.error instanceof ApiError ? positionsQuery.error.message : "Position endpoint unavailable"}
             requestId={positionsQuery.error instanceof ApiError ? positionsQuery.error.requestId : null}
             onRetry={() => void positionsQuery.refetch()}
           />
         ) : livePositions.length === 0 ? (
-          <EmptyState message={t("positions.empty.positions", "No open positions.")} hint={t("positions.empty.positions_hint", "Broker adapter snapshot is empty — nothing is hidden or estimated.")} />
+          <EmptyState message="No open positions." hint="Broker adapter snapshot is empty — nothing is hidden or estimated." />
         ) : (
-          <SortableTable
-            columns={columns}
-            rows={livePositions}
-            rowKey={posKey}
-            initialSort={{ key: "time", dir: "desc" }}
-            filter={(p, q) =>
-              String(p.ticket ?? "").includes(q) || (p.symbol ?? "").toLowerCase().includes(q) || (p.type === 0 || String(p.type).toUpperCase().includes("BUY") ? "buy" : "sell").includes(q)
-            }
-            emptyMessage={t("positions.empty.positions", "No open positions.")}
-          />
+          <>
+            {/* Derived strip over the rows currently on screen (hides itself at 0). */}
+            <AggregateStrip rows={visiblePositions} />
+            <BlotterTable
+              columns={columns}
+              rows={visiblePositions}
+              totalCount={livePositions.length}
+              rowKey={posKey}
+              initialSort={{ key: "time", dir: "desc" }}
+              query={posFilter}
+              onQueryChange={setPosFilter}
+              rowClassName={posRowClass}
+              density={density}
+              emptyMessage="No open positions."
+            />
+          </>
         )}
         {crossMismatch && (
           <div className="confirm-box" style={{ marginInline: 12, marginBlockEnd: 12, borderColor: "rgba(235,161,63,0.5)" }}>
             <span>
-              {t("positions.crosscheck.text", "The v1 adapter endpoint and the canonical snapshot disagree on open-position count ({a} vs {b}). Usually a refresh-timing gap — re-pull both; if it persists, check the reconciliation on the Trading page before trusting either.", { a: String(v1Count), b: String(snapshotCount) })}
+              The v1 adapter endpoint and the canonical snapshot disagree on open-position count ({String(v1Count)} vs {String(snapshotCount)}). Usually a
+              refresh-timing gap — re-pull both; if it persists, check the reconciliation on the Trading page before trusting either.
             </span>
           </div>
         )}
       </Panel>
 
-      <Panel
-        title={t("positions.panel.ledger", "Closed-trade ledger (broker-reconstructed)")}
-        right={
-          <>
-            <select className="select" value={ledgerStatus} onChange={(e) => setLedgerStatus(e.target.value)} aria-label={t("positions.filter.ledger_aria", "ledger status filter")}>
-              <option value="">{t("positions.filter.all_statuses", "all statuses")}</option>
-              <option value="OPEN">OPEN</option>
-              <option value="CLOSED">CLOSED</option>
-            </select>
-            <AgeNote label={t("positions.age.label", "age")} ageSec={historyQuery.dataUpdatedAt ? (Date.now() - historyQuery.dataUpdatedAt) / 1000 : null} />
-          </>
-        }
-        tight
-      >
-        {historyQuery.isPending ? (
-          <LoadingState label={t("positions.loading.ledger", "Reading audit ledger…")} />
-        ) : historyQuery.isError ? (
-          <ErrorState
-            message={historyQuery.error instanceof ApiError ? historyQuery.error.message : t("positions.error.ledger", "Ledger unavailable")}
-            requestId={historyQuery.error instanceof ApiError ? historyQuery.error.requestId : null}
-            onRetry={() => void historyQuery.refetch()}
-          />
-        ) : (historyQuery.data?.length ?? 0) === 0 ? (
-          <EmptyState message={t("positions.empty.ledger", "No closed trades in the ledger yet.")} hint={t("positions.empty.ledger_hint", "Rows appear once trades close and broker history (or the engine ledger fallback) is read.")} />
-        ) : (
-          <>
-            <div className="l4-toolbar" style={{ padding: "8px 12px", justifyContent: "flex-end" }}>
-              <button
-                className="btn small ghost"
-                onClick={() =>
-                  downloadCsv({
-                    filename: `nse-ledger-${stampForFilename()}.csv`,
-                    headers: ["ticket", "symbol", "direction", "volume", "entry_price", "status", "pnl", "timestamp"],
-                    rows: (historyQuery.data ?? []).map((r) => [r.ticket, r.symbol, r.direction, r.volume, r.entry_price, r.status, r.pnl, r.timestamp]),
-                  })
-                }
-                title={t("positions.csv.title", "exports exactly the rows returned by /api/account/trades — no re-query, no added values")}
-              >
-                {"⇩ "}{t("positions.csv.export", "export CSV")}
-              </button>
-            </div>
-            <SortableTable
-              columns={ledgerCols}
-              rows={(historyQuery.data ?? []).filter((r) => livePositions.every((p) => !ledgerMatches(r, p)))}
-              rowKey={(r, i) => `${r.ticket ?? "x"}-${i}`}
-              initialSort={{ key: "time", dir: "desc" }}
-              filter={(r, q) => String(r.ticket ?? "").includes(q) || (r.symbol ?? "").toLowerCase().includes(q)}
-              emptyMessage={t("positions.empty.rows_ledger", "No ledger rows.")}
-            />
-            <div className="l4-note" style={{ padding: "6px 12px" }}>
-              {t("positions.ledger.note", "Ledger rows still present in the open-position table are hidden here (status filter aside) so a position is never counted twice on one screen.")}
-            </div>
-          </>
-        )}
-      </Panel>
+      <LedgerPanel openPositions={livePositions} density={density} />
     </div>
   );
 }

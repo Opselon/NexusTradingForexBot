@@ -8,9 +8,14 @@ lang: en
 
 ## Versioning
 
-Semver, single canonical source: `pyproject.toml` (`version = "9.0.6"`)
-stamped into every build artifact. The README never hard-codes a conflicting
-version — it defers to `nexus version` / the release metadata.
+Semver, single canonical source: `pyproject.toml` (`version = "…"`) stamped
+into every build artifact. **Never copy the version literal into this file or
+any other document** — read it with `nexus version`, or from `pyproject.toml`
+directly. The README never hard-codes a conflicting version — it defers to
+`nexus version` / the release metadata. Where a historical re-cut is cited
+below, keep the version out of the prose and cite the taskboard row instead.
+(Corrected 2026-09-22: this page previously hard-coded `9.0.6` while
+`pyproject.toml` had already moved past it.)
 
 ## Pipeline (`.github/workflows/release.yml`)
 
@@ -18,7 +23,8 @@ Tag-triggered **only** (`v*`). Stages:
 
 1. Validate tag vs version metadata
 2. Run the critical test suite (a release run that fails the suite does not
-   publish — see the v9.0.6 re-cut history in the taskboard)
+   publish — see the v9.0.6 re-cut history in `agents/taskboard.md`, BUG-152
+   re-cut row)
 3. Build Windows x64 artifacts: `NexusScalpEngine-<version>-win-x64-setup.exe`
    + portable `.zip` (PyInstaller)
 4. Generate SHA-256 digests, release manifest, SBOM; embed manifest in the

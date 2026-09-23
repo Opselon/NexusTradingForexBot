@@ -265,6 +265,54 @@ For risky integration work, prefer a dedicated temporary worktree
 than one worktree. Untracked files are always PRESERVED — a dirty tree is a
 warning, never a blocker, so no agent is ever nudged toward `git clean`.
 
+### 8a. Branch ownership before mutation (incident-driven)
+
+On 2026-09-22 a concurrent agent committed to `main` while the primary
+worktree was mid-synchronisation, and then re-cherry-picked that work onto
+another branch — invisible to any check because nothing asserted who owns a
+branch before a mutation. This section closes that class of race.
+
+Before ANY of these operations, an agent MUST resolve ownership:
+
+`git switch` · `git checkout` · `git commit` · `git merge` · `git rebase` ·
+`git reset` · `git update-ref` · `git branch -f` · `git worktree add/remove` ·
+`git cherry-pick` · `git revert` · `git push`
+
+Resolution means determining, from `git worktree list --porcelain` plus
+`git rev-parse HEAD`:
+
+- current branch and current worktree
+- which worktree holds that branch
+- whether the holder is *this* worktree
+- whether the holder's recorded HEAD still equals the current HEAD
+- whether the branch carries a TASK-ID / BUG-ID it can be traced to
+
+Then:
+
+```
+BRANCH_OWNERSHIP
+  branch: agent/feature/ML-001
+  current_worktree: C:/.../nse_task_wt
+  other_worktrees: NONE
+  ownership_conflict: NO
+  SAFE_TO_MUTATE: YES
+```
+
+Conflict → `SAFE_TO_MUTATE: NO` → **STOP**. Do not switch, reset, commit,
+rebase or push. Do NOT "fix" it by deleting the other worktree or moving the
+branch pointer — cut your own task branch from `origin/main` in a dedicated
+worktree, or obtain an explicit ownership transfer recorded in
+`agents/locks.yaml` and `agents/taskboard.md`.
+
+**Ownership can change mid-task.** The repository is a live concurrent system.
+If the holder's HEAD no longer matches the HEAD this agent recorded, the
+ownership evidence is STALE — re-run the preflight; never reconcile a
+divergence with `reset` or `--force`.
+
+**Enforcement:** preflight `OWNERSHIP` checks (`check_branch_ownership`,
+`check_task_identity`) are ENFORCED IN CODE: `BRANCH_OWNED_BY_OTHER_WORKTREE`,
+`FOREIGN_BRANCH`, and `BRANCH_MOVED_UNDER_US` are critical STOP conditions.
+
 ---
 
 ## 9. Destructive-git rules
