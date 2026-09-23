@@ -94,7 +94,7 @@ export function NewsTimelinePanel() {
             asset,
           })}
         </span>
-        <FreshnessNote updatedAtMs={timeline.dataUpdatedAt ?? null} label="timeline" staleAfterMs={300_000} />
+        <FreshnessNote updatedAtMs={timeline.dataUpdatedAt ?? null} label={t("news.fresh.timeline", "timeline")} staleAfterMs={300_000} />
       </div>
       {timeline.isPending ? (
         <div className="viz-empty">{t("news.timeline.loading_buckets", "loading buckets…")}</div>

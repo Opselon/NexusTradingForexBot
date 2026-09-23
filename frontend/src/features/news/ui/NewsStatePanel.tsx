@@ -285,7 +285,7 @@ export function NewsStatePanel() {
           })}
         </span>
         <span className="spacer" />
-        <FreshnessNote updatedAtMs={stateQuery.dataUpdatedAt ?? null} label="state" />
+        <FreshnessNote updatedAtMs={stateQuery.dataUpdatedAt ?? null} label={t("news.fresh.state", "state")} />
       </div>
       {cmdNote && <div className={`news-status-line ${cmdErr ? "err" : ""}`}>{cmdNote.text(t)}</div>}
       <div className="tiny muted">
