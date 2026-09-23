@@ -8,6 +8,7 @@
 
 import { EmptyState, MetricCard } from "@/components/primitives";
 import { FreshnessCaption, PollControl, QuerySection, usePolling } from "@/features/config/ui/kit";
+import { useI18n } from "@/stores/i18nStore";
 import type { IpcEvent, IpcTelemetry } from "../../api";
 import { useIpcTelemetryQuery } from "../../hooks";
 import { SortTh, sortRows, useSortState, type SortApi } from "../sorting";
@@ -38,20 +39,21 @@ function eventLatency(ev: IpcEvent): number | null {
 }
 
 export function IpcTab() {
+  const t = useI18n((s) => s.t);
   const poll = usePolling(20_000);
   const query = useIpcTelemetryQuery(poll.paused);
   const api = useSortState<SortKey>({ key: null, dir: "desc" });
 
   return (
     <QuerySection<IpcTelemetry>
-      title="MT5 IPC telemetry (/api/debug/ipc-telemetry)"
+      title={t("debug.ipc.title", "MT5 IPC telemetry (/api/debug/ipc-telemetry)")}
       accent
       query={query}
       skeletonRows={5}
-      emptyMessage="No broker execution events recorded yet."
+      emptyMessage={t("debug.ipc.empty", "No broker execution events recorded yet.")}
       right={
         <>
-          <FreshnessCaption fetchedAtMs={query.dataUpdatedAt || null} intervalMs={20_000} note={`avg latency ${query.data?.avg_latency_ms ?? "—"} ms`} stale={poll.paused} />
+          <FreshnessCaption fetchedAtMs={query.dataUpdatedAt || null} intervalMs={20_000} note={t("debug.ipc.avg_note", "avg latency {v} ms", { v: query.data?.avg_latency_ms ?? "—" })} stale={poll.paused} />
           <PollControl paused={poll.paused} onToggle={poll.togglePaused} intervalMs={20_000} busy={query.isFetching} />
         </>
       }
@@ -76,20 +78,20 @@ export function IpcTab() {
         return (
           <div className="dbg-sec">
             <div className="l3-toolbar">
-              <MetricCard label="events" value={data.event_count} />
-              <MetricCard label="avg latency" value={`${data.avg_latency_ms} ms`} />
-              <MetricCard label="positions / pendings" value={`${data.exposure.positions} / ${data.exposure.pendings}`} sub={`cap ${data.max_total_exposure}`} />
-              <span className="timestamp-note">{api.sort.key === null ? "backend order — click a header to sort" : `sorted by ${api.sort.key} ${api.sort.dir}`}</span>
+              <MetricCard label={t("debug.ipc.events", "events")} value={data.event_count} />
+              <MetricCard label={t("debug.ipc.avg_latency", "avg latency")} value={`${data.avg_latency_ms} ms`} />
+              <MetricCard label={t("debug.ipc.positions", "positions / pendings")} value={`${data.exposure.positions} / ${data.exposure.pendings}`} sub={t("debug.ipc.cap", "cap {n}", { n: data.max_total_exposure })} />
+              <span className="timestamp-note">{api.sort.key === null ? t("debug.ipc.backend_order", "backend order — click a header to sort") : t("debug.ipc.sorted_by", "sorted by {key} {dir}", { key: api.sort.key, dir: api.sort.dir })}</span>
             </div>
             <div tabIndex={0} className="l3-scroll dbg-table-wrap">
               <table className="data-table dbg-table">
                 <thead>
                   <tr>
-                    <SortTh<SortKey> label="timestamp" col="ts" api={api as SortApi<SortKey>} title="event timestamp" />
-                    <SortTh<SortKey> label="event" col="event" api={api as SortApi<SortKey>} />
-                    <SortTh<SortKey> label="state" col="state" api={api as SortApi<SortKey>} title="state / status, falling back to execution_mode" />
-                    <th className="plain">reason / retcode</th>
-                    <SortTh<SortKey> label="latency" col="latency" api={api as SortApi<SortKey>} num />
+                    <SortTh<SortKey> label={t("debug.ipc.th_timestamp", "timestamp")} col="ts" api={api as SortApi<SortKey>} title={t("debug.ipc.ts_title", "event timestamp")} />
+                    <SortTh<SortKey> label={t("debug.ipc.th_event", "event")} col="event" api={api as SortApi<SortKey>} />
+                    <SortTh<SortKey> label={t("debug.ipc.th_state", "state")} col="state" api={api as SortApi<SortKey>} title={t("debug.ipc.state_title", "state / status, falling back to execution_mode")} />
+                    <th className="plain">{t("debug.ipc.th_reason", "reason / retcode")}</th>
+                    <SortTh<SortKey> label={t("debug.ipc.th_latency", "latency")} col="latency" api={api as SortApi<SortKey>} num />
                   </tr>
                 </thead>
                 <tbody>
@@ -110,7 +112,7 @@ export function IpcTab() {
                   })}
                 </tbody>
               </table>
-              {rows.length === 0 && <EmptyState message="Event log empty for this window." />}
+              {rows.length === 0 && <EmptyState message={t("debug.ipc.no_events", "Event log empty for this window.")} />}
             </div>
           </div>
         );
