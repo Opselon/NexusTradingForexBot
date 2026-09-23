@@ -10,19 +10,19 @@
  * lifecycle states in state-machine order.
  */
 import type { HandbookEntry } from "./types";
-import { chainOverviewEntry, pipelineEntries } from "./gates";
-import { lifecycleEntries } from "./lifecycle";
-import { discoveryEntry } from "./discovery";
+import { chainOverviewEntry, pipelineEntries, gatesTranslated } from "./gates";
+import { lifecycleEntries, lifecycleTranslated } from "./lifecycle";
+import { discoveryEntry, discoveryTranslated } from "./discovery";
 import { scoringEntry, scoringEntryTranslated, type ScoringTranslate } from "./scoring";
-import { economicsEntry } from "./economics";
-import { evidenceEntry } from "./evidence";
-import { operationsEntry, pipelineEntry } from "./operations";
-import { uiGuideEntry } from "./uiguide";
-import { masterFaqEntry } from "./faq";
-import { registryEntry } from "./registry";
-import { experimentsEntry } from "./experiments";
-import { glossaryEntry } from "./glossary";
-import { healthEntry } from "./health";
+import { economicsEntry, economicsTranslated } from "./economics";
+import { evidenceEntry, evidenceTranslated } from "./evidence";
+import { operationsEntry, pipelineEntry, operationsTranslated } from "./operations";
+import { uiGuideEntry, uiguideTranslated } from "./uiguide";
+import { masterFaqEntry, faqTranslated } from "./faq";
+import { registryEntry, registryTranslated } from "./registry";
+import { experimentsEntry, experimentsTranslated } from "./experiments";
+import { glossaryEntry, glossaryTranslated } from "./glossary";
+import { healthEntry, healthTranslated } from "./health";
 
 export type { HandbookEntry, Section, ParamRow, FaqItem, HandbookKind } from "./types";
 export { GATE_CHAIN, REQUIRED_FOR_VALIDATED, GATE_STATUSES, FAILURE_CLASSES } from "./gates";
@@ -107,11 +107,19 @@ export function matchesQuery(entry: HandbookEntry, rawQuery: string): boolean {
  */
 function translatedEntries(t: ScoringTranslate): HandbookEntry[] {
   return [
+    ...gatesTranslated(t), // V5-A
+    ...lifecycleTranslated(t), // V5-B
+    ...operationsTranslated(t), // V5-B
+    ...glossaryTranslated(t), // V5-B
+    ...uiguideTranslated(t), // V5-C
+    ...healthTranslated(t), // V5-C
+    ...evidenceTranslated(t), // V5-C
+    ...discoveryTranslated(t), // V5-C
+    economicsTranslated(t), // V5-D
+    faqTranslated(t), // V5-D
+    experimentsTranslated(t), // V5-D
+    registryTranslated(t), // V5-D
     scoringEntryTranslated(t),
-    // V5 slots — gates/*
-    // V5 slots — lifecycle, operations, glossary
-    // V5 slots — uiguide, health, evidence, discovery
-    // V5 slots — economics, faq, experiments, registry
   ];
 }
 
