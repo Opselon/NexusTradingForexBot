@@ -8,7 +8,7 @@
  * (bounds + debounced lazy frame slider).
  */
 
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import {
@@ -28,6 +28,75 @@ import { commandCenterQueries, commandCenterUseCases, useTimeMachineFrame } from
 import { SpatialFleetCanvas } from "./SpatialFleetCanvas";
 
 type View = "spatial" | "fleet" | "timemachine";
+
+/** Safe-envelope request id (error may be an object at HTTP 200 — never truthy-tested). */
+const errRequestId = (e: unknown): string | null => (e as { requestId?: string } | null)?.requestId ?? null;
+const errMessage = (e: unknown, fallback: string): string => (e instanceof Error ? e.message : fallback);
+
+/** Memoized fleet-grid row (up to 50 visible). Primitive props only: the page
+ *  re-renders every 5s (useNow) and every 30/60s poll — rows bail out of both. */
+const FleetRow = memo(function FleetRow({
+  row,
+  onInspect,
+}: {
+  row: CcFleetRowDto;
+  onInspect: (id: string) => void;
+}) {
+  const r = row;
+  return (
+    <tr>
+      <td className="inline-mono tiny" title={r.strategy_id}>
+        {(r.strategy_id ?? "—").slice(0, 14)}
+      </td>
+      <td>
+        <StatusPill status={r.lifecycle} />
+      </td>
+      <td className="num tiny">{r.confidence === null || r.confidence === undefined ? "—" : formatNumber(r.confidence, 3)}</td>
+      <td className="num tiny">{r.sample_count ?? "—"}</td>
+      <td className="num tiny">{r.health_final === null || r.health_final === undefined ? "—" : formatNumber(r.health_final, 1)}</td>
+      <td>
+        <StatusBadge status={r.eligibility_state} />
+      </td>
+      <td className="tiny muted" title={r.eligibility_reason ?? ""}>
+        {(r.eligibility_reason ?? "—").slice(0, 32)}
+      </td>
+      <td className="tiny">{r.updated_at ? formatDateTime(r.updated_at) : "—"}</td>
+      <td>
+        <button className="btn small ghost" onClick={() => onInspect(str(r.strategy_id) ?? "")}>
+          inspector
+        </button>
+      </td>
+    </tr>
+  );
+});
+
+/** Memoized stuck-strategy row — same bailout rule as FleetRow. */
+const StuckRow = memo(function StuckRow({
+  strategyId,
+  state,
+  hours,
+  onInspect,
+}: {
+  strategyId: string;
+  state: string | null;
+  hours: number | null;
+  onInspect: (id: string) => void;
+}) {
+  return (
+    <tr>
+      <td className="inline-mono tiny">{strategyId.slice(0, 16)}</td>
+      <td>
+        <StatusPill status={state} />
+      </td>
+      <td className="num tiny">{hours === null ? "—" : formatNumber(hours, 1)}</td>
+      <td>
+        <button className="btn small ghost" onClick={() => onInspect(strategyId)}>
+          inspect
+        </button>
+      </td>
+    </tr>
+  );
+});
 
 export default function CommandCenterPage(props: ShellPageProps) {
   void props;
@@ -50,8 +119,17 @@ export default function CommandCenterPage(props: ShellPageProps) {
     retry: false,
   });
 
-  const rows = commandCenterUseCases.fleetByRisk(fleetQ.data?.rows ?? [], nowMs);
+  // Derived rows memoized: useNow(5000) re-renders this page every 5 seconds
+  // and fleetByRisk() sorts the full registry on every call.
+  const rows = useMemo(() => commandCenterUseCases.fleetByRisk(fleetQ.data?.rows ?? [], nowMs), [fleetQ.data, nowMs]);
   const overview = overviewQ.data?.available === true ? overviewQ.data : null;
+  const censusRows = useMemo(() => Object.entries(obj(overview?.by_lifecycle)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 })), [overview]);
+  const pipelineRows = useMemo(
+    () => Object.entries(obj(overview?.evaluation_pipeline)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 })),
+    [overview],
+  );
+  const stuck = useMemo(() => stuckRows(overview ?? undefined), [overview]);
+  const onInspect = useCallback((id: string) => setInspectId(id), []);
 
   return (
     <div>
@@ -82,35 +160,48 @@ export default function CommandCenterPage(props: ShellPageProps) {
       <div style={{ height: 12 }} />
       <div className="grid cols-2">
         <Panel title="Lifecycle census" tight>
-          <DistBars
-            rows={Object.entries(obj(overview?.by_lifecycle)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 }))}
-            tone="var(--green)"
-          />
+          {overviewQ.isPending ? (
+            <Skeleton count={4} />
+          ) : overviewQ.isError ? (
+            <ErrorState
+              message={errMessage(overviewQ.error, "overview request failed")}
+              requestId={errRequestId(overviewQ.error)}
+              onRetry={() => void overviewQ.refetch()}
+            />
+          ) : censusRows.length === 0 ? (
+            <EmptyState
+              message="No lifecycle counts reported."
+              hint={overviewQ.data?.reason ?? "/api/command-center/overview answered an empty by_lifecycle map"}
+            />
+          ) : (
+            <DistBars rows={censusRows} tone="var(--green)" />
+          )}
         </Panel>
         <Panel title="Evaluation pipeline (counts across registry)" tight>
-          <DistBars
-            rows={Object.entries(obj(overview?.evaluation_pipeline)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 }))}
-            tone="var(--amber)"
-          />
+          {overviewQ.isPending ? (
+            <Skeleton count={4} />
+          ) : overviewQ.isError ? (
+            <ErrorState
+              message={errMessage(overviewQ.error, "overview request failed")}
+              requestId={errRequestId(overviewQ.error)}
+              onRetry={() => void overviewQ.refetch()}
+            />
+          ) : pipelineRows.length === 0 ? (
+            <EmptyState
+              message="No pipeline counts reported."
+              hint={overviewQ.data?.reason ?? "/api/command-center/overview answered an empty evaluation_pipeline map"}
+            />
+          ) : (
+            <DistBars rows={pipelineRows} tone="var(--amber)" />
+          )}
         </Panel>
       </div>
 
-      {stuckRows(overview ?? undefined).length > 0 && (
+      {stuck.length > 0 && (
         <Panel title="Stuck strategies (hours in non-terminal state)" tight>
           <DataTable headers={[{ label: "strategy" }, { label: "state" }, { label: "hours", num: true }, { label: "" }]}>
-            {stuckRows(overview ?? undefined).map((s) => (
-              <tr key={s.strategy_id}>
-                <td className="inline-mono tiny">{s.strategy_id.slice(0, 16)}</td>
-                <td>
-                  <StatusPill status={s.state} />
-                </td>
-                <td className="num tiny">{s.hours === null ? "—" : formatNumber(s.hours, 1)}</td>
-                <td>
-                  <button className="btn small ghost" onClick={() => setInspectId(s.strategy_id)}>
-                    inspect
-                  </button>
-                </td>
-              </tr>
+            {stuck.map((s) => (
+              <StuckRow key={s.strategy_id} strategyId={s.strategy_id} state={s.state} hours={s.hours} onInspect={onInspect} />
             ))}
           </DataTable>
         </Panel>
@@ -168,11 +259,15 @@ export default function CommandCenterPage(props: ShellPageProps) {
           {fleetQ.isPending ? (
             <Skeleton count={6} />
           ) : fleetQ.isError ? (
-            <ErrorState message={fleetQ.error instanceof Error ? fleetQ.error.message : "fleet failed"} onRetry={() => void fleetQ.refetch()} />
+            <ErrorState
+              message={errMessage(fleetQ.error, "fleet failed")}
+              requestId={errRequestId(fleetQ.error)}
+              onRetry={() => void fleetQ.refetch()}
+            />
           ) : fleetQ.data?.available === false ? (
             <EmptyState message="Research engine unavailable" hint={fleetQ.data.reason ?? "RESEARCH_ENGINE_UNAVAILABLE"} />
           ) : rows.length === 0 ? (
-            <EmptyState message="No strategies match the filters." />
+            <EmptyState message="No strategies match the filters." hint="clear the lifecycle/eligibility filters to see the whole fleet" />
           ) : (
             <div className="table-wrap" style={{ maxHeight: 560 }}>
               <table className="data-table">
@@ -191,29 +286,7 @@ export default function CommandCenterPage(props: ShellPageProps) {
                 </thead>
                 <tbody>
                   {rows.map((r: CcFleetRowDto, i) => (
-                    <tr key={`${r.strategy_id}-${i}`}>
-                      <td className="inline-mono tiny" title={r.strategy_id}>
-                        {(r.strategy_id ?? "—").slice(0, 14)}
-                      </td>
-                      <td>
-                        <StatusPill status={r.lifecycle} />
-                      </td>
-                      <td className="num tiny">{r.confidence === null || r.confidence === undefined ? "—" : formatNumber(r.confidence, 3)}</td>
-                      <td className="num tiny">{r.sample_count ?? "—"}</td>
-                      <td className="num tiny">{r.health_final === null || r.health_final === undefined ? "—" : formatNumber(r.health_final, 1)}</td>
-                      <td>
-                        <StatusBadge status={r.eligibility_state} />
-                      </td>
-                      <td className="tiny muted" title={r.eligibility_reason ?? ""}>
-                        {(r.eligibility_reason ?? "—").slice(0, 32)}
-                      </td>
-                      <td className="tiny">{r.updated_at ? formatDateTime(r.updated_at) : "—"}</td>
-                      <td>
-                        <button className="btn small ghost" onClick={() => setInspectId(str(r.strategy_id) ?? "")}>
-                          inspector
-                        </button>
-                      </td>
-                    </tr>
+                    <FleetRow key={`${r.strategy_id}-${i}`} row={r} onInspect={onInspect} />
                   ))}
                 </tbody>
               </table>
@@ -251,10 +324,23 @@ function TimeMachine() {
   const frameQ = useTimeMachineFrame(debouncedIso);
 
   if (boundsQ.isPending) return <Panel title="Time machine"><Skeleton count={3} /></Panel>;
+  if (boundsQ.isError)
+    return (
+      <Panel title="Time machine" tight>
+        <ErrorState
+          message={errMessage(boundsQ.error, "time-machine bounds request failed")}
+          requestId={errRequestId(boundsQ.error)}
+          onRetry={() => void boundsQ.refetch()}
+        />
+      </Panel>
+    );
   if (!bounds || !range) {
     return (
       <Panel title="Time machine" tight>
-        <EmptyState message="No historical events yet" hint={boundsQ.data?.reason ?? "timemachine/bounds answered available:false — nothing to scrub"} />
+        <EmptyState
+          message="No historical events yet"
+          hint={boundsQ.data?.available === false ? boundsQ.data.reason ?? "timemachine/bounds answered available:false — nothing to scrub" : "timemachine/bounds returned no usable time range"}
+        />
       </Panel>
     );
   }
@@ -288,8 +374,16 @@ function TimeMachine() {
           <span>{formatDateTime(bounds.latest)}</span>
         </div>
         {frameQ.isFetching && <div className="tiny muted">frame loading (lazy, debounced 350 ms)…</div>}
-        {frame?.available === false ? (
-          <EmptyState message={frame.reason ?? "frame not available"} />
+        {frameQ.isError ? (
+          <ErrorState
+            message={errMessage(frameQ.error, "time-machine frame request failed")}
+            requestId={errRequestId(frameQ.error)}
+            onRetry={() => void frameQ.refetch()}
+          />
+        ) : frame?.available === false ? (
+          <EmptyState message={frame.reason ?? "frame not available"} hint="the frame endpoint answers available:false for instants outside the event range" />
+        ) : frame === undefined ? (
+          <Skeleton count={3} />
         ) : (
           <div className="grid cols-2" style={{ marginTop: 6 }}>
             <div>
@@ -355,15 +449,27 @@ function InspectorDrawer({ strategyId, onClose }: { strategyId: string; onClose:
     <Drawer title={`Inspector — ${strategyId}`} onClose={onClose}>
       {inspectorQ.isPending ? (
         <Skeleton count={5} />
+      ) : inspectorQ.isError ? (
+        <ErrorState
+          message={errMessage(inspectorQ.error, "inspector request failed")}
+          requestId={errRequestId(inspectorQ.error)}
+          onRetry={() => void inspectorQ.refetch()}
+        />
       ) : inspectorQ.data?.available === false ? (
         <EmptyState message={str(inspectorQ.data.error) ?? "strategy not found"} hint="inspector answers STRATEGY_NOT_FOUND for unknown ids" />
+      ) : snap === undefined ? (
+        <EmptyState message="Inspector payload empty." hint="the inspector endpoint returned no snapshot body" />
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
           <Panel title="Execution safety (CAN-THIS-TRADE)" accent tight>
             {safetyQ.isPending ? (
               <Skeleton />
             ) : safetyQ.isError ? (
-              <ErrorState message="execution-safety endpoint failed" onRetry={() => void safetyQ.refetch()} />
+              <ErrorState
+                message={errMessage(safetyQ.error, "execution-safety endpoint failed")}
+                requestId={errRequestId(safetyQ.error)}
+                onRetry={() => void safetyQ.refetch()}
+              />
             ) : (
               <div className="decision-card">
                 <div>
@@ -432,8 +538,16 @@ function InspectorDrawer({ strategyId, onClose }: { strategyId: string; onClose:
           )}
 
           <Panel title={`Decision timeline (${events.length})`} tight>
-            {events.length === 0 ? (
-              timelineQ.isPending ? <Skeleton /> : <EmptyState message="No timeline events." />
+            {timelineQ.isPending ? (
+              <Skeleton />
+            ) : timelineQ.isError ? (
+              <ErrorState
+                message={errMessage(timelineQ.error, "decision timeline request failed")}
+                requestId={errRequestId(timelineQ.error)}
+                onRetry={() => void timelineQ.refetch()}
+              />
+            ) : events.length === 0 ? (
+              <EmptyState message="No timeline events." hint="the backend has not recorded a lifecycle transition for this strategy" />
             ) : (
               <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "from" }, { label: "to" }, { label: "actor" }]}>
                 {events.slice(0, 60).map((e, i) => (
