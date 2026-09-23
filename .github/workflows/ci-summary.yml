@@ -34,6 +34,7 @@ on:
       - "Nightly Client E2E (Docker)"
       - "Official model publication"
       - "QA Deep Assurance"
+      - "Nightly ML Benchmark"
     types: [completed]
 
 permissions:
