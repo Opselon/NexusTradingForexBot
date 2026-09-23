@@ -1,0 +1,82 @@
+{
+  "analysis_importance_score_buckets": {
+    "HIGH(>=0.5)": 3624,
+    "LOW(0.10-0.25)": 3560,
+    "MID(0.25-0.5)": 13600
+  },
+  "analysis_relevance_to_xauusd_buckets": {
+    "HIGH(>=0.5)": 7021,
+    "LOW(0.10-0.25)": 37,
+    "MID(0.25-0.5)": 9651,
+    "ZERO(<0.10)": 4075
+  },
+  "article_status": {
+    "ACTIVE": 21075,
+    "IRRELEVANT": 3513
+  },
+  "article_text_bytes": 97274851,
+  "articles_by_source": {
+    "boe": 8372,
+    "cnbc_business": 1352,
+    "ecb": 2933,
+    "fed": 2773,
+    "forexlive": 3886,
+    "fxstreet": 192,
+    "marketwatch": 1559,
+    "ustreasury": 212,
+    "zerohedge": 3309
+  },
+  "audit_utc": "2026-09-23T15:34:08.650306+00:00",
+  "byte_identical_content_extra_rows": 21579,
+  "db_path": "../NexusTradingForexBot/artifacts/news.db",
+  "db_size_bytes": 241434624,
+  "exact_duplicate_article_hash_rows": 0,
+  "importance_labels": {
+    "MINOR": 24588
+  },
+  "junk_hash_reasons": {
+    "LLM_JUNK_SOFT:ANECDOTAL_OPINION": 9,
+    "LLM_JUNK_SOFT:LOW_SIGNAL_RETAIL": 57,
+    "LLM_JUNK_SOFT:NO_GOLD_DRIVER_LIFESTYLE": 160,
+    "LLM_JUNK_SOFT:SPORTS_NOISE": 8,
+    "LOW_IMPORTANCE_AND_LOW_XAUUSD_RELEVANCE": 8174,
+    "backfill_irrelevant": 197,
+    "llm_junk:ANECDOTAL_OPINION": 49,
+    "llm_junk:LOW_SIGNAL_RETAIL": 33,
+    "llm_junk:NO_GOLD_DRIVER_LIFESTYLE": 277,
+    "llm_junk:SPORTS_NOISE": 3,
+    "purge_irrelevant": 155
+  },
+  "projected_reduction_pct": 0.0,
+  "projected_under_admission_floors": {
+    "ADMIT_OR_QUARANTINE": 20251,
+    "UNANALYZED": 4337
+  },
+  "same_normalized_title_extra_rows": 21657,
+  "tables": {
+    "calendar_events": 290,
+    "calendar_worker_state": 1,
+    "news_ai_analysis": 2767,
+    "news_analysis": 20784,
+    "news_analysis_runs": 27244,
+    "news_analyzed_hashes": 23342,
+    "news_article_versions": 0,
+    "news_articles": 24588,
+    "news_consensus": 0,
+    "news_entities": 60887,
+    "news_event_links": 0,
+    "news_health": 12,
+    "news_impacts": 23235,
+    "news_junk_hashes": 9122,
+    "news_post_event": 0,
+    "news_prune_audit": 9187,
+    "news_sources": 13,
+    "news_topics": 42090,
+    "news_trade_links": 0,
+    "news_worker_state": 1,
+    "schema_meta": 1,
+    "schema_migrations": 1,
+    "sqlite_sequence": 3
+  },
+  "total_articles": 24588
+}

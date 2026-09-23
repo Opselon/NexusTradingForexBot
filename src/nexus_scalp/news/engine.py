@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.news.admission import NewsAdmissionConfig, NewsAdmissionGateway
 from nexus_scalp.news.analysis import NewsAnalysisPipeline
 from nexus_scalp.news.config import NewsConfig
 from nexus_scalp.news.context import NewsContextCache
@@ -55,7 +56,26 @@ class NewsEngine:
 
         self.scheduler = NewsScheduler()
         self.fetcher = NewsFetcher(self.db, self.config)
-        self.ingestor = NewsIngestor(self.db)
+        # Pre-DB admission gateway (news-admission-gate): scores every fetched
+        # item BEFORE persistence; REJECT tombstones, QUARANTINE persists out
+        # of the active feed, ADMIT flows to insert_article. Thresholds ride
+        # the same NewsConfig the rest of the subsystem uses.
+        adm = self.config.admission
+        self.admission_config = NewsAdmissionConfig(
+            admit_score=adm.admit_score,
+            review_score=adm.review_score,
+            relevance_floor=adm.relevance_floor,
+            importance_floor=adm.importance_floor,
+            source_quality_floor=adm.source_quality_floor,
+            max_age_hours=adm.max_age_hours,
+            w_relevance=adm.w_relevance,
+            w_impact=adm.w_impact,
+            w_source=adm.w_source,
+            deterministic_admit_score=adm.deterministic_admit_score,
+            enabled=adm.enabled,
+        )
+        self.admission_gateway = NewsAdmissionGateway(self.db, config=self.admission_config)
+        self.ingestor = NewsIngestor(self.db, admission_gateway=self.admission_gateway)
         self.pipeline = NewsAnalysisPipeline(self.db, self.config)
         self.context = NewsContextCache(self.db, self.config)
         self.validator = PostEventValidator(self.db)
@@ -77,7 +97,16 @@ class NewsEngine:
         """
         sources = self.db.list_sources(enabled_only=True)
         due = self.scheduler.due_sources(sources)
-        stats: dict[str, Any] = {"sources_polled": 0, "new": 0, "duplicate": 0, "merged": 0}
+        stats: dict[str, Any] = {
+            "sources_polled": 0,
+            "new": 0,
+            "duplicate": 0,
+            "merged": 0,
+            "merged_evidence": 0,
+            "admitted": 0,
+            "quarantined": 0,
+            "rejected": 0,
+        }
         for src in due[:max_sources]:
             self.scheduler.mark_polled(src["source_id"])
             result = self.fetcher.fetch_source(src)
@@ -93,6 +122,9 @@ class NewsEngine:
             stats["new"] += ingested.get("new", 0)
             stats["duplicate"] += ingested.get("duplicate", 0)
             stats["merged"] += ingested.get("merged_evidence", 0)
+            stats["admitted"] += ingested.get("admitted", 0)
+            stats["quarantined"] += ingested.get("quarantined", 0)
+            stats["rejected"] += ingested.get("rejected", 0)
         self._stats = dict(stats)
         return stats
 
@@ -284,6 +316,7 @@ class NewsEngine:
                 "state": ctx.state.value,
                 "stale": ctx.stale,
                 "db": self.db.summary(),
+                "admission": self.admission_gateway.metrics.snapshot(),
                 "cycle_count": self.cycle_count,
                 "last_error": self.last_error,
                 "last_cycle_at": self.last_cycle_at.isoformat() if self.last_cycle_at else "",
