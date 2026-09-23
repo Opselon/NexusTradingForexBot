@@ -153,7 +153,7 @@ export function PerformanceIntelligenceSection() {
       ) : !intel.data ? (
         <EmptyState message="No intelligence report." />
       ) : showReport ? (
-        <pre style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 10, fontSize: 10.5, maxHeight: 420, overflow: "auto", fontFamily: "var(--mono)", margin: 0 }}>
+        <pre tabIndex={0} style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 10, fontSize: 10.5, maxHeight: 420, overflow: "auto", fontFamily: "var(--mono)", margin: 0 }}>
           {JSON.stringify(intel.data.report ?? {}, null, 2)}
         </pre>
       ) : (

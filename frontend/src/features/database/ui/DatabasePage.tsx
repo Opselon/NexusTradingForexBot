@@ -146,7 +146,7 @@ function StatusPanel() {
             </div>
             <div>
               <div className="section-title">plans / quarantine</div>
-              <div className="l3-scroll sm">
+              <div tabIndex={0} className="l3-scroll sm">
                 <JsonView value={{ plans: data.plans, runtime: data.runtime, quarantine: data.quarantine }} name="hygiene" depth={1} />
               </div>
             </div>
@@ -286,7 +286,7 @@ function ManagementPanel() {
           {preview.data?.body?.preview && (
             <div style={{ marginTop: 10 }}>
               <div className="section-title">dry-run preview ({(preview.data.body.preview.tables ?? []).length} tables · {formatBytes(preview.data.body.preview.estimated_volume_bytes)})</div>
-              <div className="l3-scroll sm"><JsonView value={preview.data.body.preview} name="preview" /></div>
+              <div tabIndex={0} className="l3-scroll sm"><JsonView value={preview.data.body.preview} name="preview" /></div>
               <ResultStrip result={strip(preview.data)} />
             </div>
           )}
@@ -456,10 +456,10 @@ function ExplorerPanel() {
                       ) : rows.data && !rows.data.success ? (
                         <div className="l3-note bad">{String(rows.data.error)}</div>
                       ) : (
-                        <div className="l3-scroll">
+                        <div tabIndex={0} className="l3-scroll">
                           <table className="data-table">
                             <thead>
-                              <tr>{(rows.data?.columns ?? []).map((c) => <th key={c}>{c}</th>)}</tr>
+                              <tr>{(rows.data?.columns ?? []).map((c) => <th scope="col" key={c}>{c}</th>)}</tr>
                             </thead>
                             <tbody>
                               {(rows.data?.rows ?? []).map((r, i) => (
@@ -488,9 +488,9 @@ function ExplorerPanel() {
                   {result && (
                     <div style={{ marginTop: 8 }}>
                       <div className={`l3-note ${result.ok ? "good" : "bad"}`}>{result.note}{result.truncated ? " · truncated at 500" : ""}</div>
-                      <div className="l3-scroll sm">
+                      <div tabIndex={0} className="l3-scroll sm">
                         <table className="data-table">
-                          <thead><tr>{result.columns.map((c) => <th key={c}>{c}</th>)}</tr></thead>
+                          <thead><tr>{result.columns.map((c) => <th scope="col" key={c}>{c}</th>)}</tr></thead>
                           <tbody>
                             {result.rows.map((r, i) => (
                               <tr key={i}>{result.columns.map((c) => <td key={c} className="l3-cell" title={String(r[c] ?? "")}>{r[c] === null || r[c] === undefined ? "—" : String(r[c])}</td>)}</tr>

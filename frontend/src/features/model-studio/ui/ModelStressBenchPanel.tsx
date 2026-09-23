@@ -60,13 +60,13 @@ export function ModelStressBenchPanel({
               No stress results yet — run the battery to audit the champion under adversarial conditions.
             </div>
           ) : (
-            <div className="table-wrap" style={{ maxHeight: 380 }}>
+            <div tabIndex={0} className="table-wrap" style={{ maxHeight: 380 }}>
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Adversarial Test</th>
-                    <th style={{ textAlign: "center" }}>Verdict</th>
-                    <th>Diagnostic Detail</th>
+                    <th scope="col">Adversarial Test</th>
+                    <th scope="col" style={{ textAlign: "center" }}>Verdict</th>
+                    <th scope="col">Diagnostic Detail</th>
                   </tr>
                 </thead>
                 <tbody>

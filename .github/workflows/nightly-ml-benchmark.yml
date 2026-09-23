@@ -1,0 +1,165 @@
+name: Nightly ML Benchmark
+
+# ML-CI-001 — scheduled REAL walk-forward training tier.
+#
+# TIER CONTRACT (see .github/workflows/nightly-qa.yml header for the tier map):
+#   FAST / PUSH   -> ci.yml quality job: synthetic smoke units only
+#                    (SMOKE_MIN_ROWS=3000, fractions of the pipeline).
+#   NIGHTLY       -> THIS workflow: the real WalkForwardTrainer.train_and_validate
+#                    path end to end (5 folds x 3 epochs, real purge + embargo
+#                    splits, atomic candidate bundle publication, hard emission
+#                    gate) via tests/integration/test_walk_forward_pipeline_real.py.
+#
+# WHY IT EXISTS: PR checks deliberately cap training at a fast synthetic drill,
+# so a regression inside the real training path (fold construction, purge/embargo
+# geometry, bundle publication, gate evidence wiring) can land on main and only
+# surface at the next real candidate run. This workflow closes that gap on a
+# schedule instead of on every push.
+#
+# The artifact it produces is a SMOKE bundle by construction (synthetic frame),
+# so production_eligible is false and the promotion gate rejects it — the
+# workflow is a benchmark/canary, never a candidate producer.
+
+on:
+  schedule:
+    # Nightly 02:41 UTC (offset from the 01:17 nightly-qa slot so the two
+    # CPU-heavy nightly jobs do not contend for the same runner pool).
+    - cron: "41 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One nightly benchmark per ref; a new scheduled run supersedes a stuck old one.
+concurrency:
+  group: nightly-ml-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI_RESULTS_DIR: ml-benchmark-results
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+jobs:
+  walk-forward:
+    name: Nightly real walk-forward training
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web]"
+
+      - name: Run real walk-forward pipeline (5 folds x 3 epochs)
+        run: |
+          set +e
+          mkdir -p "$CI_RESULTS_DIR/walk-forward"
+          # SERIAL on purpose: the host trains real PyTorch models and the
+          # xdist worker pool has died under memory pressure on this repo's
+          # CPU-heavy training batteries (see the 3.9GB/2-core gotcha).
+          pytest tests/integration/test_walk_forward_pipeline_real.py \
+                 -p no:cacheprovider \
+                 -q --tb=short \
+                 --junitxml="$CI_RESULTS_DIR/walk-forward/junit.xml" \
+                 > "$CI_RESULTS_DIR/walk-forward/pytest.txt" 2>&1
+          rc=$?
+          tail -25 "$CI_RESULTS_DIR/walk-forward/pytest.txt"
+          echo "ML_BENCHMARK_RC=$rc" >> "$GITHUB_ENV"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::nightly ML benchmark failed (rc=$rc) — the real walk-forward training path regressed"
+          fi
+          exit 0
+
+      - name: Fail if the benchmark failed
+        if: env.ML_BENCHMARK_RC != '0'
+        run: exit 1
+
+      - name: Collect training metrics for the run report
+        # Re-reads the junit timing + the suite's own reported metrics so the
+        # step summary and the notification carry real numbers, not pass/fail.
+        if: always()
+        run: |
+          mkdir -p "$CI_RESULTS_DIR/report"
+          python - <<'PY' > "$CI_RESULTS_DIR/report/metrics.json"
+          import json, re, xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          root_dir = Path("." )
+          junit = Path("ml-benchmark-results/walk-forward/junit.xml")
+          out = {
+              "workflow": "nightly-ml-benchmark",
+              "ref": "${{ github.ref_name }}",
+              "sha": "${{ github.sha }}",
+              "run_id": "${{ github.run_id }}",
+              "tests": None,
+              "failures": None,
+              "seconds": None,
+          }
+          try:
+              tree = ET.parse(junit)
+              root = tree.getroot()
+              if root.tag == "testsuites":
+                  root = root[0]
+              out["tests"] = int(root.get("tests", 0))
+              out["failures"] = int(root.get("failures", 0))
+              out["seconds"] = float(root.get("time", 0))
+          except Exception as e:
+              out["error"] = f"junit unreadable: {e}"
+          txt = Path("ml-benchmark-results/walk-forward/pytest.txt")
+          try:
+              body = txt.read_text(encoding="utf-8", errors="replace")
+          except Exception as e:
+              body = ""
+              out["error"] = f"pytest output unreadable: {e}"
+          m = re.search(r"(\d+) passed", body)
+          if m:
+              out["passed"] = int(m.group(1))
+          print(json.dumps(out, indent=2))
+          PY
+          cat "$CI_RESULTS_DIR/report/metrics.json" || true
+
+      - name: Write run summary
+        if: always()
+        run: |
+          {
+            echo "## Nightly ML Benchmark (real walk-forward training)"
+            echo
+            echo "5-fold x 3-epoch \`WalkForwardTrainer.train_and_validate\` on a synthetic 50D frame — the real training path, not the fast smoke drill."
+            echo
+            echo "\`\`\`json"
+            cat "$CI_RESULTS_DIR/report/metrics.json" 2>/dev/null || echo '{"status":"unavailable"}'
+            echo "\`\`\`"
+            echo
+            echo "Full output: the \`ml-benchmark-results\` artifact of this run."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nightly-ml-benchmark-${{ github.run_number }}
+          path: ${{ env.CI_RESULTS_DIR }}/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Telegram failure notification (advisory)
+        # Reuses the repo's canonical notifier: no credentials printed, no
+        # secrets in payloads, never fails CI. Absent secrets => no-op.
+        if: failure()
+        run: |
+          python scripts/ci/telegram_notify.py release-failed \
+            --tag "nightly-ml-benchmark-${{ github.run_number }}" \
+            --failed-phase "nightly-ml-benchmark" \
+            --error-class "ML_TRAINING_PATH_REGRESSION" \
+            --error-detail "walk-forward real training battery failed sha=${{ github.sha }} ref=${{ github.ref_name }} see ml-benchmark-results artifact" \
+            || true

@@ -33,9 +33,14 @@ import type {
 import type { V1Page } from "@/types/domain";
 
 export const chartApi = {
-  /** Authoritative broker history + SMC overlays (explicit provenance). */
-  history: (count = 900, signal?: AbortSignal): Promise<ChartHistoryResponse> =>
-    getLegacy<ChartHistoryResponse>(`/api/chart/history?count=${count}`, signal),
+  /** Authoritative broker history + SMC overlays (explicit provenance).
+   *  `timeframe` selects broker-native bars per TF (backend allowlist; omit
+   *  for the engine's own execution timeframe). */
+  history: (count = 900, timeframe?: string | null, signal?: AbortSignal): Promise<ChartHistoryResponse> =>
+    getLegacy<ChartHistoryResponse>(
+      `/api/chart/history?count=${count}${timeframe ? `&timeframe=${encodeURIComponent(timeframe)}` : ""}`,
+      signal,
+    ),
 };
 
 export const replayApi = {

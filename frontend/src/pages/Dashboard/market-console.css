@@ -43,12 +43,43 @@
 .mc-quote__item .v.dim { font-size: 11px; font-weight: 600; color: var(--text-dim); }
 .mc-quote .timestamp-note { margin-inline-start: auto; }
 
+/* ----------------------------- chart toolbars ------------------------------ */
+/* Row under the status chips: timeframe switcher (left) + zoom/pan controls
+   (right). Buttons reuse the global .btn.small tokens; only layout lives
+   here so density/theme stay theme-driven. */
+.l4-chart__tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 5px 10px;
+  border-block-end: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.mc-tfrow .btn {
+  min-inline-size: 34px;
+  font-family: var(--mono);
+}
+.mc-zoomval {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  min-inline-size: 46px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ------------------------------- chart stage ------------------------------- */
 .mc-stage {
   position: relative;
   block-size: clamp(320px, 44vh, 520px);
   cursor: crosshair;
   user-select: none;
+  /* pointer-capture drag pan on touch (TV parity) */
+  touch-action: none;
+}
+.mc-stage--dragging {
+  cursor: grabbing;
 }
 .mc-stage > canvas {
   display: block;

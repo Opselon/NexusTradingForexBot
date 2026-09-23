@@ -35,7 +35,12 @@ export interface Palette {
 }
 
 export interface PainterScene {
+  /** Bars inside the visible window, in order (occupies slots 0..shown.length-1). */
   shown: Bar[];
+  /** Window model: ABSOLUTE index of the leftmost slot … */
+  left: number;
+  /** … and how many slots the plot spans (may exceed shown.length → future space). */
+  count: number;
   overlays?: {
     rectangles?: OverlayRect[];
     bos_lines?: OverlayLine[];
@@ -49,7 +54,9 @@ export interface PainterScene {
   hoverIdx: number;
   /** Mouse Y in CSS px (legacy crosshair followed the pointer, not the bar). */
   hoverY: number | null;
+  /** ABSOLUTE index into the full series (not window-relative). */
   timeIndex: Map<string, number>;
+  /** ABSOLUTE index of the LAST bar at-or-before a time (-1 = none). */
   indexAtOrBefore: (iso: string) => number;
 }
 
@@ -104,12 +111,16 @@ export function paintChart(
   mono: string,
 ): void {
   const { w, h } = size;
-  if (w <= 0 || h <= 0 || sc.shown.length === 0) return;
+  if (w <= 0 || h <= 0 || sc.count <= 0 || sc.shown.length === 0) return;
   const { lo, hi } = scale;
   const plotW = w - AXIS_W - PAD_LEFT;
   const plotH = h - PAD_TOP - PAD_BOTTOM;
-  const x = (i: number) => PAD_LEFT + (i * plotW) / sc.shown.length;
-  const bw = plotW / sc.shown.length;
+  // Slot model (TradingView-style pan/zoom): `count` slots span the plot and
+  // `shown` fills the first shown.length of them — the tail is empty future
+  // space. x() therefore takes a slot index RELATIVE to sc.left.
+  const x = (i: number) => PAD_LEFT + (i * plotW) / sc.count;
+  const bw = plotW / sc.count;
+  const slotOf = (abs: number) => abs - sc.left;
   const y = (p: number) => PAD_TOP + ((hi - p) / (hi - lo)) * plotH;
 
   // backdrop: flat inset + subtle top gradient (legacy #090d16, modernized)
@@ -154,7 +165,7 @@ export function paintChart(
     let zx = PAD_LEFT;
     if (z.time) {
       const zi = sc.timeIndex.get(z.time) ?? sc.indexAtOrBefore(z.time);
-      if (zi >= 0) zx = x(zi);
+      if (zi >= 0) zx = x(Math.max(0, slotOf(zi)));
     }
     const zy = y(z.price_high);
     const zh = Math.max(1, y(z.price_low) - zy);
@@ -196,7 +207,7 @@ export function paintChart(
   for (const m of sc.overlays?.midlines ?? []) {
     const my = y(m.price);
     if (my < 0 || my > h - PAD_BOTTOM) continue;
-    const from = m.time_start ? Math.max(0, x(Math.max(0, sc.indexAtOrBefore(m.time_start)))) : 0;
+    const from = m.time_start ? Math.max(0, x(Math.max(0, slotOf(sc.indexAtOrBefore(m.time_start))))) : 0;
     ctx.beginPath();
     ctx.moveTo(from, my);
     ctx.lineTo(w - AXIS_W, my);
@@ -209,8 +220,9 @@ export function paintChart(
   // liquidity sweep markers (triangles at the swept extreme)
   for (const m of sc.overlays?.liq_markers ?? []) {
     const mi = m.time ? (sc.timeIndex.get(m.time) ?? -1) : -1;
-    if (mi < 0) continue;
-    const mx = x(mi) + bw / 2;
+    const mslot = slotOf(mi);
+    if (mslot < 0 || mslot >= sc.count) continue;
+    const mx = x(mslot) + bw / 2;
     const my = y(m.price);
     if (my < 0 || my > h - PAD_BOTTOM) continue;
     const up = (m.type ?? "").includes("BUY_SIDE");
@@ -333,7 +345,7 @@ export function paintChart(
   if (sc.cursorIso) {
     const ci = sc.indexAtOrBefore(sc.cursorIso);
     if (ci >= 0) {
-      const cx2 = x(ci) + bw / 2;
+      const cx2 = x(slotOf(ci)) + bw / 2;
       ctx.fillStyle = "rgba(2,6,23,0.62)";
       ctx.fillRect(cx2, 0, Math.max(0, w - AXIS_W - cx2), h - PAD_BOTTOM);
       ctx.strokeStyle = pal.accentStrong;
@@ -351,27 +363,44 @@ export function paintChart(
     }
   }
 
-  // crosshair guides (legacy dashed slate) — vertical snaps to the hovered
-  // bar center, horizontal follows the pointer Y like app.js crosshairX/Y
-  if (sc.hoverIdx >= 0) {
-    const hv = shownBars[sc.hoverIdx];
-    if (hv) {
-      const chx = x(sc.hoverIdx) + bw / 2;
+  // data/future boundary — empty slots right of the last real bar (scroll-
+  // into-future space) get an explicit edge so the emptiness reads as
+  // "no data yet", never "the feed stopped".
+  if (sc.shown.length < sc.count) {
+    const edgeX = x(sc.shown.length);
+    if (edgeX < w - AXIS_W - 46) {
       ctx.strokeStyle = "rgba(148,163,184,0.35)";
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
       ctx.beginPath();
-      ctx.moveTo(chx, 0);
-      ctx.lineTo(chx, h - PAD_BOTTOM);
+      ctx.moveTo(edgeX, 0);
+      ctx.lineTo(edgeX, h - PAD_BOTTOM);
       ctx.stroke();
-      if (typeof sc.hoverY === "number" && sc.hoverY >= 0 && sc.hoverY < h - PAD_BOTTOM) {
-        ctx.beginPath();
-        ctx.moveTo(0, sc.hoverY);
-        ctx.lineTo(w - AXIS_W, sc.hoverY);
-        ctx.stroke();
-      }
       ctx.setLineDash([]);
+      ctx.fillStyle = pal.axisText;
+      ctx.font = `9px ${mono}`;
+      ctx.fillText("future", edgeX + 5, h - PAD_BOTTOM - 6);
     }
+  }
+
+  // crosshair guides (legacy dashed slate) — vertical snaps to the hovered
+  // bar center, horizontal follows the pointer Y like app.js crosshairX/Y
+  if (sc.hoverIdx >= 0 && sc.hoverIdx < sc.count) {
+    const chx = x(sc.hoverIdx) + bw / 2;
+    ctx.strokeStyle = "rgba(148,163,184,0.35)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(chx, 0);
+    ctx.lineTo(chx, h - PAD_BOTTOM);
+    ctx.stroke();
+    if (typeof sc.hoverY === "number" && sc.hoverY >= 0 && sc.hoverY < h - PAD_BOTTOM) {
+      ctx.beginPath();
+      ctx.moveTo(0, sc.hoverY);
+      ctx.lineTo(w - AXIS_W, sc.hoverY);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
   }
   ctx.restore();
 

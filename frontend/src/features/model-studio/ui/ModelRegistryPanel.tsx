@@ -259,13 +259,13 @@ export function ModelRegistryPanel({
                 {verifyResult.all_passed ? "ALL PASSED" : "WARNINGS DETECTED"}
               </span>
             </div>
-            <div className="table-wrap">
+            <div tabIndex={0} className="table-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Check Name</th>
-                    <th style={{ textAlign: "center" }}>Verdict</th>
-                    <th>Diagnostic Detail</th>
+                    <th scope="col">Check Name</th>
+                    <th scope="col" style={{ textAlign: "center" }}>Verdict</th>
+                    <th scope="col">Diagnostic Detail</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -300,15 +300,15 @@ export function ModelRegistryPanel({
                 {scalerResult.message || "No scaler vectors cataloged."}
               </div>
             ) : (
-              <div className="table-wrap" style={{ maxHeight: 220 }}>
+              <div tabIndex={0} className="table-wrap" style={{ maxHeight: 220 }}>
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th># Index</th>
-                      <th className="num">Mean (μ)</th>
-                      <th className="num">Std Dev (σ)</th>
-                      <th style={{ textAlign: "center" }}>Clamping</th>
-                      <th style={{ textAlign: "center" }}>Zero Variance</th>
+                      <th scope="col"># Index</th>
+                      <th scope="col" className="num">Mean (μ)</th>
+                      <th scope="col" className="num">Std Dev (σ)</th>
+                      <th scope="col" style={{ textAlign: "center" }}>Clamping</th>
+                      <th scope="col" style={{ textAlign: "center" }}>Zero Variance</th>
                     </tr>
                   </thead>
                   <tbody>
