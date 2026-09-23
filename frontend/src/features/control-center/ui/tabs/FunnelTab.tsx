@@ -10,7 +10,7 @@
  * EXTEND:   new distribution column = a field OperatorFunnelDto already declares.
  */
 import { useQuery } from "@tanstack/react-query";
-import { EmptyState, Panel, Skeleton } from "@/components/primitives";
+import { ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { DistBars } from "../../../research/ui/lane5Kit";
 import { controlCenterQueries } from "../../useCases";
 
@@ -26,7 +26,11 @@ export function FunnelTab({ hours }: { hours: number | undefined }) {
       {funnelQ.isPending ? (
         <Skeleton count={4} />
       ) : funnelQ.isError ? (
-        <EmptyState message="funnel endpoint failed" />
+        <ErrorState
+          message={funnelQ.error instanceof Error ? funnelQ.error.message : "funnel endpoint failed"}
+          requestId={(funnelQ.error as { requestId?: string } | null)?.requestId ?? null}
+          onRetry={() => void funnelQ.refetch()}
+        />
       ) : (
         <>
           <div className="tiny muted" style={{ marginBottom: 8 }}>

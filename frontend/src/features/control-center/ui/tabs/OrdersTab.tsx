@@ -9,12 +9,33 @@
  *             ledger-unavailable states are all visible.
  * EXTEND:   new column = a field the orders Row already carries (verify server-side).
  */
+import { memo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton } from "@/components/primitives";
 import { formatDateTime, formatNumber, formatPrice } from "@/lib/format";
 import { StatusPill } from "../../../research/ui/lane5Kit";
-import { arr, num, str } from "../../model";
+import { arr, num, str, type Row } from "../../model";
 import { controlCenterQueries } from "../../useCases";
+
+/** Memoized dispatch row (50 visible). Primitive/object-stable props only:
+ *  the shell re-renders every second — these rows bail out of that tick. */
+const OrderRow = memo(function OrderRow({ row }: { row: Row }) {
+  const o = row;
+  return (
+    <tr>
+      <td className="tiny">{formatDateTime(str(o.timestamp))}</td>
+      <td className="num tiny">{num(o.ticket) ?? "—"}</td>
+      <td>
+        <StatusPill status={str(o.action)} />
+      </td>
+      <td className="num tiny">{formatPrice(num(o.price), 2)}</td>
+      <td className="num tiny">{num(o.volume) ?? "—"}</td>
+      <td className="num tiny">{num(o.latency) === null ? "—" : `${formatNumber(num(o.latency)!, 0)}ms`}</td>
+      <td className="tiny">{str(o.execution_mode) ?? "—"}</td>
+      <td className="tiny muted">{str(o.reason) ?? ""}</td>
+    </tr>
+  );
+});
 
 export function OrdersTab() {
   const ordersQ = useQuery({
@@ -29,9 +50,13 @@ export function OrdersTab() {
       {ordersQ.isPending ? (
         <Skeleton count={5} />
       ) : ordersQ.isError ? (
-        <ErrorState message={ordersQ.error instanceof Error ? ordersQ.error.message : "orders failed"} onRetry={() => void ordersQ.refetch()} />
+        <ErrorState
+          message={ordersQ.error instanceof Error ? ordersQ.error.message : "orders failed"}
+          requestId={(ordersQ.error as { requestId?: string } | null)?.requestId ?? null}
+          onRetry={() => void ordersQ.refetch()}
+        />
       ) : ordersQ.data?.available === false ? (
-        <EmptyState message="ledger unavailable" />
+        <EmptyState message="ledger unavailable" hint="the dispatch-evidence endpoint answers available:false — the audit_orders ledger is empty" />
       ) : (
         <>
           <div style={{ marginBottom: 8 }}>
@@ -58,18 +83,7 @@ export function OrdersTab() {
             ]}
           >
             {arr(ordersQ.data?.rows).map((o, i) => (
-              <tr key={i}>
-                <td className="tiny">{formatDateTime(str(o.timestamp))}</td>
-                <td className="num tiny">{num(o.ticket) ?? "—"}</td>
-                <td>
-                  <StatusPill status={str(o.action)} />
-                </td>
-                <td className="num tiny">{formatPrice(num(o.price), 2)}</td>
-                <td className="num tiny">{num(o.volume) ?? "—"}</td>
-                <td className="num tiny">{num(o.latency) === null ? "—" : `${formatNumber(num(o.latency)!, 0)}ms`}</td>
-                <td className="tiny">{str(o.execution_mode) ?? "—"}</td>
-                <td className="tiny muted">{str(o.reason) ?? ""}</td>
-              </tr>
+              <OrderRow key={`${str(o.ticket) ?? ""}-${i}`} row={o} />
             ))}
           </DataTable>
         </>

@@ -10,7 +10,7 @@
  * EXTEND:   new breakdown = a field OperatorNoTradeDto already declares.
  */
 import { useQuery } from "@tanstack/react-query";
-import { DataTable, EmptyState, Panel, Skeleton } from "@/components/primitives";
+import { DataTable, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
 import { DistBars } from "../../../research/ui/lane5Kit";
 import { arr, str } from "../../model";
@@ -28,7 +28,11 @@ export function NoTradeTab({ hours }: { hours: number | undefined }) {
       {noTradeQ.isPending ? (
         <Skeleton count={4} />
       ) : noTradeQ.isError ? (
-        <EmptyState message="no-trade endpoint failed" />
+        <ErrorState
+          message={noTradeQ.error instanceof Error ? noTradeQ.error.message : "no-trade endpoint failed"}
+          requestId={(noTradeQ.error as { requestId?: string } | null)?.requestId ?? null}
+          onRetry={() => void noTradeQ.refetch()}
+        />
       ) : (
         <div className="grid cols-2">
           <div>

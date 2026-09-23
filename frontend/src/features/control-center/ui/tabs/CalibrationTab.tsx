@@ -11,7 +11,7 @@
  * EXTEND:   new metric = a field CalibrationDto already declares in model.ts.
  */
 import { useQuery } from "@tanstack/react-query";
-import { EmptyState, MetricCard, Panel, Skeleton } from "@/components/primitives";
+import { EmptyState, ErrorState, MetricCard, Panel, Skeleton } from "@/components/primitives";
 import { formatNumber } from "@/lib/format";
 import { JsonBlock, StatusPill } from "../../../research/ui/lane5Kit";
 import { controlCenterQueries } from "../../useCases";
@@ -28,7 +28,11 @@ export function CalibrationTab() {
       {calibrationQ.isPending ? (
         <Skeleton count={4} />
       ) : calibrationQ.isError ? (
-        <EmptyState message={calibrationQ.error instanceof Error ? calibrationQ.error.message : "calibration monitor failed"} />
+        <ErrorState
+          message={calibrationQ.error instanceof Error ? calibrationQ.error.message : "calibration monitor failed"}
+          requestId={(calibrationQ.error as { requestId?: string } | null)?.requestId ?? null}
+          onRetry={() => void calibrationQ.refetch()}
+        />
       ) : calibrationQ.data?.available !== true ? (
         <EmptyState message="calibration monitor not available" hint="the endpoint answers available:false when the artifact is missing" />
       ) : (

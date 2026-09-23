@@ -9,11 +9,40 @@
  *             inspect-disabled; confidence never rendered when null (NOT RECORDED).
  * EXTEND:   new filter = a qs() field that api.ts already declares.
  */
+import { memo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
+import { useDebouncedValue } from "@/features/config/ui/kit";
 import { num, type OperatorDecisionRow } from "../../model";
 import { controlCenterQueries, controlCenterUseCases } from "../../useCases";
+
+/** Memoized decision row (100 visible). Row object identity is stable between
+ *  polls and onInspect is the parent's setState — rows bail out of the 1s tick. */
+const DecisionRow = memo(function DecisionRow({ row, onInspect }: { row: OperatorDecisionRow; onInspect: (id: number | null) => void }) {
+  const r = row;
+  return (
+    <tr>
+      <td className="num tiny">{r.id ?? "—"}</td>
+      <td className="small">{r.symbol ?? "—"}</td>
+      <td>
+        <StatusBadge status={r.action} />
+      </td>
+      <td className="num tiny">{r.confidence == null ? "NOT RECORDED" : formatNumber(r.confidence, 3)}</td>
+      <td className="tiny">{r.decision_stage ?? "—"}</td>
+      <td className="tiny">{r.blocked_by ?? ""}</td>
+      <td className="tiny muted" title={r.reason_code ?? ""}>
+        {(r.reason_code ?? "—").slice(0, 20)}
+      </td>
+      <td className="tiny">{formatDateTime(r.generated_at)}</td>
+      <td>
+        <button className="btn small ghost" disabled={r.payload_ok === false} onClick={() => onInspect(num(r.id) ?? null)}>
+          {r.payload_ok === false ? "payload ✗" : "inspect"}
+        </button>
+      </td>
+    </tr>
+  );
+});
 
 interface DecisionsTabProps {
   hours: number | undefined;
@@ -26,10 +55,13 @@ interface DecisionsTabProps {
 }
 
 export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFilter, onSearch, onInspect }: DecisionsTabProps) {
+  // The search box stays instant; only the settled value reaches the query key,
+  // so typing fires one request per pause instead of one per keystroke.
+  const settledSearch = useDebouncedValue(search, 300);
   const decisionsQ = useQuery({
-    queryKey: ["control-center", "decisions", hours, actionFilter, search],
+    queryKey: ["control-center", "decisions", hours, actionFilter, settledSearch],
     queryFn: ({ signal }) =>
-      controlCenterQueries.decisions({ hours, action: actionFilter || undefined, search: search || undefined, limit: 100 }, signal),
+      controlCenterQueries.decisions({ hours, action: actionFilter || undefined, search: settledSearch || undefined, limit: 100 }, signal),
     retry: false,
   });
 
@@ -82,6 +114,7 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
       ) : decisionsQ.isError ? (
         <ErrorState
           message={decisionsQ.error instanceof Error ? decisionsQ.error.message : "decisions failed"}
+          requestId={(decisionsQ.error as { requestId?: string } | null)?.requestId ?? null}
           onRetry={() => void decisionsQ.refetch()}
         />
       ) : decisionsQ.data?.available === false ? (
@@ -103,25 +136,7 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
           ]}
         >
           {(decisionsQ.data?.rows ?? []).map((r: OperatorDecisionRow) => (
-            <tr key={controlCenterUseCases.decisionKey(r)}>
-              <td className="num tiny">{r.id ?? "—"}</td>
-              <td className="small">{r.symbol ?? "—"}</td>
-              <td>
-                <StatusBadge status={r.action} />
-              </td>
-              <td className="num tiny">{r.confidence == null ? "NOT RECORDED" : formatNumber(r.confidence, 3)}</td>
-              <td className="tiny">{r.decision_stage ?? "—"}</td>
-              <td className="tiny">{r.blocked_by ?? ""}</td>
-              <td className="tiny muted" title={r.reason_code ?? ""}>
-                {(r.reason_code ?? "—").slice(0, 20)}
-              </td>
-              <td className="tiny">{formatDateTime(r.generated_at)}</td>
-              <td>
-                <button className="btn small ghost" disabled={r.payload_ok === false} onClick={() => onInspect(num(r.id) ?? null)}>
-                  {r.payload_ok === false ? "payload ✗" : "inspect"}
-                </button>
-              </td>
-            </tr>
+            <DecisionRow key={controlCenterUseCases.decisionKey(r)} row={r} onInspect={onInspect} />
           ))}
         </DataTable>
       )}
