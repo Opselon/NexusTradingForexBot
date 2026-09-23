@@ -233,6 +233,25 @@ export default function AiAnalysisPage(props: ShellPageProps) {
     <ConfidenceTimeline series={timeline} />
   );
 
+  // perf(7, lane E): shadow-tab entry chains memoized on the exact payload
+  // slices — same rows/stepper inputs, rebuilt only when the payload lands.
+  const shadowSummaryEntries = useMemo(
+    () => Object.entries(obj(shadowQ.data?.summary)).slice(0, SUMMARY_ROWS),
+    [shadowQ.data?.summary],
+  );
+  const shadowGates = useMemo(
+    () =>
+      Object.entries(obj(shadowQ.data?.disagreement_counts)).map(([k, v]) => ({
+        name: k,
+        status: "INFO",
+        reason: String(v),
+      })),
+    [shadowQ.data?.disagreement_counts],
+  );
+  const shadowAlerts = useMemo(
+    () => (shadowQ.data?.drift_alerts ?? []).slice(0, DRIFT_SHOW),
+    [shadowQ.data?.drift_alerts],
+  );
   return (
     <div>
       <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
@@ -367,16 +386,14 @@ export default function AiAnalysisPage(props: ShellPageProps) {
                     summary ({Object.keys(obj(shadowQ.data?.summary)).length} keys, showing first {SUMMARY_ROWS})
                   </div>
                   <dl className="kv">
-                    {Object.entries(obj(shadowQ.data?.summary))
-                      .slice(0, SUMMARY_ROWS)
-                      .map(([k, v]) => (
+                    {shadowSummaryEntries.map(([k, v]) => (
                         <InfoRow key={k} label={k} value={typeof v === "object" ? "…" : String(v)} />
                       ))}
                   </dl>
                   <div className="section-title" style={{ marginTop: 10 }}>
                     disagreement counts
                   </div>
-                  <GateStepper gates={Object.entries(obj(shadowQ.data?.disagreement_counts)).map(([k, v]) => ({ name: k, status: "INFO", reason: String(v) }))} />
+                  <GateStepper gates={shadowGates} />
                 </div>
                 <div>
                   <div className="section-title">
@@ -386,7 +403,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
                     <EmptyState message="No drift alerts recorded." />
                   ) : (
                     <DataTable headers={[{ label: "feature" }, { label: "kind" }, { label: "value", num: true }, { label: "at" }]}>
-                      {(shadowQ.data?.drift_alerts ?? []).slice(0, DRIFT_SHOW).map((a, i) => (
+                      {shadowAlerts.map((a, i) => (
                         <tr key={i}>
                           <td className="tiny">{str(a.feature) ?? str(a.name) ?? "—"}</td>
                           <td className="tiny">{str(a.kind) ?? str(a.alert_type) ?? "—"}</td>

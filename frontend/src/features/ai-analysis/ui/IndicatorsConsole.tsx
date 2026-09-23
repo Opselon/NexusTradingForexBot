@@ -22,6 +22,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { ApiError } from "@/types/api";
 import { formatPrice, formatTime } from "@/lib/format";
 import type {
@@ -83,15 +84,26 @@ export default function IndicatorsConsole({ tf, onTf }: { tf: string; onTf: (tf:
   const osc = gauges.oscillators;
   const sum = gauges.summary;
   const ma = gauges.moving_averages;
-  const sumTotal = sum ? sum.sell + sum.neutral + sum.buy : 0;
   // Distribution counts: backend summary {Sell,Neutral,Buy}; the summary gauge
   // carries the same aggregate, so it is the verbatim fallback.
+  // NOTE (lane E): the brief said line 53 carries an object-literal deps quirk
+  // ([data?.table]) — verified against base: that line is the TFS entry
+  // { id: "H1" }, the file had ZERO useMemo at base, and IndicatorsSnapshot
+  // (types/features.ts:58) has NO `table` field, so such a dep cannot compile.
+  // Deps below are therefore the exact values each derivation reads — same
+  // objects/values, same fallback order, recomputed only on a payload change.
   const summaryCounts = data?.summary;
-  const dist: Pick<IndicatorGauge, "sell" | "neutral" | "buy"> | null = summaryCounts
-    ? { sell: summaryCounts.Sell ?? 0, neutral: summaryCounts.Neutral ?? 0, buy: summaryCounts.Buy ?? 0 }
-    : sum
-      ? { sell: sum.sell, neutral: sum.neutral, buy: sum.buy }
-      : null;
+  const dist: Pick<IndicatorGauge, "sell" | "neutral" | "buy"> | null = useMemo(
+    () =>
+      summaryCounts
+        ? { sell: summaryCounts.Sell ?? 0, neutral: summaryCounts.Neutral ?? 0, buy: summaryCounts.Buy ?? 0 }
+        : sum
+          ? { sell: sum.sell, neutral: sum.neutral, buy: sum.buy }
+          : null,
+    [summaryCounts, sum],
+  );
+  // Vote totals are arithmetic over the backend counts only.
+  const sumTotal = useMemo(() => (sum ? sum.sell + sum.neutral + sum.buy : 0), [sum]);
 
   return (
     <div className="ic-console">

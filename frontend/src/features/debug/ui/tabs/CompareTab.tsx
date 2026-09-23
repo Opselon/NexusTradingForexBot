@@ -33,10 +33,16 @@ export function CompareTab({ a, b, setA, setB }: { a: string | null; b: string |
     () => diffSnapshotSections((snapA.data as DebugState | undefined) ?? null, (snapB.data as DebugState | undefined) ?? null, section),
     [snapA.data, snapB.data, section],
   );
-  const counts = diffCounts(clientRows);
-  const ids = (list.data?.snapshots ?? []).map((s) => String(s.snapshot_id ?? ""));
-  const sectionNames = Array.from(
-    new Set([...snapshotSections((snapA.data as DebugState | undefined) ?? null), ...snapshotSections((snapB.data as DebugState | undefined) ?? null)]),
+  // Reduce / map / set-union chains over the already-memoized rows and the
+  // two snapshot payloads — deps are exactly the data each derivation reads.
+  const counts = useMemo(() => diffCounts(clientRows), [clientRows]);
+  const ids = useMemo(() => (list.data?.snapshots ?? []).map((s) => String(s.snapshot_id ?? "")), [list.data?.snapshots]);
+  const sectionNames = useMemo(
+    () =>
+      Array.from(
+        new Set([...snapshotSections((snapA.data as DebugState | undefined) ?? null), ...snapshotSections((snapB.data as DebugState | undefined) ?? null)]),
+      ),
+    [snapA.data, snapB.data],
   );
 
   return (
@@ -144,11 +150,15 @@ function CompareSummary({ diff, deltaApi }: { diff: CompareResult; deltaApi: Sor
     ["policy", diff.policy],
     ["risk", diff.risk],
   ];
-  const sortedDeltas = sortRows(
-    featureDiffs,
-    (f) => (deltaApi.sort.key === "index" ? f.index : deltaApi.sort.key === "name" ? (f.name ?? null) : Math.abs(f.delta)),
-    deltaApi.sort.dir,
-    deltaApi.sort.key === "index" || deltaApi.sort.key === "delta" ? "number" : "string",
+  const sortedDeltas = useMemo(
+    () =>
+      sortRows(
+        featureDiffs,
+        (f) => (deltaApi.sort.key === "index" ? f.index : deltaApi.sort.key === "name" ? (f.name ?? null) : Math.abs(f.delta)),
+        deltaApi.sort.dir,
+        deltaApi.sort.key === "index" || deltaApi.sort.key === "delta" ? "number" : "string",
+      ),
+    [featureDiffs, deltaApi.sort],
   );
 
   return (
