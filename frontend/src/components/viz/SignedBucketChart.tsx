@@ -8,6 +8,7 @@
 
 import { useMemo } from "react";
 import { extent, fmtCompact, scaleLinear } from "./geometry";
+import { useI18n } from "@/stores/i18nStore";
 import "./viz.css";
 
 export interface SignedBucket {
@@ -30,7 +31,9 @@ export interface SignedBucketChartProps {
 
 const W = 640;
 
-export function SignedBucketChart({ buckets, height = 180, emptyHint = "no timeline buckets from the backend", bucketLabel }: SignedBucketChartProps) {
+export function SignedBucketChart({ buckets, height = 180, emptyHint, bucketLabel }: SignedBucketChartProps) {
+  const t = useI18n((s) => s.t);
+  const emptyHintText = emptyHint ?? t("ui.viz.sb_empty", "no timeline buckets from the backend");
   // Bars derive from `buckets` (identity changes only when a fetch lands);
   // memoizing keeps an unchanged timeline from being re-walked on every parent
   // render. The emitted SVG (and each <title> caption) is byte-identical.
@@ -49,13 +52,13 @@ export function SignedBucketChart({ buckets, height = 180, emptyHint = "no timel
     return { toY, step, barW };
   }, [buckets, height]);
 
-  if (geo === null) return <div className="viz-empty">{emptyHint}</div>;
+  if (geo === null) return <div className="viz-empty">{emptyHintText}</div>;
   const { toY, step, barW } = geo;
   const fmt = (v: number) => fmtCompact(v, 2);
   const label = bucketLabel ?? ((b: SignedBucket) => (b.bucket_start ? new Date(b.bucket_start).toLocaleString("en-GB", { hour12: false }) : ""));
   return (
     <div className="viz-frame">
-      <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={`impact timeline, ${buckets.length} buckets`}>
+      <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={t("ui.viz.sb_aria", "impact timeline, {n} buckets", { n: buckets.length })}>
         <line className="viz-zero" x1={0} x2={W} y1={toY(0)} y2={toY(0)} />
         {buckets.map((b, i) => {
           const x = i * step + (step - barW) / 2;
@@ -66,7 +69,7 @@ export function SignedBucketChart({ buckets, height = 180, emptyHint = "no timel
           const neuH = Math.abs(toY(neu / 2) - zero);
           return (
             <g key={i}>
-              <title>{`${label(b)} · bull ${fmt(bull)} · bear ${fmt(bear)} · neutral ${fmt(neu)} · ${b.article_count ?? 0} articles${b.top_title ? ` · ${b.top_title}` : ""}`}</title>
+              <title>{t("ui.viz.sb_tooltip", "{l} · bullish {bull} · bearish {bear} · neutral {neu} · {n} articles{extra}", { l: label(b), bull: fmt(bull), bear: fmt(bear), neu: fmt(neu), n: b.article_count ?? 0, extra: b.top_title ? ` · ${b.top_title}` : "" })}</title>
               {neu > 0 && <rect className="viz-bar neu" x={x - 1} y={zero - neuH} width={barW + 2} height={Math.max(1, neuH * 2)} opacity={0.25} />}
               {bull > 0 && <rect className="viz-bar pos" x={x} y={toY(bull)} width={barW} height={Math.max(1, zero - toY(bull))} rx={1} />}
               {bear > 0 && <rect className="viz-bar neg" x={x} y={zero} width={barW} height={Math.max(1, toY(-bear) - zero)} rx={1} />}
@@ -83,15 +86,15 @@ export function SignedBucketChart({ buckets, height = 180, emptyHint = "no timel
       <div className="viz-legend">
         <span>
           <i className="sw pos" />
-          bullish
+          {t("ui.viz.bullish", "bullish")}
         </span>
         <span>
           <i className="sw neg" />
-          bearish
+          {t("ui.viz.bearish", "bearish")}
         </span>
         <span>
           <i className="sw flat" />
-          neutral
+          {t("ui.viz.neutral", "neutral")}
         </span>
       </div>
     </div>

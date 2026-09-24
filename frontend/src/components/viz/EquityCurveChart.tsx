@@ -8,6 +8,7 @@
 
 import { useId, useMemo } from "react";
 import { areaPath, extent, fmtCompact, linePath, niceTicks, scaleLinear, type Pt } from "./geometry";
+import { useI18n } from "@/stores/i18nStore";
 import "./viz.css";
 
 export interface EquityPoint {
@@ -38,8 +39,10 @@ export function EquityCurveChart({
   height = 200,
   showPeak = false,
   formatValue,
-  emptyHint = "no equity samples from the backend",
+  emptyHint,
 }: EquityCurveChartProps) {
+  const t = useI18n((s) => s.t);
+  const emptyHintText = emptyHint ?? t("ui.viz.eq_empty", "no equity samples from the backend");
   const gid = useId().replace(/:/g, "");
   // The geometry is a pure function of `points` + the numeric props; memoizing
   // keeps an unchanged series from being re-walked on every parent render.
@@ -66,7 +69,7 @@ export function EquityCurveChart({
   }, [points, field, height, showPeak]);
 
   if (geo === null) {
-    return <div className="viz-empty">{emptyHint}</div>;
+    return <div className="viz-empty">{emptyHintText}</div>;
   }
   const { toY, step, pts, peakPts, first, last, rising, ticks, real, padB } = geo;
   const fmt = formatValue ?? ((v: number) => fmtCompact(v, 1));
@@ -78,7 +81,7 @@ export function EquityCurveChart({
   };
   return (
     <div className="viz-frame">
-      <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={`equity curve, ${real.length} samples, ${fmt(first)} to ${fmt(last)}`}>
+      <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={t("ui.viz.eq_aria", "equity curve, {n} samples, from {a} to {b}", { n: real.length, a: fmt(first), b: fmt(last) })}>
         <defs>
           <linearGradient id={`eq-${gid}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={rising ? "var(--green)" : "var(--red)"} stopOpacity="0.22" />
@@ -112,7 +115,7 @@ export function EquityCurveChart({
           </span>
           <span>
             <i className="sw flat" />
-            peak_equity (backend)
+            {t("ui.viz.eq_peak", "peak_equity (backend)")}
           </span>
         </div>
       )}

@@ -20,6 +20,7 @@ import { memo } from "react";
 import type { PredictionRow } from "@/types/domain";
 import { EmptyState, Panel, ProbBar } from "@/components/primitives";
 import { formatPct } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import "./market-console.css";
 
 /**
@@ -34,16 +35,17 @@ export const PredictionsTable = memo(function PredictionsTable({
   predictions: PredictionRow[];
   limit?: number;
 }) {
+  const t = useI18n((s) => s.t);
   return (
     <Panel
-      title={`Recent model decisions (${predictions.length})`}
-      subtitle="real audit_signals rows from the ledger — never fabricated"
-      right={<span className="timestamp-note">backend order, newest first</span>}
+      title={t("dash.preds.title", "Recent model decisions ({n})", { n: predictions.length })}
+      subtitle={t("dash.preds.subtitle", "real audit_signals rows from the ledger — never fabricated")}
+      right={<span className="timestamp-note">{t("dash.preds.order_note", "backend order, newest first")}</span>}
     >
       {predictions.length === 0 ? (
         <EmptyState
-          message="No AI predictions recorded yet."
-          hint="audit_signals is empty — waiting for live engine decisions. Not rendered as zeros."
+          message={t("dash.preds.empty", "No AI predictions recorded yet.")}
+          hint={t("dash.preds.empty_hint", "audit_signals is empty — waiting for live engine decisions. Not rendered as zeros.")}
         />
       ) : (
         <div className="mc-preds">
@@ -71,16 +73,26 @@ export const PredictionsTable = memo(function PredictionsTable({
                     ]}
                   />
                 ) : (
-                  <div className="mc-pred__noprobs">softmax probabilities not sent for this row — shown as unknown, not zeros</div>
+                  <div className="mc-pred__noprobs">
+                    {t("dash.preds.noprobs", "softmax probabilities not sent for this row — shown as unknown, not zeros")}
+                  </div>
                 )}
               </div>
             );
           })}
           {predictions.length > limit && (
-            <div className="mc-pred__more muted">+{predictions.length - limit} older rows on the snapshot (first {limit} shown)</div>
+            <div className="mc-pred__more muted">
+              {t("dash.preds.more", "+{o} older rows on the snapshot (first {l} shown)", {
+                o: predictions.length - limit,
+                l: limit,
+              })}
+            </div>
           )}
           <div className="mc-pred__note">
-            Outcome accuracy is not evaluated in this payload (the legacy ledger carried literal 0/0) — no fake accuracy bar is rendered.
+            {t(
+              "dash.preds.note",
+              "Outcome accuracy is not evaluated in this payload (the legacy ledger carried literal 0/0) — no fake accuracy bar is rendered.",
+            )}
           </div>
         </div>
       )}

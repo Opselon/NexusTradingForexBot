@@ -144,4 +144,6 @@ export const MESSAGES: FeatureMessages = {
   "risk.strip.unknown": { fa: "نامشخص", de: "unbekannt", es: "desconocido", ar: "غير معروف" },
   "risk.unit.lots": { fa: " لات", de: " Lot", es: " lotes", ar: " لوت" },
   "risk.unit.pts": { fa: " پوینت", de: " Pkt.", es: " pt", ar: " نقطة" },
+  "risk.strip.summary_aria": { fa: "خلاصهٔ سقفهای مشتق", de: "Abgeleitete Limitzusammenfassung", es: "Resumen de límites derivado", ar: "ملخص الحدود المشتقة" },
+  "risk.strip.tag_title": { fa: "مجموع ردیف‌های سقف نمایش‌داده‌شده در این صفحه — محاسبهٔ سمت کلاینت، بدون حکم بک‌اند.", de: "Summe über die auf dieser Seite gerenderten Limitzeilen — clientseitige Arithmetik, kein Backend-Urteil.", es: "Suma sobre las filas de límite renderizadas en esta página — aritmética del lado del cliente, sin veredicto del backend.", ar: "مجموع صفوف الحد المعروضة في هذه الصفحة — حساب من جانب العميل، لا حكم من الواجهة الخلفية." },
 };

@@ -24,6 +24,7 @@
  */
 import type { ReactNode } from "react";
 import type { EngineSnapshot } from "@/types/domain";
+import { useI18n } from "@/stores/i18nStore";
 import "./tradingHero.css";
 
 /** Provenance of every figure this hero can show — endpoints only, never decoration. */
@@ -49,6 +50,7 @@ export interface TradingHeroProps {
 const clockFmt = new Intl.DateTimeFormat(undefined, { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 export default function TradingHero({ snapshot, mt5Positions, pendingOrders, matched, drift, nowMs, refreshAll, anyFetching, engineCmd }: TradingHeroProps) {
+  const t = useI18n((s) => s.t);
   const running = snapshot.engine_running;
   const currentMode = (snapshot.runtime_mode ?? snapshot.execution_mode ?? "").toUpperCase();
   const tradeAllowed = snapshot.account.trade_allowed;
@@ -58,11 +60,11 @@ export default function TradingHero({ snapshot, mt5Positions, pendingOrders, mat
   /** Original fact 1/4 — engine_running verbatim (RUNNING / STOPPED). */
   const engineCard: KpiCard = {
     icon: "◉",
-    label: "Engine loop",
-    value: running ? "RUNNING" : "STOPPED",
+    label: t("trading.card.engine_loop", "Engine loop"),
+    value: running ? t("trading.card.running", "RUNNING") : t("trading.card.stopped", "STOPPED"),
     tone: running ? "good" : "dim",
     tip: "snapshot.engine_running (canonical socket snapshot) — displayed verbatim, never inferred. state_version climbs while the loop runs.",
-    cap: "snapshot.engine_running · verbatim",
+    cap: t("trading.hero.cap_engine", "snapshot.engine_running · verbatim"),
     sub: (
       <div className="tr-facts">
         <Chip tone="neutral" tip="health.subsystems.engine — the backend guardian's own status word for the engine subsystem, verbatim.">{`engine health: ${engineStatus}`}</Chip>
@@ -75,11 +77,11 @@ export default function TradingHero({ snapshot, mt5Positions, pendingOrders, mat
   /** Original fact 2/4 — execution mode verbatim (LIVE / PAPER / SHADOW / …). */
   const modeCard: KpiCard = {
     icon: "◐",
-    label: "Execution mode",
+    label: t("trading.card.mode", "Execution mode"),
     value: currentMode || "—",
     tone: !currentMode ? "dim" : currentMode.startsWith("LIVE") ? "bad" : currentMode.startsWith("PAPER") ? "good" : "accent",
     tip: "snapshot.runtime_mode ?? snapshot.execution_mode — the backend's own mode word, upper-cased for display only. Tone restates that word (LIVE / PAPER / SHADOW), never a verdict.",
-    cap: "runtime_mode ?? execution_mode · verbatim",
+    cap: t("trading.hero.cap_mode", "runtime_mode ?? execution_mode · verbatim"),
     sub: (
       <div className="tr-facts">
         <Chip tone="neutral" tip="data_source — where this snapshot's market data comes from (raw field, verbatim).">{`data_source: ${snapshot.data_source ?? "—"}`}</Chip>
@@ -91,11 +93,11 @@ export default function TradingHero({ snapshot, mt5Positions, pendingOrders, mat
   /** Original fact 3/4 — broker adapter verbatim. */
   const adapterCard: KpiCard = {
     icon: "⬡",
-    label: "Broker adapter",
+    label: t("trading.card.adapter", "Broker adapter"),
     value: snapshot.adapter_class ?? "—",
     tone: snapshot.adapter_class ? "accent" : "dim",
     tip: "snapshot.adapter_class — the adapter class the backend instantiates for the broker bridge (raw field, verbatim).",
-    cap: "snapshot.adapter_class · verbatim",
+    cap: t("trading.hero.cap_adapter", "snapshot.adapter_class · verbatim"),
     sub: (
       <div className="tr-facts">
         <Chip tone="neutral" tip="health.details.mt5 — the backend's own MT5 detail string from the health section (raw value, verbatim).">
@@ -108,11 +110,11 @@ export default function TradingHero({ snapshot, mt5Positions, pendingOrders, mat
   /** Original fact 4/4 — account.trade_allowed verbatim (ALLOWED / RESTRICTED / —). */
   const terminalCard: KpiCard = {
     icon: "⇄",
-    label: "Terminal trading",
-    value: tradeAllowed === null ? "—" : tradeAllowed ? "ALLOWED" : "RESTRICTED",
+    label: t("trading.card.terminal", "Terminal trading"),
+    value: tradeAllowed === null ? "—" : tradeAllowed ? t("trading.card.allowed", "ALLOWED") : t("trading.card.restricted", "RESTRICTED"),
     tone: tradeAllowed === null ? "dim" : tradeAllowed ? "good" : "bad",
     tip: "account.trade_allowed — the broker terminal's own permission flag (raw boolean). null renders an em dash; it is never shown as a zero or a verdict.",
-    cap: "broker terminal trade_allowed · verbatim",
+    cap: t("trading.hero.cap_terminal", "broker terminal trade_allowed · verbatim"),
     sub: (
       <div className="tr-facts">
         <Chip tone="neutral" tip="account.available — whether the backend could read the broker account at all (raw flag).">{`account.available: ${String(snapshot.account.available)}`}</Chip>
@@ -125,37 +127,37 @@ export default function TradingHero({ snapshot, mt5Positions, pendingOrders, mat
   /** Counter fact 5/8 — broker positions count from /api/mt5/status. */
   const positionsCard: KpiCard = {
     icon: "▤",
-    label: "Broker positions",
+    label: t("trading.card.broker_positions", "Broker positions"),
     value: String(mt5Positions),
     tone: "good",
     tip: "mt5Query.data.positions.length — open positions the broker reports (page-computed count of a backend list, raw count shown, never scaled).",
-    cap: "open in MT5 · /api/mt5/status",
-    sub: "broker-side open positions",
+    cap: t("trading.hero.cap_positions", "open in MT5 · /api/mt5/status"),
+    sub: t("trading.hero.sub_positions", "broker-side open positions"),
   };
 
   /** Counter fact 6/8 — pending orders count from /api/mt5/status. */
   const ordersCard: KpiCard = {
     icon: "⌛",
-    label: "Pending orders",
+    label: t("trading.card.pending", "Pending orders"),
     value: String(pendingOrders),
     tone: pendingOrders > 0 ? "warn" : "dim",
     tip: "mt5Query.data.orders.length — unfilled orders waiting at the broker (page-computed count of a backend list).",
-    cap: "unfilled at the broker · /api/mt5/status",
-    sub: "unfilled at the broker",
+    cap: t("trading.hero.cap_pending", "unfilled at the broker · /api/mt5/status"),
+    sub: t("trading.hero.sub_pending", "unfilled at the broker"),
   };
 
   /** Counter fact 7/8 — reconciliation matched / total, raw numbers side by side. */
   const reconCard: KpiCard = {
     icon: "⧉",
-    label: "Reconciliation",
+    label: t("trading.card.reconciliation", "Reconciliation"),
     value: `${matched} / ${matched + drift}`,
     tone: drift > 0 ? "warn" : matched > 0 ? "good" : "dim",
     tip: "Ticket match of ledger OPEN rows against broker positions — matched / total rows. The unmatched count is printed beside the value; nothing is scaled.",
-    cap: "matched / total ledger rows",
+    cap: t("trading.hero.cap_recon", "matched / total ledger rows"),
     sub: (
       <div className="tr-facts">
         <Chip tone={drift > 0 ? "warn" : "neutral"} tip="Unmatched rows = total − matched (engine-ledger rows without a broker twin, or broker rows the ledger never opened). The raw count, never a verdict.">{`unmatched: ${drift}`}</Chip>
-        <Chip tone="neutral" tip="Reconciliation runs client-side over two backend lists: /api/account/trades?status=OPEN (engine) and /api/mt5/status (broker), matched by ticket.">{drift > 0 ? "MATCHED + UNMATCHED" : matched > 0 ? "MATCHED" : "—"}</Chip>
+        <Chip tone="neutral" tip="Reconciliation runs client-side over two backend lists: /api/account/trades?status=OPEN (engine) and /api/mt5/status (broker), matched by ticket.">{drift > 0 ? t("trading.hero.matched_unmatched", "MATCHED + UNMATCHED") : matched > 0 ? t("trading.state.matched", "MATCHED") : "—"}</Chip>
       </div>
     ),
   };
@@ -163,12 +165,12 @@ export default function TradingHero({ snapshot, mt5Positions, pendingOrders, mat
   /** Counter fact 8/8 — local session clock (explicitly labeled client-side). */
   const clockCard: KpiCard = {
     icon: "◔",
-    label: "Session clock",
+    label: t("trading.card.session_clock", "Session clock"),
     value: clockFmt.format(nowMs),
     tone: "accent",
     tip: "Browser clock at render time (props.nowMs) — labeled local on purpose: it is not a backend field.",
-    cap: "local render time",
-    sub: "browser clock · not a backend field",
+    cap: t("trading.hero.cap_clock", "local render time"),
+    sub: t("trading.hero.sub_clock", "browser clock · not a backend field"),
   };
 
   const primaryCards = [engineCard, modeCard, adapterCard, terminalCard];
@@ -182,49 +184,49 @@ export default function TradingHero({ snapshot, mt5Positions, pendingOrders, mat
         <div className="tr-hero-title">
           <div className="tr-kicker" aria-hidden="true">
             <span className="tr-kicker-dot" />
-            LIVE CONTROL DECK
+            {t("trading.hero.kicker", "LIVE CONTROL DECK")}
             <span className="tr-kicker-rule" />
           </div>
           <h1 className="tr-h1">
             <span className="tr-h1-glyph" aria-hidden="true">⌁</span>
-            <span className="tr-h1-word">Trading</span>
+            <span className="tr-h1-word">{t("trading.hero.title", "Trading")}</span>
           </h1>
           <p className="tr-sub">
-            Engine readout, broker bridge, execution mode and forensic flow — every value below is the backend reply, rendered verbatim.
+            {t("trading.hero.sub", "Engine readout, broker bridge, execution mode and forensic flow — every value below is the backend reply, rendered verbatim.")}
           </p>
 
           <div className="tr-chiprow">
             <span
               className={`tr-engine-pill ${running ? "is-on" : "is-off"}`}
-              title={`snapshot.engine_running (socket snapshot) = ${running ? "RUNNING" : "STOPPED"} — displayed verbatim, never inferred. The dot pulses only while the backend reports RUNNING.`}
+              title={t("trading.hero.pill_tip", "snapshot.engine_running (socket snapshot) = {s} — displayed verbatim, never inferred. The dot pulses only while the backend reports RUNNING.", { s: running ? "RUNNING" : "STOPPED" })}
             >
               <span className="tr-engine-dot" aria-hidden="true" />
-              <span className="tr-engine-state">{running ? "RUNNING" : "STOPPED"}</span>
-              <span className="tr-engine-meta">engine · v{snapshot.state_version}</span>
+              <span className="tr-engine-state">{running ? t("trading.card.running", "RUNNING") : t("trading.card.stopped", "STOPPED")}</span>
+              <span className="tr-engine-meta">{t("trading.hero.engine_meta", "engine · v{v}", { v: snapshot.state_version })}</span>
             </span>
 
             <Chip
               tone={currentMode.startsWith("LIVE") ? "bad" : currentMode ? "accent" : "dim"}
-              tip={`runtime_mode ?? execution_mode = ${currentMode || "—"} — the backend's own mode word (verbatim).`}
+              tip={t("trading.hero.mode_tip", "runtime_mode ?? execution_mode = {m} — the backend's own mode word (verbatim).", { m: currentMode || "—" })}
             >
-              {`mode ${currentMode || "—"}`}
+              {t("trading.hero.mode_chip", "mode {m}", { m: currentMode || "—" })}
             </Chip>
 
             {lastMessage !== null && lastMessage !== "" && (
               <Chip
                 tone={engineCmd.state.lastResult ? "good" : "warn"}
-                tip={`engineCmd.state.lastMessage — the backend's own reply to the last engine command (lastResult=${String(engineCmd.state.lastResult)}).`}
+                tip={t("trading.hero.cmd_tip", "engineCmd.state.lastMessage — the backend's own reply to the last engine command (lastResult={r}).", { r: String(engineCmd.state.lastResult) })}
               >
-                {engineCmd.state.lastResult ? "✓" : "✕"} {`last command: ${lastMessage}`}
+                {engineCmd.state.lastResult ? "✓" : "✕"} {t("trading.hero.last_cmd", "last command: {m}", { m: lastMessage })}
               </Chip>
             )}
           </div>
 
-          <div className="tr-provenance" aria-label="backend endpoints surfaced by this hero">
+          <div className="tr-provenance" aria-label={t("trading.hero.prov_aria", "backend endpoints surfaced by this hero")}>
             {SOURCES.map((s) => (
-              <span className="tr-src" key={s.id} title={`Provenance — ${s.tip}`}>
+              <span className="tr-src" key={s.id} title={t("trading.hero.prov_tip", "Provenance — {tip}", { tip: s.tip })}>
                 <span className="tr-src-dot" aria-hidden="true" />
-                {s.label}
+                {s.id === "socket" ? t("trading.tile.socket_snapshot", "socket snapshot") : s.id === "ledger" ? t("trading.hero.src_ledger", "ledger OPEN") : s.label}
               </span>
             ))}
           </div>
@@ -236,11 +238,11 @@ export default function TradingHero({ snapshot, mt5Positions, pendingOrders, mat
             className="tr-refresh"
             onClick={refreshAll}
             disabled={anyFetching}
-            aria-label="Refresh all trading panels"
-            title="Refetch the existing queries only (/api/mt5/status, /api/operator/orders, ledger OPEN, executions) — no new endpoint is ever called."
+            aria-label={t("trading.hero.refresh_aria", "Refresh all trading panels")}
+            title={t("trading.hero.refresh_title", "Refetch the existing queries only (/api/mt5/status, /api/operator/orders, ledger OPEN, executions) — no new endpoint is ever called.")}
           >
             {anyFetching ? <span className="tr-refresh-spin" aria-hidden="true" /> : <span className="tr-refresh-ico" aria-hidden="true">⟳</span>}
-            <span>{anyFetching ? "Refreshing…" : "Refresh all"}</span>
+            <span>{anyFetching ? t("trading.hero.refreshing", "Refreshing…") : t("trading.hero.refresh_all", "Refresh all")}</span>
           </button>
         </div>
       </div>

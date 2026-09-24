@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChartKind } from "../chartPainter";
 import type { OverlayKey } from "./chartSettings";
+import { useI18n } from "@/stores/i18nStore";
 import "./contextMenu.css";
 
 /**
@@ -22,27 +23,33 @@ export interface ChartContextMenuProps {
   onOverlayToggle: (key: OverlayKey, visible: boolean) => void;
 }
 
-const CHART_KINDS: ReadonlyArray<{ kind: ChartKind; label: string }> = [
-  { kind: "line", label: "Line" },
-  { kind: "area", label: "Area" },
-  { kind: "hollow", label: "Hollow" },
-  { kind: "candles", label: "Candles" },
-];
+const CHART_KINDS: ReadonlyArray<ChartKind> = ["line", "area", "hollow", "candles"];
 
 /** Labels mirror toolbar/ChartOverlaysButton so both entry points read alike. */
-const OVERLAY_ROWS: ReadonlyArray<{ key: OverlayKey; label: string }> = [
-  { key: "zones", label: "Zones (FVG / OB / stop-hunt)" },
-  { key: "bos", label: "BOS lines" },
-  { key: "midlines", label: "50% equilibrium" },
-  { key: "liq", label: "Liquidity sweeps" },
-  { key: "orderLines", label: "Order lines (entry/SL/TP)" },
-];
+const OVERLAY_ROWS: ReadonlyArray<OverlayKey> = ["zones", "bos", "midlines", "liq", "orderLines"];
 
 /** Viewport edge guard for the fixed-position menu (px). */
 const EDGE = 6;
 
 export function ChartContextMenu(props: ChartContextMenuProps) {
+  const t = useI18n((s) => s.t);
   const [open, setOpen] = useState(false);
+
+  /* Labels resolve at render (literal keys — dynamic t() keys are banned) so a
+     language switch re-translates the menu; same keys as the toolbar popover. */
+  const kindLabel: Record<ChartKind, string> = {
+    line: t("dash.tools.kind_line", "Line"),
+    area: t("dash.tools.kind_area", "Area"),
+    hollow: t("dash.tools.kind_hollow", "Hollow"),
+    candles: t("dash.tools.kind_candles", "Candles"),
+  };
+  const overlayLabel: Record<OverlayKey, string> = {
+    zones: t("dash.tools.ov_zones", "Zones (FVG / OB / stop-hunt)"),
+    bos: t("dash.tools.ov_bos", "BOS lines"),
+    midlines: t("dash.tools.ov_mid", "50% equilibrium"),
+    liq: t("dash.tools.ov_liq", "Liquidity sweeps"),
+    orderLines: t("dash.tools.ov_orders", "Order lines (entry/SL/TP)"),
+  };
   /** Raw cursor position from the contextmenu event. */
   const [pos, setPos] = useState({ x: 0, y: 0 });
   /** Viewport-clamped position applied before paint (layout effect). */
@@ -182,55 +189,55 @@ export function ChartContextMenu(props: ChartContextMenuProps) {
       ref={ref}
       className="cx-menu"
       role="menu"
-      aria-label="Chart"
+      aria-label={t("dash.ctx.menu_aria", "Chart")}
       style={{ left: box.x, top: box.y }}
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}
     >
       <button type="button" role="menuitem" className="cx-menu__item" onClick={() => run(props.onGoLive)}>
-        Jump to latest bar
+        {t("dash.chart.live_title", "Jump to latest bar")}
       </button>
       <button type="button" role="menuitem" className="cx-menu__item" onClick={() => run(props.onSnapshot)}>
-        Snapshot PNG
+        {t("dash.tools.snapshot_btn", "Snapshot PNG")}
       </button>
       <button type="button" role="menuitem" className="cx-menu__item" onClick={() => run(props.onFullscreen)}>
-        Fullscreen
+        {t("dash.tools.fs_enter", "Fullscreen")}
       </button>
 
-      <div role="group" aria-label="Chart type">
+      <div role="group" aria-label={t("dash.tools.chart_type_aria", "Chart type")}>
         <div className="cx-menu__label" aria-hidden="true">
-          Chart type
+          {t("dash.tools.chart_type_aria", "Chart type")}
         </div>
         {CHART_KINDS.map((k) => (
           <button
-            key={k.kind}
+            key={k}
             type="button"
             role="menuitem"
             className="cx-menu__item"
-            aria-checked={props.chartKind === k.kind}
-            onClick={() => run(() => props.onChartKind(k.kind))}
+            aria-checked={props.chartKind === k}
+            onClick={() => run(() => props.onChartKind(k))}
           >
-            {k.label}
+            {kindLabel[k]}
           </button>
         ))}
       </div>
 
       <div className="cx-menu__sep" role="separator" />
 
-      <div role="group" aria-label="SMC overlay visibility">
+      <div role="group" aria-label={t("dash.tools.overlays_aria", "SMC overlay visibility")}>
         <div className="cx-menu__label" aria-hidden="true">
-          SMC overlays
+          {t("dash.tools.smc_btn", "SMC overlays")}
         </div>
-        {OVERLAY_ROWS.map((row) => (
+        {OVERLAY_ROWS.map((key) => (
           <button
-            key={row.key}
+            key={key}
             type="button"
             role="menuitem"
             className="cx-menu__item"
-            aria-checked={Boolean(props.overlayVisible[row.key])}
-            onClick={() => props.onOverlayToggle(row.key, !props.overlayVisible[row.key])}
+            aria-checked={Boolean(props.overlayVisible[key])}
+            onClick={() => props.onOverlayToggle(key, !props.overlayVisible[key])}
           >
-            {row.label}
+            {overlayLabel[key]}
           </button>
         ))}
       </div>
