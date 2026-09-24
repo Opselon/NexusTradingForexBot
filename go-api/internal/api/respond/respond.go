@@ -15,12 +15,18 @@ package respond
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/infrastructure/python"
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/observability"
 	"github.com/Opselon/NexusTradingForexBot/go-api/pkg/contracts"
 )
+
+// IsV1Path mirrors common._is_v1_path: the v1 envelope applies only under
+// /api/v1. Exported so handlers pick the correct envelope without each one
+// re-deriving the rule.
+func IsV1Path(p string) bool { return strings.HasPrefix(p, "/api/v1") }
 
 // UTCNowISO mirrors common.utc_now_iso(): timezone-aware ISO-8601 UTC.
 // Python's datetime.isoformat() includes microseconds; we match that with
@@ -34,6 +40,53 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// metaEntry preserves Python's meta key ORDER. Python's ok() builds meta as
+// {"request_id": ..., "generated_at": ...} then meta_extra.update(...) —
+// insertion order, which JSONResponse emits verbatim. A Go map reorders keys
+// randomly, and React clients + byte-level parity expect the exact order.
+type metaEntry struct {
+	keys []string
+	vals map[string]any
+}
+
+func newMeta(rid string) *metaEntry {
+	m := &metaEntry{vals: map[string]any{}}
+	m.set("request_id", rid)
+	m.set("generated_at", UTCNowISO())
+	return m
+}
+
+func (m *metaEntry) set(k string, v any) {
+	if _, hit := m.vals[k]; !hit {
+		m.keys = append(m.keys, k)
+	}
+	m.vals[k] = v
+}
+
+// MarshalJSON emits keys in insertion order, mirroring Python's dict.
+func (m *metaEntry) MarshalJSON() ([]byte, error) {
+	var b strings.Builder
+	b.WriteByte('{')
+	for i, k := range m.keys {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		kb, err := json.Marshal(k)
+		if err != nil {
+			return nil, err
+		}
+		b.Write(kb)
+		b.WriteByte(':')
+		vb, err := json.Marshal(m.vals[k])
+		if err != nil {
+			return nil, err
+		}
+		b.Write(vb)
+	}
+	b.WriteByte('}')
+	return []byte(b.String()), nil
 }
 
 // OK writes the v1 success envelope: {"data": ..., "meta": {...}} and ensures
@@ -50,12 +103,9 @@ func OKWithMeta(w http.ResponseWriter, r *http.Request, data any, extra map[stri
 	if rid == "" {
 		rid = observability.NewRequestID()
 	}
-	meta := map[string]any{
-		"request_id":   rid,
-		"generated_at": UTCNowISO(),
-	}
+	meta := newMeta(rid)
 	for k, v := range extra {
-		meta[k] = v
+		meta.set(k, v)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": data,

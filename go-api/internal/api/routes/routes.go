@@ -14,9 +14,10 @@ package routes
 import (
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/api/handlers"
+	"github.com/Opselon/NexusTradingForexBot/go-api/internal/api/respond"
+	"github.com/Opselon/NexusTradingForexBot/go-api/internal/api/router"
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/infrastructure/python"
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/observability"
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/security/auth"
@@ -24,83 +25,78 @@ import (
 
 // Build assembles the full middleware chain + route table and returns the
 // root handler ready to be served.
+//
+// All routes — hand-written Phase A/B and the generated surface alike — are
+// registered on ONE declaration-ordered router, because matching priority is
+// global in FastAPI: the first matching pattern wins regardless of which
+// module declared it. Splitting them across two routers would let the wrong
+// one win for the ambiguous pairs.
 func Build(py *python.Client) http.Handler {
-	mux := http.NewServeMux()
 	sys := handlers.NewSystem(py)
+	r := router.New()
 
-	// ---- Phase A: 10 operations. Registered with METHOD PATTERNS so Go's
-	// 1.22+ ServeMux distinguishes "path unknown" (404) from "method wrong"
-	// (405) exactly as FastAPI's automatic routing does. ----
-	mux.HandleFunc("GET /api/v1/system/health", sys.Health)
-	mux.HandleFunc("GET /api/v1/system/status", sys.Status)
-	mux.HandleFunc("GET /api/v1/system/readiness", sys.Readiness)
-	mux.HandleFunc("GET /api/v1/system/version", sys.Version)
-	mux.HandleFunc("GET /api/v1/system/runtime", sys.Runtime)
-	mux.HandleFunc("GET /api/v1/system/capabilities", sys.Capabilities)
-	mux.HandleFunc("GET /api/v1/system/workers", sys.Workers)
-	mux.HandleFunc("GET /api/v1/system/diagnostics", sys.Diagnostics)
-	mux.HandleFunc("POST /api/v1/system/diagnostics/run", sys.DiagnosticsRun)
-	mux.HandleFunc("POST /api/v1/system/refresh", sys.Refresh)
+	// ---- Phase A: 10 operations ----
+	r.HandleFunc("GET", "/api/v1/system/health", sys.Health)
+	r.HandleFunc("GET", "/api/v1/system/status", sys.Status)
+	r.HandleFunc("GET", "/api/v1/system/readiness", sys.Readiness)
+	r.HandleFunc("GET", "/api/v1/system/version", sys.Version)
+	r.HandleFunc("GET", "/api/v1/system/runtime", sys.Runtime)
+	r.HandleFunc("GET", "/api/v1/system/capabilities", sys.Capabilities)
+	r.HandleFunc("GET", "/api/v1/system/workers", sys.Workers)
+	r.HandleFunc("GET", "/api/v1/system/diagnostics", sys.Diagnostics)
+	r.HandleFunc("POST", "/api/v1/system/diagnostics/run", sys.DiagnosticsRun)
+	r.HandleFunc("POST", "/api/v1/system/refresh", sys.Refresh)
 
 	// ---- Phase B: read-only domains ----
 	rec := handlers.NewResearch(py)
-	mux.HandleFunc("GET /api/v1/research/status", rec.Status)
-	mux.HandleFunc("GET /api/v1/research/strategies", rec.Strategies)
-	mux.HandleFunc("GET /api/v1/research/strategies/{strategy_id}", rec.StrategyDetail)
-	mux.HandleFunc("GET /api/v1/research/runs", rec.Runs)
-	mux.HandleFunc("GET /api/v1/research/datasets", rec.Datasets)
+	r.HandleFunc("GET", "/api/v1/research/status", rec.Status)
+	r.HandleFunc("GET", "/api/v1/research/strategies", rec.Strategies)
+	r.HandleFunc("GET", "/api/v1/research/strategies/{strategy_id}", rec.StrategyDetail)
+	r.HandleFunc("GET", "/api/v1/research/runs", rec.Runs)
+	r.HandleFunc("GET", "/api/v1/research/datasets", rec.Datasets)
 
 	risk := handlers.NewRisk(py)
-	mux.HandleFunc("GET /api/v1/risk/status", risk.Status)
-	mux.HandleFunc("GET /api/v1/risk/summary", risk.Summary)
+	r.HandleFunc("GET", "/api/v1/risk/status", risk.Status)
+	r.HandleFunc("GET", "/api/v1/risk/summary", risk.Summary)
 
 	rt := handlers.NewRuntime(py)
-	mux.HandleFunc("GET /api/v1/runtime/mode", rt.Mode)
-	mux.HandleFunc("GET /api/v1/runtime/freshness", rt.Freshness)
-	mux.HandleFunc("GET /api/v1/runtime/shutdown", rt.Shutdown)
+	r.HandleFunc("GET", "/api/v1/runtime/mode", rt.Mode)
+	r.HandleFunc("GET", "/api/v1/runtime/freshness", rt.Freshness)
+	r.HandleFunc("GET", "/api/v1/runtime/shutdown", rt.Shutdown)
 
-	// ---- Method-not-allowed for every Phase A + B path: a known path with
-	// the wrong verb must answer 405, not 404 (FastAPI parity). ----
-	knownGet := []string{
-		"/api/v1/system/health", "/api/v1/system/status", "/api/v1/system/readiness",
-		"/api/v1/system/version", "/api/v1/system/runtime", "/api/v1/system/capabilities",
-		"/api/v1/system/workers", "/api/v1/system/diagnostics",
-		"/api/v1/research/status", "/api/v1/research/strategies",
-		"/api/v1/research/strategies/{strategy_id}", "/api/v1/research/runs",
-		"/api/v1/research/datasets",
-		"/api/v1/risk/status", "/api/v1/risk/summary",
-		"/api/v1/runtime/mode", "/api/v1/runtime/freshness", "/api/v1/runtime/shutdown",
-	}
-	for _, path := range knownGet {
-		mux.HandleFunc("POST "+path, handlers.MethodNotAllowedHandler)
-		mux.HandleFunc("PUT "+path, handlers.MethodNotAllowedHandler)
-		mux.HandleFunc("DELETE "+path, handlers.MethodNotAllowedHandler)
-		mux.HandleFunc("PATCH "+path, handlers.MethodNotAllowedHandler)
-	}
-	// POST-only endpoints from Phase A: register the read verbs only.
-	for _, path := range []string{"/api/v1/system/diagnostics/run", "/api/v1/system/refresh"} {
-		mux.HandleFunc("GET "+path, handlers.MethodNotAllowedHandler)
-		mux.HandleFunc("PUT "+path, handlers.MethodNotAllowedHandler)
-		mux.HandleFunc("DELETE "+path, handlers.MethodNotAllowedHandler)
-		mux.HandleFunc("PATCH "+path, handlers.MethodNotAllowedHandler)
-	}
-
-	// ---- fallback: unknown /api/v1 path -> canonical v1 404 envelope ----
-	mux.HandleFunc("/api/v1/", v1Fallback)
+	// ---- 404-vs-405 for the Phase A + B paths is DERIVED by the regex
+	// router: when the path matches a registered template but the method does
+	// not, the answer is 405, exactly as Starlette's automatic routing does.
+	// No explicit wrong-verb registrations are needed. ----
 
 	// Chain: correlation outermost (id available to auth + handlers),
 	// then auth (fail-closed), then dispatch.
-	var h http.Handler = mux
-	if auth.Disabled() {
-		// Install-time rollback knob (mirrors _install_web_auth_if_enabled).
-		// Never combine with LIVE execution or a routable host binding.
-		slog.Warn("[WEB-AUTH] DISABLED via NSE_WEB_AUTH_DISABLE=1 — NEVER " +
-			"combine with LIVE execution mode or a routable host binding.")
-	} else {
-		h = auth.Middleware(h)
+	chain := func(h http.Handler) http.Handler {
+		if !auth.Disabled() {
+			h = auth.Middleware(h)
+		} else {
+			// Install-time rollback knob (mirrors _install_web_auth_if_enabled).
+			// Never combine with LIVE execution or a routable host binding.
+			slog.Warn("[WEB-AUTH] DISABLED via NSE_WEB_AUTH_DISABLE=1 — NEVER " +
+				"combine with LIVE execution mode or a routable host binding.")
+		}
+		return observability.RequestIDMiddleware(h)
 	}
-	h = observability.RequestIDMiddleware(h)
-	return h
+
+	// ---- Phase C: the full remaining surface. The route table is generated
+	// from Python's own resolved route dump, so the Go router registers
+	// exactly the operations Python serves — no silent drift. Every entry is
+	// a byte-for-byte pass-through; Python remains the fact authority and the
+	// sole place validation happens. The regex router preserves FastAPI's
+	// declaration-order priority, which Go's ServeMux cannot express for the
+	// ambiguous {id}+literal pairs the surface contains. ----
+	proxy := handlers.NewProxy(py)
+	registerGenerated(r, proxy)
+
+	// ---- fallback: unknown /api/v1 path -> canonical v1 404 envelope ----
+	r.HandleFunc("GET", "/api/v1/", v1Fallback)
+
+	return chain(r)
 }
 
 // v1Fallback distinguishes "path unknown" (404) from "method wrong" (405)
@@ -109,6 +105,6 @@ func v1Fallback(w http.ResponseWriter, r *http.Request) {
 	handlers.NotFoundHandler(w, r)
 }
 
-// IsV1Path mirrors common._is_v1_path: the v1 envelope applies only under
-// /api/v1. Exported for the parity harness.
-func IsV1Path(p string) bool { return strings.HasPrefix(p, "/api/v1") }
+// IsV1Path is kept exported for the parity harness; the canonical helper lives
+// in respond (it mirrors common._is_v1_path, which every handler needs).
+func IsV1Path(p string) bool { return respond.IsV1Path(p) }
