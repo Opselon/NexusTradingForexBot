@@ -167,7 +167,12 @@ class DispatchEngine:
     def _clamp_dispatch_volume(self, volume: float, symbol: str | None = None) -> float:
         """
         Routes every dispatch volume through the risk engine clamp when available and
-        applies the absolute HARD_MAX_LOTS ceiling unconditionally.
+        applies the HARD_MAX_LOTS engine ceiling, composed with the broker's volume_max.
+
+        Composition rule: ``min(HARD_MAX_LOTS, volume_max)``. HARD_MAX_LOTS is the
+        engine-wide risk ceiling and is never exceeded; the broker's own volume_max
+        can only *tighten* it. A broker allowing 500 lots does not relax the engine's
+        10-lot ceiling; a broker allowing 5 tightens it.
         """
         HARD_MAX_LOTS = _om_dispatch_symbols()[0]
         try:
@@ -181,9 +186,9 @@ class DispatchEngine:
         if not math.isfinite(vol) or vol <= 0.0:
             return 0.0
 
-        # FORENSIC-LANE-BROKER: the broker's own spec is fetched up front so
-        # volume_max (EURUSD truth: 500.0) can govern instead of a fixed
-        # 10-lot ceiling that over-clamped legal broker volumes.
+        # FORENSIC-LANE-BROKER: fetch the broker's own spec up front so its
+        # volume_max can compose with the engine ceiling. The broker's rule only
+        # ever TIGHTENS (min()); it never relaxes HARD_MAX_LOTS.
         symbol_info = None
         try:
             if symbol:
