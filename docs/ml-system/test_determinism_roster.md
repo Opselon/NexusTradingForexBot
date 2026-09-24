@@ -168,6 +168,14 @@ with no production-code impact — suitable for one cycle each, or a batch.
    hits; verify none are genuine race sources before discounting.
 6. **`tests/unit/test_experiment_registry.py`** — 4 `perf_counter()` probes
    in the registry benchmark path.
+   **REMEDIATED (ML-QA-008):** both benchmark legs (register-1000, top-10
+   query) now measure `time.process_time()` (CPU time, co-tenant-scheduler-
+   insensitive) after an explicit warmup register/finalize/query; the hard
+   `query_ms < 50.0` budget, `n = 1000` scale, ordering and best-element
+   asserts are all kept (only `register_ms > 0.0` -> `>= 0.0`, which would be
+   a new wall-clock-class flake on CPU time). Contract pinned by
+   `tests/unit/test_ml_qa_008_registry_cpu_budget.py` (6 tests), which fails
+   on the pre-remediation text (negative control: 5 failed / 1 passed).
 7. **`tests/unit/test_audit_flush_contract.py`** — 4 `monotonic()` probes.
 8. **`tests/unit/test_70d_bug106_incremental_phase19.py`** — 4
    `perf_counter()` probes.
