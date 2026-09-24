@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import ast
 import sqlite3
+import sys
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -287,31 +288,50 @@ def test_bug297_b_connect_count_constant_over_N_lookups(components, temp_audit_r
 
 def test_bug297_b2_rebuild_clear_handle_is_reused(components, temp_audit_repo, monkeypatch):
     """Self-heal's DELETE goes through the seam: two rebuilds enter the
-    repository's ONE connect site exactly once for the 10.0 tier.
+    repository's ONE connect site exactly once for the 10.0 Evaluator tier.
 
-    Spy on ``AuditRepository._connect_sqlite`` (not raw sqlite3.connect): the
-    ledger keeps its own per-query connects OUT OF SCOPE here — BUG-297's
-    contract is the evaluator module."""
+    Spy on ``AuditRepository._connect_sqlite`` (not raw sqlite3.connect) and
+    attribute every seam entry to its CALLING module: since INV-001 V1 the
+    experience ledger routes its own per-query connects through the same seam
+    too, so a bare timeout count would double-book the ledger's 10.0
+    ``list_strategy_ids`` tier against the evaluator's 10.0 write tier."""
     ledger, evaluator = components
     seed_closed_trades(temp_audit_repo, ledger, "strat_heal_b297", [1.1] * 25, prefix="h")
 
-    calls: list[float] = []
+    calls: list[tuple[float, str]] = []
     original = AuditRepository._connect_sqlite
 
     def _spy(self, timeout):
-        calls.append(float(timeout))
+        frame = sys._getframe(1)
+        calls.append((float(timeout), frame.f_code.co_filename.replace("\\", "/")))
         return original(self, timeout)
 
     monkeypatch.setattr(AuditRepository, "_connect_sqlite", _spy)
+
+    def _evaluator_writes() -> int:
+        """Seam entries made by the EVALUATOR module at the 10.0 write tier."""
+        return sum(
+            1
+            for timeout, filename in calls
+            if timeout == 10.0 and filename.endswith("nexus_scalp/experience/evaluator.py")
+        )
+
     first = evaluator.rebuild_derived_intelligence(ledger)
     temp_audit_repo._queue.join()
     assert "strat_heal_b297" in first
-    assert calls.count(10.0) == 1, f"first rebuild must enter the seam once: {calls}"
+    assert _evaluator_writes() == 1, f"first rebuild must enter the seam once: {calls}"
 
     second = evaluator.rebuild_derived_intelligence(ledger)
     temp_audit_repo._queue.join()
     assert "strat_heal_b297" in second
-    assert calls.count(10.0) == 1, f"second rebuild must REUSE the write handle: {calls}"
+    assert _evaluator_writes() == 1, (
+        f"second rebuild must REUSE the write handle, not re-enter the seam: {calls}"
+    )
+    # INV-001 V1: the ledger's own reads in those same rebuilds DID enter the
+    # seam (they were raw sqlite3.connect sites before the fix).
+    assert any(filename.endswith("nexus_scalp/experience/ledger.py") for _, filename in calls), (
+        "the experience ledger must route its rebuild-time reads through the seam"
+    )
 
 
 # =============================================================================
