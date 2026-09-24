@@ -115,8 +115,11 @@ type Options struct {
 	// Origin is the Python runtime base URL (e.g. http://127.0.0.1:8087).
 	Origin string
 	// Timeout bounds a single upstream call. The Python HealthEngine sweep
-	// measures ~0.7-2.4s, so the default is deliberately generous; callers
-	// pass their own tighter ctx deadlines where appropriate.
+	// measures ~0.7-2.4s, but DB validation and dependency-cycle analysis can
+	// take considerably longer under a cold or loaded engine. Classifying a
+	// slow-but-successful answer as a circuit failure fabricates an outage
+	// Python never reported, so the default is generous; callers pass their
+	// own tighter ctx deadlines where appropriate.
 	Timeout time.Duration
 	// MaxFailures trips the circuit after N consecutive failures.
 	MaxFailures int
@@ -128,7 +131,7 @@ type Options struct {
 func DefaultOptions() Options {
 	return Options{
 		Origin:      "http://127.0.0.1:8087",
-		Timeout:     10 * time.Second,
+		Timeout:     30 * time.Second,
 		MaxFailures: 3,
 		CoolDown:    5 * time.Second,
 	}

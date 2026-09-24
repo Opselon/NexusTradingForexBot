@@ -1675,8 +1675,8 @@
   "method": "GET",
   "path": "/api/v1/database/integrity",
   "verdict": "PASS",
-  "py_status": 200,
-  "go_status": 200,
+  "py_status": 503,
+  "go_status": 503,
   "note": ""
  },
  {
@@ -1691,8 +1691,8 @@
   "method": "GET",
   "path": "/api/v1/database/tables",
   "verdict": "PASS",
-  "py_status": 200,
-  "go_status": 200,
+  "py_status": 503,
+  "go_status": 503,
   "note": ""
  },
  {
