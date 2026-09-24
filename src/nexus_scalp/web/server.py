@@ -534,6 +534,56 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         except (TypeError, ValueError):
             return None
 
+    #: H-06: how long a shared broker-tick snapshot stays authoritative.
+    #: The engine processes ticks at its own cadence and the UI polls at 5 Hz;
+    #: one adapter read per window covers every client without the UI ever
+    #: serving a tick materially older than the one the engine just processed.
+    _SHARED_TICK_TTL_SEC = 0.2
+
+    def _shared_broker_tick(state: Any, adapter: Any, symbol: str | None) -> Any:
+        """H-06: ONE broker-tick read per refresh window, shared by all clients.
+
+        Before this, every ``get_system_state`` call (one per SSE client per
+        200 ms) ran ``adapter.get_broker_tick`` — a native MT5 call into the
+        non-reentrant C library, so N dashboards meant N x the engine's own
+        polling rate. The first caller within the TTL populates the cache; the
+        rest read the same object, so the native call rate is bounded by the
+        TTL, not by the client count.
+
+        Freshness stays honest: ``stale``/``freshness_ms`` are the snapshot's
+        own fields (derived from the broker timestamp), so an aged cache entry
+        reports its real age and the payload shape is unchanged. Adapter
+        failure/None returns whatever the adapter returned before (the caller
+        falls back to the engine's synchronized ``_last_tick``), so a broken
+        adapter still degrades exactly as it did before.
+        """
+        import threading
+
+        if not symbol or adapter is None:
+            return None
+        try:
+            cache = state._shared_tick_cache
+        except AttributeError:
+            cache = None
+            state._shared_tick_cache = {
+                "lock": threading.Lock(),
+                "tick": None,
+                "expires_at": 0.0,
+                "symbol": None,
+            }
+            cache = state._shared_tick_cache
+        now = time.monotonic()
+        with cache["lock"]:
+            entry = cache["tick"]
+            if entry is not None and cache["symbol"] == symbol and now < cache["expires_at"]:
+                return entry
+            fresh = adapter.get_broker_tick(symbol)
+            if fresh is not None:
+                cache["tick"] = fresh
+                cache["symbol"] = symbol
+                cache["expires_at"] = now + _SHARED_TICK_TTL_SEC
+            return fresh
+
     def _build_health_section(state_obj: Any, mono_now: float) -> dict[str, Any]:
         """Live subsystem health derived from REAL engine/DB state.
 
@@ -938,10 +988,19 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 execution_mode = None
 
             # Fetch MT5 live ticks and prices (real broker tick - task 11).
+            # H-06 (08_laneH): no per-client broker poll. Each SSE client used
+            # to add a 5 Hz `engine.adapter.get_broker_tick` call on top of the
+            # engine's own tick loop (N clients = N x the native-call rate,
+            # all into the same non-reentrant C library). The shared cached
+            # snapshot below is served to EVERY client instead: the FIRST
+            # request per refresh window populates it from the adapter, every
+            # concurrent/parallel client reads the same object — one native
+            # call per window regardless of client count, same payload shape
+            # and same cadence as before.
             with contextlib.suppress(Exception):
                 # Use the typed broker tick first (has freshness/stale flags),
                 # falling back to the engine's synchronized last tick.
-                broker_tick = engine.adapter.get_broker_tick(symbol)
+                broker_tick = _shared_broker_tick(app.state, engine.adapter, symbol)
                 if broker_tick and broker_tick.available and broker_tick.bid and broker_tick.ask:
                     bid = broker_tick.bid
                     ask = broker_tick.ask
@@ -2855,9 +2914,70 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     # loader serves the LOCAL dataset cache only (no network, no MT5 on this
     # path). Bounded registry lives on app.state.
     from nexus_scalp.web.replay_routes import (
+        DatasetIdentityError,
         ReplaySessionRegistry,
         register_replay_routes,
     )
+
+    #: UI-M1 (06_laneF): the ids this offline loader will actually serve.
+    #: Requested id -> the canonical id on disk (tuple means "alias of").
+    #: Anything not in this map is a fabricated UI id and must fail closed.
+    _KNOWN_DATASET_IDS: dict[str, tuple[str, ...] | str] = {
+        "XAUUSD_bars_m1": "XAUUSD_bars_m1",
+        "XAUUSD_BARS_M1": ("XAUUSD_bars_m1",),
+        "XAUUSD_M1": ("XAUUSD_bars_m1",),
+        "XAUUSD": ("XAUUSD_bars_m1",),
+    }
+
+    def _canonical_dataset_id(dataset_id: str | None) -> str | None:
+        """UI-M1: canonical local-dataset id for the requested one, else None.
+
+        Accepts the bare loader id (``XAUUSD_bars_m1``) and the windowed
+        canonical id the dataset layer mints for a concrete window
+        (``XAUUSD_bars_m1_<sha12>``): identity is the ``<symbol>_<kind>`` prefix,
+        the window digest names WHICH slice, not WHICH dataset. Aliases are
+        case-insensitive (the UI sends upper-case tags). ``None`` = unknown id;
+        the caller (``_replay_records_loader``) fails closed with a 4xx.
+        """
+        if not dataset_id:
+            return None
+        key = dataset_id.strip()
+        if key in _KNOWN_DATASET_IDS:
+            return _KNOWN_DATASET_IDS[key]
+        lower = key.lower()
+        if lower in _KNOWN_DATASET_IDS:
+            return _KNOWN_DATASET_IDS[lower]
+        # windowed canonical id: "XAUUSD_bars_m1_bfb4c25b9bca" -> prefix
+        stripped = key.rsplit("_", 1)[0] if key.count("_") >= 2 else key
+        if stripped != key:
+            if stripped in _KNOWN_DATASET_IDS:
+                return _KNOWN_DATASET_IDS[stripped]
+            lstripped = stripped.lower()
+            if lstripped in _KNOWN_DATASET_IDS:
+                return _KNOWN_DATASET_IDS[lstripped]
+        for _, alias in _KNOWN_DATASET_IDS.items():
+            if isinstance(alias, tuple) and key in alias:
+                return _KNOWN_DATASET_IDS.get(alias[0]) if alias else None
+        return None
+
+    def _local_dataset_fingerprint(path: Path) -> str:
+        """UI-M1: sha256 of the bytes we actually serve (cached on first call)."""
+        cache = getattr(app.state, "_dataset_fingerprints", None)
+        if cache is None:
+            cache = {}
+            app.state._dataset_fingerprints = cache
+        cached = cache.get(str(path))
+        if cached is not None:
+            return cached
+        import hashlib
+
+        h = hashlib.sha256()
+        with path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        digest = h.hexdigest()[:32]
+        cache[str(path)] = digest
+        return digest
 
     def _replay_records_loader(contract: Any, config: Any) -> list[dict[str, Any]]:
         """Local-dataset loader for replay sessions (offline, deterministic).
@@ -2868,9 +2988,36 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         """
         import polars as _pl
 
+        # UI-M1 (06_laneF): the loader is the AUTHORITY on dataset identity.
+        # Web/replay_panel.js fabricated ids (`UI-M1-YYYYMMDD`,
+        # `uipick-<start>-<end>`, `DS-...`) and this loader accepted them
+        # silently, so a session could be created under a contract naming no
+        # dataset at all. Reject unknown identity BEFORE windowing: fail closed
+        # with a 4xx that names the bad id. ValueError, not the H-15 leak:
+        # this message is authored (the requested id), not exception text.
+        #
+        # ``_LOCAL_DATASETS`` / ``_LOCAL_DATASET_FINGERPRINTS`` are resolved
+        # FIRST (against the actual bytes this loader serves) so the rejection
+        # and the fingerprint check below reference real values.
         m1 = Path("data/raw/XAUUSD_M1.parquet")
         if not m1.exists():
             raise FileNotFoundError(f"local M1 dataset missing: {m1}")
+        _LOCAL_DATASETS: tuple[str, ...] = ("XAUUSD_bars_m1",)
+        _LOCAL_DATASET_FINGERPRINTS: dict[str, tuple[str, ...]] = {
+            "XAUUSD_bars_m1": (_local_dataset_fingerprint(m1),)
+        }
+        canonical = _canonical_dataset_id(contract.dataset_id)
+        if canonical is None:
+            raise DatasetIdentityError(
+                f"unknown dataset_id={contract.dataset_id!r}; "
+                f"available local datasets: {', '.join(_LOCAL_DATASETS)}"
+            )
+        if contract.dataset_fingerprint not in _LOCAL_DATASET_FINGERPRINTS.get(canonical, ()):
+            raise DatasetIdentityError(
+                f"dataset_fingerprint={contract.dataset_fingerprint!r} does not match "
+                f"dataset_id={canonical}; refusing to replay a mismatched contract"
+            )
+
         df = _pl.read_parquet(m1)
         if df.is_empty():
             return []
@@ -2879,6 +3026,10 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         elif df["time_utc"].dtype == _pl.Datetime("us"):
             # naive local datetimes (parquet source) -> treat as UTC
             df = df.with_columns(_pl.col("time_utc").dt.replace_time_zone("UTC"))
+        #: UI-M1: the maps above are proven against the actual bytes served
+        #: (``_local_dataset_fingerprint`` above, file-cached), so a contract
+        #: naming the right id but the wrong digest still fails closed.
+
         start = contract.start_time
         end = contract.end_time
         if start.tzinfo is None:
@@ -2905,6 +3056,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     "symbol": contract.symbol,
                     "timeframe": contract.timeframe,
                 }
+            )
+        if not out:
+            # A canonical id whose window has no records must fail CLOSED here
+            # (not silently return []), otherwise /api/replay/session can build
+            # an empty session the caller can never step.
+            raise DatasetIdentityError(
+                f"no records for dataset_id={canonical} "
+                f"window=[{start.isoformat()}, {end.isoformat()}]; "
+                f"refusing to replay an empty window"
             )
         return out
 
