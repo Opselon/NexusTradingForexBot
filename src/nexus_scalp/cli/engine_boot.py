@@ -765,7 +765,7 @@ def _verdict_of(resp: Any) -> str:
     try:
         import json as _json
 
-        raw = resp.read(4096)
+        raw = resp.read(65536)
         payload = _json.loads(raw)
         # Two shapes reach this probe:
         #  * the v1 success envelope: {"data": {"verdict": ...}, "meta": {...}}

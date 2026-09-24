@@ -2975,6 +2975,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     register_position_adviser_routes(app)
 
+    # AI PROVIDER ECOSYSTEM ROUTES (ECOSYSTEM-001): /api/ai-providers/*.
+    # Provider registry, health, switching, decision evaluate/compare and the
+    # decision trace. Additive new router; the orchestrator singleton it installs
+    # is the SAME instance the decide system and the CLI reach, so backend is the
+    # single source of truth for which provider is active (Sections 61).
+    from nexus_scalp.web.ai_providers_routes import register_ai_providers_routes
+
+    register_ai_providers_routes(app)
+
     # REPLAY-ON-CHART session routes (CHG-0043, REPLAY_API v1): the chart's
     # operator surface for the REAL historical decision pipeline. Records
     # loader serves the LOCAL dataset cache only (no network, no MT5 on this

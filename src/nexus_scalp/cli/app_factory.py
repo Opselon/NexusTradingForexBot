@@ -24,6 +24,7 @@ from typing import Any
 
 import typer
 
+from nexus_scalp.cli.ai_commands import register_ai_commands
 from nexus_scalp.cli.analyze_commands import register_analyze_commands
 from nexus_scalp.cli.db_commands import db_app, make_portability_app
 from nexus_scalp.cli.dependency_commands import register_dependency_commands
@@ -111,6 +112,9 @@ app.add_typer(
 )
 # G29: Enterprise Code Analyzer (``nse analyze``)
 register_analyze_commands(app)
+# AI PROVIDER ECOSYSTEM (``nexus ai ...``) — same backend contracts as the API
+# and the UI (Section 61: backend is the source of truth).
+register_ai_commands(app)
 # Dependency Intelligence (``nse dependency``)
 register_dependency_commands(app)
 # API PLATFORM v1 (``nexus api ...``) — same HTTP contracts as external clients.
