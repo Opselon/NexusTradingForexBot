@@ -29,6 +29,16 @@ export interface MessageEntry {
 /** A scope's message table (see <scope>/i18n.ts + lib/i18nMessages.ts). */
 export type FeatureMessages = Record<string, MessageEntry>;
 
+/** Dev-only missing-key diagnostics (§12): a key present nowhere warns ONCE
+ *  with the English fallback it is showing. Production stays silent and
+ *  renders the fallback cleanly — the warn never runs in a production build
+ *  (import.meta.env.DEV is false there; guarded for non-Vite importers too). */
+const DEV =
+  typeof import.meta !== "undefined" &&
+  typeof (import.meta as { env?: { DEV?: boolean } }).env !== "undefined" &&
+  (import.meta as { env?: { DEV?: boolean } }).env?.DEV === true;
+const warnedMissing = new Set<string>();
+
 /** Runtime lookup filled by registerMessages() — scoped messages win over
  *  the legacy chrome DICTS below. */
 const MAP: Record<string, Partial<Record<Lang, string>>> = {};
@@ -547,7 +557,13 @@ export function detectLang(): Lang {
 export function translate(lang: Lang, key: string, fallback: string, vars?: Record<string, string | number>): string {
   const entry = MAP[key];
   const dict = DICTS[lang];
-  let s = (entry && (entry[lang] || entry.en)) || (dict && dict[key]) || fallback;
+  const found = (entry && (entry[lang] || entry.en)) || (dict && dict[key]);
+  if (!found && DEV && !warnedMissing.has(key)) {
+    warnedMissing.add(key);
+    // eslint-disable-next-line no-console
+    console.warn(`[i18n] missing key "${key}" for locale "${lang}" (rendering fallback: "${fallback}")`);
+  }
+  let s = found || fallback;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v));
   }
