@@ -495,3 +495,7 @@ tests/unit/test_merge_marker_residue.py
 tests/unit/test_ml_qa_007_parity_latency_determinism.py
 tests/unit/test_duplicate_task_rows.py
 tests/unit/test_ml_qa_008_registry_cpu_budget.py
+tests/unit/test_fabric_guards.py
+tests/unit/test_ai_provider_registry_driver_migration_chg0067.py
+tests/unit/test_audit_read_plane_registration_chg0067.py
+tests/unit/test_news_candle_pg_provisioning_chg0067.py

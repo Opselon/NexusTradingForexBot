@@ -21,7 +21,6 @@ SECRETS (Section 37)
 from __future__ import annotations
 
 import json
-import sqlite3
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -29,6 +28,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.database.config import DatabaseConfig
+from nexus_scalp.database.drivers import get_driver
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.ai_providers.registry")
@@ -244,29 +245,40 @@ class ProviderRegistryStore:
     _TABLE_CONFIG = "ai_provider_config"
     _TABLE_ACTIVATION = "ai_provider_activation"
 
-    def __init__(self, db_path: Path) -> None:
-        self._db_path = Path(db_path)
+    def __init__(
+        self, db_path: Path | None = None, db_config: DatabaseConfig | None = None
+    ) -> None:
+        """Provider-portable registry store (CHG-0067 / Phase 32).
+
+        ``db_path`` keeps the legacy call shape (the settings DB path); it is
+        materialized into a SQLite ``DatabaseConfig``. ``db_config`` selects the
+        provider explicitly (PostgreSQL); SQLite remains the default. Either way
+        ALL SQL goes through the driver — domain code must not touch sqlite3.
+        """
+        if db_config is not None:
+            self._config = db_config
+        else:
+            path = str(db_path) if db_path is not None else ""
+            self._config = DatabaseConfig.for_sqlite("settings", path=path)
+        self._db_path = self._config.sqlite_connect_path
+        self._driver = get_driver(self._config)
         self._lock = threading.RLock()
         self._ensure_schema()
 
-    # -- schema -----------------------------------------------------------------
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path, timeout=30.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        return conn
-
     def _ensure_schema(self) -> None:
-        with self._lock, self._connect() as conn:
-            conn.execute(
+        # Additive schema only — CREATE TABLE IF NOT EXISTS, translated by the
+        # driver for whichever provider is configured (Phase 32 / CHG-0067).
+        with self._driver.transaction() as conn:
+            self._driver.execute(
                 f"""CREATE TABLE IF NOT EXISTS {self._TABLE_CONFIG} (
                     provider_id TEXT PRIMARY KEY,
                     blob TEXT NOT NULL,
                     configuration_version TEXT NOT NULL,
                     updated_at TEXT NOT NULL
-                )"""
+                )""",
+                conn=conn,
             )
-            conn.execute(
+            self._driver.execute(
                 f"""CREATE TABLE IF NOT EXISTS {self._TABLE_ACTIVATION} (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     primary_provider TEXT NOT NULL,
@@ -276,9 +288,9 @@ class ProviderRegistryStore:
                     shadow_provider TEXT,
                     configuration_version TEXT NOT NULL,
                     updated_at TEXT NOT NULL
-                )"""
+                )""",
+                conn=conn,
             )
-            conn.commit()
 
     # -- provider rows ------------------------------------------------------------
     def upsert(self, cfg: ProviderConfig, actor: str = "ui") -> bool:
@@ -287,8 +299,11 @@ class ProviderRegistryStore:
             logger.error("[AI-PROV] refused write of unknown provider_id=%s", cfg.provider_id)
             return False
         blob = json.dumps(cfg.to_storage_dict(), default=str)
-        with self._lock, self._connect() as conn:
-            conn.execute(
+        with self._driver.transaction() as conn:
+            # Portable ON CONFLICT (not INSERT OR REPLACE): the driver's own
+            # upsert() is REPLACE on SQLite, which would trip the activation
+            # table's CHECK(id = 1) by deleting the row first.
+            self._driver.execute(
                 f"""INSERT INTO {self._TABLE_CONFIG}
                         (provider_id, blob, configuration_version, updated_at)
                     VALUES (?, ?, ?, ?)
@@ -297,8 +312,8 @@ class ProviderRegistryStore:
                         configuration_version=excluded.configuration_version,
                         updated_at=excluded.updated_at""",
                 (cfg.provider_id, blob, cfg.configuration_version, _now_iso()),
+                conn=conn,
             )
-            conn.commit()
         logger.info(
             "[AI-PROV] saved provider=%s actor=%s v=%s",
             cfg.provider_id,
@@ -312,35 +327,47 @@ class ProviderRegistryStore:
         if provider_id in BUILTIN_PROVIDER_IDS:
             logger.warning("[AI-PROV] refused delete of built-in provider %s", provider_id)
             return False
-        with self._lock, self._connect() as conn:
-            cur = conn.execute(
-                f"DELETE FROM {self._TABLE_CONFIG} WHERE provider_id = ?", (provider_id,)
-            ).rowcount
-            conn.commit()
-        if cur:
-            logger.info("[AI-PROV] removed provider=%s", provider_id)
-        return bool(cur)
+        # NOTE on rowcount: SQLiteDriver.execute() opens a fresh connection per
+        # call when the DB is file-backed, so the cursor returned by DELETE
+        # does not see the change its own statement made (rowcount reads 0 for
+        # a hit and a miss alike). Check existence before and after instead —
+        # provider-portable, and it distinguishes "removed a row" from "nothing
+        # was there" so callers cannot mistake a no-op for success.
+        existed = (
+            self._driver.scalar(
+                f"SELECT 1 FROM {self._TABLE_CONFIG} WHERE provider_id = ?",
+                (provider_id,),
+            )
+            is not None
+        )
+        with self._driver.transaction() as conn:
+            self._driver.execute(
+                f"DELETE FROM {self._TABLE_CONFIG} WHERE provider_id = ?",
+                (provider_id,),
+                conn=conn,
+            )
+        if not existed:
+            return False
+        logger.info("[AI-PROV] removed provider=%s", provider_id)
+        return True
 
     def get_config(self, provider_id: str) -> ProviderConfig | None:
         """One provider config, or ``None`` if absent. Named ``get_config`` to
         avoid shadowing the ``ProviderConfig`` ``get``/``list`` helpers."""
-        with self._lock, self._connect() as conn:
-            row = conn.execute(
-                f"SELECT blob FROM {self._TABLE_CONFIG} WHERE provider_id = ?",
-                (provider_id,),
-            ).fetchone()
+        row = self._driver.query_one(
+            f"SELECT blob FROM {self._TABLE_CONFIG} WHERE provider_id = ?",
+            (provider_id,),
+        )
         return None if row is None else _blob_to_config(row["blob"])
 
     def list_configs(self) -> list[ProviderConfig]:
         """All stored provider configs. (Named ``list_configs``: ``ProviderConfig``
         also has a ``list`` helper, and shadowing it here made the type invalid.)"""
-        with self._lock, self._connect() as conn:
-            rows = conn.execute(f"SELECT provider_id, blob FROM {self._TABLE_CONFIG}").fetchall()
+        rows = self._driver.query(f"SELECT blob FROM {self._TABLE_CONFIG}")
         return [c for c in (_blob_to_config(r["blob"]) for r in rows) if c is not None]
 
     def list_provider_ids(self) -> list[str]:
-        with self._lock, self._connect() as conn:
-            rows = conn.execute(f"SELECT provider_id FROM {self._TABLE_CONFIG}").fetchall()
+        rows = self._driver.query(f"SELECT provider_id FROM {self._TABLE_CONFIG}")
         return [r["provider_id"] for r in rows]
 
     # -- activation ---------------------------------------------------------------
@@ -364,8 +391,10 @@ class ProviderRegistryStore:
             logger.error("[AI-PROV] refused activation, unknown mode=%s", state.decision_mode)
             return False
         state.updated_at = _now_iso()
-        with self._lock, self._connect() as conn:
-            conn.execute(
+        with self._driver.transaction() as conn:
+            # Portable ON CONFLICT: the driver upsert() is REPLACE on SQLite,
+            # which would trip this table's CHECK(id = 1) by deleting the row.
+            self._driver.execute(
                 f"""INSERT INTO {self._TABLE_ACTIVATION}
                         (id, primary_provider, secondary_provider, fallback_provider,
                          decision_mode, shadow_provider, configuration_version, updated_at)
@@ -387,8 +416,8 @@ class ProviderRegistryStore:
                     state.configuration_version,
                     state.updated_at,
                 ),
+                conn=conn,
             )
-            conn.commit()
         logger.info(
             "[AI-PROV] activation primary=%s secondary=%s fallback=%s mode=%s shadow=%s actor=%s",
             state.primary_provider,
@@ -401,8 +430,7 @@ class ProviderRegistryStore:
         return True
 
     def get_activation(self) -> ActivationState | None:
-        with self._lock, self._connect() as conn:
-            row = conn.execute(f"SELECT * FROM {self._TABLE_ACTIVATION} WHERE id = 1").fetchone()
+        row = self._driver.query_one(f"SELECT * FROM {self._TABLE_ACTIVATION} WHERE id = 1")
         if row is None:
             return None
         return ActivationState(

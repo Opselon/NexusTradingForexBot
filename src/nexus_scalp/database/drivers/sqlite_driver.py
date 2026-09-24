@@ -192,11 +192,21 @@ class SQLiteDriver(DatabaseDriver):
         Converts ``INSERT OR IGNORE`` → ``INSERT OR IGNORE`` (native) and
         ``ON CONFLICT`` → ``INSERT OR IGNORE`` is NOT needed here — callers
         use :meth:`upsert` for portable upserts; raw execute passes through.
+
+        COMMIT SEMANTICS (CHG-0067): when this method owns the connection it
+        commits before closing it. Without this, a file-backed SQLite write
+        would open a connection, run the statement and discard it on close —
+        a silent data-loss class the PostgreSQL driver does not have (it
+        commits on its own connection). A caller passing an explicit ``conn``
+        is inside a transaction and the caller commits.
         """
         own = conn is None
         c = conn or (self.connect_shared() if self.is_in_memory else self.connect())
         try:
-            return c.execute(assert_safe_sql(sql), tuple(args))
+            cur = c.execute(assert_safe_sql(sql), tuple(args))
+            if own and not self.is_in_memory:
+                c.commit()
+            return cur
         finally:
             if own and not self.is_in_memory:
                 c.close()
@@ -208,10 +218,14 @@ class SQLiteDriver(DatabaseDriver):
         # shape check (verb allow-list, no stacked statements, no block
         # comments) already enforced by every query/query_one/scalar sink; the
         # values themselves stay bound through ``seq`` placeholders.
+        # COMMIT SEMANTICS: same as execute() — commit when we own the conn
+        # (CHG-0067), else the caller's transaction owns the commit.
         own = conn is None
         c = conn or (self.connect_shared() if self.is_in_memory else self.connect())
         try:
             c.executemany(assert_safe_sql(sql), seq)
+            if own and not self.is_in_memory:
+                c.commit()
         finally:
             if own and not self.is_in_memory:
                 c.close()
