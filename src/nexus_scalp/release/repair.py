@@ -25,9 +25,18 @@ class RepairResult:
     action: str
     status: str  # OK | SKIPPED | FAILED
     detail: str = ""
+    # Operator-facing remedy for a FAILED/SKIPPED step (empty when nothing is
+    # actionable). Carried alongside the status so the doctor/repair renderer
+    # can surface "here is the exact command" instead of a bare FAILED.
+    suggestion: str = ""
 
     def to_dict(self) -> dict[str, str]:
-        return {"action": self.action, "status": self.status, "detail": self.detail}
+        return {
+            "action": self.action,
+            "status": self.status,
+            "detail": self.detail,
+            "suggestion": self.suggestion,
+        }
 
 
 class RepairEngine:
@@ -76,6 +85,25 @@ class RepairEngine:
         results.append(self._ensure_logs())
         return results
 
+    # ------------------------------------------------------------------
+    # Public, side-effect-free seams for callers that need ONE repair action
+    # instead of the whole run() (doctor --fix for a single category, the
+    # setup wizard, or an integrator wiring a sibling lane's step into the
+    # repair sequence). Each returns a RepairResult and never raises.
+    def repair_configuration(self, *, recreate: bool = False) -> RepairResult:
+        """Create the user config from the packaged template if it is missing.
+
+        Idempotent and non-destructive: an existing config is validated, never
+        rewritten (``recreate=True`` requires the operator's explicit
+        ``--recreate-config`` confirmation). This is the single entry point that
+        makes ``%LOCALAPPDATA%/NexusScalpEngine/config/nexus.yaml`` exist, so
+        ``check_configuration`` can move from FAIL/NOT_INITIALIZED to PASS
+        through the repair path the operator is already told to run
+        (``nexus doctor --fix`` / ``nexus repair``), instead of the engine
+        silently booting from the ``configs/base.yaml`` fallback.
+        """
+        return self._ensure_config(recreate=recreate)
+
     def _ensure_dirs(self) -> RepairResult:
         try:
             paths.ensure_user_dirs()
@@ -88,7 +116,13 @@ class RepairEngine:
     def _ensure_config(self, *, recreate: bool = False) -> RepairResult:
         target = paths.get_user_config_path()
         if target.exists() and not recreate:
-            return RepairResult("config", "OK", f"existing config preserved: {target}")
+            # An existing user config is ALWAYS preserved (safety contract):
+            # doctor --fix / repair must NEVER overwrite an operator's config.
+            # But "present" is not "loadable" — validate it honestly so an
+            # invalid config reports FAILED with a fix suggestion instead of a
+            # silent OK while the engine secretly falls back to configs/base.yaml
+            # (engine_boot.py:382-388). See _validate_existing_config.
+            return self._validate_existing_config(target)
         if not self.template_config.exists():
             return RepairResult(
                 "config",
@@ -98,13 +132,56 @@ class RepairEngine:
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(self.template_config, target)
-            return RepairResult(
+            res = RepairResult(
                 "config",
                 "OK",
                 f"{'recreated' if recreate else 'created'} config from template",
             )
         except OSError as e:
             return RepairResult("config", "FAILED", str(e))
+        # Freshly written from the packaged template: the copy is byte-identical
+        # to configs/base.yaml, which the loader accepts. Prove it rather than
+        # assume it, so a bootstrap that handed the operator an unloadable config
+        # could never report OK (the loader contract is the same one
+        # check_configuration uses).
+        validated = self._validate_existing_config(target)
+        if validated.status != "OK":
+            return validated
+        return res
+
+    def _validate_existing_config(self, target: Path) -> RepairResult:
+        """Honest validation of a present user config (non-destructive).
+
+        Never rewrites a valid config and never deletes an invalid one — the
+        remedy for an invalid config is the operator's explicit
+        ``--recreate-config``. The repair result just reports the truth:
+
+        * OK      — loads through ``AppConfig.load_from_yaml`` (the same loader
+          the engine and ``check_configuration`` use, so repair and health can
+          never disagree about the same file).
+        * FAILED  — the file exists but cannot be parsed/validated. Carries a
+          fix suggestion naming the exact command. This is the divergence the
+          health probe exposed: the engine boots fine via the
+          ``configs/base.yaml`` fallback while doctor reports a silent OK.
+
+        Any unexpected error while validating is reported FAILED, never raised
+        — a repair step must never abort the whole run (failure isolation,
+        same contract as every other ``_ensure_*`` step).
+        """
+        try:
+            from nexus_scalp.configuration.config import AppConfig
+
+            AppConfig.load_from_yaml(target)
+        except Exception as e:
+            return RepairResult(
+                "config",
+                "FAILED",
+                f"existing config at {target} is invalid ({type(e).__name__}: {e}) "
+                "— NOT overwritten; the engine is running from its fallback config",
+                "Back up the file, then run `nexus repair --recreate-config` "
+                "(or fix the YAML by hand) to restore a valid configuration.",
+            )
+        return RepairResult("config", "OK", f"existing config preserved: {target}")
 
     def _ensure_database(self) -> RepairResult:
         """Initialize the canonical audit DB schema if missing (never resets)."""
