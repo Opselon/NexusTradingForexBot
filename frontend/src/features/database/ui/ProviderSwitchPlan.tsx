@@ -15,6 +15,7 @@
  *   component must stay a dumb renderer of `checklist`.
  */
 import { type JSX } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import type { DbManageStatus } from "../api";
 import { providerTruth, type SwitchReadiness } from "../uiLogic";
 
@@ -24,6 +25,7 @@ export function ProviderSwitchPlan(props: {
   targetProvider: string | null;
 }): JSX.Element {
   const { readiness, manage, targetProvider } = props;
+  const t = useI18n((s) => s.t);
   const truth = providerTruth(manage);
 
   return (
@@ -32,19 +34,19 @@ export function ProviderSwitchPlan(props: {
           (measured) or "derived" (narrow client claim); both words restate. */}
       <div className="dbcsw-truth">
         <div className="dbcsw-truth-item">
-          <span className="dbcsw-k">configured</span>
+          <span className="dbcsw-k">{t("database.page.truth_configured", "configured")}</span>
           <span className="dbcsw-v">{truth?.configured ?? "—"}</span>
         </div>
         <div className="dbcsw-truth-item">
-          <span className="dbcsw-k">effective</span>
+          <span className="dbcsw-k">{t("database.page.truth_effective", "effective")}</span>
           <span className="dbcsw-v">{truth?.effective ?? "UNAVAILABLE"}</span>
         </div>
         <div className="dbcsw-truth-item">
-          <span className="dbcsw-k">switch target</span>
+          <span className="dbcsw-k">{t("database.switch.target", "switch target")}</span>
           <span className="dbcsw-v">{(targetProvider ?? "").trim() === "" ? "—" : String(targetProvider)}</span>
         </div>
         <div className="dbcsw-truth-item">
-          <span className="dbcsw-k">truth source</span>
+          <span className="dbcsw-k">{t("database.switch.truth_source", "truth source")}</span>
           <span className="dbcsw-v">{truth?.source ?? "—"}</span>
         </div>
       </div>
@@ -52,7 +54,7 @@ export function ProviderSwitchPlan(props: {
 
       {!manage && (
         <p className="dbcsw-note" data-tone="warn">
-          /api/db/manage/status has not answered — readiness is UNAVAILABLE and the switch stays disabled.
+          {t("database.switch.no_status", "/api/db/manage/status has not answered — readiness is UNAVAILABLE and the switch stays disabled.")}
         </p>
       )}
 

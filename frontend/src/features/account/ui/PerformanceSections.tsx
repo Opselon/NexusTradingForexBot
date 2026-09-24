@@ -26,6 +26,7 @@
 import { useMemo, useState } from "react";
 import { EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { Sparkline } from "@/components/viz";
+import { useI18n } from "@/stores/i18nStore";
 import { formatDateTime } from "@/lib/format";
 import { useAccountPerformance, useAccountIntelligence, useAccountSeries } from "../hooks";
 import { ADVANCED_ROWS } from "../model";
@@ -34,25 +35,26 @@ import { DASH, FreshnessNote, asErrorText, moneyOrDash } from "./shared";
 import { DistPanel, EmphBars } from "./studio-math-react";
 
 export function AdvancedMetricsSection() {
+  const t = useI18n((s) => s.t);
   const perf = useAccountPerformance();
   const a = perf.data?.advanced;
 
   return (
     <Panel
-      title="Risk-adjusted performance"
-      right={<FreshnessNote updatedAtMs={perf.dataUpdatedAt ?? null} label="advanced" staleAfterMs={90_000} />}
+      title={t("account.advanced.title", "Risk-adjusted performance")}
+      right={<FreshnessNote updatedAtMs={perf.dataUpdatedAt ?? null} label={t("account.fresh.advanced", "advanced")} staleAfterMs={90_000} />}
     >
       {perf.isPending ? (
         <Skeleton count={4} height={38} />
       ) : perf.isError ? (
         <ErrorState message={asErrorText(perf.error)} onRetry={() => perf.refetch()} />
       ) : !a ? (
-        <EmptyState message="No advanced metrics computed." hint="Needs closed trades in the accounting core." />
+        <EmptyState message={t("account.advanced.empty", "No advanced metrics computed.")} hint={t("account.advanced.empty_hint", "Needs closed trades in the accounting core.")} />
       ) : (
         <DistPanel
-          title="Risk-adjusted performance"
-          scaleNote="bars scale within each unit family — $ rows against $, ratios against ratios, never mixed"
-          footer={`source: accounting core · ${a.sample_trades ?? 0} closed trades · sharpe/sortino/calmar/sqn computed over the same realized series the period reports use`}
+          title={t("account.advanced.title", "Risk-adjusted performance")}
+          scaleNote={t("account.advanced.scale_note", "bars scale within each unit family — $ rows against $, ratios against ratios, never mixed")}
+          footer={t("account.advanced.footer", "source: accounting core · {n} closed trades · sharpe/sortino/calmar/sqn computed over the same realized series the period reports use", { n: a.sample_trades ?? 0 })}
           rows={(() => {
             // One shared scale would let avg_hold_sec (1800s) flatten Sharpe
             // (1.4) to a zero-width bar — the screen must not imply "≈ 0".
@@ -103,6 +105,7 @@ export function AdvancedMetricsSection() {
 }
 
 export function PeriodSeriesSection() {
+  const t = useI18n((s) => s.t);
   const [kind, setKind] = useState<PeriodKind>("DAY");
   const series = useAccountSeries(kind, 30);
 
@@ -118,9 +121,9 @@ export function PeriodSeriesSection() {
       seriesData.map((p, i) => (
         <div className="statline" key={`${p.key}-${i}`} style={{ fontSize: 11, justifyContent: "space-between" }}>
           <span>{p.key ?? `#${i}`}</span>
-          <span>{p.total_trades ?? 0} trades</span>
+          <span>{t("account.series.row_trades", "{n} trades", { n: p.total_trades ?? 0 })}</span>
           <span className={(p.net_pnl ?? 0) >= 0 ? "tx-good" : "tx-bad"}>{moneyOrDash(p.net_pnl, true)}</span>
-          <span className="faint">wr {p.win_rate === null || p.win_rate === undefined ? DASH : `${p.win_rate.toFixed(0)}%`}</span>
+          <span className="faint">{t("account.series.row_wr", "wr {v}", { v: p.win_rate === null || p.win_rate === undefined ? DASH : `${p.win_rate.toFixed(0)}%` })}</span>
         </div>
       )),
     [seriesData],
@@ -128,7 +131,7 @@ export function PeriodSeriesSection() {
 
   return (
     <Panel
-      title={`Net PnL per ${kind.toLowerCase()} (last 30 consecutive periods)`}
+      title={t("account.series.title", "Net PnL per {kind} (last 30 consecutive periods)", { kind: kind.toLowerCase() })}
       right={
         <>
           <span className="acct-actions">
@@ -138,7 +141,7 @@ export function PeriodSeriesSection() {
               </button>
             ))}
           </span>
-          <FreshnessNote updatedAtMs={series.dataUpdatedAt ?? null} label="series" />
+          <FreshnessNote updatedAtMs={series.dataUpdatedAt ?? null} label={t("account.fresh.series", "series")} />
         </>
       }
     >
@@ -147,7 +150,7 @@ export function PeriodSeriesSection() {
       ) : series.isError ? (
         <ErrorState message={asErrorText(series.error)} onRetry={() => series.refetch()} />
       ) : (series.data ?? []).length === 0 ? (
-        <EmptyState message="No periods returned." />
+        <EmptyState message={t("account.series.empty", "No periods returned.")} />
       ) : (
         <>
           <div className="spark-cell" style={{ gap: 14 }}>
@@ -155,22 +158,22 @@ export function PeriodSeriesSection() {
               values={seriesValues}
               width={420}
               height={54}
-              label={`net pnl per ${kind}`}
+              label={t("account.series.sparkline_label", "net pnl per {kind}", { kind })}
             />
             <div className="tiny muted">
-              {(series.data ?? []).length} periods · last {moneyOrDash(series.data?.[0]?.net_pnl ?? null)}
+              {t("account.series.count", "{n} periods · last {v}", { n: (series.data ?? []).length, v: moneyOrDash(series.data?.[0]?.net_pnl ?? null) })}
             </div>
           </div>
           <div style={{ marginTop: 4 }}>
             <EmphBars bars={(series.data ?? []).map((pr) => ({ value: pr.net_pnl ?? null }))} minPct={10} />
             <div className="tiny faint" style={{ marginBlockStart: 4 }}>
-              emphasis bars: per-period net PnL, scaled to the largest |net PnL| in view (derived from the values above)
+              {t("account.series.emph_note", "emphasis bars: per-period net PnL, scaled to the largest |net PnL| in view (derived from the values above)")}
             </div>
           </div>
           <div style={{ display: "grid", gap: 2, marginTop: 10, maxHeight: 220, overflowY: "auto" }}>
             {seriesRows}
           </div>
-          <div className="tiny faint" style={{ marginTop: 6 }}>oldest → newest; the accounting worker keeps consecutive-period rows server-side.</div>
+          <div className="tiny faint" style={{ marginTop: 6 }}>{t("account.series.foot_order", "oldest → newest; the accounting worker keeps consecutive-period rows server-side.")}</div>
         </>
       )}
     </Panel>
@@ -178,6 +181,7 @@ export function PeriodSeriesSection() {
 }
 
 export function PerformanceIntelligenceSection() {
+  const t = useI18n((s) => s.t);
   const [kind, setKind] = useState<PeriodKind>("DAY");
   const intel = useAccountIntelligence(kind);
   const [showReport, setShowReport] = useState(false);
@@ -190,7 +194,7 @@ export function PerformanceIntelligenceSection() {
   const reportText = useMemo(() => JSON.stringify(report ?? {}, null, 2), [report]);
   return (
     <Panel
-      title="Performance intelligence (report engine)"
+      title={t("account.intel.panel_title", "Performance intelligence (report engine)")}
       right={
         <>
           <span className="acct-actions">
@@ -201,7 +205,7 @@ export function PerformanceIntelligenceSection() {
             ))}
           </span>
           <button className="btn small ghost" onClick={() => setShowReport((v) => !v)}>
-            {showReport ? "summary" : "full report"}
+            {showReport ? t("account.intel.summary", "summary") : t("account.intel.full_report", "full report")}
           </button>
         </>
       }
@@ -211,7 +215,7 @@ export function PerformanceIntelligenceSection() {
       ) : intel.isError ? (
         <ErrorState message={asErrorText(intel.error)} onRetry={() => intel.refetch()} />
       ) : !intel.data ? (
-        <EmptyState message="No intelligence report." />
+        <EmptyState message={t("account.intel.empty", "No intelligence report.")} />
       ) : showReport ? (
         <pre tabIndex={0} style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 8, padding: 10, fontSize: 10.5, maxHeight: 420, overflow: "auto", fontFamily: "var(--mono)", margin: 0 }}>
           {reportText}
@@ -220,28 +224,28 @@ export function PerformanceIntelligenceSection() {
         <div className="grid cols-2">
           <div>
             <dl className="kv">
-              <dt>anomaly state</dt>
+              <dt>{t("account.intel.anomaly_state", "anomaly state")}</dt>
               <dd>
                 <StatusBadge status={i?.status ?? "NO_DATA"} />
               </dd>
-              <dt>behavior state</dt>
+              <dt>{t("account.intel.behavior_state", "behavior state")}</dt>
               <dd>
                 <StatusBadge status={i?.behavior_state ?? "NO_DATA"} />
               </dd>
-              <dt>trades analyzed</dt>
+              <dt>{t("account.intel.trades_analyzed", "trades analyzed")}</dt>
               <dd>{i?.trades_analyzed ?? DASH}</dd>
-              <dt>evidence coverage</dt>
+              <dt>{t("account.intel.evidence_coverage", "evidence coverage")}</dt>
               <dd>{i?.evidence_coverage == null ? DASH : `${(i.evidence_coverage * 100).toFixed(0)}%`}</dd>
-              <dt>versions</dt>
+              <dt>{t("account.intel.versions", "versions")}</dt>
               <dd className="tiny">
-                behavior {i?.analysis_version || DASH} · anomaly {i?.anomaly_version || DASH}
+                {t("account.intel.versions_value", "behavior {b} · anomaly {a}", { b: i?.analysis_version || DASH, a: i?.anomaly_version || DASH })}
               </dd>
             </dl>
           </div>
           <div>
-            <div className="section-title">behavioral flags (backend counts)</div>
+            <div className="section-title">{t("account.intel.flags_title", "behavioral flags (backend counts)")}</div>
             {Object.keys(i?.behavioral_flags ?? {}).length === 0 ? (
-              <EmptyState message="No behavioral flags counted." />
+              <EmptyState message={t("account.intel.flags_empty", "No behavioral flags counted.")} />
             ) : (
               <div className="statline">
                 {Object.entries(i?.behavioral_flags ?? {}).map(([k, v]) => (
@@ -252,10 +256,10 @@ export function PerformanceIntelligenceSection() {
               </div>
             )}
             <div className="section-title" style={{ marginTop: 10 }}>
-              anomalies
+              {t("account.intel.anomalies_title", "anomalies")}
             </div>
             {Object.keys(i?.anomalies ?? {}).length === 0 ? (
-              <EmptyState message="No anomalies counted for this period." />
+              <EmptyState message={t("account.intel.anomalies_empty", "No anomalies counted for this period.")} />
             ) : (
               <div className="statline">
                 {Object.entries(i?.anomalies ?? {}).map(([k, v]) => (
@@ -269,10 +273,9 @@ export function PerformanceIntelligenceSection() {
         </div>
       )}
       <div className="tiny faint" style={{ marginTop: 8 }}>
-        deterministic multi-stage enrichment over the accounting core — the same object the Telegram daily report consumes (read-only, never writes
-        financial truth) · period {kind}
+        {t("account.intel.note", "deterministic multi-stage enrichment over the accounting core — the same object the Telegram daily report consumes (read-only, never writes financial truth) · period {period}", { period: kind })}
       </div>
-      <FreshnessNote updatedAtMs={intel.dataUpdatedAt ?? null} label="intelligence" />
+      <FreshnessNote updatedAtMs={intel.dataUpdatedAt ?? null} label={t("account.fresh.intelligence", "intelligence")} />
     </Panel>
   );
 }

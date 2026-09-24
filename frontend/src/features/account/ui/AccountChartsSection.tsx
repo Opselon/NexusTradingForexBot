@@ -22,6 +22,7 @@
 import { useMemo, useState } from "react";
 import { EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { DrawdownChart, EquityCurveChart, SignedBucketChart, type SignedBucket } from "@/components/viz";
+import { useI18n } from "@/stores/i18nStore";
 import { formatDateTime } from "@/lib/format";
 import { useAccountGrowth, useEquityCurve } from "../hooks";
 import { DASH, FreshnessNote, asErrorText, moneyOrDash } from "./shared";
@@ -46,6 +47,7 @@ const fmtMoney = (v: number): string => moneyOrDash(v);
 const bucketLabel = (b: SignedBucket): string => (b.bucket_start ? formatDateTime(b.bucket_start) : "");
 
 export function AccountChartsSection() {
+  const t = useI18n((s) => s.t);
   const [range, setRange] = useState<RangeId>("all");
   const days = RANGES.find((r) => r.id === range)?.days ?? null;
   const curve = useEquityCurve(days);
@@ -81,12 +83,12 @@ export function AccountChartsSection() {
     [cum],
   );
 
-  const rangeLabel = (first?: string, last?: string) =>
-    `${first ? formatDateTime(first) : DASH} → ${last ? formatDateTime(last) : DASH}`;
+  const fmt = (ts?: string) => (ts ? formatDateTime(ts) : DASH);
+  const rangeLabel = (first?: string, last?: string) => `${fmt(first)} → ${fmt(last)}`;
 
   return (
     <Panel
-      title="Equity · drawdown · growth"
+      title={t("account.charts.title", "Equity · drawdown · growth")}
       right={
         <>
           <span className="acct-actions">
@@ -96,7 +98,7 @@ export function AccountChartsSection() {
               </button>
             ))}
           </span>
-          <FreshnessNote updatedAtMs={curve.dataUpdatedAt ?? null} label="curve" />
+          <FreshnessNote updatedAtMs={curve.dataUpdatedAt ?? null} label={t("account.fresh.curve", "curve")} />
         </>
       }
     >
@@ -105,17 +107,17 @@ export function AccountChartsSection() {
       ) : curve.isError ? (
         <ErrorState message={asErrorText(curve.error)} onRetry={() => curve.refetch()} />
       ) : points.length === 0 ? (
-        <EmptyState message="No accounting snapshots stored yet." hint="Equity/drawdown charts appear once the accounting worker records snapshots." />
+        <EmptyState message={t("account.charts.empty_snapshots", "No accounting snapshots stored yet.")} hint={t("account.charts.empty_snapshots_hint", "Equity/drawdown charts appear once the accounting worker records snapshots.")} />
       ) : (
         <div className="acc-plate-grid">
           <Plate
-            title="equity (backend running peak shown dashed)"
-            meta={`${points.length} samples`}
+            title={t("account.charts.equity_title", "equity (backend running peak shown dashed)")}
+            meta={t("account.charts.samples", "{count} samples · {start} → {end}", { count: points.length, start: fmt(points[0]?.timestamp), end: fmt(points[points.length - 1]?.timestamp) })}
             footer={rangeLabel(points[0]?.timestamp, points[points.length - 1]?.timestamp)}
           >
             <EquityCurveChart points={points} field="equity" showPeak formatValue={(v) => moneyOrDash(v)} />
             <div className="tiny faint" style={{ marginBlockStart: 5 }}>
-              emphasis bars: per-sample equity move scaled to the largest move in view (derived from the samples above)
+              {t("account.charts.emph_note_equity", "emphasis bars: per-sample equity move scaled to the largest move in view (derived from the samples above)")}
             </div>
             <EmphBars
               bars={points.map((pt, i) => {
@@ -131,9 +133,9 @@ export function AccountChartsSection() {
           </Plate>
 
           <Plate
-            title="drawdown % (one methodology — accounting core)"
-            meta={maxDd === null ? DASH : `worst ${maxDd.toFixed(2)}%`}
-            footer="worst sample in view shown in meta · depth comes from the accounting core, never recomputed here"
+            title={t("account.charts.dd_title", "drawdown % (one methodology — accounting core)")}
+            meta={maxDd === null ? DASH : t("account.charts.worst_dd", "worst sample in view: {worst}", { worst: maxDd.toFixed(2) })}
+            footer={t("account.charts.dd_footer", "worst sample in view shown in meta · depth comes from the accounting core, never recomputed here")}
           >
             <DrawdownChart points={points} maxDrawdownPct={maxDd} />
             <EmphBars
@@ -143,12 +145,12 @@ export function AccountChartsSection() {
           </Plate>
 
           <Plate
-            title="cumulative realized PnL (per closed trade)"
-            meta={`${cum.length} steps`}
-            footer="reconciles with period net_pnl sums"
+            title={t("account.charts.cum_title", "cumulative realized PnL (per closed trade)")}
+            meta={t("account.charts.steps", "{count} closed-trade steps", { count: cum.length })}
+            footer={t("account.charts.cum_footer", "reconciles with period net_pnl sums")}
           >
             {cum.length === 0 ? (
-              <EmptyState message="No closed trades to accumulate." />
+              <EmptyState message={t("account.charts.empty_cum", "No closed trades to accumulate.")} />
             ) : (
               <EquityCurveChart
                 points={cumChartPoints}
@@ -159,7 +161,7 @@ export function AccountChartsSection() {
             {cum.length > 0 && (
               <>
                 <div className="tiny faint" style={{ marginBlockStart: 5 }}>
-                  emphasis bars: each closed trade&apos;s net PnL, scaled to the largest |net| on this range (backend values)
+                  {t("account.charts.emph_note_cum", "emphasis bars: each closed trade's net PnL, scaled to the largest |net| on this range (backend values)")}
                 </div>
                 <EmphBars bars={cum.map((c) => ({ value: c.net_pnl }))} minPct={8} />
               </>
@@ -167,16 +169,16 @@ export function AccountChartsSection() {
           </Plate>
 
           <Plate
-            title={`per-trade PnL contributions (last ${Math.min(cum.length, 40)})`}
-            meta={cum.length ? `${Math.min(cum.length, 40)} of ${cum.length}` : DASH}
-            footer="green = winning trade net, red = losing trade net (backend values)"
+            title={t("account.charts.pertrade_title", "per-trade PnL contributions (last {count})", { count: Math.min(cum.length, 40) })}
+            meta={cum.length ? t("account.charts.of_total", "{shown} of {total}", { shown: Math.min(cum.length, 40), total: cum.length }) : DASH}
+            footer={t("account.charts.pertrade_footer", "green = winning trade net, red = losing trade net (backend values)")}
           >
             {cum.length === 0 ? (
-              <EmptyState message="No per-trade rows." />
+              <EmptyState message={t("account.charts.empty_pertrade", "No per-trade rows.")} />
             ) : (
               <SignedBucketChart
                 buckets={buckets}
-                emptyHint="no per-trade rows"
+                emptyHint={t("account.charts.empty_pertrade_hint", "no per-trade rows")}
                 bucketLabel={bucketLabel}
               />
             )}
@@ -185,8 +187,8 @@ export function AccountChartsSection() {
       )}
 
       <Plate
-        title="balance/equity growth (audit_account_snapshots)"
-        meta={`${(growth.data ?? []).length} snapshots`}
+        title={t("account.charts.growth_title", "balance/equity growth (audit_account_snapshots)")}
+        meta={t("account.charts.snapshots", "{n} snapshots", { n: (growth.data ?? []).length })}
         footer={
           growth.isError || growth.isPending || (growth.data ?? []).length === 0
             ? undefined
@@ -198,18 +200,18 @@ export function AccountChartsSection() {
         ) : growth.isError ? (
           <ErrorState message={asErrorText(growth.error)} onRetry={() => growth.refetch()} />
         ) : (growth.data ?? []).length === 0 ? (
-          <EmptyState message="Growth history unavailable." hint="/api/account/growth returned no rows (non-SQLite backend or empty history)." />
+          <EmptyState message={t("account.charts.empty_growth", "Growth history unavailable.")} hint={t("account.charts.empty_growth_hint", "/api/account/growth returned no rows (non-SQLite backend or empty history).")} />
         ) : (
           <>
             <EquityCurveChart points={growth.data ?? []} field="balance" formatValue={(v) => moneyOrDash(v)} />
             <EmphLevel values={(growth.data ?? []).map((g) => g.balance)} minPct={10} />
             <div className="tiny faint" style={{ marginBlockStart: 5 }}>
-              emphasis strip: audit balance levels (min→max scale, backend snapshots only)
+              {t("account.charts.emph_note_growth", "emphasis strip: audit balance levels (min→max scale, backend snapshots only)")}
             </div>
           </>
         )}
       </Plate>
-      <FreshnessNote updatedAtMs={growth.dataUpdatedAt ?? null} label="growth" />
+      <FreshnessNote updatedAtMs={growth.dataUpdatedAt ?? null} label={t("account.fresh.growth", "growth")} />
     </Panel>
   );
 }

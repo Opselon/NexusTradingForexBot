@@ -116,7 +116,7 @@ function ColumnsGrid({ columns }: { columns: ConsoleColumn[] }) {
               <td>{c.name}</td>
               <td>{c.type}</td>
               <td>
-                {c.pk && <span className="badge good">PK</span>}{" "}{c.notnull && <span className="badge neutral">NOT NULL</span>}
+                {c.pk && <span className="badge good">{t("database.explorer.pk", "PK")}</span>}{" "}{c.notnull && <span className="badge neutral">{t("database.explorer.not_null", "NOT NULL")}</span>}
               </td>
               <td className={c.default === null || c.default === undefined ? "null" : undefined}>
                 {c.default === null || c.default === undefined ? "null" : String(c.default)}

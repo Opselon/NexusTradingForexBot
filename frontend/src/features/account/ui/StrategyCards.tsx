@@ -20,6 +20,7 @@
  *           StrategyContribution — never widen the DTO.
  */
 
+import { useI18n } from "@/stores/i18nStore";
 import { moneyOrDash, numOrDash } from "./shared";
 
 /** The fields the cards read (a subset of StrategyContribution). */
@@ -64,8 +65,9 @@ function copyId(id: string, onCopy?: (id: string, ok: boolean) => void) {
 }
 
 export function StrategyCards({ rows, onCopy }: StrategyCardsProps) {
+  const t = useI18n((s) => s.t);
   if (rows.length === 0) {
-    return <div className="acc-scard-empty">no strategy contributions in range</div>;
+    return <div className="acc-scard-empty">{t("account.strategies.cards_empty", "no strategy contributions in range")}</div>;
   }
   return (
     <div className="acc-scard-grid">
@@ -85,8 +87,8 @@ export function StrategyCards({ rows, onCopy }: StrategyCardsProps) {
               <button
                 className="acc-scard-copy"
                 onClick={() => copyId(s.strategy_id, onCopy)}
-                title="copy strategy id"
-                aria-label={`copy ${s.strategy_id}`}
+                title={t("account.strategies.copy_id", "copy strategy id")}
+                aria-label={t("account.strategies.copy_aria", "copy {id}", { id: s.strategy_id })}
               >
                 ⧉
               </button>
@@ -95,8 +97,8 @@ export function StrategyCards({ rows, onCopy }: StrategyCardsProps) {
             <div className={`acc-scard-pnl ${tone}`}>{moneyOrDash(s.net_pnl, true)}</div>
 
             {conf !== null && (
-              <div className="acc-scard-meter" title="confidence — backend score, raw value shown">
-                <span className="lab">conf</span>
+              <div className="acc-scard-meter" title={t("account.strategies.conf_meter", "confidence — backend score, raw value shown")}>
+                <span className="lab">{t("account.strategies.lab_conf", "conf")}</span>
                 <span className="acc-scard-track">
                   <i
                     className={`acc-scard-fill ${confTier(conf)}`}
@@ -108,8 +110,8 @@ export function StrategyCards({ rows, onCopy }: StrategyCardsProps) {
             )}
 
             {s.loss_share !== null && s.loss_share !== undefined && (
-              <div className="acc-scard-meter" title="share of account gross loss (backend ratio)">
-                <span className="lab">loss</span>
+              <div className="acc-scard-meter" title={t("account.strategies.loss_meter", "share of account gross loss (backend ratio)")}>
+                <span className="lab">{t("account.strategies.lab_loss", "loss")}</span>
                 <span className="acc-scard-track">
                   <i
                     className="acc-scard-fill bad"
