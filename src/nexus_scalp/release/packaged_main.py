@@ -10,11 +10,12 @@ but through the safe Typer path -- LIVE never starts without confirmation.
 """
 
 from __future__ import annotations
-import contextlib
 
+import contextlib
 import sys
 
 from nexus_scalp.cli.main import app
+from nexus_scalp.release.metadata import CLI_PROGRAM_NAME
 
 if __name__ == "__main__":
     # BUG-145: packaged EXE under a double-click console (cp1252/cp437) crashed
@@ -31,4 +32,7 @@ if __name__ == "__main__":
         # Portable bare launch is ALWAYS paper+xauusd (safe) — explicit live needs `start --mode live`.
         # This also satisfies the user request: default symbol XAUUSD for now.
         sys.argv.extend(["start", "--mode", "paper"])
-    sys.exit(app())
+    # EU-RELEASE-002: canonical program name ensures the help/error output
+    # matches the documented `nexus` interface even when launched via the
+    # packaged NexusScalpEngine.exe executable directly.
+    sys.exit(app(prog_name=CLI_PROGRAM_NAME))

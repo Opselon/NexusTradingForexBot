@@ -27,6 +27,18 @@ from typing import Any
 PRODUCT_NAME = "NexusScalpEngine"
 PRODUCT_DISPLAY = "Nexus Trading Forex Bot"
 
+# Canonical CLI program name (EU-RELEASE-002). Click derives the `--help`
+# usage line from ``sys.argv[0]`` when no ``prog_name`` is passed, so the
+# surface changed with every entry point: ``python -m nexus_scalp.cli.main``
+# printed ``Usage: python -m nexus_scalp.cli.main`` and the packaged CLI
+# printed ``Usage: NexusScalpEngine-CLI.exe`` while the ``nexus help`` word
+# form always said ``nexus``. Every CLI invocation site passes this constant
+# as ``prog_name`` so the two documented-identical surfaces agree by
+# construction (docs/CLI.md: "nexus --help and nexus help are the same
+# output"). One literal, one owner — help panels, error hints and docs cite
+# the same name.
+CLI_PROGRAM_NAME = "nexus"
+
 # Changelog-derived release channel this source tree represents. Do not let a
 # beta/nightly artifact masquerade as a stable release: the build scripts
 # stamp a channel explicitly (release.yml drafts prereleases for `vX.Y.Z-*`).
