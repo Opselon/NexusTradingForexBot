@@ -143,6 +143,7 @@ exclusive_locks:
     since: 2026-09-24
     task: TASK-RESIDUE-POSIX-001
     expiry: 2026-10-01
+    status: released  # PR #423 merged as squash 5ad2d2f7
   - path: tests/unit/test_merge_marker_residue.py
     owner: HERMES-RESIDUE-POSIX
     exclusive: true
@@ -150,3 +151,4 @@ exclusive_locks:
     since: 2026-09-24
     task: TASK-RESIDUE-POSIX-001
     expiry: 2026-10-01
+    status: released  # PR #423 merged as squash 5ad2d2f7
