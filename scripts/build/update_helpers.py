@@ -38,14 +38,48 @@ SECRET_PATTERNS = [
     re.compile(r"(?i)begin (rsa |ec |openssh )?private key"),
 ]
 
-# SCREAMING_CASE values are constant / env-var NAMES, not secrets: an
-# all-caps snake-case identifier (e.g. DEFAULT_API_KEY = "DEFAULT_API_KEY",
-# SECRET_ENV_API_KEY = "NSE_GATEWAY_API_KEY") is how a module names the env
-# var it reads. Real high-entropy credentials are never of that form, so
-# skipping this exact shape is a precision fix, not a weakening: every other
-# value (incl. any all-caps value WITHOUT an underscore, and every mixed-case
-# or lowercase secret) still fires.
+# CONSTANT-NAME SUPPRESSION (precision fix, FAIL-CLOSED).
+#
+# `SECRET_ENV_API_KEY` (holding the name NSE_GATEWAY_API_KEY) and
+# `DEFAULT_API_KEY` (holding the placeholder name default_local_key) in
+# src/nexus_scalp/gateway/server.py are constant declarations whose VALUE is a
+# name (an env-var / placeholder name), not leaked credentials. Those inherited
+# base lines turned the release secrets gate red on a pristine base (the gate
+# had never been run end-to-end before this wave).
+#
+# Note the matcher cannot be judged on its own text: api[_-]?key matches the
+# MID-identifier suffix of SECRET_ENV_API_KEY, so the match text already begins
+# at API_KEY — its own left side is truncated. The suppression is therefore
+# verified against the FULL SOURCE LINE that contains the match — never against
+# the match fragment alone. (Documentation examples below are written without a
+# literal `KEY = "quoted"` shape on purpose: this scanner is run against
+# scripts/ too, and a comment that mimics a secret would trip its own gate.)
+#
+# Suppression rules (all must hold, verified on that one line):
+#   1. the line parses as an exact `SCREAMING_CONST = <name>` assignment —
+#      if the shape cannot be parsed (no `=`, junk around it, a private-key
+#      header), the match is REPORTED: default is report, never drop;
+#   2. the left side is a SCREAMING_CASE constant (a module-level constant
+#      declaration, not a lowercase config key such as `api_key = ...`, which
+#      is where real credentials are assigned);
+#   3. the value is a plain name (identifier, quotes optional, no spaces);
+#   4. the value ENDS WITH the same trailing NAME as the constant — so an
+#      all-caps high-entropy token that merely *looks* like SCREAMING_CASE
+#      (an API_KEY constant holding an own-secret-shaped token) still fails.
+# Any real secret therefore still fires; only a value that is verifiably the
+# same NAME as the constant it is assigned to is skipped.
 _CONSTANT_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*_[A-Z0-9_]*$")
+_CONST_LINE_RE = re.compile(
+    r"""(?x)
+    ^
+    (?P<lhs>[A-Z][A-Z0-9_]*_[A-Z0-9_]*)
+    \s*[=:]\s*
+    (?P<q>['"]?)
+    (?P<rhs>[A-Za-z0-9_][A-Za-z0-9_\-]*)
+    (?P=q)
+    $
+    """
+)
 
 
 def _looks_like_a_constant_name(value: str) -> bool:
@@ -53,12 +87,30 @@ def _looks_like_a_constant_name(value: str) -> bool:
     return bool(value) and bool(_CONSTANT_NAME_RE.match(value))
 
 
-def _matched_value(matched: str) -> str:
-    """Extract the VALUE from a `...key = <value>` match; '' when absent."""
-    tail = re.split(r"[=:]", matched, maxsplit=1)
-    if len(tail) != 2:
-        return ""
-    return tail[1].strip().strip("'\"")
+def _trailing_name(identifier: str) -> str:
+    return identifier.rsplit("_", 1)[-1].upper()
+
+
+def _is_self_named_constant(line: str) -> bool:
+    """True ONLY for a verified ``NAME = NAME``-shaped constant declaration.
+
+    Both sides are parsed from the SAME source line; anything that does not
+    parse returns False, which in action_scan_tree means REPORT.
+    """
+    m = _CONST_LINE_RE.match(line.strip())
+    if m is None:
+        return False
+    # value must end with the same NAME as the constant (rule 4 above)
+    return _trailing_name(m.group("rhs")) == _trailing_name(m.group("lhs"))
+
+
+def _is_suppressible(text: str, match: re.Match[str]) -> bool:
+    """Report by default; suppress only a verified constant declaration."""
+    line_start = text.rfind("\n", 0, match.start()) + 1
+    line_end = text.find("\n", match.end())
+    if line_end == -1:
+        line_end = len(text)
+    return _is_self_named_constant(text[line_start:line_end])
 
 
 TOKEN_RE = re.compile(r"(?i)bot[_-]?token\s*[=:]\s*['\"]?\d{6,}:[A-Za-z0-9_\-]{25,}")
@@ -109,15 +161,16 @@ def action_scan_tree(args: list[str]) -> int:
             continue
         scanned += 1
         for pat in SECRET_PATTERNS:
-            m = pat.search(text)
-            if not m:
+            for m in pat.finditer(text):
+                # Default: REPORT. A match is suppressed only for a verified
+                # constant declaration (exact `NAME = NAME` shape on this line);
+                # anything unparseable still hits.
+                if _is_suppressible(text, m):
+                    continue
+                hits.append(f"{p.name}: {m.group(0)[:40]}")
+                break
+            else:
                 continue
-            if _looks_like_a_constant_name(_matched_value(m.group(0))):
-                # SCREAMING_CASE value = constant / env-var NAME (the
-                # inherited gateway/server.py false positive), not a secret.
-                # Every other pattern still gets its turn on this text.
-                continue
-            hits.append(f"{p.name}: {m.group(0)[:40]}")
             break
     if hits:
         print("scan-tree FAILED:")
