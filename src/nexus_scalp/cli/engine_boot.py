@@ -791,16 +791,28 @@ def _probe_control_center(host: str, port: int) -> tuple[bool, bool, str]:
         with opener.open(f"{base}/health", timeout=2) as resp:
             status = getattr(resp, "status", 200)
             verdict = _verdict_of(resp)
-            if status != 200:
+            # The route maps verdicts to statuses: READY/DEGRADED are 200 or
+            # 503 (DEGRADED answers 503 when an optional subsystem is WARNING
+            # - the app is still serving the Control Center), NOT_READY /
+            # UNHEALTHY are 503 too. The VERDICT is authoritative: only
+            # READY / DEGRADED mean "serving". A 4xx means a routing or auth
+            # problem, which is not readiness.
+            if status >= 500 and verdict not in ("READY", "DEGRADED"):
+                return False, False, f"health HTTP {status} verdict {verdict}"
+            if 400 <= status < 500:
                 return False, False, f"health HTTP {status}"
             if verdict not in ("READY", "DEGRADED"):
-                # NOT_READY/UNHEALTHY (or an unreadable body) means the app is
-                # up but not yet able to serve the Control Center honestly.
                 return False, False, f"health verdict {verdict}"
     except urllib.error.HTTPError as http_err:
-        # 503 = accepting connections but verdict non-READY; other 4xx/5xx say
-        # the same thing for our purposes: the gate has not passed.
-        return False, False, f"health HTTP {http_err.code}"
+        # urllib raises HTTPError for 503 (and all non-2xx). The verdict in the
+        # body is still authoritative: a DEGRADED 503 means the Control Center
+        # IS being served and the gate may pass; NOT_READY / UNHEALTHY or an
+        # unreadable body must keep it closed (never a false green).
+        verdict = _verdict_of(http_err)
+        if verdict in ("READY", "DEGRADED"):
+            pass
+        else:
+            return False, False, f"health HTTP {http_err.code} verdict {verdict}"
     except Exception as exc:
         return False, False, f"health {type(exc).__name__}"
     try:
