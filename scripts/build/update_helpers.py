@@ -38,6 +38,81 @@ SECRET_PATTERNS = [
     re.compile(r"(?i)begin (rsa |ec |openssh )?private key"),
 ]
 
+# CONSTANT-NAME SUPPRESSION (precision fix, FAIL-CLOSED).
+#
+# `SECRET_ENV_API_KEY` (holding the name NSE_GATEWAY_API_KEY) and
+# `DEFAULT_API_KEY` (holding the placeholder name default_local_key) in
+# src/nexus_scalp/gateway/server.py are constant declarations whose VALUE is a
+# name (an env-var / placeholder name), not leaked credentials. Those inherited
+# base lines turned the release secrets gate red on a pristine base (the gate
+# had never been run end-to-end before this wave).
+#
+# Note the matcher cannot be judged on its own text: api[_-]?key matches the
+# MID-identifier suffix of SECRET_ENV_API_KEY, so the match text already begins
+# at API_KEY — its own left side is truncated. The suppression is therefore
+# verified against the FULL SOURCE LINE that contains the match — never against
+# the match fragment alone. (Documentation examples below are written without a
+# literal `KEY = "quoted"` shape on purpose: this scanner is run against
+# scripts/ too, and a comment that mimics a secret would trip its own gate.)
+#
+# Suppression rules (all must hold, verified on that one line):
+#   1. the line parses as an exact `SCREAMING_CONST = <name>` assignment —
+#      if the shape cannot be parsed (no `=`, junk around it, a private-key
+#      header), the match is REPORTED: default is report, never drop;
+#   2. the left side is a SCREAMING_CASE constant (a module-level constant
+#      declaration, not a lowercase config key such as `api_key = ...`, which
+#      is where real credentials are assigned);
+#   3. the value is a plain name (identifier, quotes optional, no spaces);
+#   4. the value ENDS WITH the same trailing NAME as the constant — so an
+#      all-caps high-entropy token that merely *looks* like SCREAMING_CASE
+#      (an API_KEY constant holding an own-secret-shaped token) still fails.
+# Any real secret therefore still fires; only a value that is verifiably the
+# same NAME as the constant it is assigned to is skipped.
+_CONSTANT_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*_[A-Z0-9_]*$")
+_CONST_LINE_RE = re.compile(
+    r"""(?x)
+    ^
+    (?P<lhs>[A-Z][A-Z0-9_]*_[A-Z0-9_]*)
+    \s*[=:]\s*
+    (?P<q>['"]?)
+    (?P<rhs>[A-Za-z0-9_][A-Za-z0-9_\-]*)
+    (?P=q)
+    $
+    """
+)
+
+
+def _looks_like_a_constant_name(value: str) -> bool:
+    """True only for screaming-case snake identifiers (a NAME, not a secret)."""
+    return bool(value) and bool(_CONSTANT_NAME_RE.match(value))
+
+
+def _trailing_name(identifier: str) -> str:
+    return identifier.rsplit("_", 1)[-1].upper()
+
+
+def _is_self_named_constant(line: str) -> bool:
+    """True ONLY for a verified ``NAME = NAME``-shaped constant declaration.
+
+    Both sides are parsed from the SAME source line; anything that does not
+    parse returns False, which in action_scan_tree means REPORT.
+    """
+    m = _CONST_LINE_RE.match(line.strip())
+    if m is None:
+        return False
+    # value must end with the same NAME as the constant (rule 4 above)
+    return _trailing_name(m.group("rhs")) == _trailing_name(m.group("lhs"))
+
+
+def _is_suppressible(text: str, match: re.Match[str]) -> bool:
+    """Report by default; suppress only a verified constant declaration."""
+    line_start = text.rfind("\n", 0, match.start()) + 1
+    line_end = text.find("\n", match.end())
+    if line_end == -1:
+        line_end = len(text)
+    return _is_self_named_constant(text[line_start:line_end])
+
+
 TOKEN_RE = re.compile(r"(?i)bot[_-]?token\s*[=:]\s*['\"]?\d{6,}:[A-Za-z0-9_\-]{25,}")
 
 
@@ -86,10 +161,17 @@ def action_scan_tree(args: list[str]) -> int:
             continue
         scanned += 1
         for pat in SECRET_PATTERNS:
-            m = pat.search(text)
-            if m:
+            for m in pat.finditer(text):
+                # Default: REPORT. A match is suppressed only for a verified
+                # constant declaration (exact `NAME = NAME` shape on this line);
+                # anything unparseable still hits.
+                if _is_suppressible(text, m):
+                    continue
                 hits.append(f"{p.name}: {m.group(0)[:40]}")
                 break
+            else:
+                continue
+            break
     if hits:
         print("scan-tree FAILED:")
         for h in hits[:8]:
@@ -100,7 +182,13 @@ def action_scan_tree(args: list[str]) -> int:
 
 
 def action_manifest(args: list[str]) -> int:
-    """Generate release-manifest.json + embedded (portable-rooted) copy."""
+    """Generate release-manifest.json + embedded (portable-rooted) copy.
+
+    CONTRACT frozen decision #11: the packaged frontend bundle is recorded
+    in the manifest payload so a tampered/rolled-back Control Center is
+    detectable (hash exists but the file is absent, or the file exists with
+    a different sha256).
+    """
     out_dir = Path(args[0])
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
     from nexus_scalp.release import packaging as p
@@ -149,11 +237,72 @@ def action_manifest(args: list[str]) -> int:
         "model_runtime_schema": base_meta.get("model_runtime_schema"),
         "artifacts": embedded_arts,
     }
+    embedded["frontend_bundle"] = _frontend_bundle_record(portable_root)
     portable_manifest.write_text(json.dumps(embedded, indent=2), encoding="utf-8")
     print(
         f"manifest: {len(artifacts)} artifacts -> {manifest} (embedded: {len(payload_files)} files)"
     )
     return 0
+
+
+def _stamped_frontend_hash(portable_root: Path) -> str | None:
+    """``frontend_index_hash`` from the staged build-info.json (CONTRACT #11)."""
+    for candidate in (
+        portable_root / "build-info.json",
+        portable_root / "_internal" / "build-info.json",
+    ):
+        if not candidate.is_file():
+            continue
+        try:
+            value = json.loads(candidate.read_text(encoding="utf-8")).get("frontend_index_hash")
+        except (OSError, ValueError):
+            continue
+        if value:
+            return str(value)
+    return None
+
+
+def _frontend_bundle_record(portable_root: Path) -> dict:
+    """Record the shipped Control Center bundle (CONTRACT #11).
+
+    ``frontend_index_hash`` is stamped into build-info.json by the release
+    build; the packaged entry mirrors it so a verifier can tell "the bundle
+    the build described" from "the bundle that actually landed". Missing
+    bundle, missing index, or a hash mismatch is reported explicitly rather
+    than being silently absent from the manifest.
+
+    The hash is read from the STAGED build-info.json (not from the
+    release-root manifest), because generate_manifest copies only identity
+    fields and never carried the frontend hash.
+    """
+    record: dict[str, object] = {"relative_path": "frontend/dist"}
+    index = portable_root / "_internal" / "frontend" / "dist" / "index.html"
+    if index.is_file():
+        bundled = [f for f in index.parent.rglob("*") if f.is_file()]
+        record["index_present"] = True
+        record["index_sha256"] = _sha256(index)
+        record["dist_size_bytes"] = sum(f.stat().st_size for f in bundled)
+        record["dist_file_count"] = len(bundled)
+    else:
+        record["index_present"] = False
+    expected = _stamped_frontend_hash(portable_root)
+    if expected:
+        record["expected_index_sha256"] = expected
+        if record.get("index_sha256"):
+            record["index_sha256_matches_build_info"] = (
+                str(record["index_sha256"]).lower() == expected.lower()
+            )
+    return record
+
+
+def _sha256(path: Path) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 16), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def action_sbom(args: list[str]) -> int:

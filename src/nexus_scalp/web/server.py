@@ -11,6 +11,7 @@ import contextlib
 import json
 import math
 import os
+import re
 import threading
 import time
 from collections import deque
@@ -22,7 +23,8 @@ from typing import Any
 import yaml
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from nexus_scalp.domain.enums import ActionType, ExecutionMode
@@ -48,6 +50,11 @@ from nexus_scalp.web.errors import (
     new_request_id,
     safe_error_payload,
 )
+
+# END-USER-RUNTIME-UI-INTEGRATION (contract frozen decision #9): the frozen
+# frontend/dist resolution seam — single source of truth for "/" document
+# serving, the /alt mount, the root SPA fallback and /health's frontend block.
+from nexus_scalp.web.frontend_assets import resolve_frontend_dist
 
 
 def serialize_enums(obj: Any) -> Any:
@@ -437,6 +444,117 @@ def _get_allowed_cors_origins() -> list[str]:
     if raw_env and raw_env.strip():
         return [origin.strip() for origin in raw_env.split(",") if origin.strip()]
     return list(DEFAULT_CORS_ORIGINS)
+
+
+# ---------------------------------------------------------------------------
+# END-USER-RUNTIME-UI-INTEGRATION (contract frozen decisions #6/#8):
+# SPA fallback machinery shared by the /alt mount and the ROOT mount.
+# ---------------------------------------------------------------------------
+
+#: CONTRACT frozen decision #6 (§60): path classes the ROOT SPA fallback
+#: answers with an honest 404 — NEVER index.html. Every REGISTERED route and
+#: the /alt mount win first (Starlette first-match); this deny list covers
+#: their UNMATCHED children so a typo'd API/stream call can never receive an
+#: HTML shell that would be parsed as data.
+ROOT_SPA_DENY_PREFIXES: tuple[str, ...] = ("/api", "/ws", "/web")
+
+#: CONTRACT frozen decision #8 (§42/46): vite content-hash in an asset
+#: filename — `-<hash>.<ext>` with hash length >= 8 ([A-Za-z0-9_]).
+_HASHED_ASSET_RE: re.Pattern[str] = re.compile(r"-[A-Za-z0-9_]{8,}\.[A-Za-z0-9]+$")
+
+#: SPA index documents are always revalidated (contract #8).
+_NO_STORE_HEADERS: dict[str, str] = {"Cache-Control": "no-store"}
+#: Vite-hashed assets are content-immutable (contract #8).
+_IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+
+class _AltSpaStaticFiles(StaticFiles):
+    """SPA fallback for the React console (ALT-UI-PRO / END-USER-RUNTIME).
+
+    The console routes client-side (/alt/trading, /alt/audit, /trading, ...).
+    StaticFiles only resolves real files, so a deep link or refresh 404'd.
+    Unknown NON-asset paths inside the mount fall back to index.html (standard
+    SPA hosting); missing asset files (*.js/*.css/...) still 404 so typos are
+    never masked. Static only — the API under /api keeps full token auth
+    (WEB-AUTH-P0).
+
+    ONE class serves both mounts (contract #6), configured per instance:
+
+    * `/alt` mount: `deny_prefixes=()` + `immutable_asset_hashes=False` —
+      shipped /alt behavior stays BYTE-COMPATIBLE (frozen decision #6).
+    * ROOT mount (registered LAST in create_app): `deny_prefixes=
+      ROOT_SPA_DENY_PREFIXES` (paths starting with /api, /ws, /web get an
+      honest 404, never index.html — §60) + `immutable_asset_hashes=True`
+      (hashed /assets/* files get year-long immutable caching — #8).
+    """
+
+    #: Root-mount deny classes; EMPTY on the /alt instance (byte-compat).
+    deny_prefixes: tuple[str, ...] = ()
+    #: Root-mount only: apply immutable cache headers to hashed assets.
+    immutable_asset_hashes: bool = False
+
+    @staticmethod
+    def _scope_escape_attempt(scope: dict) -> bool:
+        """Traversal/escape shapes in the ORIGINAL request path.
+
+        Checked from the request scope — NEVER from the mount's normpath'd
+        path, whose ``\\`` are ordinary Windows separators (a backslash test
+        there would refuse every multi-segment SPA route on Windows).
+
+        httpx and real browsers resolve ``..`` segments BEFORE sending, so a
+        collapsed ``/etc/passwd`` is indistinguishable from a deep link at
+        the ASGI layer (contract #6 serves the index shell there — never a
+        file; escalated in REQUESTS.md re: phase-14's pre-wave expectation).
+        Everything still visible in the scope — raw ``..``, backslash
+        traversal, UNC/triple-slash, drive letters — is refused here before
+        ANY lookup (defense in depth alongside CodeQL #62/#63/#67 and the
+        auth middleware's own guards).
+        """
+        scope_path = scope.get("path", "") if scope else ""
+        if not scope_path:
+            return False
+        if ".." in scope_path or "\\" in scope_path or "//" in scope_path:
+            return True
+        head = scope_path.lstrip("/")
+        first = head.split("/", 1)[0]
+        # Windows drive letter / device path
+        return bool(len(first) >= 2 and first[1] == ":" and first[0].isalpha())
+
+    async def get_response(self, path: str, scope):
+        from starlette.exceptions import HTTPException
+
+        if self.deny_prefixes:
+            # CONTRACT #6/§60: deny BEFORE any lookup so an unmatched API or
+            # stream child is an honest 404 — never a shell document.
+            normalized = "/" + path.lstrip("/")
+            if any(normalized.startswith(p) for p in self.deny_prefixes):
+                raise HTTPException(status_code=404)
+        if self._scope_escape_attempt(scope):
+            # Defense in depth (phase-14 traversal suite + CodeQL #62/#63/#67):
+            # traversal-shaped requests are refused before ANY lookup, so they
+            # can never be answered with the index document or a file.
+            raise HTTPException(status_code=404)
+        try:
+            resp = await super().get_response(path, scope)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            name = path.rsplit("/", 1)[-1]
+            if "." in name and not name.lower().endswith(".html"):
+                raise  # missing asset: honest 404, never a fake index
+            import stat as _stat
+
+            full, st = self.lookup_path("index.html")
+            if full and st is not None and _stat.S_ISREG(st.st_mode):
+                fallback = self.file_response(full, st, scope)
+                fallback.headers["Cache-Control"] = "no-store"
+                return fallback
+            raise
+        if self.immutable_asset_hashes and _HASHED_ASSET_RE.search(path):
+            # CONTRACT #8: content-hashed build output never changes under
+            # the same name — safe to cache for a year, immutable.
+            resp.headers["Cache-Control"] = _IMMUTABLE_CACHE_CONTROL
+        return resp
 
 
 def create_app(engine_ref: Any = None) -> FastAPI:
@@ -1700,74 +1818,72 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             if websocket in active_connections:
                 active_connections.remove(websocket)
 
+    # ------------------------------------------------------------------
+    # END-USER-RUNTIME-UI-INTEGRATION document routes (contract frozen
+    # decisions #4, #5, #8). Registered EARLY: registered paths always win
+    # over the root SPA fallback mount (Starlette first-match, #6).
+    # ------------------------------------------------------------------
+    def _index_document_response() -> FileResponse:
+        """Canonical index document: the React build when it resolves,
+        the legacy Web/index.html when the dist is MISSING (#4 — graceful
+        degradation keeps today's behavior with zero regression)."""
+        dist = resolve_frontend_dist()
+        target = dist / "index.html" if dist is not None else WEB_DIR / "index.html"
+        # CONTRACT #8: SPA/index documents are never cached (stale shells
+        # pin outdated asset URLs after every rebuild).
+        return FileResponse(target, headers=dict(_NO_STORE_HEADERS))
+
     # Static Web Pages routes
     @app.get("/")
     def serve_index() -> FileResponse:
-        return FileResponse(WEB_DIR / "index.html")
+        return _index_document_response()
+
+    # CONTRACT #5: /index.html is an ALIAS of / (React index when dist
+    # exists, legacy otherwise) — never a separate document.
+    @app.get("/index.html")
+    def serve_index_html() -> FileResponse:
+        return _index_document_response()
+
+    # CONTRACT #5: legacy dashboard relocation. Served at /legacy AND
+    # /legacy.html (both resolve relative asset refs like href="tailwind.css"
+    # against /, so every legacy asset route above keeps working);
+    # /legacy/ redirects to /legacy.html. CONTRACT #8: no-store.
+    @app.get("/legacy")
+    def serve_legacy() -> FileResponse:
+        return FileResponse(WEB_DIR / "index.html", headers=dict(_NO_STORE_HEADERS))
+
+    @app.get("/legacy.html")
+    def serve_legacy_html() -> FileResponse:
+        return FileResponse(WEB_DIR / "index.html", headers=dict(_NO_STORE_HEADERS))
+
+    @app.get("/legacy/")
+    def serve_legacy_slash() -> RedirectResponse:
+        return RedirectResponse(url="/legacy.html", status_code=302)
 
     # ------------------------------------------------------------------
     # ALT-UI (alternative React console, frontend/dist): additive static
     # mount under /alt. Served by THIS process (no Node runtime — DEC-0002
-    # principle). Disabled by default: enabled only when the built bundle
-    # exists at <repo|cwd>/frontend/dist (dev) or NEXUS_ALT_UI_DIR points
-    # at a dist/ folder (packaged releases opt in explicitly). The legacy
-    # Web/ dashboard at / remains the primary UI until parity lands.
+    # principle). Dual-serve contract (frozen decision #2): the SAME dist
+    # serves at / and at /alt; the console's basename is runtime-determined
+    # (no server redirects for /alt).
+    #
+    # RESOLUTION (frozen decision #9): dist lookup goes through the shared
+    # `frontend_assets` seam — the env NEXUS_ALT_UI_DIR override (tests +
+    # packaged releases) has authority over the legacy repo/cwd candidates,
+    # and a set-but-INVALID override means NO dist (never a fallthrough).
     # Static assets only — the API under /api keeps full token auth.
     # ------------------------------------------------------------------
-    def _resolve_alt_ui_dir() -> Path | None:
-        override = os.environ.get("NEXUS_ALT_UI_DIR")
-        if override:
-            candidate = Path(override)
-            if (candidate / "index.html").is_file():
-                return candidate
-            return None
-        for base in (Path(__file__).resolve().parent.parent.parent.parent, Path.cwd()):
-            candidate = base / "frontend" / "dist"
-            if (candidate / "index.html").is_file():
-                return candidate
-        return None
-
-    _alt_ui_dir = _resolve_alt_ui_dir()
+    _alt_ui_dir = resolve_frontend_dist()
     if _alt_ui_dir is not None:
-        from fastapi.staticfiles import StaticFiles
-
-        class _AltSpaStaticFiles(StaticFiles):
-            """SPA fallback for the /alt React console (ALT-UI-PRO).
-
-            The console routes client-side (/alt/trading, /alt/audit, ...).
-            StaticFiles only resolves real files, so a deep link or refresh
-            404'd. Unknown NON-asset paths inside the mount fall back to
-            index.html (standard SPA hosting); missing asset files
-            (*.js/*.css/...) still 404 so typos are never masked. Static
-            only — the API under /api keeps full token auth (WEB-AUTH-P0).
-            """
-
-            async def get_response(self, path: str, scope):
-                from starlette.exceptions import HTTPException
-
-                try:
-                    return await super().get_response(path, scope)
-                except HTTPException as exc:
-                    if exc.status_code != 404:
-                        raise
-                    name = path.rsplit("/", 1)[-1]
-                    if "." in name and not name.lower().endswith(".html"):
-                        raise  # missing asset: honest 404, never a fake index
-                    import stat as _stat
-
-                    full, st = self.lookup_path("index.html")
-                    if full and st is not None and _stat.S_ISREG(st.st_mode):
-                        resp = self.file_response(full, st, scope)
-                        resp.headers["Cache-Control"] = "no-store"
-                        return resp
-                    raise
-
         app.mount(
             "/alt",
+            # CONTRACT #6: the /alt instance keeps deny_prefixes=() and
+            # immutable_asset_hashes=False — shipped /alt behavior stays
+            # byte-compatible (verified by test_alt_ui_runtime_contract).
             _AltSpaStaticFiles(directory=str(_alt_ui_dir), html=True),
             name="alt_ui",
         )
-        logger.info("[ALT-UI] serving alternative React console from %s", _alt_ui_dir)
+        logger.info("[ALT-UI] serving React console at /alt and / from %s", _alt_ui_dir)
     else:
         logger.info(
             "[ALT-UI] no built frontend/dist found — /alt not mounted (legacy Web/ UI unchanged)"
@@ -1926,6 +2042,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     def serve_model_studio_ui() -> FileResponse:
         """Serves the Neural Model Studio panel JS (all 18 studio handlers)."""
         return FileResponse(WEB_DIR / "model_studio_ui.js")
+
+    # PHASE-14 completeness (REQ-1 follow-up, EUR-A lane-status follow-up):
+    # same class of gap as model_studio_ui.js — Web/index.html loads
+    # position_adviser_ui.js via a <script> tag but no route served it, so
+    # the Position Adviser panel loaded with every handler undefined.
+    @app.get("/position_adviser_ui.js")
+    def serve_position_adviser_ui() -> FileResponse:
+        """Serves the Position Adviser panel JS."""
+        return FileResponse(WEB_DIR / "position_adviser_ui.js")
 
     @app.get("/tv_widget.html")
     def serve_tv_widget_html() -> FileResponse:
@@ -3039,6 +3164,39 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     from nexus_scalp.web.api_v1_wiring import register_api_v1
 
     register_api_v1(app)
+
+    # ==================================================================
+    # END-USER-RUNTIME-UI-INTEGRATION — ROOT SPA FALLBACK (frozen #6).
+    # Registered as the VERY LAST route in create_app, so every registered
+    # route above and the /alt mount keep winning (Starlette first-match).
+    # Unknown DOTLESS paths (/trading, /positions, ...) receive the React
+    # index (client-side routing); deny classes (/api, /ws, /web),
+    # escape-shaped requests and missing non-.html files answer with an
+    # honest 404 — NEVER index.html (§60).
+    #
+    # Registered ONLY when a dist resolves — "serving dist" (#6): with no
+    # build there is no SPA fallback to register, and unknown paths keep
+    # EXACTLY the pre-wave behavior (honest 404 from the router, zero
+    # regression — contract #4's legacy-at-/ answer comes from
+    # serve_index above, not from this mount). Order invariant holds
+    # either way: when registered, this is the last route.
+    # ==================================================================
+    if _alt_ui_dir is not None:
+        _root_spa = _AltSpaStaticFiles(
+            directory=str(_alt_ui_dir),
+            html=True,
+        )
+        # Instance-level config: StaticFiles.__init__ takes no such kwargs.
+        # Deny classes + immutable asset caching are ROOT-only — the /alt
+        # instance above keeps the class defaults (byte-compat, frozen #6).
+        _root_spa.deny_prefixes = ROOT_SPA_DENY_PREFIXES
+        _root_spa.immutable_asset_hashes = True
+        app.mount("/", _root_spa, name="root_spa")
+    else:
+        logger.info(
+            "[SPA-ROOT] no built frontend/dist — root fallback not mounted "
+            "(unknown paths keep the pre-wave honest-404 behavior)"
+        )
 
     # WEB-AUTH-P0: LAST step in create_app — wraps the fully-built app so
     # every route (current and future) is behind token auth (audit B1).

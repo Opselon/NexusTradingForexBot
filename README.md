@@ -92,7 +92,8 @@ pip install -e ".[dev]"
 
 nexus doctor                # read-only diagnostics + suggested fixes
 nexus repair --model        # fresh clone only: provision the PAPER starter model bundle
-nexus start                 # PAPER mode (default, safe) → http://127.0.0.1:8080
+nexus start                 # PAPER mode (safe) → auto-opens Control Center in default browser
+nexus start --no-browser    # start runtime without launching browser (headless / CI / automation)
 nexus start --mode shadow   # live feed, ZERO order authority — recommended for evaluation
 nexus stop
 ```

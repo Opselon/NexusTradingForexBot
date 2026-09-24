@@ -52,6 +52,18 @@ Write-Host "[CLEAN-INSTALL] installed ok" -ForegroundColor Green
 $Exe = Join-Path $InstDir "NexusScalpEngine.exe"
 if (-not (Test-Path $Exe)) { Write-Host "[CLEAN-INSTALL] FAILED exe missing" -ForegroundColor Red; exit 1 }
 
+# CONTRACT frozen decision #11: the installed app must actually CONTAIN the
+# production Control Center bundle — the runtime serves it from
+# _internal/frontend/dist, and an installer that shipped without it would
+# silently fall back to the legacy UI with no signal anywhere else. The onefile
+# CLI in cli/ is intentionally dist-free, so only the app root is checked.
+$InstalledFrontendIndex = Join-Path $InstDir "_internal\frontend\dist\index.html"
+if (-not (Test-Path $InstalledFrontendIndex)) {
+    Write-Host "[CLEAN-INSTALL] FAILED: installed tree has no _internal/frontend/dist/index.html (CONTRACT #11) - the Control Center bundle did not ship" -ForegroundColor Red
+    exit 1
+}
+Write-Host "[CLEAN-INSTALL] Control Center bundle present at $InstalledFrontendIndex" -ForegroundColor Green
+
 Write-Host "[CLEAN-INSTALL] version check" -ForegroundColor Cyan
 $v = & $Exe version --plain 2>&1 | Out-String
 if ($LASTEXITCODE -ne 0 -or $v -notmatch "version") {
@@ -108,7 +120,7 @@ $UserData = Join-Path $env:LOCALAPPDATA "NexusScalpEngine"
 if (Test-Path (Join-Path $UserData "config")) {
     Write-Host "[CLEAN-INSTALL] PASS: user data preserved at $UserData" -ForegroundColor Green
 } else {
-    Write-Host "[CLEAN-INSTALL] WARN: no user data dir (first run not executed) — policy verified by design" -ForegroundColor Yellow
+    Write-Host "[CLEAN-INSTALL] WARN: no user data dir (first run not executed) - policy verified by design" -ForegroundColor Yellow
 }
 
 Remove-Item $TestRoot -Recurse -Force -ErrorAction SilentlyContinue
