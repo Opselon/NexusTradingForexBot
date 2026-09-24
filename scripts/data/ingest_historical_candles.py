@@ -229,9 +229,14 @@ def read_bars_mt5(
         except Exception as exc:
             raise IngestError(f"Cannot import DirectMT5Adapter: {exc}") from exc
 
-    manage_conn = (
-        (not getattr(adapter, "is_connected", False)) if own_connection is None else own_connection
-    )
+    # MT5-PARITY-FIX-2: `is_connected` is a METHOD on every shipped adapter,
+    # so `getattr(adapter, "is_connected", False)` was always a truthy bound
+    # method and `manage_conn` was always False — a fresh adapter was NEVER
+    # connected, so get_rate_history returned [] and the mt5 source died with
+    # "MT5 returned 0 bars". Resolve the probe before branching.
+    probe = getattr(adapter, "is_connected", False)
+    already_connected = bool(probe()) if callable(probe) else bool(probe)
+    manage_conn = (not already_connected) if own_connection is None else own_connection
     if manage_conn:
         try:
             connected = adapter.connect()
@@ -250,11 +255,17 @@ def read_bars_mt5(
             n_bars = count
 
         if hasattr(adapter, "get_rate_history"):
+            # MT5-PARITY-FIX-2 / F17-1: get_rate_history's real signature is
+            # (symbol, timeframe, count, from_utc). There is no `start=`
+            # kwarg, so the previous call raised TypeError BEFORE any fetch
+            # and the `mt5` source was completely unusable. `--days` is now
+            # honoured by passing the window through `from_utc` (the adapter
+            # owns the broker-timebase shift for that parameter).
             rates = adapter.get_rate_history(
                 symbol=symbol,
                 timeframe=timeframe,
-                start=start,
                 count=n_bars,
+                from_utc=start,
             )
         elif hasattr(adapter, "copy_rates_from_pos"):
             rates = adapter.copy_rates_from_pos(symbol, timeframe, 0, n_bars)
