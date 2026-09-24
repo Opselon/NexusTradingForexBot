@@ -410,12 +410,48 @@ def health_cmd(
 def status_cmd(
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
 ) -> None:
-    """Full status: health + environment + version."""
+    """Full status: health + environment + version + PRODUCT STATE.
+
+    ENDUSER-OPERABILITY (EU-09): health describes the INSTALLATION (config,
+    environment, model, database) — it says nothing about whether the product
+    is running. This command now also reports the four canonical product axes
+    (application / engine / execution mode / trading safety) from the live
+    engine, so one command answers "is my program running, in which mode, and
+    is live trading possible?" instead of conflating install readiness with
+    runtime state.
+    """
+    runtime = _running_product_state()
     if json_mode:
         engine = rhealth.HealthEngine()
-        _emit(engine.summary_dict(), True)
+        data = engine.summary_dict()
+        # EU-09: the four canonical axes sit at payload ROOT, not nested under
+        # "runtime", so a machine reader parsing `nexus status --json` gets one
+        # flat answer for "is the product up, in which mode, and is live trading
+        # possible?". The health payload describes the INSTALLATION; these axes
+        # describe the RUNNING product. Both are emitted; nesting differs on
+        # purpose (health checks are a list, state is a contract).
+        data.update({k: v for k, v in runtime["product_state"].items() if k != "axes"})
+        data["runtime"] = runtime
+        _emit(data, True)
         return
     health_cmd(json_mode=False, plain=True)
+    st = runtime["product_state"]
+    style = (
+        "green"
+        if st["application"] == "READY"
+        else ("yellow" if st["application"] in {"STARTING", "DEGRADED"} else "red")
+    )
+    console.print(
+        Panel(
+            f"[bold]Product state[/bold]   {st['summary']}\n"
+            f"[bold]Why[/bold]             {st['reasons']['application']}\n"
+            f"[bold]Trading safety[/bold]  {st['reasons']['trading']}\n"
+            f"[bold]Dashboard[/bold]       {runtime['dashboard_url']} "
+            f"({'reachable' if runtime['dashboard_reachable'] else 'not running'})",
+            title="Application state",
+            border_style=style,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -513,17 +549,112 @@ def test_cmd(
 # ---------------------------------------------------------------------------
 # logs
 # ---------------------------------------------------------------------------
+def _log_root() -> Path:
+    """The log tree the ACTUAL engine run used, in priority order.
+
+    ENDUSER-OPERABILITY (EU-05): the severity-split writer anchors its log
+    tree to the caller-supplied ``log_file_path`` — the launcher and
+    LiveEngine pass the relative literal ``Path("logs")``, which resolves
+    against the process CWD. ``configure_logging`` stores that base in
+    module state (``_current_log_base``), which a same-process probe could
+    read, but doctor/health run in a SEPARATE process from the engine, so
+    they must search the filesystem instead. Searching only the per-user
+    data root reported ``no log files yet`` even while the running engine
+    had written a full ``logs/<severity>/<date>.log`` tree inside the
+    install directory (where the frozen product anchors it).
+
+    Candidate order:
+      1. the live engine's workspace (CWD for source runs, the install dir
+         when frozen — where the shipped product actually writes);
+      2. the recorded per-user logs root (LocalAppData/NexusScalpEngine/logs);
+      3. a relative ``logs`` under the CWD (dev convenience).
+
+    The winner is whichever exists AND contains at least one .log file, so
+    an empty/abandoned tree never shadows a live one.
+    """
+    candidates: list[Path] = [
+        rpaths.get_engine_log_root(),
+        rpaths.get_logs_dir(),
+        Path.cwd() / "logs",
+    ]
+
+    known: set[Path] = set()
+    ordered: list[Path] = []
+    for cand in candidates:
+        try:
+            resolved = cand.resolve()
+        except OSError:
+            continue
+        if resolved in known:
+            continue
+        known.add(resolved)
+        ordered.append(resolved)
+    for cand in ordered:
+        if cand.is_dir():
+            try:
+                if any(cand.rglob("*.log")):
+                    return cand
+            except OSError:
+                continue
+    # Fall back to the first existing candidate so "no logs yet" still points
+    # at the place where logs WILL appear.
+    for cand in ordered:
+        if cand.is_dir():
+            return cand
+    return ordered[0] if ordered else rpaths.get_logs_dir()
+
+
 def _log_files() -> list[Path]:
-    dirs = [rpaths.get_logs_dir(), Path("artifacts/logs")]
+    # EU-05: the log tree where the engine actually writes is searched first
+    # (see _log_root); the legacy per-user root stays as a fallback so a
+    # user who moved their data root is not shown an empty list. RECURSIVE
+    # glob: the writer lays files out as <logs>/<severity>/<YYYY>/<MM>/*.log
+    # (observability/logging.py layout contract), so a flat *.log glob — which
+    # is what both this command and the LOGGING health check used — can never
+    # match a real log file.
+    dirs = [_log_root(), Path("artifacts/logs"), rpaths.get_logs_dir()]
     out: list[Path] = []
     seen: set[Path] = set()
     for d in dirs:
         if d.exists():
-            for f in sorted(d.glob("*.log")):
+            for f in sorted(d.rglob("*.log")):
                 if f.resolve() not in seen:
                     seen.add(f.resolve())
                     out.append(f)
+    # Newest first for `latest = files[-1]` consumers: name order is not time
+    # order once severity/date directories are in play.
+    out.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0)
     return out
+
+
+# ---------------------------------------------------------------------------
+# ENDUSER-OPERABILITY (EU-09): one canonical product-state answer for
+# `nexus status` / `nexus health` / the dashboard, derived from the RUNNING
+# engine when it answers and reported honestly when it does not.
+# ---------------------------------------------------------------------------
+
+
+def _running_product_state() -> dict[str, Any]:
+    """Derive the canonical state axes from a live engine, if one answers.
+
+    Never raises and never invents facts: unreachable engine -> STOPPED with
+    the recorded URL reported, so `nexus status` tells a user both the answer
+    and how it was obtained.
+    """
+    from nexus_scalp.cli.engine_boot import _dashboard_url, _probe_dashboard
+    from nexus_scalp.release.product_state import derive_product_state
+
+    url = ""
+    with contextlib.suppress(Exception):
+        url = _dashboard_url()
+    probe = _probe_dashboard(url) if url else {"url": "", "reachable": False, "http_status": None}
+    state = derive_product_state(probe.get("status"), reachable=probe["reachable"])
+    return {
+        "product_state": state,
+        "dashboard_url": url,
+        "dashboard_reachable": probe["reachable"],
+        "http_status": probe["http_status"],
+    }
 
 
 @app.command("logs")
@@ -532,15 +663,31 @@ def logs_cmd(
     errors: bool = typer.Option(False, "--errors", help="Only ERROR/CRITICAL lines."),
     worker: bool = typer.Option(False, "--worker", help="Only worker lines."),
     export: Path | None = typer.Option(None, "--export", help="Export logs to a zip path."),
+    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
 ) -> None:
-    """Tail / filter / export engine logs."""
+    """Tail / filter / export engine logs.
+
+    The log tree reported is the one the engine actually writes
+    (paths.get_engine_log_root): for a packaged install that is the bundle
+    directory, for a source run the process CWD. A user never has to know
+    which one — the command says so in every mode.
+    """
     files = _log_files()
     if not files:
+        no_logs = {
+            "log_root": str(rpaths.get_engine_log_root()),
+            "log_files": [],
+            "message": "No log files yet. Logs appear after the first engine start.",
+            "next_action": "Start the engine once (nexus start), then check again.",
+        }
+        if json_mode:
+            _emit(no_logs, True)
+            return
         console.print(
             _error_panel(
                 "No logs yet",
-                "No log files found.",
-                hint="Start the engine once: nexus start  ·  then check again. Logs live in artifacts/logs/",
+                f"No log files found under {rpaths.get_engine_log_root()}.",
+                hint="Start the engine once: nexus start  ·  then check again.",
             )
         )
         return
@@ -556,6 +703,17 @@ def logs_cmd(
         lines = [l for l in lines if re.search(r"\b(ERROR|CRITICAL)\b", l, re.I)]
     if worker:
         lines = [l for l in lines if re.search(r"WORKER", l, re.I)]
+    if json_mode:
+        _emit(
+            {
+                "log_root": str(_log_root()),
+                "log_files": [str(f) for f in files],
+                "latest": str(latest),
+                "lines": lines[-tail:],
+            },
+            True,
+        )
+        return
     console.print(
         Panel(f"[dim]{latest}[/dim]  ·  last {tail} lines", border_style="cyan", box=box.ROUNDED)
     )

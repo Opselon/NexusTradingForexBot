@@ -27,7 +27,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 from rich.panel import Panel
@@ -42,19 +42,227 @@ from nexus_scalp.cli.styling import (
     _welcome_panel,
     console,
 )
-from nexus_scalp.cli.wizard import _get_network_endpoints
-from nexus_scalp.configuration.config import AppConfig
-from nexus_scalp.domain.enums import ExecutionMode
+
+# NOTE (EU-03): the heavy domain imports (wizard / AppConfig / ExecutionMode)
+# are DELIBERATELY deferred into the functions that use them. They pull torch
+# + polars + networkx (~6s cold on the first `nexus help`), and Typer builds
+# the whole command tree at import time — so a top-level import here is paid
+# by every help listing on the planet.
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.release import exit_codes as xc
 from nexus_scalp.release import paths as rpaths
 from nexus_scalp.release.metadata import get_version_info
 
+if TYPE_CHECKING:
+    # Annotation-only: never imported at runtime (see the NOTE below).
+    from nexus_scalp.configuration.config import AppConfig
+    from nexus_scalp.domain.enums import ExecutionMode
+
 logger = get_logger("nexus_scalp.cli.engine_boot")
+
+
+def _heavy_wizard_endpoint(port: int) -> tuple[str, str]:
+    from nexus_scalp.cli.wizard import _get_network_endpoints
+
+    return _get_network_endpoints(port=port)
+
+
+def _heavy_app_config(path: Path) -> AppConfig:
+    from nexus_scalp.configuration.config import AppConfig
+
+    return AppConfig.load_from_yaml(path)
+
+
+def _heavy_app_config_default() -> AppConfig:
+    from nexus_scalp.configuration.config import AppConfig
+
+    return AppConfig()
+
+
+def _heavy_execution_mode() -> type:
+    from nexus_scalp.domain.enums import ExecutionMode
+
+    return ExecutionMode
 
 
 def _pidfile() -> Path:
     return rpaths.get_data_root() / "nexus.pid"
+
+
+# ---------------------------------------------------------------------------
+# ENDUSER-OPERABILITY (EU-03/EU-04): the dashboard is the product's real UI,
+# yet nothing in the whole repository ever opened it or told a user where it
+# is. These helpers give `nexus start` and the new `nexus dashboard` one
+# shared, honest answer to "where is my program?".
+# ---------------------------------------------------------------------------
+
+
+def _dashboard_host(bind_host: str | None = None) -> str:
+    """Host a HUMAN should type in a browser.
+
+    A bound wildcard address (0.0.0.0 / ::) is not a browsable URL, so the
+    loopback name is substituted; anything else is reported verbatim.
+    """
+    host = (bind_host or "127.0.0.1").strip() or "127.0.0.1"
+    return "127.0.0.1" if host in {"0.0.0.0", "::", "[::]"} else host
+
+
+def _dashboard_url(bind_host: str | None = None, port: int | None = None) -> str:
+    if port is None:
+        # Same precedence the rest of the tooling uses (BUG-267): the port the
+        # server ACTUALLY bound after auto-increment beats the configured one.
+        from nexus_scalp.web.auth_boot import resolved_web_port
+
+        port = resolved_web_port()
+    return f"http://{_dashboard_host(bind_host)}:{int(port)}"
+
+
+def _probe_dashboard(url: str, timeout: float = 2.0) -> dict[str, Any]:
+    """Is the dashboard answering? Pure observation — never raises.
+
+    ANY HTTP response (200/401/403/404) proves the product is up and serving:
+    an auth wall is a running application, not a broken one. Only transport
+    failure means "not running", which is a different user action.
+    """
+    import urllib.error
+    import urllib.request
+
+    probe: dict[str, Any] = {"url": url, "reachable": False, "http_status": None}
+    try:
+        with urllib.request.urlopen(f"{url.rstrip('/')}/api/status", timeout=timeout) as resp:
+            probe["http_status"] = int(getattr(resp, "status", 200) or 200)
+            body = resp.read(64 * 1024).decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:  # server answered with a status
+        probe["http_status"] = int(exc.code)
+        body = ""
+        try:
+            body = exc.read(64 * 1024).decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+    except (urllib.error.URLError, OSError, TimeoutError):
+        return probe
+
+    probe["reachable"] = True
+    if body:
+        import json
+
+        with contextlib.suppress(Exception):
+            parsed = json.loads(body)
+            if isinstance(parsed, dict):
+                probe["status"] = parsed
+    return probe
+
+
+def _browser_allowed() -> bool:
+    """Auto-opening a browser is a courtesy, never a side effect in automation.
+
+    Requires an interactive console (stdout is a TTY) AND a non-CI
+    environment AND no explicit opt-out — so `nexus start > log`, CI smoke
+    runs and service launches never spawn a browser.
+    """
+    if os.getenv("NSE_NO_BROWSER", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return False
+    if os.getenv("CI"):
+        return False
+    with contextlib.suppress(Exception):
+        return bool(sys.stdout.isatty())
+    return False
+
+
+def _open_dashboard(url: str) -> bool:
+    """Open the dashboard in the user's default browser. Never raises."""
+    import webbrowser
+
+    with contextlib.suppress(Exception):
+        return bool(webbrowser.open(url))
+    return False
+
+
+@app.command("dashboard")
+def dashboard_cmd(
+    url: str = typer.Option(
+        "", "--url", help="Dashboard URL (default: the engine's recorded address)."
+    ),
+    open_browser: bool = typer.Option(
+        True, "--open/--no-open", help="Open the dashboard in your browser when it is running."
+    ),
+    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+) -> None:
+    """Open / report the web dashboard — 'where is my program?' in one command.
+
+    Exit codes follow the release contract: 0 the product answered, 1 it is
+    not running (with the exact next action), 2 bad usage.
+    """
+    from nexus_scalp.release.product_state import derive_product_state
+
+    target = (url or _dashboard_url()).strip()
+    if not target.startswith(("http://", "https://")):
+        console.print(
+            _error_panel(
+                "Invalid dashboard URL",
+                f"--url must start with http:// or https:// (got {target!r})",
+                exit_code=xc.EXIT_USAGE,
+            )
+        )
+        raise typer.Exit(xc.EXIT_USAGE) from None
+
+    probe = _probe_dashboard(target)
+    state = derive_product_state(probe.get("status"), reachable=probe["reachable"])
+
+    # EU-03: the installer writes <app data root>/dashboard.url.txt as a
+    # "where is my program?" pointer; refresh it with the address that just
+    # answered so support and the user always read the live one.
+    if probe["reachable"]:
+        with contextlib.suppress(Exception):
+            (rpaths.app_data_root() / "dashboard.url.txt").write_text(
+                target.rstrip("/") + "\n", encoding="utf-8"
+            )
+
+    opened = False
+    if probe["reachable"] and open_browser and not json_mode:
+        opened = _open_dashboard(target)
+
+    payload = {
+        "url": target,
+        "reachable": probe["reachable"],
+        "http_status": probe["http_status"],
+        "product_state": state,
+        "opened": opened,
+        "next_action": (
+            "none — the dashboard is open in your browser"
+            if opened
+            else "none — the dashboard answered"
+            if probe["reachable"]
+            else "start the engine first: NexusScalpEngine.exe start  (or just run the app)"
+        ),
+    }
+
+    if json_mode:
+        _emit(payload, True)
+        raise typer.Exit(0 if probe["reachable"] else xc.EXIT_RUNTIME) from None
+
+    if not probe["reachable"]:
+        console.print(
+            _error_panel(
+                "Dashboard not running",
+                f"Nothing is answering at {target}. The product is installed but not started.",
+                hint=(
+                    "Start it: run NexusScalpEngine.exe from the Start Menu, or "
+                    "`nexus start`. Then run `nexus dashboard` again."
+                ),
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
+
+    lines = [
+        f"[bold]Address[/bold]   {target}",
+        f"[bold]Product[/bold]    {state['summary']}",
+        f"[bold]Note[/bold]      {state['reasons']['application']}",
+    ]
+    console.print(Panel("\n".join(lines), title="Dashboard", border_style="green"))
+    if not opened:
+        console.print(f"[dim]Open it in a browser: {target}[/dim]")
 
 
 @app.command("start")
@@ -125,7 +333,7 @@ def start_cmd(
                 )
             raise typer.Exit(xc.EXIT_RUNTIME) from None
         try:
-            cfg = AppConfig.load_from_yaml(config_path)
+            cfg = _heavy_app_config(config_path)
         except Exception as e:
             if json_mode:
                 _emit(
@@ -160,7 +368,7 @@ def start_cmd(
             config_path = None
         if config_path is not None:
             try:
-                cfg = AppConfig.load_from_yaml(config_path)
+                cfg = _heavy_app_config(config_path)
             except Exception as e:
                 if json_mode:
                     _emit(
@@ -185,10 +393,10 @@ def start_cmd(
             # No file -> bootstrap from hard defaults (same values as base.yaml).
             # This is the user story "downloaded release from GitHub, double-
             # clicked the exe, it just works in PAPER".
-            cfg = AppConfig()
+            cfg = _heavy_app_config_default()
             config_path = None  # type: ignore[assignment]
 
-    if chosen == ExecutionMode.LIVE:
+    if chosen == _heavy_execution_mode().LIVE:
         panel = Panel(
             "[bold red]WARNING: this starts REAL execution.[/bold red]\n\n"
             f"Account   : {cfg.mt5.account or 'configured'}\n"
@@ -260,7 +468,7 @@ def start_cmd(
     except Exception:
         pass
 
-    endpoints = _get_network_endpoints(port=port)
+    endpoints = _heavy_wizard_endpoint(port)
 
     if json_mode:
         _emit(
@@ -488,7 +696,7 @@ def _run_engine_locked(
     # REFUSED without a real verified bundle (starter or silent mint never
     # serves live-money paths). Serving gates are never relaxed.
     _eff_mode = mode_override if mode_override is not None else cfg.execution.mode
-    if _eff_mode in (ExecutionMode.PAPER, ExecutionMode.SHADOW):
+    if _eff_mode in (_heavy_execution_mode().PAPER, _heavy_execution_mode().SHADOW):
         try:
             from nexus_scalp.model_provisioning import FirstRunCoordinator
 
@@ -561,7 +769,7 @@ def _run_engine_locked(
     # BUG-148: adapter boundary must match the operator-selected mode. PAPER
     # starts use the simulation adapter so a double-click/bare `start` can
     # NEVER touch the real broker even when MT5 credentials are configured.
-    if mode_override == ExecutionMode.PAPER and not gateway:
+    if mode_override == _heavy_execution_mode().PAPER and not gateway:
         # BUG-266 (audit K2): PAPER boots route through the paper-data
         # factory so the configured market-data substrate (SYNTHETIC default,
         # REPLAY over real recorded data) is actually honored. Fail-closed:
@@ -859,6 +1067,21 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
         # task-cancelling default. (Runner only installs its own SIGINT
         # handler when the current one is the default.)
         _install_supervisor_handlers(supervisor)
+        # EU-03: the user is now looking at a console, not a browser. Tell
+        # them exactly where the product's real UI lives, and open it when
+        # the launch is interactive. A daemonized/silent run never opens
+        # anything (_browser_allowed gates it), so automation is unaffected.
+        dash = _dashboard_url(bind_host, port)
+        console.print(
+            Panel(
+                f"[bold green]Web dashboard:[/bold green] [bold]{dash}[/bold]\n"
+                f"[dim]Open it any time with:  nexus dashboard[/dim]",
+                title="Ready",
+                border_style="green",
+            )
+        )
+        if _browser_allowed():
+            _open_dashboard(dash)
         asyncio.run(run_concurrently())
     except KeyboardInterrupt:
         console.print(
@@ -976,7 +1199,7 @@ def run_cmd(
         console.print(_error_panel("Config not found", str(config_path), hint="Run nexus setup"))
         raise typer.Exit(xc.EXIT_RUNTIME) from None
     try:
-        cfg = AppConfig.load_from_yaml(config_path)
+        cfg = _heavy_app_config(config_path)
     except Exception as e:
         console.print(_error_panel("Config invalid", str(e), exit_code=xc.EXIT_RUNTIME))
         raise typer.Exit(xc.EXIT_RUNTIME) from None
