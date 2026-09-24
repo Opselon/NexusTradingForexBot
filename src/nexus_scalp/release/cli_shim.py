@@ -27,7 +27,7 @@ from nexus_scalp.platform.windows_identity import (
 apply_windows_identity()
 
 from nexus_scalp.cli.main import app  # noqa: E402
-from nexus_scalp.release.metadata import CLI_PROGRAM_NAME
+from nexus_scalp.release.metadata import CLI_PROGRAM_NAME  # noqa: E402
 
 if __name__ == "__main__":
     # BUG-145/147: frozen consoles default to legacy code pages (cp1252/437).

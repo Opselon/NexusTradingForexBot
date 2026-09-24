@@ -13,8 +13,8 @@ artifact tree) or regenerated at runtime from the environment.
 """
 
 from __future__ import annotations
-import contextlib
 
+import contextlib
 import importlib.metadata
 import json
 import platform
@@ -332,7 +332,8 @@ def get_version_info() -> dict[str, Any]:
                 try:
                     repo_root = _repo_root()
                     stale_build_info = (
-                        repo_root is not None and stamped_file.resolve() == (repo_root / "build-info.json").resolve()
+                        repo_root is not None
+                        and stamped_file.resolve() == (repo_root / "build-info.json").resolve()
                     )
                 except Exception:
                     stale_build_info = False
