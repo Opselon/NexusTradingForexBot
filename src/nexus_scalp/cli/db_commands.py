@@ -655,6 +655,193 @@ def make_db_app(
     return app
 
 
+# ---------------------------------------------------------------------------
+# First-run migration seam (NSE-HEALTHFIX-001, contract §6 / lane D)
+# ---------------------------------------------------------------------------
+#
+# The probe's DATABASE WARNING was a healthy audit.db parked at schema 7 while
+# the registry expects 9: `nexus db migrate` applies the pending pair, but
+# nothing on the first-run path (`nexus setup` -> RepairEngine.run(),
+# `nexus repair`, `doctor --fix`) ever calls it, so the gap never closes
+# automatically. This is that step, exposed as a stable seam RepairEngine can
+# call once the integrator wires the two lanes together.
+#
+# Contract invariants (binding):
+#   * NEVER raises — every failure path returns (status, detail).
+#   * Non-blocking: a migration that cannot apply reports SKIPPED/FAILED with
+#     an honest reason; it never aborts setup (the same optional-tier honesty
+#     as RepairEngine._ensure_strategies_database's ImportError -> SKIPPED).
+#   * Integrity gate: read-only `PRAGMA integrity_check` BEFORE and AFTER. A
+#     failed check aborts the step — a corrupt DB is never migrated onward.
+#   * Live-DB safety: every probe uses a read-only URI connect
+#     (`file:<db>?mode=ro`, uri=True) — never a plain read-write connect
+#     against a DB a live engine may hold. A DB we cannot take the write lock
+#     on reports SKIPPED rather than racing the engine.
+#   * DatabaseMigrationEngine remains the migration authority: this function
+#     only decides WHETHER it is safe to let it run.
+
+_MIGRATION_STATUSES = ("OK", "SKIPPED", "FAILED", "NOT_INITIALIZED")
+
+
+def _read_only_integrity(db_path: Path) -> tuple[bool, str]:
+    """Read-only integrity probe — the same check ``_db_health`` runs.
+
+    Returns (ok, detail). Never raises; an unopenable database is reported as
+    a failure with the sqlite error rather than propagated.
+    """
+    import sqlite3
+
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2)
+    except sqlite3.Error as e:
+        return False, f"cannot open read-only: {e}"
+    try:
+        row = con.execute("PRAGMA integrity_check").fetchone()
+    except sqlite3.Error as e:
+        return False, f"integrity_check failed: {e}"
+    finally:
+        con.close()
+    verdict = str(row[0]) if row else "unknown"
+    return verdict == "ok", f"integrity_check -> {verdict}"
+
+
+def _write_lock_acquireable(db_path: Path) -> tuple[bool, str]:
+    """Is the DB writable right now, i.e. no live engine holds it?
+
+    SQLite has no reader-visible "in use" flag, so this is a lock probe: a
+    `BEGIN IMMEDIATE` either takes the write lock (quiescent DB) or fails with
+    SQLITE_BUSY/locked while an engine holds a write transaction or an
+    uncheckpointed WAL. Rolling back immediately leaves zero footprint. The
+    read-only connect above already proved the file readable; this proves the
+    stronger property the migration needs.
+    """
+    import sqlite3
+
+    try:
+        con = sqlite3.connect(str(db_path), timeout=2)
+    except sqlite3.Error as e:
+        return False, f"cannot connect: {e}"
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        con.rollback()
+    except sqlite3.Error as e:
+        return False, f"database is locked by a live process: {e}"
+    finally:
+        con.close()
+    return True, "write lock acquireable"
+
+
+def apply_pending_audit_migrations(db_path: Path) -> tuple[str, str]:
+    """Apply pending audit.schema migrations on the first-run/repair path.
+
+    Idempotent, failure-isolated, non-blocking. Returns ``(status, detail)``:
+
+    * ``OK``             — migrations applied (or none were needed) and the DB
+                           is now at the expected schema version;
+    * ``SKIPPED``        — nothing to do, or the DB is in use by a live engine
+                           and must not be raced;
+    * ``FAILED``         — the DB is corrupt, or a migration attempted and did
+                           not reach the expected version;
+    * ``NOT_INITIALIZED`` — the database file does not exist yet (lazy
+                           first-use; the engine creates it on first start).
+
+    Never raises. Integrity is probed read-only before AND after; a failed
+    check aborts the step before any migration runs. ``DatabaseMigrationEngine``
+    is the migration authority — this function decides only whether it is safe
+    to let it apply.
+    """
+    try:
+        from nexus_scalp.database.engine import DatabaseMigrationEngine
+        from nexus_scalp.database.models import DatabaseDomain
+    except ImportError as e:
+        # Optional tier unavailable in this bundle (the frozen CLI excludes
+        # the DB stack): skip honestly, never fail setup for it.
+        return "SKIPPED", f"migration engine unavailable in this bundle: {e}"
+
+    try:
+        db_path = Path(db_path)
+        if not db_path.exists():
+            # Lazy first-use, not corruption (CHG-0043 truthfulness): the
+            # engine boots and creates the DB, so there is nothing to migrate.
+            return "NOT_INITIALIZED", f"database not initialized yet (no file: {db_path.name})"
+
+        engine = DatabaseMigrationEngine(db_path=db_path, domain=DatabaseDomain.AUDIT)
+
+        # Pre-flight integrity gate FIRST: a corrupt DB may still be openable
+        # enough to read a version, and current_version() swallows sqlite
+        # errors (returning 0), so it cannot distinguish "no metadata" from
+        # "unreadable". A corrupt database is never migrated onward.
+        ok, detail = _read_only_integrity(db_path)
+        if not ok:
+            return "FAILED", f"pre-migration integrity gate failed: {detail}"
+
+        current = engine.current_version()
+        expected = engine.expected_version()
+
+        if current >= expected:
+            return "SKIPPED", f"schema {current}/{expected} — no pending migrations"
+
+        if current == 0:
+            # No schema_meta at all. A legacy DB with real tables is baselined
+            # by the engine itself; a file with no metadata and no tables is
+            # not a DB we should create schema on — the engine owns first
+            # creation. Report honestly either way instead of guessing.
+            return (
+                "SKIPPED",
+                "database has no schema metadata yet — the engine boot creates it",
+            )
+
+        # Live-DB safety: never race an engine holding the write lock.
+        writable, lock_detail = _write_lock_acquireable(db_path)
+        if not writable:
+            return "SKIPPED", f"migrations deferred — {lock_detail}"
+
+        # The engine takes its own cross-process lock, backs up, applies and
+        # verifies. It is the authority; we do not reimplement application.
+        result = engine.migrate()
+
+        state = str(result.get("state", ""))
+        applied = result.get("applied") or []
+        after = engine.current_version()
+
+        # Post-flight integrity gate (read-only): even a "successful" apply
+        # that leaves a corrupt file is a failure, never an OK.
+        ok, post_detail = _read_only_integrity(db_path)
+        if not ok:
+            return (
+                "FAILED",
+                f"post-migration integrity gate failed ({post_detail}) after "
+                f"{len(applied)} migration(s), state={state}",
+            )
+
+        if state in (
+            "DB_MIGRATION_FAILED",
+            "DB_BLOCKED",
+            "DB_DOWNGRADE_BLOCKED",
+        ):
+            return (
+                "FAILED",
+                f"migration engine reported {state}: {result.get('error', '')}",
+            )
+
+        if after < expected:
+            return (
+                "FAILED",
+                f"schema reached {after}, expected {expected} "
+                f"(state={state}, applied={len(applied)})",
+            )
+
+        applied_txt = ", ".join(str(a) for a in applied) if applied else "none"
+        return (
+            "OK",
+            f"schema {after}/{expected} — applied {len(applied)} migration(s): {applied_txt}",
+        )
+    except Exception as e:
+        # Contract: never raise to a caller. An unexpected error is reported
+        # as FAILED with the honest reason so the operator can act on it.
+        return "FAILED", f"{type(e).__name__}: {e}"
+
+
 def _migration_template(domain: str, name: str) -> str:
     safe = "".join(c if c.isalnum() or c == "_" else "_" for c in name)
     return (
