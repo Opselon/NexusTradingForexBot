@@ -9,8 +9,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from nexus_scalp.ai_providers.store import ProviderDecisionStore
 
 
 def _payload(decision_id: str = "dec-001") -> dict:
@@ -51,7 +55,7 @@ def _payload(decision_id: str = "dec-001") -> dict:
 
 
 @pytest.fixture()
-def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> "ProviderDecisionStore":
+def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ProviderDecisionStore:
     from nexus_scalp.ai_providers.store import ProviderDecisionStore
 
     db = tmp_path / "decisions.db"
@@ -218,9 +222,7 @@ class TestPgSchemaTranslation:
     def test_verify_domain_expects_the_new_table(self):
         from nexus_scalp.database.migration import verify_domain_schema
 
-        result = verify_domain_schema(
-            "ai_provider_decisions", lambda: ["ai_provider_decisions"]
-        )
+        result = verify_domain_schema("ai_provider_decisions", lambda: ["ai_provider_decisions"])
         assert result["expected_count"] == 1
         assert result["missing"] == []
 
@@ -245,16 +247,12 @@ class TestOrchestratorWiring:
     def test_orchestrator_accepts_a_decision_store(self, store, registry):
         from nexus_scalp.ai_providers.orchestrator import ProviderOrchestrator
 
-        orch = ProviderOrchestrator(
-            registry=registry, secret_store=None, decision_store=store
-        )
+        orch = ProviderOrchestrator(registry=registry, secret_store=None, decision_store=store)
         assert orch._decision_store is store
 
     def test_orchestrator_records_without_a_store(self, registry):
         from nexus_scalp.ai_providers.orchestrator import ProviderOrchestrator
 
-        orch = ProviderOrchestrator(
-            registry=registry, secret_store=None, decision_store=None
-        )
+        orch = ProviderOrchestrator(registry=registry, secret_store=None, decision_store=None)
         # No store configured: the ring is in memory and never raises.
         assert orch._decision_store is None

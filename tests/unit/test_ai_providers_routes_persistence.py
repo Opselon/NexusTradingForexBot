@@ -19,8 +19,9 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("NEXUS_DECISIONS_DB", str(tmp_path / "decisions.db"))
     monkeypatch.setenv("NEXUS_SETTINGS_DB", str(tmp_path / "settings.db"))
 
-    from nexus_scalp.web.ai_providers_routes import router
     from fastapi import FastAPI
+
+    from nexus_scalp.web.ai_providers_routes import router
 
     app = FastAPI()
     # The router already carries its own /api/ai-providers prefix.

@@ -90,7 +90,7 @@ def _decision_store() -> Any:
 
     try:
         return ProviderDecisionStore(db_path=decisions_db_path())
-    except Exception as exc:  # noqa: BLE001 - persistence must never block boot
+    except Exception as exc:
         logger.warning("[AI-PROV] decision store unavailable: %s", exc)
         return None
 
@@ -383,7 +383,7 @@ def route_decisions(limit: int = 50) -> dict[str, Any]:
             rows = store.list_recent(limit=limit)
             if rows:
                 return {"status": "OK", "decisions": rows, "source": "durable"}
-        except Exception as exc:  # noqa: BLE001 - read-only, degrade to memory
+        except Exception as exc:
             logger.warning("[AI-PROV] durable history read failed: %s", exc)
     return {
         "status": "OK",
@@ -402,7 +402,7 @@ def route_decision_detail(decision_id: str) -> dict[str, Any]:
             row = store.get(decision_id)
             if row is not None:
                 return {"status": "OK", "decision": row, "source": "durable"}
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("[AI-PROV] durable decision read failed: %s", exc)
     for d in get_ai_provider_orchestrator().history(200):
         if d.get("decision_id") == decision_id:

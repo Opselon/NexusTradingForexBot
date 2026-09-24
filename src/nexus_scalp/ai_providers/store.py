@@ -43,21 +43,20 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nexus_scalp.observability.logging import get_logger
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    pass
 
 logger = get_logger("nexus_scalp.ai_providers.store")
 
 #: Domain name registered with the DB fabric for PostgreSQL provisioning.
 DECISION_DOMAIN = "ai_provider_decisions"
 
-_SCHEMA = f"""
+_SCHEMA = """
 CREATE TABLE IF NOT EXISTS ai_provider_decisions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     decision_id TEXT NOT NULL,
@@ -158,7 +157,7 @@ class ProviderDecisionStore:
             if backend is not None:
                 return backend
             return provision_domain(DECISION_DOMAIN, dsn, min_size=1, max_size=4)
-        except Exception as exc:  # noqa: BLE001 - provisioning must never block boot
+        except Exception as exc:
             logger.error("[AI-PROV] %s domain provisioning failed: %s", DECISION_DOMAIN, exc)
             return None
 
@@ -184,8 +183,10 @@ class ProviderDecisionStore:
                 else:
                     self._mem.insert(0, {**outcome, "_row": row})
                     del self._mem[self._max_rows :]
-        except Exception as exc:  # noqa: BLE001 - observer must never break the decide path
-            logger.warning("[AI-PROV] failed to record decision %s: %s", outcome.get("decision_id"), exc)
+        except Exception as exc:
+            logger.warning(
+                "[AI-PROV] failed to record decision %s: %s", outcome.get("decision_id"), exc
+            )
 
     def _row(self, outcome: dict[str, Any]) -> tuple[Any, ...]:
         decision = outcome.get("decision", {}) if isinstance(outcome.get("decision"), dict) else {}
@@ -252,7 +253,7 @@ class ProviderDecisionStore:
                     "SELECT * FROM ai_provider_decisions ORDER BY id DESC LIMIT ?", (limit,)
                 )
                 cols = [d[0] for d in cur.description]
-                return [dict(zip(cols, r)) for r in cur.fetchall()]
+                return [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
             if self._dsn is not None:
                 return self._read_pg(limit)
             return [dict(o) for o in self._mem[:limit]]
@@ -265,10 +266,12 @@ class ProviderDecisionStore:
         try:
             conn = backend.conn() if hasattr(backend, "conn") else backend.connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM ai_provider_decisions ORDER BY id DESC LIMIT %s", (limit,))
+            cursor.execute(
+                "SELECT * FROM ai_provider_decisions ORDER BY id DESC LIMIT %s", (limit,)
+            )
             cols = [d[0] for d in cursor.description]
-            return [dict(zip(cols, r)) for r in cursor.fetchall()]
-        except Exception as exc:  # noqa: BLE001
+            return [dict(zip(cols, r, strict=True)) for r in cursor.fetchall()]
+        except Exception as exc:
             logger.warning("[AI-PROV] decision read failed: %s", exc)
             return []
         finally:

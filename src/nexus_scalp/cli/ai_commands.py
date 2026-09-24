@@ -358,7 +358,7 @@ def decision_inspect(
             if row is not None:
                 _emit(row, json_out)
                 return
-        except Exception as exc:  # noqa: BLE001 - degrade to the in-memory ring
+        except Exception as exc:
             typer.echo(f"warning: durable read failed: {exc}", err=True)
     for d in _orchestrator().history(200):
         if d.get("decision_id") == decision_id:
@@ -381,7 +381,7 @@ def decision_list(
             if rows:
                 _emit({"decisions": rows, "source": "durable"}, json_out)
                 return
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             typer.echo(f"warning: durable read failed: {exc}", err=True)
     _emit(
         {"decisions": _orchestrator().history(limit), "source": "in_memory"},
@@ -400,7 +400,7 @@ def _decision_store() -> Any:
 
     try:
         return ProviderDecisionStore(db_path=decisions_db_path())
-    except Exception as exc:  # noqa: BLE001 - CLI must never die on a bad DB path
+    except Exception as exc:
         typer.echo(f"warning: decision store unavailable: {exc}", err=True)
         return None
 
