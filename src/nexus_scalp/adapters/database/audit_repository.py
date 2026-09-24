@@ -20,7 +20,7 @@ import queue
 import sqlite3
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -358,6 +358,16 @@ class AuditRepository:
         # explicit non-sqlite scheme means "another provider".
         self._is_sqlite = self._detect_sqlite(self._db_url)
         self._db_path = self._db_url.replace("sqlite:///", "") if self._is_sqlite else ""
+        # D9 (PG-READ-PLANE-001): under a pooled provider there is no local
+        # file, and the empty string broke every consumer that builds a Path
+        # from it — ``Path("")`` is ``WindowsPath('.')``, so debug_snapshot's
+        # schema probe raised ``WindowsPath('.') has an empty name``. Expose a
+        # real, non-empty location (the fabric's database) via the same
+        # attribute so those consumers work unchanged. ``_provider_db_path``
+        # returns the SQLite path verbatim when the provider IS SQLite, so the
+        # SQLite branch below stays byte-for-byte.
+        if not self._is_sqlite:
+            self._db_path = self._provider_db_path()
         # sqlite:///:memory: opens a PRIVATE empty DB per connection; the
         # background worker would never see the schema created here. Use a
         # shared named in-memory DB (file::memory:?cache=shared) so worker
@@ -1172,6 +1182,22 @@ class AuditRepository:
             1 if release_required else 0,
             int(consecutive_losses),
         )
+        if not self._is_sqlite:
+            # PG-READ-PLANE-001 / D2: under a pooled provider _db_path is ""
+            # and _connect_sqlite() would open a throwaway temp DB, so the
+            # safety row never reached PostgreSQL. Execute synchronously
+            # against the fabric's pooled WRITE backend instead: this bool is
+            # a safety gate, so it must reflect real durability, not a queue
+            # that may still be in flight (or never flushed on a fast exit).
+            ok = self._provider_execute_write([(sql, args)])
+            if not ok:
+                logger.error(
+                    "runtime_risk_state persist FAILED state=%s "
+                    "(provider write backend unavailable)",
+                    state_up,
+                )
+                return False
+            return True
         try:
             with self._connect_sqlite(10.0) as conn:
                 conn.execute(sql, args)
@@ -1214,6 +1240,32 @@ class AuditRepository:
             isinstance(v, float) and math.isfinite(v) and v > 0.0 for v in (day_anchor, week_anchor)
         ):
             return False
+        if not self._is_sqlite:
+            # PG-READ-PLANE-001 / D2: same provider defect as the risk state —
+            # _connect_sqlite() under PostgreSQL writes to a throwaway temp
+            # DB. The two statements run in ONE backend transaction so the
+            # anchor row can never exist without its canonical parent row.
+            # ``INSERT OR IGNORE`` is SQLite dialect: the pooled backend does
+            # not translate on the execute_batch path, so the portable shape
+            # is produced here (the ON CONFLICT target is the row PK id=1).
+            return self._provider_execute_write(
+                [
+                    (
+                        "INSERT INTO runtime_risk_state (id, state) "
+                        "VALUES (1, 'RUNNING') ON CONFLICT (id) DO NOTHING",
+                        (),
+                    ),
+                    (
+                        """
+                        UPDATE runtime_risk_state
+                        SET breaker_day_anchor = ?, breaker_day_utc = ?,
+                            breaker_week_anchor = ?, breaker_week_iso = ?
+                        WHERE id = 1
+                        """,
+                        (day_anchor, str(day_utc or ""), week_anchor, str(week_iso or "")),
+                    ),
+                ]
+            )
         try:
             with self._connect_sqlite(10.0) as conn:
                 # The canonical row must exist (set_runtime_risk_state creates
@@ -1246,6 +1298,27 @@ class AuditRepository:
         garbage) return None — the caller must treat None as 'no trustworthy
         anchor' and FAIL CLOSED, never as 'reset to current equity'.
         """
+        if not self._is_sqlite:
+            # PG-READ-PLANE-001 / D3: the SQLite connect opens a throwaway
+            # temp DB under a pooled provider, so the read always failed with
+            # "no such table" and boot treated the anchors as ABSENT — the
+            # BUG-259 regression (loss budgets re-anchored to current equity
+            # on restart, a pre-restart loss vanishing from the budget).
+            # Route through the fabric read plane, which returns a real row
+            # dict or None when the row is genuinely unset. A failed route or
+            # a corrupt row still degrades to the documented fail-closed None
+            # below — never a fabricated anchor.
+            row = self._provider_read_guard(
+                "get_breaker_anchors",
+                lambda: None,
+                sql="""
+                SELECT breaker_day_anchor, breaker_day_utc,
+                       breaker_week_anchor, breaker_week_iso
+                FROM runtime_risk_state WHERE id = 1
+                """,
+                kind="row",
+            )
+            return self._validate_breaker_anchors(row)
         try:
             with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
@@ -1259,6 +1332,18 @@ class AuditRepository:
         except Exception as e:
             logger.error("breaker anchor read FAILED (treated as absent) error=%s", e)
             return None
+        return self._validate_breaker_anchors(row)
+
+    @staticmethod
+    def _validate_breaker_anchors(row: Any) -> dict[str, Any] | None:
+        """Fail-closed validation of one breaker anchor row (any mapping).
+
+        Returns the anchor dict only for a healthy, well-formed row; None for
+        an absent row (``row is None``) and for every CORRUPT/ambiguous value
+        (non-finite, non-positive, missing identity strings, type garbage).
+        None means 'no trustworthy anchor': the caller must never decode it
+        as 'reset to current equity' (BUG-259).
+        """
         if row is None:
             return None
         try:
@@ -2377,7 +2462,94 @@ class AuditRepository:
         uri = self._db_path.startswith("file:")
         return sqlite3.connect(self._db_path, timeout=timeout, uri=uri)
 
-    # ------------------------------------------------------------------
+    def _provider_write_backend(self) -> Any:
+        """The fabric's pooled WRITE backend for the audit domain, else None.
+
+        LATENCY CONTRACT: ``set_runtime_risk_state`` / ``save_breaker_anchors``
+        are synchronous safety writes — the caller's bool must reflect real
+        durability, so this resolves the pooled WRITE backend directly and
+        executes against it rather than enqueueing on the async write plane
+        (a queued write can still be in-flight when the caller acts on True,
+        and on a fast shutdown the row would never land).
+
+        Resolved per call (never cached): the domain is provisioned lazily by
+        ``_build_write_plane`` on the first non-SQLite boot, so a value fixed
+        at construction would permanently observe ``None`` on a fresh process
+        — the RTF-002 class of bug.
+        """
+        if self._is_sqlite:
+            return None
+        try:
+            from nexus_scalp.database.fabric import get_domain_backend
+
+            return get_domain_backend("audit", readonly=False)
+        except Exception as exc:
+            logger.error("[DB-FABRIC] audit write backend unavailable: %s", exc)
+            return None
+
+    def _provider_execute_write(self, statements: Sequence[tuple[str, Sequence[Any]]]) -> bool:
+        """Run one atomic non-SQLite write against the pooled write backend.
+
+        ``statements`` is a list of ``(query, args)`` pairs applied in ONE
+        transaction (the backend's ``execute_batch`` commits atomically or
+        rolls back). Returns True only when the backend reports success; a
+        missing backend or a raised error is logged and returns False — a
+        safety write never silently succeeds (the mission's fail-closed rule).
+        """
+        backend = self._provider_write_backend()
+        if backend is None:
+            logger.error(
+                "audit provider write FAILED (no pooled write backend for the "
+                "audit domain; provision it via the database fabric)"
+            )
+            return False
+        # execute_batch takes (query, rows) pairs where `rows` is a sequence
+        # of ROWS (each row the arg tuple for one execution of the query).
+        # Every caller here is a single-row statement, so the arg tuple is
+        # wrapped as the one and only row.
+        batch = [(query, [tuple(args)]) for query, args in statements]
+        try:
+            backend.execute_batch(batch)
+            return True
+        except Exception as exc:
+            logger.error("audit provider write FAILED error=%s", exc)
+            return False
+
+    def _provider_db_path(self) -> str:
+        """A real, non-empty location string for a non-SQLite provider.
+
+        Under PostgreSQL ``self._db_path`` is ``""`` (there is no file), and
+        a handful of observability paths (``debug_snapshot``'s schema probe)
+        build a ``Path`` from it — ``Path("")`` is ``WindowsPath('.')`` and
+        ``DatabaseMigrationEngine.status()`` then raises ``WindowsPath('.') has
+        an empty name`` (contract defect D9). The fabric's DSN names a real
+        server-side database, so the probe reports the live database instead
+        of a non-existent local file; the fallback keeps the value non-empty
+        even when the DSN is unresolved.
+        """
+        if self._is_sqlite:
+            return self._db_path
+        dsn = getattr(self, "_db_url", "") or ""
+        if dsn:
+            try:
+                from nexus_scalp.database.fabric import _pg_dsn_parts
+
+                parts = _pg_dsn_parts(dsn)
+                name = parts.get("database", "")
+                if name:
+                    host = parts.get("host", "localhost")
+                    port = parts.get("port", "5432")
+                    return f"postgresql://{host}:{port}/{name}"
+            except Exception:
+                pass  # DSN unparseable: fall back to the workspace path
+        try:
+            from nexus_scalp.release.paths import get_runtime_workspace
+
+            return str(Path(get_runtime_workspace()) / "audit-postgresql")
+        except Exception:
+            return "audit-postgresql"
+
+    # ---------------------------------------------------------------------
     # Provider read guard (CR-02 / CHG-0067)
     # ------------------------------------------------------------------
     #: Minimum spacing between repeated degradation warnings for ONE
