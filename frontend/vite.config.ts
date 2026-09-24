@@ -2,14 +2,21 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
 
-// NSE Alternative UI — Vite configuration.
+// Nexus Scalp Engine — Control Center UI — Vite configuration.
 //
 // Architecture contract (DEC-0002 lineage): Node/Vite is a BUILD/DEV tool only.
 // The production artifact is a fully static `dist/` bundle served by the
 // existing FastAPI process (no Node HTTP server, no extra ports in production).
 //
-// Development: `npm run dev` serves the UI on :5173 and proxies /api, /health,
-// /ws and /web to the authoritative NSE backend (default 127.0.0.1:8080,
+// Production mount: the SAME dist/ is served at `/` (canonical entrypoint,
+// CONTRACT #4) and at `/alt` (dual-serve compatibility mount). Both serve
+// byte-identical files, and the router basename is resolved at RUNTIME from
+// window.location.pathname (src/main.tsx, CONTRACT #2) — so the build emits one
+// root-absolute bundle that works under both prefixes without a second
+// config source.
+//
+// Development: `npm run dev` serves the UI at `/` on :5173 and proxies /api,
+// /health, /ws and /web to the authoritative NSE backend (default 127.0.0.1:8080,
 // override with NSE_API_ORIGIN) so cookies/tokens and SSE/WebSockets work
 // without CORS games. The backend stays the single source of truth.
 //
@@ -42,7 +49,12 @@ const wsTarget = backendOrigin.replace(/^https/, "http");
 
 export default defineConfig({
   plugins: [react()],
-  base: "/alt/",
+  // Root-absolute build (CONTRACT #1): assets are emitted as /assets/... and
+  // index.html references them as such. The `/` entrypoint and the `/alt`
+  // mount both resolve them; the router prefix itself is resolved at runtime
+  // (src/main.tsx, CONTRACT #2). A base of "/alt/" is what made `/alt/alt`
+  // style URLs possible.
+  base: "/",
   server: {
     port: 5173,
     strictPort: false,

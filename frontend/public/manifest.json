@@ -1,26 +1,26 @@
 {
-  "name": "NSE \u2014 Alternative Console",
-  "short_name": "NSE Console",
-  "description": "Trading rule matrix, risk gates and execution controls \u2014 backend-authoritative operator console.",
+  "name": "Nexus Scalp Engine",
+  "short_name": "NSE",
+  "description": "Backend-authoritative operator control center: trading rule matrix, risk gates and execution controls.",
   "icons": [
     {
-      "src": "icon-192.png",
+      "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "icon-512.png",
+      "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     },
     {
-      "src": "icon-512-maskable.png",
+      "src": "/icon-512-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "apple-touch-icon.png",
+      "src": "/apple-touch-icon.png",
       "sizes": "180x180",
       "type": "image/png"
     }
