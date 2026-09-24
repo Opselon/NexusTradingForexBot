@@ -21,6 +21,15 @@
 window.NX = window.NX || {};
 NX.Forensic = NX.Forensic || {};
 
+  // i18n seam (P3): local helper mirroring the ux_signal.js:24-27 pattern.
+  function t(key, fallback, vars) {
+    var i = window.NX_I18N;
+    var s = i ? i.t(key, fallback, vars) : (fallback || key);
+    if (vars) Object.keys(vars).forEach(function (k) { s = s.split('{' + k + '}').join(vars[k]); });
+    return s;
+  }
+  NX.Forensic.t = t;
+
 (function () {
   'use strict';
 
@@ -280,22 +289,36 @@ NX.Forensic = NX.Forensic || {};
    *    The UI only shows a state when a real backend signal drives it.
    *    OFF is the default and shows nothing.
    * --------------------------------------------------------------------- */
+  // Labels are user-facing status words (contract §41); the STATE KEYS
+  // (OFF/IDLE/QUEUED/...) are technical and stay verbatim.
   var AGENT_STATES = {
-    OFF: { label: 'Off', color: 'inactive' },
-    IDLE: { label: 'Agent: Idle', color: 'agent' },
-    QUEUED: { label: 'Agent: Queued', color: 'agent' },
-    TRACING: { label: 'Agent: Tracing Lineage', color: 'agent' },
-    ANALYZING: { label: 'Agent: Analyzing', color: 'agent' },
-    GENERATING_TASK: { label: 'Agent: Generating Task', color: 'agent' },
-    TASK_READY: { label: 'Agent: Task Ready', color: 'agent' },
-    RESOLVING: { label: 'Agent: Resolving', color: 'agent' },
-    RESOLVED: { label: 'Agent: Resolved', color: 'success' },
-    FAILED: { label: 'Agent: Failed', color: 'error' },
+    OFF: { label: 'fx.agent.off', color: 'inactive' },
+    IDLE: { label: 'fx.agent.idle', color: 'agent' },
+    QUEUED: { label: 'fx.agent.queued', color: 'agent' },
+    TRACING: { label: 'fx.agent.tracing', color: 'agent' },
+    ANALYZING: { label: 'fx.agent.analyzing', color: 'agent' },
+    GENERATING_TASK: { label: 'fx.agent.generating_task', color: 'agent' },
+    TASK_READY: { label: 'fx.agent.task_ready', color: 'agent' },
+    RESOLVING: { label: 'fx.agent.resolving', color: 'agent' },
+    RESOLVED: { label: 'fx.agent.resolved', color: 'success' },
+    FAILED: { label: 'fx.agent.failed', color: 'error' },
+  };
+  var AGENT_LABELS_EN = {
+    'fx.agent.off': 'Off',
+    'fx.agent.idle': 'Agent: Idle',
+    'fx.agent.queued': 'Agent: Queued',
+    'fx.agent.tracing': 'Agent: Tracing Lineage',
+    'fx.agent.analyzing': 'Agent: Analyzing',
+    'fx.agent.generating_task': 'Agent: Generating Task',
+    'fx.agent.task_ready': 'Agent: Task Ready',
+    'fx.agent.resolving': 'Agent: Resolving',
+    'fx.agent.resolved': 'Agent: Resolved',
+    'fx.agent.failed': 'Agent: Failed',
   };
 
   function agentBadge(state) {
     var meta = AGENT_STATES[state] || AGENT_STATES.OFF;
-    return { state: state, label: meta.label, color: meta.color };
+    return { state: state, label: t(meta.label, AGENT_LABELS_EN[meta.label]), color: meta.color };
   }
 
   NX.Forensic.agent = {
@@ -311,10 +334,19 @@ NX.Forensic = NX.Forensic || {};
    *    "not configured" truthful state. NO secrets are ever placed here.
    * --------------------------------------------------------------------- */
   var TASK_PROVIDERS = {
-    jira: { id: 'jira', label: 'Jira' },
-    clickup: { id: 'clickup', label: 'ClickUp' },
-    github: { id: 'github', label: 'GitHub Issues' },
+    jira: { id: 'jira', label: 'fx.provider.jira' },
+    clickup: { id: 'clickup', label: 'fx.provider.clickup' },
+    github: { id: 'github', label: 'fx.provider.github' },
   };
+  var PROVIDER_LABELS_EN = {
+    'fx.provider.jira': 'Jira',
+    'fx.provider.clickup': 'ClickUp',
+    'fx.provider.github': 'GitHub Issues',
+  };
+  function providerLabel(id) {
+    var p = TASK_PROVIDERS[id];
+    return p ? t(p.label, PROVIDER_LABELS_EN[p.label]) : (id || '');
+  }
 
   // Returns a truthful descriptor of the provider surface (no creds).
   function taskProviderSurface() {
@@ -322,7 +354,9 @@ NX.Forensic = NX.Forensic || {};
     // provider labels and a disabled-by-default flag so the UI can render a
     // truthful "review before submit" state without pretending success.
     return {
-      providers: Object.keys(TASK_PROVIDERS).map(function (k) { return TASK_PROVIDERS[k]; }),
+      providers: Object.keys(TASK_PROVIDERS).map(function (k) {
+        return { id: TASK_PROVIDERS[k].id, label: providerLabel(k) };
+      }),
       configured: false, // no backend endpoint exists => honest placeholder
       submitEndpoint: null,
     };
@@ -331,6 +365,7 @@ NX.Forensic = NX.Forensic || {};
   NX.Forensic.taskProvider = {
     TASK_PROVIDERS: TASK_PROVIDERS,
     surface: taskProviderSurface,
+    providerLabel: providerLabel,
   };
 
   /* -----------------------------------------------------------------------
