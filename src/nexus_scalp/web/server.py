@@ -2043,6 +2043,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         """Serves the Neural Model Studio panel JS (all 18 studio handlers)."""
         return FileResponse(WEB_DIR / "model_studio_ui.js")
 
+    # PHASE-14 completeness (REQ-1 follow-up, EUR-A lane-status follow-up):
+    # same class of gap as model_studio_ui.js — Web/index.html loads
+    # position_adviser_ui.js via a <script> tag but no route served it, so
+    # the Position Adviser panel loaded with every handler undefined.
+    @app.get("/position_adviser_ui.js")
+    def serve_position_adviser_ui() -> FileResponse:
+        """Serves the Position Adviser panel JS."""
+        return FileResponse(WEB_DIR / "position_adviser_ui.js")
+
     @app.get("/tv_widget.html")
     def serve_tv_widget_html() -> FileResponse:
         return FileResponse(WEB_DIR / "tv_widget.html")

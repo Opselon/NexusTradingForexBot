@@ -141,6 +141,10 @@ PUBLIC_JS_ASSETS: frozenset[str] = frozenset(
         "command_center_timemachine.js",
         "command_center_ui.js",
         "backtest_report_ui.js",
+        # PHASE-14 completeness (EUR-A follow-up): index.html loads
+        # position_adviser_ui.js; same contract as the entries above — static
+        # script asset, no state or credentials (routes it calls stay gated).
+        "position_adviser_ui.js",
     }
 )
 
