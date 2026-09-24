@@ -844,6 +844,11 @@ def _run_engine_locked(
         console.print(
             Panel("[yellow]Using Remote MT5 Gateway Adapter[/yellow]", border_style="yellow")
         )
+        # MT5-PARITY T4 (H-02 class): the client must NOT fall back to
+        # publicly-known default gateway credentials. Resolution order is
+        # explicit args -> env (NSE_GATEWAY_*) -> DPAPI SecureSecretStore,
+        # and the adapter now raises when none are available unless
+        # NSE_GATEWAY_ALLOW_DEFAULTS=1 (local dev only).
         adapter = RemoteMT5GatewayAdapter()
     else:
         console.print(

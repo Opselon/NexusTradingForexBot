@@ -330,7 +330,10 @@ def paper():
 @pytest.mark.parametrize(
     "adapter",
     [
-        pytest.param(RemoteMT5GatewayAdapter(), id="remote-gateway"),
+        pytest.param(
+            RemoteMT5GatewayAdapter(api_key="parity_key", secret_token="parity_secret"),
+            id="remote-gateway",
+        ),
         pytest.param(PaperMT5Adapter(symbol=SYMBOL), id="paper"),
     ],
 )
@@ -359,7 +362,7 @@ def test_implements_imt5_port(adapter):
 )
 def test_port_method_present_on_both_linux_adapters(method):
     """Every port-declared execution primitive exists on both Linux adapters."""
-    remote = RemoteMT5GatewayAdapter()
+    remote = RemoteMT5GatewayAdapter(api_key="parity_key", secret_token="parity_secret")
     paper = PaperMT5Adapter(symbol=SYMBOL)
     for adapter in (remote, paper):
         assert callable(getattr(adapter, method)), f"{type(adapter).__name__} missing {method}"
@@ -368,7 +371,10 @@ def test_port_method_present_on_both_linux_adapters(method):
 def test_remote_gateway_implements_igateway_port():
     from nexus_scalp.ports.gateway_port import IGatewayPort
 
-    assert isinstance(RemoteMT5GatewayAdapter(), IGatewayPort)
+    assert isinstance(
+        RemoteMT5GatewayAdapter(api_key="parity_key", secret_token="parity_secret"),
+        IGatewayPort,
+    )
 
 
 def test_native_mt5_adapter_is_windows_only_on_linux():

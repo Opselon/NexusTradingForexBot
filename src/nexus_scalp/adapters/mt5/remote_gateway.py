@@ -14,6 +14,7 @@ Key Invariants:
 import hashlib
 import hmac
 import json
+import os
 import time
 import urllib.request
 from datetime import UTC, datetime
@@ -53,16 +54,65 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
     to Windows MetaTrader 5 Hosts.
     """
 
+    # Well-known demo defaults (ONLY under NSE_GATEWAY_ALLOW_DEFAULTS=1);
+    # kept as constants so the client/server opt-in stays symmetric.
+    _DEFAULT_GATEWAY_URL = "http://127.0.0.1:8080"
+    _DEFAULT_API_KEY = "default_local_key"
+    _DEFAULT_SECRET = "default_local_secret"
+
     def __init__(
         self,
-        gateway_url: str = "http://127.0.0.1:8080",
-        api_key: str = "default_local_key",
-        secret_token: str = "default_local_secret",
+        gateway_url: str | None = None,
+        api_key: str | None = None,
+        secret_token: str | None = None,
         timeout_seconds: float = 3.0,
     ) -> None:
-        self._gateway_url = gateway_url.rstrip("/")
-        self._api_key = api_key
-        self._secret_token = secret_token
+        """Constructs the remote gateway client.
+
+        MT5-PARITY T4 (H-03): credentials/URL now resolve the SAME chain the
+        server resolves (``gateway/server._expected_keys``): explicit args ->
+        NSE_GATEWAY_URL / NSE_GATEWAY_API_KEY / NSE_GATEWAY_SECRET env ->
+        SecureSecretStore (DPAPI) -> well-known demo defaults, and ONLY the
+        last fallback under the explicit NSE_GATEWAY_ALLOW_DEFAULTS=1 demo
+        opt-in when live trading is not allowed. Previously every production
+        construction passed no arguments, so the client could never
+        authenticate against a properly provisioned server (documented
+        Linux path dead) and ran on publicly-known constants otherwise.
+        """
+        resolved_url = gateway_url or os.environ.get("NSE_GATEWAY_URL", "").strip()
+        self._gateway_url = (resolved_url or self._DEFAULT_GATEWAY_URL).rstrip("/")
+        resolved_key = api_key
+        resolved_secret = secret_token
+        if not resolved_key or not resolved_secret:
+            resolved_key = resolved_key or os.environ.get("NSE_GATEWAY_API_KEY", "").strip()
+            resolved_secret = resolved_secret or os.environ.get("NSE_GATEWAY_SECRET", "").strip()
+        if not resolved_key or not resolved_secret:
+            try:
+                from nexus_scalp.settings.secret_store import SecureSecretStore
+
+                store = SecureSecretStore()
+                s_key = store.get_secret("gateway_api_key")
+                s_secret = store.get_secret("gateway_secret")
+                if s_key and s_secret:
+                    resolved_key = resolved_key or s_key.strip()
+                    resolved_secret = resolved_secret or s_secret.strip()
+            except Exception:
+                pass
+        if not resolved_key or not resolved_secret:
+            allow_defaults = os.environ.get("NSE_GATEWAY_ALLOW_DEFAULTS", "").strip() == "1"
+            if allow_defaults:
+                resolved_key = resolved_key or self._DEFAULT_API_KEY
+                resolved_secret = resolved_secret or self._DEFAULT_SECRET
+            else:
+                raise RuntimeError(
+                    "GATEWAY SECRETS REQUIRED: set NSE_GATEWAY_API_KEY and "
+                    "NSE_GATEWAY_SECRET (env or secure secret store), or pass "
+                    "them explicitly. Client-side defaults are refused without "
+                    "the explicit NSE_GATEWAY_ALLOW_DEFAULTS=1 demo opt-in "
+                    "(mirrors gateway/server._expected_keys, audit B2)."
+                )
+        self._api_key = resolved_key
+        self._secret_token = resolved_secret
         self._timeout = timeout_seconds
         self._is_connected = False
 
@@ -94,6 +144,24 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
     def is_connected(self) -> bool:
         """Returns current gateway active status."""
         return self._is_connected
+
+    def connection_state(self) -> Any:
+        """Bridge connection state (IMT5Port override, MT5-PARITY T3).
+
+        Without this the port default constructed a fresh
+        MT5ConnectionState (initial state DISCONNECTED) on EVERY call, so
+        the UI always showed DISCONNECTED in remote/gateway mode even while
+        ``_is_connected`` is True. Returns the object the port contract
+        expects; ``to_dict()['state']`` is the string consumers serialize.
+        """
+        from nexus_scalp.adapters.mt5.diagnostics import MT5ConnectionState
+
+        state = MT5ConnectionState()
+        if self._is_connected:
+            state.set_state(MT5ConnectionState.CONNECTED, "gateway reachable")
+        else:
+            state.set_state(MT5ConnectionState.DISCONNECTED, "gateway not connected")
+        return state
 
     async def ping(self) -> float:
         """Async interface for measuring RTT latency."""
@@ -433,18 +501,27 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
         )
         return 0
 
-    def get_pending_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
-        """Queries active pending orders via remote gateway RPC."""
+    def get_pending_orders(self, symbol: str | None = None) -> list[dict[str, Any]] | None:
+        """Queries active pending orders via remote gateway RPC.
+
+        Returns None on transport failure so callers can distinguish
+        "cannot ask the broker" from "broker has no pending orders"
+        (MT5-PARITY T1, fail-closed reconciliation contract).
+        """
         try:
             res = self._send_request("GET_PENDING_ORDERS", {"symbol": symbol})
         except Exception as e:
             logger.error("Remote gateway GET_PENDING_ORDERS failed", error=str(e))
-            return []
+            return None
         data = res.get("data")
         if isinstance(data, list):
             return data
         if isinstance(res.get("pending_orders"), list):
             return res["pending_orders"]
+        if res.get("status") == "FAILED":
+            # Gateway answered but reported failure: keep the [] only for a
+            # genuinely successful empty answer.
+            return None
         return []
 
     def cancel_pending_order(self, ticket: int) -> bool:

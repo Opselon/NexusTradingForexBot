@@ -107,7 +107,14 @@ def execution_status(request: Request) -> Any:
     if adapter is not None:
         try:
             conn_state = adapter.connection_state()
-            state = getattr(conn_state, "value", conn_state)
+            # MT5-PARITY T2 (E-BUG-01): connection_state() may return a
+            # MT5ConnectionState object (no .value attribute) — jsonable()
+            # then fails and the route 500s. Prefer the object's own
+            # to_dict()["state"] string form, else the enum value.
+            if hasattr(conn_state, "to_dict"):
+                state = conn_state.to_dict().get("state")
+            else:
+                state = getattr(conn_state, "value", conn_state)
         except Exception:
             state = None
         try:

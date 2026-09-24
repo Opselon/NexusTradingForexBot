@@ -158,6 +158,30 @@ def _json_failed(message: str, retcode: Any = None, **extra: Any) -> dict[str, A
     return out
 
 
+def _adapter_retcode(adapter: Any) -> Any:
+    """Last MT5 broker retcode from the adapter, if it exposes one.
+
+    MT5-PARITY T5 (E-MF-01): order rejections must not lose their cause in
+    transit. ``DirectMT5Adapter`` records the retcode of the last call in its
+    diagnostics; remote clients can then classify a rejection instead of
+    seeing only a bare "failed" string. Adapters without a diagnostic
+    surface return None (the field is then omitted entirely).
+    """
+    diag: Any = None
+    getter = getattr(adapter, "diagnostics_summary", None)
+    if callable(getter):
+        try:
+            diag = getter()
+        except Exception:
+            diag = None
+    if isinstance(diag, dict):
+        rc = diag.get("last_retcode") or diag.get("mt5_error_code")
+        if rc is not None:
+            return rc
+    last = getattr(adapter, "_last_retcode", None)
+    return last
+
+
 def _handle_action(action: str, payload: dict[str, Any], adapter: Any) -> dict[str, Any]:
     """Dispatch table mirroring RemoteMT5GatewayAdapter expectations."""
     # Keep imports local to avoid Linux import cost.
@@ -192,20 +216,30 @@ def _handle_action(action: str, payload: dict[str, Any], adapter: Any) -> dict[s
         if not snap.available or not snap.spec:
             return _json_failed(snap.error_state or "symbol unavailable")
         s = snap.spec
+
+        # MT5-PARITY T6: a field the broker did not fill must NOT be silently
+        # substituted with a plausible-looking constant — that poisons margin
+        # math (tick_value=0.0) and loosens order validation (stops_level=0)
+        # on the client while native surfaces the broker's own falsy truth.
+        # Omitted fields are reported as null so the client can distinguish
+        # "broker says 0" from "broker did not answer".
+        def _or_none(value: Any) -> Any:
+            return value if value is not None else None
+
         return {
             "status": "SUCCESS",
             "data": {
                 "symbol": str(s.get("name") or symbol),
-                "digits": int(float(s.get("digits", 5))),
-                "point": float(s.get("point") or 0.00001),
-                "tick_size": float(s.get("trade_tick_size") or s.get("point") or 0.00001),
-                "tick_value": float(s.get("trade_tick_value") or 0.0),
-                "volume_min": float(s.get("volume_min") or 0.01),
-                "volume_max": float(s.get("volume_max") or 100.0),
-                "volume_step": float(s.get("volume_step") or 0.01),
-                "stops_level": int(float(s.get("trade_stops_level") or 0)),
-                "freeze_level": int(float(s.get("trade_freeze_level") or 0)),
-                "trade_contract_size": float(s.get("trade_contract_size") or 100.0),
+                "digits": _or_none(s.get("digits")),
+                "point": _or_none(s.get("point")),
+                "tick_size": _or_none(s.get("trade_tick_size")) or _or_none(s.get("point")),
+                "tick_value": _or_none(s.get("trade_tick_value")),
+                "volume_min": _or_none(s.get("volume_min")),
+                "volume_max": _or_none(s.get("volume_max")),
+                "volume_step": _or_none(s.get("volume_step")),
+                "stops_level": _or_none(s.get("trade_stops_level")),
+                "freeze_level": _or_none(s.get("trade_freeze_level")),
+                "trade_contract_size": _or_none(s.get("trade_contract_size")),
             },
         }
 
@@ -309,7 +343,13 @@ def _handle_action(action: str, payload: dict[str, Any], adapter: Any) -> dict[s
             except Exception:
                 pass
             return _json_success(ticket=ticket, message="order sent")
-        return _json_failed("order_send failed")
+        # MT5-PARITY T5 (E-MF-01): the adapter exposes the last broker
+        # retcode/diagnostic — forward it so the client can classify the
+        # rejection cause instead of seeing only "order_send failed".
+        return _json_failed(
+            "order_send failed",
+            retcode=_adapter_retcode(adapter),
+        )
 
     if action == "EXECUTE_MARKET_ORDER":
         # BUG-293 (L11-6): the market path previously had NO structural
@@ -337,7 +377,11 @@ def _handle_action(action: str, payload: dict[str, Any], adapter: Any) -> dict[s
         )
         if ticket:
             return _json_success(ticket=int(ticket))
-        return _json_failed("execute_market_order failed")
+        # MT5-PARITY T5 (E-MF-01): forward the broker retcode on failure.
+        return _json_failed(
+            "execute_market_order failed",
+            retcode=_adapter_retcode(adapter),
+        )
 
     if action == "PLACE_PENDING_ORDER":
         # BUG-293 (L11-6): boundary validation mirrors the market path;
@@ -363,7 +407,11 @@ def _handle_action(action: str, payload: dict[str, Any], adapter: Any) -> dict[s
         )
         if ticket:
             return _json_success(ticket=int(ticket))
-        return _json_failed("place_pending_order failed")
+        # MT5-PARITY T5 (E-MF-01): forward the broker retcode on failure.
+        return _json_failed(
+            "place_pending_order failed",
+            retcode=_adapter_retcode(adapter),
+        )
 
     if action == "GET_PENDING_ORDERS":
         symbol = payload.get("symbol")
@@ -389,6 +437,10 @@ def _handle_action(action: str, payload: dict[str, Any], adapter: Any) -> dict[s
         except Exception:
             pass
         data = adapter.get_pending_orders(symbol=symbol)
+        if data is None:
+            # MT5-PARITY T1/T5: forward the failure instead of reporting a
+            # successful empty roster (fail-closed reconciliation).
+            return _json_failed("pending order query failed")
         return {"status": "SUCCESS", "data": data if isinstance(data, list) else []}
 
     if action == "CANCEL_PENDING_ORDER":
