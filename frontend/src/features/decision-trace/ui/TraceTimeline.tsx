@@ -8,6 +8,7 @@
  */
 
 import { memo } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import type { TimelineEntry } from "../traceGraph";
 
 interface Props {
@@ -21,12 +22,13 @@ export const TraceTimeline = memo(function TraceTimeline({
   onSelectStage,
   selectedStage,
 }: Props) {
+  const t = useI18n((s) => s.t);
   if (!entries.length) {
     return (
       <div className="dt-tl-empty">
-        <div className="dt-tl-empty-title">NO LATENCY OBSERVED</div>
+        <div className="dt-tl-empty-title">{t("trace.timeline.empty_title", "NO LATENCY OBSERVED")}</div>
         <div className="dt-tl-empty-sub">
-          The trace holds no stage timing yet — timing appears as the runtime emits stage events.
+          {t("trace.timeline.empty_sub", "The trace holds no stage timing yet — timing appears as the runtime emits stage events.")}
         </div>
       </div>
     );
@@ -41,7 +43,7 @@ export const TraceTimeline = memo(function TraceTimeline({
   const trackW = `calc(100% - ${labelW + 56}px)`;
 
   return (
-    <div className="dt-tl" role="table" aria-label="Stage latency timeline">
+    <div className="dt-tl" role="table" aria-label={t("trace.timeline.aria", "Stage latency timeline")} dir="ltr">
       <div className="dt-tl-scale" style={{ marginLeft: labelW, width: trackW }}>
         {[0, 0.25, 0.5, 0.75, 1].map((f) => (
           <span key={f} className="dt-tl-tick" style={{ left: `${f * 100}%` }}>
@@ -59,7 +61,7 @@ export const TraceTimeline = memo(function TraceTimeline({
             key={ev.event_id}
             className={`dt-tl-row ${selectedStage === ev.stage ? "selected" : ""} ${observed ? "" : "unobserved"}`}
             onClick={() => onSelectStage?.(selectedStage === ev.stage ? null : ev.stage)}
-            title={`${ev.stage}: ${observed ? `${(ev.latency_us! / 1000).toFixed(2)}ms` : "NOT OBSERVED"}`}
+            title={`${ev.stage}: ${observed ? `${(ev.latency_us! / 1000).toFixed(2)}ms` : t("trace.marker.not_observed", "NOT OBSERVED")}`}
           >
             <span className="dt-tl-label" style={{ width: labelW }}>{ev.stage}</span>
             <span className="dt-tl-track" style={{ width: trackW }}>

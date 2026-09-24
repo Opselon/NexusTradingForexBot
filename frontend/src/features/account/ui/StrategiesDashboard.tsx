@@ -26,6 +26,7 @@
 import { useMemo, useState } from "react";
 import { EmptyState, ErrorState, Panel } from "@/components/primitives";
 import { ConfidenceGauge, ConfidenceMeter } from "@/components/viz";
+import { useI18n } from "@/stores/i18nStore";
 import { useAccountStrategies } from "../hooks";
 import { useUiStore } from "@/stores/uiStore";
 import { FreshnessNote, asErrorText } from "./shared";
@@ -42,6 +43,7 @@ const isStratView = (v: unknown): v is StratView => v === "cards" || v === "tabl
 type ConfidenceView = "grid" | "list";
 
 export function StrategiesDashboard() {
+  const t = useI18n((s) => s.t);
   const strategies = useAccountStrategies();
   // Derived row arrays are computed once per response identity
   // (`strategies.data` only changes when a fetch lands) — deps are exactly
@@ -70,50 +72,50 @@ export function StrategiesDashboard() {
     <div className="sd-root">
       <div className="sd-main">
         <Panel
-          title={`Strategy contributions (${rows.length})`}
+          title={t("account.strategies.title", "Strategy contributions ({n})", { n: rows.length })}
           right={
             <>
-              <div className="acc-toggle" role="group" aria-label="Contributions view">
+              <div className="acc-toggle" role="group" aria-label={t("account.strategies.aria_view", "Contributions view")}>
                 <button
                   className={stratView === "cards" ? "active" : ""}
                   onClick={() => setStratView("cards")}
                   aria-pressed={stratView === "cards"}
                 >
-                  cards
+                  {t("account.strategies.view_cards", "cards")}
                 </button>
                 <button
                   className={stratView === "table" ? "active" : ""}
                   onClick={() => setStratView("table")}
                   aria-pressed={stratView === "table"}
                 >
-                  table
+                  {t("account.strategies.view_table", "table")}
                 </button>
               </div>
-              <FreshnessNote updatedAtMs={strategies.dataUpdatedAt ?? null} label="strategies" />
+              <FreshnessNote updatedAtMs={strategies.dataUpdatedAt ?? null} label={t("account.fresh.strategies", "strategies")} />
             </>
           }
         >
           {strategies.isPending ? (
-            <div className="sd-loading">loading contributions…</div>
+            <div className="sd-loading">{t("account.strategies.loading", "loading contributions…")}</div>
           ) : strategies.isError ? (
             <ErrorState message={asErrorText(strategies.error)} onRetry={() => strategies.refetch()} />
           ) : rows.length === 0 ? (
             <EmptyState
-              message="NO STRATEGY EVIDENCE AVAILABLE"
-              hint="Contributions need closed trades tagged with a strategy_id."
+              message={t("account.strategies.empty", "NO STRATEGY EVIDENCE AVAILABLE")}
+              hint={t("account.strategies.empty_hint", "Contributions need closed trades tagged with a strategy_id.")}
             />
           ) : stratView === "cards" ? (
             <StrategyCards
               rows={rows}
               onCopy={(_id, ok) =>
-                pushToast(ok ? "ok" : "fail", ok ? "strategy id copied" : "copy failed — clipboard unavailable")
+                pushToast(ok ? "ok" : "fail", ok ? t("account.strategies.copied", "strategy id copied") : t("account.strategies.copy_failed", "copy failed — clipboard unavailable"))
               }
             />
           ) : (
             <StrategyMetricsTable
               rows={rows}
               onCopy={(_id, ok) =>
-                pushToast(ok ? "ok" : "fail", ok ? "strategy id copied" : "copy failed — clipboard unavailable")
+                pushToast(ok ? "ok" : "fail", ok ? t("account.strategies.copied", "strategy id copied") : t("account.strategies.copy_failed", "copy failed — clipboard unavailable"))
               }
             />
           )}
@@ -122,28 +124,28 @@ export function StrategiesDashboard() {
 
       <div className="sd-side">
         <Panel
-          title="Registry confidence"
+          title={t("account.strategies.conf_title_dash", "Registry confidence")}
           right={
-            <div className="sd-view-toggle" role="group" aria-label="Confidence view">
+            <div className="sd-view-toggle" role="group" aria-label={t("account.strategies.aria_conf", "Confidence view")}>
               <button
                 className={view === "grid" ? "active" : ""}
                 onClick={() => setView("grid")}
                 aria-pressed={view === "grid"}
               >
-                grid
+                {t("account.strategies.view_grid", "grid")}
               </button>
               <button
                 className={view === "list" ? "active" : ""}
                 onClick={() => setView("list")}
                 aria-pressed={view === "list"}
               >
-                list
+                {t("account.strategies.view_list", "list")}
               </button>
             </div>
           }
         >
           {confidenceRows.length === 0 ? (
-            <EmptyState message="no confidence scores" />
+            <EmptyState message={t("account.strategies.no_confidence", "no confidence scores")} />
           ) : view === "grid" ? (
             <div className="cg-grid">
               {confidenceRows.map((s) => (
@@ -163,11 +165,11 @@ export function StrategiesDashboard() {
             </div>
           )}
           <div className="sd-note tiny faint">
-            DISCOVERED = observed but unscored family (informational, not an error). Tier: ≥0.70 HIGH · ≥0.50 MID · &lt;0.50 LOW.
+            {t("account.strategies.tier_note", "DISCOVERED = observed but unscored family (informational, not an error). Tier: ≥0.70 HIGH · ≥0.50 MID · <0.50 LOW.")}
           </div>
         </Panel>
 
-        <Panel title="Loss responsibility" subtitle="share of account gross loss, ranked">
+        <Panel title={t("account.strategies.loss_title_dash", "Loss responsibility")} subtitle={t("account.strategies.loss_subtitle", "share of account gross loss, ranked")}>
           <LossDistributionPanel rows={lossRows} />
         </Panel>
       </div>

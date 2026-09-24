@@ -70,6 +70,7 @@ export interface AdviserConfigDto {
   /** BUG-314 F1: staleness gate — a snapshot older than this is refused. */
   max_snapshot_age_sec: number;
   artifact_dir: string;
+  manifest_path: string;
 }
 
 export interface AdviserModelDto {
@@ -196,6 +197,7 @@ export interface AdviserConfigRequest {
   min_eval_interval_sec?: number;
   /** BUG-314 F1: set to 0 to accept snapshots of any age. */
   max_snapshot_age_sec?: number;
+  manifest_path?: string;
 }
 
 /* --------------------- auto-tune (auto mode) ----------------------------- */

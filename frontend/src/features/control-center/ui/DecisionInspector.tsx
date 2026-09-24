@@ -40,9 +40,9 @@ export function DecisionInspector({ id, onClose }: { id: number; onClose: () => 
             <dl className="kv">
               <InfoRow label={t("control-center.label.action_mode", "action / mode")} value={`${notRecorded(str(d.action))} / ${notRecorded(str(d.execution_mode))}`} />
               <InfoRow label={t("control-center.label.confidence", "confidence")} value={notRecorded(str(d.confidence))} />
-              <InfoRow label="stage / blocked_by" value={`${notRecorded(str(d.decision_stage))} / ${notRecorded(str(d.blocked_by))}`} />
+              <InfoRow label={t("control-center.label.stage_blocked", "stage / blocked_by")} value={`${notRecorded(str(d.decision_stage))} / ${notRecorded(str(d.blocked_by))}`} />
               <InfoRow label={t("control-center.label.reason", "reason")} value={notRecorded(str(d.reason_code))} />
-              <InfoRow label="request_id" value={<span className="inline-mono tiny">{notRecorded(str(d.request_id))}</span>} />
+              <InfoRow label={t("control-center.label.request_id", "request_id")} value={<span className="inline-mono tiny">{notRecorded(str(d.request_id))}</span>} />
             </dl>
           </Panel>
           <Panel title={t("control-center.panel.model_probs", "Model probabilities (NOT RECORDED when absent)")} tight>
@@ -50,12 +50,12 @@ export function DecisionInspector({ id, onClose }: { id: number; onClose: () => 
               <EmptyState message={t("control-center.empty.payload_unparseable", "payload unparseable — kept with payload_ok:false (never fabricated)")} />
             ) : (
               <dl className="kv">
-                <InfoRow label="P(buy)" value={notRecorded(str(probs.buy))} />
-                <InfoRow label="P(sell)" value={notRecorded(str(probs.sell))} />
-                <InfoRow label="P(no_trade)" value={notRecorded(str(probs.no_trade))} />
-                <InfoRow label="P(wait)" value={notRecorded(str(probs.wait))} />
-                <InfoRow label="model_action" value={notRecorded(str(probs.model_action))} />
-                <InfoRow label="confidence_source" value={notRecorded(str(obj(probs.raw).source))} />
+                <InfoRow label={t("control-center.label.p_buy", "P(buy)")} value={notRecorded(str(probs.buy))} />
+                <InfoRow label={t("control-center.label.p_sell", "P(sell)")} value={notRecorded(str(probs.sell))} />
+                <InfoRow label={t("control-center.label.p_no_trade", "P(no_trade)")} value={notRecorded(str(probs.no_trade))} />
+                <InfoRow label={t("control-center.label.p_wait", "P(wait)")} value={notRecorded(str(probs.wait))} />
+                <InfoRow label={t("control-center.label.model_action", "model_action")} value={notRecorded(str(probs.model_action))} />
+                <InfoRow label={t("control-center.label.confidence_source", "confidence_source")} value={notRecorded(str(obj(probs.raw).source))} />
               </dl>
             )}
           </Panel>

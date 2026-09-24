@@ -80,15 +80,27 @@ export default function CommandDeck(props: CommandDeckProps) {
    *  local button availability (pure local view state), adds no verdict. */
   const engineStartLocked = engineCmd.state.running || running;
   const engineStopLocked = engineCmd.state.running || !running;
-  const applyHint = !modeTarget
-    ? "no target selected"
+  // Data stays a token; only the rendered hint is localized (never compare a
+  // translated string — the class reads the token).
+  const applyHintState: "no_target" | "in_flight" | "typed" | "same" | "ready" = !modeTarget
+    ? "no_target"
     : modeCmd.state.running
-      ? "command in flight"
+      ? "in_flight"
       : modeTarget === "LIVE" && liveConfirm !== LIVE_CONFIRM_TEXT
-        ? `type ${LIVE_CONFIRM_TEXT} to arm`
+        ? "typed"
         : modeTarget === currentMode
-          ? "target equals current mode"
-          : "ready to apply";
+          ? "same"
+          : "ready";
+  const applyHint =
+    applyHintState === "no_target"
+      ? t("trading.deck.hint_no_target", "no target selected")
+      : applyHintState === "in_flight"
+        ? t("trading.deck.hint_inflight", "command in flight")
+        : applyHintState === "typed"
+          ? t("trading.deck.hint_typed", "type {w} to arm", { w: LIVE_CONFIRM_TEXT })
+          : applyHintState === "same"
+            ? t("trading.deck.hint_same", "target equals current mode")
+            : t("trading.deck.hint_ready", "ready to apply");
 
   return (
     <div className="tr-deck" role="region" aria-label={t("trading.deck.kicker", "Command deck")}>
@@ -108,12 +120,12 @@ export default function CommandDeck(props: CommandDeckProps) {
             <div className="tr-deck-card-head">
               <h2 className="tr-deck-card-title" id="tr-deck-engine-title">
                 <span className={`tr-deck-dot${running ? " is-live" : ""}`} aria-hidden="true" />
-                Engine commands
+                {t("trading.panel.engine_commands", "Engine commands")}
               </h2>
               <span className="tr-deck-head-tools">
                 {engineCmd.state.running && (
                   <span className="tr-deck-busy" role="status">
-                    sending…
+                    {t("ui.confirm.sending", "sending…")}
                   </span>
                 )}
                 {/* raw value: snapshot.engine_running */}
@@ -123,22 +135,22 @@ export default function CommandDeck(props: CommandDeckProps) {
             <div className="tr-deck-card-body">
               <div className="tr-deck-actions">
                 <button className="btn primary tr-deck-btn tr-deck-btn--start" disabled={engineCmd.state.running || running} onClick={onStart}>
-                  ▶ Start engine
+                  {t("trading.engine.start", "▶ Start engine")}
                 </button>
                 <button className="btn danger tr-deck-btn tr-deck-btn--stop" disabled={engineCmd.state.running || !running} onClick={onStop}>
-                  ■ Stop engine
+                  {t("trading.engine.stop", "■ Stop engine")}
                 </button>
               </div>
               <div className="tr-deck-hint">
-                <span className={engineStartLocked ? "is-locked" : "is-ready"}>start {engineStartLocked ? "locked" : "ready"}</span>
+                <span className={engineStartLocked ? "is-locked" : "is-ready"}>{t("trading.deck.start", "start")} {engineStartLocked ? t("trading.deck.locked", "locked") : t("trading.deck.ready", "ready")}</span>
                 <span aria-hidden="true">·</span>
-                <span className={engineStopLocked ? "is-locked" : "is-armed"}>stop {engineStopLocked ? "locked" : "armed"}</span>
+                <span className={engineStopLocked ? "is-locked" : "is-armed"}>{t("trading.deck.stop", "stop")} {engineStopLocked ? t("trading.deck.locked", "locked") : t("trading.deck.armed", "armed")}</span>
               </div>
               {engineCmd.state.lastMessage && (
                 <div className={`cmd-result tr-deck-toast ${engineCmd.state.lastResult ? "ok" : "fail"}`}>{engineCmd.state.lastResult ? "✓" : "✕"} {engineCmd.state.lastMessage}</div>
               )}
               <div className="small muted tr-deck-note">
-                Result comes from the backend response — the UI never assumes a command succeeded before confirmation, and the authoritative engine state on the left updates from the next snapshot.
+                {t("trading.engine.disclaimer", "Result comes from the backend response — the UI never assumes a command succeeded before confirmation, and the authoritative engine state on the left updates from the next snapshot.")}
               </div>
             </div>
           </section>
@@ -148,27 +160,27 @@ export default function CommandDeck(props: CommandDeckProps) {
             <div className="tr-deck-card-head">
               <h2 className="tr-deck-card-title" id="tr-deck-mode-title">
                 <span className="tr-deck-dot tr-deck-dot--mode" aria-hidden="true" />
-                Execution mode (PAPER ⇄ LIVE)
+                {t("trading.panel.mode", "Execution mode (PAPER ⇄ LIVE)")}
               </h2>
               <span className="tr-deck-head-tools">
                 {modeCmd.state.running && (
                   <span className="tr-deck-busy" role="status">
-                    sending…
+                    {t("ui.confirm.sending", "sending…")}
                   </span>
                 )}
-                <span className={`l4-chip tr-deck-current${modeTone ? ` ${modeTone}` : ""}`}>current {currentMode || "—"}</span>
+                <span className={`l4-chip tr-deck-current${modeTone ? ` ${modeTone}` : ""}`}>{t("trading.mode.current", "current {m}", { m: currentMode || "—" })}</span>
               </span>
             </div>
             <div className="tr-deck-card-body">
               {/* segmented quick-target — same two setters as the select below */}
-              <div className="tr-deck-segs" role="group" aria-label="Target execution mode quick picker">
+              <div className="tr-deck-segs" role="group" aria-label={t("trading.deck.mode_picker_aria", "Target execution mode quick picker")}>
                 {MODE_SEGMENTS.map((m) => {
                   const active = modeTarget === m.id;
                   return (
                     <button key={m.id} type="button" className={`tr-deck-seg tr-deck-seg--${m.id.toLowerCase()}${active ? " is-active" : ""}`} aria-pressed={active} onClick={() => pickMode(m.id)}>
                       <span className="tr-deck-seg-name">{m.id}</span>
-                      <span className="tr-deck-seg-desc">{m.desc}</span>
-                      {currentMode === m.id && <span className="tr-deck-seg-current">current</span>}
+                      <span className="tr-deck-seg-desc">{m.id === "PAPER" ? t("trading.seg.paper_desc", m.desc) : m.id === "SHADOW" ? t("trading.seg.shadow_desc", m.desc) : t("trading.seg.live_desc", m.desc)}</span>
+                      {currentMode === m.id && <span className="tr-deck-seg-current">{t("trading.mode.current_word", "current")}</span>}
                     </button>
                   );
                 })}
@@ -176,12 +188,12 @@ export default function CommandDeck(props: CommandDeckProps) {
 
               <div className="tr-deck-controls">
                 <span className="tr-deck-field">
-                  <span className="tr-deck-field-label">target mode</span>
-                  <select aria-label="Target execution mode" className="select tr-deck-select" value={modeTarget} onChange={(e) => { setModeTarget(e.target.value); setShowLiveConfirm(e.target.value === "LIVE"); }}>
-                    <option value="">select mode…</option>
-                    <option value="PAPER">PAPER (simulation adapter)</option>
-                    <option value="SHADOW">SHADOW (no execution)</option>
-                    <option value="LIVE">LIVE (real capital)</option>
+                  <span className="tr-deck-field-label">{t("trading.deck.target_mode", "target mode")}</span>
+                  <select aria-label={t("trading.deck.mode_aria", "Target execution mode")} className="select tr-deck-select" value={modeTarget} onChange={(e) => { setModeTarget(e.target.value); setShowLiveConfirm(e.target.value === "LIVE"); }}>
+                    <option value="">{t("trading.mode.select_placeholder", "select mode…")}</option>
+                    <option value="PAPER">{t("trading.mode.paper", "PAPER (simulation adapter)")}</option>
+                    <option value="SHADOW">{t("trading.mode.shadow", "SHADOW (no execution)")}</option>
+                    <option value="LIVE">{t("trading.mode.live", "LIVE (real capital)")}</option>
                   </select>
                 </span>
                 <button
@@ -189,17 +201,17 @@ export default function CommandDeck(props: CommandDeckProps) {
                   disabled={!modeTarget || modeCmd.state.running || (modeTarget === "LIVE" && liveConfirm !== LIVE_CONFIRM_TEXT) || modeTarget === currentMode}
                   onClick={onApplyMode}
                 >
-                  Apply mode
+                  {t("trading.mode.apply", "Apply mode")}
                 </button>
               </div>
               <div className="tr-deck-hint">
-                <span className={applyHint === "ready to apply" ? "is-ready" : "is-locked"}>{applyHint}</span>
+                <span className={applyHintState === "ready" ? "is-ready" : "is-locked"}>{applyHint}</span>
               </div>
 
               {modeTarget && MODE_IMPACT[modeTarget] && (
                 <div className="l4-note tr-deck-impact">
                   <span className="tr-deck-impact-tag">{t("ux.mode.impact_label", "What changes")}</span>
-                  <span>{MODE_IMPACT[modeTarget]}</span>
+                  <span>{modeTarget === "PAPER" ? t("trading.mode.impact_paper", MODE_IMPACT.PAPER ?? "") : modeTarget === "SHADOW" ? t("trading.mode.impact_shadow", MODE_IMPACT.SHADOW ?? "") : modeTarget === "LIVE" ? t("trading.mode.impact_live", MODE_IMPACT.LIVE ?? "") : MODE_IMPACT[modeTarget]}</span>
                 </div>
               )}
 
@@ -212,17 +224,17 @@ export default function CommandDeck(props: CommandDeckProps) {
                     <div className="tr-deck-danger-text">
                       <b>{t("ux.mode.live_warning", "Real money is at risk. This affects your live broker account.")}</b>{" "}
                       {t("ux.mode.body", "This changes how the engine executes orders.")}{" "}
-                      <span className="muted">{MODE_IMPACT.LIVE}</span>
+                      <span className="muted">{t("trading.mode.impact_live", MODE_IMPACT.LIVE ?? "")}</span>
                     </div>
                     <div className="row">
                       <input
                         className="input tr-deck-confirm-input"
-                        aria-label="LIVE confirmation phrase"
+                        aria-label={t("trading.deck.live_aria", "LIVE confirmation phrase")}
                         placeholder={t("ux.confirm.type", "Type {w} to enable confirmation", { w: LIVE_CONFIRM_TEXT })}
                         value={liveConfirm}
                         onChange={(e) => setLiveConfirm(e.target.value.toUpperCase())}
                       />
-                      <span className="note">confirmation is relayed with the command; backend validation still applies</span>
+                      <span className="note">{t("trading.mode.confirm_note", "confirmation is relayed with the command; backend validation still applies")}</span>
                     </div>
                   </div>
                 </div>

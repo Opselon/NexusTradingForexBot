@@ -12,8 +12,10 @@ import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
+import { ApiError } from "@/types/api";
 import { confidence01, str, type SignalDto, type DecisionStatsDto, type NoTradeReasonsDto } from "../model";
 import type { V1Page } from "@/types/domain";
+import { useI18n } from "@/stores/i18nStore";
 import { topEntry, type ActionKpi, type CountRow } from "./vizMath";
 import { AaActionChip, ActionDonut, BarList, ConfCell } from "./aaCharts";
 
@@ -58,15 +60,16 @@ export default function SignalsTab({
   reasonBody: ReactNode;
   timelineBody: ReactNode;
 }) {
+  const t = useI18n((s) => s.t);
   return (
     <div className="aa-stack">
       <div className="aa-segbar">
         <span className="section-title" style={{ margin: 0 }}>
-          decision stats
+          {t("ai-analysis.stats.heading", "decision stats")}
         </span>
-        <span className="tiny faint">window</span>
+        <span className="tiny faint">{t("ai-analysis.stats.window", "window")}</span>
         <select
-          aria-label="Stats window (hours)"
+          aria-label={t("ai-analysis.stats.window_aria", "Stats window (hours)")}
           className="select"
           style={{ width: 92 }}
           value={hoursBack}
@@ -92,7 +95,7 @@ export default function SignalsTab({
           ))}
         </div>
       ) : statsQ.isError ? (
-        <EmptyState message={statsQ.error instanceof Error ? statsQ.error.message : "stats unavailable"} />
+        <EmptyState message={statsQ.error instanceof ApiError ? statsQ.error.localized(t) : t("ai-analysis.empty.stats_unavailable", "stats unavailable")} />
       ) : (
         (() => {
           const st = statsQ.data;
@@ -100,36 +103,36 @@ export default function SignalsTab({
           return (
             <>
               <div className="grid cols-4">
-                <MetricCard label="decisions in window" value={kpi.total.toLocaleString()} sub={`/decisions/stats · ${st?.window_hours ?? hoursBack}h scanned`} />
-                <MetricCard label="trade actions" value={kpi.trade.toLocaleString()} sub={`${pct(kpi.trade)} of decisions · non-NO_TRADE`} />
-                <MetricCard label="no-trade" value={kpi.noTrade.toLocaleString()} sub={`${pct(kpi.noTrade)} of decisions · filter blocks`} />
-                <MetricCard
-                  label="top stage"
-                  value={<span style={{ fontSize: 13, fontWeight: 700 }}>{top?.label ?? "—"}</span>}
-                  sub={top ? `${top.count.toLocaleString()} · ${pct(top.count)}` : "no stage rows"}
-                />
+                <MetricCard label={t("ai-analysis.stats.decisions_in_window", "decisions in window")} value={kpi.total.toLocaleString()} sub={t("ai-analysis.stats.scanned_path", "/decisions/stats · {h}h scanned", { h: st?.window_hours ?? hoursBack })} />
+                                <MetricCard label={t("ai-analysis.stats.trade_actions", "trade actions")} value={kpi.trade.toLocaleString()} sub={t("ai-analysis.stats.trade_sub", "{p} of decisions · non-NO_TRADE", { p: pct(kpi.trade) })} />
+                                <MetricCard label={t("ai-analysis.stats.no_trade", "no-trade")} value={kpi.noTrade.toLocaleString()} sub={t("ai-analysis.stats.notrade_sub", "{p} of decisions · filter blocks", { p: pct(kpi.noTrade) })} />
+                                <MetricCard
+                                  label={t("ai-analysis.stats.top_stage", "top stage")}
+                                  value={<span style={{ fontSize: 13, fontWeight: 700 }}>{top?.label ?? "—"}</span>}
+                                  sub={top ? `${top.count.toLocaleString()} · ${pct(top.count)}` : t("ai-analysis.stats.no_stage_rows", "no stage rows")}
+                                />
               </div>
 
               <div className="grid cols-2">
-                <Panel title="Decision mix (by action)" tight>
+                <Panel title={t("ai-analysis.panel.decision_mix", "Decision mix (by action)")} tight>
                   <div className="panel-body">
                     <ActionDonut byAction={st?.by_action} />
                   </div>
                 </Panel>
-                <Panel title="NO_TRADE reasons" right={<span className="tiny faint">{reasonsQ.isPending ? "loading…" : reasonsQ.isError ? "unavailable" : `${(reasonsQ.data?.total ?? 0).toLocaleString()} all-time in ledger`}</span>} tight>
+                <Panel title={t("ai-analysis.panel.no_trade_reasons", "NO_TRADE reasons")} right={<span className="tiny faint">{reasonsQ.isPending ? t("ai-analysis.panel.loading", "loading…") : reasonsQ.isError ? t("ai-analysis.reasons.unavailable", "unavailable") : t("ai-analysis.reasons.in_ledger", "{n} all-time in ledger", { n: (reasonsQ.data?.total ?? 0).toLocaleString() })}</span>} tight>
                   <div className="panel-body">{reasonBody}</div>
                 </Panel>
               </div>
 
               <div className="grid cols-2">
-                <Panel title="Decision stage distribution" right={<span className="tiny faint">sorted by count — backend returns no stage order</span>} tight>
+                <Panel title={t("ai-analysis.panel.stage_distribution", "Decision stage distribution")} right={<span className="tiny faint">{t("ai-analysis.panel.stage_sort_note", "sorted by count — backend returns no stage order")}</span>} tight>
                   <div className="panel-body">
                     <BarList rows={stageRows} tone="var(--violet)" max={STAGE_MAX} />
                   </div>
                 </Panel>
                 <Panel
-                  title="Confidence over time"
-                  right={<span className="tiny faint">{historyQ.isPending ? "loading…" : `current history page · ${historyQ.data?.page_size ?? "—"} rows max`}</span>}
+                  title={t("ai-analysis.panel.conf_over_time", "Confidence over time")}
+                                    right={<span className="tiny faint">{historyQ.isPending ? t("ai-analysis.panel.loading", "loading…") : t("ai-analysis.panel.history_page_rows", "current history page · {n} rows max", { n: historyQ.data?.page_size ?? "—" })}</span>}
                   tight
                 >
                   <div className="panel-body">{timelineBody}</div>
@@ -140,26 +143,26 @@ export default function SignalsTab({
         })()
       )}
 
-      <Panel title="Signal history (ledger, newest first)" tight>
+      <Panel title={t("ai-analysis.panel.history", "Signal history (ledger, newest first)")} tight>
         {historyQ.isPending ? (
           <Skeleton count={5} />
         ) : historyQ.isError ? (
-          <ErrorState message={historyQ.error instanceof Error ? historyQ.error.message : "history failed"} onRetry={() => void historyQ.refetch()} />
+          <ErrorState message={historyQ.error instanceof ApiError ? historyQ.error.localized(t) : t("ai-analysis.empty.history_failed", "history failed")} onRetry={() => void historyQ.refetch()} />
         ) : (historyQ.data?.items ?? []).length === 0 ? (
-          <EmptyState message="No signals in this window." />
+          <EmptyState message={t("ai-analysis.empty.window", "No signals in this window.")} />
         ) : (
           <>
             <DataTable
               headers={[
-                { label: "decision" },
-                { label: "symbol" },
-                { label: "action" },
-                { label: "conf", num: true },
-                { label: "stage" },
-                { label: "reason" },
-                { label: "at" },
-                { label: "drill" },
-              ]}
+                              { label: t("ai-analysis.th.decision", "decision") },
+                              { label: t("ai-analysis.th.symbol", "symbol") },
+                              { label: t("ai-analysis.th.action", "action") },
+                              { label: t("ai-analysis.th.conf", "conf"), num: true },
+                              { label: t("ai-analysis.th.stage", "stage") },
+                              { label: t("ai-analysis.th.reason", "reason") },
+                              { label: t("ai-analysis.th.at", "at") },
+                              { label: t("ai-analysis.th.drill", "drill") },
+                            ]}
             >
               {historyRows.map((s: SignalDto, i: number) => (
                 <HistoryRow key={s.request_id ?? `${s.symbol}-${s.generated_at}-${i}`} s={s} onInspect={inspectDecision} />
@@ -167,17 +170,17 @@ export default function SignalsTab({
             </DataTable>
             <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
               <button className="btn small" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-                ← newer
-              </button>
+                {t("ai-analysis.pager.newer", "← newer")}
+                              </button>
               <span className="tiny muted" aria-live="polite">
-                page {page}
-                {historyQ.isFetching && " · loading…"}
+                {t("ai-analysis.pager.page", "page {p}", { p: page })}
+                                {historyQ.isFetching && ` · ${t("ai-analysis.panel.loading", "loading…")}`}
               </span>
               <button className="btn small" disabled={!historyQ.data?.has_more} onClick={() => setPage((p) => p + 1)}>
-                older →
-              </button>
+                {t("ai-analysis.pager.older", "older →")}
+                              </button>
               <span className="tiny faint" style={{ marginInlineStart: "auto" }}>
-                {historyQ.data?.page_size} rows/page · hours_back cap 720 (backend-enforced)
+                {t("ai-analysis.pager.rows", "{n} rows/page · hours_back cap 720 (backend-enforced)", { n: historyQ.data?.page_size ?? "—" })}
               </span>
             </div>
           </>
@@ -198,6 +201,7 @@ const HistoryRow = memo(function HistoryRow({
   s: SignalDto;
   onInspect: (id: string) => void;
 }) {
+  const t = useI18n((s) => s.t);
   return (
     <tr>
       <td className="inline-mono tiny">{str(s.request_id)?.slice(0, 10) ?? "—"}</td>
@@ -210,12 +214,12 @@ const HistoryRow = memo(function HistoryRow({
       </td>
       <td className="tiny">{s.decision_stage ?? "—"}</td>
       <td className="tiny muted aa-reason" title={s.reason_code ?? ""}>
-        {s.blocked_by ? `blocked:${s.blocked_by}` : (s.reason_code ?? "—")}
+        {s.blocked_by ? t("ai-analysis.cell.blocked", "blocked:{b}", { b: s.blocked_by }) : (s.reason_code ?? "—")}
       </td>
       <td className="tiny">{formatDateTime(s.generated_at)}</td>
       <td>
         <button className="btn small ghost" disabled={!s.request_id} onClick={() => onInspect(String(s.request_id))}>
-          drilldown
+          {t("ai-analysis.cell.drilldown", "drilldown")}
         </button>
       </td>
     </tr>

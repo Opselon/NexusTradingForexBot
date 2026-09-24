@@ -24,6 +24,7 @@ import { EmptyState, ErrorState, Panel, PositionSideBadge, Skeleton } from "@/co
 import { InfoChip, SortableTable } from "@/pages/_shared/widgets";
 import { formatNumber, formatPrice } from "@/lib/format";
 import { ApiError } from "@/types/api";
+import { useI18n } from "@/stores/i18nStore";
 import type { EngineSnapshot, Position } from "@/types/domain";
 
 type ReconRow = {
@@ -43,6 +44,7 @@ interface Props {
 }
 
 export function ReconPanel({ snapshot, mt5Query }: Props) {
+  const t = useI18n((s) => s.t);
   const ledgerOpenQuery = useQuery({
     queryKey: ["ledger-open"],
     queryFn: ({ signal }) => positionsApi.ledgerHistory({ limit: 100, status: "OPEN" }, signal),
@@ -80,43 +82,43 @@ export function ReconPanel({ snapshot, mt5Query }: Props) {
   // Virtual ↔ real reconciliation (verbatim block, extracted for the line law).
   return (
       <Panel
-        title="Virtual ⇄ real reconciliation"
+        title={t("trading.panel.recon", "Virtual ⇄ real reconciliation")}
         right={
           <>
-            <InfoChip k="matched" v={matched} tone={drift.length === 0 && matched > 0 ? "good" : ""} />
-            <InfoChip k="drift" v={drift.length} tone={drift.length > 0 ? "bad" : ""} />
+            <InfoChip k={t("trading.chip.matched", "matched")} v={matched} tone={drift.length === 0 && matched > 0 ? "good" : ""} />
+            <InfoChip k={t("trading.chip.drift", "drift")} v={drift.length} tone={drift.length > 0 ? "bad" : ""} />
           </>
         }
         tight
       >
         <div className="l4-note" style={{ padding: "8px 12px 0" }}>
-          Engine ledger OPEN rows (/api/account/trades?status=OPEN) matched by ticket against broker positions (/api/mt5/status).
-          {mt5Query.isPending ? " broker read pending…" : mt5Query.isError ? " ⚠ broker read FAILED — positions below fall back to the canonical snapshot." : ""}
+          {t("trading.recon.note", "Engine ledger OPEN rows (/api/account/trades?status=OPEN) matched by ticket against broker positions (/api/mt5/status).")}
+          {mt5Query.isPending ? " " + t("trading.recon.note_pending", "broker read pending…") : mt5Query.isError ? " " + t("trading.recon.note_failed", "⚠ broker read FAILED — positions below fall back to the canonical snapshot.") : ""}
         </div>
         {ledgerOpenQuery.isPending ? (
           <div style={{ padding: 12 }}><Skeleton count={3} /></div>
         ) : ledgerOpenQuery.isError ? (
           <ErrorState
-            message={ledgerOpenQuery.error instanceof ApiError ? ledgerOpenQuery.error.message : "Engine ledger unavailable"}
+            message={ledgerOpenQuery.error instanceof ApiError ? ledgerOpenQuery.error.localized(t) : t("trading.err.ledger", "Engine ledger unavailable")}
             requestId={ledgerOpenQuery.error instanceof ApiError ? ledgerOpenQuery.error.requestId : null}
             onRetry={() => void ledgerOpenQuery.refetch()}
           />
         ) : recon.length === 0 ? (
-          <EmptyState message="Nothing to reconcile — no open ledger rows and no broker positions." hint="A clean, consistent EMPTY. Not a hidden drift." />
+          <EmptyState message={t("trading.empty.recon", "Nothing to reconcile — no open ledger rows and no broker positions.")} hint={t("trading.empty.recon_hint", "A clean, consistent EMPTY. Not a hidden drift.")} />
         ) : (
           <SortableTable
             columns={[
-              { key: "ticket", label: "Ticket", sortValue: (r) => r.ticket, render: (r) => r.ticket },
+              { key: "ticket", label: t("trading.th.ticket", "Ticket"), sortValue: (r) => r.ticket, render: (r) => r.ticket },
               {
                 key: "engine",
-                label: "Engine ledger",
+                label: t("trading.th.engine_ledger", "Engine ledger"),
                 sortValue: (r) => r.engine?.symbol ?? null,
                 render: (r) =>
-                  r.engine ? `${r.engine.symbol ?? "—"} ${r.engine.direction ?? "?"} ${formatNumber(r.engine.volume)}` : <span className="faint">absent</span>,
+                  r.engine ? `${r.engine.symbol ?? "—"} ${r.engine.direction ?? "?"} ${formatNumber(r.engine.volume)}` : <span className="faint">{t("trading.cell.absent", "absent")}</span>,
               },
               {
                 key: "broker",
-                label: "Broker position",
+                label: t("trading.th.broker_position", "Broker position"),
                 sortValue: (r) => r.broker?.symbol ?? null,
                 render: (r) =>
                   r.broker ? (
@@ -124,31 +126,30 @@ export function ReconPanel({ snapshot, mt5Query }: Props) {
                       {r.broker.symbol ?? "—"} <PositionSideBadge type={r.broker.type} /> {formatNumber(r.broker.volume)} @ {formatPrice(r.broker.price_open)}
                     </span>
                   ) : (
-                    <span className="faint">absent</span>
+                    <span className="faint">{t("trading.cell.absent", "absent")}</span>
                   ),
               },
               {
                 key: "state",
-                label: "State",
+                label: t("trading.th.state", "State"),
                 sortValue: (r) => r.state,
                 render: (r) => (
                   <span className={`l4-chip ${r.state === "MATCHED" ? "good" : "warn"}`}>
-                    {r.state === "MATCHED" ? "✓ ticket+symbol" : r.state === "ENGINE_ONLY" ? "ENGINE ONLY (not on broker)" : "BROKER ONLY (untracked)"}
+                    {r.state === "MATCHED" ? t("trading.state.matched", "✓ ticket+symbol") : r.state === "ENGINE_ONLY" ? t("trading.state.engine_only", "ENGINE ONLY (not on broker)") : t("trading.state.broker_only", "BROKER ONLY (untracked)")}
                   </span>
                 ),
               },
             ]}
             rows={recon}
             rowKey={(r) => r.ticket}
-            emptyMessage="No rows."
+            emptyMessage={t("trading.empty.no_rows", "No rows.")}
             maxHeight={320}
           />
         )}
         {drift.length > 0 && (
           <div className="confirm-box" style={{ marginInline: 12, marginBlock: 12, borderColor: "rgba(235,161,63,0.5)" }}>
             <span>
-              <b>{drift.length} unreconciled row(s).</b> ENGINE ONLY usually means the broker rejected/closed without the ledger catching the deal yet;
-              BROKER ONLY means a position the engine did not open (manual terminal action or restart gap). Investigate before enabling new risk.
+              <b>{t("trading.recon.drift_title", "{n} unreconciled row(s).", { n: drift.length })}</b> {t("trading.recon.drift_body", "ENGINE ONLY usually means the broker rejected/closed without the ledger catching the deal yet; BROKER ONLY means a position the engine did not open (manual terminal action or restart gap). Investigate before enabling new risk.")}
             </span>
           </div>
         )}

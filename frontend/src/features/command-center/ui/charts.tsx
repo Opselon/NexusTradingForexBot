@@ -145,7 +145,7 @@ export function GateOutcomeRows({ gates }: { gates: GateOutcome[] }) {
         return (
           <div className="cc-gate-row" key={g.gate}>
             <span className="cc-gate-name">{g.gate}</span>
-            <span className="cc-gate-track" role="img" aria-label={`${g.gate} pass rate ${rate === null ? "unknown" : `${(rate * 100).toFixed(1)}%`}`}>
+            <span className="cc-gate-track" role="img" aria-label={t("command-center.analysis.gate_rate_aria", "{gate} pass rate {p}", { gate: g.gate, p: rate === null ? t("command-center.analysis.not_tested", "not tested") : `${(rate * 100).toFixed(1)}%` })}>
               <i className="cc-gate-pass" style={{ width: rate === null ? 0 : `${Math.max(0, Math.min(1, rate)) * 100}%` }} />
               <i className="cc-gate-fail" style={{ width: g.total > 0 ? `${(g.fail / g.total) * 100}%` : 0 }} />
             </span>

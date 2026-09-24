@@ -106,25 +106,25 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
 
   const orderCols = useMemo<Array<Column<OperatorOrderRow>>>(
     () => [
-      { key: "time", label: "Time", sortValue: (r) => r.timestamp, render: (r) => (r.timestamp ? formatDateTime(r.timestamp) : "—") },
-      { key: "ticket", label: "Ticket", sortValue: (r) => r.ticket, render: (r) => r.ticket ?? "—" },
-      { key: "symbol", label: "Symbol", sortValue: (r) => r.symbol, render: (r) => r.symbol ?? "—" },
-      { key: "action", label: "Action", sortValue: (r) => r.action, render: (r) => <span className={`l4-chip ${(r.action ?? "").includes("BUY") ? "good" : (r.action ?? "").includes("SELL") ? "bad" : ""}`}>{r.action ?? "—"}</span> },
-      { key: "vol", label: "Vol", num: true, sortValue: (r) => r.volume, render: (r) => formatNumber(r.volume) },
-      { key: "price", label: "Price", num: true, sortValue: (r) => r.price, render: (r) => formatPrice(r.price, snapshot?.price_digits ?? 2) },
-      { key: "sl", label: "SL", num: true, sortValue: (r) => r.stop_loss, render: (r) => (r.stop_loss ? formatPrice(r.stop_loss) : "—") },
-      { key: "tp", label: "TP", num: true, sortValue: (r) => r.take_profit, render: (r) => (r.take_profit ? formatPrice(r.take_profit) : "—") },
-      { key: "lat", label: "Latency ms", num: true, sortValue: (r) => r.latency, render: (r) => latencyText.get(r) ?? (typeof r.latency === "number" ? r.latency.toFixed(1) : "—") },
-      { key: "mode", label: "Mode", sortValue: (r) => r.execution_mode, render: (r) => <StatusBadge status={String(r.execution_mode ?? null)} /> },
-      { key: "reason", label: "Reason", render: (r) => <span className="small muted" title={r.reason ?? undefined}>{r.reason?.slice(0, 42) ?? "—"}</span> },
+      { key: "time", label: t("trading.th.time", "Time"), sortValue: (r) => r.timestamp, render: (r) => (r.timestamp ? formatDateTime(r.timestamp) : "—") },
+      { key: "ticket", label: t("trading.th.ticket", "Ticket"), sortValue: (r) => r.ticket, render: (r) => r.ticket ?? "—" },
+      { key: "symbol", label: t("trading.th.symbol", "Symbol"), sortValue: (r) => r.symbol, render: (r) => r.symbol ?? "—" },
+      { key: "action", label: t("trading.th.action", "Action"), sortValue: (r) => r.action, render: (r) => <span className={`l4-chip ${(r.action ?? "").includes("BUY") ? "good" : (r.action ?? "").includes("SELL") ? "bad" : ""}`}>{r.action ?? "—"}</span> },
+      { key: "vol", label: t("trading.th.vol", "Vol"), num: true, sortValue: (r) => r.volume, render: (r) => formatNumber(r.volume) },
+      { key: "price", label: t("trading.th.price", "Price"), num: true, sortValue: (r) => r.price, render: (r) => formatPrice(r.price, snapshot?.price_digits ?? 2) },
+      { key: "sl", label: t("trading.th.sl", "SL"), num: true, sortValue: (r) => r.stop_loss, render: (r) => (r.stop_loss ? formatPrice(r.stop_loss) : "—") },
+      { key: "tp", label: t("trading.th.tp", "TP"), num: true, sortValue: (r) => r.take_profit, render: (r) => (r.take_profit ? formatPrice(r.take_profit) : "—") },
+      { key: "lat", label: t("trading.th.latency", "Latency ms"), num: true, sortValue: (r) => r.latency, render: (r) => latencyText.get(r) ?? (typeof r.latency === "number" ? r.latency.toFixed(1) : "—") },
+      { key: "mode", label: t("trading.th.mode", "Mode"), sortValue: (r) => r.execution_mode, render: (r) => <StatusBadge status={String(r.execution_mode ?? null)} /> },
+      { key: "reason", label: t("trading.th.reason", "Reason"), render: (r) => <span className="small muted" title={r.reason ?? undefined}>{r.reason?.slice(0, 42) ?? "—"}</span> },
     ],
-    [snapshot?.price_digits, latencyText],
+    [snapshot?.price_digits, latencyText, t],
   );
 
   if (!snapshot) {
     return (
       <div>
-        <Panel title="Trading">
+        <Panel title={t("nav.page.trading", "Trading")}>
           <Skeleton count={5} />
         </Panel>
       </div>
@@ -208,10 +208,10 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
 
       {/* Dispatch order flow — audit_orders + backend latency stats */}
       <Panel
-        title="Dispatch order flow (audit_orders)"
+        title={t("trading.panel.order_flow", "Dispatch order flow (audit_orders)")}
         right={
           <>
-            <AgeNote label="age" ageSec={ordersQuery.dataUpdatedAt ? Math.max(0, (nowMs - ordersQuery.dataUpdatedAt) / 1000) : null} />
+            <AgeNote label={t("trading.age.label", "age")} ageSec={ordersQuery.dataUpdatedAt ? Math.max(0, (nowMs - ordersQuery.dataUpdatedAt) / 1000) : null} />
             <SectionExportButton
               rows={ordersQuery.data?.rows ?? []}
               onExport={() =>
@@ -229,9 +229,9 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
         {ordersQuery.isPending && !ordersQuery.data ? (
           <div style={{ padding: 12 }}><Skeleton count={4} /></div>
         ) : ordersQuery.data?.available === false ? (
-          <EmptyState message="Order flow unavailable." hint={ordersQuery.data.reason ?? "Ledger store not reachable — nothing inferred."} />
+          <EmptyState message={t("trading.empty.order_flow", "Order flow unavailable.")} hint={ordersQuery.data.reason ?? t("trading.empty.order_flow_hint", "Ledger store not reachable — nothing inferred.")} />
         ) : (ordersQuery.data?.rows?.length ?? 0) === 0 ? (
-          <EmptyState message="No dispatched orders recorded yet." hint="audit_orders rows appear when the engine sends a proposal to the broker/simulation adapter." />
+          <EmptyState message={t("trading.empty.no_orders", "No dispatched orders recorded yet.")} hint={t("trading.empty.no_orders_hint", "audit_orders rows appear when the engine sends a proposal to the broker/simulation adapter.")} />
         ) : (
           <>
             <div className="l4-toolbar" style={{ padding: "8px 12px 0" }}>
@@ -243,9 +243,9 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
                   <InfoChip k="p99" v={`${formatNumber(ordersQuery.data.latency.p99_ms, 1)} ms`} />
                 </>
               ) : (
-                <span className="l4-note">no numeric latency values in the returned rows yet</span>
+                <span className="l4-note">{t("trading.latency.none", "no numeric latency values in the returned rows yet")}</span>
               )}
-              <span className="timestamp-note" style={{ marginInlineStart: "auto" }}>stats computed by the backend over these rows</span>
+              <span className="timestamp-note" style={{ marginInlineStart: "auto" }}>{t("trading.latency.stats", "stats computed by the backend over these rows")}</span>
             </div>
             <SortableTable
               columns={orderCols}
@@ -253,7 +253,7 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
               rowKey={(r) => String(r.id)}
               initialSort={{ key: "time", dir: "desc" }}
               filter={(r, q) => String(r.ticket ?? "").includes(q) || (r.symbol ?? "").toLowerCase().includes(q) || (r.action ?? "").toLowerCase().includes(q)}
-              emptyMessage="No order-flow rows."
+              emptyMessage={t("trading.empty.no_order_rows", "No order-flow rows.")}
             />
           </>
         )}
@@ -270,14 +270,14 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
 
       {/* Execution history (v1 audit_executions) */}
       <Panel
-        title="Recent executions (audit_executions)"
+        title={t("trading.panel.exec", "Recent executions (audit_executions)")}
         right={
           <>
-            <span className="small faint">manual order placement / cancel: NO backend route — no fake buttons here (BUG-242 INV-004)</span>
+            <span className="small faint">{t("trading.exec.no_route", "manual order placement / cancel: NO backend route — no fake buttons here (BUG-242 INV-004)")}</span>
             <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-              <button aria-label="Previous page" className="btn small" disabled={execPage <= 1} onClick={() => setExecPage((p) => Math.max(1, p - 1))}>‹</button>
-              <span className="small faint inline-mono">p{execPage}</span>
-              <button aria-label="Next page" className="btn small" disabled={!execQuery.data?.has_more} onClick={() => setExecPage((p) => p + 1)}>›</button>
+              <button aria-label={t("trading.pager.prev", "Previous page")} className="btn small" disabled={execPage <= 1} onClick={() => setExecPage((p) => Math.max(1, p - 1))}>‹</button>
+              <span className="small faint inline-mono">{t("trading.exec.page", "p{n}", { n: execPage })}</span>
+              <button aria-label={t("trading.pager.next", "Next page")} className="btn small" disabled={!execQuery.data?.has_more} onClick={() => setExecPage((p) => p + 1)}>›</button>
             </span>
           </>
         }
@@ -285,9 +285,9 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
       >
         <SectionState
           query={execQuery}
-          emptyMessage="No execution rows yet."
-          emptyHint="audit_executions fills as the OrderLifecycleManager dispatches."
-          errorFallback="Execution history endpoint failed."
+          emptyMessage={t("trading.empty.exec", "No execution rows yet.")}
+          emptyHint={t("trading.empty.exec_hint", "audit_executions fills as the OrderLifecycleManager dispatches.")}
+          errorFallback={t("trading.err.exec", "Execution history endpoint failed.")}
           emptyWhen={(d) => d.items.length === 0}
         >
           {(d) => (
@@ -315,15 +315,14 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
           )}
         </SectionState>
         <div className="small faint" style={{ padding: "8px 12px" }}>
-          Guardian state: <StatusBadge status={String(snapshot.health.subsystems.engine ?? "UNKNOWN")} /> (engine) · mode <span className="inline-mono">{currentMode || "—"}</span> · positions &
-          close actions live on the Positions page; model proposals on the Dashboard.
+          {t("trading.exec.guardian_label", "Guardian state:")} <StatusBadge status={String(snapshot.health.subsystems.engine ?? "UNKNOWN")} /> {t("trading.exec.guardian_mid", "(engine) · mode")} <span className="inline-mono">{currentMode || "—"}</span> {t("trading.exec.guardian_tail", "· positions and close actions live on the Positions page; model proposals on the Dashboard.")}
         </div>
       </Panel>
 
       {stopConfirm && (
         <ConfirmModal
           title={t("ux.confirm.title", "Confirm action") + " — STOP ENGINE"}
-          confirmLabel="■ Stop engine"
+          confirmLabel={t("trading.engine.stop", "■ Stop engine")}
           busy={engineCmd.state.running}
           onCancel={() => setStopConfirm(false)}
           onConfirm={() => {
@@ -332,9 +331,9 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
           }}
         >
           <div>
-            <b>Impact:</b> the engine loop stops — no new proposals, no new executions. Open positions stay on the broker until you act there.
+            <b>{t("trading.confirm.impact", "Impact:")}</b> {t("trading.confirm.stop_body", "the engine loop stops — no new proposals, no new executions. Open positions stay on the broker until you act there.")}
             <div className="small muted" style={{ marginTop: 8 }}>
-              Recovery: Start engine re-attaches the loop; the backend refuses the command if the runtime state forbids it.
+              {t("trading.confirm.stop_recovery", "Recovery: Start engine re-attaches the loop; the backend refuses the command if the runtime state forbids it.")}
             </div>
           </div>
         </ConfirmModal>
@@ -345,10 +344,11 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
 
 /** CSV export affordance shared by the order-flow table header. */
 function SectionExportButton({ rows, onExport }: { rows: unknown[]; onExport: () => void }) {
+  const t = useI18n((s) => s.t);
   if (rows.length === 0) return null;
   return (
-    <button className="btn small ghost" onClick={onExport} title="exports exactly the rows the backend returned (client-side, no re-query)">
-      ⇩ CSV
+    <button className="btn small ghost" onClick={onExport} title={t("trading.csv.title", "exports exactly the rows the backend returned (client-side, no re-query)")}>
+      {t("trading.csv.btn", "⇩ CSV")}
     </button>
   );
 }

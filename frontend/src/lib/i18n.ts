@@ -29,6 +29,16 @@ export interface MessageEntry {
 /** A scope's message table (see <scope>/i18n.ts + lib/i18nMessages.ts). */
 export type FeatureMessages = Record<string, MessageEntry>;
 
+/** Dev-only missing-key diagnostics (§12): a key present nowhere warns ONCE
+ *  with the English fallback it is showing. Production stays silent and
+ *  renders the fallback cleanly — the warn never runs in a production build
+ *  (import.meta.env.DEV is false there; guarded for non-Vite importers too). */
+const DEV =
+  typeof import.meta !== "undefined" &&
+  typeof (import.meta as { env?: { DEV?: boolean } }).env !== "undefined" &&
+  (import.meta as { env?: { DEV?: boolean } }).env?.DEV === true;
+const warnedMissing = new Set<string>();
+
 /** Runtime lookup filled by registerMessages() — scoped messages win over
  *  the legacy chrome DICTS below. */
 const MAP: Record<string, Partial<Record<Lang, string>>> = {};
@@ -157,6 +167,9 @@ const DICTS: Record<Lang, Dict | null> = {
     "ux.palette.hint.close": "بستن",
     "ux.settings.density": "تراکم ردیف",
     "ux.settings.sidebar": "نوار کناری",
+    "meta.description": "کنسول جایگزین NSE — ماتریس قوانین معاملاتی، گیت‌های ریسک و کنترل‌های اجرا. رابط کاربری اپراتور، مبتنی بر بک‌اند.",
+    "meta.og_title": "NSE — کنسول جایگزین",
+    "meta.og_description": "ماتریس قوانین معاملاتی — فعال‌سازی و آستانه‌ها، مبتنی بر بک‌اند.",
     "ux.lang.label": "زبان",
     "nav.feature.model-studio": "استودیو عصبی",
     "nav.feature.position-adviser": "مشاور پوزیشن",
@@ -232,6 +245,9 @@ const DICTS: Record<Lang, Dict | null> = {
     "ux.palette.hint.close": "schließen",
     "ux.settings.density": "Zeilendichte",
     "ux.settings.sidebar": "Seitenleiste",
+    "meta.description": "NSE Alternative Konsole — Handelsregel-Matrix, Risiko-Gates und Ausführungskontrollen. Operator-Oberfläche, backend-seitig autoritativ.",
+    "meta.og_title": "NSE — Alternative Konsole",
+    "meta.og_description": "Handelsregel-Matrix — Aktivierung + Schwellwerte, backend-seitig autoritativ.",
     "ux.lang.label": "Sprache",
     "ux.reason.BLOCKED_BY_GUARDIAN_UNSAFE_REGIME": "KEIN TRADE — das Marktreregime gilt derzeit für Einstiege als unsicher (Guardian).",
     "ux.reason.CONFIDENCE_GATE": "KEIN TRADE — die Modellkonfidenz hat die notwendige Schwelle nicht erreicht.",
@@ -347,6 +363,9 @@ const DICTS: Record<Lang, Dict | null> = {
     "ux.palette.hint.close": "cerrar",
     "ux.settings.density": "Densidad de filas",
     "ux.settings.sidebar": "Barra lateral",
+    "meta.description": "Consola Alternativa NSE — matriz de reglas de trading, controles de riesgo y ejecución. Interfaz de operador, autoritativa en el backend.",
+    "meta.og_title": "NSE — Consola Alternativa",
+    "meta.og_description": "Matriz de reglas de trading — habilitación + umbrales, autoritativa en el backend.",
     "ux.lang.label": "Idioma",
     "ux.reason.BLOCKED_BY_GUARDIAN_UNSAFE_REGIME": "SIN OPERACIÓN — el régimen de mercado se considera actualmente inseguro para entrar (Guardian).",
     "ux.reason.CONFIDENCE_GATE": "SIN OPERACIÓN — la confianza del modelo no alcanzó el umbral necesario.",
@@ -462,6 +481,9 @@ const DICTS: Record<Lang, Dict | null> = {
     "ux.palette.hint.close": "إغلاق",
     "ux.settings.density": "كثافة الصفوف",
     "ux.settings.sidebar": "الشريط الجانبي",
+    "meta.description": "كونسول NSE البديل — مصفوفة قواعد التداول وبوابات المخاطر وأدوات التحكم في التنفيذ. واجهة مشغّل معتمدة على الخلفية.",
+    "meta.og_title": "NSE — الكونسول البديل",
+    "meta.og_description": "مصفوفة قواعد التداول — التفعيل والعتبات، معتمدة على الخلفية.",
     "ux.lang.label": "اللغة",
     "ux.reason.BLOCKED_BY_GUARDIAN_UNSAFE_REGIME": "بدون صفقة — يُعتبر نظام السوق الحالي غير آمن للدخول (Guardian).",
     "ux.reason.CONFIDENCE_GATE": "بدون صفقة — لم تبلغ ثقة النموذج الحد المطلوب.",
@@ -539,7 +561,13 @@ export function detectLang(): Lang {
 export function translate(lang: Lang, key: string, fallback: string, vars?: Record<string, string | number>): string {
   const entry = MAP[key];
   const dict = DICTS[lang];
-  let s = (entry && (entry[lang] || entry.en)) || (dict && dict[key]) || fallback;
+  const found = (entry && (entry[lang] || entry.en)) || (dict && dict[key]);
+  if (!found && DEV && !warnedMissing.has(key)) {
+    warnedMissing.add(key);
+    // eslint-disable-next-line no-console
+    console.warn(`[i18n] missing key "${key}" for locale "${lang}" (rendering fallback: "${fallback}")`);
+  }
+  let s = found || fallback;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v));
   }

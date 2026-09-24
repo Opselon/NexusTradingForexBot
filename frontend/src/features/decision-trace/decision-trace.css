@@ -81,7 +81,7 @@
   max-width: 240px;
   font-size: 11px;
   color: var(--text-dim);
-  text-align: right;
+  text-align: end;
 }
 
 /* -------------------------------------------------------- toolbar */
@@ -150,7 +150,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 /* -------------------------------------------------------- banners */
@@ -205,7 +205,7 @@
   color: var(--text-faint);
 }
 .dt-tab-note {
-  margin-left: auto;
+  margin-inline-start: auto;
   font-size: 11px;
   color: var(--text-dim);
   font-family: var(--mono);
@@ -322,7 +322,7 @@
 .dt-canvas-zoom {
   position: absolute;
   top: 10px;
-  right: 10px;
+  inset-inline-end: 10px;
   display: flex;
   gap: 4px;
   align-items: center;
@@ -346,7 +346,7 @@
 .dt-canvas-legend {
   position: absolute;
   bottom: 8px;
-  left: 10px;
+  inset-inline-start: 10px;
   display: flex;
   gap: 10px;
   font-size: 10px;
@@ -357,7 +357,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  margin-right: 4px;
+  margin-inline-end: 4px;
   vertical-align: middle;
 }
 .dt-dot.observed { background: var(--border-strong); }
@@ -415,7 +415,7 @@
   border: none;
   padding: 2px 4px;
   cursor: pointer;
-  text-align: left;
+  text-align: start;
 }
 .dt-tl-row:hover {
   background: var(--elevate-hi);
@@ -430,7 +430,7 @@
   font-size: 10px;
   font-family: var(--mono);
   color: var(--text-dim);
-  text-align: right;
+  text-align: end;
   flex-shrink: 0;
 }
 .dt-tl-track {
@@ -456,7 +456,7 @@
   font-family: var(--mono);
   color: var(--text-dim);
   min-width: 52px;
-  text-align: right;
+  text-align: end;
 }
 .dt-tl-empty,
 .dt-ev-empty {
@@ -494,7 +494,7 @@
   border-radius: 6px;
   font-size: 11px;
   cursor: pointer;
-  text-align: left;
+  text-align: start;
 }
 .dt-ev-row:hover {
   background: var(--bg-panel-2);
@@ -504,10 +504,10 @@
   background: rgba(65, 166, 242, 0.08);
 }
 .dt-ev-row.terminal {
-  border-left: 3px solid var(--violet);
+  border-inline-start: 3px solid var(--violet);
 }
 .dt-ev-row.unmapped {
-  border-left: 3px solid var(--amber);
+  border-inline-start: 3px solid var(--amber);
 }
 .dt-ev-time {
   font-family: var(--mono);
@@ -516,7 +516,7 @@
 .dt-ev-seq {
   font-family: var(--mono);
   color: var(--text-faint);
-  text-align: right;
+  text-align: end;
 }
 .dt-ev-stage {
   font-family: var(--mono);
@@ -551,7 +551,7 @@
 .dt-ev-ms {
   font-family: var(--mono);
   color: var(--text-faint);
-  text-align: right;
+  text-align: end;
 }
 
 /* --------------------------------------------------- decisions */
@@ -596,13 +596,13 @@
   border-radius: 6px;
   font-size: 11px;
   cursor: pointer;
-  text-align: left;
+  text-align: start;
 }
 .dt-d-row:hover { background: var(--bg-panel-2); }
 .dt-d-row.selected { border-color: var(--accent); }
-.dt-d-row.error { border-left: 3px solid var(--red); }
-.dt-d-row.pass { border-left: 3px solid var(--green); }
-.dt-d-row.reject { border-left: 3px solid var(--amber); }
+.dt-d-row.error { border-inline-start: 3px solid var(--red); }
+.dt-d-row.pass { border-inline-start: 3px solid var(--green); }
+.dt-d-row.reject { border-inline-start: 3px solid var(--amber); }
 .dt-d-time { font-family: var(--mono); color: var(--text-faint); }
 .dt-d-status { font-family: var(--mono); font-weight: 700; }
 .dt-d-status.error { color: var(--red); }
@@ -646,7 +646,7 @@
 .dt-src-badge.replay { color: var(--violet); border-color: var(--violet); }
 .dt-src-badge.historical { color: var(--accent); border-color: var(--accent); }
 .dt-insp-close {
-  margin-left: auto;
+  margin-inline-start: auto;
   background: none;
   border: none;
   color: var(--text-faint);
@@ -734,7 +734,7 @@
 }
 .dt-why-list {
   margin: 6px 0 0;
-  padding-left: 18px;
+  padding-inline-start: 18px;
   font-size: 11px;
   color: var(--text-dim);
 }
@@ -748,7 +748,7 @@
 .dt-stage-meta { font-size: 11px; color: var(--text-dim); }
 .dt-stage-list {
   margin: 6px 0 0;
-  padding-left: 16px;
+  padding-inline-start: 16px;
   font-size: 10px;
   font-family: var(--mono);
   color: var(--text-faint);
@@ -862,7 +862,7 @@
   font-family: var(--mono);
 }
 .dt-footer-note {
-  margin-left: auto;
+  margin-inline-start: auto;
   font-family: var(--sans);
   color: var(--text-faint);
 }

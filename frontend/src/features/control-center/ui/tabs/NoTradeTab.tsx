@@ -13,11 +13,13 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, EmptyState, Panel, Skeleton } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import { DistBars } from "../../../research/ui/lane5Kit";
 import { arr, str } from "../../model";
 import { controlCenterQueries } from "../../useCases";
 
 export function NoTradeTab({ hours }: { hours: number | undefined }) {
+  const t = useI18n((s) => s.t);
   const noTradeQ = useQuery({
     queryKey: ["control-center", "no-trade", hours],
     queryFn: ({ signal }) => controlCenterQueries.noTrade(hours, 8, signal),
@@ -50,28 +52,28 @@ export function NoTradeTab({ hours }: { hours: number | undefined }) {
   );
 
   return (
-    <Panel title="NO_TRADE forensics" tight>
+    <Panel title={t("control-center.panel.no_trade", "NO_TRADE forensics")} tight>
       {noTradeQ.isPending ? (
         <Skeleton count={4} />
       ) : noTradeQ.isError ? (
-        <EmptyState message="no-trade endpoint failed" />
+        <EmptyState message={t("control-center.err.no_trade", "no-trade endpoint failed")} />
       ) : (
         <div className="grid cols-2">
           <div>
-            <div className="section-title">blocking gates</div>
+            <div className="section-title">{t("control-center.section.blocking_gates", "blocking gates")}</div>
             <DistBars rows={gateRows} tone="var(--red)" />
             <div className="section-title" style={{ marginTop: 8 }}>
-              regimes
-            </div>
+                          {t("control-center.section.regimes", "regimes")}
+                        </div>
             <DistBars rows={regimeRows} />
           </div>
           <div>
-            <div className="section-title">hourly trend</div>
+            <div className="section-title">{t("control-center.section.hourly_trend", "hourly trend")}</div>
             <DistBars rows={trendRows} tone="var(--violet)" />
             <div className="section-title" style={{ marginTop: 8 }}>
-              recent examples
-            </div>
-            <DataTable headers={[{ label: "at" }, { label: "reason" }, { label: "gate" }]}>
+                          {t("control-center.section.recent_examples", "recent examples")}
+                        </div>
+            <DataTable headers={[{ label: t("control-center.th.at", "at") }, { label: t("control-center.th.reason", "reason") }, { label: t("control-center.th.gate", "gate") }]}>
               {recentRows.map((r, i) => (
                 <tr key={r.key ?? i}>
                   <td className="tiny">{r.at}</td>
@@ -81,7 +83,7 @@ export function NoTradeTab({ hours }: { hours: number | undefined }) {
               ))}
             </DataTable>
             <div className="tiny faint" style={{ marginTop: 4 }}>
-              model direction unresolved: {String(noTradeQ.data?.model_direction_unresolved ?? "—")}
+              {t("control-center.nt.unresolved", "model direction unresolved: {n}", { n: String(noTradeQ.data?.model_direction_unresolved ?? "—") })}
             </div>
           </div>
         </div>

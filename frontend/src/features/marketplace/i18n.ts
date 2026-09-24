@@ -190,4 +190,7 @@ export const MESSAGES: FeatureMessages = {
   "marketplace.detail.sec_enablement": { fa: "فعال‌سازی", de: "Aktivierung", es: "habilitación", ar: "التفعيل" },
   "marketplace.detail.sec_recent_scores": { fa: "امتیازهای اخیر", de: "letzte Scores", es: "puntuaciones recientes", ar: "أحدث الدرجات" },
   "marketplace.detail.sec_recent_repairs": { fa: "ترمیم‌های اخیر", de: "letzte Reparaturen", es: "reparaciones recientes", ar: "أحدث الإصلاحات" },
+  "marketplace.drawer.close": { fa: "بستن", de: "Schließen", es: "Cerrar", ar: "إغلاق" },
+  "marketplace.seeds.view_aria": { fa: "نمای بذرها", de: "Samen-Ansicht", es: "vista de semillas", ar: "عرض البذور" },
+  "marketplace.seeds.clear_title": { fa: "پاک کردن فیلتر خانواده/چرخه حیات/جستجو", de: "Familien-/Lebenszyklus-/Suchfilter löschen", es: "borrar filtros de familia/ciclo de vida/búsqueda", ar: "مسح مرشّحات العائلة/دورة الحياة/البحث" },
 };

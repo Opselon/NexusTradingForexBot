@@ -20,6 +20,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import { ConfirmModal, DataTable, EmptyState, MetricCard, Panel, Segmented, SeverityBadge, Skeleton, StatusBadge } from "@/components/primitives";
@@ -48,6 +49,7 @@ const INCIDENT_ENDPOINTS = [
 
 export default function IncidentsPage(props: ShellPageProps) {
   void props;
+  const t = useI18n((s) => s.t);
   const [tab, setTab] = useState<Tab>("list");
   const [severity, setSeverity] = useState("");
   const [status, setStatus] = useState("");
@@ -126,21 +128,21 @@ export default function IncidentsPage(props: ShellPageProps) {
           <div className="inc-kicker">
             <span className="inc-kicker-bar" aria-hidden="true" />
             <span className="inc-kicker-dot" aria-hidden="true" />
-            SAFETY &amp; GOVERNANCE · FORENSICS
+            {t("incidents.page.kicker", "SAFETY & GOVERNANCE · FORENSICS")}
           </div>
           <h1 className="inc-title">
             <span className="inc-title-mark" aria-hidden="true">
               ⚠
             </span>
-            <span className="word">Incidents</span>
+            <span className="word">{t("nav.feature.incidents", "Incidents")}</span>
           </h1>
           <p className="inc-desc">
-            Forensic incident console (legacy tab-incidents): read-only records, health aggregates, bounded
-            search, one-click trace, value lineage and read-only probes — plus one confirm-guarded forensic
-            audit. Every figure below comes from the diagnostics envelope; missing state stays explicit,
-            never fabricated.
+            {t(
+              "incidents.page.desc",
+              "Forensic incident console (legacy tab-incidents): read-only records, health aggregates, bounded search, one-click trace, value lineage and read-only probes — plus one confirm-guarded forensic audit. Every figure below comes from the diagnostics envelope; missing state stays explicit, never fabricated.",
+            )}
           </p>
-          <div className="inc-endpoints" aria-label="endpoints served by this console">
+          <div className="inc-endpoints" aria-label={t("incidents.hero.ep_a11y", "endpoints served by this console")}>
             {INCIDENT_ENDPOINTS.map((ep) => (
               <span className="inc-ep" key={ep}>
                 {ep}
@@ -149,15 +151,15 @@ export default function IncidentsPage(props: ShellPageProps) {
           </div>
         </div>
         <div className="inc-hero-side">
-          <div className="inc-prov" role="group" aria-label="incident store provenance">
+          <div className="inc-prov" role="group" aria-label={t("incidents.hero.prov_a11y", "incident store provenance")}>
             <div className="inc-prov-cell">
-              <span className="inc-prov-k">total / open</span>
+              <span className="inc-prov-k">{t("incidents.metric.total_open", "total / open")}</span>
               <span className={`inc-prov-v ${counts ? "" : "dim"}`}>
                 {String(counts?.total ?? "—")} / {String(counts?.open ?? "—")}
               </span>
             </div>
             <div className="inc-prov-cell">
-              <span className="inc-prov-k">crit / high</span>
+              <span className="inc-prov-k">{t("incidents.prov.crit_high", "crit / high")}</span>
               <span
                 className={`inc-prov-v ${num(counts?.critical) ? "neg" : num(counts?.high) ? "warn" : "dim"}`}
               >
@@ -165,20 +167,20 @@ export default function IncidentsPage(props: ShellPageProps) {
               </span>
             </div>
             <div className="inc-prov-cell">
-              <span className="inc-prov-k">worker</span>
+              <span className="inc-prov-k">{t("incidents.prov.worker", "worker")}</span>
               <span className="inc-prov-v">
                 <StatusBadge status={workerStatus} />
               </span>
             </div>
             <div className="inc-prov-cell">
-              <span className="inc-prov-k">recurring</span>
+              <span className="inc-prov-k">{t("incidents.prov.recurring", "recurring")}</span>
               <span className={`inc-prov-v ${recurringCount ? "warn" : "dim"}`}>{String(recurringCount)}</span>
             </div>
           </div>
           <span className="inc-prov-fresh">
             <FreshnessCaption
               timestamp={null}
-              source="diagnostics incident store"
+              source={t("incidents.page.source", "diagnostics incident store")}
               isFetching={listQ.isFetching}
               error={listQ.isError}
             />
@@ -188,44 +190,60 @@ export default function IncidentsPage(props: ShellPageProps) {
 
       <div className="inc-sec">
         <div className="inc-sec-label">
-          Store health
+          {t("incidents.section.store_health", "Store health")}
           <span className="inc-sec-rule" aria-hidden="true" />
-          <span className="inc-sec-hint">counts + worker display state + recurring fingerprints</span>
+          <span className="inc-sec-hint">{t("incidents.section.store_health_hint", "counts + worker display state + recurring fingerprints")}</span>
         </div>
         <div className="inc-stats">
-          <MetricCard label="total / open" value={`${String(counts?.total ?? "—")} / ${String(counts?.open ?? "—")}`} tone="dim" sub="store.count() backend aggregate" />
-          <MetricCard label="critical / high" value={`${String(counts?.critical ?? 0)} / ${String(counts?.high ?? 0)}`} tone={num(counts?.critical) ? "neg" : "dim"} />
           <MetricCard
-            label="incident worker"
-            value={<StatusBadge status={workerStatus} />}
-            sub={str(worker.last_error) ?? "state decided by backend"}
+            label={t("incidents.metric.total_open", "total / open")}
+            value={`${String(counts?.total ?? "—")} / ${String(counts?.open ?? "—")}`}
+            tone="dim"
+            sub={t("incidents.metric.total_open_sub", "store.count() backend aggregate")}
           />
-          <MetricCard label="recurring fingerprints" value={String(recurringCount)} tone="dim" sub="same failure seen repeatedly" />
+          <MetricCard
+            label={t("incidents.metric.critical_high", "critical / high")}
+            value={`${String(counts?.critical ?? 0)} / ${String(counts?.high ?? 0)}`}
+            tone={num(counts?.critical) ? "neg" : "dim"}
+          />
+          <MetricCard
+            label={t("incidents.metric.worker", "incident worker")}
+            value={<StatusBadge status={workerStatus} />}
+            sub={str(worker.last_error) ?? t("incidents.metric.worker_sub", "state decided by backend")}
+          />
+          <MetricCard
+            label={t("incidents.metric.recurring", "recurring fingerprints")}
+            value={String(recurringCount)}
+            tone="dim"
+            sub={t("incidents.metric.recurring_sub", "same failure seen repeatedly")}
+          />
         </div>
       </div>
 
       <Panel
-        title="Reconcile (forensic audit)"
+        title={t("incidents.panel.reconcile", "Reconcile (forensic audit)")}
         right={
           <button className="btn small danger" disabled={cmd.state.running} onClick={() => setConfirmReconcile(true)}>
-            run forensic audit
+            {t("incidents.reconcile.btn", "run forensic audit")}
           </button>
         }
         tight
       >
         <div className="small muted">
-          Re-runs every forensic probe (accounting, timebase, outcome, learning, split-fill) against the CURRENT database and reconciles incident
-          impact/evidence in place — read-only regarding trading state, never creates duplicates.
+          {t(
+            "incidents.reconcile.note",
+            "Re-runs every forensic probe (accounting, timebase, outcome, learning, split-fill) against the CURRENT database and reconciles incident impact/evidence in place — read-only regarding trading state, never creates duplicates.",
+          )}
         </div>
         <CommandResultLine state={cmd.state} />
       </Panel>
 
       <Segmented
         options={[
-          { id: "list" as const, label: `Incidents (${incidents.length})` },
-          { id: "search" as const, label: "Search / Trace" },
-          { id: "lineage" as const, label: "Value lineage" },
-          { id: "forensics" as const, label: "Forensics" },
+          { id: "list" as const, label: t("incidents.tab.list", "Incidents ({n})", { n: incidents.length }) },
+          { id: "search" as const, label: t("incidents.tab.search", "Search / Trace") },
+          { id: "lineage" as const, label: t("incidents.tab.lineage", "Value lineage") },
+          { id: "forensics" as const, label: t("incidents.tab.forensics", "Forensics") },
         ]}
         value={tab}
         onChange={setTab}
@@ -248,17 +266,36 @@ export default function IncidentsPage(props: ShellPageProps) {
 
         {tab === "search" && (
           <div className="grid cols-2">
-            <Panel title="Search incidents (bounded, deterministic)" tight>
-              <input className="input" style={{ width: "100%" }} aria-label="Search incidents" placeholder="query text (id / root cause / tag)" value={q} onChange={(e) => setQ(e.target.value)} />
+            <Panel title={t("incidents.panel.search", "Search incidents (bounded, deterministic)")} tight>
+              <input
+                className="input"
+                style={{ width: "100%" }}
+                aria-label={t("incidents.search.a11y", "Search incidents")}
+                placeholder={t("incidents.search.ph", "query text (id / root cause / tag)")}
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
               <div style={{ marginTop: 8 }}>
                 {q.trim() === "" ? (
-                  <EmptyState message="Type a query — the backend answers {available:true, incidents:[]} for empty queries." />
+                  <EmptyState
+                    message={t(
+                      "incidents.empty.type_query",
+                      "Type a query — the backend answers {available:true, incidents:[]} for empty queries.",
+                    )}
+                  />
                 ) : searchQ.isFetching ? (
                   <Skeleton count={2} />
                 ) : searchIncidents.length === 0 ? (
-                  <EmptyState message="No incidents matched." />
+                  <EmptyState message={t("incidents.empty.search_none", "No incidents matched.")} />
                 ) : (
-                  <DataTable headers={[{ label: "incident" }, { label: "sev" }, { label: "status" }, { label: "" }]}>
+                  <DataTable
+                    headers={[
+                      { label: t("incidents.th.incident", "incident") },
+                      { label: t("incidents.th.sev", "sev") },
+                      { label: t("incidents.th.status", "status") },
+                      { label: "" },
+                    ]}
+                  >
                     {searchIncidents.map((i) => (
                       <tr key={i.id}>
                         <td className="inline-mono tiny">{i.id.slice(0, 14)}</td>
@@ -270,7 +307,7 @@ export default function IncidentsPage(props: ShellPageProps) {
                         </td>
                         <td>
                           <button className="btn small ghost" onClick={() => setOpen(i.id)}>
-                            open
+                            {t("incidents.action.open", "open")}
                           </button>
                         </td>
                       </tr>
@@ -279,18 +316,26 @@ export default function IncidentsPage(props: ShellPageProps) {
                 )}
               </div>
             </Panel>
-            <Panel title="One-click trace (incident / ticket / run / model)" tight>
+            <Panel title={t("incidents.panel.trace", "One-click trace (incident / ticket / run / model)")} tight>
               <input
                 className="input"
                 style={{ width: "100%" }}
-                aria-label="Related id filter"
-                placeholder="incident_id | ticket | execution_id | order_id | model_id | research_run_id"
+                aria-label={t("incidents.trace.a11y", "Related id filter")}
+                placeholder={t(
+                  "incidents.trace.ph",
+                  "incident_id | ticket | execution_id | order_id | model_id | research_run_id",
+                )}
                 value={traceQ}
                 onChange={(e) => setTraceQ(e.target.value)}
               />
               <div style={{ marginTop: 8 }}>
                 {traceQ.trim() === "" ? (
-                  <EmptyState message="Missing hops are reported as missing_link + reason — never fabricated." />
+                  <EmptyState
+                    message={t(
+                      "incidents.empty.trace_hint",
+                      "Missing hops are reported as missing_link + reason — never fabricated.",
+                    )}
+                  />
                 ) : traceQuery.isFetching ? (
                   <Skeleton count={2} />
                 ) : (
@@ -303,17 +348,24 @@ export default function IncidentsPage(props: ShellPageProps) {
 
         {tab === "lineage" && (
           <Panel
-            title="Value lineage (how a number is derived)"
+            title={t("incidents.panel.lineage", "Value lineage (how a number is derived)")}
             right={
               <div style={{ display: "flex", gap: 6 }}>
-                <select aria-label="Lineage field" className="select" style={{ width: 150 }} value={lineageField} onChange={(e) => setLineageField(e.target.value)}>
+                <select aria-label={t("incidents.lineage.field_a11y", "Lineage field")} className="select" style={{ width: 150 }} value={lineageField} onChange={(e) => setLineageField(e.target.value)}>
                   {["pnl", "realized_r", "open_positions", "model_output"].map((f) => (
                     <option key={f} value={f}>
                       {f}
                     </option>
                   ))}
                 </select>
-                <input className="input" style={{ width: 110 }} aria-label="Ticket for lineage" placeholder="ticket (why)" value={lineageTicket} onChange={(e) => setLineageTicket(e.target.value)} />
+                <input
+                  className="input"
+                  style={{ width: 110 }}
+                  aria-label={t("incidents.lineage.ticket_a11y", "Ticket for lineage")}
+                  placeholder={t("incidents.lineage.ph_ticket", "ticket (why)")}
+                  value={lineageTicket}
+                  onChange={(e) => setLineageTicket(e.target.value)}
+                />
               </div>
             }
             tight
@@ -321,15 +373,22 @@ export default function IncidentsPage(props: ShellPageProps) {
             {lineageQ.isPending ? (
               <Skeleton count={3} />
             ) : lineageQ.isError ? (
-              <EmptyState message={lineageQ.error instanceof Error ? lineageQ.error.message : "lineage failed"} />
+              <EmptyState message={lineageQ.error instanceof Error ? lineageQ.error.message : t("incidents.empty.lineage_failed", "lineage failed")} />
             ) : (
               <>
                 <dl className="kv" style={{ marginBottom: 8 }}>
-                  <InfoRow label="field" value={lineageQ.data?.field ?? "—"} />
-                  <InfoRow label="source" value={lineageQ.data?.source ?? "—"} />
-                  <InfoRow label="hops" value={formatNumber(arr(lineageQ.data?.hops).length, 0)} />
+                  <InfoRow label={t("incidents.lineage.field", "field")} value={lineageQ.data?.field ?? "—"} />
+                  <InfoRow label={t("incidents.lineage.source", "source")} value={lineageQ.data?.source ?? "—"} />
+                  <InfoRow label={t("incidents.lineage.hops", "hops")} value={formatNumber(arr(lineageQ.data?.hops).length, 0)} />
                 </dl>
-                <DataTable headers={[{ label: "#" }, { label: "hop" }, { label: "table / fn" }, { label: "note" }]}>
+                <DataTable
+                  headers={[
+                    { label: "#" },
+                    { label: t("incidents.th.hop", "hop") },
+                    { label: t("incidents.th.table_fn", "table / fn") },
+                    { label: t("incidents.th.note", "note") },
+                  ]}
+                >
                   {arr(lineageQ.data?.hops).map((h: Row, i: number) => (
                     <tr key={i}>
                       <td className="num tiny">{i + 1}</td>
@@ -342,7 +401,11 @@ export default function IncidentsPage(props: ShellPageProps) {
                 {lineageTicket && (
                   <>
                     <div className="section-title" style={{ marginTop: 10 }}>
-                      why closed / why no learning (ticket {lineageTicket})
+                      {t(
+                        "incidents.section.why",
+                        "why closed / why no learning (ticket {ticket})",
+                        { ticket: lineageTicket },
+                      )}
                     </div>
                     <JsonBlock value={{ why_closed: lineageQ.data?.why_closed, why_no_learning: lineageQ.data?.why_no_learning }} maxChars={2500} />
                   </>
@@ -354,11 +417,11 @@ export default function IncidentsPage(props: ShellPageProps) {
 
         {tab === "forensics" && (
           <Panel
-            title="Read-only forensic probes"
+            title={t("incidents.panel.probes", "Read-only forensic probes")}
             right={
-              <select aria-label="Forensic probe" className="select" style={{ width: 150 }} value={forensicKind} onChange={(e) => setForensicKind(e.target.value)}>
-                <option value="accounting">accounting</option>
-                <option value="timebase">timebase</option>
+              <select aria-label={t("incidents.probe.a11y", "Forensic probe")} className="select" style={{ width: 150 }} value={forensicKind} onChange={(e) => setForensicKind(e.target.value)}>
+                <option value="accounting">{t("incidents.probe.accounting", "accounting")}</option>
+                <option value="timebase">{t("incidents.probe.timebase", "timebase")}</option>
               </select>
             }
             tight
@@ -366,12 +429,15 @@ export default function IncidentsPage(props: ShellPageProps) {
             {forensicsQ.isPending ? (
               <Skeleton count={3} />
             ) : forensicsQ.isError ? (
-              <EmptyState message={forensicsQ.error instanceof Error ? forensicsQ.error.message : "probe failed"} />
+              <EmptyState message={forensicsQ.error instanceof Error ? forensicsQ.error.message : t("incidents.empty.probe_failed", "probe failed")} />
             ) : (
               <JsonBlock value={forensicsQ.data} maxChars={5000} />
             )}
             <div className="tiny faint" style={{ marginTop: 6 }}>
-              probes never write; classification counts come straight from the backend engine.
+              {t(
+                "incidents.note.probes",
+                "probes never write; classification counts come straight from the backend engine.",
+              )}
             </div>
           </Panel>
         )}
@@ -381,9 +447,9 @@ export default function IncidentsPage(props: ShellPageProps) {
 
       {confirmReconcile && (
         <ConfirmModal
-          title="Run forensic audit (reconcile)"
+          title={t("incidents.confirm.title", "Run forensic audit (reconcile)")}
           danger
-          confirmLabel="Run audit"
+          confirmLabel={t("incidents.confirm.run", "Run audit")}
           busy={cmd.state.running}
           onCancel={() => setConfirmReconcile(false)}
           onConfirm={async () => {
@@ -397,8 +463,10 @@ export default function IncidentsPage(props: ShellPageProps) {
           }}
         >
           <div className="small">
-            Runs 5 forensic probe families over the current audit DB and updates stored incident records (impact/evidence). It does not touch
-            orders, positions, or the engine.
+            {t(
+              "incidents.confirm.body",
+              "Runs 5 forensic probe families over the current audit DB and updates stored incident records (impact/evidence). It does not touch orders, positions, or the engine.",
+            )}
           </div>
         </ConfirmModal>
       )}

@@ -14,6 +14,7 @@
  */
 import { create } from "zustand";
 import { detectLang, isRtl, persistLang, translate, type Lang } from "@/lib/i18n";
+import { setFormatLocale } from "@/lib/format";
 
 interface I18nState {
   lang: Lang;
@@ -36,11 +37,13 @@ function makeT(lang: Lang): I18nState["t"] {
 export const useI18n = create<I18nState>((set) => {
   const initial = detectLang();
   applyDirection(initial);
+  setFormatLocale(initial); // locale-aware dates/numbers follow the language
   return {
     lang: initial,
     setLang: (lang: Lang) => {
       persistLang(lang);
       applyDirection(lang);
+      setFormatLocale(lang);
       set({ lang, t: makeT(lang) });
       document.dispatchEvent(new CustomEvent("nexus:lang-changed", { detail: { lang } }));
     },

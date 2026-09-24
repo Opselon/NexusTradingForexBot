@@ -36,7 +36,7 @@ export default function NewsPage() {
           {t("news.page.desc", "isolated news subsystem · bounded gate — news informs, never forces a trade")}
         </span>
         <span style={{ marginInlineStart: "auto" }}>
-          <FreshnessNote updatedAtMs={aiStatus.dataUpdatedAt ?? null} label="ai-status" />
+          <FreshnessNote updatedAtMs={aiStatus.dataUpdatedAt ?? null} label={t("news.fresh.ai_status", "ai-status")} />
         </span>
       </div>
 

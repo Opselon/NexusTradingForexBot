@@ -75,4 +75,9 @@ export const MESSAGES: FeatureMessages = {
   "audit.integrity.error": { fa: "endpoint یکپارچگی در دسترس نیست.", de: "Integritäts-Endpunkt nicht verfügbar.", es: "El endpoint de integridad no está disponible.", ar: "نقطة نهاية السلامة غير متاحة." },
   "audit.chip.tables_counted": { fa: "جدول شمارش‌شده", de: "gezählte Tabellen", es: "tablas contadas", ar: "الجداول المعدودة" },
   "audit.drawer.payload_label": { fa: "payload بک‌اند (بدون تغییر)", de: "Backend-Payload (wörtlich)", es: "payload del backend (verbatim)", ar: "حمولة الخادم (حرفية)" },
+  "audit.csv.label": { fa: "⇩ خروجی CSV", de: "⇩ CSV exportieren", es: "⇩ Exportar CSV", ar: "⇩ تصدير CSV" },
+  "audit.severity.critical": { fa: "بحرانی", de: "Kritisch", es: "Crítica", ar: "حرجة" },
+  "audit.severity.high": { fa: "شدید", de: "Hoch", es: "Alta", ar: "عالية" },
+  "audit.severity.medium": { fa: "متوسط", de: "Mittel", es: "Media", ar: "متوسطة" },
+  "audit.severity.low": { fa: "پایین", de: "Niedrig", es: "Baja", ar: "منخفضة" },
 };

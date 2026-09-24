@@ -8,6 +8,7 @@
  * dictionary is registered before any component calls t().
  */
 import { registerMessages } from "@/lib/i18n";
+import { MESSAGES as errorScope } from "@/lib/errors/i18n";
 import { MESSAGES as app } from "@/app/i18n";
 import { MESSAGES as components } from "@/components/i18n";
 import { MESSAGES as sharedWidgets } from "@/pages/_shared/i18n";
@@ -25,6 +26,7 @@ import { MESSAGES as commandCenter } from "@/features/command-center/i18n";
 import { MESSAGES as config } from "@/features/config/i18n";
 import { MESSAGES as controlCenter } from "@/features/control-center/i18n";
 import { MESSAGES as database } from "@/features/database/i18n";
+import { MESSAGES as decisionTrace } from "@/features/decision-trace/i18n";
 import { MESSAGES as debug } from "@/features/debug/i18n";
 import { MESSAGES as dependency } from "@/features/dependency/i18n";
 import { MESSAGES as factory } from "@/features/factory/i18n";
@@ -43,6 +45,7 @@ import { MESSAGES as rules } from "@/features/rules/i18n";
 /** Every scope, registered sequentially so duplicate keys can be reported
  *  per scope by registerMessages (first registration wins). */
 for (const scope of [
+  errorScope,
   app,
   components,
   sharedWidgets,
@@ -60,6 +63,7 @@ for (const scope of [
   config,
   controlCenter,
   database,
+  decisionTrace,
   debug,
   dependency,
   factory,

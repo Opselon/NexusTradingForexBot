@@ -86,7 +86,7 @@ export default function LedgerPanel({ openPositions, density }: { openPositions:
         </div>
       ) : historyQuery.isError ? (
         <ErrorState
-          message={historyQuery.error instanceof ApiError ? historyQuery.error.message : t("positions.error.ledger", "Ledger unavailable")}
+          message={historyQuery.error instanceof ApiError ? historyQuery.error.localized(t) : t("positions.error.ledger", "Ledger unavailable")}
           requestId={historyQuery.error instanceof ApiError ? historyQuery.error.requestId : null}
           onRetry={() => void historyQuery.refetch()}
         />

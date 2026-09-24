@@ -9,6 +9,7 @@
 
 import { useMemo } from "react";
 import { fmtCompact, scaleLinear } from "./geometry";
+import { useI18n } from "@/stores/i18nStore";
 import "./viz.css";
 
 export interface WaterfallStep {
@@ -49,7 +50,17 @@ export function buildTradeWaterfall(outcome: {
   return steps;
 }
 
-export function PnlWaterfall({ steps, height = 170, formatValue, emptyHint = "no PnL decomposition reported" }: PnlWaterfallProps) {
+export function PnlWaterfall({ steps, height = 170, formatValue, emptyHint }: PnlWaterfallProps) {
+  const t = useI18n((s) => s.t);
+  const stepLabel = (raw: string): string =>
+    raw === "gross" ? t("ui.viz.step_gross", "gross")
+      : raw === "commission" ? t("ui.viz.step_commission", "commission")
+        : raw === "commission?" ? t("ui.viz.step_commission_unknown", "commission?")
+          : raw === "swap" ? t("ui.viz.step_swap", "swap")
+            : raw === "swap?" ? t("ui.viz.step_swap_unknown", "swap?")
+              : raw === "net" ? t("ui.viz.step_net", "net")
+                : raw;
+  const emptyHintText = emptyHint ?? t("ui.viz.pnl_empty", "no PnL decomposition reported");
   // Running levels + scale are a pure function of `steps` (memoized so an
   // unchanged trade never re-derives them); the emitted SVG is byte-identical.
   const geo = useMemo(() => {
@@ -83,13 +94,13 @@ export function PnlWaterfall({ steps, height = 170, formatValue, emptyHint = "no
     return { bars, toY, zeroY, step, barW };
   }, [steps, height]);
 
-  if (geo === null) return <div className="viz-empty">{emptyHint}</div>;
+  if (geo === null) return <div className="viz-empty">{emptyHintText}</div>;
   const { bars, toY, zeroY, step, barW } = geo;
   const fmt = formatValue ?? ((v: number) => fmtCompact(v, 2));
 
   return (
     <div className="viz-frame">
-      <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label="PnL waterfall from backend-reported components">
+      <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={t("ui.viz.pnl_aria", "PnL waterfall from backend-reported components")}>
         <line className="viz-zero" x1={0} x2={W} y1={zeroY} y2={zeroY} />
         {bars.map((b, i) => {
           const x = i * step + (step - barW) / 2;
@@ -98,10 +109,10 @@ export function PnlWaterfall({ steps, height = 170, formatValue, emptyHint = "no
               <g key={i}>
                 <rect x={x} y={zeroY - 3} width={barW} height={6} rx={2} fill="var(--bg-panel-2)" stroke="var(--border-strong)" />
                 <text className="viz-step-label" x={x + barW / 2} y={height - 16} textAnchor="middle">
-                  {b.s.label}
+                  {stepLabel(b.s.label)}
                 </text>
                 <text className="viz-step-value neu" x={x + barW / 2} y={height - 5} textAnchor="middle">
-                  UNKNOWN
+                  {t("ui.word.unknown", "UNKNOWN")}
                 </text>
               </g>
             );
@@ -123,7 +134,7 @@ export function PnlWaterfall({ steps, height = 170, formatValue, emptyHint = "no
                 opacity={b.s.total ? 1 : 0.85}
               />
               <text className="viz-step-label" x={x + barW / 2} y={height - 16} textAnchor="middle">
-                {b.s.label}
+                {stepLabel(b.s.label)}
               </text>
               <text className={`viz-step-value ${cls}`} x={x + barW / 2} y={y0 - 4} textAnchor="middle">
                 {fmt(b.s.value ?? 0)}

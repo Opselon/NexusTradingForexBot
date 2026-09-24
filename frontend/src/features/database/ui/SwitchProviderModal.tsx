@@ -17,6 +17,7 @@
  */
 import { useRef, useState, type JSX } from "react";
 import { useDialogA11y } from "@/components/useDialogA11y";
+import { useI18n } from "@/stores/i18nStore";
 import { TypedConfirmModal } from "@/features/config/ui/kit";
 import type { DbManageStatus, MigrationReport } from "../api";
 import { switchReadiness } from "../uiLogic";
@@ -42,6 +43,7 @@ export default SwitchProviderModal;
 
 function SwitchProviderDialog(props: Parameters<typeof SwitchProviderModal>[0]): JSX.Element {
   const { onClose, manage, report, testResult, targetProvider, onConfirm } = props;
+  const t = useI18n((s) => s.t);
   const readiness = switchReadiness(manage, report, testResult);
   const [stage, setStage] = useState<"plan" | "ack">("plan");
   const boxRef = useRef<HTMLDivElement | null>(null);
@@ -62,40 +64,40 @@ function SwitchProviderDialog(props: Parameters<typeof SwitchProviderModal>[0]):
           className="modal dbcsw-modal"
           role="dialog"
           aria-modal="true"
-          aria-label={`switch active provider to ${name}`}
+          aria-label={t("database.switch.aria", "switch active provider to {name}", { name })}
         >
-          <div className="modal-header">switch active provider → {name}</div>
+          <div className="modal-header">{t("database.switch.title", "switch active provider → {name}", { name })}</div>
           <div className="modal-body">
             <ProviderSwitchPlan readiness={readiness} manage={manage} targetProvider={targetProvider} />
 
             {!canProceed && (
               <p className="dbcsw-gate" data-tone="bad" role="note">
                 {dataReady
-                  ? `switch blocked — ${blocks.map((b) => b.label).join(" · ")}`
-                  : "switch blocked — /api/db/manage/status has not answered, readiness is UNAVAILABLE."}
+                  ? t("database.switch.blocked", "switch blocked — {blocks}", { blocks: blocks.map((b) => b.label).join(" · ") })
+                  : t("database.switch.blocked_unavailable", "switch blocked — /api/db/manage/status has not answered, readiness is UNAVAILABLE.")}
               </p>
             )}
             {canProceed && readiness.requiresAcknowledgement && (
               <p className="dbcsw-gate" data-tone="warn" role="note">
-                {`a WARN remains — you will be asked to type ${ackWord} to acknowledge switching without a validated migration.`}
+                {t("database.switch.warn_ack", "a WARN remains — you will be asked to type {word} to acknowledge switching without a validated migration.", { word: ackWord })}
               </p>
             )}
             {canProceed && !readiness.requiresAcknowledgement && (
               <p className="dbcsw-gate" data-tone="good" role="note">
-                {`all prerequisites reported by the backend are in place — confirm to switch to ${name}. the selection is persisted and applies on the next restart; no data is moved.`}
+                {t("database.switch.ok", "all prerequisites reported by the backend are in place — confirm to switch to {name}. the selection is persisted and applies on the next restart; no data is moved.", { name })}
               </p>
             )}
           </div>
           <div className="modal-actions">
             <button className="btn" disabled={stage === "ack"} onClick={onClose}>
-              Cancel <kbd>esc</kbd>
+              {t("common.close", "Cancel")} <kbd>esc</kbd>
             </button>
             <button
               className="btn primary"
               disabled={!canProceed}
               onClick={() => (readiness.requiresAcknowledgement ? setStage("ack") : onConfirm(false))}
             >
-              {`switch to ${name}`}
+              {t("database.switch.confirm", "switch to {name}", { name })}
             </button>
           </div>
         </div>
@@ -105,19 +107,15 @@ function SwitchProviderDialog(props: Parameters<typeof SwitchProviderModal>[0]):
           stays mounted so focus and the Esc trap return to it on cancel. */}
       {stage === "ack" && (
         <TypedConfirmModal
-          title={`Switch to ${name} without a validated migration`}
+          title={t("database.switch.ack_title", "Switch to {name} without a validated migration", { name })}
           word={ackWord}
-          confirmLabel={`switch to ${name}`}
+          confirmLabel={t("database.switch.confirm", "switch to {name}", { name })}
           onCancel={() => setStage("plan")}
           onConfirm={() => onConfirm(true)}
           body={
             <>
-              The backend sets <span className="inline-mono">provider_switch_ready</span> only when the last
-              migration finished <span className="inline-mono">COMPLETE</span> with validation{" "}
-              <span className="inline-mono">PASSED</span> (database/migrate_engine.py:354) — the report you have
-              does not say that. Switching only persists the provider selection: no row is moved, copied or
-              deleted, and it applies on the next restart. Type <span className="inline-mono">{ackWord}</span> to
-              confirm you accept switching with that migration unvalidated.
+              {t("database.switch.ack_body_pre", "The backend sets")} <span className="inline-mono">provider_switch_ready</span> {t("database.switch.ack_body_mid", "only when the last migration finished")} <span className="inline-mono">COMPLETE</span> {t("database.switch.ack_body_mid2", "with validation")}{" "}
+              <span className="inline-mono">PASSED</span> {t("database.switch.ack_body_post", "(database/migrate_engine.py:354) — the report you have does not say that. Switching only persists the provider selection: no row is moved, copied or deleted, and it applies on the next restart. Type {word} to confirm you accept switching with that migration unvalidated.", { word: ackWord })}
             </>
           }
         />

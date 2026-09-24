@@ -7,6 +7,7 @@
  */
 
 import { memo, useMemo } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import type { TraceEvent } from "../types";
 
 interface Props {
@@ -81,13 +82,14 @@ export const TraceEventRow = memo(function TraceEventRow({
   selected: boolean;
   onSelect: (id: string | null) => void;
 }) {
+  const t = useI18n((s) => s.t);
   const reason = pickReason(ev.detail);
   const symbol = typeof ev.detail?.symbol === "string" ? (ev.detail.symbol as string) : null;
   return (
     <button
       className={`dt-ev-row ${selected ? "selected" : ""} ${ev.terminal ? "terminal" : ""} ${ev.unmapped ? "unmapped" : ""}`}
       onClick={() => onSelect(selected ? null : ev.event_id)}
-      title={`${ev.stage} @ ${ev.timestamp} · seq ${ev.sequence}${ev.unmapped ? " · UNMAPPED" : ""}${ev.provenance_gap ? " · PROVENANCE GAP" : ""}`}
+      title={t("trace.events.row_title", "{stage} @ {ts} · seq {seq}{unmapped}{gap}", { stage: ev.stage, ts: ev.timestamp, seq: ev.sequence, unmapped: ev.unmapped ? t("trace.events.row_unmapped", " · UNMAPPED") : "", gap: ev.provenance_gap ? t("trace.events.row_gap", " · PROVENANCE GAP") : "" })}
     >
       <span className="dt-ev-time">{hmsec(ev.timestamp)}</span>
       <span className="dt-ev-seq">{ev.sequence}</span>
@@ -100,6 +102,7 @@ export const TraceEventRow = memo(function TraceEventRow({
 });
 
 export function TraceEventList({ events, selectedId, onSelect, limit = 140 }: Props) {
+  const t = useI18n((s) => s.t);
   const rows = useMemo(() => {
     const sorted = events.slice().sort((a, b) => b.sequence - a.sequence);
     return sorted.slice(0, limit);
@@ -108,16 +111,16 @@ export function TraceEventList({ events, selectedId, onSelect, limit = 140 }: Pr
   if (!rows.length) {
     return (
       <div className="dt-ev-empty">
-        <div className="dt-ev-empty-title">NO EVENTS OBSERVED</div>
+        <div className="dt-ev-empty-title">{t("trace.events.empty_title", "NO EVENTS OBSERVED")}</div>
         <div className="dt-ev-empty-sub">
-          The stream is connected but no decision event has been recorded yet.
+          {t("trace.events.empty_sub", "The stream is connected but no decision event has been recorded yet.")}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="dt-ev-list" role="list" aria-label="Live decision events">
+    <div className="dt-ev-list" role="list" aria-label={t("trace.events.aria", "Live decision events")}>
       {rows.map((ev) => (
         <TraceEventRow
           key={ev.event_id}

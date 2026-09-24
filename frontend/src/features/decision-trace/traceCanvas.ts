@@ -24,6 +24,31 @@
 import type { CanvasLayout, PositionedEdge, PositionedNode } from "./traceLayout";
 
 /* ---------- DOM-independent constants (exported for tests + CSS parity) --- */
+/**
+ * Translator seam: canvas-drawn markers are DISPLAY, so the caller (the
+ * React layer) passes `t` from useI18n. Optional keeps this file pure and
+ * unit-testable; without it markers render their English fallback.
+ */
+export type CanvasT = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
+export interface NodeVisual {
+  node: PositionedNode;
+  label: string;
+  sublabel: string;
+  tone: string;
+  pulse: boolean;
+  width: number;
+  height: number;
+  badge: string | null;
+}
+
+export interface EdgeVisual {
+  edge: PositionedEdge;
+  path: string;
+  tone: string;
+  dash: string;
+  width: number;
+}
 
 export const NODE_W = 116;
 export const NODE_H = 42;
@@ -257,21 +282,30 @@ export function edgeIsFailure(state: string | null | undefined): boolean {
 
 /* ---------- descriptors ---------------------------------------------------- */
 
+export function nodeTone(node: PositionedNode): string {
+  if (node.terminal) return "terminal";
+  if (node.unmapped) return "unmapped";
+  if (node.provenanceGap) return "gap";
+  return "stage";
+}
+
 export function describeNode(
   node: PositionedNode,
   opts: { collapsedCount?: number | null } = {},
+  t?: CanvasT,
 ): NodeVisual {
   const label = node.stage;
   const d = node.lastStatus;
+  const mark = (key: string, fb: string): string => (t ? t(key, fb) : fb);
   const bits: string[] = [];
   if (node.count > 1) bits.push(`${node.count}×`);
   if (d) bits.push(d);
-  if (node.unmapped) bits.push(UNMAPPED_WORD);
+  if (node.unmapped) bits.push(mark("trace.marker.unmapped", UNMAPPED_WORD));
   const gap = node.provenanceGap;
   return {
     node,
     label,
-    sublabel: bits.length ? bits.join(" · ") : NOT_OBSERVED_WORD,
+    sublabel: bits.length ? bits.join(" · ") : mark("trace.marker.not_observed", NOT_OBSERVED_WORD),
     cls: nodeCls(node),
     modeCls: modeCls(node.mode),
     extCls: node.externalKind ? EXTERNAL_CLS[node.externalKind] ?? null : null,
@@ -284,14 +318,6 @@ export function describeNode(
     collapsedCount: opts.collapsedCount ?? null,
   };
 }
-
-export function nodeTone(node: PositionedNode): string {
-  if (node.terminal) return "terminal";
-  if (node.unmapped) return "unmapped";
-  if (node.provenanceGap) return "gap";
-  return "stage";
-}
-
 export function describeEdge(edge: PositionedEdge): EdgeVisual {
   // Slight vertical curvature so parallel edges between the same two columns
   // don't collapse into one line (branch visibility, §69).
@@ -330,52 +356,13 @@ const PROVENANCE_GAP_WORD = "PROVENANCE GAP";
 
 /* The two above mirror the names exported from traceGraph.ts. They are
  * duplicated as local constants (not imported) to keep this file
- * runtime-import-free — see the OWNERSHIP note at the top. A compile-time
- * record pins them to the canonical constants so they can never drift. */
-
-import type { TraceMode, TraceState } from "./types";
-
-/**
- * Compile-time exhaustiveness pin (§4/§44). If lane D adds a frozen word to
- * TraceState/TraceMode this record stops type-checking until the visual
- * mapping covers it — the mapping can never silently drift from the
- * canonical vocabulary. Unused locally by design; the error is the feature.
- */
-const VOCAB_COVERAGE_PIN: {
-  states: Record<keyof typeof TraceState, string>;
-  modes: Record<keyof typeof TraceMode, string>;
-} = {
-  states: {
-    IDLE: "dt-st-idle",
-    RECEIVED: "dt-st-received",
-    PROCESSING: "dt-st-processing",
-    WAITING: "dt-st-waiting",
-    COMPLETED: "dt-st-completed",
-    PASSED: "dt-st-passed",
-    REJECTED: "dt-st-rejected",
-    FAILED: "dt-st-failed",
-    BLOCKED: "dt-st-blocked",
-    SKIPPED: "dt-st-skipped",
-    TIMEOUT: "dt-st-timeout",
-    STALE: "dt-st-stale",
-    CANCELLED: "dt-st-cancelled",
-    EXECUTING: "dt-st-executing",
-    CONFIRMED: "dt-st-confirmed",
-  },
-  modes: {
-    LIVE: "dt-mode-live",
-    PAPER: "dt-mode-paper",
-    SHADOW: "dt-mode-shadow",
-    REPLAY: "dt-mode-replay",
-    BACKTEST: "dt-mode-backtest",
-    TRAINING: "dt-mode-training",
-  },
-};
-void VOCAB_COVERAGE_PIN;
+ * runtime-import-free. A compile-time record pins them to the canonical
+ * constants so they can never drift. */
 
 export function describeCanvas(
   layout: CanvasLayout,
   opts: { collapsedCounts?: ReadonlyMap<string, number> } = {},
+  t?: CanvasT,
 ): { nodes: NodeVisual[]; edges: EdgeVisual[] } {
   const taken = new Set<string>();
   for (const e of layout.edges) {
@@ -384,7 +371,7 @@ export function describeCanvas(
   const cc = opts.collapsedCounts;
   return {
     nodes: layout.nodes.map((n) =>
-      describeNode(n, { collapsedCount: cc ? cc.get(n.id) ?? null : null }),
+      describeNode(n, { collapsedCount: cc ? cc.get(n.id) ?? null : null }, t),
     ),
     edges: layout.edges.map((e) => describeEdge(e)),
   };

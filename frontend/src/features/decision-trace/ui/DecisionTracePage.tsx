@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import type { ShellPageProps } from "@/app/featureModule";
 import { ReplayControls } from "./ReplayControls";
 import { TraceCompare } from "./TraceCompare";
@@ -43,7 +44,35 @@ import "../traceInspectors.css";
 
 type Panel = "canvas" | "events" | "decisions";
 
+type PageT = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
+/** Observer status token → display label (token stays raw in store/comparisons). */
+function observerLabel(t: PageT, status: string | null | undefined): string {
+  switch (status) {
+    case "off": return t("trace.observer.off", "OFF");
+    case "starting": return t("trace.observer.starting", "STARTING");
+    case "active": return t("trace.observer.active", "ACTIVE");
+    case "stopping": return t("trace.observer.stopping", "STOPPING");
+    case "error": return t("trace.observer.error", "ERROR");
+    case "unknown": return t("trace.status.unknown", "UNKNOWN");
+    default: return status ?? t("trace.status.unknown", "UNKNOWN");
+  }
+}
+
+/** TraceStreamStatus token → display label (token stays raw in logic). */
+function streamStatusLabel(t: PageT, status: string): string {
+  switch (status) {
+    case "connecting": return t("trace.stream.connecting", "CONNECTING");
+    case "connected": return t("trace.stream.connected", "CONNECTED");
+    case "reconnecting": return t("trace.stream.reconnecting", "RECONNECTING");
+    case "disconnected": return t("trace.stream.disconnected", "DISCONNECTED");
+    case "failed": return t("trace.stream.failed", "FAILED");
+    default: return status;
+  }
+}
+
 export default function DecisionTracePage({ snapshot }: ShellPageProps) {
+  const t = useI18n((s) => s.t);
   const [panel, setPanel] = useState<Panel>("canvas");
   const [inspectorCompact, setInspectorCompact] = useState(true);
   const [comparePair, setComparePair] = useState<
@@ -141,13 +170,13 @@ export default function DecisionTracePage({ snapshot }: ShellPageProps) {
   const integrityItems = useMemo(() => {
     if (!integrity || integrity.total === 0) return [];
     const items: string[] = [];
-    if (integrity.duplicateEvents) items.push(`duplicate event ids: ${integrity.duplicateEvents}`);
-    if (integrity.missingSequence) items.push(`sequence gaps: ${integrity.missingSequence}`);
-    if (integrity.missingParent) items.push(`missing parent refs: ${integrity.missingParent}`);
-    if (integrity.executionWithoutDecision) items.push(`execution without decision: ${integrity.executionWithoutDecision}`);
-    if (integrity.mt5WithoutOrder) items.push(`MT5 without order: ${integrity.mt5WithoutOrder}`);
+    if (integrity.duplicateEvents) items.push(t("trace.integrity.duplicate", "duplicate event ids: {n}", { n: integrity.duplicateEvents }));
+    if (integrity.missingSequence) items.push(t("trace.integrity.seq", "sequence gaps: {n}", { n: integrity.missingSequence }));
+    if (integrity.missingParent) items.push(t("trace.integrity.parent", "missing parent refs: {n}", { n: integrity.missingParent }));
+    if (integrity.executionWithoutDecision) items.push(t("trace.integrity.exec_no_dec", "execution without decision: {n}", { n: integrity.executionWithoutDecision }));
+    if (integrity.mt5WithoutOrder) items.push(t("trace.integrity.mt5_no_order", "MT5 without order: {n}", { n: integrity.mt5WithoutOrder }));
     return items;
-  }, [integrity]);
+  }, [integrity, t]);
 
   const toggleLive = useCallback(() => {
     const next = !useDecisionTraceStore.getState().live;
@@ -177,41 +206,43 @@ export default function DecisionTracePage({ snapshot }: ShellPageProps) {
           <span className="dt-banner-glyph">!</span>
           <span>
             {streamStatus === "failed"
-              ? "OBSERVABILITY OFFLINE — stream failed; polling continues."
-              : "Reconnecting to the observer stream..."}
-            {streamError ? ` (${streamError})` : ""}
+              ? t("trace.banner.offline", "OBSERVABILITY OFFLINE — stream failed; polling continues.")
+              : t("trace.banner.reconnecting", "Reconnecting to the observer stream…")}
+            {streamError ? t("trace.banner.cause", " ({cause})", { cause: streamError }) : ""}
           </span>
         </div>
       )}
       {gapMessage ? (
         <div className="dt-banner warn" role="alert">
           <span className="dt-banner-glyph">~</span>
-          <span>TRACE GAP — the observer ring evicted data older than the resume point; continuity is not asserted.</span>
+          <span>{t("trace.banner.gap", "TRACE GAP — the observer ring evicted data older than the resume point; continuity is not asserted.")}</span>
         </div>
       ) : null}
       {integrityItems.length ? (
         <div className="dt-banner warn" role="status">
           <span className="dt-banner-glyph">i</span>
           <span>
-            INTEGRITY ({integrityItems.length}): {integrityItems.slice(0, 4).join(" · ")}
-            {integrityItems.length > 4 ? ` +${integrityItems.length - 4} more` : ""}
+            {t("trace.banner.integrity", "INTEGRITY ({n}):", { n: integrityItems.length })} {integrityItems.slice(0, 4).join(" · ")}
+            {integrityItems.length > 4 ? t("trace.banner.more", " +{n} more", { n: integrityItems.length - 4 }) : ""}
           </span>
         </div>
       ) : null}
 
       <div className="dt-body">
-        <nav className="dt-panel-tabs" aria-label="View">
+        <nav className="dt-panel-tabs" aria-label={t("trace.tab.aria", "View")}>
           <button className={panel === "canvas" ? "active" : ""} onClick={() => setPanel("canvas")}>
-            Topology
+            {t("trace.tab.topology", "Topology")}
           </button>
           <button className={panel === "events" ? "active" : ""} onClick={() => setPanel("events")}>
-            Events <span className="dt-tab-count">{events.length}</span>
+            {t("trace.tab.events", "Events")} <span className="dt-tab-count">{events.length}</span>
           </button>
           <button className={panel === "decisions" ? "active" : ""} onClick={() => setPanel("decisions")}>
-            Decisions <span className="dt-tab-count">{decisionsTotal}</span>
+            {t("trace.tab.decisions", "Decisions")} <span className="dt-tab-count">{decisionsTotal}</span>
           </button>
           <span className="dt-tab-note">
-            topology {topoQ.data ? `${topoQ.data.nodes.length} nodes / ${topoQ.data.edges.length} edges` : "—"}
+            {topoQ.data
+              ? t("trace.tab.topo_note", "topology {nodes} nodes / {edges} edges", { nodes: topoQ.data.nodes.length, edges: topoQ.data.edges.length })
+              : t("trace.tab.topo_pending", "topology —")}
           </span>
         </nav>
 
@@ -228,7 +259,7 @@ export default function DecisionTracePage({ snapshot }: ShellPageProps) {
               {activeBundle ? (
                 <div className="dt-timeline-wrap">
                   <div className="dt-timeline-head">
-                    <span>Latency timeline — {activeBundle.trace_id ?? activeBundle.decision_id ?? "trace"}</span>
+                    <span>{t("trace.timeline.head", "Latency timeline — {id}", { id: activeBundle.trace_id ?? activeBundle.decision_id ?? t("trace.timeline.fallback_id", "trace") })}</span>
                     <ReplayControls
                       active={replay.active}
                       index={replay.index}
@@ -290,11 +321,17 @@ export default function DecisionTracePage({ snapshot }: ShellPageProps) {
 
       <footer className="dt-footer">
         <span>
-          observer {observer?.status ?? "unknown"} · stream {streamStatus} · events {events.length} ·
-          coalesced {coalescedEvents} · dropped {droppedVisualEvents} · malformed {malformed} ·
-          last_seq {lastSeq}
+          {t("trace.footer", "observer {observer} · stream {stream} · events {events} · coalesced {coalesced} · dropped {dropped} · malformed {malformed} · last_seq {lastSeq}", {
+            observer: observerLabel(t, observer?.status),
+            stream: streamStatusLabel(t, streamStatus),
+            events: events.length,
+            coalesced: coalescedEvents,
+            dropped: droppedVisualEvents,
+            malformed,
+            lastSeq,
+          })}
         </span>
-        <span className="dt-footer-note">Every figure is observed runtime data.</span>
+        <span className="dt-footer-note">{t("trace.footer_note", "Every figure is observed runtime data.")}</span>
       </footer>
     </div>
   );
@@ -311,14 +348,15 @@ function NodeStagePanel({
   events: Array<{ event_id: string; sequence: number; timestamp: string }>;
   onClose: () => void;
 }) {
+  const t = useI18n((s) => s.t);
   return (
-    <section className="dt-stage-panel" aria-label={`Stage ${stage} evidence`}>
+    <section className="dt-stage-panel" aria-label={t("trace.stage.aria", "Stage {stage} evidence", { stage })}>
       <header className="dt-insp-sec-title">
-        Stage evidence — {stage}{" "}
-        <button className="dt-insp-close" onClick={onClose} aria-label="Close">x</button>
+        {t("trace.stage.title", "Stage evidence — {stage}", { stage })}{" "}
+        <button className="dt-insp-close" onClick={onClose} aria-label={t("trace.stage.close", "Close")}>x</button>
       </header>
       <div className="dt-insp-sec-body">
-        <div className="dt-stage-meta">{count} observed event(s) across all traces</div>
+        <div className="dt-stage-meta">{t("trace.stage.meta", "{count} observed event(s) across all traces", { count })}</div>
         <ul className="dt-stage-list">
           {events.slice(-12).map((e) => (
             <li key={e.event_id}>

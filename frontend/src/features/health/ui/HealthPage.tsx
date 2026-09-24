@@ -35,6 +35,7 @@ import { useI18n } from "@/stores/i18nStore";
 import "./health.css";
 
 function MatrixCellView({ cell, nowMs }: { cell: MatrixCell; nowMs: number }) {
+  const t = useI18n((s) => s.t);
   const tone = cellTone(cell, nowMs);
   return (
     <div className={`l3-health-cell hl-cell ${tone.level} ${tone.staleClass}`}>
@@ -44,7 +45,7 @@ function MatrixCellView({ cell, nowMs }: { cell: MatrixCell; nowMs: number }) {
       </div>
       <div>
         <StatusBadge status={cell.status} />{" "}
-        <span className="timestamp-note">{tone.ageMs === null ? "never read" : formatAgeMs(tone.ageMs)}</span>
+        <span className="timestamp-note">{tone.ageMs === null ? t("health.cell.never_read", "never read") : formatAgeMs(tone.ageMs)}</span>
       </div>
       {cell.detail && <div className="detail">{cell.detail}</div>}
       {cell.metrics.length > 0 && (
@@ -65,14 +66,15 @@ function MatrixCellView({ cell, nowMs }: { cell: MatrixCell; nowMs: number }) {
  *  isFetching window so the retry cannot be spammed while the re-read is in
  *  flight (ConfigPage house standard: disabled while pending + busy label). */
 function FailedCell({ name, error, onRetry, busy }: { name: string; error: unknown; onRetry: () => void; busy?: boolean }) {
+  const t = useI18n((s) => s.t);
   return (
     <div className="l3-health-cell bad hl-cell">
       <div className="name"><span>{name}</span><Dot status="ERROR" /></div>
       <StatusBadge status="ERROR" />
-      <div className="detail">{error instanceof Error ? error.message : "read failed"}</div>
+      <div className="detail">{error instanceof Error ? error.message : t("health.cell.read_failed", "read failed")}</div>
       <div>
-        <button className="btn small" onClick={onRetry} disabled={busy} title={busy ? "re-read in progress" : undefined}>
-          {busy ? "retrying…" : "Retry"}
+        <button className="btn small" onClick={onRetry} disabled={busy} title={busy ? t("health.cell.reread_busy", "re-read in progress") : undefined}>
+          {busy ? t("health.cell.retrying", "retrying…") : t("common.retry", "Retry")}
         </button>
       </div>
     </div>
@@ -222,36 +224,31 @@ export default function HealthPage(props: ShellPageProps) {
         <div className="hl-hero-main">
           <div className="hl-kicker">
             <span className="dot" aria-hidden="true" />
-            SAFETY &amp; GOVERNANCE
+            {t("health.hero.kicker", "Safety & governance")}
           </div>
           <h1 className="hl-title">
             <span className="hl-mark" aria-hidden="true">+</span>
-            <span className="word">Health</span>
+            <span className="word">{t("health.hero.title", "Health")}</span>
           </h1>
-          <p className="hl-desc">
-            subsystem matrix from debug + v1 system + broker + news (legacy tab-health)
-          </p>
+          <p className="hl-desc">{t("health.page.desc", "subsystem matrix from debug + v1 system + broker + news (legacy tab-health)")}</p>
         </div>
-        <div className="hl-hero-side" role="group" aria-label="Backend status and provenance">
-          <StatusBadge status={system.data?.verdict ?? probe.data?.status ?? overall} label="v1 verdict" />
+        <div className="hl-hero-side" role="group" aria-label={t("health.hero.prov_a11y", "Backend status and provenance")}>
+          <StatusBadge status={system.data?.verdict ?? probe.data?.status ?? overall} label={t("health.badge.v1_verdict", "v1 verdict")} />
           <div className="hl-chips">
-            {readiness.data && <span className={`hl-chip ${readiness.data.ready ? "pos" : "neg"}`}>readiness {readiness.data.ready ? "READY" : "NOT READY"}</span>}
-            {runtime.data && <span className={`hl-chip ${runtime.data.engine_running ? "pos" : "dim"}`}>engine {runtime.data.engine_running ? "RUNNING" : "STOPPED"}</span>}
+            {readiness.data && <span className={`hl-chip ${readiness.data.ready ? "pos" : "neg"}`}>{t("health.chip.readiness", "readiness {v}", { v: readiness.data.ready ? "READY" : "NOT READY" })}</span>}
+            {runtime.data && <span className={`hl-chip ${runtime.data.engine_running ? "pos" : "dim"}`}>{t("health.chip.engine", "engine {v}", { v: runtime.data.engine_running ? t("health.status.running", "RUNNING") : t("health.status.stopped", "STOPPED") })}</span>}
             {status.data && status.data.critical_failures.length > 0 && (
-              <span className="hl-chip neg">critical: {status.data.critical_failures.join(", ")}</span>
+              <span className="hl-chip neg">{t("health.badge.critical", "critical: {list}", { list: status.data.critical_failures.join(", ") })}</span>
             )}
-            <span className="hl-chip dim">{cells.length} cells</span>
-            <span className="hl-chip dim">poll 10s</span>
+            <span className="hl-chip dim">{t("health.metric.cells", "{n} cells", { n: cells.length })}</span>
+            <span className="hl-chip dim">{t("health.hero.poll", "poll 10s")}</span>
           </div>
         </div>
       </header>
-      <div className="l3-note hl-note">
-        Each cell is one independent read with its own age — a stale GOOD recolors to amber, a failed endpoint fails only
-        its cell. Verdict words are the backend's (HealthEngine contract); nothing here is inferred client-side.
-      </div>
+      <div className="l3-note hl-note">{t("health.page.note", "Each cell is one independent read with its own age — a stale GOOD recolors to amber, a failed endpoint fails only its cell. Verdict words are the backend's (HealthEngine contract); nothing here is inferred client-side.")}</div>
 
       <Panel
-        title="Overview"
+        title={t("health.panel.overview", "Overview")}
         accent
         right={
           <>
@@ -262,26 +259,26 @@ export default function HealthPage(props: ShellPageProps) {
       >
         <div className="hl-section">
           <div className="hl-section-label">
-            <span className="lbl">Overview</span>
+            <span className="lbl">{t("health.panel.overview", "Overview")}</span>
             <span className="src">
               <span className="hl-chip dim">/api/v1/system/health</span>
               <span className="hl-chip dim">/health</span>
             </span>
           </div>
           <div className="hl-toolbar l3-toolbar">
-            <span className="hl-segmented segmented" role="tablist">
-              {(["matrix", "layers", "workers", "identity"] as const).map((t) => (
-                <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
-                  {t}
+            <span className="hl-segmented segmented" role="tablist" aria-label={t("health.tabs.a11y", "Health views")}>
+              {([["matrix", t("health.tab.matrix", "Matrix")], ["layers", t("health.tab.layers", "Layers")], ["workers", t("health.tab.workers", "Workers")], ["identity", t("health.tab.identity", "Identity")]] as const).map(([v, label]) => (
+                <button key={v} role="tab" aria-selected={tab === v} className={tab === v ? "active" : ""} onClick={() => setTab(v)}>
+                  {label}
                 </button>
               ))}
             </span>
           </div>
           <div className="hl-metrics">
-            <MetricCard label="cells good" value={summary.good} tone="pos" />
-            <MetricCard label="warn / stale" value={summary.warn} tone={summary.warn ? "neg" : "dim"} />
-            <MetricCard label="failing" value={summary.bad} tone={summary.bad ? "neg" : "dim"} />
-            <MetricCard label="idle / n-a" value={summary.neutral} tone="dim" sub={`${cells.length} total`} />
+            <MetricCard label={t("health.metric.cells_good", "cells good")} value={summary.good} tone="pos" />
+            <MetricCard label={t("health.metric.warn_stale", "warn / stale")} value={summary.warn} tone={summary.warn ? "neg" : "dim"} />
+            <MetricCard label={t("health.metric.failing", "failing")} value={summary.bad} tone={summary.bad ? "neg" : "dim"} />
+            <MetricCard label={t("health.metric.idle", "idle / n-a")} value={summary.neutral} tone="dim" sub={t("health.metric.total_sub", "{n} total", { n: cells.length })} />
           </div>
         </div>
       </Panel>
@@ -299,7 +296,7 @@ export default function HealthPage(props: ShellPageProps) {
               <span className="hl-chip dim">/api/forensics/health</span>
             </span>
           </div>
-          <Panel title="Subsystem matrix" tight={cells.length === 0}>
+          <Panel title={t("health.panel.matrix", "Subsystem matrix")} tight={cells.length === 0}>
             {cells.length === 0 && failed.length === 0 ? (
               <Skeleton count={4} />
             ) : (
@@ -319,24 +316,24 @@ export default function HealthPage(props: ShellPageProps) {
               <span className="hl-chip dim">/api/v1/system/readiness</span>
             </span>
           </div>
-          <Panel title="Required vs optional layers (/api/v1/system/readiness)">
+          <Panel title={t("health.panel.layers", "Required vs optional layers (/api/v1/system/readiness)")}>
           {readiness.isPending ? (
             <Skeleton count={4} />
           ) : readiness.isError ? (
-            <ResultStrip result={{ running: false, lastResult: false, lastMessage: readiness.error instanceof Error ? readiness.error.message : "readiness failed" }} />
+            <ResultStrip result={{ running: false, lastResult: false, lastMessage: readiness.error instanceof Error ? readiness.error.message : t("health.empty.readiness_failed", "readiness failed") }} />
           ) : readiness.data ? (
             <>
-              <div className="hl-sublabel">required (must PASS for READY) · {readiness.data.required_layers.length}</div>
-              <DataTable headers={[{ label: "CATEGORY" }, { label: "VERDICT" }, { label: "REASON" }, { label: "SUGGESTION" }]}>
+              <div className="hl-sublabel">{t("health.section.required_layers", "required (must PASS for READY) · {n}", { n: readiness.data.required_layers.length })}</div>
+              <DataTable headers={[{ label: t("health.th.category", "CATEGORY") }, { label: t("health.th.verdict", "VERDICT") }, { label: t("health.th.reason", "REASON") }, { label: t("health.th.suggestion", "SUGGESTION") }]}>
                 {requiredLayerRows}
               </DataTable>
-              <div className="hl-sublabel">optional (may WARN without blocking) · {readiness.data.optional_layers.length}</div>
-              <DataTable headers={[{ label: "CATEGORY" }, { label: "VERDICT" }, { label: "REASON" }]}>
+              <div className="hl-sublabel">{t("health.section.optional_layers", "optional (may WARN without blocking) · {n}", { n: readiness.data.optional_layers.length })}</div>
+              <DataTable headers={[{ label: t("health.th.category", "CATEGORY") }, { label: t("health.th.verdict", "VERDICT") }, { label: t("health.th.reason", "REASON") }]}>
                 {optionalLayerRows}
               </DataTable>
             </>
           ) : (
-            <EmptyState message="Readiness payload empty." />
+            <EmptyState message={t("health.empty.readiness_payload", "Readiness payload empty.")} />
           )}
           </Panel>
         </div>
@@ -345,34 +342,34 @@ export default function HealthPage(props: ShellPageProps) {
       {tab === "workers" && (
         <div className="hl-section">
           <div className="hl-section-label">
-            <span className="lbl">Workers &amp; runtime</span>
+            <span className="lbl">{t("health.section.workers_runtime", "Workers & runtime")}</span>
             <span className="src">
               <span className="hl-chip dim">/api/v1/system/workers</span>
               <span className="hl-chip dim">/api/v1/system/runtime</span>
             </span>
           </div>
-          <Panel title="Workers (/api/v1/system/workers)" right={<span className="timestamp-note">engine_attached={String(workers.data?.engine_attached ?? "—")}</span>}>
+          <Panel title={t("health.panel.workers", "Workers (/api/v1/system/workers)")} right={<span className="timestamp-note">{t("health.workers.engine_attached", "engine_attached={v}", { v: String(workers.data?.engine_attached ?? "—") })}</span>}>
           {workers.isPending ? (
             <Skeleton count={3} />
           ) : workers.data && workers.data.workers.length === 0 ? (
-            <EmptyState message="No worker attributes attached to the engine object." hint="NOT_ATTACHED is a state the backend reports — it is never hidden." />
+            <EmptyState message={t("health.empty.no_workers", "No worker attributes attached to the engine object.")} hint={t("health.empty.no_workers_hint", "NOT_ATTACHED is a state the backend reports — it is never hidden.")} />
           ) : workers.data ? (
-            <DataTable headers={[{ label: "WORKER" }, { label: "STATE" }]}>
+            <DataTable headers={[{ label: t("health.th.worker", "WORKER") }, { label: t("health.th.state", "STATE") }]}>
               {workerRows}
             </DataTable>
           ) : (
             <FailedCell name="workers" error={workers.error} onRetry={() => void workers.refetch()} />
           )}
-          <div className="hl-sublabel">runtime</div>
+          <div className="hl-sublabel">{t("health.section.runtime", "runtime")}</div>
           {runtime.data ? (
             <KeyValueList
               rows={[
-                ["engine", runtime.data.engine_running ? <span key="e" className="badge good">RUNNING</span> : <span key="e" className="badge neutral">STOPPED</span>],
+                ["engine", runtime.data.engine_running ? <span key="e" className="badge good">{t("health.status.running", "RUNNING")}</span> : <span key="e" className="badge neutral">{t("health.status.stopped", "STOPPED")}</span>],
                 ["warmup", String(runtime.data.warmup_state ?? "—")],
-                ["inference_enabled", String(runtime.data.inference_enabled)],
-                ["mode", String(runtime.data.mode ?? "—")],
-                ["effective_mode", String(runtime.data.effective_mode ?? "—")],
-                ["freshness.overall", String((runtime.data.freshness as { overall?: string } | null)?.overall ?? "—")],
+                [t("health.kv.inference_enabled", "inference_enabled"), String(runtime.data.inference_enabled)],
+                [t("health.kv.mode", "mode"), String(runtime.data.mode ?? "—")],
+                [t("health.kv.effective_mode", "effective_mode"), String(runtime.data.effective_mode ?? "—")],
+                [t("health.kv.freshness_overall", "freshness.overall"), String((runtime.data.freshness as { overall?: string } | null)?.overall ?? "—")],
               ]}
             />
           ) : (
@@ -385,14 +382,14 @@ export default function HealthPage(props: ShellPageProps) {
       {tab === "identity" && (
         <div className="hl-section">
           <div className="hl-section-label">
-            <span className="lbl">Identity &amp; capabilities</span>
+            <span className="lbl">{t("health.section.identity", "Identity & capabilities")}</span>
             <span className="src">
               <span className="hl-chip dim">/api/v1/system/version</span>
               <span className="hl-chip dim">/api/v1/system/capabilities</span>
             </span>
           </div>
           <div className="l3-split">
-          <Panel title="Version / build (/api/v1/system/version)">
+          <Panel title={t("health.panel.version", "Version / build (/api/v1/system/version)")}>
             {version.isPending ? (
               <Skeleton count={3} />
             ) : version.isError ? (
@@ -401,7 +398,7 @@ export default function HealthPage(props: ShellPageProps) {
               <KeyValueList rows={versionRows} />
             ) : null}
           </Panel>
-          <Panel title="API capabilities (/api/v1/system/capabilities)" right={<span className="timestamp-note">every {60}s · route-table truth</span>}>
+          <Panel title={t("health.panel.capabilities", "API capabilities (/api/v1/system/capabilities)")} right={<span className="timestamp-note">{t("health.caps.interval", "every {n}s · route-table truth", { n: 60 })}</span>}>
             {capabilities.isPending ? (
               <Skeleton count={3} />
             ) : capabilities.data ? (
@@ -409,9 +406,9 @@ export default function HealthPage(props: ShellPageProps) {
                 <KeyValueList
                   rows={[
                     ["api_version", capabilities.data.api_version],
-                    ["domains", capabilities.data.domain_count],
-                    ["endpoints", capabilities.data.endpoint_count],
-                    ["spec", capabilities.data.spec],
+                    [t("health.caps.domains", "domains"), capabilities.data.domain_count],
+                    [t("health.caps.endpoints", "endpoints"), capabilities.data.endpoint_count],
+                    [t("health.caps.spec", "spec"), capabilities.data.spec],
                   ]}
                 />
                 <div className="l3-rule-params">

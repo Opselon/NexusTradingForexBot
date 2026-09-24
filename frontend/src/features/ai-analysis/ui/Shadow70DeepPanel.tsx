@@ -13,9 +13,11 @@
  */
 
 import { useMemo } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
+import { ApiError } from "@/types/api";
 import { shadow70Api } from "../shadow70Api";
 import { FreshnessCaption } from "../../research/ui/lane5Kit";
 
@@ -25,6 +27,7 @@ function dash(v: number | null | undefined, digits = 3, suffix = ""): string {
 }
 
 export function Shadow70DeepPanel() {
+  const t = useI18n((s) => s.t);
   const healthQ = useQuery({
     queryKey: ["shadow70", "health"],
     queryFn: ({ signal }) => shadow70Api.health(signal),
@@ -48,11 +51,11 @@ export function Shadow70DeepPanel() {
 
   if (healthQ.data && healthQ.data.available === false) {
     return (
-      <Panel title="Shadow 70D deep (feature health · disagreements)" tight>
-        <EmptyState
-          message="70D shadow runtime not attached."
-          hint="/api/models/shadow70/health answers available:false — attach a validated 70D candidate to begin observing."
-        />
+      <Panel title={t("ai-analysis.shadow.deep_panel", "Shadow 70D deep (feature health · disagreements)")} tight>
+              <EmptyState
+                message={t("ai-analysis.shadow.not_attached", "70D shadow runtime not attached.")}
+                hint={t("ai-analysis.shadow.not_attached_hint", "/api/models/shadow70/health answers available:false — attach a validated 70D candidate to begin observing.")}
+              />
       </Panel>
     );
   }
@@ -64,12 +67,12 @@ export function Shadow70DeepPanel() {
   return (
     <div style={{ display: "grid", gap: 12 }}>
       <Panel
-        title="Shadow 70D feature health"
+              title={t("ai-analysis.shadow.health_panel", "Shadow 70D feature health")}
         right={
           <>
             <StatusBadge
               status={driftSeverity}
-              label={`drift: ${driftSeverity.toLowerCase()}`}
+              label={t("ai-analysis.shadow.drift_label", "drift: {s}", { s: driftSeverity.toLowerCase() })}
             />
             <FreshnessCaption isFetching={healthQ.isFetching} error={healthQ.isError} />
           </>
@@ -80,20 +83,20 @@ export function Shadow70DeepPanel() {
           <Skeleton count={4} />
         ) : healthQ.isError ? (
           <ErrorState
-            message={healthQ.error instanceof Error ? healthQ.error.message : "shadow70 health endpoint failed"}
+            message={healthQ.error instanceof ApiError ? healthQ.error.localized(t) : t("ai-analysis.shadow.health_failed", "shadow70 health endpoint failed")}
             onRetry={() => void healthQ.refetch()}
           />
         ) : featureHealth.length === 0 ? (
-          <EmptyState message="No live feature health yet — the observer has not sampled the 70D feature stream." />
+          <EmptyState message={t("ai-analysis.shadow.no_feature_health", "No live feature health yet — the observer has not sampled the 70D feature stream.")} />
         ) : (
           <DataTable
             headers={[
-              { label: "feature" },
-              { label: "mean", num: true },
-              { label: "std", num: true },
-              { label: "missing", num: true },
-              { label: "zero", num: true },
-              { label: "samples", num: true },
+              { label: t("ai-analysis.shadow.th_feature", "feature") },
+              { label: t("ai-analysis.shadow.th_mean", "mean"), num: true },
+              { label: t("ai-analysis.shadow.th_std", "std"), num: true },
+              { label: t("ai-analysis.shadow.th_missing", "missing"), num: true },
+              { label: t("ai-analysis.shadow.th_zero", "zero"), num: true },
+              { label: t("ai-analysis.shadow.th_samples", "samples"), num: true },
             ]}
           >
             {featureHealth.map((h, i) => (
@@ -111,7 +114,7 @@ export function Shadow70DeepPanel() {
       </Panel>
 
       <Panel
-        title="Champion vs Shadow disagreements (spec 30)"
+        title={t("ai-analysis.shadow.disagreements_panel", "Champion vs Shadow disagreements (spec 30)")}
         right={<FreshnessCaption isFetching={disQ.isFetching} error={disQ.isError} />}
         tight
       >
@@ -119,13 +122,13 @@ export function Shadow70DeepPanel() {
           <Skeleton count={3} />
         ) : disQ.isError ? (
           <ErrorState
-            message={disQ.error instanceof Error ? disQ.error.message : "disagreements endpoint failed"}
+            message={disQ.error instanceof ApiError ? disQ.error.localized(t) : t("ai-analysis.shadow.disagreements_failed", "disagreements endpoint failed")}
             onRetry={() => void disQ.refetch()}
           />
         ) : rows.length === 0 ? (
-          <EmptyState message="No disagreements recorded." hint="The shadow observer agrees with the champion on every recorded observation so far." />
+          <EmptyState message={t("ai-analysis.shadow.no_disagreements", "No disagreements recorded.")} hint={t("ai-analysis.shadow.no_disagreements_hint", "The shadow observer agrees with the champion on every recorded observation so far.")} />
         ) : (
-          <DataTable headers={[{ label: "timestamp" }, { label: "champion" }, { label: "shadow" }, { label: "type" }, { label: "outcome" }]}>
+          <DataTable headers={[{ label: t("ai-analysis.shadow.th_timestamp", "timestamp") }, { label: t("ai-analysis.shadow.th_champion", "champion") }, { label: t("ai-analysis.shadow.th_shadow", "shadow") }, { label: t("ai-analysis.shadow.th_type", "type") }, { label: t("ai-analysis.shadow.th_outcome", "outcome") }]}>
             {rows.map((r, i) => (
               <tr key={i}>
                 <td className="tiny">{formatDateTime((r.timestamp ?? "").slice(0, 19))}</td>
@@ -134,7 +137,7 @@ export function Shadow70DeepPanel() {
                 <td className="tiny tx-warn" >
                   {r.disagreement || "—"}
                 </td>
-                <td className="tiny">{r.outcome || "PENDING"}</td>
+                <td className="tiny">{r.outcome || t("ai-analysis.shadow.pending", "PENDING")}</td>
               </tr>
             ))}
           </DataTable>
@@ -142,8 +145,8 @@ export function Shadow70DeepPanel() {
       </Panel>
 
       {healthQ.data?.persisted_alerts && healthQ.data.persisted_alerts.length > 0 ? (
-        <Panel title="Persisted drift alerts (latest 25)" tight>
-          <DataTable headers={[{ label: "feature" }, { label: "kind" }, { label: "value", num: true }, { label: "at" }]}>
+        <Panel title={t("ai-analysis.shadow.alerts_panel", "Persisted drift alerts (latest 25)")} tight>
+                  <DataTable headers={[{ label: t("ai-analysis.shadow.th_feature", "feature") }, { label: t("ai-analysis.shadow.th_kind", "kind") }, { label: t("ai-analysis.shadow.th_value", "value"), num: true }, { label: t("ai-analysis.th.at", "at") }]}>
             {persistedAlerts.map((a, i) => (
               <tr key={i}>
                 <td className="tiny">{a.feature ?? a.kind ?? "—"}</td>

@@ -22,6 +22,15 @@ window.NX = window.NX || {};
 (function () {
   'use strict';
 
+  // i18n seam (P3): local helper mirroring the ux_signal.js:24-27 pattern.
+  // seed_id / pack_id / family / lifecycle values stay verbatim (protocol).
+  function t(key, fallback, vars) {
+    const i = window.NX_I18N;
+    let s = i ? i.t(key, fallback, vars) : (fallback || key);
+    if (vars) Object.keys(vars).forEach((k) => { s = s.split('{' + k + '}').join(vars[k]); });
+    return s;
+  }
+
   function renderMarketplaceTab() {
     const container = document.getElementById('tab-marketplace');
     if (!container) return;
@@ -38,13 +47,13 @@ window.NX = window.NX || {};
       <div class="flex items-center justify-between border-b border-slate-800 pb-4">
         <div>
           <h2 class="text-2xl font-black tracking-tight text-cyan-400 flex items-center gap-3">
-            <i class="fa-solid fa-store text-xl"></i> Strategy Marketplace & Research Lab
+            <i class="fa-solid fa-store text-xl"></i> ${t('mkt.title', 'Strategy Marketplace & Research Lab')}
           </h2>
-          <p class="text-xs text-slate-400 mt-1">Discover, install, validate, score, repair, and govern strategy seeds across isolated research persistence.</p>
+          <p class="text-xs text-slate-400 mt-1">${t('mkt.subtitle', 'Discover, install, validate, score, repair, and govern strategy seeds across isolated research persistence.')}</p>
         </div>
         <div class="flex items-center gap-3">
           <button id="mkt-refresh-btn" class="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition border border-slate-700 flex items-center gap-2">
-            <i class="fa-solid fa-rotate"></i> Refresh Marketplace
+            <i class="fa-solid fa-rotate"></i> ${t('mkt.refresh', 'Refresh Marketplace')}
           </button>
         </div>
       </div>
@@ -55,7 +64,7 @@ window.NX = window.NX || {};
         <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <i class="fa-solid fa-box-archive text-cyan-400"></i> Installed Strategy Seeds
+              <i class="fa-solid fa-box-archive text-cyan-400"></i> ${t('mkt.installed_seeds', 'Installed Strategy Seeds')}
             </h3>
             <span id="mkt-installed-count" class="text-xs font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">0 seeds</span>
           </div>
@@ -63,14 +72,14 @@ window.NX = window.NX || {};
             <table class="w-full text-left text-xs">
               <thead class="text-slate-400 border-b border-slate-800 sticky top-0 bg-slate-950">
                 <tr>
-                  <th class="pb-2 font-semibold">Seed ID / Name</th>
-                  <th class="pb-2 font-semibold">Family</th>
-                  <th class="pb-2 font-semibold">Lifecycle</th>
-                  <th class="pb-2 font-semibold text-right">Actions</th>
+                  <th class="pb-2 font-semibold">${t('mkt.th_seed', 'Seed ID / Name')}</th>
+                  <th class="pb-2 font-semibold">${t('mkt.th_family', 'Family')}</th>
+                  <th class="pb-2 font-semibold">${t('mkt.th_lifecycle', 'Lifecycle')}</th>
+                  <th class="pb-2 font-semibold text-right">${t('mkt.th_actions', 'Actions')}</th>
                 </tr>
               </thead>
               <tbody id="mkt-installed-tbody" class="divide-y divide-slate-900 text-slate-300">
-                <tr><td colspan="4" class="py-4 text-center text-slate-500 italic">No strategy seeds installed. Install a pack below.</td></tr>
+                <tr><td colspan="4" class="py-4 text-center text-slate-500 italic">${t('mkt.no_seeds', 'No strategy seeds installed. Install a pack below.')}</td></tr>
               </tbody>
             </table>
           </div>
@@ -80,12 +89,12 @@ window.NX = window.NX || {};
         <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <i class="fa-solid fa-boxes-stacked text-amber-400"></i> Available Installable Packs
+              <i class="fa-solid fa-boxes-stacked text-amber-400"></i> ${t('mkt.available_packs', 'Available Installable Packs')}
             </h3>
             <span class="text-xs font-mono px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800">13 packs</span>
           </div>
           <div id="mkt-packs-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
-            <div class="p-3 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-400 animate-pulse">Loading packs catalog...</div>
+            <div class="p-3 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-400 animate-pulse">${t('mkt.packs_loading', 'Loading packs catalog...')}</div>
           </div>
         </div>
       </div>
@@ -95,20 +104,20 @@ window.NX = window.NX || {};
         <!-- Panel 3: Research Lab -->
         <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col">
           <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300 mb-4 flex items-center gap-2">
-            <i class="fa-solid fa-flask text-emerald-400"></i> Research Lab & Sandbox
+            <i class="fa-solid fa-flask text-emerald-400"></i> ${t('mkt.research_lab', 'Research Lab & Sandbox')}
           </h3>
           <div class="space-y-4 text-xs">
             <div>
-              <label class="block text-slate-400 mb-1 font-medium">Select Installed Seed for Research Execution:</label>
+              <label class="block text-slate-400 mb-1 font-medium">${t('mkt.select_seed_research', 'Select Installed Seed for Research Execution:')}</label>
               <select id="mkt-research-seed-select" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-slate-200">
-                <option value="">-- Choose installed seed --</option>
+                <option value="">${t('mkt.choose_seed', '-- Choose installed seed --')}</option>
               </select>
             </div>
             <div class="flex items-center gap-3">
               <button id="mkt-run-research-btn" class="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition flex items-center gap-2 shadow">
-                <i class="fa-solid fa-play"></i> Run Research Pipeline
+                <i class="fa-solid fa-play"></i> ${t('mkt.run_research', 'Run Research Pipeline')}
               </button>
-              <span id="mkt-research-status" class="text-slate-400 italic">Ready.</span>
+              <span id="mkt-research-status" class="text-slate-400 italic">${t('mkt.status_ready', 'Ready.')}</span>
             </div>
             <div id="mkt-research-result-box" class="bg-slate-900 border border-slate-800 rounded p-3 font-mono text-[11px] text-slate-300 max-h-40 overflow-y-auto hidden">
               <!-- Research result JSON output -->
@@ -120,7 +129,7 @@ window.NX = window.NX || {};
         <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <i class="fa-solid fa-ranking-star text-purple-400"></i> Strategy Rankings & 14-Factor Scores
+              <i class="fa-solid fa-ranking-star text-purple-400"></i> ${t('mkt.rankings', 'Strategy Rankings & 14-Factor Scores')}
             </h3>
             <select id="mkt-rank-dim-select" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200">
               <option value="OVERALL">Dimension: Overall</option>
@@ -134,10 +143,10 @@ window.NX = window.NX || {};
             <table class="w-full text-left text-xs">
               <thead class="text-slate-400 border-b border-slate-800 sticky top-0 bg-slate-950">
                 <tr>
-                  <th class="pb-2 font-semibold">Rank</th>
-                  <th class="pb-2 font-semibold">Seed ID</th>
-                  <th class="pb-2 font-semibold">Family</th>
-                  <th class="pb-2 font-semibold text-right">Score</th>
+                  <th class="pb-2 font-semibold">${t('mkt.th_rank', 'Rank')}</th>
+                  <th class="pb-2 font-semibold">${t('mkt.th_seed_id', 'Seed ID')}</th>
+                  <th class="pb-2 font-semibold">${t('mkt.th_family', 'Family')}</th>
+                  <th class="pb-2 font-semibold text-right">${t('mkt.th_score', 'Score')}</th>
                 </tr>
               </thead>
               <tbody id="mkt-rankings-tbody" class="divide-y divide-slate-900 text-slate-300">
@@ -158,14 +167,14 @@ window.NX = window.NX || {};
           <div class="space-y-3 text-xs flex-1">
             <div class="flex items-center gap-3">
               <select id="mkt-repair-seed-select" class="flex-1 bg-slate-900 border border-slate-700 rounded p-2 text-slate-200">
-                <option value="">-- Choose seed to repair --</option>
+                <option value="">${t('mkt.choose_repair_seed', '-- Choose seed to repair --')}</option>
               </select>
               <button id="mkt-trigger-repair-btn" class="px-3 py-2 rounded bg-rose-600 hover:bg-rose-500 text-white font-semibold transition flex items-center gap-2">
-                <i class="fa-solid fa-hammer"></i> Trigger Repair
+                <i class="fa-solid fa-hammer"></i> ${t('mkt.trigger_repair', 'Trigger Repair')}
               </button>
             </div>
             <div class="overflow-x-auto max-h-36 overflow-y-auto pr-1 border border-slate-800 rounded bg-slate-900/50 p-2">
-              <div id="mkt-repair-log" class="text-slate-400 italic">No repair runs recorded.</div>
+              <div id="mkt-repair-log" class="text-slate-400 italic">${t('mkt.no_repairs', 'No repair runs recorded.')}</div>
             </div>
           </div>
         </div>
@@ -174,12 +183,12 @@ window.NX = window.NX || {};
         <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <i class="fa-solid fa-microchip text-blue-400"></i> Strategy Runtime Snapshot Store
+              <i class="fa-solid fa-microchip text-blue-400"></i> ${t('mkt.snapshot_store', 'Strategy Runtime Snapshot Store')}</div>
             </h3>
-            <span id="mkt-snapshot-version" class="text-xs font-mono px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">Version: 0</span>
+            <span id="mkt-snapshot-version" class="text-xs font-mono px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">${t('mkt.version', 'Version: {n}', { n: 0 })}</span>
           </div>
           <div class="bg-slate-900 border border-slate-800 rounded p-3 font-mono text-[11px] text-slate-300 max-h-40 overflow-y-auto" id="mkt-snapshot-content">
-            <span class="text-slate-500 italic">Loading active runtime strategy set...</span>
+            <span class="text-slate-500 italic">${t('mkt.snapshot_loading', 'Loading active runtime strategy set...')}</span>
           </div>
         </div>
       </div>
@@ -188,7 +197,7 @@ window.NX = window.NX || {};
       <div id="mkt-seed-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
         <div class="bg-slate-900 border border-slate-700 rounded-xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
           <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-            <h3 id="mkt-modal-title" class="text-lg font-bold text-cyan-300">Seed Detail</h3>
+            <h3 id="mkt-modal-title" class="text-lg font-bold text-cyan-300">${t('mkt.seed_detail', 'Seed Detail')}</h3>
             <button id="mkt-modal-close" class="text-slate-400 hover:text-slate-200 text-lg font-bold px-2">&times;</button>
           </div>
           <div id="mkt-modal-body" class="text-xs space-y-3 text-slate-300">
@@ -227,7 +236,7 @@ window.NX = window.NX || {};
       const res = await window.NX.api.get('/api/v1/marketplace/packs', { component: 'Marketplace', action: 'LIST_PACKS' });
       const packs = (res && res.data && res.data.packs) || [];
       if (!packs.length) {
-        container.innerHTML = '<div class="text-slate-500 italic p-2">No packs available.</div>';
+        container.innerHTML = '<div class="text-slate-500 italic p-2">' + t('mkt.no_packs', 'No packs available.') + '</div>';
         return;
       }
       container.innerHTML = '';
@@ -249,11 +258,11 @@ window.NX = window.NX || {};
         const bot = document.createElement('div');
         bot.className = 'flex items-center justify-between pt-1 border-t border-slate-800/60 text-[10px] text-slate-500';
         const span = document.createElement('span');
-        span.textContent = `${pack.seed_count || 25} seeds (${pack.family})`;
+        span.textContent = t('mkt.pack_seeds', '{n} seeds ({family})', { n: pack.seed_count || 25, family: pack.family });
         
         const btn = document.createElement('button');
         btn.className = 'px-2.5 py-1 rounded bg-amber-600/80 hover:bg-amber-500 text-white font-semibold transition';
-        btn.textContent = 'Install Pack';
+        btn.textContent = t('mkt.install_pack', 'Install Pack');
         btn.addEventListener('click', () => installPack(pack.pack_id));
 
         bot.appendChild(span);
@@ -294,7 +303,7 @@ window.NX = window.NX || {};
       
       // Update dropdowns
       if (researchSelect) {
-        researchSelect.innerHTML = '<option value="">-- Choose installed seed --</option>';
+        researchSelect.innerHTML = '<option value="">' + t('mkt.choose_seed', '-- Choose installed seed --') + '</option>';
         items.forEach(s => {
           const opt = document.createElement('option');
           opt.value = s.seed_id;
@@ -303,7 +312,7 @@ window.NX = window.NX || {};
         });
       }
       if (repairSelect) {
-        repairSelect.innerHTML = '<option value="">-- Choose seed to repair --</option>';
+        repairSelect.innerHTML = '<option value="">' + t('mkt.choose_repair_seed', '-- Choose seed to repair --') + '</option>';
         items.forEach(s => {
           const opt = document.createElement('option');
           opt.value = s.seed_id;
@@ -316,7 +325,7 @@ window.NX = window.NX || {};
       if (countSpan) countSpan.textContent = `${items.length} seeds`;
 
       if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-slate-500 italic">No strategy seeds installed. Install a pack above.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-slate-500 italic">' + t('mkt.no_seeds_above', 'No strategy seeds installed. Install a pack above.') + '</td></tr>';
         return;
       }
 
@@ -351,12 +360,12 @@ window.NX = window.NX || {};
         
         const detailBtn = document.createElement('button');
         detailBtn.className = 'px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold transition';
-        detailBtn.textContent = 'View';
+        detailBtn.textContent = t('mkt.view', 'View');
         detailBtn.addEventListener('click', () => openSeedDetail(seed.seed_id));
 
         const enableBtn = document.createElement('button');
         enableBtn.className = 'px-2 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-semibold transition';
-        enableBtn.textContent = 'Enable...';
+        enableBtn.textContent = t('mkt.enable_dots', 'Enable...');
         enableBtn.addEventListener('click', () => promptEnableSeed(seed.seed_id, seed.lifecycle));
 
         td4.appendChild(detailBtn);
@@ -371,7 +380,7 @@ window.NX = window.NX || {};
       });
     } catch (err) {
       console.warn('[Marketplace] loadInstalledSeeds error:', err);
-      tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-rose-400 italic">Failed to load installed seeds.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-rose-400 italic">' + t('mkt.seeds_failed', 'Failed to load installed seeds.') + '</td></tr>';
     }
   }
 
@@ -399,7 +408,7 @@ window.NX = window.NX || {};
       const res = await window.NX.api.get(`/api/v1/marketplace/rankings?dimension=${dim}`, { component: 'Marketplace', action: 'GET_RANKINGS' });
       const items = (res && res.data && res.data.rankings) || [];
       if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-slate-500 italic">No rankings available yet. Run research on seeds.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-slate-500 italic">' + t('mkt.no_rankings', 'No rankings available yet. Run research on seeds.') + '</td></tr>';
         return;
       }
       tbody.innerHTML = '';
@@ -431,7 +440,7 @@ window.NX = window.NX || {};
       });
     } catch (err) {
       console.warn('[Marketplace] loadRankings error:', err);
-      tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-rose-400 italic">Failed to load rankings.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-rose-400 italic">' + t('mkt.rankings_failed', 'Failed to load rankings.') + '</td></tr>';
     }
   }
 
@@ -443,13 +452,13 @@ window.NX = window.NX || {};
       const res = await window.NX.api.get('/api/v1/marketplace/runtime-snapshot', { component: 'Marketplace', action: 'GET_SNAPSHOT' });
       const data = res && res.data;
       if (!data) {
-        box.textContent = 'No runtime snapshot recorded.';
+        box.textContent = t('mkt.no_snapshot', 'No runtime snapshot recorded.');
         return;
       }
-      if (verSpan) verSpan.textContent = `Version: ${data.version || 0}`;
+      if (verSpan) verSpan.textContent = t('mkt.version', 'Version: {n}', { n: data.version || 0 });
       box.textContent = JSON.stringify(data, null, 2);
     } catch (err) {
-      box.textContent = 'Runtime snapshot unavailable (backend offline or unmounted).';
+      box.textContent = t('mkt.snapshot_failed', 'Runtime snapshot unavailable (backend offline or unmounted).');
     }
   }
 
@@ -458,11 +467,11 @@ window.NX = window.NX || {};
     const statusSpan = document.getElementById('mkt-research-status');
     const resultBox = document.getElementById('mkt-research-result-box');
     if (!select || !select.value) {
-      alert('Please choose an installed seed first.');
+      alert(t('mkt.alert_choose_seed', 'Please choose an installed seed first.'));
       return;
     }
     const seedId = select.value;
-    if (statusSpan) statusSpan.textContent = 'Running research pipeline...';
+      if (statusSpan) statusSpan.textContent = t('mkt.research_running', 'Running research pipeline...');
     if (resultBox) {
       resultBox.classList.add('hidden');
       resultBox.textContent = '';
@@ -471,21 +480,21 @@ window.NX = window.NX || {};
     try {
       const res = await window.NX.api.post(`/api/v1/marketplace/seeds/${seedId}/run-research`, {}, { component: 'Marketplace', action: 'RUN_RESEARCH' });
       if (res && res.success) {
-        if (statusSpan) statusSpan.textContent = 'Research run completed successfully!';
+        if (statusSpan) statusSpan.textContent = t('mkt.research_done', 'Research run completed successfully!');
         if (resultBox) {
           resultBox.classList.remove('hidden');
           resultBox.textContent = JSON.stringify(res.data, null, 2);
         }
         refreshMarketplaceData();
       } else {
-        if (statusSpan) statusSpan.textContent = 'Research run finished with errors.';
+        if (statusSpan) statusSpan.textContent = t('mkt.research_errors', 'Research run finished with errors.');
         if (resultBox) {
           resultBox.classList.remove('hidden');
           resultBox.textContent = JSON.stringify(res, null, 2);
         }
       }
     } catch (err) {
-      if (statusSpan) statusSpan.textContent = `Research request failed: ${err.message || err}`;
+      if (statusSpan) statusSpan.textContent = t('mkt.research_failed', 'Research request failed: {msg}', { msg: err.message || err });
     }
   }
 
@@ -493,11 +502,11 @@ window.NX = window.NX || {};
     const select = document.getElementById('mkt-repair-seed-select');
     const logBox = document.getElementById('mkt-repair-log');
     if (!select || !select.value) {
-      alert('Please choose a seed to repair.');
+      alert(t('mkt.alert_choose_repair', 'Please choose a seed to repair.'));
       return;
     }
     const seedId = select.value;
-    if (logBox) logBox.textContent = `Triggering repair for ${seedId}...`;
+    if (logBox) logBox.textContent = t('mkt.repair_triggering', 'Triggering repair for {id}...', { id: seedId });
 
     try {
       const res = await window.NX.api.post(`/api/v1/marketplace/seeds/${seedId}/repair`, { trigger: 'MANUAL_TRIGGER' }, { component: 'Marketplace', action: 'REPAIR_SEED' });
@@ -505,10 +514,10 @@ window.NX = window.NX || {};
         if (logBox) logBox.textContent = JSON.stringify(res.data, null, 2);
         refreshMarketplaceData();
       } else {
-        if (logBox) logBox.textContent = `Repair failed: ${JSON.stringify(res)}`;
+        if (logBox) logBox.textContent = t('mkt.repair_failed', 'Repair failed: {msg}', { msg: JSON.stringify(res) });
       }
     } catch (err) {
-      if (logBox) logBox.textContent = `Repair request failed: ${err.message || err}`;
+      if (logBox) logBox.textContent = t('mkt.repair_request_failed', 'Repair request failed: {msg}', { msg: err.message || err });
     }
   }
 
@@ -519,8 +528,8 @@ window.NX = window.NX || {};
     const actions = document.getElementById('mkt-modal-actions');
     if (!modal) return;
 
-    if (title) title.textContent = `Seed Detail: ${seedId}`;
-    if (body) body.textContent = 'Loading seed specifications and history...';
+    if (title) title.textContent = t('mkt.seed_detail_id', 'Seed Detail: {id}', { id: seedId });
+    if (body) body.textContent = t('mkt.seed_loading', 'Loading seed specifications and history...');
     if (actions) actions.innerHTML = '';
     modal.classList.remove('hidden');
 
@@ -528,7 +537,7 @@ window.NX = window.NX || {};
       const res = await window.NX.api.get(`/api/v1/marketplace/seeds/${seedId}`, { component: 'Marketplace', action: 'GET_SEED' });
       const seed = res && res.data;
       if (!seed) {
-        if (body) body.textContent = 'Seed not found.';
+        if (body) body.textContent = t('mkt.seed_not_found', 'Seed not found.');
         return;
       }
 
@@ -543,7 +552,7 @@ window.NX = window.NX || {};
       if (actions) {
         const disBtn = document.createElement('button');
         disBtn.className = 'px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition';
-        disBtn.textContent = 'Disable';
+        disBtn.textContent = t('mkt.disable', 'Disable');
         disBtn.addEventListener('click', async () => {
           await window.NX.api.post(`/api/v1/marketplace/seeds/${seedId}/disable`, {}, { component: 'Marketplace', action: 'DISABLE_SEED' });
           closeModal();
@@ -552,7 +561,7 @@ window.NX = window.NX || {};
         actions.appendChild(disBtn);
       }
     } catch (err) {
-      if (body) body.textContent = `Failed to load seed detail: ${err.message || err}`;
+      if (body) body.textContent = t('mkt.seed_detail_failed', 'Failed to load seed detail: {msg}', { msg: err.message || err });
     }
   }
 
@@ -588,4 +597,16 @@ window.NX = window.NX || {};
     render: renderMarketplaceTab,
     refresh: refreshMarketplaceData
   };
+
+  // P1 (i18n): rebuild the whole tab on language switch. The shell is rebuilt
+  // (dataset.rendered is reset so the static headings are re-translated) and
+  // the data is re-fetched into the fresh DOM.
+  document.addEventListener('nexus:lang-changed', function () {
+    try {
+      const container = document.getElementById('tab-marketplace');
+      if (!container || container.classList.contains('hidden')) return;
+      container.dataset.rendered = '';
+      renderMarketplaceTab();
+    } catch (e) { /* never break a language switch */ }
+  });
 })();

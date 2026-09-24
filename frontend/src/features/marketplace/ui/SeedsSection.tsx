@@ -17,6 +17,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import { ConfirmModal, DataTable, EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { useDisableSeed, useEnableSeed, useMktSeeds, useRepairSeed, useRunResearch } from "../hooks";
@@ -73,6 +74,7 @@ function sortRows(rows: SeedVM[], mode: SortMode): SeedVM[] {
 
 export function SeedsSection() {
   const [page, setPage] = useState(1);
+  const t = useI18n((s) => s.t);
   const [family, setFamily] = useState("");
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
@@ -165,7 +167,7 @@ export function SeedsSection() {
       <button className="btn small danger" onClick={() => setPending({ kind: "disable", seed: s.seed.seed_id })} disabled={busy}>
         {busy ? "running…" : "Disable"}
       </button>
-      <button className="btn small" onClick={() => setPending({ kind: "repair", seed: s.seed.seed_id })} disabled={busy} title="evolution-operator repair">
+      <button className="btn small" onClick={() => setPending({ kind: "repair", seed: s.seed.seed_id })} disabled={busy} title={t("marketplace.seeds.repair_title", "evolution-operator repair")}>
         {busy ? "running…" : "Repair"}
       </button>
     </div>
@@ -179,7 +181,7 @@ export function SeedsSection() {
           <input
             className="input"
             style={{ width: 150 }}
-            placeholder="search id/name…"
+            placeholder={t("marketplace.seeds.search_ph", "search id/name…")}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
@@ -188,7 +190,7 @@ export function SeedsSection() {
                 setAppliedQ(q.trim());
               }
             }}
-            aria-label="search seeds"
+            aria-label={t("marketplace.seeds.search_aria", "search seeds")}
           />
           <button
             className="btn small ghost"
@@ -199,16 +201,16 @@ export function SeedsSection() {
           >
             Search
           </button>
-          <div className="mkt-store-viewtoggle" role="group" aria-label="seeds view">
+          <div className="mkt-store-viewtoggle" role="group" aria-label={t("marketplace.seeds.view_aria", "seeds view")}>
             <button aria-pressed={view === "table"} onClick={() => changeView("table")}>table</button>
             <button aria-pressed={view === "cards"} onClick={() => changeView("cards")}>cards</button>
           </div>
-          <FreshnessNote updatedAtMs={seeds.dataUpdatedAt ?? null} label="seeds" />
+          <FreshnessNote updatedAtMs={seeds.dataUpdatedAt ?? null} label={t("marketplace.fresh.seeds", "seeds")} />
         </>
       }
     >
       {/* Facet chips — categories/count labels derived from the loaded page only */}
-      <div className="mkt-store-chips" style={{ marginBottom: 6 }} role="group" aria-label="family filter (loaded rows)">
+      <div className="mkt-store-chips" style={{ marginBottom: 6 }} role="group" aria-label={t("marketplace.seeds.family_aria", "family filter (loaded rows)")}>
         <span className="tiny faint" style={{ letterSpacing: "0.08em" }}>family</span>
         {familyFacets.length === 0 ? (
           <span className="tiny faint">no families in the loaded page</span>
@@ -231,7 +233,7 @@ export function SeedsSection() {
           ))
         )}
       </div>
-      <div className="mkt-store-chips" style={{ marginBottom: 8 }} role="group" aria-label="lifecycle filter (loaded rows)">
+      <div className="mkt-store-chips" style={{ marginBottom: 8 }} role="group" aria-label={t("marketplace.seeds.lifecycle_aria", "lifecycle filter (loaded rows)")}>
         <span className="tiny faint" style={{ letterSpacing: "0.08em" }}>lifecycle</span>
         {lifecycleFacets.length === 0 ? (
           <span className="tiny faint">no lifecycles in the loaded page</span>
@@ -253,7 +255,7 @@ export function SeedsSection() {
           ))
         )}
         {hasFilter && (
-          <button className="mkt-store-chip" aria-pressed={false} onClick={clearFilters} title="clear family/lifecycle/search filters">
+          <button className="mkt-store-chip" aria-pressed={false} onClick={clearFilters} title={t("marketplace.seeds.clear_title", "clear family/lifecycle/search filters")}>
             ✕ clear filters
           </button>
         )}
@@ -295,14 +297,14 @@ export function SeedsSection() {
       ) : seeds.isError ? (
         <ErrorState message={asErrorText(seeds.error)} onRetry={() => seeds.refetch()} />
       ) : rows.length === 0 ? (
-        <EmptyState message="No seeds match this filter." hint="Install a pack above — seeds appear here after the backend stores them." />
+        <EmptyState message={t("marketplace.seeds.empty", "No seeds match this filter.")} hint={t("marketplace.seeds.empty_hint", "Install a pack above — seeds appear here after the backend stores them.")} />
       ) : view === "cards" ? (
         <div className="mkt-store-seeds">
           {visibleRows.map((s) => (
             <div className="mkt-store-seed" key={`${s.seed.seed_id}:${String(s.seed.version ?? "")}`}>
               <div className="mkt-store-seed-head">
                 <div>
-                  <button className="btn small ghost nm" onClick={() => setDetail(s.seed.seed_id)} title="open detail drawer" style={{ padding: 0, border: "none", background: "none" }}>
+                  <button className="btn small ghost nm" onClick={() => setDetail(s.seed.seed_id)} title={t("marketplace.seeds.open_detail", "open detail drawer")} style={{ padding: 0, border: "none", background: "none" }}>
                     {s.seed.name || s.seed.seed_id}
                   </button>
                   <div className="id">{s.seed.seed_id}</div>
@@ -336,7 +338,7 @@ export function SeedsSection() {
           {visibleRows.map((s) => (
             <tr key={`${s.seed.seed_id}:${String(s.seed.version ?? "")}`}>
               <td>
-                <button className="btn small ghost" onClick={() => setDetail(s.seed.seed_id)} title="open detail drawer">
+                <button className="btn small ghost" onClick={() => setDetail(s.seed.seed_id)} title={t("marketplace.seeds.open_detail", "open detail drawer")}>
                   {s.seed.name || s.seed.seed_id}
                 </button>
                 <div className="tiny faint inline-mono">{s.seed.seed_id} · v{String(s.seed.version ?? "—")}</div>
@@ -347,7 +349,7 @@ export function SeedsSection() {
               </td>
               <td>
                 {typeof s.seed.risk_profile === "string" && s.seed.risk_profile ? (
-                  <span className="mkt-family-tag" title="risk profile">
+                  <span className="mkt-family-tag" title={t("marketplace.seeds.risk_title", "risk profile")}>
                     <span className="swatch" aria-hidden="true" />
                     {s.seed.risk_profile}
                   </span>

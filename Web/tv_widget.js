@@ -6,6 +6,17 @@
 // Gauges replaced (user-approved 2026-09-06) by count-proportional distribution
 // bars; last_close + meta.generated_at surfaced from the real response.
 (function(){
+  // i18n seam (P3): local helper mirroring the ux_signal.js:24-27 pattern.
+  // Backend gauge labels ('Buy'/'Sell'/'Neutral') are protocol VALUES, so the
+  // verdict words are mapped through t() at display time and class selection
+  // keeps comparing the raw English tokens.
+  function t(key, fallback, vars){
+    var i = window.NX_I18N;
+    var s = i ? i.t(key, fallback, vars) : fallback;
+    if (vars) Object.keys(vars).forEach(function(k){ s = s.split('{' + k + '}').join(vars[k]); });
+    return s;
+  }
+
   var TF = 'M1';
   var POLL_MS = 10000;        // legacy healthy cadence (superseded by POLL_OK_MS below)
   var POLL_ERR_MS = 10000;    // retry cadence while degraded/stale (was 5s: too hot)
@@ -16,6 +27,16 @@
   var inflight = false;
 
   var GLYPH = { buy: '\u25B2', sell: '\u25BC', neutral: '\u25CF' };
+
+  // gauge labels arrive from the backend in English; display the translated word
+  function verdictLabel(label){
+    if (label === 'Buy')      return t('ux.signal.buy', 'Buy');
+    if (label === 'Strong buy')  return t('ux.signal.strong_buy', 'Strong buy');
+    if (label === 'Sell')     return t('ux.signal.sell', 'Sell');
+    if (label === 'Strong sell') return t('ux.signal.strong_sell', 'Strong sell');
+    if (label === 'Neutral')  return t('tv.neutral', 'Neutral');
+    return label;
+  }
 
   // ── cycles palette — same red→purple→blue as your reference screenshot,
   //     tuned for dark: idle track #3b4a6b (not white), labels readable on #0d1526
@@ -119,14 +140,14 @@
   function setVerdict(id, label){
     var n = el(id);
     if (!n) return;
-    n.textContent = label;
+    n.textContent = verdictLabel(label);
     n.classList.remove('is-buy','is-sell','is-neutral');
     n.classList.add(verdictClass(label));
   }
   function setChip(id, label){
     var n = el(id);
     if (!n) return;
-    n.textContent = label;
+    n.textContent = verdictLabel(label);
     n.classList.remove('is-buy','is-sell','is-neutral');
     n.classList.add(verdictClass(label));
   }
@@ -147,7 +168,7 @@
       '<td class="tv-name">' + escapeHTML(r.name) + '</td>' +
       '<td class="tv-val">' + fmt(r.value) + '</td>' +
       '<td class="tv-act"><span class="tv-action is-' + kind + '"><i aria-hidden="true">' + GLYPH[kind] + '</i>' +
-      escapeHTML(r.action) + '</span></td></tr>';
+      escapeHTML(verdictLabel(r.action)) + '</span></td></tr>';
   }
   function emptyRowHTML(cols, msg){
     return '<tr><td colspan="' + cols + '" class="tv-empty">' + escapeHTML(msg) + '</td></tr>';
@@ -177,8 +198,8 @@
       setCls(el(id), 'skeleton', on);
     });
     if (on){
-      setBody('tv-osc-body', [], 3, 'Loading oscillators\u2026');
-      setBody('tv-ma-body', [], 3, 'Loading moving averages\u2026');
+      setBody('tv-osc-body', [], 3, t('tv.oscillators_loading', 'Loading oscillators\u2026'));
+      setBody('tv-ma-body', [], 3, t('tv.averages_loading', 'Loading moving averages\u2026'));
     }
   }
 
@@ -223,9 +244,9 @@
     setText('tv-price', fmtPrice(data.last_close));
     setText('tv-timeframe-label', data.timeframe || TF);
     var total = gs.sell + gs.neutral + gs.buy;
-    renderSignal('tv-sum-', gs, total + ' signals \u00B7 ' + (data.timeframe || TF));
-    renderSignal('tv-osc-', go, (go.sell + go.neutral + go.buy) + ' oscillators');
-    renderSignal('tv-ma-',  gm, (gm.sell + gm.neutral + gm.buy) + ' averages');
+    renderSignal('tv-sum-', gs, t('tv.signals_meta', '{n} signals \u00B7 {tf}', { n: total, tf: (data.timeframe || TF) }));
+    renderSignal('tv-osc-', go, t('tv.oscillators_meta', '{n} oscillators', { n: go.sell + go.neutral + go.buy }));
+    renderSignal('tv-ma-',  gm, t('tv.averages_meta', '{n} averages', { n: gm.sell + gm.neutral + gm.buy }));
 
     // cycles — same gauges as your reference (red→blue, dark substrate), additive
     var aOsc = go.angle_deg, aSum = gs.angle_deg, aMa = gm.angle_deg;
@@ -233,7 +254,7 @@
     drawCycle('tv-cycle-sum', gs.label, aSum);
     drawCycle('tv-cycle-ma',  gm.label, aMa);
     // cycle verdicts + counts mirror distribution bars (same data, second visual)
-    function cycleVerdict(id, label){ var n = el(id); if (!n) return; n.textContent = label; n.classList.remove('is-buy','is-sell','is-neutral'); n.classList.add(label === 'Buy' || label === 'Strong buy' ? 'is-buy' : label === 'Sell' || label === 'Strong sell' ? 'is-sell' : 'is-neutral'); }
+    function cycleVerdict(id, label){ var n = el(id); if (!n) return; n.textContent = verdictLabel(label); n.classList.remove('is-buy','is-sell','is-neutral'); n.classList.add(label === 'Buy' || label === 'Strong buy' ? 'is-buy' : label === 'Sell' || label === 'Strong sell' ? 'is-sell' : 'is-neutral'); }
     cycleVerdict('tv-cycle-osc-label', go.label);
     cycleVerdict('tv-cycle-sum-label', gs.label);
     cycleVerdict('tv-cycle-ma-label', gm.label);
@@ -241,15 +262,15 @@
     setText('tv-cycle-sum-sell', String(gs.sell)); setText('tv-cycle-sum-neu', String(gs.neutral)); setText('tv-cycle-sum-buy', String(gs.buy));
     setText('tv-cycle-ma-sell',  String(gm.sell)); setText('tv-cycle-ma-neu',  String(gm.neutral)); setText('tv-cycle-ma-buy',  String(gm.buy));
 
-    setBody('tv-osc-body', osc, 3, 'No oscillator data for this timeframe yet \u2014 waiting for completed bars.');
-    setBody('tv-ma-body', ma, 3, 'No moving-average data for this timeframe yet \u2014 waiting for completed bars.');
+    setBody('tv-osc-body', osc, 3, t('tv.oscillators_empty', 'No oscillator data for this timeframe yet \u2014 waiting for completed bars.'));
+    setBody('tv-ma-body', ma, 3, t('tv.averages_empty', 'No moving-average data for this timeframe yet \u2014 waiting for completed bars.'));
 
     var pb = el('tv-pivot-body');
     if (pb){
       var levels = piv.levels || ['R3','R2','R1','P','S1','S2','S3'];
       var cols = piv.columns && piv.columns.length ? piv.columns : ['Classic','Fibonacci','Camarilla','Woodie','DM'];
       if (!levels.length){
-        pb.innerHTML = emptyRowHTML(cols.length + 1, 'No pivot levels available yet.');
+        pb.innerHTML = emptyRowHTML(cols.length + 1, t('tv.pivots_empty', 'No pivot levels available yet.'));
       } else {
         pb.innerHTML = levels.map(function(lv){
           var row = (piv.rows && piv.rows[lv]) || {};
@@ -269,13 +290,13 @@
       var m1b = data.source_bar_count || null;
       badge.classList.remove('hidden','is-warn');
       badge.textContent = (data.timeframe || TF) + ' \u00B7 ' + (data.symbol || '') +
-        (m1b ? ' \u00B7 ' + m1b + ' M1 bars' : (n ? ' \u00B7 ' + n + ' bars' : ''));
+        (m1b ? ' \u00B7 ' + t('tv.m1_bars', '{n} M1 bars', { n: m1b }) : (n ? ' \u00B7 ' + t('tv.bars', '{n} bars', { n: n }) : ''));
     }
     // server-generated timestamp from the response envelope meta (real data)
     var upd = el('tv-updated');
     if (upd && meta && meta.generated_at){
       var t = new Date(meta.generated_at);
-      if (!isNaN(t.getTime())) upd.textContent = 'Updated ' + fmtTime(t);
+      if (!isNaN(t.getTime())) upd.textContent = t('tv.updated', 'Updated {t}', { t: fmtTime(t) });
     }
   }
 
@@ -318,15 +339,15 @@
       inflight = false;
       if (slowTimer) { clearTimeout(slowTimer); slowTimer = null; }
       var code = (e && e.error && e.error.code) || '';
-      var msg = timedOut ? 'Indicator compute timed out (retrying on schedule)…'
-        : code === 'ENGINE_UNAVAILABLE' ? 'Waiting for engine\u2026'
-        : code === 'RESOURCE_UNAVAILABLE' ? 'No bar history yet\u2026'
-        : 'Indicator feed unavailable';
+      var msg = timedOut ? t('tv.err_timeout', 'Indicator compute timed out (retrying on schedule)…')
+        : code === 'ENGINE_UNAVAILABLE' ? t('tv.err_engine', 'Waiting for engine\u2026')
+        : code === 'RESOURCE_UNAVAILABLE' ? t('tv.err_history', 'No bar history yet\u2026')
+        : t('tv.err_feed', 'Indicator feed unavailable');
       if (lastGood && lastGood.data){
         // keep showing the last real data; never pretend the feed is alive
         state = 'stale';
         skeleton(false);
-        setBanner('stale', 'Live feed interrupted \u2014 showing values from ' + fmtTime(lastGood.at) + ' (' + msg + ')');
+        setBanner('stale', t('tv.stale_banner', 'Live feed interrupted \u2014 showing values from {t} ({m})', { t: fmtTime(lastGood.at), m: msg }));
       } else {
         state = 'error';
         setBanner('error', msg);
@@ -389,5 +410,10 @@
     var iv = setInterval(function(){ if (init()) clearInterval(iv); }, 300);
     setTimeout(function(){ clearInterval(iv); }, 10000);
   }
+  // P1 (i18n): rebuild on language switch so labels/verdict words follow the
+  // newly selected language without waiting for the next poll tick.
+  document.addEventListener('nexus:lang-changed', function(){
+    if (lastGood && lastGood.data) render(lastGood.data, lastGood.meta);
+  });
   window.__tvIndicatorRefresh = fetchAndRender;
 })();

@@ -35,6 +35,7 @@ import {
   describeCanvas,
   NODE_H,
   NODE_W,
+  type CanvasT,
   type EdgeVisual,
   type NodeVisual,
 } from "../traceCanvas";
@@ -53,6 +54,7 @@ import {
   type Packet,
   type PacketSeen,
 } from "../traceGraph";
+import { useI18n } from "@/stores/i18nStore";
 import type { DerivedGraph } from "../traceGraph";
 import type { TraceEvent } from "../types";
 
@@ -86,6 +88,7 @@ const NodeView = memo(function NodeView({
   selected: boolean;
   onSelect: (stage: string) => void;
 }) {
+  const t = useI18n((s) => s.t);
   return (
     <g
       className={`dt-node ${v.cls} ${v.tone} ${selected ? "selected" : ""} ${dimmed ? "dim" : ""} ${
@@ -95,9 +98,7 @@ const NodeView = memo(function NodeView({
       onClick={() => onSelect(v.node.stage)}
       role="button"
       tabIndex={0}
-      aria-label={`stage ${v.node.stage}, ${v.node.count} events${
-        v.node.terminal ? ", terminal" : ""
-      }${v.node.provenanceGap ? ", provenance gap" : ""}`}
+      aria-label={t("trace.canvas.node_aria", "stage {stage}, {count} events", { stage: v.node.stage, count: v.node.count }) + (v.node.terminal ? `, ${t("trace.canvas.terminal", "terminal")}` : "") + (v.node.provenanceGap ? `, ${t("trace.canvas.provenance_gap", "provenance gap")}` : "")}
     >
       <rect width={v.width} height={v.height} rx={8} className="dt-node-body" />
       {v.extCls ? <rect width={v.width} height={v.height} rx={8} className={`dt-ext ${v.extCls}`} /> : null}
@@ -175,6 +176,17 @@ const EdgeView = memo(function EdgeView({
   );
 });
 
+/** Redraw the canvas when the language changes (labels are locale-dependent). */
+function useLangChanged(onLang: () => void): void {
+  useEffect(() => {
+    const handler = () => onLang();
+    document.addEventListener("nexus:lang-changed", handler);
+    return () => {
+      document.removeEventListener("nexus:lang-changed", handler);
+    };
+  }, [onLang]);
+}
+
 export function TraceGraphCanvas({
   graph,
   selectedTraceId,
@@ -190,6 +202,11 @@ export function TraceGraphCanvas({
   const svgRef = useRef<SVGSVGElement | null>(null);
   const packetSeenRef = useRef<PacketSeen | null>(null);
   const sizeRef = useRef({ vw: 0, vh: 0 });
+  const t = useI18n((s) => s.t);
+
+  // Locale bump → recompute canvas labels (force a new visuals object).
+  const [langTick, setLangTick] = useState(0);
+  useLangChanged(useCallback(() => setLangTick((n) => n + 1), []));
 
   const layout = useMemo(() => layoutCanvas(graph), [graph]);
 
@@ -200,8 +217,8 @@ export function TraceGraphCanvas({
   );
 
   const visuals = useMemo(
-    () => describeCanvas(layout, { collapsedCounts: view.collapsedCounts }),
-    [layout, view],
+    () => describeCanvas(layout, { collapsedCounts: view.collapsedCounts }, t as CanvasT),
+    [layout, view, t, langTick],
   );
 
   /* §5 — packets fire ONLY on real event arrival. No timer: the derivation
@@ -232,7 +249,6 @@ export function TraceGraphCanvas({
     if (!vw || !vh) return;
     setVp((p) => focusViewport(layout, ids, vw, vh, p.k));
   }, [autoFocus, activeEvents, layout]);
-
   const activeStages = useMemo(() => {
     if (!activeEvents) return null;
     return new Set(activeEvents.map((e) => e.stage));
@@ -293,7 +309,7 @@ export function TraceGraphCanvas({
     !!(selectedTraceId && activeStages && !stages.some((s) => activeStages.has(s)));
 
   return (
-    <div className="dt-canvas" role="region" aria-label="Runtime causal topology">
+    <div className="dt-canvas" role="region" aria-label={t("trace.canvas.region", "Runtime causal topology")}>
       <svg
         ref={svgRef}
         className="dt-canvas-svg"
@@ -339,35 +355,34 @@ export function TraceGraphCanvas({
 
       {!layout.nodes.length ? (
         <div className="dt-canvas-empty">
-          <div className="dt-canvas-empty-title">OBSERVING RUNTIME — NO DECISION PATH OBSERVED YET</div>
+          <div className="dt-canvas-empty-title">{t("trace.canvas.empty_title", "OBSERVING RUNTIME — NO DECISION PATH OBSERVED YET")}</div>
           <div className="dt-canvas-empty-sub">
-            The graph derives only from real decision events. Nodes appear exactly when the
-            runtime proves each stage ran.
+            {t("trace.canvas.empty_sub", "The graph derives only from real decision events. Nodes appear exactly when the runtime proves each stage ran.")}
           </div>
         </div>
       ) : null}
 
-      <div className="dt-canvas-zoom" aria-label="Zoom controls">
-        <button className="dt-zoom-btn" onClick={() => zoomBy(1.25)} aria-label="Zoom in">+</button>
+      <div className="dt-canvas-zoom" aria-label={t("trace.canvas.zoom_aria", "Zoom controls")}>
+        <button className="dt-zoom-btn" onClick={() => zoomBy(1.25)} aria-label={t("trace.canvas.zoom_in", "Zoom in")}>+</button>
         <span className="dt-zoom-k">{vp.k.toFixed(1)}x</span>
-        <button className="dt-zoom-btn" onClick={() => zoomBy(0.8)} aria-label="Zoom out">-</button>
-        <button className="dt-zoom-btn fit" onClick={fit} aria-label="Fit graph to view">FIT</button>
+        <button className="dt-zoom-btn" onClick={() => zoomBy(0.8)} aria-label={t("trace.canvas.zoom_out", "Zoom out")}>-</button>
+        <button className="dt-zoom-btn fit" onClick={fit} aria-label={t("trace.canvas.fit", "Fit graph to view")}>FIT</button>
         <button
           className={`dt-zoom-btn ${autoFocus ? "on" : ""}`}
           onClick={() => setAutoFocus((a) => !a)}
           aria-pressed={autoFocus}
-          aria-label="Toggle auto-focus"
-          title="Auto-follow the newest observed stage"
+          aria-label={t("trace.canvas.toggle_autofocus", "Toggle auto-focus")}
+          title={t("trace.canvas.autofocus_tip", "Auto-follow the newest observed stage")}
         >
           AF
         </button>
       </div>
 
       <div className="dt-canvas-legend" aria-hidden="true">
-        <span className="dt-legend-item"><i className="dt-dot observed" />observed stage</span>
-        <span className="dt-legend-item"><i className="dt-dot terminal" />terminal (execution evidence)</span>
-        <span className="dt-legend-item"><i className="dt-dot unmapped" />UNMAPPED</span>
-        <span className="dt-legend-item"><i className="dt-dot gap" />PROVENANCE GAP (dashed)</span>
+        <span className="dt-legend-item"><i className="dt-dot observed" />{t("trace.canvas.legend_observed", "observed stage")}</span>
+        <span className="dt-legend-item"><i className="dt-dot terminal" />{t("trace.canvas.legend_terminal", "terminal (execution evidence)")}</span>
+        <span className="dt-legend-item"><i className="dt-dot unmapped" />{t("trace.marker.unmapped", "UNMAPPED")}</span>
+        <span className="dt-legend-item"><i className="dt-dot gap" />{t("trace.marker.provenance_gap", "PROVENANCE GAP (dashed)")}</span>
       </div>
     </div>
   );

@@ -125,20 +125,22 @@ export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: numb
 
   return (
     <Panel
-      title="Market Radar"
-      subtitle="backend setup intelligence — rendered verbatim, never recomputed here"
+      title={t("dash.radar.title", "Market Radar")}
+      subtitle={t("dash.radar.subtitle", "backend setup intelligence — rendered verbatim, never recomputed here")}
       accent
       right={
         <span className={`mc-radar__state mc-radar__state--${tone}`} role="status">
-          {r ? state : "NO RADAR DATA"}
+          {r ? state : t("dash.radar.no_data", "NO RADAR DATA")}
         </span>
       }
     >
       <div className={`mc-radar mc-radar--${tone}`}>
         {/* Hero decision line (legacy radar-decision) */}
         <div className="mc-radar__decision">
-          <span className="mc-radar__decision-k">Decision</span>
-          <span className="mc-radar__decision-v">{r ? dash(r.decision_reason) : "Awaiting radar snapshot…"}</span>
+          <span className="mc-radar__decision-k">{t("dash.radar.decision", "Decision")}</span>
+          <span className="mc-radar__decision-v">
+            {r ? dash(r.decision_reason) : t("dash.radar.awaiting", "Awaiting radar snapshot…")}
+          </span>
         </div>
 
         {r && (
@@ -148,13 +150,13 @@ export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: numb
               <div className="mc-radar__v">{dash(best?.setup_type)}</div>
             </div>
             <div>
-              <div className="mc-radar__k">Direction</div>
+              <div className="mc-radar__k">{t("dash.radar.direction", "Direction")}</div>
               <div className="mc-radar__v">
                 {dir ? <span className={`mc-radar__dir mc-radar__dir--${dir.toLowerCase()}`}>{dir}</span> : "—"}
               </div>
             </div>
             <div>
-              <div className="mc-radar__k">Quality</div>
+              <div className="mc-radar__k">{t("dash.radar.quality", "Quality")}</div>
               <div className="mc-radar__v mc-radar__v--gold">
                 {qualityPct}
               </div>
@@ -164,11 +166,11 @@ export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: numb
 
         <div className="mc-radar__facts">
           <div className="mc-radar__fact">
-            <span className="mc-radar__k">Regime</span>
+            <span className="mc-radar__k">{t("dash.radar.regime", "Regime")}</span>
             <span className="mc-radar__fv">{r ? dash(r.regime) : "—"}</span>
           </div>
           <div className="mc-radar__fact">
-            <span className="mc-radar__k">Candidates</span>
+            <span className="mc-radar__k">{t("dash.radar.candidates", "Candidates")}</span>
             <span className="mc-radar__fv mc-radar__fv--gold">{r ? dash(r.candidate_count) : "—"}</span>
           </div>
           <div className="mc-radar__fact">
@@ -176,15 +178,20 @@ export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: numb
             <span className={`mc-radar__news mc-radar__news--${r ? newsTone : "idle"}`}>{r ? dash(news) : "—"}</span>
           </div>
           <div className="mc-radar__fact">
-            <span className="mc-radar__k">Updated</span>
-            <span className="mc-radar__fv mc-radar__fv--dim" title={r?.updated_at ?? "no radar snapshot"}>
-              {r?.updated_at ? `${formatTime(r.updated_at)} · ${age}s ago` : "—"}
+            <span className="mc-radar__k">{t("dash.radar.updated_label", "Updated")}</span>
+            <span
+              className="mc-radar__fv mc-radar__fv--dim"
+              title={r?.updated_at ?? t("dash.radar.no_snapshot", "no radar snapshot")}
+            >
+              {r?.updated_at
+                ? t("dash.radar.updated", "{time} · {sec}s ago", { time: formatTime(r.updated_at), sec: age })
+                : "—"}
             </span>
           </div>
         </div>
 
         {/* Compatible strategies as chips — verbatim backend strings */}
-        <div className="mc-radar__strategies" aria-label="compatible strategies">
+        <div className="mc-radar__strategies" aria-label={t("dash.radar.strategies_aria", "compatible strategies")}>
           <span className="mc-radar__k">{t("dash.radar.compatible", "Compatible strategies")}</span>
           <span className="mc-radar__chips">
             {r ? (compat.length > 0 ? compat.map((c) => <span key={c} className="l4-chip accent">{c}</span>) : <span className="mc-radar__fv">—</span>) : <span className="mc-radar__fv">—</span>}
@@ -194,7 +201,7 @@ export function MarketRadarPanel({ radar, nowMs }: { radar: unknown; nowMs: numb
         {/* Ranked setups (radar.setups = backend's ranked top-5 list, verbatim) */}
         {r && r.setups && r.setups.length > 0 && (
           <div tabIndex={0} className="mc-radar__setups">
-            <span className="mc-radar__k">Ranked setups (backend order)</span>
+            <span className="mc-radar__k">{t("dash.radar.ranked", "Ranked setups (backend order)")}</span>
             <ul>
               {r.setups.map((s, i) => {
                 const sd = directionOf(s);

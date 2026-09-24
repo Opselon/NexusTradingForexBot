@@ -8,6 +8,7 @@
 
 import { useMemo } from "react";
 import { extent, fmtCompact, linePath, niceTicks, scaleLinear, type Pt } from "./geometry";
+import { useI18n } from "@/stores/i18nStore";
 import "./viz.css";
 
 export interface DrawdownPoint {
@@ -25,7 +26,9 @@ export interface DrawdownChartProps {
 
 const W = 640;
 
-export function DrawdownChart({ points, height = 150, maxDrawdownPct, emptyHint = "no drawdown samples from the backend" }: DrawdownChartProps) {
+export function DrawdownChart({ points, height = 150, maxDrawdownPct, emptyHint }: DrawdownChartProps) {
+  const t = useI18n((s) => s.t);
+  const emptyHintText = emptyHint ?? t("ui.viz.dd_empty", "no drawdown samples from the backend");
   // The geometry is a pure function of `points` (identity changes only when a
   // fetch lands). Memoizing keeps an unchanged series from being re-walked on
   // every parent render; the emitted SVG is byte-identical.
@@ -49,11 +52,11 @@ export function DrawdownChart({ points, height = 150, maxDrawdownPct, emptyHint 
     return { toY, ticks, line, area, zeroY, worst, ext };
   }, [points, height]);
 
-  if (geo === null) return <div className="viz-empty">{emptyHint}</div>;
+  if (geo === null) return <div className="viz-empty">{emptyHintText}</div>;
   const { toY, ticks, line, area, zeroY, worst, ext } = geo;
   return (
     <div className="viz-frame">
-      <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={`drawdown, worst ${worst.toFixed(2)}%`}>
+      <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={t("ui.viz.dd_aria", "drawdown, worst {w}%", { w: worst.toFixed(2) })}>
         {ticks.map((t) => (
           <g key={t}>
             <line className="viz-grid" x1={0} x2={W} y1={toY(t)} y2={toY(t)} />
@@ -67,14 +70,14 @@ export function DrawdownChart({ points, height = 150, maxDrawdownPct, emptyHint 
         <path className="viz-line neg" d={line} />
         {maxDrawdownPct !== null && maxDrawdownPct !== undefined && (
           <text className="viz-axis" x={W} y={toY(Math.min(maxDrawdownPct, ext[1])) - 3} textAnchor="end" style={{ fill: "var(--amber)" }}>
-            max {maxDrawdownPct.toFixed(2)}%
+            {t("ui.viz.max_pct", "max {v}%", { v: maxDrawdownPct.toFixed(2) })}
           </text>
         )}
       </svg>
       <div className="viz-legend">
         <span>
           <i className="sw neg" />
-          drawdown_pct (running peak, accounting core)
+          {t("ui.viz.dd_legend", "drawdown_pct (running peak, accounting core)")}
         </span>
       </div>
     </div>

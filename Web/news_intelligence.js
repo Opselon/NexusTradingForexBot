@@ -19,8 +19,17 @@ window.NewsIntel = window.NewsIntel || {};
 (function () {
   'use strict';
 
+  // i18n seam (P3): local helper mirroring the ux_signal.js:24-27 pattern.
+  function t(key, fallback, vars) {
+    var i = window.NX_I18N;
+    var s = i ? i.t(key, fallback, vars) : (fallback || key);
+    if (vars) Object.keys(vars).forEach(function (k) { s = s.split('{' + k + '}').join(vars[k]); });
+    return s;
+  }
+
   // Single source of truth for view state (§81).
   var state = {
+    counts: null,          // last status_counts payload (for re-render on lang switch)
     aiStatus: null,        // last ai_status payload
     filter: 'ACTIVE',      // ACTIVE | ALL | IRRELEVANT
     analyzing: {},         // article_id -> true (in-flight dedup, §50)
@@ -43,16 +52,16 @@ window.NewsIntel = window.NewsIntel || {};
     var s = state.aiStatus;
     if (!s) { box.innerHTML = ''; return; }
     var cls = 'ni-chip ni-chip-unknown';
-    var label = 'AI UNKNOWN';
-    if (s.state === 'AVAILABLE') { cls = 'ni-chip ni-chip-ready'; label = 'AI READY'; }
-    else if (s.state === 'NOT_CONFIGURED') { cls = 'ni-chip ni-chip-notcfg'; label = 'AI NOT CONFIGURED'; }
-    else if (s.state === 'UNAVAILABLE') { cls = 'ni-chip ni-chip-unavail'; label = 'AI UNAVAILABLE'; }
-    else if (s.state === 'MISCONFIGURED') { cls = 'ni-chip ni-chip-misconfig'; label = 'AI MISCONFIGURED'; }
+    var label = t('news.ai.unknown', 'AI UNKNOWN');
+    if (s.state === 'AVAILABLE') { cls = 'ni-chip ni-chip-ready'; label = t('news.ai.ready', 'AI READY'); }
+    else if (s.state === 'NOT_CONFIGURED') { cls = 'ni-chip ni-chip-notcfg'; label = t('news.ai.not_configured', 'AI NOT CONFIGURED'); }
+    else if (s.state === 'UNAVAILABLE') { cls = 'ni-chip ni-chip-unavail'; label = t('news.ai.unavailable', 'AI UNAVAILABLE'); }
+    else if (s.state === 'MISCONFIGURED') { cls = 'ni-chip ni-chip-misconfig'; label = t('news.ai.misconfigured', 'AI MISCONFIGURED'); }
     var html = '<span class="' + cls + '"><i class="fa-solid fa-robot mr-1"></i>' + esc(label) + '</span>';
-    if (s.provider) html += '<span class="ni-muted">provider: ' + esc(s.provider) + '</span>';
-    if (s.model) html += '<span class="ni-muted">model: ' + esc(s.model) + '</span>';
+    if (s.provider) html += '<span class="ni-muted">' + t('news.ai.provider', 'provider: {p}', { p: s.provider }) + '</span>';
+    if (s.model) html += '<span class="ni-muted">' + t('news.ai.model', 'model: {m}', { m: s.model }) + '</span>';
     if (s.state === 'NOT_CONFIGURED' || s.state === 'MISCONFIGURED') {
-      html += '<button onclick="NewsIntel.openFactoryCTA()" class="ml-1 bg-accentCyan/10 text-accentCyan border border-accentCyan/40 rounded px-2 py-0.5 text-[10px] font-bold hover:bg-accentCyan/20 transition">Configure in Strategy Factory</button>';
+      html += '<button onclick="NewsIntel.openFactoryCTA()" class="ml-1 bg-accentCyan/10 text-accentCyan border border-accentCyan/40 rounded px-2 py-0.5 text-[10px] font-bold hover:bg-accentCyan/20 transition">' + t('news.ai.configure', 'Configure in Strategy Factory') + '</button>';
     }
     box.innerHTML = html;
   }
@@ -128,7 +137,7 @@ window.NewsIntel = window.NewsIntel || {};
     if (state.analyzing[articleId]) { return; } // dedup in-flight (§50)
     state.analyzing[articleId] = true;
     var btn = el('ni-analyze-' + articleId);
-    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ni-spinner"></span> Analyzing…'; }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ni-spinner"></span> ' + t('news.analyzing', 'Analyzing…'); }
     NX.api.post('/api/news/analyze/' + encodeURIComponent(articleId), {}, { component: 'News', action: 'ANALYZE' })
       .then(function (res) {
         if (!res || !res.ok) {
@@ -136,7 +145,7 @@ window.NewsIntel = window.NewsIntel || {};
           NX.Forensic.toast.error(n.message, { detail: n.detail });
           return;
         }
-        NX.Forensic.toast.success('AI analysis complete.');
+        NX.Forensic.toast.success(t('news.analyze_done', 'AI analysis complete.'));
         // refresh the feed to show the result (server owns state).
         if (typeof loadNewsFeed === 'function') loadNewsFeed();
       })
@@ -146,7 +155,7 @@ window.NewsIntel = window.NewsIntel || {};
       })
       .finally(function () {
         state.analyzing[articleId] = false;
-        if (btn) { btn.disabled = false; btn.innerHTML = 'Analyze with AI'; }
+        if (btn) { btn.disabled = false; btn.innerHTML = t('news.analyze_with_ai', 'Analyze with AI'); }
       });
   };
 
@@ -158,7 +167,7 @@ window.NewsIntel = window.NewsIntel || {};
           NX.Forensic.toast.error(n.message, { detail: n.detail });
           return;
         }
-        NX.Forensic.toast.success('AI re-analysis complete.');
+        NX.Forensic.toast.success(t('news.reanalyze_done', 'AI re-analysis complete.'));
         if (typeof loadNewsFeed === 'function') loadNewsFeed();
       })
       .catch(function (e) {
@@ -181,12 +190,13 @@ window.NewsIntel = window.NewsIntel || {};
   };
 
   function renderStatusCounts(counts) {
+    state.counts = counts || null;
     var box = el('news-status-counts');
     if (!box) return;
     if (!counts) { box.textContent = ''; return; }
     var parts = [];
-    if (counts.ACTIVE != null) parts.push('Active ' + counts.ACTIVE);
-    if (counts.IRRELEVANT != null) parts.push('Irrelevant ' + counts.IRRELEVANT);
+    if (counts.ACTIVE != null) parts.push(t('news.count_active', 'Active {n}', { n: counts.ACTIVE }));
+    if (counts.IRRELEVANT != null) parts.push(t('news.count_irrelevant', 'Irrelevant {n}', { n: counts.IRRELEVANT }));
     box.textContent = parts.join(' · ');
   }
   NewsIntel.renderStatusCounts = renderStatusCounts;
@@ -200,9 +210,9 @@ window.NewsIntel = window.NewsIntel || {};
     var box = el('news-pro-controls');
     if (!box) return;
     var html = '' +
-      '<span class="text-[9px] uppercase tracking-widest text-textMuted">Pro:</span>' +
-      '<button id="news-autoprune-btn" onclick="NewsIntel.autoPrune()" class="bg-amber-500/10 text-amber-300 border border-amber-500/40 rounded px-2.5 py-1 text-[10px] font-bold hover:bg-amber-500/20 transition">Hide unrelated (auto-prune)</button>' +
-      '<button id="news-batch-btn" onclick="NewsIntel.batchAnalyze()" class="bg-accentCyan/10 text-accentCyan border border-accentCyan/40 rounded px-2.5 py-1 text-[10px] font-bold hover:bg-accentCyan/20 transition">AI-analyze visible</button>';
+      '<span class="text-[9px] uppercase tracking-widest text-textMuted">' + t('news.pro', 'Pro:') + '</span>' +
+      '<button id="news-autoprune-btn" onclick="NewsIntel.autoPrune()" class="bg-amber-500/10 text-amber-300 border border-amber-500/40 rounded px-2.5 py-1 text-[10px] font-bold hover:bg-amber-500/20 transition">' + t('news.hide_unrelated', 'Hide unrelated (auto-prune)') + '</button>' +
+      '<button id="news-batch-btn" onclick="NewsIntel.batchAnalyze()" class="bg-accentCyan/10 text-accentCyan border border-accentCyan/40 rounded px-2.5 py-1 text-[10px] font-bold hover:bg-accentCyan/20 transition">' + t('news.ai_analyze_visible', 'AI-analyze visible') + '</button>';
     box.innerHTML = html;
   }
 
@@ -211,14 +221,12 @@ window.NewsIntel = window.NewsIntel || {};
     // Confirmation (§33): explain recoverability, type-to-confirm not required
     // but an explicit modal confirm is used (no fake success).
     var ok = window.confirm(
-      'Mark unrelated News as Irrelevant?\n\n' +
-      'Original articles are preserved and remain recoverable (status: IRRELEVANT). ' +
-      'This uses importance + XAUUSD relevance, not a blunt "not gold => delete".'
+      t('news.prune_confirm', 'Mark unrelated News as Irrelevant?\n\nOriginal articles are preserved and remain recoverable (status: IRRELEVANT). This uses importance + XAUUSD relevance, not a blunt "not gold => delete".')
     );
     if (!ok) { return; }
     state.pruneRunning = true;
     var btn = el('news-autoprune-btn');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ni-spinner"></span> Pruning…'; }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ni-spinner"></span> ' + t('news.pruning', 'Pruning…'); }
     NX.api.post('/api/news/auto-prune', { actor: 'pro_user' }, { component: 'News', action: 'AUTO_PRUNE' })
       .then(function (res) {
         if (!res || !res.ok) {
@@ -228,9 +236,8 @@ window.NewsIntel = window.NewsIntel || {};
         }
         var r = res.body || {};
         NX.Forensic.toast.success(
-          'Pruning complete: ' + (r.marked_irrelevant || 0) + ' marked irrelevant, ' +
-          (r.preserved || 0) + ' preserved.',
-          { detail: 'already irrelevant: ' + (r.already_irrelevant || 0) }
+          t('news.prune_done', 'Pruning complete: {marked} marked irrelevant, {preserved} preserved.', { marked: r.marked_irrelevant || 0, preserved: r.preserved || 0 }),
+          { detail: t('news.prune_detail', 'already irrelevant: {n}', { n: r.already_irrelevant || 0 }) }
         );
         if (typeof loadNewsFeed === 'function') loadNewsFeed();
       })
@@ -240,7 +247,7 @@ window.NewsIntel = window.NewsIntel || {};
       })
       .finally(function () {
         state.pruneRunning = false;
-        if (btn) { btn.disabled = false; btn.innerHTML = 'Hide unrelated (auto-prune)'; }
+        if (btn) { btn.disabled = false; btn.innerHTML = t('news.hide_unrelated', 'Hide unrelated (auto-prune)'); }
       });
   };
 
@@ -252,10 +259,10 @@ window.NewsIntel = window.NewsIntel || {};
     var ids = Array.prototype.slice.call(feed.querySelectorAll('[data-article-id]'))
       .map(function (n) { return n.getAttribute('data-article-id'); })
       .filter(Boolean);
-    if (!ids.length) { NX.Forensic.toast.info('No visible articles to analyze.'); return; }
+    if (!ids.length) { NX.Forensic.toast.info(t('news.batch_empty', 'No visible articles to analyze.')); return; }
     state.batchRunning = true;
     var btn = el('news-batch-btn');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ni-spinner"></span> Analyzing ' + ids.length + '…'; }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ni-spinner"></span> ' + t('news.analyzing_n', 'Analyzing {n}…', { n: ids.length }); }
     NX.api.post('/api/news/analyze/batch', { article_ids: ids }, { component: 'News', action: 'BATCH_ANALYZE' })
       .then(function (res) {
         if (!res || !res.ok) {
@@ -265,8 +272,8 @@ window.NewsIntel = window.NewsIntel || {};
         }
         var r = res.body || {};
         NX.Forensic.toast.success(
-          'Batch AI analysis: ' + (r.completed || 0) + ' completed, ' + (r.failed || 0) + ' failed.',
-          { detail: (r.skipped || 0) + ' skipped (existing)' }
+          t('news.batch_done', 'Batch AI analysis: {done} completed, {failed} failed.', { done: r.completed || 0, failed: r.failed || 0 }),
+          { detail: t('news.batch_detail', '{n} skipped (existing)', { n: r.skipped || 0 }) }
         );
         if (typeof loadNewsFeed === 'function') loadNewsFeed();
       })
@@ -276,7 +283,7 @@ window.NewsIntel = window.NewsIntel || {};
       })
       .finally(function () {
         state.batchRunning = false;
-        if (btn) { btn.disabled = false; btn.innerHTML = 'AI-analyze visible'; }
+        if (btn) { btn.disabled = false; btn.innerHTML = t('news.ai_analyze_visible', 'AI-analyze visible'); }
       });
   };
 
@@ -407,7 +414,7 @@ window.NewsIntel = window.NewsIntel || {};
   NewsIntel.startProConsole = function(){
     if(_proTimer) clearInterval(_proTimer);
     _proSeq = 0;
-    var log = document.getElementById('news-pro-console-log'); if(log) log.innerHTML = '<div class="text-slate-500 italic">Polling console... every pass and LLM answer will appear here (route: /api/news/pro/console).</div>';
+    var log = document.getElementById('news-pro-console-log'); if(log) log.innerHTML = '<div class="text-slate-500 italic">' + t('news.console_polling', 'Polling console... every pass and LLM answer will appear here (route: /api/news/pro/console).') + '</div>';
     _pollProConsole(); _pollProStatus();
     _proTimer = setInterval(function(){
       var tab = document.getElementById('tab-news');
@@ -417,7 +424,7 @@ window.NewsIntel = window.NewsIntel || {};
   };
   NewsIntel.stopProConsole = function(){ if(_proTimer) clearInterval(_proTimer); _proTimer=null; };
   NewsIntel.refreshProStatus = function(){ _pollProStatus(); _pollProConsole(); };
-  NewsIntel.clearProConsole = function(){ var log=document.getElementById('news-pro-console-log'); if(log) log.innerHTML='<div class="text-slate-500 italic">Cleared.</div>'; _proSeq=0; };
+  NewsIntel.clearProConsole = function(){ var log=document.getElementById('news-pro-console-log'); if(log) log.innerHTML='<div class="text-slate-500 italic">' + t('news.console_cleared', 'Cleared.') + '</div>'; _proSeq=0; };
   NewsIntel.proAnalyzeAll = async function(){
     var btn = document.getElementById('news-pro-analyze-all');
     if(_proRunning) return;
@@ -450,6 +457,12 @@ window.NewsIntel = window.NewsIntel || {};
       else document.addEventListener('DOMContentLoaded', function(){ setTimeout(kick, 700); });
     }catch(_){}
   })();
+
+  // P1 (i18n): rebuild the status-dependent widgets on language switch.
+  document.addEventListener('nexus:lang-changed', function () {
+    try { renderAIStatus(); renderStatusCounts(state.counts || null); renderProControls(); }
+    catch (e) { /* never break the tab on a re-render */ }
+  });
 
   NewsIntel.state = state;
 })();

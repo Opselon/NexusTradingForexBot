@@ -23,8 +23,10 @@ import { asErrorText } from "./shared";
 import "./marketplace.css";
 import "./marketplace-store.css";
 import "./marketplace-store-detail.css";
+import { useI18n } from "@/stores/i18nStore";
 
 export function PacksSection() {
+  const t = useI18n((s) => s.t);
   const packs = useMktPacks();
   const install = useInstallPack();
   const [target, setTarget] = useState<string | null>(null);
@@ -63,7 +65,7 @@ export function PacksSection() {
       ) : packs.isError ? (
         <ErrorState message={asErrorText(packs.error)} onRetry={() => packs.refetch()} />
       ) : list.length === 0 ? (
-        <EmptyState message="Pack registry is empty." hint="The backend REGISTRY has no packs on this build." />
+        <EmptyState message={t("marketplace.packs.empty", "Pack registry is empty.")} hint={t("marketplace.packs.empty_hint", "The backend REGISTRY has no packs on this build.")} />
       ) : (
         <div className="mkt-store-packs">
           {list.map((p) => {
