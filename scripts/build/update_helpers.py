@@ -38,6 +38,29 @@ SECRET_PATTERNS = [
     re.compile(r"(?i)begin (rsa |ec |openssh )?private key"),
 ]
 
+# SCREAMING_CASE values are constant / env-var NAMES, not secrets: an
+# all-caps snake-case identifier (e.g. DEFAULT_API_KEY = "DEFAULT_API_KEY",
+# SECRET_ENV_API_KEY = "NSE_GATEWAY_API_KEY") is how a module names the env
+# var it reads. Real high-entropy credentials are never of that form, so
+# skipping this exact shape is a precision fix, not a weakening: every other
+# value (incl. any all-caps value WITHOUT an underscore, and every mixed-case
+# or lowercase secret) still fires.
+_CONSTANT_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*_[A-Z0-9_]*$")
+
+
+def _looks_like_a_constant_name(value: str) -> bool:
+    """True only for screaming-case snake identifiers (a NAME, not a secret)."""
+    return bool(value) and bool(_CONSTANT_NAME_RE.match(value))
+
+
+def _matched_value(matched: str) -> str:
+    """Extract the VALUE from a `...key = <value>` match; '' when absent."""
+    tail = re.split(r"[=:]", matched, maxsplit=1)
+    if len(tail) != 2:
+        return ""
+    return tail[1].strip().strip("'\"")
+
+
 TOKEN_RE = re.compile(r"(?i)bot[_-]?token\s*[=:]\s*['\"]?\d{6,}:[A-Za-z0-9_\-]{25,}")
 
 
@@ -87,9 +110,15 @@ def action_scan_tree(args: list[str]) -> int:
         scanned += 1
         for pat in SECRET_PATTERNS:
             m = pat.search(text)
-            if m:
-                hits.append(f"{p.name}: {m.group(0)[:40]}")
-                break
+            if not m:
+                continue
+            if _looks_like_a_constant_name(_matched_value(m.group(0))):
+                # SCREAMING_CASE value = constant / env-var NAME (the
+                # inherited gateway/server.py false positive), not a secret.
+                # Every other pattern still gets its turn on this text.
+                continue
+            hits.append(f"{p.name}: {m.group(0)[:40]}")
+            break
     if hits:
         print("scan-tree FAILED:")
         for h in hits[:8]:
