@@ -74,7 +74,11 @@
             'ux.sidebar.operate': 'عملیات روزانه',
             'ux.sidebar.analyze': 'تحلیل و پژوهش',
             'ux.sidebar.system': 'سیستم',
-            'ux.lang.label': 'زبان'
+            'ux.attention.model_unavailable': 'مدل در دسترس نیست — امکان تولید تصمیم‌گیری وجود ندارد.',
+            'ux.attention.runtime_blocked': 'حالت اجرا {m} است. تا زمان بازیابی، معامله ممکن نیست.',
+            'ux.attention.stale': 'داده‌ها قدیمی هستند — مقادیر نمایش‌داده‌شده آخرین مقادیر معتبر هستند.',
+            'ux.attention.subsystem': '{s}: {v}',
+            'ux.reason.HIGH_IMPACT_NEWS': 'بدون معامله — پنجره اخبار با تأثیر بالا؛ معامله برای ایمنی متوقف شد.',
         },
         de: {
             'ux.conn.title': 'VERBINDUNG VERLOREN',
@@ -124,7 +128,14 @@
             'ux.sidebar.operate': 'Täglicher Betrieb',
             'ux.sidebar.analyze': 'Analyse & Forschung',
             'ux.sidebar.system': 'System',
-            'ux.lang.label': 'Sprache'
+            'ux.attention.model_unavailable': 'Modell nicht verfügbar — Entscheidungen können nicht erzeugt werden.',
+            'ux.attention.runtime_blocked': 'Laufzeitumgebung ist {m}. Handel ist bis zur Wiederherstellung nicht möglich.',
+            'ux.attention.stale': 'Daten sind veraltet — die angezeigten Werte sind die letzten bekannten.',
+            'ux.attention.subsystem': '{s}: {v}',
+            'ux.reason.BLOCKED_BY_GUARDIAN_UNSAFE_REGIME': 'Kein Trade — das Marktregime wurde aktuell als nicht sicher genug für einen Einstieg bewertet (Guardian).',
+            'ux.reason.CONFIDENCE_GATE': 'Kein Trade — die Modellkonfidenz erreichte nicht das erforderliche Niveau.',
+            'ux.reason.NO_CANDIDATE': 'Derzeit kein geeigneter Trade-Setup.',
+            'ux.reason.HIGH_IMPACT_NEWS': 'Kein Trade — Hochimpact-Nachrichtenfenster; der Handel wurde zur Sicherheit pausiert.',
         },
         es: {
             'ux.conn.title': 'CONEXIÓN PERDIDA',
@@ -174,7 +185,14 @@
             'ux.sidebar.operate': 'Operación diaria',
             'ux.sidebar.analyze': 'Análisis e investigación',
             'ux.sidebar.system': 'Sistema',
-            'ux.lang.label': 'Idioma'
+            'ux.attention.model_unavailable': 'Modelo no disponible — no se pueden producir decisiones.',
+            'ux.attention.runtime_blocked': 'El entorno de ejecución es {m}. No es posible operar hasta que se recupere.',
+            'ux.attention.stale': 'Los datos están desactualizados — los valores mostrados son los últimos conocidos.',
+            'ux.attention.subsystem': '{s}: {v}',
+            'ux.reason.BLOCKED_BY_GUARDIAN_UNSAFE_REGIME': 'Sin operación — el régimen de mercado se evaluó como poco seguro para entrar en este momento (Guardian).',
+            'ux.reason.CONFIDENCE_GATE': 'Sin operación — la confianza del modelo no alcanzó el nivel requerido.',
+            'ux.reason.NO_CANDIDATE': 'Ninguna oportunidad de operación conveniente en este momento.',
+            'ux.reason.HIGH_IMPACT_NEWS': 'Sin operación — ventana de noticias de alto impacto; el trading se pausó por seguridad.',
         },
         ar: {
             'ux.conn.title': 'انقطاع الاتصال',
@@ -224,7 +242,14 @@
             'ux.sidebar.operate': 'التشغيل اليومي',
             'ux.sidebar.analyze': 'التحليل والبحث',
             'ux.sidebar.system': 'النظام',
-            'ux.lang.label': 'اللغة'
+            'ux.attention.model_unavailable': 'النموذج غير متاح — لا يمكن إنتاج القرارات.',
+            'ux.attention.runtime_blocked': 'بيئة التشغيل هي {m}. لا يمكن التداول حتى تتعافى.',
+            'ux.attention.stale': 'البيانات قديمة — القيم المعروضة هي آخر القيم المعروفة.',
+            'ux.attention.subsystem': '{s}: {v}',
+            'ux.reason.BLOCKED_BY_GUARDIAN_UNSAFE_REGIME': 'بدون صفقة — تم تقييم نظام السوق حالياً على أنه غير آمن بما يكفي للدخول (الحارس).',
+            'ux.reason.CONFIDENCE_GATE': 'بدون صفقة — لم يصل مستوى ثقة النموذج إلى العتبة المطلوبة.',
+            'ux.reason.NO_CANDIDATE': 'لا توجد فرصة تداول مناسبة في هذه اللحظة.',
+            'ux.reason.HIGH_IMPACT_NEWS': 'بدون صفقة — نافذة أخبار عالية التأثير؛ تم إيقاف التداول للسلامة.',
         }
     };
 
