@@ -493,7 +493,7 @@ def _resolve_checkpoint_path(raw: Path | str | None, *, label: str) -> Path | No
         candidate = raw_path
     else:
         candidate = REPO_ROOT / sanitize_rel_path(s, label=label)
-    resolved = resolve_within_trusted_roots(candidate, _trusted_checkpoint_roots(), label=label)
+    resolved = resolve_within_trusted_roots(candidate, _trusted_checkpoint_roots())
     if resolved is None:
         raise ValueError(f"{label} must stay inside the artifact root")
     return resolved

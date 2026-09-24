@@ -43,6 +43,7 @@ from nexus_scalp.model_provisioning import (
     service as prov,
 )
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.position_adviser.paths import resolve_within_trusted_roots
 
 logger = get_logger("nexus_scalp.web.provisioning_routes")
 
@@ -149,14 +150,14 @@ def _resolve_within_import_roots(raw: str) -> Path:
     canonical sanitizer output: absolute, symlink-followed and strictly
     contained in one of the allowed import roots. An escaping or unresolvable
     value raises ``ValueError`` fail-closed.
-    """
-    from nexus_scalp.position_adviser.paths import resolve_within_trusted_roots
 
+    The import is at module scope on purpose: resolving a path lazily pulled
+    ``position_adviser`` (and torch) into the middle of a request/test where
+    ``threading.Thread`` may be monkeypatched, crashing tqdm's monitor import.
+    """
     s = str(raw).strip()
     _validate_import_path_shape(s)
-    resolved = resolve_within_trusted_roots(
-        s, _allowed_import_roots(), label="training import file"
-    )
+    resolved = resolve_within_trusted_roots(s, _allowed_import_roots())
     if resolved is None:
         raise ValueError("import path is outside allowed import roots")
     return resolved

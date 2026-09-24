@@ -12,8 +12,10 @@ built from downstream. The taint chain therefore ends at the sanitizer rather
 than at the containment check, which is why this module exists separately from
 the ``is_relative_to`` barriers the callers also keep as defense-in-depth.
 
-Nothing here touches the filesystem: these are pure string -> Path reductions
-(``Path.relative_to`` included, which is a PurePath operation).
+Nothing else here touches the filesystem: the other functions are pure string
+-> Path reductions (``Path.relative_to`` included, which is a PurePath
+operation); only ``resolve_within_trusted_roots`` resolves, because containment
+must be answered against the real, symlink-followed path.
 """
 
 from __future__ import annotations
@@ -141,21 +143,48 @@ def sanitize_name(raw: str | None, *, fallback: str) -> str:
     return m.group(0) if m is not None else fallback
 
 
-def resolve_within_trusted_roots(raw: str | Path, roots: list[Path], *, label: str) -> Path | None:
+#: Shape barrier for a path string entering ``resolve_within_trusted_roots``:
+#: optional drive + safe nested dirs/filenames (hyphens and spaces allowed, so
+#: ``C:\\Users\\John Doe\\...`` matches). A segment can never START with ``.``,
+#: so ``..`` traversal, a NUL, a newline and shell metacharacters can never
+#: match — the same whitelist contract as ``_SAFE_REL`` above, extended with a
+#: drive prefix for absolute values.
+_SAFE_ABS_OR_REL = re.compile(
+    r"(?:[A-Za-z]:[\\/]{1,2})?(?:[A-Za-z0-9_ -][A-Za-z0-9_ .-]{0,127}[\\/])*"
+    r"[A-Za-z0-9_ -][A-Za-z0-9_ .-]{0,191}"
+)
+
+
+def resolve_within_trusted_roots(raw: str | Path, roots: list[Path]) -> Path | None:
     """Canonicalize ``raw`` and return it only when inside one of ``roots``.
 
-    This is the containment sanitizer: ``Path.resolve`` follows symlinks and
-    normalizes ``..``, so the returned value is a real, absolute path that
-    cannot name anything outside its root via traversal or a symlink escape.
-    Returns ``None`` when the resolved path is outside every root (fail-closed)
-    or cannot be resolved at all.
+    The whitelist match runs IN THIS FUNCTION before any ``Path`` is built from
+    the input, so the taint chain ends at the ``fullmatch`` barrier rather than
+    at the containment check — the same barrier pattern as the other
+    sanitizers. ``Path.resolve`` then follows symlinks and normalizes the
+    value, and the containment loop below is the trust boundary. Returns
+    ``None`` on a shape violation, an unresolvable path or a value outside
+    every root (fail-closed). ``roots`` are supplied by the callers from
+    trusted constants (package location, ``REPO_ROOT``, ``tempdir``) or from
+    env values each caller has already shape-guarded.
+
+    This is the one helper in this module that touches the filesystem:
+    resolution is what makes the containment answer authoritative against
+    symlinks.
     """
+    s = str(raw or "").strip()
+    if not s or not _SAFE_ABS_OR_REL.fullmatch(s):
+        return None
     try:
-        resolved = Path(raw).expanduser().resolve()
+        resolved = Path(s).expanduser().resolve()
     except (OSError, ValueError):
         return None
-    if any(resolved.is_relative_to(root.resolve()) for root in roots):
-        return resolved
+    for root in roots:
+        try:
+            if resolved.is_relative_to(Path(root).resolve()):
+                return resolved
+        except (OSError, ValueError):
+            continue
     return None
 
 

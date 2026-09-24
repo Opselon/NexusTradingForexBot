@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -563,8 +564,6 @@ class TestTrainerSinkContainment:
             _sha256_file(Path("C:/nonexistent_outside_root/evil.pt"))
 
     def test_sha256_file_accepts_in_repo(self, tmp_path: Path) -> None:
-        import tempfile
-
         from nexus_scalp.position_adviser import trainer as tr
 
         # _ADVISER_ROOT is the repo root; write a file inside it
@@ -575,3 +574,86 @@ class TestTrainerSinkContainment:
             assert len(tr._sha256_file(target)) == 64
         finally:
             target.unlink(missing_ok=True)
+
+
+class TestResolveWithinTrustedRoots:
+    """Canonical trusted-root sanitizer (paths.py) used by both path sinks."""
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            "../../etc/passwd",
+            "C:/temp/../../Windows/System32/evil.dll",
+            "data/imports/..\\..\\secrets.env",
+            "bad\x00byte.csv",
+            "evil\nnewline.csv",
+            "$(whoami).csv",
+            "`id`.csv",
+            "~/.ssh/id_rsa",
+            "\\\\server\\share\\evil.csv",
+            "",
+            "   ",
+        ],
+    )
+    def test_shape_barriers_reject(self, payload: str) -> None:
+        from nexus_scalp.position_adviser.paths import resolve_within_trusted_roots
+
+        roots = [Path(tempfile.gettempdir()).resolve()]
+        assert resolve_within_trusted_roots(payload, roots) is None
+
+    def test_absolute_under_trusted_root_accepted(self) -> None:
+        from nexus_scalp.position_adviser.paths import resolve_within_trusted_roots
+
+        target = Path(tempfile.gettempdir()).resolve() / "sec_wave_probe.csv"
+        target.write_text("x,y\n1,2\n", encoding="utf-8")
+        try:
+            got = resolve_within_trusted_roots(str(target), [Path(tempfile.gettempdir()).resolve()])
+            assert got == target
+        finally:
+            target.unlink(missing_ok=True)
+
+    def test_absolute_outside_every_root_rejected(self) -> None:
+        from nexus_scalp.position_adviser.paths import resolve_within_trusted_roots
+
+        # Shape-clean but outside the only trusted root (tempdir): the
+        # containment boundary must reject it even though it passes the shape
+        # barrier.
+        assert (
+            resolve_within_trusted_roots(
+                "C:/definitely_not_a_real_root/probe.csv",
+                [Path(tempfile.gettempdir()).resolve()],
+            )
+            is None
+        )
+
+    def test_unresolvable_path_rejected(self) -> None:
+        from nexus_scalp.position_adviser.paths import resolve_within_trusted_roots
+
+        # An absolute path containing a NUL byte is unresolvable and must not
+        # leak any part of the payload to a caller.
+        assert (
+            resolve_within_trusted_roots(
+                "C:/definitely_not_a_real_root/probe\x00.csv",
+                [Path(tempfile.gettempdir()).resolve()],
+            )
+            is None
+        )
+
+    def test_relative_under_trusted_root_accepted(self) -> None:
+        """A repo-relative shape-clean path that lands inside a root is kept."""
+        from nexus_scalp.position_adviser.paths import resolve_within_trusted_roots
+
+        repo = REPO_ROOT.resolve()
+        got = resolve_within_trusted_roots("artifacts/models", [repo])
+        assert got is not None
+        assert got.is_relative_to(repo)
+
+    def test_accepts_space_in_path(self) -> None:
+        """A legitimate path containing a directory with spaces still resolves."""
+        from nexus_scalp.position_adviser.paths import resolve_within_trusted_roots
+
+        # Regression guard: the shape barrier must not reject paths like the
+        # repo's own "operator imports" dataset directory.
+        got = resolve_within_trusted_roots("data/imports/some folder", [REPO_ROOT.resolve()])
+        assert got is not None
+        assert got.is_relative_to(REPO_ROOT.resolve())
