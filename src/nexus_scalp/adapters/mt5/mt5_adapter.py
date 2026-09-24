@@ -1264,14 +1264,25 @@ class DirectMT5Adapter(IMT5Port):
     # ==========================================================================
     # PENDING ORDERS INVENTORY & CANCELLATION
     # ==========================================================================
-    def get_pending_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
-        """Queries active pending orders (LIMIT / STOP). BOT-filtered (XAUUSD+magic)."""
+    def get_pending_orders(self, symbol: str | None = None) -> list[dict[str, Any]] | None:
+        """Queries active pending orders (LIMIT / STOP). BOT-filtered (XAUUSD+magic).
+
+        Returns None when the broker query fails, so callers can distinguish
+        "cannot ask" from "no pending orders" (MT5-PARITY T1).
+        """
         self._assert_connected()
         assert mt5 is not None
 
         raw_orders = mt5.orders_get(symbol=symbol) if symbol else mt5.orders_get()
         if raw_orders is None:
-            return []
+            # FAIL CLOSED (MT5-PARITY T1): a None answer means the broker
+            # query FAILED, not "no pending orders". Returning [] here
+            # made reconcile_pending_state compute broker_pendings=0 with
+            # broker_error=False and "repair" the internal view FROM a
+            # transport error (money-adjacent fail-open, E-BUG-05).
+            # None is the caller-honored "cannot ask" signal.
+            self._conn_state.record_failure("orders_get", None)
+            return None
 
         pending_list: list[dict[str, Any]] = []
         for ord_item in raw_orders:
@@ -1331,6 +1342,16 @@ class DirectMT5Adapter(IMT5Port):
     def cancel_all_pending_orders(self, symbol: str) -> int:
         """Cancels ALL active pending orders for a symbol."""
         pending_orders = self.get_pending_orders(symbol=symbol)
+        if pending_orders is None:
+            # MT5-PARITY T1: broker query failed — do NOT cancel by
+            # assuming an empty roster (which would be a no-op here but
+            # hides the outage from callers of this cleanup path).
+            logger.error(
+                "Cannot enumerate pending orders for %s (broker query failed); "
+                "aborting cancel-all to avoid acting on stale truth.",
+                symbol,
+            )
+            return 0
         cancelled_count = 0
 
         for p_order in pending_orders:

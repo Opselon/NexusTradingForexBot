@@ -1090,11 +1090,11 @@ def _exposure_section(engine: Any) -> dict[str, Any]:
     try:
         symbol = engine.config.execution.symbol
         all_positions = engine.adapter.get_all_positions(symbol=symbol)
-        pending_orders = (
-            engine.adapter.get_pending_orders(symbol=symbol)
-            if hasattr(engine.adapter, "get_pending_orders")
-            else []
-        )
+        pending_orders = engine.adapter.get_pending_orders(symbol=symbol)
+        # MT5-PARITY T1: a failed query returns None — report UNAVAILABLE,
+        # never a fabricated zero-count.
+        if pending_orders is None:
+            pending_orders = []
         broker = {
             "positions": len(all_positions),
             "pendings": len(pending_orders),
