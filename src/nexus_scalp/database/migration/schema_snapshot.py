@@ -311,3 +311,16 @@ def candle_intel_schema_statements() -> tuple[str, ...]:
     meta tables on top.
     """
     return replay_schema(domain=DatabaseDomain.CANDLE_INTEL)
+
+
+def ai_provider_decisions_schema_statements() -> tuple[str, ...]:
+    """The complete AI-provider-decision domain schema as SQLite DDL statements.
+
+    Unlike the replay domains this one has no ordered migration registry: the
+    schema is authored directly in ``ai_providers.store._SCHEMA`` (SQLite
+    dialect), so the statements are read from it verbatim and the store is
+    deliberately NOT constructed (its constructor opens a real database file).
+    """
+    from nexus_scalp.ai_providers.store import _SCHEMA
+
+    return tuple(s.strip() for s in _SCHEMA.split(";") if s.strip())

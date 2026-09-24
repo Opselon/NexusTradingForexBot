@@ -17,6 +17,7 @@ import type {
   ActivationEnvelope,
   CompareResponse,
   DecisionRecord,
+  DecisionsResponse,
   EvaluateResponse,
   ModelInfo,
   ProviderConfigRequest,
@@ -74,9 +75,11 @@ export const aiProvidersApi = {
   compare: (req: Record<string, unknown>): Promise<CompareResponse> =>
     send<CompareResponse>(`${BASE}/decision/compare`, req),
 
-  /** GET /api/ai-providers/decisions — recent decisions (Section 23). */
-  decisions: (limit = 25, signal?: AbortSignal): Promise<DecisionRecord[]> =>
-    getLegacy<DecisionRecord[]>(`${BASE}/decisions?limit=${limit}`, signal),
+  /** GET /api/ai-providers/decisions — recent decisions (Section 23). The
+   * durable route returns an envelope with a ``source`` field (Section 63);
+   * callers that only need rows read ``.decisions``. */
+  decisions: (limit = 25, signal?: AbortSignal): Promise<DecisionsResponse> =>
+    getLegacy<DecisionsResponse>(`${BASE}/decisions?limit=${limit}`, signal),
 
   /** GET /api/ai-providers/decision/{id} — full decision trace (Section 41). */
   trace: (decisionId: string, signal?: AbortSignal): Promise<DecisionRecord> =>

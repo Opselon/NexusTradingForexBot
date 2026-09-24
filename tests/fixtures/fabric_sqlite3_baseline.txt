@@ -2,6 +2,8 @@ accounting/core.py
 adapters/database/audit_repository.py
 adapters/database/broker_history.py
 adapters/database/dead_letter_store.py
+ai_providers/registry.py
+ai_providers/store.py
 adapters/database/executions_idempotency.py
 application/live/model_bundle_store.py
 candle_intelligence/store.py

@@ -30,6 +30,10 @@ _DOMAIN_STATEMENTS: dict[str, str] = {
     DatabaseDomain.AUDIT.value: "audit_schema_statements",
     DatabaseDomain.NEWS.value: "news_schema_statements",
     DatabaseDomain.CANDLE_INTEL.value: "candle_intel_schema_statements",
+    # The AI-provider decision ledger (ECOSYSTEM-001). Not a DatabaseDomain
+    # enum member — it is owned by the ai_providers package, and its DDL is
+    # authored there rather than replayed from a migration registry.
+    "ai_provider_decisions": "ai_provider_decisions_schema_statements",
 }
 
 

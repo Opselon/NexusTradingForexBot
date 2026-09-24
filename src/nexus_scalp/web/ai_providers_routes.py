@@ -72,8 +72,27 @@ def get_ai_provider_orchestrator() -> ProviderOrchestrator:
             _ORCHESTRATOR = ProviderOrchestrator(
                 registry=ProviderRegistryStore(settings_db_path()),
                 secret_store=_secret_store(),
+                decision_store=_decision_store(),
             )
         return _ORCHESTRATOR
+
+
+def _decision_store() -> Any:
+    """The durable decision record (Sections 41, 63).
+
+    SQLite by default (a table next to the provider settings). When the box is
+    configured for PostgreSQL the same store routes through the DB fabric so
+    both providers keep the identical schema. Construction never raises: a
+    misconfigured box degrades to in-memory recording with a logged warning.
+    """
+    from nexus_scalp.ai_providers.store import ProviderDecisionStore
+    from nexus_scalp.settings.paths import decisions_db_path
+
+    try:
+        return ProviderDecisionStore(db_path=decisions_db_path())
+    except Exception as exc:
+        logger.warning("[AI-PROV] decision store unavailable: %s", exc)
+        return None
 
 
 def _reset_orchestrator() -> None:
@@ -356,16 +375,38 @@ def ADAPTER_TYPES_LAZY() -> list[str]:
 
 @router.get("/decisions")
 def route_decisions(limit: int = 50) -> dict[str, Any]:
-    """Recent decisions for the live AI panel (Section 23)."""
-    return {"status": "OK", "decisions": get_ai_provider_orchestrator().history(limit)}
+    """Recent decisions for the live AI panel (Section 23). Read from the
+    durable ledger when one is configured; falls back to the live ring."""
+    store = _decision_store()
+    if store is not None:
+        try:
+            rows = store.list_recent(limit=limit)
+            if rows:
+                return {"status": "OK", "decisions": rows, "source": "durable"}
+        except Exception as exc:
+            logger.warning("[AI-PROV] durable history read failed: %s", exc)
+    return {
+        "status": "OK",
+        "decisions": get_ai_provider_orchestrator().history(limit),
+        "source": "in_memory",
+    }
 
 
 @router.get("/decision/{decision_id}")
 def route_decision_detail(decision_id: str) -> dict[str, Any]:
-    """Decision trace (Section 41)."""
+    """Decision trace (Section 41). Prefers the durable ledger: it survives
+    restarts, the in-memory ring does not."""
+    store = _decision_store()
+    if store is not None:
+        try:
+            row = store.get(decision_id)
+            if row is not None:
+                return {"status": "OK", "decision": row, "source": "durable"}
+        except Exception as exc:
+            logger.warning("[AI-PROV] durable decision read failed: %s", exc)
     for d in get_ai_provider_orchestrator().history(200):
         if d.get("decision_id") == decision_id:
-            return {"status": "OK", "decision": d}
+            return {"status": "OK", "decision": d, "source": "in_memory"}
     raise HTTPException(status_code=404, detail="decision not found")
 
 

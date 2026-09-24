@@ -70,6 +70,8 @@ export default function AIProvidersPage(_props: ShellPageProps) {
   const [test, setTest] = useState<ProviderTestResult | null>(null);
   const [compare, setCompare] = useState<CompareResponse | null>(null);
   const [trace, setTrace] = useState<DecisionRecord | null>(null);
+  const [history, setHistory] = useState<DecisionRecord[]>([]);
+  const [historySource, setHistorySource] = useState<"durable" | "in_memory">("in_memory");
   const [snapshot, setSnapshot] = useState<Record<string, unknown> | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -83,15 +85,33 @@ export default function AIProvidersPage(_props: ShellPageProps) {
     }
   }, []);
 
+  /** Decision history — the durable ledger when the box persists decisions
+   * (Section 63), the in-memory ring otherwise. Loaded alongside the provider
+   * list so the panel is never stale after a switch or evaluate. */
+  const loadHistory = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        const res = await aiProvidersApi.decisions(15, signal);
+        setHistory(res.decisions ?? []);
+        setHistorySource(res.source ?? "in_memory");
+      } catch {
+        // History is a convenience: a failed read must not block the page.
+        setHistory([]);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     const controller = new AbortController();
     void load(controller.signal);
+    void loadHistory(controller.signal);
     const timer = window.setInterval(() => void load(), REFRESH_MS);
     return () => {
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [load]);
+  }, [load, loadHistory]);
 
   const act = data;
   const providers = data?.providers ?? [];
@@ -378,6 +398,76 @@ export default function AIProvidersPage(_props: ShellPageProps) {
             <summary>Input snapshot</summary>
             <pre className="aipage-mono">{JSON.stringify(snapshot, null, 2)}</pre>
           </details>
+        )}
+      </Panel>
+
+      {/* ---- decision history (Sections 23, 63) ---------------------------- */}
+      <Panel
+        title="Decision History"
+        subtitle={
+          historySource === "durable"
+            ? "Persisted (SQLite / PostgreSQL) — survives restarts"
+            : "In memory only — not persisted across restarts"
+        }
+      >
+        {history.length === 0 ? (
+          <p className="aipage-help">
+            No decisions recorded yet. Run the Test Centre above or let the engine decide a
+            position; every final decision is written here.
+          </p>
+        ) : (
+          <table className="aipage-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Providers</th>
+                <th>Failed</th>
+                <th>Fallback</th>
+                <th>Risk</th>
+                <th>Latency</th>
+                <th>Data</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((d) => (
+                <tr
+                  key={d.decision_id}
+                  className="aipage-row"
+                  onClick={() => setTrace(d)}
+                  title="Click to load this trace into the Decision Pipeline panel"
+                >
+                  <td className="aipage-mono">
+                    {d.created_at ? new Date(d.created_at).toLocaleTimeString() : "—"}
+                  </td>
+                  <td>
+                    <span className={classNames("aipage-chip", d.final_action.toLowerCase())}>
+                      {d.final_action}
+                    </span>
+                  </td>
+                  <td className="aipage-mono">{d.providers_used.join(", ") || "—"}</td>
+                  <td className="aipage-fail">
+                    {d.providers_failed.length > 0 ? d.providers_failed.join(", ") : "—"}
+                  </td>
+                  <td>{d.fallback_used ? d.fallback_reason || "yes" : "—"}</td>
+                  <td>
+                    <StatusBadge
+                      status={d.risk.allowed ? "allowed" : "restricted"}
+                      label={d.risk.allowed ? "allowed" : "restricted"}
+                    />
+                  </td>
+                  <td>{Math.round(d.latency_ms)} ms</td>
+                  <td>
+                    {d.is_test_data ? (
+                      <span className="aipage-chip warn">SIMULATED</span>
+                    ) : (
+                      <span className="aipage-chip">live</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </Panel>
     </div>

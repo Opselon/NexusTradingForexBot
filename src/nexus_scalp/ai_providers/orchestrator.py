@@ -161,6 +161,7 @@ class ProviderOrchestrator:
         risk_policy: RiskPolicy | None = None,
         request_deadline_sec: float = 5.0,
         adviser_service: Any | None = None,
+        decision_store: Any | None = None,
     ) -> None:
         self._registry: ProviderRegistryStore = registry
         self._secret_store = secret_store
@@ -168,6 +169,10 @@ class ProviderOrchestrator:
         self._risk_policy = risk_policy or RiskPolicy()
         self._request_deadline_sec = request_deadline_sec
         self._adviser_service = adviser_service
+        #: Durable record of every final decision (Sections 41, 58, 63).
+        #: Optional: absent = in-memory only, and recording never raises into
+        #: the decide path (the store is an observer, not a participant).
+        self._decision_store = decision_store
         self._lock = threading.RLock()
         self._adapters: dict[str, BaseAIProviderAdapter] = {}
         self._decision_history: list[dict[str, Any]] = []
@@ -475,11 +480,17 @@ class ProviderOrchestrator:
     # --------------------------------------------------------------------------
     def _record(self, outcome: DecisionOutcome) -> None:
         """Bounded in-memory ring for the live UI panel (Section 59: no
-        unbounded decision storage). Persistence is the caller's job."""
+        unbounded decision storage) + durable persistence when a store is
+        configured (Sections 41, 63)."""
+        payload = outcome.to_dict()
         with self._lock:
-            self._decision_history.insert(0, outcome.to_dict())
+            self._decision_history.insert(0, payload)
             if len(self._decision_history) > self._max_history:
                 del self._decision_history[self._max_history :]
+        if self._decision_store is not None:
+            # The store is fail-closed internally; this can never raise into
+            # the decide path and never changes the decision itself.
+            self._decision_store.record(payload)
 
     def history(self, limit: int = 50) -> list[dict[str, Any]]:
         with self._lock:

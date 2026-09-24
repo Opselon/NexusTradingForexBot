@@ -246,6 +246,12 @@
   background: var(--bg-inset);
 }
 
+.aipage-row {
+  cursor: pointer;
+}
+.aipage-row:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
 .aipage-scores {
   display: flex;
   gap: 12px;
