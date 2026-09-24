@@ -18,6 +18,7 @@
 
 import { useMemo, useState } from "react";
 import { EmptyState, ErrorState, Panel, Segmented, Skeleton } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { formatDateTime } from "@/lib/format";
 import { useAccountPerformance, useAccountPeriod } from "../hooks";
 import { PERIOD_LABEL, rateTone } from "../model";
@@ -49,6 +50,7 @@ function countDelta(wins: number | null | undefined, losses: number | null | und
 }
 
 export function AccountSummarySection() {
+  const t = useI18n((s) => s.t);
   const perf = useAccountPerformance();
   const [kind, setKind] = useState<PeriodKind>("DAY");
   const period = useAccountPeriod(kind);
@@ -67,12 +69,12 @@ export function AccountSummarySection() {
   return (
     <>
       <Panel
-        title="Live account state (accounting core)"
+        title={t("account.summary.title", "Live account state (accounting core)")}
         right={
           <>
-            {live?.available === false && <span className="acct-chip neg">adapter {live.error ? "error" : "unavailable"}</span>}
+            {live?.available === false && <span className="acct-chip neg">{t("account.summary.adapter_down", "adapter {state}", { state: live.error ? t("account.summary.adapter_error", "error") : t("account.summary.adapter_unavailable", "unavailable") })}</span>}
             {live?.available === true && <span className="acct-chip pos">{live.source || "AVAILABLE"}</span>}
-            <FreshnessNote updatedAtMs={perf.dataUpdatedAt ?? null} label="performance" staleAfterMs={90_000} />
+            <FreshnessNote updatedAtMs={perf.dataUpdatedAt ?? null} label={t("account.fresh.performance", "performance")} staleAfterMs={90_000} />
           </>
         }
       >
@@ -83,53 +85,53 @@ export function AccountSummarySection() {
         ) : (
           <div className="acc-kpi-rail">
             <KpiCard
-              label="balance"
+              label={t("account.summary.balance", "balance")}
               value={moneyOrDash(live?.balance)}
               tone="dim"
               sub={live?.currency || DASH}
             />
             <KpiCard
-              label="equity"
+              label={t("account.summary.equity", "equity")}
               value={moneyOrDash(live?.equity)}
               tone="dim"
               delta={
                 live?.equity !== null && live?.equity !== undefined && live?.balance !== null && live?.balance !== undefined
-                  ? { ...delta(live.equity - live.balance), hint: "vs balance" }
+                  ? { ...delta(live.equity - live.balance), hint: t("account.summary.vs_balance", "vs balance") }
                   : undefined
               }
-              sub={`margin ${moneyOrDash(live?.margin)} · free ${moneyOrDash(live?.margin_free)}`}
+              sub={t("account.summary.margin_sub", "margin {margin} · free {free}", { margin: moneyOrDash(live?.margin), free: moneyOrDash(live?.margin_free) })}
             />
             <KpiCard
-              label="floating PnL"
+              label={t("account.summary.floating_pnl", "floating PnL")}
               value={moneyOrDash(live?.floating_pnl, true)}
               tone={live?.floating_pnl == null ? "dim" : live.floating_pnl >= 0 ? "pos" : "neg"}
               delta={ratioDelta(live?.floating_pnl, live?.balance)}
-              sub={`open positions ${live?.open_positions ?? DASH} · vol ${live?.open_volume ?? DASH}`}
+              sub={t("account.summary.floating_sub", "open positions {n} · vol {v}", { n: live?.open_positions ?? DASH, v: live?.open_volume ?? DASH })}
             />
             <KpiCard
-              label="closed realized PnL"
+              label={t("account.summary.realized_pnl", "closed realized PnL")}
               value={moneyOrDash(totals?.realized_pnl, true)}
               tone={totals?.realized_pnl == null ? "dim" : totals.realized_pnl >= 0 ? "pos" : "neg"}
-              sub={`${totals?.closed_trades ?? DASH} closed · win ${pctOrDash(totals?.win_rate, 1)}`}
+              sub={t("account.summary.realized_sub", "{n} closed · win {rate}", { n: totals?.closed_trades ?? DASH, rate: pctOrDash(totals?.win_rate, 1) })}
             />
             <KpiCard
-              label="win rate"
+              label={t("account.summary.win_rate", "win rate")}
               value={pctOrDash(totals?.win_rate, 1)}
               tone={rateTone(totals?.win_rate)}
               delta={countDelta(totals?.win_count, totals?.loss_count)}
-              sub={`W ${totals?.win_count ?? DASH} · L ${totals?.loss_count ?? DASH}`}
+              sub={t("account.summary.win_rate_sub", "W {w} · L {l}", { w: totals?.win_count ?? DASH, l: totals?.loss_count ?? DASH })}
             />
             <KpiCard
-              label="current drawdown"
+              label={t("account.summary.current_dd", "current drawdown")}
               value={pctOrDash(dd?.current_drawdown_pct)}
               tone={dd?.current_drawdown_pct == null ? "dim" : dd.current_drawdown_pct > 5 ? "neg" : "warn"}
-              sub={`max ${pctOrDash(dd?.max_drawdown_pct)}${dd?.max_drawdown_at ? ` @ ${formatDateTime(dd.max_drawdown_at)}` : ""}`}
+              sub={t("account.summary.dd_sub", "max {v}{at}", { v: pctOrDash(dd?.max_drawdown_pct), at: dd?.max_drawdown_at ? ` @ ${formatDateTime(dd.max_drawdown_at)}` : "" })}
             />
             <KpiCard
-              label="recovery"
+              label={t("account.summary.recovery", "recovery")}
               value={pctOrDash(dd?.recovery_pct, 1)}
               tone="dim"
-              sub={dd?.in_drawdown ? `in drawdown · ${numOrDash(dd?.drawdown_duration_sec, 0)}s` : dd?.has_data ? "not in drawdown" : "no samples"}
+              sub={dd?.in_drawdown ? t("account.summary.in_drawdown", "in drawdown · {n}s", { n: numOrDash(dd?.drawdown_duration_sec, 0) }) : dd?.has_data ? t("account.summary.not_in_drawdown", "not in drawdown") : t("account.summary.no_samples", "no samples")}
             />
           </div>
         )}
@@ -141,11 +143,11 @@ export function AccountSummarySection() {
       </Panel>
 
       <Panel
-        title={`Period report · ${PERIOD_LABEL[kind]}`}
+        title={t("account.summary.period_title", "Period report · {label}", { label: PERIOD_LABEL[kind] })}
         right={
           <>
             <Segmented options={KINDS} value={kind} onChange={setKind} />
-            <FreshnessNote updatedAtMs={period.dataUpdatedAt ?? null} label="period" />
+            <FreshnessNote updatedAtMs={period.dataUpdatedAt ?? null} label={t("account.fresh.period", "period")} />
           </>
         }
       >
@@ -154,48 +156,48 @@ export function AccountSummarySection() {
         ) : period.isError ? (
           <ErrorState message={asErrorText(period.error)} onRetry={() => period.refetch()} />
         ) : !p || p.has_data === false ? (
-          <EmptyState message={`No closed trades recorded for this ${kind.toLowerCase()} yet.`} hint="The report is honest-empty: the backend says has_data=false." />
+          <EmptyState message={t("account.summary.period_empty", "No closed trades recorded for this {kind} yet.", { kind: kind.toLowerCase() })} hint={t("account.summary.period_empty_hint", "The report is honest-empty: the backend says has_data=false.")} />
         ) : (
           <>
             <div className="acc-kpi-rail" style={{ marginBlockEnd: 10 }}>
               <KpiCard
-                label="win rate"
+                label={t("account.summary.win_rate", "win rate")}
                 value={pctOrDash(p.win_rate, 1)}
                 tone={rateTone(p.win_rate)}
                 delta={countDelta(p.win_count, p.loss_count)}
-                sub={`${p.win_rate_denominator ?? "NONE"} denom`}
+                sub={t("account.summary.denom_sub", "{d} denom", { d: p.win_rate_denominator ?? "NONE" })}
               />
               <KpiCard
-                label="profit factor"
+                label={t("account.summary.profit_factor", "profit factor")}
                 value={numOrDash(p.profit_factor, 3)}
                 tone={p.profit_factor == null ? "dim" : p.profit_factor > 1 ? "pos" : p.profit_factor < 1 ? "neg" : "dim"}
-                sub={`${p.breakeven_count ?? 0} BE included`}
+                sub={t("account.summary.be_sub", "{n} BE included", { n: p.breakeven_count ?? 0 })}
               />
               <KpiCard
-                label="expectancy"
+                label={t("account.summary.expectancy", "expectancy")}
                 value={moneyOrDash(p.expectancy)}
                 tone={p.expectancy == null ? "dim" : p.expectancy > 0 ? "pos" : p.expectancy < 0 ? "neg" : "dim"}
-                sub={`incl BE ${moneyOrDash(p.expectancy_breakeven_incl)}`}
+                sub={t("account.summary.expectancy_sub", "incl BE {v}", { v: moneyOrDash(p.expectancy_breakeven_incl) })}
               />
               <KpiCard
-                label="avg R"
+                label={t("account.summary.avg_r", "avg R")}
                 value={`${numOrDash(p.average_r, 3)}`}
                 tone={p.average_r == null ? "dim" : p.average_r > 0 ? "pos" : p.average_r < 0 ? "neg" : "dim"}
-                sub={`n = ${p.r_sample_count ?? 0} samples`}
+                sub={t("account.summary.samples_sub", "n = {n} samples", { n: p.r_sample_count ?? 0 })}
               />
             </div>
             <div className="acct-hero">
               <div>
-                <div className="tiny faint">NET PNL</div>
+                <div className="tiny faint">{t("account.summary.net_pnl", "NET PNL")}</div>
                 <div className={`big ${(p.net_pnl ?? 0) >= 0 ? "pos" : "neg"}`}>{moneyOrDash(p.net_pnl, true)}</div>
               </div>
               <div>
-                <div className="tiny faint">PnL %</div>
+                <div className="tiny faint">{t("account.summary.pnl_pct", "PnL %")}</div>
                 <div className="big">{pctOrDash(p.pnl_pct, 2)}</div>
               </div>
               <div style={{ minWidth: 220 }}>
                 <div className="tiny faint">
-                  gross profit {moneyOrDash(p.gross_profit)} · gross loss {moneyOrDash(p.gross_loss)}
+                  {t("account.summary.gross_line", "gross profit {p} · gross loss {l}", { p: moneyOrDash(p.gross_profit), l: moneyOrDash(p.gross_loss) })}
                 </div>
                 <div className="split" role="img" aria-label={`gross profit ${p.gross_profit ?? 0} vs gross loss ${p.gross_loss ?? 0}`}>
                   <i className="gp" style={{ inlineSize: `${grossShare(p.gross_profit, p.gross_loss)}%` }} />
@@ -203,34 +205,32 @@ export function AccountSummarySection() {
                 </div>
               </div>
               <div className="statline">
-                <span>{p.total_trades ?? DASH} trades</span>
-                <span>win {pctOrDash(p.win_rate, 1)} ({p.win_rate_denominator ?? "NONE"} denom)</span>
-                <span>loss {pctOrDash(p.loss_rate_decided, 1)} decided / {pctOrDash(p.loss_rate_all, 1)} all</span>
-                <span>PF {numOrDash(p.profit_factor, 3)}</span>
-                <span>avg R {numOrDash(p.average_r, 3)} (n={p.r_sample_count ?? 0})</span>
-                <span>expectancy {moneyOrDash(p.expectancy)} · incl BE {moneyOrDash(p.expectancy_breakeven_incl)} ({p.breakeven_count ?? 0} BE)</span>
-                <span>best {moneyOrDash(p.best_trade)} · worst {moneyOrDash(p.worst_trade)}</span>
-                <span>max DD {pctOrDash(p.max_drawdown_pct)} / {moneyOrDash(p.max_drawdown_usd)}</span>
-                <span>hold {p.average_holding_sec != null ? `${Math.round(p.average_holding_sec)}s` : DASH}</span>
-                <span>risk deployed {moneyOrDash(p.total_risk_deployed)}</span>
-                <span>costs {moneyOrDash(p.total_costs)} ({pctOrDash(p.cost_drag_pct)} drag)</span>
-                <span>PnL-wtd win {pctOrDash(p.pnl_weighted_win_rate, 1)}</span>
+                <span>{t("account.summary.l_trades", "{n} trades", { n: p.total_trades ?? DASH })}</span>
+                <span>{t("account.summary.l_win", "win {rate} ({d} denom)", { rate: pctOrDash(p.win_rate, 1), d: p.win_rate_denominator ?? "NONE" })}</span>
+                <span>{t("account.summary.l_loss", "loss {decided} decided / {all} all", { decided: pctOrDash(p.loss_rate_decided, 1), all: pctOrDash(p.loss_rate_all, 1) })}</span>
+                <span>{t("account.summary.l_pf", "PF {v}", { v: numOrDash(p.profit_factor, 3) })}</span>
+                <span>{t("account.summary.l_avgr", "avg R {v} (n={n})", { v: numOrDash(p.average_r, 3), n: p.r_sample_count ?? 0 })}</span>
+                <span>{t("account.summary.l_exp", "expectancy {v} · incl BE {be} ({n} BE)", { v: moneyOrDash(p.expectancy), be: moneyOrDash(p.expectancy_breakeven_incl), n: p.breakeven_count ?? 0 })}</span>
+                <span>{t("account.summary.l_bw", "best {b} · worst {w}", { b: moneyOrDash(p.best_trade), w: moneyOrDash(p.worst_trade) })}</span>
+                <span>{t("account.summary.l_dd", "max DD {pct} / {usd}", { pct: pctOrDash(p.max_drawdown_pct), usd: moneyOrDash(p.max_drawdown_usd) })}</span>
+                <span>{t("account.summary.l_hold", "hold {v}", { v: p.average_holding_sec != null ? `${Math.round(p.average_holding_sec)}s` : DASH })}</span>
+                <span>{t("account.summary.l_risk", "risk deployed {v}", { v: moneyOrDash(p.total_risk_deployed) })}</span>
+                <span>{t("account.summary.l_costs", "costs {v} ({d} drag)", { v: moneyOrDash(p.total_costs), d: pctOrDash(p.cost_drag_pct) })}</span>
+                <span>{t("account.summary.l_pnlw", "PnL-wtd win {v}", { v: pctOrDash(p.pnl_weighted_win_rate, 1) })}</span>
               </div>
             </div>
             {market && (
               <div className="statline" style={{ marginTop: 6 }}>
-                <span>broker day {market.server_day ?? DASH}</span>
+                <span>{t("account.summary.l_broker_day", "broker day {v}", { v: market.server_day ?? DASH })}</span>
                 <span>
-                  market {market.state ?? "UNKNOWN"}
-                  {market.state && market.state !== "OPEN" && market.next_open_iso ? ` · opens ${formatDateTime(market.next_open_iso)}` : ""}
+                  {t("account.summary.l_market", "market {state}{at}", { state: market.state ?? "UNKNOWN", at: market.state && market.state !== "OPEN" && market.next_open_iso ? ` · opens ${formatDateTime(market.next_open_iso)}` : "" })}
                 </span>
-                {market.last_tick_age_sec != null && <span>tick age {Math.round(market.last_tick_age_sec)}s</span>}
+                {market.last_tick_age_sec != null && <span>{t("account.summary.l_tick_age", "tick age {n}s", { n: Math.round(market.last_tick_age_sec) })}</span>}
                 {market.reason && <span className="faint">{market.reason}</span>}
               </div>
             )}
             <div className="tiny faint" style={{ marginTop: 6 }}>
-              period {p.key ?? DASH} · {p.period_start ? formatDateTime(p.period_start) : DASH} → {p.period_end ? formatDateTime(p.period_end) : DASH} · all figures
-              from the accounting core (single methodology)
+              {t("account.summary.l_period_foot", "period {key} · {start} → {end} · all figures from the accounting core (single methodology)", { key: p.key ?? DASH, start: p.period_start ? formatDateTime(p.period_start) : DASH, end: p.period_end ? formatDateTime(p.period_end) : DASH })}
             </div>
           </>
         )}
