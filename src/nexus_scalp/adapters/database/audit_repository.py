@@ -3386,10 +3386,10 @@ class AuditRepository:
         """
         window = proposal.generated_at.replace(second=0, microsecond=0).isoformat()
         query = """
-            INSERT INTO audit_guard_telemetry (window_start, symbol, reason_code, count)
+            INSERT INTO audit_guard_telemetry AS t (window_start, symbol, reason_code, count)
             VALUES (?, ?, ?, 1)
             ON CONFLICT(window_start, symbol, reason_code)
-            DO UPDATE SET count = count + 1
+            DO UPDATE SET count = t.count + 1
         """
         args = (window, proposal.symbol, reason_code)
         self._enqueue_telemetry(query, args)

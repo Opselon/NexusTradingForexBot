@@ -76,11 +76,14 @@ def _columns(conn, table: str) -> set[str]:
 
 
 @needs_postgres
-def test_live_domain_gap_is_fully_covered_by_the_replay() -> None:
-    """The precondition of the incident, measured on the real database: the
-    configured domain is missing required columns, and every one of them is
-    emitted by the replay as an ``ALTER TABLE ADD COLUMN``. This is what proves
-    the gap was a provisioning defect and not a registry mismatch."""
+def test_the_replay_leaves_no_required_column_gap_on_the_live_domain() -> None:
+    """The incident's precondition is gone on the live domain.
+
+    CHG-0067's replay is now applied at boot, and the live ``nexusdb`` carries
+    every required column (verified separately by the lane's post-merge probe).
+    This test asserts that property directly, so a future regression of the
+    provisioning gap fails here instead of silently corrupting audit writes.
+    """
     with psycopg.connect(PG_URL, connect_timeout=10) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -91,24 +94,11 @@ def test_live_domain_gap_is_fully_covered_by_the_replay() -> None:
 
     required = {(t, c.lower()) for t, cols in APP_REQUIRED_COLUMNS.items() for c, _ in cols}
     missing = sorted(required - live)
-    assert missing, "the configured domain already carries every required column"
+    assert missing == [], f"required columns missing from the live domain: {missing}"
 
-    replayed: set[tuple[str, str]] = set()
-    for stmt in sqlite_ddl_statements():
-        s = stmt.strip()
-        if s.upper().startswith("ALTER TABLE"):
-            parts = s.split()
-            if len(parts) >= 6:
-                replayed.add((parts[2].lower(), parts[5].lower()))
-
-    not_covered = [m for m in missing if m not in replayed]
-    assert not_covered == [], (
-        "live-missing columns the replay does not emit: "
-        f"{not_covered} — the provisioning gap is not closed"
-    )
     # The two columns named verbatim in the runtime log.
-    assert ("audit_signals", "signal_dedup_key") in replayed
-    assert ("audit_account_snapshots", "account_source") in replayed
+    assert ("audit_signals", "signal_dedup_key") in live
+    assert ("audit_account_snapshots", "account_source") in live
 
 
 @needs_postgres
