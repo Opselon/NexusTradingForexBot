@@ -79,6 +79,12 @@ CRITICAL_CATEGORIES = {
 
 CheckFn = Callable[..., tuple[str, str, str]]  # (verdict, reason, suggestion)
 
+# The metadata sidecars that complete a serving bundle (the same completeness
+# contract release/model_bootstrap stamps and _read_meta probes): the signed
+# digest manifest, or the provisioning metadata descriptor. A ``model.pt``
+# without ANY of these is an unverified weights stub.
+_BUNDLE_META_SIDECARS: tuple[str, ...] = ("manifest.json", "model.meta.json", "meta.json")
+
 
 @dataclass
 class HealthEntry:
@@ -157,6 +163,70 @@ def _db_tables(db_path: Path) -> set[str]:
             con.close()
     except sqlite3.Error:
         return set()
+
+
+def _bundle_has_full_sidecars(model_path: Path) -> bool:
+    """A bundle directory carries the complete serving sidecar set.
+
+    Mirrors the loader's sibling-scaler convention (``model.pt`` ->
+    ``model.scaler.npz``, ``model_lifecycle.serving_contract._scaler_path``)
+    and the provisioning completeness contract (``release.model_bootstrap``
+    stamps ``model.scaler.npz`` + ``model.meta.json`` + signed
+    ``manifest.json`` beside every minted bundle). A weights file with no
+    sidecars is an unverified stub — it is never a serving bundle, and a
+    health check reporting PASS against one is reporting the wrong artifact.
+    """
+    bundle = model_path.parent
+    if not (bundle / "model.scaler.npz").exists():
+        return False
+    return any((bundle / name).exists() for name in _BUNDLE_META_SIDECARS)
+
+
+def _resolve_serving_artifact(model_dir: Path) -> Path | None:
+    """Pick the model artifact a health check should introspect (NSE-HEALTHFIX-001).
+
+    The previous resolution was ``sorted(model_dir.rglob("model.pt"))[0]`` — a
+    pure path-string sort — so ``scalp/EURUSD/v1.0.0/model.pt`` (a bare
+    31-tensor weights file with zero sidecars and no metadata) won over the
+    complete ``scalp/XAUUSD/70d_liquidity/`` bundle. MODEL then reported PASS
+    against the stub, MODEL_CONTRACT reported ``NO_MODEL_METADATA`` and
+    FEATURE_SCHEMA reported the stub's 50D contract: three checks, three
+    different "serving bundles".
+
+    Selection rule, in order:
+
+    1. Prefer artifacts whose bundle directory carries the full sidecar set
+       (a co-located ``model.scaler.npz`` sibling AND a ``manifest.json`` or
+       ``model.meta.json``). Among complete bundles prefer non-``candidate/``
+       paths (a bundle directly under a symbol dir over a nested ``candidate/``
+       experiment dir — ``candidate/`` holds training probes), then
+       lexicographic as a stable tiebreak.
+    2. Fall back to any ``model.pt`` (sidecar-less) only when NO complete
+       bundle exists, so a stub-only tree still resolves instead of reporting
+       a bare "no artifact" — the stub's missing metadata surfaces honestly
+       downstream as ``NO_MODEL_METADATA``.
+    3. Never fabricate metadata: this helper only SELECTS an artifact; the
+       checks read whatever the artifact actually declares.
+
+    Returns ``None`` when the model dir is absent or holds no ``model.pt``.
+    """
+    if not model_dir.exists():
+        return None
+    try:
+        found = sorted(model_dir.rglob("model.pt"))
+    except OSError:  # unreadable / raced-away tree
+        return None
+    if not found:
+        return None
+    complete = [p for p in found if _bundle_has_full_sidecars(p)]
+    if not complete:
+        return found[0]
+    # `candidate` sorts after a real bundle dir (False < True); the path
+    # string is the stable tiebreak so the pick is deterministic per tree.
+    return min(
+        complete,
+        key=lambda p: ("candidate" in p.parts, str(p)),
+    )
 
 
 class HealthEngine:
@@ -338,10 +408,10 @@ class HealthEngine:
             p = Path(configured)
             candidate = p if p.is_absolute() else self.workspace / p
         if candidate is None or not candidate.exists():
-            # Fall back to any artifact under the model dir.
-            matches = sorted(self.model_dir.rglob("model.pt")) if self.model_dir.exists() else []
-            if matches:
-                candidate = matches[0]
+            # Fall back to the bundle-selection heuristic (NSE-HEALTHFIX-001):
+            # prefer a complete bundle (full sidecar set) over a sidecar-less
+            # weights stub, so MODEL never reports PASS on an unverified stub.
+            candidate = _resolve_serving_artifact(self.model_dir)
         if candidate is None or not candidate.exists():
             # BUG-157: absent artifact is OPTIONAL, not CRITICAL. The repo's
             # own contracts disagreed: RepairEngine declares models
@@ -435,9 +505,11 @@ class HealthEngine:
                 p = Path(configured)
                 candidate = p if p.is_absolute() else self.workspace / p
         if candidate is None or not candidate.exists():
-            matches = sorted(self.model_dir.rglob("model.pt")) if self.model_dir.exists() else []
-            if matches:
-                candidate = matches[0]
+            # Same artifact as check_model / check_feature_schema
+            # (NSE-HEALTHFIX-001): one bundle-selection helper for all three,
+            # so the three model-family checks can never disagree on which
+            # bundle is serving.
+            candidate = _resolve_serving_artifact(self.model_dir)
         if candidate is None or not candidate.exists():
             return HealthEntry(
                 "MODEL_CONTRACT",
@@ -650,10 +722,11 @@ class HealthEngine:
             if configured:
                 p = Path(configured)
                 artifact = p if p.is_absolute() else self.workspace / p
-        if artifact is None and self.model_dir.exists():
-            matches = sorted(self.model_dir.rglob("model.pt"))
-            if matches:
-                artifact = matches[0]
+        if artifact is None:
+            # Same helper as check_model / check_model_contract
+            # (NSE-HEALTHFIX-001): the FEATURE_SCHEMA truth must be read from
+            # the SAME serving bundle the other two checks introspect.
+            artifact = _resolve_serving_artifact(self.model_dir)
         if artifact is None or not artifact.exists():
             return HealthEntry(
                 "FEATURE_SCHEMA",
