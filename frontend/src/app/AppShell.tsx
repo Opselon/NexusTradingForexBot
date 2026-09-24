@@ -164,6 +164,30 @@ export function AppShell() {
     document.title = routeLabel ? `${routeLabel} · NSE Console` : "NSE Console";
   }, [routeLabel]);
 
+  // Locale-aware document metadata: index.html keeps the static English tags
+  // (crawlers and social scrapers read raw HTML — never break SEO), while the
+  // live <head> follows the active language for the user's own browser and
+  // extensions. Re-runs when `t` identity changes with the language.
+  useEffect(() => {
+    const setMeta = (selector: string, content: string) => {
+      const el = document.head.querySelector(selector);
+      if (el) el.setAttribute("content", content);
+    };
+    setMeta(
+      'meta[name="description"]',
+      t(
+        "meta.description",
+        "NSE Alternative Console — trading rule matrix, risk gates and execution controls. Backend-authoritative operator UI.",
+      ),
+    );
+    setMeta('meta[property="og:title"]', t("meta.og_title", "NSE — Alternative Console"));
+    setMeta(
+      'meta[property="og:description"]',
+      t("meta.og_description", "Trading rule matrix — enablement + thresholds, backend-authoritative."),
+    );
+    setMeta('meta[name="twitter:title"]', t("meta.og_title", "NSE — Alternative Console"));
+  }, [t]);
+
   // SPA navigation: return the scroll container to the top and move focus to
   // <main> so keyboard/SR users land on the new page, not the old scroll
   // position. Skipped on first mount — the landing page keeps its place.
