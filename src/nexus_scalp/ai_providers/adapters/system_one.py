@@ -130,15 +130,28 @@ class SystemOneAdapter(BaseAIProviderAdapter):
         }
 
     def _provider_test_payload(self) -> dict[str, Any]:
-        """Harmless fixed probe: no position, no order, no side effect."""
+        """A harmless fixed probe over SIMULATED TEST DATA (Sections 22, 56).
+
+        Deliberately asks the REAL decision questions against a synthetic
+        snapshot, so the test exercises the same normalization path a live
+        decision takes -- "connection works" is not the same claim as "the
+        provider can produce a contract-valid response", and only the second
+        one is what activation requires (Section 65).
+        """
+        from nexus_scalp.ai_providers.sample import SIMULATED_SAMPLE_REQUEST
+        from nexus_scalp.ai_providers.templates import build_position_decision_payload
+
+        canonical = build_position_decision_payload(SIMULATED_SAMPLE_REQUEST)
         return {
             "model": self.model,
             "state": (
-                "NSE TEST CENTER connectivity probe (SIMULATED TEST DATA). "
-                "No position, no order. Answer the single question."
+                "NSE TEST CENTER probe using SIMULATED TEST DATA (not a real "
+                "position, no order). " + _state_string(canonical)
             ),
             "questions": {
-                "is_urgent": {"type": "noul", "instructions": "Does this require urgent attention?"}
+                _Q_HOLD: {"type": "noul", "instructions": "Is holding this position favourable?"},
+                _Q_CLOSE: {"type": "noul", "instructions": "Is closing this position now favourable?"},
+                _Q_REDUCE: {"type": "noul", "instructions": "Is reducing this position's size advisable?"},
             },
         }
 

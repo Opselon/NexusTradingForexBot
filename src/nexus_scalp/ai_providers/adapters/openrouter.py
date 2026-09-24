@@ -111,16 +111,27 @@ class OpenRouterAdapter(BaseAIProviderAdapter):
         }
 
     def _provider_test_payload(self) -> dict[str, Any]:
-        """Harmless fixed probe: no position, no order, no side effect."""
+        """A harmless probe over SIMULATED TEST DATA (Sections 22, 56).
+
+        Asks for the REAL decision contract against a synthetic snapshot, so the
+        test proves the provider can produce a contract-valid response rather
+        than merely that HTTP 200 came back (Section 65 activation gate).
+        """
+        from nexus_scalp.ai_providers.sample import SIMULATED_SAMPLE_REQUEST
+        from nexus_scalp.ai_providers.templates import build_position_decision_payload
+
+        canonical = build_position_decision_payload(SIMULATED_SAMPLE_REQUEST)
         return {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": "Reply with valid JSON only."},
+                {"role": "system", "content": system_instructions()},
                 {
                     "role": "user",
                     "content": (
-                        '{"connection_check": true}. Reply {"connection_check": true, '
-                        '"reply": "ok"} as JSON.'
+                        "This is an NSE TEST CENTER probe using SIMULATED TEST "
+                        "DATA (not a real position, no order). Assess it and "
+                        "reply with the JSON object the system instructions "
+                        f"describe.\n{__import__('json').dumps(canonical, default=str)}"
                     ),
                 },
             ],

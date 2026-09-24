@@ -343,7 +343,7 @@ class BaseAIProviderAdapter(abc.ABC):
             stage="complete",
             latency_ms=latency,
             raw_response=_summarize(result.payload),
-            normalized_response=response.to_dict(),
+            normalized_response=response.model_dump(mode="json"),
         )
 
     # -- provider-specific hooks ------------------------------------------------
