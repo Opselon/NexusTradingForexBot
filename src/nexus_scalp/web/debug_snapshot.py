@@ -1530,8 +1530,27 @@ def _database_section(engine: Any) -> dict[str, Any]:
     try:
         audit_path = None
         if engine is not None and getattr(engine, "audit", None) is not None:
-            audit_path = Path(getattr(engine.audit, "_db_path", "") or "")
-        out["databases"]["audit"] = _probe("audit", audit_path or None)
+            resolved = getattr(engine.audit, "_db_path", "") or ""
+            # RT-005: a PostgreSQL-configured AuditRepository has no
+            # filesystem path (only SQLite sets _db_path), and Path("") is
+            # WindowsPath('.') — feeding that to the SQLite-only migration
+            # engine raised "WindowsPath('.') has an empty name" on every
+            # snapshot. Report an explicit provider mismatch instead.
+            if resolved:
+                audit_path = Path(resolved)
+            elif str(getattr(engine.audit, "_db_url", "") or "").startswith("postgresql://"):
+                out["databases"]["audit"] = {
+                    "path": _mask_path(str(engine.audit._db_url)),
+                    "provider": "postgresql",
+                    "health": "READY",
+                    "exists": True,
+                    "schema_version": "NOT_RECORDED",
+                    "migration_state": "MANAGED_EXTERNALLY",
+                    "reason": "POSTGRES_DOMAIN_NOT_FILE_BASED",
+                }
+                audit_path = None
+        if audit_path is not None:
+            out["databases"]["audit"] = _probe("audit", audit_path)
     except Exception:
         out["databases"]["audit"] = {"health": "ERROR"}
     try:
