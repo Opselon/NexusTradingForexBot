@@ -24,10 +24,10 @@ fallback applies. Never a fabricated instant.
 
 from __future__ import annotations
 
-import os
 import sqlite3
-import tempfile
 from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -48,6 +48,102 @@ from nexus_scalp.experience.outcome_recovery import (
     broker_close_time,
 )
 from nexus_scalp.experience.outcome_repair import OutcomeRepairJob
+
+# ---------------------------------------------------------------------------
+# Deterministic wall-clock + id factory (test-only)
+# ---------------------------------------------------------------------------
+#
+# Every BUG-262 scenario asserts a *relationship* against the detection
+# instant: "the evidenced close is 2 h before detection", "the contaminated
+# stamp is 3 h AFTER detection, so it is refused", "the fallback equals
+# detection +/- tolerance". Those relationships are what the fix guarantees;
+# they must not also depend on the host clock. Reading datetime.now(UTC) for
+# the detection instant made each of the 11 probes a wall-clock probe:
+# a test starting at 23:59:59 UTC re-bucketed a "2 h ago" close into
+# yesterday, and a co-tenant-scheduled pause widened the `< now + 5 s`
+# tolerance windows past their evidence. Replacing now() with a FIXED,
+# injected instant keeps every relationship assert byte-identical while
+# removing the wall clock entirely. The tolerance windows are preserved as
+# real timedelta arithmetic around the injected instant (a duration is a
+# duration regardless of the host clock), never as relaxed bounds.
+#
+# _FIXED_NOW is deliberately set INSIDE the 2026-09-24 accounting day and
+# minutes clear of any day/week bucket boundary, so a date-boundary flake
+# would be caught by this module rather than hidden by it.
+
+_FIXED_NOW = datetime(2026, 9, 24, 14, 37, 12, tzinfo=UTC)
+
+
+def _now() -> datetime:
+    """Detection instant used by every scenario. Fixed, not wall-clock.
+
+    Returns a fresh copy so a test that mutates the returned object (e.g. via
+    ``timedelta`` arithmetic re-assignment) cannot poison the module constant.
+    """
+    return _FIXED_NOW
+
+
+def _tick_ts(bid: float, ts: datetime | None = None) -> TickData:
+    """Tick whose timestamp is the injected detection instant by default.
+
+    ``reconcile_missed_closes`` derives its detection time from the tick
+    (``current_tick.timestamp``), so injecting there injects the whole
+    reconciliation clock. ``ts`` is kept for the few call sites that need a
+    different instant (a tick can carry a pre-gap time even when detection is
+    ``_now()`` — the real-world shape: the broker's last quote precedes the
+    detection sweep).
+    """
+    return TickData(
+        symbol="XAUUSD",
+        timestamp=ts if ts is not None else _now(),
+        bid=bid,
+        ask=bid + 0.20,
+        volume=1.0,
+    )
+
+
+@pytest.fixture
+def fixed_now() -> datetime:
+    """Detection instant shared by a scenario, deterministic across hosts."""
+    return _FIXED_NOW
+
+
+class _FrozenClock:
+    """Minimal stand-in for the ``datetime`` module name in outcome_repair.
+
+    ``OutcomeRepairJob`` calls ``datetime.now(UTC)`` in four places (candidate
+    age, contamination window ``not_after``, fallback close stamp, and the
+    ``repaired_at`` provenance field). The age/window/stamp sites take a
+    relative position against detection: patching the module-level ``datetime``
+    name to this object fixes all four at one deterministic instant, so the
+    repair path runs inside the same fixed clock as the reconciliation path.
+
+    Only the surface the module actually touches is implemented (``now`` plus
+    the attributes it accesses through the same name: ``UTC`` and the class
+    itself for ``isinstance``-free construction). Constructed values pass
+    through unchanged, so arithmetic against the module's real ``timedelta``
+    still works.
+    """
+
+    def __init__(self, instant: datetime) -> None:
+        self._instant = instant
+
+    def now(self, tz: Any = None) -> datetime:
+        """Fixed instant. ``tz`` is accepted for signature parity, then ignored:
+        the production caller always passes UTC and the injected instant is
+        already tz-aware, so honoring ``tz`` would mean converting an instant
+        that has no business moving.
+        """
+        return self._instant
+
+    # ``outcome_repair`` does ``datetime.now(UTC).isoformat()``; construction of
+    # naive/aware values in the module is only ever through ``now``, so the
+    # class object itself is exposed for any residual class-level access.
+    def __getattr__(self, name: str) -> Any:
+        if name == "UTC":
+            return UTC
+        return getattr(datetime, name)
+
 
 # ---------------------------------------------------------------------------
 # as_utc / broker_close_time units
@@ -111,13 +207,71 @@ class TestBrokerCloseTime:
 
 
 # ---------------------------------------------------------------------------
+# Determinism invariants (ML-QA-010): the clock the scenarios run against is
+# fixed, and the fixed instant is positioned to catch, not hide, a
+# date-boundary flake. These guard the remediation itself.
+# ---------------------------------------------------------------------------
+
+
+def test_detection_instant_is_fixed_and_aware() -> None:
+    """The scenario clock is a constant, tz-aware UTC instant.
+
+    This is the invariant the whole remediation rests on: if any helper can
+    hand back a wall-clock value, every relationship assert below becomes
+    host-clock-dependent again. ``datetime`` is immutable, so sharing the
+    constant is safe; the assert proves the value is frozen and UTC-aware so
+    a future refactor to a mutable container (e.g. a list slot) fails loudly.
+    """
+    assert _now() == _FIXED_NOW
+    assert _now().tzinfo is not None
+    assert _FIXED_NOW.tzinfo is UTC
+    # Repeated reads are stable — no clock drift between two reads in one test.
+    assert _now() == _now()
+
+
+def test_reconciled_close_time_is_invariant_across_host_clocks(
+    tmp_path: Path,
+) -> None:
+    """The evidenced close instant does not move with the wall clock.
+
+    Runs the reconcile path twice with a contract that the ledger close_time
+    equals the fixed evidential instant exactly (not ``within 5 s``). The
+    pre-remediation module derived detection from ``datetime.now(UTC)`` and
+    asserted ``close < now + 5 s``; the exactness below is only possible with
+    the injected clock, and it is the assertion that a 23:59:59 UTC start used
+    to break for day buckets.
+    """
+    evidence = _now() - timedelta(hours=2)
+    for _ in range(2):
+        om, audit, mock = _make_om(tmp_path)
+        try:
+            _seed_opened(audit, 7201, evidence - timedelta(minutes=30))
+            mock.deals = [_close_deal(7201, evidence)]
+            om.reconcile_missed_closes("XAUUSD", _tick_ts(1994.0), hours_back=24)
+            audit._queue.join()
+            row = audit.get_ledger_row(7201)
+            assert row is not None
+            assert row["status"] == "RECONCILED"
+            # EXACT: not a tolerance window — the evidential instant is the
+            # same value on every host, in every timezone, at any wall time.
+            assert as_utc(row["close_time"]) == evidence
+        finally:
+            audit.close()
+
+
+# ---------------------------------------------------------------------------
 # Reconciliation close-loop (restart gap): evidence-time ledger + outcome
 # ---------------------------------------------------------------------------
 
 
-def _make_om():
-    temp_dir = tempfile.mkdtemp()
-    db_path = os.path.join(temp_dir, "bug262.db")
+def _make_om(tmp_path: Path) -> tuple[OrderLifecycleManager, AuditRepository, Any]:
+    """Build the order manager + audit repo on a per-test tmp dir.
+
+    Uses pytest's ``tmp_path`` (auto-created, auto-removed, unique per test)
+    rather than ``tempfile.mkdtemp()``, which left the directory behind after
+    the test and resolved to a random symlink target on macOS.
+    """
+    db_path = str(tmp_path / "bug262.db")
     audit = AuditRepository(db_url=f"sqlite:///{db_path}")
 
     class MockMT5Port:
@@ -146,13 +300,7 @@ def _make_om():
 
 
 def _tick(bid: float = 1994.0) -> TickData:
-    return TickData(
-        symbol="XAUUSD",
-        timestamp=datetime.now(UTC),
-        bid=bid,
-        ask=bid + 0.20,
-        volume=1.0,
-    )
+    return _tick_ts(bid)
 
 
 def _seed_opened(audit: AuditRepository, ticket: int, open_dt: datetime) -> None:
@@ -201,11 +349,11 @@ class _RecordingEngine:
         self.calls.append(kw)
 
 
-def test_reconcile_ledger_close_time_from_deal_evidence():
+def test_reconcile_ledger_close_time_from_deal_evidence(tmp_path: Path) -> None:
     """A close that happened HOURS before detection must keep its true instant."""
-    om, audit, mock = _make_om()
+    om, audit, mock = _make_om(tmp_path)
     try:
-        now = datetime.now(UTC)
+        now = _now()
         true_close = now - timedelta(hours=2)
         open_dt = true_close - timedelta(minutes=30)
         _seed_opened(audit, 7101, open_dt)
@@ -226,10 +374,10 @@ def test_reconcile_ledger_close_time_from_deal_evidence():
         audit.close()
 
 
-def test_reconcile_experience_outcome_timestamp_evidenced():
-    om, audit, mock = _make_om()
+def test_reconcile_experience_outcome_timestamp_evidenced(tmp_path: Path) -> None:
+    om, audit, mock = _make_om(tmp_path)
     try:
-        now = datetime.now(UTC)
+        now = _now()
         true_close = now - timedelta(hours=3)
         _seed_opened(audit, 7102, true_close - timedelta(minutes=10))
         mock.deals = [_close_deal(7102, true_close)]
@@ -251,11 +399,11 @@ def test_reconcile_experience_outcome_timestamp_evidenced():
         audit.close()
 
 
-def test_reconcile_refuses_contaminated_server_local_stamps():
+def test_reconcile_refuses_contaminated_server_local_stamps(tmp_path: Path) -> None:
     """A +3h server-local close stamp is refused: fallback keeps old behavior."""
-    om, audit, mock = _make_om()
+    om, audit, mock = _make_om(tmp_path)
     try:
-        now = datetime.now(UTC)
+        now = _now()
         contaminated = now + timedelta(hours=3)  # GMT+3 server-local shape
         _seed_opened(audit, 7103, now - timedelta(minutes=45))
         mock.deals = [_close_deal(7103, contaminated)]
@@ -274,10 +422,10 @@ def test_reconcile_refuses_contaminated_server_local_stamps():
         audit.close()
 
 
-def test_reconcile_missing_evidence_falls_back_to_detection_time():
-    om, audit, mock = _make_om()
+def test_reconcile_missing_evidence_falls_back_to_detection_time(tmp_path: Path) -> None:
+    om, audit, mock = _make_om(tmp_path)
     try:
-        now = datetime.now(UTC)
+        now = _now()
         _seed_opened(audit, 7104, now - timedelta(minutes=20))
         deal = _close_deal(7104, None)
         deal.pop("closed_at")
@@ -299,10 +447,10 @@ def test_reconcile_missing_evidence_falls_back_to_detection_time():
 # ---------------------------------------------------------------------------
 
 
-def test_autopsy_vanished_ticket_uses_deal_close_time():
-    om, audit, mock = _make_om()
+def test_autopsy_vanished_ticket_uses_deal_close_time(tmp_path: Path) -> None:
+    om, audit, mock = _make_om(tmp_path)
     try:
-        now = datetime.now(UTC)
+        now = _now()
         true_close = now - timedelta(minutes=50)
         entry_time = true_close - timedelta(minutes=25)
         ticket = 7105
@@ -402,12 +550,17 @@ def _seed_zero_outcome(repo: AuditRepository, key: str, ticket: int, recorded_at
     conn.close()
 
 
-def test_outcome_repair_preserves_historical_close_instant():
-    temp_dir = tempfile.mkdtemp()
-    repo = AuditRepository(db_url=f"sqlite:///{temp_dir}/repair.db")
+def test_outcome_repair_preserves_historical_close_instant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'repair.db'}")
     try:
         ledger = ExperienceLedger(repo)
-        now = datetime.now(UTC)
+        now = _now()
+        monkeypatch.setattr(
+            "nexus_scalp.experience.outcome_repair.datetime",
+            _FrozenClock(now),
+        )
         decision_ts = now - timedelta(days=7, hours=6)
         true_close = now - timedelta(days=7)  # closed 7 days ago
         key = "bug262-repair"
@@ -466,13 +619,18 @@ def test_outcome_repair_preserves_historical_close_instant():
         repo.close()
 
 
-def test_outcome_repair_refuses_contaminated_evidence_and_falls_back():
+def test_outcome_repair_refuses_contaminated_evidence_and_falls_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Server-local (future) deal stamps keep the old repair-now behavior."""
-    temp_dir = tempfile.mkdtemp()
-    repo = AuditRepository(db_url=f"sqlite:///{temp_dir}/repair2.db")
+    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'repair2.db'}")
     try:
         ledger = ExperienceLedger(repo)
-        now = datetime.now(UTC)
+        now = _now()
+        monkeypatch.setattr(
+            "nexus_scalp.experience.outcome_repair.datetime",
+            _FrozenClock(now),
+        )
         decision_ts = now - timedelta(days=2)
         key = "bug262-contam"
         ticket = 5151
@@ -515,13 +673,18 @@ def test_outcome_repair_refuses_contaminated_evidence_and_falls_back():
         repo.close()
 
 
-def test_outcome_repair_honors_epoch_int_evidence():
+def test_outcome_repair_honors_epoch_int_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Durable-deal shape (int epoch) is accepted as close evidence."""
-    temp_dir = tempfile.mkdtemp()
-    repo = AuditRepository(db_url=f"sqlite:///{temp_dir}/repair3.db")
+    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'repair3.db'}")
     try:
         ledger = ExperienceLedger(repo)
-        now = datetime.now(UTC)
+        now = _now()
+        monkeypatch.setattr(
+            "nexus_scalp.experience.outcome_repair.datetime",
+            _FrozenClock(now),
+        )
         decision_ts = now - timedelta(days=3)
         # Epoch evidence is second-granular: floor the expected close to match.
         true_close = (decision_ts + timedelta(minutes=15)).replace(microsecond=0)

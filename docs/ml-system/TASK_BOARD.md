@@ -77,7 +77,8 @@
 - [ML-QA-006](tasks/ML-QA-006.md) — Duplicate Canonical Task-Row Detector (SSOT table gate) `[P2 | DONE (PR pending) | AGENT-QA]`
 - [ML-QA-007](tasks/ML-QA-007.md) — Push-Gate Latency Determinism: MT5 Parity Suite (roster candidate #4, CPU-time probes + warmup + SLA re-attached) `[P2 | DONE (PR pending) | AGENT-QA]`
 - [ML-QA-008](tasks/ML-QA-008.md) — Push-Gate Latency Determinism: Experiment-Registry Benchmark (roster candidate #6, CPU-time legs + warmup, 50ms query budget kept hard) `[P2 | DONE (PR pending) | AGENT-QA]`
-- [ML-QA-009](tasks/ML-QA-009.md) — Push-Gate Determinism: Audit-Flush Bounded-Wait Assert (roster candidate #7, CPU-time budget, `ok is False` kept hard) `[P2 | DONE (PR pending) | AGENT-QA]`
+- [ML-QA-009](tasks/ML-QA-009.md) — Push-Gate Bounded-Wait Determinism: Audit-Flush (roster candidate #7, CPU-time budget, no-deadlock contract kept hard) `[P2 | DONE (PR #422 open) | AGENT-QA]`
+- [ML-QA-010](tasks/ML-QA-010.md) — Push-Gate Wall-Clock Determinism: BUG-262 Close-Time Evidence (roster recount #1, injected fixed clock + tmp_path, 15 sources removed) `[P2 | DONE (PR pending) | AGENT-QA]`
 - [ML-UI-001](tasks/ML-UI-001.md) — End-to-End Model UX & CLI Verification (Training, Predict & Confidence Trust) `[P1 | DONE | AGENT-UI]`
 - [ML-UI-002](tasks/ML-UI-002.md) — Model Studio E2E Dataset Ingestion, 50D/70D Normalization & Layer-2 Position Management Generator `[P1 | DONE | AGENT-UI]`
 - [ML-UI-003](tasks/ML-UI-003.md) — AI Hub: Model Registry, SQLite Catalog & Live Runtime Hot-Loader `[P1 | DONE | AGENT-UI]`
@@ -92,4 +93,4 @@ The following tasks are strictly frozen from implementation until the human oper
 2. **[ML-GOV-002](tasks/ML-GOV-002.md)**: Designate the single canonical root model state machine: `PromotionState` (`governance.db`) vs `ModelStatus` (`lifecycle.db`).
 3. **[ML-EXP-002](tasks/ML-EXP-002.md)**: Empirical comparison decision: Retain and wire 3D TCN+Attention sequence buffer in live execution or officially retire 3D sequence modeling to favor 2D MLP ResNet.
 4. **[ML-FEAT-003](tasks/ML-FEAT-003.md)**: Approve live production gating criteria and infrastructure requirements for 70D schema adoption.
-5. **[ML-OBS-002](tasks/ML-OBS-002.md)**: Authorize activation of online fine-tuning on live broker demo/paper accounts under quarantined shadow buffers.
+5. **[ML-OBS-002](tasks/ML-OBS-002.md)**: Authorize activation of online fine-tuning on live broker demo/paper accounts under quarantined shadow buffers.- [ML-QA-009](tasks/ML-QA-009.md) — Push-Gate Bounded-Wait Determinism: Audit-Flush (roster candidate #7, CPU-time budget, no-deadlock contract kept hard) `[P2 | DONE (PR #422 open) | AGENT-QA]`

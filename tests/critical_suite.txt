@@ -487,3 +487,4 @@ tests/unit/test_winner_protection_geometry_sprint.py
 tests/unit/test_zero_friction_guard_e1.py
 tests/unit/test_git_governance.py
 tests/unit/test_ml_qa_009_audit_flush_cpu_budget.py
+tests/unit/test_ml_qa_010_clock_determinism.py
