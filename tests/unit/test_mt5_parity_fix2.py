@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 import scripts.data.ingest_historical_candles as ingest_mod
 
 # The REAL adapter signature — the contract D1's call must satisfy.
+from nexus_scalp.adapters.database.broker_history_sync import BrokerHistorySyncWorker
 from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
 
 # =============================================================================
@@ -170,3 +171,197 @@ def test_d1_real_adapter_signature_has_no_start_parameter() -> None:
     assert "start" not in params
     assert "from_utc" in params
     assert "count" in params
+
+
+# =============================================================================
+# D2 — F17-3: watermark must not advance on a fetch empty because of failure
+# =============================================================================
+
+
+class _RecordingAudit:
+    """Audit double that records whether the watermark was persisted."""
+
+    def __init__(self, meta: dict) -> None:
+        self._meta = meta
+        self.captured: dict = {}
+        self.sync_calls = 0
+
+    def get_broker_history_meta(self, symbol: str) -> dict:
+        return self._meta
+
+    def sync_broker_history(self, orders, deals, symbol, sync_from, sync_to):
+        self.sync_calls += 1
+        self.captured["from"] = sync_from.isoformat()
+        self.captured["to"] = sync_to.isoformat()
+        return {
+            "orders_total": len(orders or []),
+            "orders_inserted": 0,
+            "orders_duplicates": 0,
+            "deals_total": len(deals or []),
+            "deals_inserted": 0,
+            "deals_duplicates": 0,
+            "trades_total": 0,
+            "trades_inserted": 0,
+            "trades_duplicates": 0,
+            "duration_ms": 0.0,
+        }
+
+
+class _BrokerDownAdapter:
+    """Transport/broker failure: history readers answer [] (F17-4), and the
+    connectivity probe reports the terminal is unreachable."""
+
+    def is_connected(self) -> bool:
+        return False
+
+    def get_history_orders(self, from_dt, to_dt, symbol=None):
+        return []
+
+    def get_history_deals(self, from_dt, to_dt, symbol=None):
+        return []
+
+
+class _QuietAdapter(_BrokerDownAdapter):
+    """A genuinely empty window: [] but the broker IS reachable."""
+
+    def is_connected(self) -> bool:
+        return True
+
+
+class _RowsAdapter(_BrokerDownAdapter):
+    """Normal sync: history readers return rows and the broker is reachable."""
+
+    def __init__(self, rows: int = 3) -> None:
+        self.rows = rows
+
+    def is_connected(self) -> bool:
+        return True
+
+    def get_history_orders(self, from_dt, to_dt, symbol=None):
+        return [{"ticket": 1000 + i, "time_setup": 0, "state": 0} for i in range(self.rows)]
+
+    def get_history_deals(self, from_dt, to_dt, symbol=None):
+        return []
+
+
+class _NoProbeAdapter:
+    """Rows, but the adapter publishes NO connectivity signal (like the
+    BUG-133 test doubles) — window arithmetic must be unaffected."""
+
+    def __init__(self, rows: int = 2) -> None:
+        self.rows = rows
+
+    def get_history_orders(self, from_dt, to_dt, symbol=None):
+        return [{"ticket": 2000 + i, "time_setup": 0, "state": 0} for i in range(self.rows)]
+
+    def get_history_deals(self, from_dt, to_dt, symbol=None):
+        return []
+
+
+def _worker(audit) -> BrokerHistorySyncWorker:
+    w = BrokerHistorySyncWorker(
+        audit=audit,
+        adapter=_BrokerDownAdapter(),
+        symbol="XAUUSD",
+        interval_sec=0.0,
+        overlap_days=1,
+    )
+    w.start()
+    w._last_run_ts = 0.0
+    return w
+
+
+def test_d2_down_broker_does_not_persist_sync_window() -> None:
+    """A zero-row fetch from an unreachable broker must not reach persistence.
+
+    Pre-fix the worker called sync_broker_history with [] every cycle, which
+    unconditionally advanced last_sync_to (broker_history.py:772-781) — past
+    an outage longer than OVERLAP_DAYS that becomes a permanent hole.
+    """
+    audit = _RecordingAudit(
+        {"last_sync_from": "2026-05-08T17:03:44+00:00", "last_sync_to": "2026-08-20T17:45:00+00:00"}
+    )
+    worker = _worker(audit)
+    assert worker.tick() is False
+    assert audit.sync_calls == 0, "watermark was persisted for a failed fetch"
+
+
+def test_d2_down_broker_reports_failure_not_success() -> None:
+    """The cycle must surface as SYNC_FAILED so the next tick retries in full."""
+    worker = _worker(_RecordingAudit({}))
+    assert worker.tick() is False
+    assert worker.last_error
+    assert "unavailable" in worker.last_error
+
+
+def test_d2_quiet_window_still_persists() -> None:
+    """[] from a REACHABLE broker is genuinely empty: it must persist.
+
+    This pins the half of F17-3 the fix must NOT break — an account with no
+    activity in the window still advances its watermark.
+    """
+    audit = _RecordingAudit(
+        {"last_sync_from": "2026-05-08T17:03:44+00:00", "last_sync_to": "2026-08-20T17:45:00+00:00"}
+    )
+    worker = BrokerHistorySyncWorker(
+        audit=audit,
+        adapter=_QuietAdapter(),
+        symbol="XAUUSD",
+        interval_sec=0.0,
+        overlap_days=1,
+    )
+    worker.start()
+    worker._last_run_ts = 0.0
+    assert worker.tick() is True
+    assert audit.sync_calls == 1
+    expected_to = datetime.now(UTC).isoformat()
+    assert audit.captured["to"].startswith(expected_to[:13]), audit.captured["to"]
+
+
+def test_d2_rows_persist_unchanged() -> None:
+    """Non-empty fetch behaviour (and window anchoring) is untouched."""
+    audit = _RecordingAudit(
+        {"last_sync_from": "2026-05-08T17:03:44+00:00", "last_sync_to": "2026-08-20T17:45:00+00:00"}
+    )
+    worker = BrokerHistorySyncWorker(
+        audit=audit,
+        adapter=_RowsAdapter(3),
+        symbol="XAUUSD",
+        interval_sec=0.0,
+        overlap_days=1,
+    )
+    worker.start()
+    worker._last_run_ts = 0.0
+    assert worker.tick() is True
+    assert audit.sync_calls == 1
+    expected_from = (
+        datetime.fromisoformat("2026-08-20T17:45:00+00:00") - timedelta(days=1)
+    ).isoformat()
+    assert audit.captured["from"] == expected_from, audit.captured["from"]
+
+
+def test_d2_window_arithmetic_preserved_without_connectivity_signal() -> None:
+    """BUG-133 regression guard: window anchoring is independent of the probe.
+
+    Adapters that publish no connectivity signal still compute the SAME window
+    (anchored on last_sync_to - overlap); only the empty-window verdict is
+    fail-closed. Pre-fix fakes with no probe exercised exactly this.
+    """
+    audit = _RecordingAudit(
+        {"last_sync_from": "2026-05-08T17:03:44+00:00", "last_sync_to": "2026-08-20T17:45:00+00:00"}
+    )
+
+    worker = BrokerHistorySyncWorker(
+        audit=audit,
+        adapter=_NoProbeAdapter(2),
+        symbol="XAUUSD",
+        interval_sec=0.0,
+        overlap_days=1,
+    )
+    worker.start()
+    worker._last_run_ts = 0.0
+    assert worker.tick() is True
+    expected_from = (
+        datetime.fromisoformat("2026-08-20T17:45:00+00:00") - timedelta(days=1)
+    ).isoformat()
+    assert audit.captured["from"] == expected_from, audit.captured["from"]
