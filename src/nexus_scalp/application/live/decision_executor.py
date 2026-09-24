@@ -19,6 +19,7 @@ from typing import Any
 from nexus_scalp.domain.enums import ActionType, ExecutionMode
 from nexus_scalp.domain.models import TickData, TradeOrder, TradeProposal
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.observability.trace_contract import TraceState as _TraceState
 
 logger = get_logger("nexus_scalp.application.live.decision_executor")
 
@@ -44,6 +45,128 @@ def _trace_decision_id(policy_decision: Any) -> str | None:
         )
         or None
     )
+
+
+# ---------------------------------------------------------------------------
+# DECISION-TRACE enrichment helpers (LIVE-CAUSAL-TOPOLOGY, lane B).
+# Contract fields are read ONLY from real runtime objects with getattr; an
+# unknown/absent fact stays None and the key is omitted downstream ("absence
+# is data", §60). No prose explanation and no latency is ever manufactured.
+# ---------------------------------------------------------------------------
+
+
+def _tr_engine_mode(om: Any) -> str | None:
+    """Frozen ``mode`` vocab word from the engine's real execution config.
+
+    Returns None when the config/mode is unreadable — the UI renders UNKNOWN
+    instead of a guessed trading mode (§44: LIVE/PAPER/SHADOW never conflated).
+    """
+    try:
+        mode = getattr(getattr(getattr(om, "config", None), "execution", None), "mode", None)
+    except Exception:
+        return None
+    if mode is None:
+        return None
+    return str(getattr(mode, "value", mode)).upper() or None
+
+
+def _tr_account_freshness(om: Any) -> str | None:
+    """Freshness word (FRESH/STALE/MISSING) of the account snapshot the risk
+    gate consumed (§40). Absent on any engine that never classified it."""
+    try:
+        value = getattr(om, "_account_freshness", None)
+    except Exception:
+        return None
+    if value is None:
+        return None
+    return str(getattr(value, "value", value)) or None
+
+
+def _tr_ticket_ids(action: Any, ticket: Any) -> tuple[str | None, str | None]:
+    """Map a real broker ticket to ``(position_id, order_id)`` by the entity
+    the ACTION targets: position actions carry a position ticket, CANCEL_ORDER
+    an order ticket, entries carry no ticket at all. Unknown action or an
+    absent/zero ticket -> (None, None); a ticket is never guessed onto a field
+    that would misstate what the broker identified (§66).
+
+    NOTE: ``position_id`` is the position TICKET the action targeted — the
+    honest lineage fact this call site holds. The broker's deal/order ids
+    arrive with the gateway response (adapter seam, out of lane scope), so
+    ``deal_id`` stays absent here.
+    """
+    try:
+        raw = int(ticket or 0)
+    except Exception:
+        return None, None
+    if raw <= 0:
+        return None, None
+    name = str(getattr(action, "value", action))
+    if name in {"CLOSE_POSITION", "PARTIAL_CLOSE", "MODIFY_SL_TP"}:
+        return str(raw), None
+    if name == "CANCEL_ORDER":
+        return None, str(raw)
+    return None, None
+
+
+def _tr_risk_evidence(
+    base: dict[str, Any], *, om: Any, proposal: Any, account: Any
+) -> dict[str, Any]:
+    """Risk-gate evidence for a RISK event (§19 risk evidence, §28 margin
+    lineage, §40 freshness): the proposal's own rule record, the free-margin
+    figure the gate was handed, and the account-snapshot freshness word — all
+    read from the objects the runtime actually passed in. Keys whose value the
+    runtime does not carry are left out; nothing is zero-filled."""
+    out = dict(base)
+    checks = getattr(proposal, "risk_checks", None)
+    if checks is not None:
+        out["risk_checks"] = checks
+    margin_free = getattr(account, "margin_free", None)
+    if isinstance(margin_free, int | float) and not isinstance(margin_free, bool):
+        out["margin_free"] = float(margin_free)
+    fresh = _tr_account_freshness(om)
+    if fresh:
+        out["account_freshness"] = fresh
+    return out
+
+
+def _tr_emit(observer: Any, *, extra: dict[str, Any] | None = None, **emit_fields: Any) -> None:
+    """One guarded ``emit()`` that also carries the frozen v2 causal fields.
+
+    ``extra`` holds only REAL, non-None contract fields (``state`` /
+    ``reason_code`` / ``mode`` / ``position_id`` / ``order_id`` / ``freshness``
+    / ``request_id`` / ``execution_id``). Every value is a getattr on a real
+    runtime object (never a literal the caller invented); None stays omitted
+    ("absence is data", §60). Never raises (BUG-311).
+    """
+    payload = {k: v for k, v in (extra or {}).items() if v is not None}
+    try:
+        observer.emit(**{**emit_fields, **payload})
+    except Exception:  # pragma: no cover - observability failure isolation
+        pass
+
+
+def _tr_state_verdict(rejected: bool) -> str:
+    """Frozen ``TraceState`` verdict word for a gate result (PASSED/REJECTED)."""
+    return _TraceState.REJECTED if rejected else _TraceState.PASSED
+
+
+def _tr_state_outcome(failed: bool) -> str | None:
+    """Frozen ``TraceState`` outcome word for a terminal order state.
+
+    Success yields None: a completed request does NOT claim CONFIRMED — that
+    word belongs to broker confirmation evidence this call site never sees
+    (§66: only CONFIRMED/EXECUTED backend states may render executed).
+    """
+    return _TraceState.FAILED if failed else None
+
+
+def _tr_execution_id(proposal: Any) -> str | None:
+    """The proposal's own EXEC id — the trace's canonical decision id."""
+    try:
+        eid = getattr(proposal, "execution_id", None)
+    except Exception:
+        return None
+    return str(eid) or None
 
 
 class DecisionExecutor:
@@ -190,7 +313,14 @@ class DecisionExecutor:
             if _trace_suppressed_reason is not None:
                 _trace.emit_decision(
                     summary=_proposal_summary(policy_decision, status="REJECTED"),
-                    detail={"suppressed_by": _trace_suppressed_reason},
+                    detail={
+                        "suppressed_by": _trace_suppressed_reason,
+                        # Frozen v2 contract fields as REAL data (lane-A seam:
+                        # a non-keyword kwarg would break older observers, so
+                        # they ride in the detail payload — see lane-B status).
+                        "reason_code": str(_trace_suppressed_reason),
+                        "engine_mode": _tr_engine_mode(self.om),
+                    },
                     terminal=True,
                     component="decision_executor",
                 )
@@ -236,30 +366,57 @@ class DecisionExecutor:
                         # NOT terminal — the protective close still executes
                         # after a flip rejection (close-only is a real path).
                         if _trace is not None and _trace.active:
-                            _trace.emit(
+                            _tr_pos, _ = _tr_ticket_ids(
+                                policy_decision.action,
+                                getattr(policy_decision, "ticket", 0),
+                            )
+                            _tr_emit(
+                                _trace,
                                 stage="RISK",
                                 component="risk_engine",
                                 event_type="RISK_EVALUATION",
-                                status="REJECT" if reversal_risk_order is None else "PASS",
+                                status=("REJECT" if reversal_risk_order is None else "OBSERVED"),
                                 symbol=policy_decision.symbol,
                                 decision_id=_trace_decision_id(policy_decision),
-                                detail={
-                                    "allowed": reversal_risk_order is not None,
-                                    "flip_allowed": reversal_risk_order is not None,
-                                    "close_only": reversal_risk_order is None,
-                                    "context": "ai_reversal_flip",
-                                    "reason": (
+                                # Real contract fields (frozen v2): the verdict
+                                # word, the runtime's own rejection code, the
+                                # engine mode, the position the flip targeted and
+                                # the account-snapshot freshness the gate read.
+                                extra={
+                                    "state": _tr_state_verdict(reversal_risk_order is None),
+                                    "reason_code": (
                                         "AI_REVERSAL_RISK_REJECTED"
                                         if reversal_risk_order is None
                                         else None
                                     ),
-                                    "volume": (
-                                        reversal_risk_order.volume
-                                        if reversal_risk_order is not None
-                                        else None
-                                    ),
+                                    "mode": _tr_engine_mode(self.om),
+                                    "position_id": _tr_pos,
+                                    "freshness": _tr_account_freshness(self.om),
                                     "request_id": policy_decision.request_id,
+                                    "execution_id": _tr_execution_id(policy_decision),
                                 },
+                                detail=_tr_risk_evidence(
+                                    {
+                                        "allowed": reversal_risk_order is not None,
+                                        "flip_allowed": reversal_risk_order is not None,
+                                        "close_only": reversal_risk_order is None,
+                                        "context": "ai_reversal_flip",
+                                        "reason": (
+                                            "AI_REVERSAL_RISK_REJECTED"
+                                            if reversal_risk_order is None
+                                            else None
+                                        ),
+                                        "volume": (
+                                            reversal_risk_order.volume
+                                            if reversal_risk_order is not None
+                                            else None
+                                        ),
+                                        "request_id": policy_decision.request_id,
+                                    },
+                                    om=self.om,
+                                    proposal=policy_decision,
+                                    account=account,
+                                ),
                             )
                         if reversal_risk_order is None:
                             logger.warning(
@@ -289,13 +446,26 @@ class DecisionExecutor:
                 # (pre-dispatch evidence; the gateway event follows inside
                 # order dispatch, then the terminal ORDER state below).
                 if _trace is not None and _trace.active:
-                    _trace.emit(
+                    _tr_pos, _ = _tr_ticket_ids(
+                        policy_decision.action, getattr(policy_decision, "ticket", 0)
+                    )
+                    _tr_emit(
+                        _trace,
                         stage="EXECUTION",
                         component="order_manager",
                         event_type="ORDER_BUILD",
                         status="OBSERVED",
                         symbol=policy_decision.symbol,
                         decision_id=_trace_decision_id(policy_decision),
+                        extra={
+                            "mode": _tr_engine_mode(self.om),
+                            "position_id": _tr_pos,
+                            # The proposal's own reason code: the real code
+                            # that made this order build happen (§16).
+                            "reason_code": getattr(policy_decision, "reason_code", None) or None,
+                            "request_id": policy_decision.request_id,
+                            "execution_id": _tr_execution_id(policy_decision),
+                        },
                         detail={
                             "action": "AI_REVERSAL",
                             "reversal_action": getattr(
@@ -323,7 +493,11 @@ class DecisionExecutor:
                 )
                 # DECISION-TRACE: terminal order-state for this trace path.
                 if _trace is not None:
-                    _trace.emit(
+                    _tr_pos, _ = _tr_ticket_ids(
+                        policy_decision.action, getattr(policy_decision, "ticket", 0)
+                    )
+                    _tr_emit(
+                        _trace,
                         stage="ORDER",
                         component="order_manager",
                         event_type="ORDER_STATE",
@@ -331,6 +505,13 @@ class DecisionExecutor:
                         symbol=policy_decision.symbol,
                         decision_id=_trace_decision_id(policy_decision),
                         terminal=True,
+                        extra={
+                            "state": _tr_state_outcome(not success),
+                            "mode": _tr_engine_mode(self.om),
+                            "position_id": _tr_pos,
+                            "request_id": policy_decision.request_id,
+                            "execution_id": _tr_execution_id(policy_decision),
+                        },
                         detail={
                             "success": bool(success),
                             "action": "AI_REVERSAL",
@@ -391,25 +572,44 @@ class DecisionExecutor:
                     # terminal (no dispatch can follow); an approval chains
                     # into the EXECUTION stage below.
                     if _trace is not None and _trace.active:
-                        _trace.emit(
+                        _tr_rejected = risk_order is None
+                        _tr_emit(
+                            _trace,
                             stage="RISK",
                             component="risk_engine",
                             event_type="RISK_EVALUATION",
-                            status="REJECT" if risk_order is None else "PASS",
+                            status="REJECT" if _tr_rejected else "OBSERVED",
                             symbol=policy_decision.symbol,
                             decision_id=_trace_decision_id(policy_decision),
-                            terminal=risk_order is None,
-                            detail={
-                                "allowed": risk_order is not None,
-                                "context": "primary_entry",
-                                "reason": "RISK_EVALUATION_REJECTED"
-                                if risk_order is None
-                                else None,
-                                "action": policy_decision.action.value,
-                                "atr_for_risk": atr_for_risk,
-                                "volume": risk_order.volume if risk_order is not None else None,
+                            terminal=_tr_rejected,
+                            extra={
+                                "state": _tr_state_verdict(_tr_rejected),
+                                "reason_code": (
+                                    "RISK_EVALUATION_REJECTED" if _tr_rejected else None
+                                ),
+                                "mode": _tr_engine_mode(self.om),
+                                "freshness": _tr_account_freshness(self.om),
                                 "request_id": policy_decision.request_id,
+                                "execution_id": _tr_execution_id(policy_decision),
                             },
+                            detail=_tr_risk_evidence(
+                                {
+                                    "allowed": not _tr_rejected,
+                                    "context": "primary_entry",
+                                    "reason": (
+                                        "RISK_EVALUATION_REJECTED" if _tr_rejected else None
+                                    ),
+                                    "action": policy_decision.action.value,
+                                    "atr_for_risk": atr_for_risk,
+                                    "volume": (
+                                        risk_order.volume if risk_order is not None else None
+                                    ),
+                                    "request_id": policy_decision.request_id,
+                                },
+                                om=self.om,
+                                proposal=policy_decision,
+                                account=account,
+                            ),
                         )
                     if risk_order is None:
                         logger.warning(
@@ -513,13 +713,22 @@ class DecisionExecutor:
                         # DECISION-TRACE: execution-stage entry evidence
                         # (order construction, pre-dispatch).
                         if _trace is not None and _trace.active:
-                            _trace.emit(
+                            _tr_emit(
+                                _trace,
                                 stage="EXECUTION",
                                 component="order_manager",
                                 event_type="ORDER_BUILD",
                                 status="OBSERVED",
                                 symbol=policy_decision.symbol,
                                 decision_id=_trace_decision_id(policy_decision),
+                                extra={
+                                    "mode": _tr_engine_mode(self.om),
+                                    "reason_code": (
+                                        getattr(policy_decision, "reason_code", None) or None
+                                    ),
+                                    "request_id": policy_decision.request_id,
+                                    "execution_id": _tr_execution_id(policy_decision),
+                                },
                                 detail={
                                     "action": policy_decision.action.value,
                                     "volume": dynamic_volume,
@@ -546,7 +755,8 @@ class DecisionExecutor:
                         # path (gateway response events are chained between
                         # ORDER_BUILD and this event by the adapter seam).
                         if _trace is not None:
-                            _trace.emit(
+                            _tr_emit(
+                                _trace,
                                 stage="ORDER",
                                 component="order_manager",
                                 event_type="ORDER_STATE",
@@ -554,6 +764,12 @@ class DecisionExecutor:
                                 symbol=policy_decision.symbol,
                                 decision_id=_trace_decision_id(policy_decision),
                                 terminal=True,
+                                extra={
+                                    "state": _tr_state_outcome(not success),
+                                    "mode": _tr_engine_mode(self.om),
+                                    "request_id": policy_decision.request_id,
+                                    "execution_id": _tr_execution_id(policy_decision),
+                                },
                                 detail={
                                     "success": bool(success),
                                     "action": policy_decision.action.value,
@@ -603,7 +819,8 @@ class DecisionExecutor:
                 # DECISION-TRACE: entry approved but dispatch was never
                 # attempted (no symbol info) — terminal, honestly labeled.
                 elif _trace is not None:
-                    _trace.emit(
+                    _tr_emit(
+                        _trace,
                         stage="EXECUTION",
                         component="order_manager",
                         event_type="ORDER_BUILD",
@@ -611,6 +828,15 @@ class DecisionExecutor:
                         symbol=policy_decision.symbol,
                         decision_id=_trace_decision_id(policy_decision),
                         terminal=True,
+                        extra={
+                            # Real stop reason already carried by this call
+                            # site (never invented): dispatch was BLOCKED.
+                            "state": _TraceState.BLOCKED,
+                            "reason_code": "SYMBOL_INFO_UNAVAILABLE",
+                            "mode": _tr_engine_mode(self.om),
+                            "request_id": policy_decision.request_id,
+                            "execution_id": _tr_execution_id(policy_decision),
+                        },
                         detail={
                             "reason": "SYMBOL_INFO_UNAVAILABLE",
                             "action": policy_decision.action.value,
@@ -626,15 +852,28 @@ class DecisionExecutor:
                 ActionType.CANCEL_ORDER,
             ):
                 ticket = getattr(policy_decision, "ticket", 0) or 0
-                # DECISION-TRACE: lifecycle dispatch boundaries.
+                # DECISION-TRACE: lifecycle dispatch boundaries. The ticket is
+                # mapped to the entity THIS action targets (position vs pending
+                # order) so a follow-position/follow-order filter sees the id the
+                # broker itself identified — absent tickets stay absent.
+                _tr_pos, _tr_ord = _tr_ticket_ids(policy_decision.action, ticket)
                 if _trace is not None and _trace.active:
-                    _trace.emit(
+                    _tr_emit(
+                        _trace,
                         stage="EXECUTION",
                         component="order_manager",
                         event_type="ORDER_BUILD",
                         status="OBSERVED",
                         symbol=policy_decision.symbol,
                         decision_id=_trace_decision_id(policy_decision),
+                        extra={
+                            "mode": _tr_engine_mode(self.om),
+                            "position_id": _tr_pos,
+                            "order_id": _tr_ord,
+                            "reason_code": (getattr(policy_decision, "reason_code", None) or None),
+                            "request_id": policy_decision.request_id,
+                            "execution_id": _tr_execution_id(policy_decision),
+                        },
                         detail={
                             "action": policy_decision.action.value,
                             "ticket": ticket or None,
@@ -645,24 +884,41 @@ class DecisionExecutor:
                             "request_id": policy_decision.request_id,
                         },
                     )
-                self.om.order_manager.execute_lifecycle_action(policy_decision)
+                # Real execution result: the order manager's own boolean (a
+                # False means the lifecycle action did NOT happen). Observability
+                # reads it only — no engine branch changes on this value.
+                _tr_lifecycle_ok = bool(
+                    self.om.order_manager.execute_lifecycle_action(policy_decision)
+                )
                 logger.info(
                     f"[info] DISPATCH LIFECYCLE ACTION action={policy_decision.action.value} ticket={ticket}"
                 )
                 # DECISION-TRACE: terminal path end. "DISPATCHED" claims only
-                # what this call site proves (the action was handed to the
-                # order manager) — broker response evidence, if any, is the
-                # gateway event chained in between.
+                # what this call site proves when the order manager reported
+                # success (the action was handed over) — broker response
+                # evidence, if any, is the gateway event chained in between.
+                # A reported FAILURE is terminal FAILED (real execution result,
+                # never dressed up as dispatched).
                 if _trace is not None:
-                    _trace.emit(
+                    _tr_emit(
+                        _trace,
                         stage="ORDER",
                         component="order_manager",
                         event_type="ORDER_STATE",
-                        status="DISPATCHED",
+                        status="DISPATCHED" if _tr_lifecycle_ok else "FAILED",
                         symbol=policy_decision.symbol,
                         decision_id=_trace_decision_id(policy_decision),
                         terminal=True,
+                        extra={
+                            "state": _tr_state_outcome(not _tr_lifecycle_ok),
+                            "mode": _tr_engine_mode(self.om),
+                            "position_id": _tr_pos,
+                            "order_id": _tr_ord,
+                            "request_id": policy_decision.request_id,
+                            "execution_id": _tr_execution_id(policy_decision),
+                        },
                         detail={
+                            "success": _tr_lifecycle_ok,
                             "action": policy_decision.action.value,
                             "ticket": ticket or None,
                             "request_id": policy_decision.request_id,
