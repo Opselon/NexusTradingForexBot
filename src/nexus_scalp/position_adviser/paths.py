@@ -14,8 +14,9 @@ the ``is_relative_to`` barriers the callers also keep as defense-in-depth.
 
 Nothing else here touches the filesystem: the other functions are pure string
 -> Path reductions (``Path.relative_to`` included, which is a PurePath
-operation); only ``resolve_within_trusted_roots`` resolves, because containment
-must be answered against the real, symlink-followed path.
+operation); ``resolve_within_trusted_roots`` resolves only its TRUSTED ROOTS
+(the value itself is resolved inside ``resolve_under_root``), because
+containment must be answered against the real, symlink-followed root paths.
 """
 
 from __future__ import annotations
@@ -143,58 +144,61 @@ def sanitize_name(raw: str | None, *, fallback: str) -> str:
     return m.group(0) if m is not None else fallback
 
 
-#: Shape barrier for a path string entering ``resolve_within_trusted_roots``:
-#: optional drive + optional POSIX leading slash + safe nested dirs/filenames
-#: (hyphens and spaces allowed, so ``C:\\Users\\John Doe\\...`` and
-#: ``/home/runner/...`` both match). A segment can never START with ``.``, so
-#: ``..`` traversal, a NUL, a newline and shell metacharacters can never match —
-#: the same whitelist contract as ``_SAFE_REL`` above, extended with a drive
-#: and root prefix for absolute values. A UNC prefix (``\\server\\share``) is
-#: deliberately NOT matched: it needs a backslash-leading separator, which only
-#: the Windows-drive branch may consume.
-_SAFE_ABS_OR_REL = re.compile(
-    r"(?:[A-Za-z]:[\\/]{1,2})?/?"
-    r"(?:[A-Za-z0-9_ -][A-Za-z0-9_ .-]{0,127}[\\/])*"
-    r"[A-Za-z0-9_ -][A-Za-z0-9_ .-]{0,191}"
-)
+def resolve_within_trusted_roots(
+    raw: str | Path, roots: list[Path], *, label: str = "path"
+) -> Path | None:
+    """Resolve ``raw`` through ``resolve_under_root`` and confine it to ``roots``.
 
+    Every value the path machinery sees comes out of :func:`resolve_under_root`
+    — the single-root sanitizer the trainer already uses, whose whitelist match
+    builds the returned value (so the taint chain ends there rather than at a
+    sink here; this helper deliberately performs no ``resolve`` of its own).
 
-def resolve_within_trusted_roots(raw: str | Path, roots: list[Path]) -> Path | None:
-    """Canonicalize ``raw`` and return it only when inside one of ``roots``.
+    Absolute values are tried against each trusted root in turn (both the
+    caller's spelling and its canonical form, so a ``/tmp`` -> ``/private/tmp``
+    style symlink between candidate and root cannot cause a false refusal);
+    relative values are anchored at the CWD — repo-relative when the app runs
+    from the repo — matching how callers hand over ``data/raw/...`` names.
 
-    The whitelist match runs IN THIS FUNCTION before any ``Path`` is built from
-    the input, so the taint chain ends at the ``fullmatch`` barrier rather than
-    at the containment check — the same barrier pattern as the other
-    sanitizers. ``Path.resolve`` then follows symlinks and normalizes the
-    value, and the containment loop below is the trust boundary. Returns
-    ``None`` on a shape violation, an unresolvable path or a value outside
-    every root (fail-closed). ``roots`` are supplied by the callers from
-    trusted constants (package location, ``REPO_ROOT``, ``tempdir``) or from
-    env values each caller has already shape-guarded.
-
-    This is the one helper in this module that touches the filesystem:
-    resolution is what makes the containment answer authoritative against
-    symlinks.
+    Each candidate is then re-checked AFTER resolution against every root's
+    canonical form: the single-root sanitizer's own containment runs
+    PRE-resolve, so this second check is what rejects a symlink under one root
+    that points outside all of them. Returns ``None`` when nothing accepts the
+    value (fail-closed). ``roots`` come from trusted constants (package
+    location, ``REPO_ROOT``, ``tempdir``) or from env values each caller has
+    already shape-guarded.
     """
     s = str(raw or "").strip()
-    if not s:
+    if not s or "\x00" in s:
         return None
-    # Barrier: the matched STRING (not the raw input) is the only value the
-    # path machinery below may see — same match-object flow as
-    # ``sanitize_rel_path``, which CodeQL treats as untainted.
-    m = _SAFE_ABS_OR_REL.fullmatch(s)
-    if m is None:
-        return None
-    try:
-        resolved = Path(m.group(0)).resolve()
-    except (OSError, ValueError):
-        return None
-    for root in roots:
+    resolved_roots: list[Path] = []
+    sanitize_roots: list[Path] = []
+    for r in roots:
+        candidate_root = Path(r)
+        sanitize_roots.append(candidate_root)
         try:
-            if resolved.is_relative_to(Path(root).resolve()):
-                return resolved
+            canonical = candidate_root.resolve()
         except (OSError, ValueError):
             continue
+        sanitize_roots.append(canonical)
+        resolved_roots.append(canonical)
+    if not resolved_roots:
+        return None
+
+    def _inside(candidate: Path) -> bool:
+        return any(candidate.is_relative_to(rr) for rr in resolved_roots)
+
+    if Path(s).is_absolute():
+        attempts = sanitize_roots
+    else:
+        attempts = [Path.cwd()]
+    for root in attempts:
+        try:
+            resolved = resolve_under_root(s, root, label=label)
+        except (AdviserPathError, OSError, ValueError):
+            continue
+        if _inside(resolved):
+            return resolved
     return None
 
 

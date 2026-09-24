@@ -697,8 +697,14 @@ class TestResolveWithinTrustedRoots:
         """CI runs on Linux: a leading-``/`` path must reach containment.
 
         The shape barrier previously rejected POSIX-absolute paths on sight
-        (no drive letter), which broke the ubuntu critical-suite gate.
+        (no drive letter), which broke the ubuntu critical-suite gate. On
+        Windows a drive-less rooted path is a different shape (drive-relative),
+        so this regression only applies on POSIX hosts.
         """
+        import pytest
+
+        if sys.platform == "win32":
+            pytest.skip("POSIX-rooted path shape is the Linux-CI regression this guards")
         from nexus_scalp.position_adviser.paths import resolve_within_trusted_roots
 
         got = resolve_within_trusted_roots("/tmp/probe/xauusd_M1.csv", [Path("/")])
