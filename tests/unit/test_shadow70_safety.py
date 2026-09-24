@@ -8,17 +8,45 @@ Extends the TEST-SHADOW matrix with hard safety proofs:
                   shadow model failure -> Champion safety contract intact
   TEST-SHADOW-39  queue/memory bounded under load
   TEST-SHADOW-40  async persistence worker actually persists (real sqlite)
+
+DETERMINISM (ML-QA-011): this module was the second-largest wall-clock
+exposure in the push gate (8 sources: 6 ``datetime.now(UTC)`` stamps + 1
+``tempfile.mkdtemp()`` + 1 worker thread). None of those reads carried
+information the assertions depend on — the observation timestamp is an
+*input* the caller supplies, never a magnitude a test measures. The
+remediation keeps every safety assert identical and removes only the
+nondeterminism:
+
+  * the 6 per-call ``datetime.now(UTC)`` stamps became reads of ONE frozen
+    instant (``_FIXED_NOW``, captured once at import via ``_now()``). The
+    runtime's freshness gate (``_validate_vector`` in the production code)
+    still compares that instant against the real clock, so the frozen value
+    must stay *near* now — a hardcoded calendar date would go stale within
+    ``FEATURE_FRESHNESS_SEC`` (300 s) and silently flip every scenario to
+    ``SHADOW_STALE_FEATURES``. Reading the wall clock exactly once and
+    reusing the value is what removes the flake class: no scenario can any
+    longer straddle a date boundary or drift between two reads of now, and
+    the derived ``observation_id`` (spec 13) becomes stable enough that
+    retry/idempotency is provable (TEST-SHADOW-37/40b).
+  * ``tempfile.mkdtemp()`` became the pytest ``tmp_path`` fixture (only the
+    directory *name* varies; nothing about it feeds an assertion).
+  * the persistence wait in TEST-SHADOW-40 keeps its hard ``n == 60``
+    row-count contract and gains a bounded CPU-time budget via the shared
+    ``budget_cpu_ms`` helper (same helper as ML-QA-004/007/008/009/010).
+
+The pinned contract is enforced textually by
+``tests/unit/test_ml_qa_011_shadow70_clock_determinism.py``, which runs in
+the slim venv (no torch/sqlite import) and fails on this module's
+pre-remediation text.
 """
 
 from __future__ import annotations
 
-import os
-import shutil
 import sqlite3
-import tempfile
 import threading
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -28,19 +56,54 @@ from nexus_scalp.shadow.shadow70.models import (
 from nexus_scalp.shadow.shadow70.runtime import Shadow70Runtime
 from nexus_scalp.shadow.shadow70.store import Shadow70Store
 from nexus_scalp.shadow.shadow70.worker import Shadow70Worker
+from tests.e2e.chain_clock import budget_cpu_ms
 from tests.helpers.shadow70_fixtures import make_contract, vector70
 
+#: The single observation instant every scenario in this module shares
+#: (ML-QA-011). Captured ONCE at import and replayed via ``_now()``; the
+#: runtime's freshness gate still compares it against the real clock, so a
+#: hardcoded calendar date is unsafe here (it would age past
+#: ``FEATURE_FRESHNESS_SEC`` = 300 s and silently mark every vector stale),
+#: while six separate per-call reads reintroduced the date-boundary and
+#: read-drift flake class. One frozen read has neither defect.
+#:
+#: NOTE: the line below carries NO trailing comment on purpose — the
+#: ML-QA-011 contract battery matches it textually, and a comment after the
+#: capture makes the line ambiguous between "captured from the real clock"
+#: and "hardcoded calendar date".
+_FIXED_NOW: datetime = datetime.now(UTC)
+
+
+def _now() -> datetime:
+    """The shared deterministic observation instant.
+
+    Replaces the per-call ``datetime.now(UTC)`` arguments. Every
+    ``observe()`` in this module reads this, so all observations in a
+    scenario share one instant — which is what spec 13's deterministic
+    ``observation_id`` (``snapshot_id | model_id | version | timestamp``)
+    assumes, and what makes the retry/idempotency check in
+    TEST-SHADOW-37/40b meaningful instead of clock-dependent.
+    """
+    return _FIXED_NOW
+
 
 @pytest.fixture()
-def tmp_artifacts() -> str:
-    d = tempfile.mkdtemp(prefix="s70s_")
-    yield d
-    shutil.rmtree(d, ignore_errors=True)
+def tmp_artifacts(tmp_path: Path) -> Path:
+    """Scratch directory for artifact + DB files (pytest ``tmp_path``).
+
+    ``tmp_path`` is unique per test and auto-cleaned by pytest; only its
+    *name* is nondeterministic and nothing about it feeds an assertion, so
+    it carries no flake (the ``mkdtemp`` it replaced had the same property
+    but leaked on early failure).
+    """
+    d = tmp_path / "s70s"
+    d.mkdir(exist_ok=True)
+    return d
 
 
 @pytest.fixture()
-def contract(tmp_artifacts: str) -> Shadow70CandidateContract:
-    return make_contract(tmp_artifacts)
+def contract(tmp_artifacts: Path) -> Shadow70CandidateContract:
+    return make_contract(str(tmp_artifacts))
 
 
 class MockBroker:
@@ -89,7 +152,7 @@ def test_shadow36_champion_output_never_altered(contract: Shadow70CandidateContr
         champion_probabilities=champion_probs,
         champion_confidence=champion_conf,
         snapshot_id="snap_buyvsell",
-        timestamp=datetime.now(UTC),
+        timestamp=_now(),
         base_feature_hash="b" * 8,
         feature_schema_hash="f" * 16,
     )
@@ -100,6 +163,8 @@ def test_shadow36_champion_output_never_altered(contract: Shadow70CandidateContr
     # and the shadow disagreed (recorded as evidence, not action)
     assert obs.shadow_action == "SELL_MARKET"
     assert not obs.agreement
+    # the frozen instant is what the observation recorded (ML-QA-011)
+    assert obs.timestamp == _FIXED_NOW
 
 
 def test_shadow37_broker_interaction_zero(contract: Shadow70CandidateContract) -> None:
@@ -110,6 +175,7 @@ def test_shadow37_broker_interaction_zero(contract: Shadow70CandidateContract) -
     rt.attach(contract)
     rt.set_inference(lambda v: [0.05, 0.7, 0.2, 0.05])
     n = 2000
+    last_obs = None
     for i in range(n):
         obs = rt.observe(
             vector70=vector70(liquidity=0.05 * (i % 7)),
@@ -117,11 +183,12 @@ def test_shadow37_broker_interaction_zero(contract: Shadow70CandidateContract) -
             champion_probabilities=[0.5, 0.3, 0.1, 0.1],
             champion_confidence=0.5,
             snapshot_id=f"snap_broker_{i}",
-            timestamp=datetime.now(UTC),
+            timestamp=_now(),
             base_feature_hash="b" * 8,
             feature_schema_hash="f" * 16,
         )
         assert obs.valid
+        last_obs = obs
         # what if the broker were somehow reachable? shadow still never calls it
         if hasattr(rt, "order_send"):
             rt.order_send()  # pragma: no cover
@@ -131,6 +198,24 @@ def test_shadow37_broker_interaction_zero(contract: Shadow70CandidateContract) -
     snap = broker.snapshot()
     assert snap == {"order_count": 0, "modify_count": 0, "cancel_count": 0, "close_count": 0}
     assert rt.observations == n
+    # spec 13/14 identity: replaying the SAME snapshot under the SAME frozen
+    # clock derives the SAME observation_id — a retry cannot duplicate a row
+    # (INSERT OR IGNORE on the unique key). Under the old per-call wall
+    # clock this id changed between the original and the retry whenever the
+    # two reads straddled a clock tick, so the idempotency contract was
+    # unprovable rather than merely unproven.
+    assert last_obs is not None
+    replay = rt.observe(
+        vector70=vector70(liquidity=0.05 * ((n - 1) % 7)),
+        champion_action="NO_TRADE" if (n - 1) % 3 else "BUY_MARKET",
+        champion_probabilities=[0.5, 0.3, 0.1, 0.1],
+        champion_confidence=0.5,
+        snapshot_id=f"snap_broker_{n - 1}",
+        timestamp=_now(),
+        base_feature_hash="b" * 8,
+        feature_schema_hash="f" * 16,
+    )
+    assert replay.observation_id == last_obs.observation_id
 
 
 def test_shadow38_failure_cascade_isolation(contract: Shadow70CandidateContract) -> None:
@@ -151,7 +236,7 @@ def test_shadow38_failure_cascade_isolation(contract: Shadow70CandidateContract)
         champion_probabilities=[0.9, 0.03, 0.03, 0.04],
         champion_confidence=0.9,
         snapshot_id="snap_fail1",
-        timestamp=datetime.now(UTC),
+        timestamp=_now(),
         base_feature_hash="b" * 8,
         feature_schema_hash="f" * 16,
     )
@@ -167,7 +252,7 @@ def test_shadow38_failure_cascade_isolation(contract: Shadow70CandidateContract)
         champion_probabilities=[0.9, 0.03, 0.03, 0.04],
         champion_confidence=0.9,
         snapshot_id="snap_fail2",
-        timestamp=datetime.now(UTC),
+        timestamp=_now(),
         base_feature_hash="b" * 8,
         feature_schema_hash="f" * 16,
         news_context=None,
@@ -191,7 +276,7 @@ def test_shadow39_memory_bounded_under_load(contract: Shadow70CandidateContract)
             champion_probabilities=[0.9, 0.03, 0.03, 0.04],
             champion_confidence=0.9,
             snapshot_id=f"snap_mem_{i}",
-            timestamp=datetime.now(UTC),
+            timestamp=_now(),
             base_feature_hash="b" * 8,
             feature_schema_hash="f" * 16,
         )
@@ -202,7 +287,7 @@ def test_shadow39_memory_bounded_under_load(contract: Shadow70CandidateContract)
     assert sys.getsizeof(rt._recent) < 1_000_000
 
 
-def test_shadow40_worker_persists_to_real_db(tmp_artifacts: str) -> None:
+def test_shadow40_worker_persists_to_real_db(tmp_artifacts: Path) -> None:
     """TEST-SHADOW-40: the async worker actually persists observations to a
     real sqlite DB via the queued writer path."""
     import queue as _q
@@ -241,7 +326,7 @@ def test_shadow40_worker_persists_to_real_db(tmp_artifacts: str) -> None:
             while not self._queue.empty():
                 time.sleep(0.01)
 
-    db = os.path.join(tmp_artifacts, "audit.db")
+    db = str(tmp_artifacts / "audit.db")
     repo = RealRepo(db)
     store = Shadow70Store(audit_repo=repo)
     # lazy-schema contract: ensure tables BEFORE the writer starts so a
@@ -252,7 +337,7 @@ def test_shadow40_worker_persists_to_real_db(tmp_artifacts: str) -> None:
     wk.start()
     try:
         rt = Shadow70Runtime()
-        rt.attach(make_contract(tmp_artifacts))
+        rt.attach(make_contract(str(tmp_artifacts)))
         rt.set_inference(lambda v: [0.05, 0.7, 0.2, 0.05])
         for i in range(60):
             obs = rt.observe(
@@ -261,22 +346,32 @@ def test_shadow40_worker_persists_to_real_db(tmp_artifacts: str) -> None:
                 champion_probabilities=[0.1, 0.7, 0.1, 0.1],
                 champion_confidence=0.7,
                 snapshot_id=f"snap_wk_{i}",
-                timestamp=datetime.now(UTC),
+                timestamp=_now(),
                 base_feature_hash="b" * 8,
                 feature_schema_hash="f" * 16,
             )
             wk.enqueue(obs)
-        # wait for the worker to flush
-        deadline = time.time() + 15
-        while time.time() < deadline:
-            wk.flush()
-            repo._flush_readonly()
-            conn = sqlite3.connect(db)
-            n = conn.execute("SELECT COUNT(*) FROM shadow70_observations;").fetchone()[0]
-            conn.close()
-            if n >= 60:
-                break
-            time.sleep(0.2)
+        # wait for the worker to flush. The hard contract is the row count
+        # below ("persisted 60/60"); the CPU-time budget around the poll
+        # loop proves the wait consumed bounded compute, not bounded wall
+        # clock — a co-tenant scheduler stall on a 2-core CI runner inflates
+        # a wall-clock bound with zero change in the code under test
+        # (same helper as ML-QA-004/007/008/009/010).
+        with budget_cpu_ms(4000.0) as sw:
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                wk.flush()
+                repo._flush_readonly()
+                conn = sqlite3.connect(db)
+                n = conn.execute("SELECT COUNT(*) FROM shadow70_observations;").fetchone()[0]
+                conn.close()
+                if n >= 60:
+                    break
+                time.sleep(0.2)
+        assert sw.consumed_ms < 4000.0, (
+            f"flush wait consumed {sw.consumed_ms:.1f}ms CPU — the bounded "
+            "CPU-time budget for the persistence poll loop was exceeded"
+        )
         conn = sqlite3.connect(db)
         n = conn.execute("SELECT COUNT(*) FROM shadow70_observations;").fetchone()[0]
         conn.close()
@@ -284,3 +379,67 @@ def test_shadow40_worker_persists_to_real_db(tmp_artifacts: str) -> None:
     finally:
         wk.stop(flush=True)
         repo.close()
+
+
+def test_shadow40b_replay_is_idempotent_under_fixed_clock(tmp_artifacts: Path) -> None:
+    """TEST-SHADOW-40b (ML-QA-011): a replay of the same snapshot under the
+    same frozen instant derives the same ``observation_id`` and cannot
+    duplicate a row (spec 13/14, INSERT OR IGNORE).
+
+    Thread-free: the queued writer is a production transport detail; what
+    this pins is that the timestamp the caller injected is the timestamp
+    that lands in the row, and that identity is stable across retries — the
+    property six separate wall-clock reads left to chance.
+    """
+    import queue as _q
+
+    class ImmediateRepo:
+        _is_sqlite = True
+        _queue: _q.Queue = _q.Queue(maxsize=10000)
+
+        def __init__(self, path: str) -> None:
+            self._db_path = path
+
+    db = str(tmp_artifacts / "audit_replay.db")
+    repo = ImmediateRepo(db)
+    store = Shadow70Store(audit_repo=repo)
+    store.ensure_schema()
+    rt = Shadow70Runtime()
+    rt.attach(make_contract(str(tmp_artifacts)))
+    rt.set_inference(lambda v: [0.05, 0.7, 0.2, 0.05])
+
+    def _one(snapshot_id: str) -> None:
+        obs = rt.observe(
+            vector70=vector70(),
+            champion_action="NO_TRADE",
+            champion_probabilities=[0.1, 0.7, 0.1, 0.1],
+            champion_confidence=0.7,
+            snapshot_id=snapshot_id,
+            timestamp=_now(),
+            base_feature_hash="b" * 8,
+            feature_schema_hash="f" * 16,
+        )
+        # the store's queued-writer entry point the worker calls per batch
+        assert store.save_observation(obs)
+
+    for i in range(3):
+        _one(f"snap_replay_{i}")
+    # a retry of snapshot 1 must derive the SAME id and be ignored
+    _one("snap_replay_1")
+
+    conn = sqlite3.connect(db)
+    try:
+        while not repo._queue.empty():
+            sql, args = repo._queue.get_nowait()
+            conn.execute(sql, args)
+        conn.commit()
+        rows = conn.execute(
+            "SELECT observation_id, timestamp FROM shadow70_observations ORDER BY snapshot_id;"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert len(rows) == 3, f"replay must not duplicate: {len(rows)} rows"
+    for _oid, ts in rows:
+        assert ts == _FIXED_NOW.isoformat()
+    assert len({oid for oid, _ts in rows}) == 3
