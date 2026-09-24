@@ -79,6 +79,12 @@ CRITICAL_CATEGORIES = {
 
 CheckFn = Callable[..., tuple[str, str, str]]  # (verdict, reason, suggestion)
 
+# The metadata sidecars that complete a serving bundle (the same completeness
+# contract release/model_bootstrap stamps and _read_meta probes): the signed
+# digest manifest, or the provisioning metadata descriptor. A ``model.pt``
+# without ANY of these is an unverified weights stub.
+_BUNDLE_META_SIDECARS: tuple[str, ...] = ("manifest.json", "model.meta.json", "meta.json")
+
 
 @dataclass
 class HealthEntry:
@@ -159,6 +165,72 @@ def _db_tables(db_path: Path) -> set[str]:
         return set()
 
 
+def _bundle_has_full_sidecars(model_path: Path) -> bool:
+    """A bundle directory carries the complete serving sidecar set.
+
+    Mirrors the loader's sibling-scaler convention (``model.pt`` ->
+    ``model.scaler.npz``, ``model_lifecycle.serving_contract._scaler_path``)
+    and the provisioning completeness contract (``release.model_bootstrap``
+    stamps ``model.scaler.npz`` + ``model.meta.json`` + signed
+    ``manifest.json`` beside every minted bundle). A weights file with no
+    sidecars is an unverified stub — it is never a serving bundle, and a
+    health check reporting PASS against one is reporting the wrong artifact.
+    """
+    bundle = model_path.parent
+    if not (bundle / "model.scaler.npz").exists():
+        return False
+    return any((bundle / name).exists() for name in _BUNDLE_META_SIDECARS)
+
+
+def _resolve_serving_artifact(model_dir: Path) -> Path | None:
+    """Pick the model artifact a health check should introspect (NSE-HEALTHFIX-001).
+
+    The previous resolution was ``sorted(model_dir.rglob("model.pt"))[0]`` — a
+    pure path-string sort — so ``scalp/EURUSD/v1.0.0/model.pt`` (a bare
+    31-tensor weights file with zero sidecars and no metadata) won over the
+    complete ``scalp/XAUUSD/70d_liquidity/`` bundle. MODEL then reported PASS
+    against the stub, MODEL_CONTRACT reported ``NO_MODEL_METADATA`` and
+    FEATURE_SCHEMA reported the stub's 50D contract: three checks, three
+    different "serving bundles".
+
+    Selection rule, in order:
+
+    1. Prefer artifacts whose bundle directory carries the full sidecar set
+       (a co-located ``model.scaler.npz`` sibling AND a ``manifest.json`` or
+       ``model.meta.json``). Among complete bundles prefer non-``candidate/``
+       paths (a bundle directly under a symbol dir over a nested ``candidate/``
+       experiment dir — ``candidate/`` holds training probes), then
+       lexicographic as a stable tiebreak.
+    2. Fall back to any ``model.pt`` (sidecar-less) only when NO complete
+       bundle exists, so a stub-only tree still resolves instead of reporting
+       a bare "no artifact" — the stub's missing metadata surfaces honestly
+       downstream as ``NO_MODEL_METADATA``.
+    3. Never fabricate metadata: this helper only SELECTS an artifact; the
+       checks read whatever the artifact actually declares.
+    4. ``configured_hint`` (optional): reserved for a caller that already
+       holds the engine's resolved artifact; unused by the checks today.
+
+    Returns ``None`` when the model dir is absent or holds no ``model.pt``.
+    """
+    if not model_dir.exists():
+        return None
+    try:
+        found = sorted(model_dir.rglob("model.pt"))
+    except OSError:  # unreadable / raced-away tree
+        return None
+    if not found:
+        return None
+    complete = [p for p in found if _bundle_has_full_sidecars(p)]
+    if not complete:
+        return found[0]
+    # `candidate` sorts after a real bundle dir (False < True); the path
+    # string is the stable tiebreak so the pick is deterministic per tree.
+    return min(
+        complete,
+        key=lambda p: ("candidate" in p.parts, str(p)),
+    )
+
+
 class HealthEngine:
     """Runs all subsystem checks; verdicts are PASS/WARNING/FAIL."""
 
@@ -170,7 +242,7 @@ class HealthEngine:
         news_db_path: Path | None = None,
         model_dir: Path | None = None,
     ) -> None:
-        self.config_path = config_path or paths.get_user_config_path()
+        self.config_path = config_path  # explicit None -> engine resolution chain (below)
         self.workspace = workspace or paths.get_runtime_workspace()
         self.db_path = db_path or (self.workspace / "artifacts" / "audit.db")
         self.news_db_path = news_db_path or (self.workspace / "artifacts" / "news.db")
@@ -187,10 +259,31 @@ class HealthEngine:
         try:
             from nexus_scalp.configuration.config import AppConfig
 
-            if not self.config_path.exists():
+            # NSE-HEALTHFIX-001: mirror the engine's own resolution order
+            # (cli/engine_boot.py) instead of only accepting an explicit user
+            # config. On first run there is no nexus.yaml and the engine
+            # falls back to the packaged defaults (configs/live.yaml then
+            # configs/base.yaml); if health does not do the same it silently
+            # reports no configured artifact, picks a bundle by tiebreak
+            # alone, and can contradict the bundle the engine actually
+            # serves. An explicit user config (or --config) still wins.
+            candidates: list[Path] = []
+            if self.config_path is not None:
+                candidates.append(self.config_path)
+            else:
+                candidates.append(paths.get_user_config_path())
+                candidates.append(Path("configs/live.yaml"))
+                candidates.append(Path("configs/base.yaml"))
+            chosen = next((c for c in candidates if c.exists()), None)
+            if chosen is None:
                 self._config = False
                 return None
-            self._config = AppConfig.load_from_yaml(self.config_path)
+            try:
+                self._config = AppConfig.load_from_yaml(chosen)
+            except FileNotFoundError:
+                self._config = False
+                return None
+            self._config_source = chosen  # type: ignore[attr-defined]
             return self._config
         except Exception as e:
             self._config = False
@@ -234,7 +327,7 @@ class HealthEngine:
             return HealthEntry(
                 "CONFIGURATION",
                 "FAIL",
-                f"config '{self.config_path}' failed to load: {err}",
+                f"config '{self._config_report_path()}' failed to load: {err}",
                 "Run `nexus repair` to restore from template, or fix the YAML.",
                 state=ERROR,
             )
@@ -245,7 +338,7 @@ class HealthEngine:
             return HealthEntry(
                 "CONFIGURATION",
                 "FAIL",
-                f"config '{self.config_path}' missing (first run / not set up yet)",
+                f"config '{self._config_report_path()}' missing (first run / not set up yet)",
                 "Run `nexus setup` or `nexus repair` to create the configuration.",
                 state=NOT_INITIALIZED,
             )
@@ -254,8 +347,22 @@ class HealthEngine:
         return HealthEntry(
             "CONFIGURATION",
             "PASS",
-            f"mode={mode_txt} symbol={cfg.execution.symbol} schema={cfg.model.feature_schema_version}",
+            f"mode={mode_txt} symbol={cfg.execution.symbol} schema={cfg.model.feature_schema_version}"
+            f" · {self._config_report_path()}",
         )
+
+    def _config_report_path(self) -> str:
+        """Path shown in the CONFIGURATION check (NSE-HEALTHFIX-001).
+
+        ``self.config_path`` is ``None`` in default mode (the engine chain is
+        resolved inside ``_load_config``), so the check reports whichever file
+        actually loaded — including a packaged default like
+        ``configs/base.yaml`` on first run.
+        """
+        if self.config_path is not None:
+            return str(self.config_path)
+        resolved = getattr(self, "_config_source", None)
+        return str(resolved) if resolved is not None else "configs/base.yaml (default chain)"
 
     def check_database(self) -> HealthEntry:
         verdict, reason = _db_health(self.db_path)
@@ -338,10 +445,10 @@ class HealthEngine:
             p = Path(configured)
             candidate = p if p.is_absolute() else self.workspace / p
         if candidate is None or not candidate.exists():
-            # Fall back to any artifact under the model dir.
-            matches = sorted(self.model_dir.rglob("model.pt")) if self.model_dir.exists() else []
-            if matches:
-                candidate = matches[0]
+            # Fall back to the bundle-selection heuristic (NSE-HEALTHFIX-001):
+            # prefer a complete bundle (full sidecar set) over a sidecar-less
+            # weights stub, so MODEL never reports PASS on an unverified stub.
+            candidate = _resolve_serving_artifact(self.model_dir)
         if candidate is None or not candidate.exists():
             # BUG-157: absent artifact is OPTIONAL, not CRITICAL. The repo's
             # own contracts disagreed: RepairEngine declares models
@@ -435,9 +542,11 @@ class HealthEngine:
                 p = Path(configured)
                 candidate = p if p.is_absolute() else self.workspace / p
         if candidate is None or not candidate.exists():
-            matches = sorted(self.model_dir.rglob("model.pt")) if self.model_dir.exists() else []
-            if matches:
-                candidate = matches[0]
+            # Same artifact as check_model / check_feature_schema
+            # (NSE-HEALTHFIX-001): one bundle-selection helper for all three,
+            # so the three model-family checks can never disagree on which
+            # bundle is serving.
+            candidate = _resolve_serving_artifact(self.model_dir)
         if candidate is None or not candidate.exists():
             return HealthEntry(
                 "MODEL_CONTRACT",
@@ -481,6 +590,24 @@ class HealthEngine:
             model_dim = (
                 meta.get("dimension") or meta.get("feature_dimension") or model_dim_from_schema
             )
+        if model_schema_id is None and model_dim is None:
+            # NSE-HEALTHFIX-001 (lane C seam): no real NSE bundle carries its
+            # contract inside the state_dict — it lives in SIBLING files
+            # (signed manifest.json / model.meta.json; proven on every bundle
+            # in this repo). Fall back to the sidecar resolver before
+            # concluding the bundle declares nothing. Read-only, never
+            # fabricates: a bundle with no sidecar contract still yields
+            # (None, None) and the UNKNOWN/NO_MODEL_METADATA verdict below.
+            try:
+                from nexus_scalp.release.model_bootstrap import resolve_bundle_contract
+
+                side_schema, side_dim, _report = resolve_bundle_contract(candidate.parent)
+            except Exception:
+                side_schema, side_dim = None, None
+            if side_schema is not None:
+                model_schema_id = side_schema
+            if side_dim is not None:
+                model_dim = side_dim
         if model_dim is None:
             try:
                 first_w = next(
@@ -650,10 +777,11 @@ class HealthEngine:
             if configured:
                 p = Path(configured)
                 artifact = p if p.is_absolute() else self.workspace / p
-        if artifact is None and self.model_dir.exists():
-            matches = sorted(self.model_dir.rglob("model.pt"))
-            if matches:
-                artifact = matches[0]
+        if artifact is None:
+            # Same helper as check_model / check_model_contract
+            # (NSE-HEALTHFIX-001): the FEATURE_SCHEMA truth must be read from
+            # the SAME serving bundle the other two checks introspect.
+            artifact = _resolve_serving_artifact(self.model_dir)
         if artifact is None or not artifact.exists():
             return HealthEntry(
                 "FEATURE_SCHEMA",

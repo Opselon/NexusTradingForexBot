@@ -273,6 +273,146 @@ def _is_declared_starter(model: Path) -> bool:
     )
 
 
+#: Dimension spellings a bundle sidecar may carry, in priority order. The
+#: published, signed ``manifest.json`` emits ``input_dim``
+#: (training/emission_gate.build_bundle_manifest); the trainer's
+#: ``model.meta.json`` emits ``feature_schema_dimension`` then ``num_features``
+#: (application/live/model_bundle_store._artifact_meta_coherence reads the same
+#: pair). Mirrors model_lifecycle/gates._DIM_KEYS so this seam and the gate
+#: pipeline can never disagree on what a dimension is.
+_SIDEKICK_DIM_KEYS = (
+    "feature_dimension",
+    "input_dim",
+    "feature_schema_dimension",
+    "num_features",
+)
+
+#: Schema-id spellings the two sidecars use (``feature_schema_id`` in both;
+#: kept as a tuple so a future producer spelling is one additive line).
+_SIDEKICK_SCHEMA_KEYS = ("feature_schema_id", "schema_id")
+
+#: The sidecar files that declare a bundle's contract, in precedence order:
+#: the signed manifest is the publication record (hash-bound, governance
+#: authority), the training meta is its fallback when no manifest exists.
+_CONTRACT_SIDECARS = ("manifest.json", "model.meta.json")
+
+
+def _read_json_sidecar(path: Path) -> dict[str, Any] | None:
+    """Return a parsed sidecar dict, or None when missing/unreadable/not an object.
+
+    Read-only: never writes, never falls back to a default document. An
+    unreadable sidecar is reported as absent (callers keep their own verdict).
+    """
+    if not path.exists():
+        return None
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def _sidecar_contract_fields(record: dict[str, Any]) -> tuple[str | None, int | None]:
+    """Pull (schema_id, dimension) out of ONE parsed sidecar record.
+
+    Never invents a value: a missing/garbage field stays None, and a dimension
+    that is not a real positive integer stays None (a negative or zero width is
+    not a contract any caller can honour).
+    """
+    schema_id: str | None = None
+    for key in _SIDEKICK_SCHEMA_KEYS:
+        value = record.get(key)
+        if isinstance(value, str) and value.strip():
+            schema_id = value.strip()
+            break
+        if isinstance(value, int) and not isinstance(value, bool):
+            schema_id = str(value)
+            break
+
+    dimension: int | None = None
+    for key in _SIDEKICK_DIM_KEYS:
+        if key not in record or record[key] is None:
+            continue
+        try:
+            parsed = int(record[key])
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0:
+            dimension = parsed
+            break
+    return schema_id, dimension
+
+
+def resolve_bundle_contract(bundle_dir: Path) -> tuple[str | None, int | None, dict[str, Any]]:
+    """Read a bundle's DECLARED contract from its sidecars (NSE-HEALTHFIX-001, lane C).
+
+    WHY: ``HealthEngine.check_model_contract`` historically read the contract
+    from the torch state_dict (``sd["metadata"]``), but every real NSE bundle
+    stores it in SIBLING files — the signed ``manifest.json``
+    (``feature_schema_id`` / ``input_dim`` / ``class_count``, hash-bound to the
+    weights) and the trainer's ``model.meta.json``
+    (``feature_schema_id`` / ``feature_schema_dimension`` / ``num_features``).
+    The state_dict of every probed bundle (EURUSD/v1.0.0, XAUUSD/70d_liquidity,
+    XAUUSD/50d_main) carries no metadata key, so the gate read
+    ``NO_MODEL_METADATA`` against bundles that DO declare their contract.
+
+    Precedence (manifest is the signed publication record — it wins):
+      1. ``manifest.json`` -> ``(feature_schema_id, input_dim)``;
+      2. ``model.meta.json`` -> ``(feature_schema_id, feature_schema_dimension
+         / num_features)`` when no readable manifest declares a PAIR.
+
+    Returns ``(schema_id, dimension, report)`` where ``report`` carries the
+    honest diagnostics a caller needs to render a verdict:
+      * ``schema_id`` / ``dimension``  — the resolved pair, or ``(None, None)``
+        when the bundle declares nothing readable. NEVER fabricated: a partial
+        declaration (id without a dimension, or vice versa) is returned as-is
+        and the caller decides what to do with it;
+      * ``source``                     — which sidecar the pair came from
+        (``manifest.json`` / ``model.meta.json``) or ``None``;
+      * ``disagreement``               — True when BOTH sidecars are readable
+        and declare DIFFERENT pairs. The MANIFEST pair is what the function
+        returns in that case (governance authority, hash-bound); the flag lets
+        a caller report the drift loudly instead of silently trusting one file;
+      * ``manifest_pair`` / ``meta_pair`` — the raw pairs per sidecar (None when
+        that sidecar is absent/unreadable) so a caller can show the operator
+        exactly what each file claims.
+
+    Strictly READ-ONLY on artifacts: no file is written, no champion is touched,
+    ``bundle_is_servable`` / ``provision`` / ``mint_starter_bundle`` semantics
+    are untouched, and the ``production_eligible`` flag + manifest hash
+    bindings remain authoritative (this helper does not evaluate them — it only
+    reads the contract vocabulary).
+    """
+    bundle = Path(bundle_dir)
+    manifest = _read_json_sidecar(bundle / "manifest.json")
+    meta = _read_json_sidecar(bundle / "model.meta.json")
+
+    manifest_pair = _sidecar_contract_fields(manifest) if manifest is not None else None
+    meta_pair = _sidecar_contract_fields(meta) if meta is not None else None
+
+    source: str | None = None
+    schema_id: str | None = None
+    dimension: int | None = None
+    if manifest_pair is not None and (manifest_pair[0] is not None or manifest_pair[1] is not None):
+        source = "manifest.json"
+        schema_id, dimension = manifest_pair
+    elif meta_pair is not None and (meta_pair[0] is not None or meta_pair[1] is not None):
+        source = "model.meta.json"
+        schema_id, dimension = meta_pair
+
+    disagreement = (
+        manifest_pair is not None and meta_pair is not None and manifest_pair != meta_pair
+    )
+
+    report: dict[str, Any] = {
+        "source": source,
+        "disagreement": disagreement,
+        "manifest_pair": list(manifest_pair) if manifest_pair is not None else None,
+        "meta_pair": list(meta_pair) if meta_pair is not None else None,
+    }
+    return schema_id, dimension, report
+
+
 def provision(
     model: Path,
     *,
