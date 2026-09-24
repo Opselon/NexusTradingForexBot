@@ -7,7 +7,8 @@
 #
 # Pipeline (spec section 57):
 #   validate version -> repo audit / clean-tree check -> quality gates
-#   (ruff/mypy/pytest) -> detect target -> PyInstaller onedir + onefile
+#   (ruff/mypy/pytest) -> frontend production build + dist validation
+#   -> detect target -> PyInstaller onedir + onefile
 #   -> EXE smoke tests -> stage release tree -> Inno Setup installer
 #   -> clean-install test (optional) -> SHA256 + manifest + SBOM + secrets scan
 #   -> verify-release -> release metadata
@@ -47,7 +48,7 @@ if (-not (Test-Path $Py)) { Fail "venv python not found at $Py" }
 # ---------------------------------------------------------------------------
 # 1. Version — single canonical source (pyproject.toml)
 # ---------------------------------------------------------------------------
-Write-Step "1/10 Validate version (canonical source: pyproject.toml)"
+Write-Step "1/11 Validate version (canonical source: pyproject.toml)"
 if (-not $Version) {
     $m = Select-String -Path pyproject.toml -Pattern '^version = "([^"]+)"'
     if (-not $m) { Fail "cannot read version from pyproject.toml" }
@@ -61,7 +62,7 @@ Pass "Canonical version: $Version (channel: $Channel)"
 # ---------------------------------------------------------------------------
 # 2. Git state + secret guard
 # ---------------------------------------------------------------------------
-Write-Step "2/10 Repository audit (git state + secret guard)"
+Write-Step "2/11 Repository audit (git state + secret guard)"
 # Release-wave Finding 2: the build identity binds to the FULL 40-hex commit
 # SHA. Short SHAs are presentation-only (the Pass line below may display it).
 $GitCommitFull = (& git rev-parse HEAD).Trim()
@@ -86,7 +87,7 @@ Pass "secret guard: no real telegram token in configs/live.yaml"
 # ---------------------------------------------------------------------------
 # 3. Quality gates
 # ---------------------------------------------------------------------------
-Write-Step "3/10 Quality gates (ruff / mypy / pytest)"
+Write-Step "3/11 Quality gates (ruff / mypy / pytest)"
 if (-not $SkipGates) {
     & $Py -m ruff check . --fix --unsafe-fixes | Out-Null
     if ($LASTEXITCODE -ne 0) { Fail "ruff lint failed" }
@@ -100,14 +101,57 @@ if (-not $SkipGates) {
 } else { Write-Host "[RELEASE] gates skipped (-SkipGates)" -ForegroundColor Yellow }
 
 # ---------------------------------------------------------------------------
-# 4. Build windows-x64 with PyInstaller (onedir + onefile)
+# 4. Frontend production build + dist validation (CONTRACT frozen decision #11)
 # ---------------------------------------------------------------------------
-Write-Step "4/10 PyInstaller build (windows-$Arch) — onedir + onefile"
+# The end user never runs Node: the release pipeline runs `npm ci` +
+# `npm run build` in frontend/ HERE (build-time only), FAIL-LOUD validates
+# dist (CONTRACT #11 gate), then bakes dist into the onedir tree. `npm run
+# build` is the single source of truth for how the bundle is produced
+# (frontend/package.json), so a build-script change can never drift from the
+# bytes this release ships.
+Write-Step "4/11 Frontend production build + dist validation"
+if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    Fail "npm not found on PATH - Node.js is required to BUILD this release (the end user never needs it)"
+}
+$FrontendDir = Join-Path $Root "frontend"
+Push-Location $FrontendDir
+try {
+    # Wave worktrees junction node_modules into the SHARED parent checkout's
+    # install. `npm ci` deletes node_modules first, so running it here would
+    # destroy that link — and, if the removal follows reparse points, the
+    # shared install itself. Never risk a shared tree: deps are already
+    # served through the link, so only a real directory is re-provisioned.
+    $NodeModules = Join-Path $FrontendDir "node_modules"
+    $IsSharedInstall = ((Test-Path $NodeModules) -and (((Get-Item $NodeModules -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0))
+    if ($IsSharedInstall) {
+        Write-Host "[RELEASE] node_modules is a junction into a shared install - skipping npm ci (deps already provisioned)" -ForegroundColor Yellow
+    } else {
+        & npm ci
+        if ($LASTEXITCODE -ne 0) { Fail "frontend npm ci failed (exit $LASTEXITCODE)" }
+    }
+    & npm run build
+    if ($LASTEXITCODE -ne 0) { Fail "frontend production build failed (npm run build exit $LASTEXITCODE)" }
+} finally { Pop-Location }
+$FrontendDist = Join-Path $Root "frontend\dist"
+if (-not (Test-Path (Join-Path $FrontendDist "index.html"))) {
+    Fail "frontend build produced no dist\index.html at $FrontendDist"
+}
+Pass "frontend production build: $FrontendDist"
+# CONTRACT #11: missing index.html/JS/CSS/manifest/favicon, broken /assets refs
+# or an external http(s) boot URL = STOP RELEASE.
+& $Py (Join-Path $Root "scripts\build\validate_frontend_dist.py") $FrontendDist
+if ($LASTEXITCODE -ne 0) { Fail "frontend dist validation failed (validate_frontend_dist.py exit $LASTEXITCODE)" }
+Pass "frontend dist validated (validate_frontend_dist.py)"
+
+# ---------------------------------------------------------------------------
+# 5. Build windows-x64 with PyInstaller (onedir + onefile)
+# ---------------------------------------------------------------------------
+Write-Step "5/11 PyInstaller build (windows-$Arch) — onedir + onefile"
 
 # EU-RELEASE-001: canonical branded application icon (generated from
 # frontend/public/icon-512.png). Without --icon PyInstaller stamps its
 # generic placeholder onto the EXE, the Start Menu entry and the shortcut.
-& $PythonExe (Join-Path $Root "scripts\build\generate_app_icon.py")
+& $Py (Join-Path $Root "scripts\build\generate_app_icon.py")
 if ($LASTEXITCODE -ne 0) { Fail "application icon generation failed" }
 if ($Arch -ne "x64") {
     Fail "Only windows-x64 is supported by the dependency stack (torch/polars/MetaTrader5). '$Arch' requested = BLOCKED."
@@ -152,6 +196,16 @@ $webAssetHash = (Get-FileHash -Algorithm SHA256 (Join-Path $Root "Web\app.js")).
 $webIndexHash = (Get-FileHash -Algorithm SHA256 (Join-Path $Root "Web\index.html")).Hash.ToLower()
 $webApiClientHash = (Get-FileHash -Algorithm SHA256 (Join-Path $Root "Web\api_client.js")).Hash.ToLower()
 $webStylesHash = (Get-FileHash -Algorithm SHA256 (Join-Path $Root "Web\styles.css")).Hash.ToLower()
+# CONTRACT frozen decision #11: release identity also carries the SHA256 of
+# the built React entrypoint baked into the onedir tree.
+$FrontendIndexPath = Join-Path $Root "frontend\dist\index.html"
+if (-not (Test-Path $FrontendIndexPath)) {
+    Fail "frontend/dist/index.html missing - frontend build must precede PyInstaller (CONTRACT #11)"
+}
+$frontendIndexHash = (Get-FileHash -Algorithm SHA256 $FrontendIndexPath).Hash.ToLower()
+# Guard the hash against staleness: Get-FileHash reads whatever bytes are on
+# disk, so the build cannot stamp a dist that the validator just rejected.
+$env:NSE_FRONTEND_INDEX_HASH = $frontendIndexHash
 $buildInfo = @{
     product         = "NexusScalpEngine"
     version         = $Version
@@ -169,6 +223,8 @@ $buildInfo = @{
     web_index_hash  = $webIndexHash
     web_api_client_hash = $webApiClientHash
     web_styles_hash = $webStylesHash
+    frontend_index_hash = $frontendIndexHash
+    frontend_dist = "frontend/dist"
 } | ConvertTo-Json
 [System.IO.File]::WriteAllText((Join-Path $Root "build-info.json"), $buildInfo, (New-Object System.Text.UTF8Encoding($false)))
 
@@ -177,6 +233,7 @@ $buildInfo = @{
     --icon $IconPath `
     --version-file $VersionInfoPath `
     --add-data "$Root\Web;Web" `
+    --add-data "$Root\frontend\dist;frontend/dist" `
     --add-data "$Root\configs;configs" `
     --add-data "$Root\docs;docs" `
     --add-data "$Root\build-info.json;." `
@@ -230,9 +287,9 @@ if ($LASTEXITCODE -ne 0) { Fail "PyInstaller onefile CLI build failed (exit $LAS
 Pass "onefile CLI: $BuildDir\onefile\NexusScalpEngine-CLI.exe"
 
 # ---------------------------------------------------------------------------
-# 5. EXE smoke tests (launch / version / health)
+# 6. EXE smoke tests (launch / version / health)
 # ---------------------------------------------------------------------------
-Write-Step "5/10 EXE smoke tests"
+Write-Step "6/11 EXE smoke tests"
 if (-not $SkipSmoke) {
     & (Join-Path $BuildDir "onedir\NexusScalpEngine\NexusScalpEngine.exe") version --plain
     if ($LASTEXITCODE -ne 0) { Fail "packaged EXE version failed" }
@@ -244,9 +301,9 @@ if (-not $SkipSmoke) {
 } else { Write-Host "[RELEASE] smoke skipped (-SkipSmoke)" -ForegroundColor Yellow }
 
 # ---------------------------------------------------------------------------
-# 6. Stage the release tree
+# 7. Stage the release tree
 # ---------------------------------------------------------------------------
-Write-Step "6/10 Stage release tree (portable layout)"
+Write-Step "7/11 Stage release tree (portable layout)"
 $OutDir = Join-Path $Root "release\v$Version\windows\x64"
 if (Test-Path $OutDir) { Remove-Item $OutDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -271,7 +328,10 @@ Copy-Item (Join-Path $Root "docs\*") (Join-Path $Stage "docs") -Recurse -Force
 Copy-Item (Join-Path $Root "build-info.json") (Join-Path $Stage "build-info.json") -Force
 # Portable Web must mirror _internal/Web for the web server fallback (empty portable/Web broke production panel)
 $portableWeb = Join-Path $Stage "Web"
-$internalWeb = Join-Path $Stage "_internal" "Web"
+# Join-Path takes exactly two positional args on Windows PowerShell 5.1 (the
+# release host shell here); only pwsh 7 accepts three. Nest the calls so the
+# script is semantically identical on both 5.1 and CI's pwsh 7.
+$internalWeb = Join-Path (Join-Path $Stage "_internal") "Web"
 if (Test-Path $internalWeb) {
     if (Test-Path $portableWeb) { Remove-Item $portableWeb -Recurse -Force -ErrorAction SilentlyContinue }
     Copy-Item $internalWeb $portableWeb -Recurse -Force
@@ -306,15 +366,30 @@ Supported: Windows 10/11 x64. ARM64 is NOT supported by PyTorch/Polars/MetaTrade
 Set-Content -Path (Join-Path $Stage "README.txt") -Value $ReadmeTxt -Encoding utf8
 Pass "portable tree staged at $Stage"
 
+# CONTRACT frozen decision #11: the staged onedir tree MUST carry the React
+# dist (PyInstaller 6 onedir places --add-data under _internal\) -- assert it
+# on the exact tree the installer/zip ship. This is the release-side twin of
+# the CI assertion (release.yml EUR_FRONTEND_MISSING).
+$StagedFrontendIndex = Join-Path $Stage "_internal\frontend\dist\index.html"
+if (-not (Test-Path $StagedFrontendIndex)) {
+    Fail "staged tree missing _internal\frontend\dist\index.html - PyInstaller --add-data frontend/dist did not land"
+}
+# And the dist must be the SAME bytes the build-info.json hash describes.
+$StagedHash = (Get-FileHash -Algorithm SHA256 $StagedFrontendIndex).Hash.ToLower()
+if ($StagedHash -ne $frontendIndexHash) {
+    Fail "staged frontend/dist/index.html hash mismatch: staged=$StagedHash build-info=$frontendIndexHash"
+}
+Pass "packaged frontend dist present: $StagedFrontendIndex"
+
 # Onefile CLI into cli/
 $CliDir = Join-Path $OutDir "cli"
 New-Item -ItemType Directory -Force -Path $CliDir | Out-Null
 Copy-Item (Join-Path $BuildDir "onefile\NexusScalpEngine-CLI.exe") $CliDir -Force
 
 # ---------------------------------------------------------------------------
-# 7. Inno Setup installer
+# 8. Inno Setup installer
 # ---------------------------------------------------------------------------
-Write-Step "7/10 Installer (Inno Setup)"
+Write-Step "8/11 Installer (Inno Setup)"
 if (-not $SkipInstaller) {
     $Iscc = @(
         "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
@@ -333,9 +408,9 @@ if (-not $SkipInstaller) {
 } else { Write-Host "[RELEASE] installer skipped (-SkipInstaller)" -ForegroundColor Yellow }
 
 # ---------------------------------------------------------------------------
-# 8. Clean-install test (./scripts/build/clean_install_test.ps1)
+# 9. Clean-install test (./scripts/build/clean_install_test.ps1)
 # ---------------------------------------------------------------------------
-Write-Step "8/10 Clean-install test"
+Write-Step "9/11 Clean-install test"
 if (-not $SkipCleanInstallTest) {
     $TestScript = Join-Path $PSScriptRoot "clean_install_test.ps1"
     if (Test-Path $TestScript) {
@@ -349,9 +424,9 @@ if (-not $SkipCleanInstallTest) {
 } else { Write-Host "[RELEASE] clean-install test skipped" -ForegroundColor Yellow }
 
 # ---------------------------------------------------------------------------
-# 9. Checksums + manifest + SBOM + secrets scan
+# 10. Checksums + manifest + SBOM + secrets scan
 # ---------------------------------------------------------------------------
-Write-Step "9/10 Checksums / manifest / SBOM / secrets scan"
+Write-Step "10/11 Checksums / manifest / SBOM / secrets scan"
 $ChecksumsDir = Join-Path $OutDir "checksums"
 New-Item -ItemType Directory -Force -Path $ChecksumsDir | Out-Null
 $Artifacts = @()
@@ -405,9 +480,9 @@ if (Test-Path $ManifestSrc) {
 Pass "checksums + manifest + SBOM + secrets scan complete"
 
 # ---------------------------------------------------------------------------
-# 10. verify-release (full tree self-check)
+# 11. verify-release (full tree self-check)
 # ---------------------------------------------------------------------------
-Write-Step "10/10 Release verification"
+Write-Step "11/11 Release verification"
 if (-not $SkipSmoke) {
     & (Join-Path $Root ".venv\Scripts\python.exe") (Join-Path $PSScriptRoot "update_helpers.py") verify $Stage
     if ($LASTEXITCODE -ne 0) { Fail "release verification failed" }

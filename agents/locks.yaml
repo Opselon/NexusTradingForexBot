@@ -5,6 +5,85 @@
 # Release locks when done (remove entry or mark released).
 
 exclusive_locks:
+  # --- END-USER-RUNTIME-UI-INTEGRATION WAVE (2026-09-24, EUR) ---------------
+  # Base a758fe46 (= origin/main tip). 4 file-disjoint implementer lanes +
+  # integrator. Wave contract lives OUTSIDE the repo at
+  # C:/Users/Capsizer/source/repos/nse-enduser-runtime/CONTRACT.md.
+  # Taskboard TASK-EUR-001. NOTE — the SEC-WAVE rows seen as dirty WIP in the
+  # shared main checkout belong to a FOREIGN branch and are intentionally not
+  # duplicated here.
+  - path: src/nexus_scalp/web/frontend_assets.py
+    owner: EUR-LANE-A
+    exclusive: true
+    scope: EUR-WAVE canonical dist resolver + status seam (other lanes import read-only)
+    since: 2026-09-24
+    task: EUR-A
+    expiry: 2026-10-01
+  - path: src/nexus_scalp/web/server.py
+    owner: EUR-LANE-A
+    exclusive: true
+    scope: EUR-WAVE root static serving + SPA fallback + /legacy relocation + /alt dual-serve
+    since: 2026-09-24
+    task: EUR-A
+    expiry: 2026-10-01
+  - path: src/nexus_scalp/web/auth.py
+    owner: EUR-LANE-A
+    exclusive: true
+    scope: EUR-WAVE public static-shell rule (GET/HEAD dotless) + /legacy bootstrap entries
+    since: 2026-09-24
+    task: EUR-A
+    expiry: 2026-10-01
+  - path: src/nexus_scalp/cli/browser_launch.py
+    owner: EUR-LANE-D
+    exclusive: true
+    scope: EUR-WAVE browser auto-launch seam (never raises, engine-independent)
+    since: 2026-09-24
+    task: EUR-D
+    expiry: 2026-10-01
+  - path: src/nexus_scalp/cli/engine_boot.py
+    owner: EUR-LANE-D
+    exclusive: true
+    scope: EUR-WAVE post-readiness browser launch + --no-browser wiring in engine start
+    since: 2026-09-24
+    task: EUR-D
+    expiry: 2026-10-01
+  - path: scripts/build/build_release.ps1
+    owner: EUR-LANE-C
+    exclusive: true
+    scope: EUR-WAVE release build — npm ci + vite build + dist validation + frontend add-data
+    since: 2026-09-24
+    task: EUR-C
+    expiry: 2026-10-01
+  - path: scripts/build/validate_frontend_dist.py
+    owner: EUR-LANE-C
+    exclusive: true
+    scope: EUR-WAVE stdlib-only frontend dist validator (release.yml + js-tests.yml consume it)
+    since: 2026-09-24
+    task: EUR-C
+    expiry: 2026-10-01
+  - path: frontend/vite.config.ts
+    owner: EUR-LANE-B
+    exclusive: true
+    scope: EUR-WAVE base / + dev proxy (dual-serve root and /alt)
+    since: 2026-09-24
+    task: EUR-B
+    expiry: 2026-10-01
+  - path: frontend/src/main.tsx
+    owner: EUR-LANE-B
+    exclusive: true
+    scope: EUR-WAVE runtime router basename (pathname-driven /alt or /)
+    since: 2026-09-24
+    task: EUR-B
+    expiry: 2026-10-01
+  - path: scripts/build/update_helpers.py
+    owner: EUR-LANE-C
+    exclusive: true
+    scope: EUR-WAVE narrow scanner-precision fix - inherited false positive where
+      the all-caps env-var NAME NSE_GATEWAY_API_KEY trips SECRET_PATTERNS[0];
+      token_guard + private-key paths untouched, positive regression test required
+    since: 2026-09-24
+    task: EUR-C
+    expiry: 2026-10-01
   - path: src/nexus_scalp/web/diagnostics_state_routes.py
     owner: Hermes-CFGUI
     exclusive: true
@@ -75,6 +154,34 @@ exclusive_locks:
     since: 2026-09-23
     task: ML-QA-005
     expiry: 2026-09-24
+  - path: src/nexus_scalp/database/
+    owner: Hermes-DBFABRIC
+    exclusive: true
+    scope: TASK-DB-FABRIC-COMPLETE Database Fabric master wave (read-only audit phase first; implementation lanes file-disjoint; PR #412 driver hunks + agent/hermes/db-provider-pro UI work are FOREIGN — coordinate, never overwrite)
+    since: 2026-09-24
+    task: TASK-DB-FABRIC-COMPLETE
+    expiry: 2026-09-27
+  - path: src/nexus_scalp/adapters/database/
+    owner: Hermes-DBFABRIC
+    exclusive: true
+    scope: TASK-DB-FABRIC-COMPLETE read/write plane + repository facade surface (audit phase; foreign WIP respected)
+    since: 2026-09-24
+    task: TASK-DB-FABRIC-COMPLETE
+    expiry: 2026-09-27
+  - path: tests/unit/test_fabric_*.py
+    owner: Hermes-DBFABRIC
+    exclusive: true
+    scope: TASK-DB-FABRIC-COMPLETE fabric guard/contract tests (new + owned)
+    since: 2026-09-24
+    task: TASK-DB-FABRIC-COMPLETE
+    expiry: 2026-09-27
+  - path: src/nexus_scalp/cli/db_commands.py
+    owner: Hermes-DBFABRIC
+    exclusive: true
+    scope: TASK-DB-FABRIC-COMPLETE db doctor/status/migrate/verify/switch CLI surface
+    since: 2026-09-24
+    task: TASK-DB-FABRIC-COMPLETE
+    expiry: 2026-09-27
 # - src/nexus_scalp/models/attention.py + src/nexus_scalp/models/attention_ablation.py
 #   (ML-ARCH-003, AGENT-ML-ARCH) — released, PR opened
 # - src/nexus_scalp/model_generation/architectures.py + tests/unit/test_causal_conv_invariants.py
@@ -113,21 +220,42 @@ exclusive_locks:
   - path: src/nexus_scalp/release/metadata.py
     owner: HERMES-EUP-RELEASE
     exclusive: true
-    scope: TASK-EUP-RELEASE-001 canonical CLI_PROGRAM_NAME constant
+    scope: TASK-EUP-RELEASE-001 canonical CLI_PROGRAM_NAME constant (released — task DONE, PR #417 merged as c9851b51)
     since: 2026-09-24
     task: TASK-EUP-RELEASE-001
     expiry: 2026-10-01
   - path: src/nexus_scalp/cli/help_command.py
     owner: HERMES-EUP-RELEASE
     exclusive: true
-    scope: TASK-EUP-RELEASE-001 nexus help word-form surface (audit; unchanged)
+    scope: TASK-EUP-RELEASE-001 nexus help word-form surface (audit; unchanged) (released — task DONE, PR #417 merged as c9851b51)
     since: 2026-09-24
     task: TASK-EUP-RELEASE-001
     expiry: 2026-10-01
   - path: tests/cli/test_cli_subprocess.py
     owner: HERMES-EUP-RELEASE
     exclusive: true
-    scope: TASK-EUP-RELEASE-001 program-name invariance golden tests
+    scope: TASK-EUP-RELEASE-001 program-name invariance golden tests (released — task DONE, PR #417 merged as c9851b51)
     since: 2026-09-24
     task: TASK-EUP-RELEASE-001
     expiry: 2026-10-01
+
+  # --- RESIDUE-POSIX LANE (2026-09-24, TASK-RESIDUE-POSIX-001) ------------
+  # Base: cbabadae (= origin/main tip). Lane branch
+  # agent/ci/residue-posix-paths, worktree nse-residue-posix.
+  # Scope: Windows path-separator regression in the merge-marker residue gate.
+  - path: scripts/ci/check_merge_marker_residue.py
+    owner: HERMES-RESIDUE-POSIX
+    exclusive: true
+    scope: TASK-RESIDUE-POSIX-001 POSIX-canonical diagnostic paths (str -> as_posix at the single derivation site)
+    since: 2026-09-24
+    task: TASK-RESIDUE-POSIX-001
+    expiry: 2026-10-01
+    status: released  # PR #423 merged as squash 5ad2d2f7
+  - path: tests/unit/test_merge_marker_residue.py
+    owner: HERMES-RESIDUE-POSIX
+    exclusive: true
+    scope: TASK-RESIDUE-POSIX-001 Windows regression coverage for the residue gate
+    since: 2026-09-24
+    task: TASK-RESIDUE-POSIX-001
+    expiry: 2026-10-01
+    status: released  # PR #423 merged as squash 5ad2d2f7

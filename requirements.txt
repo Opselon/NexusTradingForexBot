@@ -18,6 +18,7 @@ numpy==2.4.6 ; python_full_version < '3.12'
 numpy==2.5.3 ; python_full_version >= '3.12'
 playwright==1.63.0
 polars==1.44.2
+psycopg-pool==3.3.3
 psycopg==3.3.6
 pyarrow==25.0.1
 pydantic-settings==2.15.0

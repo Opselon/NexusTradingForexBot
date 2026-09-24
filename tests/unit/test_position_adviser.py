@@ -12,6 +12,7 @@ Covers the invariants that matter:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import polars as pl
@@ -61,7 +62,10 @@ def adviser_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-def _live_state(**over: object) -> dict[str, float]:
+def _live_state(**over: object) -> dict[str, Any]:
+    import time
+
+    now = time.monotonic()
     base = {
         "unrealized_pnl_r": -0.35,
         "current_r_net": -0.35,
@@ -75,6 +79,10 @@ def _live_state(**over: object) -> dict[str, float]:
         "model_probability": 0.62,
         "model_confidence": 0.58,
         "signal_age": 12.0,
+        # Snapshot contract (F1): required by service.evaluate; a fresh call
+        # is a fresh observation, so its id is fresh too.
+        "snapshot_observed_at": now,
+        "snapshot_id": f"probe_snap_{time.monotonic_ns()}",
     }
     base.update(over)
     return base
@@ -298,24 +306,35 @@ def test_integration_refuses_a_score_below_zero():
 
 
 def test_integration_builds_causal_state_only():
+    # ML-POSITION-FORENSICS F0/F4: initial_risk_price is in PRICE units
+    # (generator r_distance convention), NOT dollars; signal_age_bars derives
+    # from holding duration in BARS.
     state = build_position_state_for_adviser(
         pos=_FakePos(),
         ticket=1,
         price_current=2657.10,
         atr=1.85,
         spread=0.34,
-        initial_risk_usd=9.80,
+        initial_risk_price=2.20,  # |2658.40 - 2656.20| in price units
         holding_duration_sec=720.0,
-        signal_age=12.0,
+        signal_age_bars=12.0,
         model_probability=0.62,
         model_confidence=0.62,
     )
-    assert set(state) == set(ADVISER_FEATURE_ORDER)
+    # The live feature vector consumes exactly ADVISER_FEATURE_ORDER
+    # (snapshot contract keys are consumed by service.evaluate).
+    for k in ADVISER_FEATURE_ORDER:
+        assert k in state, f"missing feature {k}"
+    assert "snapshot_observed_at" in state
+    assert "snapshot_id" in state
     # A losing BUY: unrealized R negative, distance to stop < distance to target.
     assert state["unrealized_pnl_r"] < 0.0
     assert state["distance_to_stop_r"] < state["distance_to_target_r"]
     assert state["position_age_bars"] == 12  # 720s / 60
-    assert np.isfinite(list(state.values())).all()
+    assert state["signal_age"] == 12.0
+    # Every feature numeric and finite
+    feat_vals = [float(state[k]) for k in ADVISER_FEATURE_ORDER]
+    assert np.isfinite(feat_vals).all()
 
 
 # ------------------------------------------------------------------- trainer

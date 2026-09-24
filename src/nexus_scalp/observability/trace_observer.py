@@ -53,6 +53,45 @@ _SUBSCRIBER_COALESCE_STAGES = frozenset(
     {"MARKET", "FEATURES", "REGIME", "INFERENCE", "POLICY", "POST_POLICY"}
 )
 
+# Frozen contract v2 optional causal fields (CONTRACT.md "Frozen causal
+# contract v2"): accepted by begin_trace()/emit(), threaded verbatim into
+# TraceEvent and OMITTED from JSON when None (absence is data). Order mirrors
+# trace_contract.TraceEvent; extend here only by adding to BOTH (additive-only,
+# TRACE_SCHEMA_VERSION stays 1).
+_CAUSAL_V2_FIELDS = (
+    "request_id",
+    "root_event_id",
+    "source",
+    "destination",
+    "state",
+    "started_at",
+    "completed_at",
+    "duration_ms",
+    "reason_code",
+    "error_code",
+    "mode",
+    "provider",
+    "model",
+    "position_id",
+    "order_id",
+    "deal_id",
+    "execution_id",
+    "snapshot_id",
+    "payload_summary",
+    "freshness",
+    "provenance",
+)
+
+
+def _causal(**values: Any) -> dict[str, Any]:
+    """Keep only the frozen v2 kwargs that were actually supplied.
+
+    None means "not observed" and must stay absent — it never becomes a
+    default, a zero or an empty string. Unknown names are dropped (defensive:
+    a typo must not reach TraceEvent as an invented field). Never raises.
+    """
+    return {k: v for k, v in values.items() if k in _CAUSAL_V2_FIELDS and v is not None}
+
 
 class ObserverStatus:
     OFF = "OFF"
@@ -143,6 +182,10 @@ class TraceObserver:
         self._events: deque[dict[str, Any]] = deque(maxlen=_EVENTS_RING)
         self._decisions: deque[dict[str, Any]] = deque(maxlen=_DECISIONS_RING)
         self._trace_events: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
+        # trace_id -> its root event id (bounded with _TRACES_MAX, evicted in
+        # lockstep with _trace_events): lets every event of a trace carry the
+        # same root_event_id even when emitted from another thread.
+        self._trace_root: OrderedDict[str, str] = OrderedDict()
         self._trace_ctx: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._decision_index: OrderedDict[str, str] = OrderedDict()
         self._subscribers: dict[str, Subscriber] = {}
@@ -270,11 +313,29 @@ class TraceObserver:
             self.stop_session()
 
     # ------------------------------------------------------------------ emit
-    def begin_trace(self, *, symbol: str | None, detail: dict[str, Any] | None = None) -> str:
+    def begin_trace(
+        self,
+        *,
+        symbol: str | None,
+        detail: dict[str, Any] | None = None,
+        request_id: str | None = None,
+        source: str | None = None,
+        destination: str | None = None,
+        state: str | None = None,
+        started_at: str | None = None,
+        mode: str | None = None,
+        freshness: str | int | None = None,
+        provenance: str | None = None,
+        payload_summary: dict[str, Any] | None = None,
+    ) -> str:
         """Open a per-market-decision trace (detailed tracing only).
 
         Returns "" when the observer is OFF — callers treat that as
         'not observed' and pass no trace id onward. Never raises.
+
+        The v2 causal kwargs are optional and stay ABSENT when None (§61):
+        ``source``/``mode`` name the observed origin of the request (§10),
+        ``provenance`` must be 'observed' or 'inferred' (§9) or it is dropped.
         """
         if self._status is not ObserverStatus.ACTIVE:
             return ""
@@ -283,7 +344,7 @@ class TraceObserver:
                 trace_id = _new_id("TRC")
                 self._tl.trace_id = trace_id
                 self._tl.last_event_id = None
-                self._push_locked(
+                event_id = self._push_locked(
                     trace_id=trace_id,
                     parent_event_id=None,
                     stage="MARKET",
@@ -292,7 +353,25 @@ class TraceObserver:
                     status="OBSERVED",
                     symbol=symbol,
                     detail=detail,
+                    causal=_causal(
+                        request_id=request_id,
+                        source=source,
+                        destination=destination,
+                        state=state,
+                        started_at=started_at,
+                        mode=mode,
+                        freshness=freshness,
+                        provenance=provenance,
+                        payload_summary=payload_summary,
+                    ),
                 )
+                # The MARKET root event IS the trace root: record it so every
+                # later event of this trace carries the same root_event_id
+                # (§9 root propagation), even from another thread.
+                if event_id:
+                    self._trace_root[trace_id] = event_id
+                    if len(self._trace_root) > _TRACES_MAX:
+                        self._trace_root.popitem(last=False)
                 return trace_id
         except Exception:
             self._counters["emit_errors"] += 1
@@ -312,9 +391,38 @@ class TraceObserver:
         terminal: bool = False,
         provenance_gap: bool = False,
         trace_id: str | None = None,
+        request_id: str | None = None,
+        root_event_id: str | None = None,
+        source: str | None = None,
+        destination: str | None = None,
+        state: str | None = None,
+        started_at: str | None = None,
+        completed_at: str | None = None,
+        duration_ms: int | None = None,
+        reason_code: str | None = None,
+        error_code: str | None = None,
+        mode: str | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        position_id: str | None = None,
+        order_id: str | None = None,
+        deal_id: str | None = None,
+        execution_id: str | None = None,
+        snapshot_id: str | None = None,
+        payload_summary: dict[str, Any] | None = None,
+        freshness: str | int | None = None,
+        provenance: str | None = None,
     ) -> str:
         """Record one runtime fact into the active trace. OFF = immediate
-        return; ACTIVE = in-memory only; never raises."""
+        return; ACTIVE = in-memory only; never raises.
+
+        All v2 causal kwargs are optional; None stays OMITTED from JSON
+        (absence is data — never a guessed default). ``root_event_id`` is
+        filled from the trace's own root when the caller does not name one;
+        a caller-named root always wins (§9 explicit ids beat derivation).
+        ``duration_ms`` is derived by the contract when started_at and
+        completed_at are both present, else it stays absent.
+        """
         if self._status is not ObserverStatus.ACTIVE:
             return ""
         try:
@@ -340,6 +448,29 @@ class TraceObserver:
                     latency_us=latency_us,
                     terminal=terminal,
                     provenance_gap=provenance_gap,
+                    causal=_causal(
+                        request_id=request_id,
+                        root_event_id=root_event_id,
+                        source=source,
+                        destination=destination,
+                        state=state,
+                        started_at=started_at,
+                        completed_at=completed_at,
+                        duration_ms=duration_ms,
+                        reason_code=reason_code,
+                        error_code=error_code,
+                        mode=mode,
+                        provider=provider,
+                        model=model,
+                        position_id=position_id,
+                        order_id=order_id,
+                        deal_id=deal_id,
+                        execution_id=execution_id,
+                        snapshot_id=snapshot_id,
+                        payload_summary=payload_summary,
+                        freshness=freshness,
+                        provenance=provenance,
+                    ),
                 )
         except Exception:
             self._counters["emit_errors"] += 1
@@ -360,10 +491,25 @@ class TraceObserver:
         latency_us: int | None = None,
         terminal: bool = False,
         provenance_gap: bool = False,
+        causal: dict[str, Any] | None = None,
     ) -> str:
         self._seq += 1
         event_id = f"EV-{self._seq:08d}"
         unmapped = parent_event_id is None and stage != "MARKET"
+        fields: dict[str, Any] = dict(causal) if causal else {}
+        # Root propagation (§9): caller-named root wins; otherwise inherit
+        # THIS trace's own root. Never another trace's root.
+        if "root_event_id" not in fields and trace_id:
+            inherited = self._trace_root.get(trace_id)
+            if inherited:
+                fields["root_event_id"] = inherited
+            elif parent_event_id is None:
+                # First event of a trace that did not open via begin_trace
+                # (e.g. a foreign trace_id): it is its own root.
+                fields["root_event_id"] = event_id
+                self._trace_root[trace_id] = event_id
+                if len(self._trace_root) > _TRACES_MAX:
+                    self._trace_root.popitem(last=False)
         ev = TraceEvent(
             event_id=event_id,
             trace_id=trace_id,
@@ -382,6 +528,7 @@ class TraceObserver:
             unmapped=unmapped,
             provenance_gap=provenance_gap,
             detail=sanitize_detail(detail) if detail else {},
+            **fields,
         )
         d = ev.to_dict()
         self._events.append(d)
@@ -427,7 +574,11 @@ class TraceObserver:
         if parent_stage:
             self._observe_edge_locked(parent_stage, stage)
         if trace_id and not terminal:
-            self._tl.last_event_id = event_id
+            # Thread-local cursor advances only for THIS trace: an emit into a
+            # foreign trace_id must never point later events of the local
+            # trace at it (cross-trace parent leak guard, §9).
+            if trace_id == getattr(self._tl, "trace_id", None):
+                self._tl.last_event_id = event_id
         elif terminal:
             self._tl.trace_id = None
             self._tl.last_event_id = None
@@ -507,6 +658,10 @@ class TraceObserver:
                         event_type="DECISION",
                         status=str(row.get("status") or "UNKNOWN"),
                         parent_event_id=getattr(self._tl, "last_event_id", None),
+                        # §9 root propagation: the DECISION event points at the
+                        # same trace root as the rest of its chain (absent if
+                        # this trace never recorded one — never invented).
+                        root_event_id=self._trace_root.get(trace_id),
                         symbol=row.get("symbol"),
                         decision_id=str(decision_id) if decision_id else None,
                         terminal=terminal,

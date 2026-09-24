@@ -48,6 +48,12 @@ from nexus_scalp.domain.models import (
     TickData,
     TradeOrder,
 )
+from nexus_scalp.domain.valuation import (
+    margin_level_percent,
+    normalize_volume,
+    price_delta_value,
+    required_margin_estimate,
+)
 
 # BUG-308: parity with the live boundary readers — the broker returns the
 # still-forming current bar in the same payload as its sealed history; marking
@@ -565,15 +571,39 @@ class PaperMT5Adapter(IMT5Port):
     def _contract_size(self, symbol: str) -> float:
         return 100.0 if self._symbol_is_metal(symbol) else 100000.0
 
+    #: Paper account is simulated at a fixed 1:100 (documented invariant of
+    #: the simulator — NOT a claim about any real broker). All simulated
+    #: margin math routes through domain/valuation.py, the same canonical
+    #: law the risk engine uses, so PAPER exercises REAL sizing semantics
+    #: instead of a second hidden formula (mission §35 / §43).
+    PAPER_LEVERAGE: ClassVar[int] = 100
+
+    def _simulated_margin(self) -> float:
+        """Reserved margin the simulator would hold for open positions.
+
+        The old implementation reported margin=0.0 unconditionally, which
+        handed Risk an unlimited 'free margin' and let PAPER validate
+        production risk semantics against a number no real broker would ever
+        report. Simulated, labeled PAPER_SIMULATION — never broker truth.
+        """
+        total = 0.0
+        for pos in self._positions:
+            try:
+                total += self._margin_required(pos.symbol, float(pos.price_open), float(pos.volume))
+            except Exception:  # pragma: no cover - defensive: never block a read
+                continue
+        return total
+
     def _realized_pnl(self, pos: Any, close_price: float, close_volume: float) -> float:
-        contract = self._contract_size(pos.symbol)
-        if pos.type == OrderType.BUY:
-            return round(
-                (float(close_price) - float(pos.price_open)) * float(close_volume) * contract, 2
-            )
-        # SELL
+        # Canonical PnL law (domain/valuation.py) — single source of truth.
+        direction = 1.0 if pos.type == OrderType.BUY else -1.0
         return round(
-            (float(pos.price_open) - float(close_price)) * float(close_volume) * contract, 2
+            price_delta_value(
+                float(close_volume),
+                self._contract_size(pos.symbol),
+                direction * (float(close_price) - float(pos.price_open)),
+            ),
+            2,
         )
 
     def _current_price_for_pnl(self, pos: Any) -> float | None:
@@ -674,9 +704,15 @@ class PaperMT5Adapter(IMT5Port):
         snap.credit = 0.0
         snap.profit = float(self.equity - self.balance)
         snap.equity = float(self.equity)
-        snap.margin = 0.0
-        snap.margin_free = float(self.equity)
-        snap.margin_level = None if self.equity <= 0 else 100.0
+        # HONESTY (mission §35): paper previously reported margin=0.0 and
+        # margin_free=equity unconditionally — a free-margin figure no real
+        # broker would ever return, silently approving risk decisions. The
+        # simulator now reserves margin for its own open positions through
+        # the SAME canonical law the risk engine uses (domain/valuation).
+        _sim_margin = self._simulated_margin()
+        snap.margin = round(_sim_margin, 2)
+        snap.margin_free = round(float(self.equity) - _sim_margin, 2)
+        snap.margin_level = margin_level_percent(float(self.equity), _sim_margin)
         snap.margin_level_source = "PAPER_SIMULATION"
         snap.floating_pnl = float(self.equity - self.balance)
         snap.net_pnl = snap.floating_pnl
@@ -792,9 +828,10 @@ class PaperMT5Adapter(IMT5Port):
         snap.volume = float(volume)
         snap.available = True
         snap.source = "FALLBACK_ESTIMATE"
-        is_metal = self._symbol_is_metal(symbol)
-        contract = 100.0 if is_metal else 100000.0
-        snap.value = round((contract * float(price) * float(volume)) / 100.0, 4)
+        # Canonical margin law — no private re-implementation (mission §43).
+        snap.value = required_margin_estimate(
+            float(volume), self._contract_size(symbol), float(price), self.PAPER_LEVERAGE
+        )
         snap.value_source = "FALLBACK_ESTIMATE"
         return snap
 
@@ -814,10 +851,14 @@ class PaperMT5Adapter(IMT5Port):
         snap.volume = float(volume)
         snap.available = True
         snap.source = "FALLBACK_ESTIMATE"
-        # Paper: BUY=0 (POSITION_TYPE_BUY). Simulated tick value per lot = 1.0.
+        # Canonical PnL law (domain/valuation.price_delta_value). The old
+        # copy hard-coded `* 100.0` as the contract size for EVERY symbol —
+        # a 1000x error on FX contracts (100000) inside PAPER.
         direction = 1.0 if int(order_type) == 0 else -1.0
-        snap.value = round(
-            direction * (float(price_close) - float(price_open)) * float(volume) * 100.0, 4
+        snap.value = price_delta_value(
+            float(volume),
+            self._contract_size(symbol),
+            direction * (float(price_close) - float(price_open)),
         )
         snap.value_source = "FALLBACK_ESTIMATE"
         return snap
@@ -871,14 +912,15 @@ class PaperMT5Adapter(IMT5Port):
         """Returns virtual account snapshot (equity = balance + unrealized)."""
         self._refresh_position_profits()
         self._refresh_account()
+        _sim_margin = self._simulated_margin()
         return AccountInfo(
             login=9990001,
             trade_mode=0,  # Demo / Simulation
-            leverage=100,
+            leverage=self.PAPER_LEVERAGE,
             balance=self.balance,
             equity=self.equity,
-            margin=0.0,
-            margin_free=self.equity,
+            margin=round(_sim_margin, 2),
+            margin_free=round(float(self.equity) - _sim_margin, 2),
             currency="USD",
         )
 
@@ -1618,8 +1660,14 @@ class PaperMT5Adapter(IMT5Port):
             return False
 
     def _margin_required(self, symbol: str, price: float, volume: float) -> float:
-        contract = self._contract_size(symbol)
-        return round((contract * float(price) * float(volume)) / 100.0, 4)
+        """Simulated margin via the CANONICAL law (domain/valuation.py).
+
+        The old inline `(contract * price * volume) / 100.0` was a fourth
+        private copy of the margin formula with a hard-coded leverage.
+        """
+        return required_margin_estimate(
+            float(volume), self._contract_size(symbol), float(price), self.PAPER_LEVERAGE
+        )
 
     # ------------------------------------------------------------------
     # Execution ledger (Priority 4 — audit trail)
@@ -1729,6 +1777,47 @@ class PaperMT5Adapter(IMT5Port):
                 self._persist_state()
             return 0
 
+        # V1: broker volume contract (volume_min / volume_max / volume_step).
+        # A real MT5 server rejects these with TRADE_RETCODE_INVALID_VOLUME
+        # (10014); PAPER silently accepted 0.001 and 0.015 lots before, so a
+        # size a real broker would refuse could "succeed" in simulation and
+        # validate production risk semantics against a lie (mission §12/§35).
+        # Rejection, never silent rounding — the caller must see the refusal.
+        try:
+            _spec = self.get_symbol_info(symbol)
+            legal = normalize_volume(
+                float(volume),
+                _spec.volume_min,
+                _spec.volume_max,
+                _spec.volume_step,
+            )
+        except Exception:  # no usable spec -> keep legacy validation only
+            legal = float(volume)
+        if legal <= 0.0 or abs(legal - float(volume)) > 1e-9:
+            logger.warning(
+                "PAPER ORDER REJECTED (invalid volume vs broker contract)",
+                symbol=symbol,
+                volume=volume,
+                volume_min=getattr(_spec, "volume_min", None) if "_spec" in dir() else None,
+                volume_step=getattr(_spec, "volume_step", None) if "_spec" in dir() else None,
+            )
+            _, lbid, lask, lspread = self._ledger_quote(symbol)
+            self._ledger_append(
+                symbol=symbol,
+                order_type=order_type,
+                volume=volume,
+                requested_price=float(price),
+                bid=lbid,
+                ask=lask,
+                spread=lspread,
+                fill_price=None,
+                slippage=None,
+                rejection_reason="invalid_volume",
+            )
+            with contextlib.suppress(Exception):
+                self._persist_state()
+            return 0
+
         # H: stale tick guard
         if self._is_stale_tick():
             logger.warning("PAPER ORDER REJECTED (stale tick >30s)", symbol=symbol, price=price)
@@ -1753,7 +1842,9 @@ class PaperMT5Adapter(IMT5Port):
         try:
             self._refresh_position_profits()
             self._refresh_account()
-            free = float(self.equity)  # margin==0 in paper; free == equity
+            # free margin = equity - margin already reserved by open paper
+            # positions (never the raw equity — see get_account_snapshot).
+            free = round(float(self.equity) - self._simulated_margin(), 2)
             req = self._margin_required(symbol, float(price), float(volume))
             if req > free:
                 logger.warning(

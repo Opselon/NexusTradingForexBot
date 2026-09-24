@@ -6,7 +6,10 @@ export * from "./api";
 
 export default defineFeature({
   meta: {
-    route: "/dependency",
+    // CONTRACT #3 rename: root `/dependency` (+ /dependency.html) stays the
+    // legacy dependency dashboard on the backend; the React page moves to
+    // `/dependencies` and old deep links land via the AppShell <Navigate> alias.
+    route: "/dependencies",
     label: "Dependency",
     icon: "⌬",
     section: "PLATFORM",

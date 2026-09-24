@@ -156,6 +156,85 @@ def _health_entries() -> tuple[str, list[rhealth.HealthEntry]]:
     return engine.overall()
 
 
+def _frontend_seam_status() -> dict[str, Any]:
+    """Read-only Control Center seam status for `nexus status` / `nexus doctor`.
+
+    WHY: the operator must be able to see, without starting the engine, (a)
+    whether the React Control Center build is present and (b) whether
+    `nexus start` will auto-open a browser (CONTRACT #8/#9).
+
+    The shared runtime seam is imported READ-ONLY; a missing or faulty
+    ``nexus_scalp.web.frontend_assets`` (owned by the runtime lane) degrades to
+    UNAVAILABLE instead of ever breaking the CLI.
+    """
+    from nexus_scalp.cli import browser_launch
+
+    payload: dict[str, Any] = {
+        "frontend": {
+            "state": "UNAVAILABLE",
+            "dist_present": None,
+            "index": None,
+            "dir": None,
+            "reason": "frontend_assets module not importable",
+        },
+        "auto_open": browser_launch.auto_open_state(),
+    }
+    try:
+        from nexus_scalp.web.frontend_assets import frontend_status
+    except Exception as exc:
+        payload["frontend"]["reason"] = f"frontend_assets unavailable ({type(exc).__name__})"
+        return payload
+    try:
+        raw = dict(frontend_status() or {})
+    except Exception as exc:
+        payload["frontend"]["reason"] = f"frontend_status failed ({type(exc).__name__})"
+        return payload
+    dist_present = bool(raw.get("dist_present"))
+    index = bool(raw.get("index"))
+    ready = dist_present and index
+    payload["frontend"] = {
+        "state": "AVAILABLE" if ready else "MISSING",
+        "dist_present": dist_present,
+        "index": index,
+        "dir": raw.get("dir"),
+        "reason": "" if ready else "frontend/dist index missing (React build not present)",
+    }
+    return payload
+
+
+def _control_center_table() -> Table:
+    """Human table for the Control Center seam (appended to `nexus doctor`)."""
+    status = _frontend_seam_status()
+    fe = status["frontend"]
+    ao = status["auto_open"]
+    table = Table(title="CONTROL CENTER", box=box.SIMPLE_HEAD)
+    table.add_column("Seam", style="bold white", no_wrap=True)
+    table.add_column("Status", style="bold", no_wrap=True)
+    table.add_column("Detail", style="dim", overflow="fold")
+    table.add_row(
+        "FRONTEND",
+        _verdict_style(str(fe.get("state", "UNKNOWN"))),
+        str(fe.get("dir") or fe.get("reason") or ""),
+    )
+    table.add_row(
+        "BROWSER AUTO-OPEN",
+        _verdict_style("ENABLED" if ao.get("enabled") else "DISABLED"),
+        str(ao.get("reason", "")),
+    )
+    return table
+
+
+def _print_control_center_plain() -> None:
+    """Plain rows for `nexus status` (same column shape as the health rows)."""
+    status = _frontend_seam_status()
+    fe = status["frontend"]
+    ao = status["auto_open"]
+    detail = str(fe.get("dir") or fe.get("reason") or "")
+    print(f"{'FRONTEND':18} {fe.get('state', 'UNKNOWN')!s:8} {detail}")
+    mode = "ENABLED" if ao.get("enabled") else "DISABLED"
+    print(f"{'BROWSER AUTO-OPEN':18} {mode:8} {ao.get('reason', '')}")
+
+
 @app.command("doctor")
 def doctor_cmd(
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
@@ -192,6 +271,13 @@ def doctor_cmd(
 
                 payload["release_status"] = build_release_status()
             except Exception:
+                pass  # offline-safe: absence is UNKNOWN, never fabricated
+            # CONTRACT #8/#9: additive Control Center seam (frontend build +
+            # browser auto-open state). Failure-isolated so doctor --json can
+            # never lose its payload to this report.
+            try:
+                payload["control_center"] = _frontend_seam_status()
+            except Exception:
                 pass
         _emit(payload, True)
         return
@@ -225,6 +311,10 @@ def doctor_cmd(
             )
             table.add_row(e.category, status_cell, detail)
         console.print(table)
+        # CONTRACT #8/#9: extend the doctor with the Control Center seam
+        # (frontend build presence + browser auto-open state) instead of
+        # duplicating the reachability check the health engine already owns.
+        console.print(_control_center_table())
         console.print(
             Panel(
                 f"Overall: [bold]{verdict}[/bold]",
@@ -410,29 +500,36 @@ def health_cmd(
 def status_cmd(
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
 ) -> None:
-    """Full status: health + environment + version + PRODUCT STATE.
+    """Full status: health + environment + version + product state + Control Center seam.
 
     ENDUSER-OPERABILITY (EU-09): health describes the INSTALLATION (config,
     environment, model, database) — it says nothing about whether the product
-    is running. This command now also reports the four canonical product axes
+    is running. This command also reports the four canonical product axes
     (application / engine / execution mode / trading safety) from the live
     engine, so one command answers "is my program running, in which mode, and
     is live trading possible?" instead of conflating install readiness with
-    runtime state.
+    runtime state. The Control Center seam (TASK-EUR-001) reports whether the
+    frontend build is present and whether the browser auto-open path is armed.
     """
     runtime = _running_product_state()
     if json_mode:
         engine = rhealth.HealthEngine()
-        data = engine.summary_dict()
+        payload = engine.summary_dict()
         # EU-09: the four canonical axes sit at payload ROOT, not nested under
         # "runtime", so a machine reader parsing `nexus status --json` gets one
         # flat answer for "is the product up, in which mode, and is live trading
         # possible?". The health payload describes the INSTALLATION; these axes
         # describe the RUNNING product. Both are emitted; nesting differs on
         # purpose (health checks are a list, state is a contract).
-        data.update({k: v for k, v in runtime["product_state"].items() if k != "axes"})
-        data["runtime"] = runtime
-        _emit(data, True)
+        payload.update({k: v for k, v in runtime["product_state"].items() if k != "axes"})
+        payload["runtime"] = runtime
+        # CONTRACT #8/#9 (TASK-EUR-001): additive Control Center seam (frontend
+        # build + browser auto-open state); failure-isolated like every field.
+        try:
+            payload["control_center"] = _frontend_seam_status()
+        except Exception:
+            pass
+        _emit(payload, True)
         return
     health_cmd(json_mode=False, plain=True)
     st = runtime["product_state"]
@@ -443,15 +540,22 @@ def status_cmd(
     )
     console.print(
         Panel(
-            f"[bold]Product state[/bold]   {st['summary']}\n"
-            f"[bold]Why[/bold]             {st['reasons']['application']}\n"
-            f"[bold]Trading safety[/bold]  {st['reasons']['trading']}\n"
-            f"[bold]Dashboard[/bold]       {runtime['dashboard_url']} "
-            f"({'reachable' if runtime['dashboard_reachable'] else 'not running'})",
+            "[bold]Product state[/bold]   "
+            + st["summary"]
+            + "\n[bold]Why[/bold]             "
+            + st["reasons"]["application"]
+            + "\n[bold]Trading safety[/bold]  "
+            + st["reasons"]["trading"]
+            + "\n[bold]Dashboard[/bold]       "
+            + runtime["dashboard_url"]
+            + " ("
+            + ("reachable" if runtime["dashboard_reachable"] else "not running")
+            + ")",
             title="Application state",
             border_style=style,
         )
     )
+    _print_control_center_plain()
 
 
 # ---------------------------------------------------------------------------
