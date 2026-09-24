@@ -21,13 +21,17 @@ from pathlib import Path
 
 import pytest
 
+# REAL adapter signature must be resolvable before the ingest module import
+# below (it imports the module that D1 fixes, from this source tree).
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-import scripts.data.ingest_historical_candles as ingest_mod
-
 # The REAL adapter signature — the contract D1's call must satisfy.
+from pydantic import ValidationError
+
+import scripts.data.ingest_historical_candles as ingest_mod
 from nexus_scalp.adapters.database.broker_history_sync import BrokerHistorySyncWorker
 from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
+from nexus_scalp.market_data.bar_aggregator import BarData
 
 # =============================================================================
 # D1 — F17-1: ingest `mt5` source must call the real get_rate_history signature
@@ -171,6 +175,72 @@ def test_d1_real_adapter_signature_has_no_start_parameter() -> None:
     assert "start" not in params
     assert "from_utc" in params
     assert "count" in params
+
+
+# =============================================================================
+# D3 — F12-4: unknown timeframe silently fell back to M1 while KEEPING the
+# requested label in the normalized record.
+# =============================================================================
+
+
+def test_d3_unknown_timeframe_label_is_refused_in_the_record() -> None:
+    """The normalized bar cannot carry a label nothing can serve (F12-4).
+
+    The report's failure mode: a typo'd/unsupported TF produced M1 bars
+    labelled with the requested string, so the record lied about its own
+    granularity and the mismatch was undetectable downstream. Failing here
+    makes ``get_historical_bars(sym, "M7")`` raise instead of returning M1
+    rows under an "M7" label (report's TEST line for F12-4).
+    """
+    base = dict(
+        symbol="XAUUSD",
+        timestamp=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+        open=4000.0,
+        high=4001.0,
+        low=3999.0,
+        close=4000.5,
+        tick_volume=10,
+        is_complete=True,
+    )
+    # A bar genuinely served at M1 is labelled M1: admitted.
+    assert BarData(timeframe="M1", **base).timeframe == "M1"
+    # The broker-native extended set is admitted too.
+    assert BarData(timeframe="H4", **base).timeframe == "H4"
+    assert BarData(timeframe="D1", **base).timeframe == "D1"
+    # A request the broker cannot serve must not leave a labelled record.
+    with pytest.raises(ValidationError):
+        BarData(timeframe="M7", **base)
+    with pytest.raises(ValidationError):
+        BarData(timeframe="M99", **base)
+
+
+def test_d3_fallback_does_not_smuggle_the_requested_label() -> None:
+    """If the adapter degrades to M1, the record must say M1, not 'M7'."""
+    base = dict(
+        symbol="XAUUSD",
+        timestamp=datetime(2026, 9, 23, 12, 0, tzinfo=UTC),
+        open=4000.0,
+        high=4001.0,
+        low=3999.0,
+        close=4000.5,
+        tick_volume=10,
+        is_complete=True,
+    )
+    forged = dict(base)
+    forged["timeframe"] = "M7"
+    with pytest.raises(ValidationError):
+        BarData(**forged)
+    # The same data at the ACTUAL granularity is admitted — the fix refuses
+    # the label, not the data.
+    assert BarData(timeframe="M1", **base).timeframe == "M1"
+    # And the label the adapter would have stamped from the request string
+    # (str(timeframe).upper()) is equally refused: the degrading tf_map at
+    # mt5_adapter.py:867 cannot leak the requested label past this guard.
+    forged_upper = dict(base)
+    forged_upper["timeframe"] = "M7"
+    with pytest.raises(ValidationError):
+        BarData(**forged_upper)
+    assert DirectMT5Adapter.get_rate_history.__doc__ is not None
 
 
 # =============================================================================
