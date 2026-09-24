@@ -2408,11 +2408,11 @@ class AuditRepository:
 
         1. ROUTE the read through the fabric read plane when one is
            genuinely registered for the audit domain AND the gate declared
-           its query here (``sql`` + ``args`` + ``kind``). Today the fabric
-           registry holds only the pooled WRITE backend (writes-only
-           adoption), so this branch does not fire in production;
-           per-query PostgreSQL read routing is the documented follow-up
-           wave, not something this guard invents.
+           its query here (``sql`` + ``args`` + ``kind``).  Since
+           ``provision_domain`` registers the READ backend alongside the
+           WRITE one (CHG-0067), this branch IS the production path under
+           PostgreSQL; before that the registry held only writes and every
+           declared read degraded to (2).
         2. Otherwise make the degradation OBSERVABLE: bump
            ``provider_read_degraded_total`` (plus a per-operation
            breakdown), emit ONE structured warning per operation name
@@ -2493,11 +2493,12 @@ class AuditRepository:
         """The fabric's registered READ plane for ``audit``, else ``None``.
 
         ``get_domain_backend(domain, readonly=True)`` is the fabric's
-        read-side accessor. Until a read plane is actually registered there
-        this returns ``None`` and every gated read degrades observably
-        rather than inventing an ad-hoc connection path. A WRITE-shaped
-        backend is refused outright: reads must never share the write path,
-        and the registry's current occupants are pooled write backends.
+        read-side accessor; ``provision_domain`` registers the read plane
+        there (CHG-0067).  When it is absent this returns ``None`` and every
+        gated read degrades observably rather than inventing an ad-hoc
+        connection path. A WRITE-shaped backend is refused outright: reads
+        must never share the write path, so a slot holding only the write
+        backend does not make the domain readable.
         """
         if self._is_sqlite:
             return None
@@ -2549,8 +2550,8 @@ class AuditRepository:
         logger.warning(
             "[DB-FABRIC] audit provider read degraded op=%s kind=%s emission=%d "
             "occurrences=%d provider_read_degraded_total=%d -> documented default "
-            "(no read plane registered for domain 'audit'; PostgreSQL read routing "
-            "is the documented follow-up, never a silent loss of consistency)",
+            "(no read plane registered for domain 'audit' — the domain is not "
+            "provisioned for reads; never a silent loss of consistency)",
             operation,
             kind,
             emissions + 1,

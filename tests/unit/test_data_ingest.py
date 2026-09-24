@@ -262,7 +262,11 @@ class _MockMT5Adapter:
         self.is_connected = False
 
     def get_rate_history(
-        self, symbol: str, timeframe: str, start: dt.datetime, count: int
+        self,
+        symbol: str,
+        timeframe: str = "M1",
+        count: int = 500,
+        from_utc: dt.datetime | None = None,
     ) -> list[_MockBar]:
         if not self.is_connected:
             raise RuntimeError("MT5 not connected")

@@ -15,6 +15,18 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.market_data.bar_aggregator")
 
+# MT5-PARITY-FIX-2 / F12-4: every timeframe label a normalized bar may carry.
+# This is the union of what the broker boundary can actually serve
+# (DirectMT5Adapter.get_rate_history tf_names: mt5_adapter.py:839-862, also
+# mirrored by web/server.py ChartTimeframe) and the higher-timeframe labels
+# the in-repo aggregators mint from minute periods (aggregate_bars +
+# _FastHTFState: 15/30/60/240 -> M15/M30/H1/H4). A request for anything else
+# must fail loud at the fetch boundary rather than degrade to M1 bars that
+# still wear the requested string; this set is what "actual timeframe" means.
+_CANONICAL_TIMEFRAMES: frozenset[str] = frozenset(
+    "M1 M2 M3 M4 M5 M6 M10 M12 M15 M20 M30 H1 H2 H3 H4 H6 H8 H12 D1 W1 MN1".split()
+)
+
 
 class BarData(BaseModel):
     """
@@ -42,6 +54,26 @@ class BarData(BaseModel):
     close: float
     tick_volume: int
     is_complete: bool
+
+    @field_validator("timeframe")
+    @classmethod
+    def _canonical_timeframe(cls, v: str) -> str:
+        # MT5-PARITY-FIX-2 / F12-4: the label must survive. An unknown
+        # timeframe string silently degraded to M1 data at the broker
+        # boundary while KEEPING the requested label
+        # (`tf_map.get(..., TIMEFRAME_M1)` + label set from the caller), so a
+        # typo'd TF produced M1 bars labelled as something else and the
+        # mismatch became undetectable downstream. This record is the last
+        # point where a wrong label can still be refused; after this it is
+        # canonical. Callers that legitimately build bars off the broker
+        # pass the label the broker can serve, which is in
+        # _CANONICAL_TIMEFRAMES.
+        if v in _CANONICAL_TIMEFRAMES:
+            return v
+        raise ValueError(
+            f"unknown timeframe label {v!r}: a fetch that silently fell back "
+            f"to M1 must carry the ACTUAL timeframe, not the requested one"
+        )
 
     @field_validator("open", "high", "low", "close")
     @classmethod

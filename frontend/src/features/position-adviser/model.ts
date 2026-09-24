@@ -48,15 +48,18 @@ export interface AdviserStatusResponse {
   last_error: string;
   ready: boolean;
   config: AdviserConfigDto;
-  /** BUG-314 F6: package-integrity verdict from the immutable sidecar manifest ("OK" | …). */
-  integrity: string;
-  manifest_path: string;
-  source_dataset_hash: string;
-  /** BUG-314 F1: snapshots refused solely for being stale. */
-  stale_rejected_count: number;
   activation_ladder: { current: string; available: string[] };
   actions: string[];
   now?: string;
+  /** BUG-314 F6: package-integrity verdict from the immutable sidecar
+   *  manifest (OK / unverified / a failure reason). Empty before any load. */
+  integrity: string;
+  /** Relative path of the .meta.json that pinned this package. */
+  manifest_path: string;
+  /** Content hash of the dataset this model was trained on. */
+  source_dataset_hash: string;
+  /** BUG-314 F1: snapshots refused solely for being stale. */
+  stale_rejected_count: number;
 }
 
 export interface AdviserConfigDto {
@@ -64,9 +67,9 @@ export interface AdviserConfigDto {
   min_confidence_to_apply: number;
   min_action_advantage: number;
   min_eval_interval_sec: number;
-  artifact_dir: string;
   /** BUG-314 F1: staleness gate — a snapshot older than this is refused. */
   max_snapshot_age_sec: number;
+  artifact_dir: string;
   manifest_path: string;
 }
 

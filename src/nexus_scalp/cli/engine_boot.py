@@ -91,6 +91,16 @@ def _heavy_app_config_default() -> AppConfig:
     return AppConfig()
 
 
+def _heavy_write_effective_config(path: Path, cfg: AppConfig) -> None:
+    # EUR first-run persistence (see the bootstrap branch below): writes the
+    # bootstrapped default so the CONFIGURATION health gate can PASS on the
+    # first launch. Deferred for the same EU-03 latency reason as the shims
+    # above.
+    from nexus_scalp.cli.wizard import _write_effective_config
+
+    _write_effective_config(path, cfg)
+
+
 def _pidfile() -> Path:
     return rpaths.get_data_root() / "nexus.pid"
 
@@ -417,6 +427,22 @@ def start_cmd(
             # clicked the exe, it just works in PAPER".
             cfg = _heavy_app_config_default()
             config_path = None  # type: ignore[assignment]
+            # EUR contract #10 / one-click law: persist the bootstrapped default
+            # so the CONFIGURATION health gate (release/health.py, a
+            # CRITICAL_CATEGORIES entry) can PASS on the FIRST launch instead
+            # of reporting "config missing (first run / not set up yet)".
+            # Without this /health stays 503, the browser-readiness gate
+            # (_open_control_center_when_ready) times out, and the Control
+            # Center never auto-opens on the very first double-click.
+            # Idempotent: this branch only runs when NO config file exists.
+            user_cfg_path = rpaths.get_user_config_path()
+            try:
+                _heavy_write_effective_config(user_cfg_path, cfg)
+                config_path = user_cfg_path
+            except Exception:
+                # A config we cannot persist must never block the engine: the
+                # in-memory default still boots PAPER mode (§27 isolation).
+                config_path = None  # type: ignore[assignment]
 
     # FIRST-RUN DATABASE CHOICE (dual-entry law, TASK-EUR-001): `nexus start`
     # offers the same PostgreSQL/SQLite question as `nexus setup` (wizard.py)
@@ -844,6 +870,11 @@ def _run_engine_locked(
         console.print(
             Panel("[yellow]Using Remote MT5 Gateway Adapter[/yellow]", border_style="yellow")
         )
+        # MT5-PARITY T4 (H-02 class): the client must NOT fall back to
+        # publicly-known default gateway credentials. Resolution order is
+        # explicit args -> env (NSE_GATEWAY_*) -> DPAPI SecureSecretStore,
+        # and the adapter now raises when none are available unless
+        # NSE_GATEWAY_ALLOW_DEFAULTS=1 (local dev only).
         adapter = RemoteMT5GatewayAdapter()
     else:
         console.print(
