@@ -105,3 +105,41 @@ def test_scanner_reports_a_missing_root(helpers_module: Any) -> None:
     """Sanity: the gate still returns non-zero when the tree is absent."""
     rc = helpers_module.action_scan_tree(["no-such-tree-xyz"])
     assert rc != 0
+
+
+def test_scanner_catches_a_colon_shaped_secret(tmp_path: Path, helpers_module: Any) -> None:
+    """A ``key: <value>`` colon-shaped line has no constant declaration to
+    match, so it can never be a self-named constant and must still fire."""
+    root = tmp_path / "portable"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "gateway.py").write_text('apikey: "AKIAIOSFODNN7EXAMPLE"\n', encoding="utf-8")
+    rc = helpers_module.action_scan_tree([str(root)])
+    assert rc != 0, "a colon-shaped api key MUST fail the secrets scan"
+
+
+def test_scanner_catches_an_all_caps_value_with_a_different_trailing_name(
+    tmp_path: Path, helpers_module: Any
+) -> None:
+    """Precision is anchored on the CONSTANT NAME, not the value's shape:
+    an all-caps value whose trailing identifier differs from the constant
+    (here MY_OWN_SECRET under API_KEY) is a possible secret and MUST fire."""
+    root = tmp_path / "portable"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "gateway.py").write_text('API_KEY = "MY_OWN_SECRET"\n', encoding="utf-8")
+    rc = helpers_module.action_scan_tree([str(root)])
+    assert rc != 0, "a value whose trailing name differs from its constant must still fail"
+
+
+def test_scanner_catches_a_secret_in_a_file_that_also_has_a_self_named_constant(
+    tmp_path: Path, helpers_module: Any
+) -> None:
+    """The pattern loop walks every match of every pattern: a file may hold a
+    legitimate constant AND a real secret — only the constant is skipped."""
+    root = tmp_path / "portable"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "server.py").write_text(
+        'SECRET_ENV_API_KEY = "NSE_GATEWAY_API_KEY"\napi_key = "AKIAIOSFODNN7EXAMPLE"\n',
+        encoding="utf-8",
+    )
+    rc = helpers_module.action_scan_tree([str(root)])
+    assert rc != 0, "a real secret next to a self-named constant MUST still be reported"
