@@ -34,7 +34,10 @@ import { AgeNote } from "@/pages/_shared/SectionState";
 import type { OverlayRect, VisualOverlays } from "@/pages/_shared/contracts";
 import { formatNumber, formatPct, formatPrice, formatTime } from "@/lib/format";
 import type { EngineSnapshot, OrderRow } from "@/types/domain";
+import { useI18n } from "@/stores/i18nStore";
 import "./readout.css";
+
+type TFn = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
 
 export interface MarketReadoutProps {
   snapshot: EngineSnapshot;
@@ -50,16 +53,17 @@ function orderStateTone(state: number | string | null): "good" | "warn" | "neutr
   if (s === "1" || s === "PARTIAL" || s === "2" || s === "CANCELED") return "warn";
   return "neutral";
 }
-function orderStateWord(state: number | string | null): string {
+function orderStateWord(t: TFn, state: number | string | null): string {
   const s = String(state ?? "");
-  if (s === "0") return "PLACED";
-  if (s === "1") return "PARTIAL";
-  if (s === "2") return "CANCELED";
+  if (s === "0") return t("trading.order_state.placed", "PLACED");
+  if (s === "1") return t("trading.order_state.partial", "PARTIAL");
+  if (s === "2") return t("trading.order_state.canceled", "CANCELED");
   return s || "—";
 }
 
 export default function MarketReadout(props: MarketReadoutProps) {
   const { snapshot, mt5Query } = props;
+  const t = useI18n((s) => s.t);
   const digits = snapshot.price_digits ?? 2;
 
   // ---- SMC/ICT overlays: engine-computed only (the legacy visual_overlays
@@ -93,90 +97,90 @@ export default function MarketReadout(props: MarketReadoutProps) {
       <div className="tr-readout-grid">
         {/* ---------------- Market / execution state ---------------- */}
         <Panel
-          title="Market / execution state"
+          title={t("trading.panel.market_state", "Market / execution state")}
           accent
-          right={<AgeNote label="tick age" ageSec={snapshot.diagnostics.tick_age_sec} />}
+          right={<AgeNote label={t("trading.kv.tick_stale", "tick age")} ageSec={snapshot.diagnostics.tick_age_sec} />}
         >
           <div className="tr-readout-tiles">
             <div className="tr-tile tr-tile-symbol">
-              <span className="tr-tile-k">symbol</span>
+              <span className="tr-tile-k">{t("trading.kv.symbol", "symbol")}</span>
               <span className="tr-tile-v">{snapshot.symbol ?? "—"}</span>
-              <span className="tr-tile-s">socket snapshot</span>
+              <span className="tr-tile-s">{t("trading.tile.socket_snapshot", "socket snapshot")}</span>
             </div>
             <div className="tr-tile tr-tile-bidask">
-              <span className="tr-tile-k">bid / ask</span>
+              <span className="tr-tile-k">{t("trading.kv.bid_ask", "bid / ask")}</span>
               <span className="tr-tile-v">
                 {formatPrice(snapshot.bid, digits)} <span className="tr-tile-sep">/</span> {formatPrice(snapshot.ask, digits)}
               </span>
-              <span className="tr-tile-s">{snapshot.symbol ? `${snapshot.symbol} · ${digits} digits` : "—"}</span>
+              <span className="tr-tile-s">{snapshot.symbol ? t("trading.tile.digits_sub", "{sym} · {d} digits", { sym: snapshot.symbol, d: digits }) : "—"}</span>
             </div>
             <div className="tr-tile">
-              <span className="tr-tile-k">spread</span>
+              <span className="tr-tile-k">{t("trading.kv.spread", "spread")}</span>
               <span className="tr-tile-v">
                 {spreadPts === null ? "—" : `${formatNumber(spreadPts)} pts`}
               </span>
               {spreadBudget !== null && spreadPts !== null ? (
-                <span className="tr-tile-meter" role="img" aria-label={`spread meter, ${formatNumber(spreadPts)} points`}>
+                <span className="tr-tile-meter" role="img" aria-label={t("trading.tile.spread_aria", "spread meter, {p} points", { p: formatNumber(spreadPts) })}>
                   <i style={{ width: `${Math.round(spreadBudget * 100)}%` }} />
                 </span>
               ) : (
-                <span className="tr-tile-s">no ask/bid pair</span>
+                <span className="tr-tile-s">{t("trading.tile.no_pair", "no ask/bid pair")}</span>
               )}
             </div>
             <div className="tr-tile">
-              <span className="tr-tile-k">tick stale</span>
+              <span className="tr-tile-k">{t("trading.kv.tick_stale", "tick stale")}</span>
               <span className="tr-tile-v">
                 {/* tone restates snapshot.tick_stale verbatim (STALE / FRESH) */}
                 {snapshot.tick_stale ? (
-                  <span className="tr-tone tr-tone-warn">● STALE</span>
+                  <span className="tr-tone tr-tone-warn">● {t("trading.tile.stale", "STALE")}</span>
                 ) : (
-                  <span className="tr-tone tr-tone-good">● FRESH</span>
+                  <span className="tr-tone tr-tone-good">● {t("trading.tile.fresh", "FRESH")}</span>
                 )}
               </span>
               <span className="tr-tile-s">
-                {snapshot.tick_freshness_ms === null ? "freshness n/a" : `${formatNumber(snapshot.tick_freshness_ms, 0)} ms`}
+                {snapshot.tick_freshness_ms === null ? t("trading.tile.freshness_na", "freshness n/a") : `${formatNumber(snapshot.tick_freshness_ms, 0)} ms`}
               </span>
             </div>
             <div className="tr-tile">
-              <span className="tr-tile-k">regime</span>
+              <span className="tr-tile-k">{t("trading.kv.regime", "regime")}</span>
               <span className="tr-tile-v tr-tile-v-word">{snapshot.regime ?? "—"}</span>
-              <span className="tr-tile-s">engine classification</span>
+              <span className="tr-tile-s">{t("trading.tile.engine_class", "engine classification")}</span>
             </div>
             <div className="tr-tile">
-              <span className="tr-tile-k">AI proposal</span>
+              <span className="tr-tile-k">{t("trading.kv.ai_proposal", "AI proposal")}</span>
               <span className="tr-tile-v tr-tile-v-word">
                 {snapshot.ai_decision ?? "—"}{" "}
                 {conf !== null ? <span className="tr-tile-conf">({formatPct(conf * 100, 1)})</span> : null}
               </span>
               {conf !== null ? (
-                <span className="tr-tile-meter" role="img" aria-label={`confidence ${formatPct(conf * 100, 1)}`}>
+                <span className="tr-tile-meter" role="img" aria-label={t("ui.viz.confidence_aria", "confidence {r}", { r: formatPct(conf * 100, 1) })}>
                   <i style={{ width: `${Math.round(Math.min(1, Math.max(0, conf)) * 100)}%` }} />
                 </span>
               ) : (
-                <span className="tr-tile-s">confidence n/a</span>
+                <span className="tr-tile-s">{t("trading.tile.conf_na", "confidence n/a")}</span>
               )}
             </div>
             <div className="tr-tile tr-tile-wide">
-              <span className="tr-tile-k">proposal blocked by</span>
+              <span className="tr-tile-k">{t("trading.kv.blocked_by", "proposal blocked by")}</span>
               <span className="tr-tile-v tr-tile-v-word tr-tile-reason">{snapshot.ai_reason ?? "—"}</span>
             </div>
             <div className="tr-tile">
-              <span className="tr-tile-k">proposal age</span>
+              <span className="tr-tile-k">{t("trading.kv.proposal_age", "proposal age")}</span>
               <span className="tr-tile-v">
                 {snapshot.diagnostics.proposal_age_sec === null ? "—" : `${snapshot.diagnostics.proposal_age_sec.toFixed(1)}s`}
               </span>
-              <span className="tr-tile-s">since last proposal</span>
+              <span className="tr-tile-s">{t("trading.tile.since_proposal", "since last proposal")}</span>
             </div>
           </div>
         </Panel>
 
         {/* ---------------- Pending orders (broker) ---------------- */}
         <Panel
-          title="Pending orders (broker)"
+          title={t("trading.panel.pending", "Pending orders (broker)")}
           accent
           right={
             <span className="tr-readout-count">
-              {mt5Query.data?.orders ? mt5Query.data.orders.length : 0} open
+              {t("trading.tile.orders_open", "{n} open", { n: mt5Query.data?.orders ? mt5Query.data.orders.length : 0 })}
             </span>
           }
           tight
@@ -186,12 +190,12 @@ export default function MarketReadout(props: MarketReadoutProps) {
               <table className="tr-orders-table">
                 <thead>
                   <tr>
-                    <th scope="col">Ticket</th>
-                    <th scope="col">Type</th>
-                    <th scope="col">Volume</th>
-                    <th scope="col">Price</th>
-                    <th scope="col">State</th>
-                    <th scope="col">Setup</th>
+                    <th scope="col">{t("trading.th.ticket", "Ticket")}</th>
+                    <th scope="col">{t("trading.th.type", "Type")}</th>
+                    <th scope="col">{t("trading.th.volume", "Volume")}</th>
+                    <th scope="col">{t("trading.th.price", "Price")}</th>
+                    <th scope="col">{t("trading.th.state", "State")}</th>
+                    <th scope="col">{t("trading.th.setup", "Setup")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -209,7 +213,7 @@ export default function MarketReadout(props: MarketReadoutProps) {
                         <td className="num">{formatPrice(o.price_open)}</td>
                         <td>
                           <span className={`tr-tone-badge tr-tone-badge-${orderStateTone(o.state)}`}>
-                            {orderStateWord(o.state)}
+                            {orderStateWord(t, o.state)}
                           </span>
                         </td>
                         <td className="tr-c-setup">{formatTime(o.time_setup)}</td>
@@ -225,19 +229,19 @@ export default function MarketReadout(props: MarketReadoutProps) {
             </div>
           ) : mt5Query.isError ? (
             <ErrorState
-              message="Pending orders unavailable (MT5 status endpoint failed)."
+              message={t("trading.err.pending", "Pending orders unavailable (MT5 status endpoint failed).")}
               onRetry={() => void mt5Query.refetch()}
             />
           ) : (
-            <EmptyState message="No pending orders on the broker account." />
+            <EmptyState message={t("trading.empty.pending", "No pending orders on the broker account.")} />
           )}
         </Panel>
       </div>
 
       {/* ---------------- SMC / ICT overlays ---------------- */}
       <Panel
-        title="SMC / ICT overlays"
-        subtitle="engine-computed zones and structure — visualised, never fabricated"
+        title={t("trading.panel.smc", "SMC / ICT overlays")}
+        subtitle={t("trading.smc.sub", "engine-computed zones and structure — visualised, never fabricated")}
         accent
         right={
           <span className="tr-readout-count">
@@ -247,8 +251,8 @@ export default function MarketReadout(props: MarketReadoutProps) {
       >
         {zones.length === 0 && bosLines.length === 0 && midlines.length === 0 && liqMarkers.length === 0 ? (
           <EmptyState
-            message="No active zones, breaks or sweeps on the last computed window."
-            hint="visual_overlays is empty — the engine saw no unmitigated structure, not a rendering failure."
+            message={t("trading.empty.overlays", "No active zones, breaks or sweeps on the last computed window.")}
+            hint={t("trading.empty.overlays_hint", "visual_overlays is empty — the engine saw no unmitigated structure, not a rendering failure.")}
           />
         ) : (
           <div className="tr-readout-smc">
@@ -257,7 +261,7 @@ export default function MarketReadout(props: MarketReadoutProps) {
                 <>
                   <div className="tr-ladder-scale">
                     <span className="tr-ladder-end">{formatPrice(ladderHi, digits)}</span>
-                    <span className="tr-ladder-end-cap">window high</span>
+                    <span className="tr-ladder-end-cap">{t("trading.th.range_high", "window high")}</span>
                   </div>
                   <div className="tr-ladder-track">
                     {/* live bid/ask marker — scaled strictly between payload endpoints */}
@@ -265,9 +269,9 @@ export default function MarketReadout(props: MarketReadoutProps) {
                       <div
                         className="tr-ladder-price"
                         style={{ insetBlockStart: `${scale.pct(Math.max(snapshot.bid, snapshot.ask))}%` }}
-                        title={`ask ${formatPrice(snapshot.ask, digits)} / bid ${formatPrice(snapshot.bid, digits)}`}
+                        title={t("trading.tile.ask_bid_title", "ask {a} / bid {b}", { a: formatPrice(snapshot.ask, digits), b: formatPrice(snapshot.bid, digits) })}
                       >
-                        <span className="tr-ladder-price-lab">ask/bid</span>
+                        <span className="tr-ladder-price-lab">{t("trading.tile.ask_bid_lab", "ask/bid")}</span>
                       </div>
                     ) : null}
                     {zones.map((z, i) => {
@@ -301,17 +305,17 @@ export default function MarketReadout(props: MarketReadoutProps) {
                   </div>
                   <div className="tr-ladder-scale">
                     <span className="tr-ladder-end">{formatPrice(ladderLo, digits)}</span>
-                    <span className="tr-ladder-end-cap">window low</span>
+                    <span className="tr-ladder-end-cap">{t("trading.th.range_low", "window low")}</span>
                   </div>
                 </>
               ) : (
-                <div className="tr-ladder-empty">no price extent in the payload — nothing to scale</div>
+                <div className="tr-ladder-empty">{t("trading.empty.no_extent", "no price extent in the payload — nothing to scale")}</div>
               )}
             </div>
 
             <div className="tr-struct">
               <div className="tr-struct-group">
-                <span className="tr-struct-k">BOS breaks</span>
+                <span className="tr-struct-k">{t("trading.smc.bos", "BOS breaks")}</span>
                 <div className="tr-chips">
                   {bosLines.length ? (
                     bosLines.slice(-6).map((l, i) => (
@@ -325,7 +329,7 @@ export default function MarketReadout(props: MarketReadoutProps) {
                 </div>
               </div>
               <div className="tr-struct-group">
-                <span className="tr-struct-k">equilibrium</span>
+                <span className="tr-struct-k">{t("trading.smc.equilibrium", "equilibrium")}</span>
                 <div className="tr-chips">
                   {midlines.length ? (
                     midlines.map((m, i) => (
@@ -339,7 +343,7 @@ export default function MarketReadout(props: MarketReadoutProps) {
                 </div>
               </div>
               <div className="tr-struct-group">
-                <span className="tr-struct-k">liquidity sweeps</span>
+                <span className="tr-struct-k">{t("trading.smc.liquidity", "liquidity sweeps")}</span>
                 <div className="tr-chips">
                   {liqMarkers.length ? (
                     liqMarkers.slice(-6).map((m, i) => (
