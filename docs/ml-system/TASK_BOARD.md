@@ -93,4 +93,4 @@ The following tasks are strictly frozen from implementation until the human oper
 2. **[ML-GOV-002](tasks/ML-GOV-002.md)**: Designate the single canonical root model state machine: `PromotionState` (`governance.db`) vs `ModelStatus` (`lifecycle.db`).
 3. **[ML-EXP-002](tasks/ML-EXP-002.md)**: Empirical comparison decision: Retain and wire 3D TCN+Attention sequence buffer in live execution or officially retire 3D sequence modeling to favor 2D MLP ResNet.
 4. **[ML-FEAT-003](tasks/ML-FEAT-003.md)**: Approve live production gating criteria and infrastructure requirements for 70D schema adoption.
-5. **[ML-OBS-002](tasks/ML-OBS-002.md)**: Authorize activation of online fine-tuning on live broker demo/paper accounts under quarantined shadow buffers.- [ML-QA-009](tasks/ML-QA-009.md) — Push-Gate Bounded-Wait Determinism: Audit-Flush (roster candidate #7, CPU-time budget, no-deadlock contract kept hard) `[P2 | DONE (PR #422 open) | AGENT-QA]`
+5. **[ML-OBS-002](tasks/ML-OBS-002.md)**: Authorize activation of online fine-tuning on live broker demo/paper accounts under quarantined shadow buffers.
