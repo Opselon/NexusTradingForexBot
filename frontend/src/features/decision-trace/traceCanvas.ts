@@ -15,6 +15,13 @@
 import { NOT_OBSERVED, UNMAPPED } from "./traceGraph";
 import type { PositionedEdge, PositionedNode } from "./traceLayout";
 
+/**
+ * Translator seam: canvas-drawn markers are DISPLAY, so the caller (the
+ * React layer) passes `t` from useI18n. Optional keeps this file pure and
+ * unit-testable; without it markers render their English fallback.
+ */
+export type CanvasT = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
 export interface NodeVisual {
   node: PositionedNode;
   label: string;
@@ -49,17 +56,18 @@ export function nodeTone(node: PositionedNode): string {
   return "stage";
 }
 
-export function describeNode(node: PositionedNode): NodeVisual {
+export function describeNode(node: PositionedNode, t?: CanvasT): NodeVisual {
   const label = node.stage;
   const d = node.lastStatus;
+  const mark = (key: string, fb: string): string => (t ? t(key, fb) : fb);
   const bits: string[] = [];
   if (node.count > 1) bits.push(`${node.count}×`);
   if (d) bits.push(d);
-  if (node.unmapped) bits.push(UNMAPPED);
+  if (node.unmapped) bits.push(mark("trace.marker.unmapped", UNMAPPED));
   return {
     node,
     label,
-    sublabel: bits.length ? bits.join(" · ") : NOT_OBSERVED,
+    sublabel: bits.length ? bits.join(" · ") : mark("trace.marker.not_observed", NOT_OBSERVED),
     tone: nodeTone(node),
     pulse: false,
     width: NODE_W,
@@ -84,9 +92,9 @@ export function describeEdge(edge: PositionedEdge): EdgeVisual {
 
 import type { CanvasLayout } from "./traceLayout";
 
-export function describeCanvas(layout: CanvasLayout): { nodes: NodeVisual[]; edges: EdgeVisual[] } {
+export function describeCanvas(layout: CanvasLayout, t?: CanvasT): { nodes: NodeVisual[]; edges: EdgeVisual[] } {
   return {
-    nodes: layout.nodes.map(describeNode),
+    nodes: layout.nodes.map((n) => describeNode(n, t)),
     edges: layout.edges.map(describeEdge),
   };
 }

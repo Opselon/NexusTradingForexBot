@@ -3,7 +3,297 @@
  *
  * Pre-wired by the orchestrator (i18n-complete wave scaffold). Lanes add
  * entries here; `en` is the call-site fallback in JSX/TSX.
+ *
+ * Status / regime / side / outcome tokens are DISPLAY here (the raw tokens
+ * stay verbatim only in comparisons and payloads): a `trace.status.*`-style
+ * key carries the natural translation with the English token as fallback.
+ * Technical identifiers (MT5, XAUUSD, scalp_v1, 50D/70D, stage names, ids,
+ * paths, numeric codes) render verbatim in every language.
  */
 import type { FeatureMessages } from "@/lib/i18n";
 
-export const MESSAGES: FeatureMessages = {};
+export const MESSAGES: FeatureMessages = {
+  "trace.header.identity": { fa: "هویت زمان اجرا", de: "Laufzeit-Identität", es: "Identidad en tiempo de ejecución", ar: "هوية وقت التشغيل" },
+  "trace.header.engine_running": { fa: "موتور در حال اجرا", de: "Engine läuft", es: "Motor en ejecución", ar: "المحرك قيد التشغيل" },
+  "trace.header.engine_stopped": { fa: "موتور متوقف", de: "Engine gestoppt", es: "Motor detenido", ar: "المحرك متوقف" },
+  "trace.mode.live": { fa: "زنده", de: "Live", es: "En vivo", ar: "مباشر" },
+  "trace.mode.paper": { fa: "کاغذی", de: "Papier", es: "Papel", ar: "ورقي" },
+  "trace.mode.shadow": { fa: "سایه", de: "Schatten", es: "Sombra", ar: "ظل" },
+  "trace.mode.replay": { fa: "بازپخش", de: "Wiedergabe", es: "Repetición", ar: "إعادة" },
+  "trace.mode.backtest": { fa: "آزمون گذشته", de: "Backtest", es: "Backtest", ar: "اختبار تاريخي" },
+  "trace.regime.macro_news_freeze": { fa: "یخ‌زدگی اخبار کلان", de: "Makro-Nachrichten-Freeze", es: "Congelación por macro-noticias", ar: "تجميد أخبار ماكرو" },
+  "trace.regime.high_spread_chop": { fa: "پرنوسه با اسپرد بالا", de: "Chop bei hohem Spread", es: "Chop con spread alto", ar: "تذبذب بانتشار مرتفع" },
+  "trace.regime.volatility_expansion": { fa: "گسترش نوسانات", de: "Volatilitätsexpansion", es: "Expansión de volatilidad", ar: "توسع التقلب" },
+  "trace.regime.trending_momentum": { fa: "روند شتاب‌دار", de: "Trend-Momentum", es: "Momento en tendencia", ar: "زخم الاتجاه" },
+  "trace.regime.ranging_mean_reversion": { fa: "بازه‌ای با بازگشت به میانگین", de: "Seitwärts mit Mean Reversion", es: "Rango con reversión a la media", ar: "عرضي مع الارتداد للمتوسط" },
+  "trace.verdict.timeout": { fa: "مهلت", de: "Zeitüberschreitung", es: "Tiempo agotado", ar: "انتهاء المهلة" },
+  "trace.tab.topo_pending": { fa: "توپولوژی —", de: "Topologie —", es: "topología —", ar: "الطوبولوجيا —" },
+  "trace.replay.position": { fa: "{pos} / {total} رویداد", de: "{pos} / {total} Ereignisse", es: "{pos} / {total} eventos", ar: "{pos} / {total} أحداث" },
+  "trace.replay.exit_aria": { fa: "خروج از بازپخش", de: "Wiederholung verlassen", es: "Salir de la repetición", ar: "الخروج من إعادة التشغيل" },
+  "trace.inspector.contract_value": { fa: "{contract} (منبع: {source})", de: "{contract} (Quelle: {source})", es: "{contract} (fuente: {source})", ar: "{contract} (المصدر: {source})" },
+  // ---- header rail: labels
+  "trace.header.eyebrow": { fa: "قابلیت مشاهده توپولوژی زمان اجرا", de: "Laufzeit-Topologie-Observability", es: "Observabilidad de topología en tiempo de ejecución", ar: "إمكانية رصد طوبولوجيا وقت التشغيل" },
+  "trace.header.title": { fa: "ردیابی تصمیم", de: "Entscheidungs-Trace", es: "Trazo de decisiones", ar: "تتبع القرار" },
+  "trace.header.engine": { fa: "موتور", de: "Engine", es: "Motor", ar: "المحرك" },
+  "trace.header.mode": { fa: "حالت", de: "Modus", es: "Modo", ar: "الوضع" },
+  "trace.header.mt5": { fa: "MT5", de: "MT5", es: "MT5", ar: "MT5" },
+  "trace.header.symbol": { fa: "نماد", de: "Symbol", es: "Símbolo", ar: "الرمز" },
+  "trace.header.tf": { fa: "بازه", de: "TF", es: "TF", ar: "الإطار" },
+  "trace.header.model": { fa: "مدل", de: "Modell", es: "Modelo", ar: "النموذج" },
+  "trace.header.regime": { fa: "رژیم", de: "Regime", es: "Régimen", ar: "النظام" },
+  "trace.header.observer": { fa: "ناظر", de: "Observer", es: "Observador", ar: "المراقب" },
+  "trace.header.schema": { fa: "نسخه ساختار", de: "Schema", es: "Esquema", ar: "المخطط" },
+  "trace.header.note": { fa: "پنجره مشاهده موتور زنده — زمان اجرا تنها مرجع حقیقت است.", de: "Observability-Fenster in die Live-Engine — die Laufzeit ist die einzige Wahrheitsquelle.", es: "Ventana de observabilidad del motor en vivo — el tiempo de ejecución es la única fuente de verdad.", ar: "نافذة رصد المحرك المباشر — وقت التشغيل هو المصدر الوحيد للحقيقة." },
+
+  // ---- engine status (display labels for the runtime status token)
+  "trace.status.running": { fa: "در حال اجرا", de: "Läuft", es: "En ejecución", ar: "قيد التشغيل" },
+  "trace.status.stopped": { fa: "متوقف", de: "Gestoppt", es: "Detenido", ar: "متوقف" },
+  "trace.status.unknown": { fa: "نامشخص", de: "Unbekannt", es: "Desconocido", ar: "غير معروف" },
+
+  // ---- observer lifecycle status (ObserverStatus tokens, display side)
+  "trace.observer.off": { fa: "خاموش", de: "Aus", es: "Apagado", ar: "متوقف" },
+  "trace.observer.starting": { fa: "در حال راه‌اندازی", de: "Startet", es: "Iniciando", ar: "قيد البدء" },
+  "trace.observer.active": { fa: "فعال", de: "Aktiv", es: "Activo", ar: "نشط" },
+  "trace.observer.stopping": { fa: "در حال توقف", de: "Stoppt", es: "Deteniendo", ar: "قيد الإيقاف" },
+  "trace.observer.error": { fa: "خطا", de: "Fehler", es: "Error", ar: "خطأ" },
+
+  // ---- stream status (TraceStreamStatus tokens, display side)
+  "trace.stream.connected": { fa: "متصل", de: "Verbunden", es: "Conectado", ar: "متصل" },
+  "trace.stream.connecting": { fa: "در حال اتصال", de: "Verbinden…", es: "Conectando…", ar: "قيد الاتصال…" },
+  "trace.stream.reconnecting": { fa: "در حال اتصال مجدد", de: "Erneut verbinden…", es: "Reconectando…", ar: "إعادة الاتصال…" },
+  "trace.stream.disconnected": { fa: "قطع شده", de: "Getrennt", es: "Desconectado", ar: "غير متصل" },
+  "trace.stream.failed": { fa: "ناموفق", de: "Fehlgeschlagen", es: "Fallido", ar: "فشل" },
+  "trace.stream.error": { fa: "خطا", de: "Fehler", es: "Error", ar: "خطأ" },
+
+  // ---- decision verdict / outcome vocabulary (display side)
+  "trace.verdict.approved": { fa: "تأیید شد", de: "Genehmigt", es: "Aprobado", ar: "موافق عليه" },
+  "trace.verdict.rejected": { fa: "رد شد", de: "Abgelehnt", es: "Rechazado", ar: "مرفوض" },
+  "trace.verdict.executed": { fa: "اجرا شد", de: "Ausgeführt", es: "Ejecutado", ar: "منفذ" },
+  "trace.verdict.dispatched": { fa: "ارسال شد", de: "Versendet", es: "Enviado", ar: "مُرسل" },
+  "trace.verdict.no_trade": { fa: "بدون معامله", de: "Kein Trade", es: "Sin operación", ar: "بدون صفقة" },
+  "trace.verdict.pass": { fa: "عبور", de: "Bestanden", es: "Aprobado", ar: "ناجح" },
+  "trace.verdict.error": { fa: "خطا", de: "Fehler", es: "Error", ar: "خطأ" },
+  "trace.verdict.failed": { fa: "ناموفق", de: "Fehlgeschlagen", es: "Fallido", ar: "فشل" },
+
+  // ---- evidence-absence honesty markers (display side)
+  "trace.marker.unknown": { fa: "نامشخص", de: "Unbekannt", es: "Desconocido", ar: "غير معروف" },
+  "trace.marker.not_observed": { fa: "مشاهده نشد", de: "Nicht beobachtet", es: "No observado", ar: "لم يُلاحظ" },
+  "trace.marker.not_reached": { fa: "اجرا نشد", de: "Nicht erreicht", es: "No alcanzado", ar: "لم يتم الوصول إليه" },
+  "trace.marker.provenance_gap": { fa: "شکاف تبار", de: "Provenienzlücke", es: "Brecha de procedencia", ar: "فجوة المصدر" },
+  "trace.marker.unmapped": { fa: "نامشخص", de: "Nicht zugeordnet", es: "No mapeado", ar: "غير مُطابق" },
+  "trace.marker.insufficient_data": { fa: "داده ناکافی", de: "Unzureichende Daten", es: "Datos insuficientes", ar: "بيانات غير كافية" },
+  "trace.marker.order_uncertain": { fa: "وضعیت سفارش نامشخص", de: "Order ungewiss", es: "Orden incierta", ar: "أمر غير مؤكد" },
+  "trace.marker.missing": { fa: "موجود نیست", de: "Fehlend", es: "Faltante", ar: "مفقود" },
+
+  // ---- source badges (inspector provenance)
+  "trace.source.live": { fa: "زنده (زمان اجرا)", de: "LIVE (Laufzeit)", es: "EN VIVO (tiempo de ejecución)", ar: "مباشر (وقت التشغيل)" },
+  "trace.source.historical": { fa: "تاریخی (آرشیو)", de: "HISTORISCH (Archiv)", es: "HISTÓRICO (archivo)", ar: "تاريخي (الأرشيف)" },
+  "trace.source.replay": { fa: "بازپخش", de: "REPLAY", es: "REPETICIÓN", ar: "إعادة" },
+
+  // ---- toolbar: buttons, statuses, metric labels
+  "trace.toolbar.region": { fa: "تلمتری ناظر", de: "Observer-Telemetrie", es: "Telemetría del observador", ar: "قياس المراقب عن بُعد" },
+  "trace.toolbar.observer": { fa: "ناظر", de: "Observer", es: "Observador", ar: "المراقب" },
+  "trace.toolbar.detailed_active": { fa: "ردیابی دقیق فعال است", de: "Detailliertes Tracing aktiv", es: "Trazo detallado activo", ar: "التتبع التفصيلي نشط" },
+  "trace.toolbar.low_overhead": { fa: "مسیر سبک (بدون ناظر)", de: "Niedrig-Overhead-Pfad (ohne Observer)", es: "Ruta de bajo coste (sin observadores)", ar: "مسار منخفض التكلفة (بدون مراقبين)" },
+  "trace.toolbar.start": { fa: "شروع ردیابی دقیق", de: "Detailliertes Tracing starten", es: "Iniciar trazo detallado", ar: "بدء التتبع التفصيلي" },
+  "trace.toolbar.starting": { fa: "در حال شروع…", de: "Startet…", es: "Iniciando…", ar: "قيد البدء…" },
+  "trace.toolbar.stop": { fa: "توقف", de: "Stoppen", es: "Detener", ar: "إيقاف" },
+  "trace.toolbar.stopping": { fa: "در حال توقف…", de: "Stoppt…", es: "Deteniendo…", ar: "قيد الإيقاف…" },
+  "trace.toolbar.resume": { fa: "از سرگیری نظرسنجی", de: "Polling fortsetzen", es: "Reanudar sondeo", ar: "استئناف الاستطلاع" },
+  "trace.toolbar.pause": { fa: "توقف موقت نظرسنجی", de: "Polling pausieren", es: "Pausar sondeo", ar: "إيقاف الاستطلاع مؤقتًا" },
+  "trace.toolbar.metrics.events_captured": { fa: "رویدادهای ثبت‌شده", de: "Ereignisse erfasst", es: "Eventos capturados", ar: "الأحداث المسجلة" },
+  "trace.toolbar.metrics.decisions": { fa: "تصمیم‌ها", de: "Entscheidungen", es: "Decisiones", ar: "القرارات" },
+  "trace.toolbar.metrics.p99_worst": { fa: "تأخیر p۹۹ (کندترین مرحله)", de: "Latenz p99 (langsamste Phase)", es: "Latencia p99 (fase más lenta)", ar: "زمن الاستجابة p99 (أبطأ مرحلة)" },
+  "trace.toolbar.metrics.stages_timed": { fa: "مراحل زمان‌سنجی", de: "Phasen gemessen", es: "Fases cronometradas", ar: "المراحل المُؤقتة" },
+  "trace.toolbar.metrics.sessions": { fa: "نشست‌ها", de: "Sitzungen", es: "Sesiones", ar: "الجلسات" },
+  "trace.toolbar.metrics.subscribers": { fa: "مشترکین", de: "Abonnenten", es: "Suscriptores", ar: "المشتركون" },
+  "trace.toolbar.metrics.coalesced": { fa: "ترکیب‌شده", de: "Zusammengefasst", es: "Consolidados", ar: "المُدمجة" },
+  "trace.toolbar.metrics.dropped_visual": { fa: "حذف‌شده (نمایشی)", de: "Verworfen (visuell)", es: "Descartados (visual)", ar: "المُتجاهلة (مرئية)" },
+  "trace.toolbar.metrics.ring_usage": { fa: "میزان استفاده از حلقه", de: "Ring-Auslastung", es: "Uso del anillo", ar: "استخدام الحلقة" },
+
+  // ---- decisions feed / historical search
+  "trace.decisions.title": { fa: "تصمیم‌ها", de: "Entscheidungen", es: "Decisiones", ar: "القرارات" },
+  "trace.decisions.count": { fa: "{total} ثبت‌شده · نمایش {shown}", de: "{total} erfasst · {shown} angezeigt", es: "{total} registradas · mostrando {shown}", ar: "{total} مسجلة · عرض {shown}" },
+  "trace.decisions.search_placeholder": { fa: "جستجوی شناسه / نماد / مدل / دلیل…", de: "id / Symbol / Modell / Grund suchen…", es: "buscar id / símbolo / modelo / razón…", ar: "ابحث عن المعرّف / الرمز / النموذج / السبب…" },
+  "trace.decisions.search_aria": { fa: "جستجوی تصمیم‌ها", de: "Entscheidungen suchen", es: "Buscar decisiones", ar: "البحث عن القرارات" },
+  "trace.decisions.loading": { fa: "در حال بارگذاری تصمیم‌های ثبت‌شده…", de: "Aufgezeichnete Entscheidungen werden geladen…", es: "Cargando decisiones registradas…", ar: "جارٍ تحميل القرارات المسجلة…" },
+  "trace.decisions.empty_message": { fa: "هیچ تصمیمی در این نشست ثبت نشده است.", de: "In dieser Sitzung wurden keine Entscheidungen aufgezeichnet.", es: "No se registraron decisiones en esta sesión.", ar: "لم تُسجل أي قرارات في هذه الجلسة." },
+  "trace.decisions.empty_hint": { fa: "تصمیم‌ها هم‌زمان با ارزیابی شرایط بازار بر اساس مدل ظاهر می‌شوند.", de: "Entscheidungen erscheinen, sobald die Engine Marktbedingungen gegen das Modell prüft.", es: "Las decisiones aparecen a medida que el motor evalúa las condiciones del mercado frente al modelo.", ar: "تظهر القرارات أثناء تقييم المحرك لظروف السوق وفقًا للنموذج." },
+  "trace.decisions.row_title": { fa: "{id} · {symbol} · {model} — برای مقایسه دوبار کلیک کنید", de: "{id} · {symbol} · {model} — Doppelklick zum Vergleichen", es: "{id} · {symbol} · {model} — doble clic para comparar", ar: "{id} · {symbol} · {model} — انقر مرتين للمقارنة" },
+
+  // ---- decision feed filter chips
+  "trace.filter.all": { fa: "همه", de: "Alle", es: "Todas", ar: "الكل" },
+  "trace.filter.active": { fa: "فعال", de: "Aktiv", es: "Activas", ar: "نشط" },
+  "trace.filter.passed": { fa: "تأییدشده", de: "Bestanden", es: "Aprobadas", ar: "ناجحة" },
+  "trace.filter.rejected": { fa: "ردشده", de: "Abgelehnt", es: "Rechazadas", ar: "مرفوضة" },
+  "trace.filter.error": { fa: "خطا", de: "Fehler", es: "Error", ar: "خطأ" },
+
+  // ---- events feed
+  "trace.events.empty_title": { fa: "هیچ رویدادی مشاهده نشد", de: "KEINE EREIGNISSE BEOBACHTET", es: "NINGÚN EVENTO OBSERVADO", ar: "لم تُلاحظ أي أحداث" },
+  "trace.events.empty_sub": { fa: "جریان متصل است اما هنوز هیچ رویداد تصمیمی ثبت نشده است.", de: "Der Stream ist verbunden, aber noch kein Entscheidungsereignis wurde aufgezeichnet.", es: "El flujo está conectado pero aún no se ha registrado ningún evento de decisión.", ar: "الاتصال قائم ولكن لم يُسجل أي حدث قرار بعد." },
+  "trace.events.row_title": { fa: "{stage} @ {ts} · شماره {seq}{unmapped}{gap}", de: "{stage} @ {ts} · Seq {seq}{unmapped}{gap}", es: "{stage} @ {ts} · n.º {seq}{unmapped}{gap}", ar: "{stage} @ {ts} · تسلسل {seq}{unmapped}{gap}" },
+  "trace.events.row_unmapped": { fa: " · نامشخص", de: " · NICHT ZUGEWIESEN", es: " · NO MAPEADO", ar: " · غير مُطابق" },
+  "trace.events.row_gap": { fa: " · شکاف تبار", de: " · PROVENIENZLÜCKE", es: " · BRECHA DE PROCEDENCIA", ar: " · فجوة المصدر" },
+  "trace.events.aria": { fa: "رویدادهای تصمیم زنده", de: "Live-Entscheidungsereignisse", es: "Eventos de decisión en vivo", ar: "أحداث القرار المباشرة" },
+
+  // ---- topology canvas
+  "trace.canvas.aria": { fa: "توپولوژی زمان اجرا", de: "Laufzeit-Topologie", es: "Topología en tiempo de ejecución", ar: "طوبولوجيا وقت التشغيل" },
+  "trace.canvas.node_aria": { fa: "مرحله {stage}، {count} رویداد", de: "Phase {stage}, {count} Ereignisse", es: "Fase {stage}, {count} eventos", ar: "المرحلة {stage}، {count} أحداث" },
+  "trace.canvas.empty_title": { fa: "در حال مشاهده زمان اجرا — هنوز هیچ مسیر تصمیمی مشاهده نشده است", de: "LAUFZEIT BEOBACHTET — NOCH KEIN ENTSCHEIDUNGSPFAD BEOBACHTET", es: "OBSERVANDO EL TIEMPO DE EJECUCIÓN — AÚN NINGÚNA RUTA DE DECISIÓN OBSERVADA", ar: "جارٍ رصد وقت التشغيل — لم يُلاحظ أي مسار قرار بعد" },
+  "trace.canvas.empty_sub": { fa: "این نمودار فقط از رویدادهای تصمیمی واقعی ساخته می‌شود. گره‌ها دقیقاً زمانی ظاهر می‌شوند که زمان اجرا اجرای هر مرحله را ثابت کند.", de: "Der Graph entsteht ausschließlich aus realen Entscheidungsereignissen. Knoten erscheinen genau dann, wenn die Laufzeit belegt, dass eine Phase lief.", es: "El gráfico se deriva solo de eventos de decisión reales. Los nodos aparecen exactamente cuando el tiempo de ejecución demuestra que cada fase se ejecutó.", ar: "يُشتق الرسم البياني فقط من أحداث القرار الحقيقية. تظهر العقد بالضبط عندما يُثبت وقت التشغيل تشغيل كل مرحلة." },
+  "trace.canvas.zoom_in": { fa: "بزرگ‌نمایی", de: "Heranzoomen", es: "Acercar", ar: "تكبير" },
+  "trace.canvas.zoom_out": { fa: "کوچک‌نمایی", de: "Herauszoomen", es: "Alejar", ar: "تصغير" },
+  "trace.canvas.reset": { fa: "بازنشانی نما", de: "Ansicht zurücksetzen", es: "Restablecer vista", ar: "إعادة ضبط العرض" },
+  "trace.canvas.zoom_controls": { fa: "کنترل‌های بزرگ‌نمایی", de: "Zoom-Steuerung", es: "Controles de zoom", ar: "ضوابط التكبير" },
+  "trace.canvas.legend_observed": { fa: "مرحله مشاهده‌شده", de: "beobachtete Phase", es: "fase observada", ar: "مرحلة مُلاحَظة" },
+  "trace.canvas.legend_terminal": { fa: "پایانی (شواهد اجرا)", de: "Endstufe (Ausführungsnachweis)", es: "terminal (evidencia de ejecución)", ar: "نهائي (دليل التنفيذ)" },
+  "trace.canvas.legend_unmapped": { fa: "نامشخص", de: "NICHT ZUGEWIESEN", es: "NO MAPEADO", ar: "غير مُطابق" },
+  "trace.canvas.legend_gap": { fa: "شکاف تبار", de: "PROVENIENZLÜCKE", es: "BRECHA DE PROCEDENCIA", ar: "فجوة المصدر" },
+
+  // ---- latency timeline
+  "trace.timeline.aria": { fa: "جدول تأخیر مراحل", de: "Phasen-Latenzzeitachse", es: "Cronograma de latencia por fase", ar: "جدول زمن الاستجابة للمراحل" },
+  "trace.timeline.empty_title": { fa: "هیچ تأخیری مشاهده نشد", de: "KEINE LATENZ BEOBACHTET", es: "NINGUNA LATENCIA OBSERVADA", ar: "لم يُلاحظ أي زمن استجابة" },
+  "trace.timeline.empty_sub": { fa: "این رد هنوز زمان‌بندی مرحله‌ای ندارد — زمان‌بندی با انتشار رویدادهای مرحله‌ای توسط زمان اجرا ظاهر می‌شود.", de: "Der Trace enthält noch kein Phasen-Timing — Timing erscheint, sobald die Laufzeit Phasenereignisse emittiert.", es: "El trazo aún no contiene sincronización de fases — aparece a medida que el tiempo de ejecución emite eventos de fase.", ar: "لا يحوي التتبع بعد أي توقيت للمراحل — يظهر التوقيت عندما يُصدر وقت التشغيل أحداث المرحلة." },
+  "trace.timeline.not_observed": { fa: "مشاهده نشد", de: "NICHT BEOBACHTET", es: "NO OBSERVADO", ar: "غير مُلاحَظ" },
+  "trace.timeline.head": { fa: "جدول زمانی تأخیر — {id}", de: "Latenz-Zeitachse — {id}", es: "Cronograma de latencia — {id}", ar: "الجدول الزمني لزمن الاستجابة — {id}" },
+  "trace.timeline.fallback_id": { fa: "رد", de: "Trace", es: "trazo", ar: "تتبع" },
+
+  // ---- replay controls
+  "trace.replay.start": { fa: "بازپخش رد", de: "Trace abspielen", es: "Reproducir trazo", ar: "إعادة تشغيل التتبع" },
+  "trace.replay.start_title": { fa: "این رد را مرحله‌به‌مرحله بازپخش کنید (فقط رویدادهای ثبت‌شده — موتور هرگز برگردانده نمی‌شود)", de: "Diesen Trace schrittweise abspielen (nur aufgezeichnete Ereignisse — die Engine wird nie zurückgespult)", es: "Reproducir este trazo paso a paso (solo eventos grabados — el motor nunca se rebobina)", ar: "أعد تشغيل هذا التتبع خطوة بخطوة (الأحداث المسجلة فقط — لا يُعاد المحرك أبدًا)" },
+  "trace.replay.aria": { fa: "کنترل‌های بازپخش", de: "Replay-Steuerung", es: "Controles de repetición", ar: "ضوابط إعادة التشغيل" },
+  "trace.replay.prev": { fa: "رویداد قبلی", de: "Vorheriges Ereignis", es: "Evento anterior", ar: "الحدث السابق" },
+  "trace.replay.next": { fa: "رویداد بعدی", de: "Nächstes Ereignis", es: "Evento siguiente", ar: "الحدث التالي" },
+  "trace.replay.play": { fa: "پخش بازپخش", de: "Wiederholung abspielen", es: "Reproducir repetición", ar: "تشغيل إعادة التشغيل" },
+  "trace.replay.pause": { fa: "توقف موقت بازپخش", de: "Wiederholung pausieren", es: "Pausar repetición", ar: "إيقاف إعادة التشغيل مؤقتًا" },
+  "trace.replay.exit": { fa: "خروج از بازپخش", de: "Replay verlassen", es: "Salir de la repetición", ar: "الخروج من إعادة التشغيل" },
+  "trace.replay.speed_aria": { fa: "سرعت", de: "Geschwindigkeit", es: "Velocidad", ar: "السرعة" },
+
+  // ---- compare panel
+  "trace.compare.aria": { fa: "مقایسه A با B", de: "A vs B vergleichen", es: "Comparar A vs B", ar: "مقارنة A مع B" },
+  "trace.compare.title": { fa: "مقایسه A با B", de: "A vs B vergleichen", es: "Comparar A vs B", ar: "مقارنة A مع B" },
+  "trace.compare.close": { fa: "بستن مقایسه", de: "Vergleich schließen", es: "Cerrar comparación", ar: "إغلاق المقارنة" },
+  "trace.compare.decision": { fa: "تصمیم", de: "Entscheidung", es: "Decisión", ar: "القرار" },
+  "trace.compare.symbol": { fa: "نماد", de: "Symbol", es: "Símbolo", ar: "الرمز" },
+  "trace.compare.status": { fa: "وضعیت", de: "Status", es: "Estado", ar: "الحالة" },
+  "trace.compare.action": { fa: "عمل", de: "Aktion", es: "Acción", ar: "الإجراء" },
+  "trace.compare.reason_code": { fa: "کد دلیل", de: "Grundcode", es: "Código de motivo", ar: "رمز السبب" },
+  "trace.compare.rejection": { fa: "رد", de: "Ablehnung", es: "Rechazo", ar: "الرفض" },
+  "trace.compare.model": { fa: "مدل", de: "Modell", es: "Modelo", ar: "النموذج" },
+  "trace.compare.model_version": { fa: "نسخه مدل", de: "Modellversion", es: "Versión del modelo", ar: "إصدار النموذج" },
+  "trace.compare.contract": { fa: "قرارداد", de: "Vertrag", es: "Contrato", ar: "العقد" },
+  "trace.compare.regime": { fa: "رژیم", de: "Regime", es: "Régimen", ar: "النظام" },
+  "trace.compare.started": { fa: "شروع", de: "Gestartet", es: "Iniciado", ar: "بدأ" },
+  "trace.compare.latency": { fa: "تأخیر (میلی‌ثانیه)", de: "Latenz (ms)", es: "Latencia (ms)", ar: "زمن الاستجابة (مللي ثانية)" },
+
+  // ---- inspector: titles, labels, sections
+  "trace.inspector.aria": { fa: "بازرس رد", de: "Trace-Inspektor", es: "Inspector de trazos", ar: "مفتش التتبع" },
+  "trace.inspector.title": { fa: "بازرس رد", de: "Trace-Inspektor", es: "Inspector de trazos", ar: "مفتش التتبع" },
+  "trace.inspector.close": { fa: "بستن بازرس", de: "Inspektor schließen", es: "Cerrar inspector", ar: "إغلاق المفتش" },
+  "trace.inspector.empty_title": { fa: "هیچ ردی انتخاب نشده است", de: "KEIN TRACE AUSGEWÄHLT", es: "NINGÚN TRAZO SELECCIONADO", ar: "لم يتم اختيار أي تتبع" },
+  "trace.inspector.empty_sub": { fa: "برای بازسازی زنجیره علّی آن فقط از رویدادهای مشاهده‌شده، یک ردیف تصمیم یا یک رویداد انتخاب کنید.", de: "Wähle eine Entscheidungszeile oder ein Ereignis, um seine Kausalkette ausschließlich aus beobachteten Ereignissen zu rekonstruieren.", es: "Selecciona una fila de decisión o un evento para reconstruir su cadena causal solo a partir de eventos observados.", ar: "اختر صف قرار أو حدث لإعادة بناء سلسلته السببية من الأحداث المُلاحَظة فقط." },
+  "trace.inspector.decision": { fa: "تصمیم", de: "Entscheidung", es: "Decisión", ar: "القرار" },
+  "trace.inspector.sec_identity": { fa: "۱ · هویت تصمیم", de: "1 · Entscheidungskennung", es: "1 · Identidad de la decisión", ar: "١ · هوية القرار" },
+  "trace.inspector.sec_model": { fa: "۲ · خاستگاه مدل", de: "2 · Modell-Provenienz", es: "2 · Procedencia del modelo", ar: "٢ · مصدر النموذج" },
+  "trace.inspector.sec_regime": { fa: "۳ · رژیم و دروازه‌ها", de: "3 · Regime & Gates", es: "3 · Régimen y puertas", ar: "٣ · النظام والبوابات" },
+  "trace.inspector.sec_risk": { fa: "۴ · رأی ریسک", de: "4 · Risiko-Urteil", es: "4 · Veredicto de riesgo", ar: "٤ · حكم المخاطرة" },
+  "trace.inspector.sec_exec": { fa: "۵ · شواهد اجرا", de: "5 · Ausführungsnachweis", es: "5 · Evidencia de ejecución", ar: "٥ · دليل التنفيذ" },
+  "trace.inspector.sec_why": { fa: "۶ · نتیجه (چرایی قطعی)", de: "6 · Ergebnis (deterministisches WARUM)", es: "6 · Resultado (POR QUÉ determinista)", ar: "٦ · النتيجة (السبب الحتمي)" },
+  "trace.inspector.sec_gaps": { fa: "چرا مرحله پایین‌دست اجرا نشد", de: "Warum die Nachfolgestufe NICHT erreicht wurde", es: "Por qué la etapa posterior NO se alcanzó", ar: "لماذا لم يتم الوصول للمرحلة اللاحقة" },
+  "trace.inspector.sec_source": { fa: "منبع (مبتنی بر واقعیت، غیر استنباطی)", de: "QUELLE (faktengestützt, nicht inferiert)", es: "FUENTE (basada en hechos, no inferida)", ar: "المصدر (مبني على الوقائع، لا الاستنتاج)" },
+  "trace.inspector.f_decision_id": { fa: "شناسه تصمیم", de: "decision_id", es: "decision_id", ar: "معرّف القرار" },
+  "trace.inspector.f_trace_id": { fa: "شناسه رد", de: "trace_id", es: "trace_id", ar: "معرّف التتبع" },
+  "trace.inspector.f_symbol": { fa: "نماد", de: "symbol", es: "symbol", ar: "الرمز" },
+  "trace.inspector.f_recorded_at": { fa: "زمان ثبت", de: "recorded_at", es: "recorded_at", ar: "وقت التسجيل" },
+  "trace.inspector.f_verdict": { fa: "رأی", de: "verdict", es: "verdict", ar: "الحكم" },
+  "trace.inspector.f_e2e_latency": { fa: "تأخیر سرتاسری", de: "Ende-zu-Ende-Latenz", es: "Latencia de extremo a extremo", ar: "زمن الاستجابة من الطرف للطرف" },
+  "trace.inspector.f_model_id": { fa: "شناسه مدل", de: "model_id", es: "model_id", ar: "معرّف النموذج" },
+  "trace.inspector.f_model_version": { fa: "نسخه مدل", de: "model_version", es: "model_version", ar: "إصدار النموذج" },
+  "trace.inspector.f_artifact": { fa: "اثر انگشت artifact", de: "Artefakt-Fingerabdruck", es: "Huella del artefacto", ar: "بصمة القطعة" },
+  "trace.inspector.f_contract_evidence": { fa: "شواهد قرارداد", de: "Vertragsnachweis", es: "Evidencia de contrato", ar: "دليل العقد" },
+  "trace.inspector.f_feature_dim": { fa: "ابعاد ویژگی", de: "feature_dim", es: "feature_dim", ar: "أبعاد الميزة" },
+  "trace.inspector.f_schema_hash": { fa: "درهم‌ساختار", de: "schema_hash", es: "schema_hash", ar: "تجزئة المخطط" },
+  "trace.inspector.f_prediction": { fa: "پیش‌بینی", de: "prediction", es: "prediction", ar: "التنبؤ" },
+  "trace.inspector.f_probabilities": { fa: "احتمالات", de: "probabilities", es: "probabilities", ar: "الاحتمالات" },
+  "trace.inspector.f_regime": { fa: "رژیم", de: "regime", es: "regime", ar: "النظام" },
+  "trace.inspector.f_policy_branch": { fa: "شاخه سیاست", de: "Policy-Branch", es: "rama de política", ar: "فرع السياسة" },
+  "trace.inspector.f_rule": { fa: "قانون", de: "rule", es: "rule", ar: "القاعدة" },
+  "trace.inspector.f_actual_vs_required": { fa: "مقدار واقعی در برابر مقدار لازم", de: "Ist vs. Soll", es: "actual vs requerido", ar: "الفعلي مقابل المطلوب" },
+  "trace.inspector.f_not_reached": { fa: "اجرا نشد", de: "not reached", es: "no alcanzado", ar: "لم يتم الوصول" },
+  "trace.inspector.f_risk_verdict": { fa: "رأی ریسک", de: "risk verdict", es: "veredicto de riesgo", ar: "حكم المخاطرة" },
+  "trace.inspector.f_rejection_stage": { fa: "مرحله رد", de: "Ablehnungs-Stage", es: "fase de rechazo", ar: "مرحلة الرفض" },
+  "trace.inspector.f_cause": { fa: "علت", de: "cause", es: "cause", ar: "السبب" },
+  "trace.inspector.f_exec_status": { fa: "وضعیت اجرا", de: "Ausführungsstatus", es: "estado de ejecución", ar: "حالة التنفيذ" },
+  "trace.inspector.f_order_id": { fa: "شناسه سفارش", de: "order_id", es: "order_id", ar: "معرّف الأمر" },
+  "trace.inspector.f_gateway_reached": { fa: "دستیابی به دروازه", de: "Gateway erreicht", es: "gateway alcanzado", ar: "تم الوصول للبوابة" },
+  "trace.inspector.f_gateway": { fa: "دروازه", de: "gateway", es: "gateway", ar: "البوابة" },
+  "trace.inspector.f_gateway_state": { fa: "وضعیت دروازه", de: "Gateway-Status", es: "estado del gateway", ar: "حالة البوابة" },
+  "trace.inspector.f_ticket": { fa: "تیکت", de: "ticket", es: "ticket", ar: "التذكرة" },
+  "trace.inspector.f_latency_by_stage": { fa: "تأخیر به تفکیک مرحله", de: "Latenz nach Phase", es: "Latencia por fase", ar: "زمن الاستجابة حسب المرحلة" },
+  "trace.inspector.gateway_reached_yes": { fa: "بله (شواهد پاسخ مشاهده شد)", de: "JA (Antwortnachweis beobachtet)", es: "SÍ (evidencia de respuesta observada)", ar: "نعم (دُلل على الاستجابة)" },
+  "trace.inspector.gateway_reached_no": { fa: "هیچ پاسخی مشاهده نشد", de: "KEINE ANTWORT BEOBACHTET", es: "NINGUNA RESPUESTA OBSERVADA", ar: "لم تُلاحظ أي استجابة" },
+  "trace.inspector.evidence_basis": { fa: "مبنای شواهد", de: "Evidenzbasis", es: "base de evidencia", ar: "أساس الدليل" },
+  "trace.inspector.evidence_count": { fa: "{n} رویداد مشاهده‌شده", de: "{n} beobachtete(s) Ereignis(se)", es: "{n} evento(s) observado(s)", ar: "{n} حدث/أحداث مُلاحَظة" },
+  "trace.inspector.selected_frame": { fa: "قاب انتخاب‌شده", de: "Ausgewählter Frame", es: "fotograma seleccionado", ar: "الإطار المحدد" },
+  "trace.inspector.frame_live": { fa: "زنده", de: "live", es: "en vivo", ar: "مباشر" },
+  "trace.inspector.notreached_hint": { fa: "هیچ رویدادی برای این مرحله مشاهده نشد (شکاف تبار / اجرا نشد)", de: "kein beobachtetes Ereignis für diese Phase (PROVENIENZLÜCKE / nicht erreicht)", es: "ningún evento observado para esta fase (BRECHA DE PROCEDENCIA / no alcanzado)", ar: "لا يوجد حدث مُلاحَظ لهذه المرحلة (فجوة المصدر / لم يتم الوصول)" },
+  "trace.inspector.why_cause": { fa: "علت: {cause}", de: "URSACHE: {cause}", es: "CAUSA: {cause}", ar: "السبب: {cause}" },
+  "trace.inspector.why_notreached": { fa: " · اجرا نشد: {stages}", de: " · NICHT ERREICHT: {stages}", es: " · NO ALCANZADO: {stages}", ar: " · لم يتم الوصول: {stages}" },
+
+  // ---- stage evidence panel (aside)
+  "trace.stage.aria": { fa: "شواهد مرحله {stage}", de: "Phasen-Evidenz {stage}", es: "Evidencia de la fase {stage}", ar: "أدلة المرحلة {stage}" },
+  "trace.stage.title": { fa: "شواهد مرحله — {stage}", de: "Phasen-Evidenz — {stage}", es: "Evidencia de fase — {stage}", ar: "أدلة المرحلة — {stage}" },
+  "trace.stage.meta": { fa: "{count} رویداد مشاهده‌شده در همه ردها", de: "{count} beobachtete(s) Ereignis(se) über alle Traces", es: "{count} evento(s) observado(s) en todos los trazos", ar: "{count} حدث/أحداث مُلاحَظة في كل التتبعات" },
+
+  // ---- banners
+  "trace.banner.failed": { fa: "قابلیت مشاهده آفلاین — جریان ناموفق بود؛ نظرسنجی ادامه دارد.", de: "OBSERVABILITY OFFLINE — Stream fehlgeschlagen; Polling läuft weiter.", es: "OBSERVABILIDAD FUERA DE LÍNEA — el flujo falló; el sondeo continúa.", ar: "الرصد غير متصل — فشل التدفق؛ يستمر الاستطلاع." },
+  "trace.banner.reconnecting": { fa: "در حال اتصال مجدد به جریان ناظر…", de: "Erneute Verbindung zum Observer-Stream…", es: "Reconectando al flujo del observador…", ar: "إعادة الاتصال بتدفق المراقب…" },
+  "trace.banner.cause": { fa: " (علت: {cause})", de: " (Ursache: {cause})", es: " (causa: {cause})", ar: " (السبب: {cause})" },
+  "trace.banner.gap": { fa: "شکاف رد — حلقه ناظر داده‌های قدیمی‌تر از نقطه ازسرگیری را حذف کرد؛ پیوستگی تضمین نمی‌شود.", de: "TRACE-LÜCKE — der Observer-Ring hat Daten älter als den Resume-Punkt evakuiert; Kontinuität wird nicht zugesichert.", es: "BRECHA DE TRAZO — el anillo del observador expulsó datos más antiguos que el punto de reanudación; no se asegura continuidad.", ar: "فجوة التتبع — أزالت حلقة المراقب البيانات الأقدم من نقطة الاستئناف؛ لا يُضمن التسلسل." },
+  "trace.banner.integrity": { fa: "یکپارچگی ({n})", de: "INTEGRITÄT ({n})", es: "INTEGRIDAD ({n})", ar: "سلامة ({n})" },
+  "trace.banner.integrity_more": { fa: " +{n} مورد دیگر", de: " +{n} weitere", es: " +{n} más", ar: " +{n} إضافية" },
+  "trace.banner.duplicate_events": { fa: "شناسه‌های رویداد تکراری: {n}", de: "doppelte Ereignis-IDs: {n}", es: "ids de evento duplicados: {n}", ar: "معرّفات أحداث مكررة: {n}" },
+  "trace.banner.missing_sequence": { fa: "شکاف‌های توالی: {n}", de: "Sequenzlücken: {n}", es: "saltos de secuencia: {n}", ar: "فجوات التسلسل: {n}" },
+  "trace.banner.missing_parent": { fa: "ارجاعات والد گم‌شده: {n}", de: "fehlende Parent-Referenzen: {n}", es: "referencias padre faltantes: {n}", ar: "مراجع أصلية مفقودة: {n}" },
+  "trace.banner.exec_without_decision": { fa: "اجرا بدون تصمیم: {n}", de: "Ausführung ohne Entscheidung: {n}", es: "ejecución sin decisión: {n}", ar: "تنفيذ بدون قرار: {n}" },
+  "trace.banner.mt5_without_order": { fa: "MT5 بدون سفارش: {n}", de: "MT5 ohne Order: {n}", es: "MT5 sin orden: {n}", ar: "MT5 بدون أمر: {n}" },
+
+  // ---- page tabs / footer
+  "trace.tab.topology": { fa: "توپولوژی", de: "Topologie", es: "Topología", ar: "الطوبولوجيا" },
+  "trace.tab.events": { fa: "رویدادها", de: "Ereignisse", es: "Eventos", ar: "الأحداث" },
+  "trace.tab.decisions": { fa: "تصمیم‌ها", de: "Entscheidungen", es: "Decisiones", ar: "القرارات" },
+  "trace.tab.aria": { fa: "نما", de: "Ansicht", es: "Vista", ar: "العرض" },
+  "trace.tab.topo_note": { fa: "توپولوژی {nodes} گره / {edges} یال", de: "Topologie {nodes} Knoten / {edges} Kanten", es: "topología {nodes} nodos / {edges} aristas", ar: "الطوبولوجيا {nodes} عقدة / {edges} حافة" },
+  "trace.footer": { fa: "ناظر {observer} · جریان {stream} · رویدادها {events} · ترکیب‌شده {coalesced} · حذف‌شده {dropped} · بد‌قالب {malformed} · آخرین شماره {lastSeq}", de: "Observer {observer} · Stream {stream} · Ereignisse {events} · zusammengefasst {coalesced} · verworfen {dropped} · fehlerhaft {malformed} · last_seq {lastSeq}", es: "observador {observer} · flujo {stream} · eventos {events} · consolidados {coalesced} · descartados {dropped} · malformados {malformed} · last_seq {lastSeq}", ar: "المراقب {observer} · التدفق {stream} · الأحداث {events} · المُدمجة {coalesced} · المُتجاهلة {dropped} · التالفة {malformed} · آخر تسلسل {lastSeq}" },
+  "trace.footer_note": { fa: "هر عدد، داده مشاهده‌شده زمان اجرا است.", de: "Jede Zahl ist beobachtete Laufzeitdaten.", es: "Cada cifra es dato observado del tiempo de ejecución.", ar: "كل رقم هو بيانات مُلاحَظة من وقت التشغيل." },
+  // ---- batch 2: events, timeline, compare, decisions, filters, markers
+  "trace.compare.region": { fa: "مقایسه A با B", de: "A vs B vergleichen", es: "Comparar A vs B", ar: "مقارنة A مع B" },
+  "trace.decisions.region": { fa: "فید تصمیمات", de: "Entscheidungs-Feed", es: "Feed de decisiones", ar: "تغذية القرارات" },
+  "trace.decisions.row_hint": { fa: "برای مقایسه دوبار کلیک کنید", de: "Doppelklick zum Vergleichen", es: "Doble clic para comparar", ar: "انقر مرتين للمقارنة" },
+
+  // ---- batch 2b: decision status tokens (display side)
+  "trace.dstatus.error": { fa: "خطا", de: "FEHLER", es: "ERROR", ar: "خطأ" },
+  "trace.dstatus.failed": { fa: "ناموفق", de: "FEHLGESCHLAGEN", es: "FALLIDO", ar: "فشل" },
+  "trace.dstatus.approved": { fa: "تأیید شد", de: "GENEHMIGT", es: "APROBADO", ar: "تمت الموافقة" },
+  "trace.dstatus.executed": { fa: "اجرا شد", de: "AUSGEFÜHRT", es: "EJECUTADO", ar: "نُفِّذ" },
+  "trace.dstatus.dispatched": { fa: "ارسال شد", de: "WEITERGELEITET", es: "ENVIADO", ar: "أُرسل" },
+  "trace.dstatus.rejected": { fa: "رد شد", de: "ABGELEHNT", es: "RECHAZADO", ar: "رُفض" },
+  "trace.dstatus.no_trade": { fa: "بدون معامله", de: "KEIN HANDEL", es: "SIN OPERACIÓN", ar: "بلا تداول" },
+  "trace.dstatus.pending": { fa: "در انتظار", de: "AUSSTEHEND", es: "PENDIENTE", ar: "معلّق" },
+
+  // ---- batch 3: replay controls + canvas
+  "trace.replay.start_hint": { fa: "بازپخش گام‌به‌گام این ردپا (فقط رویدادهای ثبت‌شده — موتور هرگز به عقب برنمی‌گردد)", de: "Trace schrittweise abspielen (nur aufgezeichnete Ereignisse — die Engine wird nie zurückgespult)", es: "Reproducir este trace paso a paso (solo eventos registrados — el motor nunca se rebobina)", ar: "إعادة تشغيل هذا التتبع خطوة بخطوة (أحداث مسجَّلة فقط — لا يُرجَع بالمحرك أبدًا)" },
+  "trace.replay.region": { fa: "کنترل‌های بازپخش", de: "Wiedergabesteuerung", es: "Controles de reproducción", ar: "عناصر تحكم إعادة التشغيل" },
+  "trace.canvas.region": { fa: "توپولوژی زمان اجرا", de: "Laufzeit-Topologie", es: "Topología en tiempo de ejecución", ar: "طوبولوجية وقت التشغيل" },
+  "trace.canvas.zoom_aria": { fa: "کنترل‌های بزرگ‌نمایی", de: "Zoomsteuerung", es: "Controles de zoom", ar: "عناصر تحكم التكبير" },
+
+  // ---- batch 3b: page banners, tabs, integrity, stage panel
+  "trace.banner.offline": { fa: "قابلیت مشاهده آفلاین — جریان ناموفق بود؛ نظرسنجی ادامه دارد.", de: "OBSERVABILITY OFFLINE — Stream fehlgeschlagen; Polling läuft weiter.", es: "OBSERVABILIDAD FUERA DE LÍNEA — el flujo falló; el sondeo continúa.", ar: "المراقبة غير متصلة — فشل البث؛ يستمر الاستطلاع." },
+  "trace.banner.more": { fa: " +{n} مورد دیگر", de: " +{n} weitere", es: " +{n} más", ar: " +{n} أخرى" },
+  "trace.stage.close": { fa: "بستن", de: "Schließen", es: "Cerrar", ar: "إغلاق" },
+  "trace.integrity.duplicate": { fa: "شناسه‌های رویداد تکراری: {n}", de: "Duplikate Ereignis-IDs: {n}", es: "ids de eventos duplicados: {n}", ar: "معرّفات أحداث مكررة: {n}" },
+  "trace.integrity.seq": { fa: "شکاف‌های توالی: {n}", de: "Sequenzlücken: {n}", es: "brechas de secuencia: {n}", ar: "فجوات التسلسل: {n}" },
+  "trace.integrity.parent": { fa: "ارجاع‌های والد مفقود: {n}", de: "Fehlende Eltern-Referenzen: {n}", es: "referencias padre faltantes: {n}", ar: "مراجع أصلية مفقودة: {n}" },
+  "trace.integrity.exec_no_dec": { fa: "اجرا بدون تصمیم: {n}", de: "Ausführung ohne Entscheidung: {n}", es: "ejecución sin decisión: {n}", ar: "تنفيذ بدون قرار: {n}" },
+  "trace.integrity.mt5_no_order": { fa: "MT5 بدون سفارش: {n}", de: "MT5 ohne Order: {n}", es: "MT5 sin orden: {n}", ar: "MT5 بدون أمر: {n}" },
+};

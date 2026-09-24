@@ -8,6 +8,7 @@
  */
 
 import { MetricCard } from "@/components/primitives";
+import { useI18n } from "@/stores/i18nStore";
 import { useLatencyQuery, useObserverQuery, useStartObserver, useStopObserver } from "../useCases";
 import type { LatencyStats, ObserverSnapshot } from "../types";
 
@@ -40,6 +41,17 @@ function counter(obs: ObserverSnapshot | undefined, key: string): string {
   return v === undefined || v === null ? "0" : String(v);
 }
 
+function statusLabel(t: (k: string, fb: string) => string, status: string): string {
+  switch (status) {
+    case "OFF": return t("trace.observer.off", "OFF");
+    case "STARTING": return t("trace.observer.starting", "STARTING");
+    case "ACTIVE": return t("trace.observer.active", "ACTIVE");
+    case "STOPPING": return t("trace.observer.stopping", "STOPPING");
+    case "ERROR": return t("trace.observer.error", "ERROR");
+    default: return status;
+  }
+}
+
 export function TraceToolbar({
   paused,
   onTogglePause,
@@ -47,6 +59,7 @@ export function TraceToolbar({
   paused: boolean;
   onTogglePause: () => void;
 }) {
+  const t = useI18n((s) => s.t);
   const obsQ = useObserverQuery(paused);
   const latQ = useLatencyQuery(paused);
   const startMut = useStartObserver();
@@ -58,13 +71,15 @@ export function TraceToolbar({
   const bus = obs ?? undefined;
 
   return (
-    <div className="dt-toolbar" role="region" aria-label="Observer telemetry">
+    <div className="dt-toolbar" role="region" aria-label={t("trace.toolbar.region", "Observer telemetry")}>
       <div className="dt-tb-status">
         <span className={`dt-tb-dot ${isOn ? "on" : "off"}`} aria-hidden="true" />
-        <span className="dt-tb-label">OBSERVER</span>
-        <span className={`dt-tb-value ${isOn ? "on" : "off"}`}>{status}</span>
+        <span className="dt-tb-label">{t("trace.toolbar.observer", "OBSERVER")}</span>
+        <span className={`dt-tb-value ${isOn ? "on" : "off"}`}>{statusLabel(t, status)}</span>
         <span className="dt-tb-note">
-          {isOn ? "detailed tracing active" : "low-overhead path (no observers)"}
+          {isOn
+            ? t("trace.toolbar.detailed_active", "detailed tracing active")
+            : t("trace.toolbar.low_overhead", "low-overhead path (no observers)")}
         </span>
       </div>
 
@@ -74,31 +89,37 @@ export function TraceToolbar({
           disabled={isOn || startMut.isPending}
           onClick={() => void startMut.mutateAsync()}
         >
-          {startMut.isPending ? "starting…" : "Start detailed trace"}
+          {startMut.isPending
+            ? t("trace.toolbar.starting", "starting…")
+            : t("trace.toolbar.start", "Start detailed trace")}
         </button>
         <button
           className="dt-tb-btn"
           disabled={!isOn || stopMut.isPending}
           onClick={() => void stopMut.mutateAsync()}
         >
-          {stopMut.isPending ? "stopping…" : "Stop"}
+          {stopMut.isPending
+            ? t("trace.toolbar.stopping", "stopping…")
+            : t("trace.toolbar.stop", "Stop")}
         </button>
         <button className="dt-tb-btn" onClick={onTogglePause}>
-          {paused ? "Resume polling" : "Pause polling"}
+          {paused
+            ? t("trace.toolbar.resume", "Resume polling")
+            : t("trace.toolbar.pause", "Pause polling")}
         </button>
       </div>
 
       <div className="dt-tb-metrics">
-        <MetricCard label="Events captured" value={counter(bus, "events")} />
-        <MetricCard label="Decisions" value={String(bus?.decisions_retained ?? 0)} />
-        <MetricCard label="Latency p99 (worst stage)" value={totalP99(latQ.data as LatencyStats | undefined)} />
-        <MetricCard label="Stages timed" value={stageCount(latQ.data as LatencyStats | undefined)} />
-        <MetricCard label="Sessions" value={String(bus?.recent_sessions?.length ?? 0)} />
-        <MetricCard label="Subscribers" value={String(bus?.subscribers?.length ?? 0)} />
-        <MetricCard label="Coalesced" value={counter(bus, "coalesced_events")} />
-        <MetricCard label="Dropped (visual)" value={counter(bus, "dropped_visual_events")} />
+        <MetricCard label={t("trace.toolbar.metrics.events_captured", "Events captured")} value={counter(bus, "events")} />
+        <MetricCard label={t("trace.toolbar.metrics.decisions", "Decisions")} value={String(bus?.decisions_retained ?? 0)} />
+        <MetricCard label={t("trace.toolbar.metrics.p99_worst", "Latency p99 (worst stage)")} value={totalP99(latQ.data as LatencyStats | undefined)} />
+        <MetricCard label={t("trace.toolbar.metrics.stages_timed", "Stages timed")} value={stageCount(latQ.data as LatencyStats | undefined)} />
+        <MetricCard label={t("trace.toolbar.metrics.sessions", "Sessions")} value={String(bus?.recent_sessions?.length ?? 0)} />
+        <MetricCard label={t("trace.toolbar.metrics.subscribers", "Subscribers")} value={String(bus?.subscribers?.length ?? 0)} />
+        <MetricCard label={t("trace.toolbar.metrics.coalesced", "Coalesced")} value={counter(bus, "coalesced_events")} />
+        <MetricCard label={t("trace.toolbar.metrics.dropped_visual", "Dropped (visual)")} value={counter(bus, "dropped_visual_events")} />
         <MetricCard
-          label="Ring usage"
+          label={t("trace.toolbar.metrics.ring_usage", "Ring usage")}
           value={
             bus && bus.events_ring_capacity
               ? `${bus.events_retained}/${bus.events_ring_capacity}`
