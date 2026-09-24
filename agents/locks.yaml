@@ -113,21 +113,21 @@ exclusive_locks:
   - path: src/nexus_scalp/release/metadata.py
     owner: HERMES-EUP-RELEASE
     exclusive: true
-    scope: TASK-EUP-RELEASE-001 canonical CLI_PROGRAM_NAME constant
+    scope: TASK-EUP-RELEASE-001 canonical CLI_PROGRAM_NAME constant (released — task DONE, PR #417 merged as c9851b51)
     since: 2026-09-24
     task: TASK-EUP-RELEASE-001
     expiry: 2026-10-01
   - path: src/nexus_scalp/cli/help_command.py
     owner: HERMES-EUP-RELEASE
     exclusive: true
-    scope: TASK-EUP-RELEASE-001 nexus help word-form surface (audit; unchanged)
+    scope: TASK-EUP-RELEASE-001 nexus help word-form surface (audit; unchanged) (released — task DONE, PR #417 merged as c9851b51)
     since: 2026-09-24
     task: TASK-EUP-RELEASE-001
     expiry: 2026-10-01
   - path: tests/cli/test_cli_subprocess.py
     owner: HERMES-EUP-RELEASE
     exclusive: true
-    scope: TASK-EUP-RELEASE-001 program-name invariance golden tests
+    scope: TASK-EUP-RELEASE-001 program-name invariance golden tests (released — task DONE, PR #417 merged as c9851b51)
     since: 2026-09-24
     task: TASK-EUP-RELEASE-001
     expiry: 2026-10-01
