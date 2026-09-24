@@ -745,25 +745,58 @@ def _browser_host(bind_host: str) -> str:
     return bind_host
 
 
+def _verdict_of(resp: Any) -> str:
+    """Best-effort ``verdict`` read from a /health body (never raises).
+
+    The HealthEngine contract (``nexus_scalp.release.health``) defines the
+    verdict; this reads it defensively so a malformed body degrades the gate
+    to a retry instead of raising.
+    """
+    try:
+        import json as _json
+
+        raw = resp.read(4096)
+        payload = _json.loads(raw)
+        # Two shapes reach this probe:
+        #  * the v1 success envelope: {"data": {"verdict": ...}, "meta": {...}}
+        #  * a FastAPI error detail (503): {"detail": {"verdict": ...}}
+        for key in ("data", "detail"):
+            node = payload.get(key) if isinstance(payload, dict) else None
+            if isinstance(node, dict) and "verdict" in node:
+                return str(node["verdict"])
+        value = payload.get("verdict") if isinstance(payload, dict) else None
+        return str(value) if value is not None else "UNKNOWN"
+    except Exception:
+        return "UNKNOWN"
+
+
 def _probe_control_center(host: str, port: int) -> tuple[bool, bool, str]:
     """Blocking readiness probe -> (health_ok, index_ok, phase).
 
-    health_ok: GET /health answered 200 (the registered liveness route).
-    index_ok: GET / answered 200 with a text/html body, i.e. the Control Center
-    index is actually being served (CONTRACT #4/#6) - process spawn is NOT
-    readiness. ``phase`` is a short, credential-free diagnostic word that the
-    caller prints when the gate has not passed.
+    health_ok: GET /health answered 200 with a verdict that means the app is
+    serving: READY or DEGRADED (the HealthEngine contract maps UNHEALTHY /
+    NOT_READY / 503 to failure). ``index_ok``: GET / answered 200 with a
+    text/html body, i.e. the Control Center index is actually being served
+    (CONTRACT #4/#6) - process spawn is NOT readiness. ``phase`` is a short,
+    credential-free diagnostic word that the caller prints when the gate has
+    not passed.
     """
+    base = f"http://{host}:{port}"
+    # Loopback self-probe: never detour through an ambient HTTP proxy.
     import urllib.error
     import urllib.request
 
-    base = f"http://{host}:{port}"
-    # Loopback self-probe: never detour through an ambient HTTP proxy.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
         with opener.open(f"{base}/health", timeout=2) as resp:
-            if getattr(resp, "status", 200) != 200:
-                return False, False, f"health HTTP {resp.status}"
+            status = getattr(resp, "status", 200)
+            verdict = _verdict_of(resp)
+            if status != 200:
+                return False, False, f"health HTTP {status}"
+            if verdict not in ("READY", "DEGRADED"):
+                # NOT_READY/UNHEALTHY (or an unreadable body) means the app is
+                # up but not yet able to serve the Control Center honestly.
+                return False, False, f"health verdict {verdict}"
     except urllib.error.HTTPError as http_err:
         # 503 = accepting connections but verdict non-READY; other 4xx/5xx say
         # the same thing for our purposes: the gate has not passed.
