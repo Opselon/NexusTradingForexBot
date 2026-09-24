@@ -211,7 +211,7 @@ export default function CommandDeck(props: CommandDeckProps) {
               {modeTarget && MODE_IMPACT[modeTarget] && (
                 <div className="l4-note tr-deck-impact">
                   <span className="tr-deck-impact-tag">{t("ux.mode.impact_label", "What changes")}</span>
-                  <span>{MODE_IMPACT[modeTarget]}</span>
+                  <span>{modeTarget === "PAPER" ? t("trading.mode.impact_paper", MODE_IMPACT.PAPER ?? "") : modeTarget === "SHADOW" ? t("trading.mode.impact_shadow", MODE_IMPACT.SHADOW ?? "") : modeTarget === "LIVE" ? t("trading.mode.impact_live", MODE_IMPACT.LIVE ?? "") : MODE_IMPACT[modeTarget]}</span>
                 </div>
               )}
 
@@ -224,7 +224,7 @@ export default function CommandDeck(props: CommandDeckProps) {
                     <div className="tr-deck-danger-text">
                       <b>{t("ux.mode.live_warning", "Real money is at risk. This affects your live broker account.")}</b>{" "}
                       {t("ux.mode.body", "This changes how the engine executes orders.")}{" "}
-                      <span className="muted">{MODE_IMPACT.LIVE}</span>
+                      <span className="muted">{t("trading.mode.impact_live", MODE_IMPACT.LIVE ?? "")}</span>
                     </div>
                     <div className="row">
                       <input

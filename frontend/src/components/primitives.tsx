@@ -155,11 +155,13 @@ export function Panel({
   );
 }
 
-export function LoadingState({ label = "Loading backend state…" }: { label?: string }) {
+export function LoadingState({ label }: { label?: string }) {
+  const t = useI18n((s) => s.t);
+  const text = label ?? t("ui.state.loading", "Loading backend state…");
   return (
     <div className="state-block" role="status">
       <div className="spinner" />
-      <div>{label}</div>
+      <div>{text}</div>
     </div>
   );
 }
