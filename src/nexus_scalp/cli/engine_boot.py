@@ -44,7 +44,7 @@ from nexus_scalp.cli.styling import (
     _welcome_panel,
     console,
 )
-from nexus_scalp.cli.wizard import _get_network_endpoints
+from nexus_scalp.cli.wizard import _get_network_endpoints, run_first_run_database_choice
 from nexus_scalp.configuration.config import AppConfig
 from nexus_scalp.domain.enums import ExecutionMode
 from nexus_scalp.observability.logging import get_logger
@@ -205,6 +205,16 @@ def start_cmd(
             # clicked the exe, it just works in PAPER".
             cfg = AppConfig()
             config_path = None  # type: ignore[assignment]
+
+    # FIRST-RUN DATABASE CHOICE (dual-entry law): `nexus start` offers the same
+    # PostgreSQL/SQLite question as `nexus setup` (wizard.py) and the
+    # double-click launcher (NexusTradingForexBot.py) when no database.provider
+    # row exists yet — the missing prompt that let a silently-persisted
+    # database.provider=postgresql point the runtime at a dead server. Gated
+    # inside: a configured install prompts ZERO times; --json and non-TTY
+    # sessions are never blocked (reason=non_interactive).
+    if not json_mode:
+        run_first_run_database_choice()
 
     if chosen == ExecutionMode.LIVE:
         panel = Panel(

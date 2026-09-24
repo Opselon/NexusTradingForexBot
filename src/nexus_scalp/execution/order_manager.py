@@ -38,6 +38,7 @@ from nexus_scalp.bounded_map import BoundedLRUMap
 from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
+from nexus_scalp.domain.valuation import align_price, min_stop_distance_price
 from nexus_scalp.execution.execution_plan import ExecutionPlan
 from nexus_scalp.execution.hold_score_ledger import HoldScoreLedger
 from nexus_scalp.execution.lifecycle import (
@@ -2814,11 +2815,19 @@ class OrderLifecycleManager:
         if not positions:
             return []
 
-        min_stop_gap = (
-            (symbol_info.stops_level * symbol_info.point)
-            if symbol_info and symbol_info.stops_level > 0
-            else 0.25
-        )
+        # FORENSIC-LANE-BROKER: the old fallback `else 0.25` was a PRICE-unit
+        # constant calibrated to 2-digit XAUUSD: on 5-digit EURUSD it became
+        # a 25,000-point gap. Semantics preserved exactly, unit made right:
+        #   broker specifies stops_level -> trust it verbatim (as before);
+        #   broker allows stops at market -> 25 broker POINTS of safety
+        #     (byte-identical 0.25 on XAUUSD);
+        #   no usable spec at all -> legacy 0.25, explicitly documented.
+        if symbol_info and symbol_info.stops_level > 0:
+            min_stop_gap = symbol_info.stops_level * symbol_info.point
+        elif symbol_info and symbol_info.point > 0:
+            min_stop_gap = min_stop_distance_price(0, symbol_info.point, safety_points=25)
+        else:
+            min_stop_gap = 0.25  # legacy XAUUSD-calibrated fallback, spec unknown
         spread = max(current_tick.ask - current_tick.bid, 0.0)
         mid_price = (current_tick.ask + current_tick.bid) * 0.5
 
@@ -2980,6 +2989,7 @@ class OrderLifecycleManager:
                 smart_metrics=smart_metrics,
                 spread=spread,
                 now=now,
+                holding_duration_sec=holding_duration,
             )
 
             # --- Trajectory, Evidence, and State machine Processing (Requirements 13-16, 20) ---
@@ -3420,12 +3430,17 @@ class OrderLifecycleManager:
         smart_metrics: dict[str, Any],
         spread: float = 0.0,
         now: datetime | None = None,
+        holding_duration_sec: float = 0.0,
     ) -> tuple[int, list[str], int]:
         """HOLD-SCORE EVALUATION STAGE (S6-escalation): throttled base-score
         evaluation + position-state recalculation + giveback override + tracker
         store. Moved VERBATIM from manage_active_positions'
-        per-position loop. Returns (hold_score, invalidate_reasons,
-        base_hold_score)."""
+        per-position loop. Returns (hold_score, invalidate_reasons, base_hold_score).
+
+        ``holding_duration_sec`` is the live time-in-trade (ML-POSITION-
+        FORENSICS F4): the adviser's ``position_age_bars``/``signal_age``
+        features derive from it, matching the generator's bar-age semantics.
+        """
         last_eval = self._last_hold_eval_time.get(ticket, 0.0)
         if (current_time - last_eval) >= 0.50:
             base_hold_score, invalidate_reasons = self._calculate_hold_value_score(
@@ -3457,18 +3472,35 @@ class OrderLifecycleManager:
         # one, never extend a position, never weaken a protection verdict. When
         # the adviser is DISABLED (the default) the score is stored unchanged
         # and the decide path is byte-identical to its pre-adviser behaviour.
+        #
+        # ML-POSITION-FORENSICS F0/F4 parity with the position-dataset generator:
+        # the adviser trains on generator rows, so the live state must be built
+        # with the generator's units. Previously this call passed
+        # `initial_risks[ticket]` (DOLLARS: volume*contract_size*stop_distance)
+        # and `holding_duration_sec=0.0`, which made every R-feature ~1/1000th
+        # of its trained scale and `position_age_bars` a constant 0.
         adviser = self._adviser
         if adviser is not None and adviser.enabled:
             try:
+                entry_px = float(self._entry_prices.get(ticket, 0.0) or 0.0)
+                entry_sl = float(self._entry_sls.get(ticket, 0.0) or 0.0)
+                # Generator convention: r_distance = max(|entry - initial_sl|, 0.20)
+                # in PRICE units. Never dollars; never the live (possibly already
+                # trailed) stop.
+                risk_price = max(abs(entry_px - entry_sl), 0.20) if entry_sl > 0.0 else 0.20
+                holding_dur = max(0.0, float(holding_duration_sec))
+                # signal_age == position_age in the generator (entry == signal),
+                # expressed in BARS, not seconds.
+                sig_age_bars = holding_dur / 60.0
                 state = build_position_state_for_adviser(
                     pos=pos,
                     ticket=ticket,
                     price_current=price_current,
                     atr=atr,
                     spread=spread,
-                    initial_risk_usd=float(self._initial_risks.get(ticket, 0.0) or 0.0),
-                    holding_duration_sec=0.0,
-                    signal_age=float(self._signal_ages.get(ticket, 0.0) or 0.0),
+                    initial_risk_price=risk_price,
+                    holding_duration_sec=holding_dur,
+                    signal_age_bars=sig_age_bars,
                     model_probability=float(self._entry_confidences.get(ticket, 0.0) or 0.0),
                     model_confidence=float(self._entry_confidences.get(ticket, 0.0) or 0.0),
                 )
@@ -3482,6 +3514,23 @@ class OrderLifecycleManager:
                         f"{advisory['action']},conf={advisory['confidence']:.4f},"
                         f"adj={advisory['hold_score_adjustment']:.2f})",
                     ]
+                    # F2: publish the advisory to the live decision feed so the
+                    # UI (Model Studio / legacy UI activity feed) can show the
+                    # REAL latest advisory per ticket instead of an empty ring.
+                    # Observability only: import/call failures must never break
+                    # the decide hot path.
+                    try:
+                        from nexus_scalp.web.position_adviser_routes import (
+                            record_advisory_for_ui,
+                        )
+
+                        record_advisory_for_ui(advisory)
+                    except Exception as feed_exc:
+                        logger.debug(
+                            "[ADVISER] event=UI_FEED_RECORD_FAILED ticket=%s error=%s",
+                            ticket,
+                            feed_exc,
+                        )
             except Exception as exc:  # fail closed; never break position management
                 logger.warning("[ADVISER] event=INTEGRATION_SKIP ticket=%s error=%s", ticket, exc)
 
@@ -3516,6 +3565,10 @@ class OrderLifecycleManager:
         action = plan.action
         scenario = plan.scenario
         rule_target_sl = plan.rule_target_sl
+        # FORENSIC-LANE-BROKER: digits for stop alignment come from the
+        # broker's own symbol spec (XAUUSD=2, EURUSD=5). The old code used
+        # a fixed round(x, 2) which destroyed 5-digit FX stop prices.
+        pos_digits = int(symbol_info.digits) if symbol_info else 2
         if action == "CLOSE":
             msg_id = self._order_message_ids.get(ticket)
             # Attribute engine-initiated exits to hold-score decay unless a more
@@ -3596,7 +3649,10 @@ class OrderLifecycleManager:
                 if pos.type == OrderType.BUY
                 else pos.price_open - max(self.be_lock, spread)
             )
-            target_sl = round(target_sl, 2)
+            # FORENSIC-LANE-BROKER: fixed round(x,2) destroyed FX stops
+            # (an EURUSD SL at 1.08500 became 1.09). Align to the symbol's
+            # own digits instead.
+            target_sl = align_price(target_sl, None, pos_digits)
             valid_stop = False
             if pos.type == OrderType.BUY:
                 if target_sl > pos.sl and (current_tick.bid - target_sl) >= min_stop_gap:
@@ -3651,13 +3707,14 @@ class OrderLifecycleManager:
                     )
 
         elif action == "NORMAL_TRAIL":
-            trail_distance = max(min_stop_gap, round(atr * 1.15, 2))
+            trail_distance = max(min_stop_gap, align_price(atr * 1.15, None, pos_digits))
             target_sl = (
                 price_current - trail_distance
                 if pos.type == OrderType.BUY
                 else price_current + trail_distance
             )
-            target_sl = round(target_sl, 2)
+            # FORENSIC-LANE-BROKER: fixed round(x,2) destroyed FX stops.
+            target_sl = align_price(target_sl, None, pos_digits)
             valid_stop = False
             if pos.type == OrderType.BUY:
                 if target_sl > pos.sl and (current_tick.bid - target_sl) >= min_stop_gap:
@@ -3727,6 +3784,9 @@ class OrderLifecycleManager:
         loop body for this position; returns False to proceed to the
         decision stage."""
         # --- 0. AI DIRECTION FLIP & FAST REVERSAL PROTECTION ---
+        # Broker digits for stop alignment (was fixed round(x, 2), which
+        # destroyed 5-digit FX stops — see domain/valuation.align_price).
+        pos_digits = int(symbol_info.digits) if symbol_info else 2
         ai_flip_detected = False
         ai_flip_action = None
         if probs is not None:
@@ -3921,7 +3981,7 @@ class OrderLifecycleManager:
                 if pos.type == OrderType.BUY
                 else pos.price_open - (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
             )
-            target_mfe_sl = round(target_mfe_sl, 2)
+            target_mfe_sl = align_price(target_mfe_sl, None, pos_digits)
 
             valid_stop = False
             if pos.type == OrderType.BUY:
@@ -4363,5 +4423,15 @@ class OrderLifecycleManager:
         self._scoring._trajectory_history.pop(ticket, None)
         self._recovery_ledger.drop_ticket(ticket)
         self._state_machine.drop_ticket(ticket)
+        # ML-POSITION-FORENSICS F5: drop the adviser's per-ticket throttle +
+        # snapshot maps on broker-verified close (service.forget), so the maps
+        # are bounded by OPEN tickets instead of growing for the whole runtime.
+        # Guarded on the resolved attr: teardown must not instantiate the
+        # service just to forget a ticket.
+        if self._position_adviser is not None:
+            try:
+                self._position_adviser.forget(ticket)
+            except Exception as forget_exc:
+                logger.debug("[ADVISER] event=FORGET_FAILED ticket=%s error=%s", ticket, forget_exc)
         with self._live_tickets_lock:
             self._tickets_cache.pop_ticket(ticket)

@@ -292,7 +292,10 @@ class PostgreSQLDriver(DatabaseDriver):
         c = conn or self.connect()
         try:
             with c.cursor() as cur:
-                cur.executemany(self.translate_sql(sql), seq)
+                # SEC (py/sql-injection #1114 sibling): same boundary as the
+                # sqlite driver — the shared guard runs before the engine sees
+                # the statement; values stay bound through ``seq``.
+                cur.executemany(assert_safe_sql(self.translate_sql(sql)), seq)
             if own:
                 c.commit()
         finally:

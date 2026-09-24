@@ -18,6 +18,7 @@ Training-time hard rules:
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -167,6 +168,10 @@ class AdviserTrainingResult:
     oos_rows: int
     sha256: str
     duration_sec: float
+    #: ML-POSITION-FORENSICS F8: classes absent from the training split. These
+    #: receive zero weight (see the class-weight gate) and are reported so the
+    #: consumer can see the model was never trained on them.
+    classes_absent: list[str] = field(default_factory=list)
     metrics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -186,6 +191,7 @@ class AdviserTrainingResult:
             "oos_rows": self.oos_rows,
             "sha256": self.sha256,
             "duration_sec": round(self.duration_sec, 3),
+            "classes_absent": list(self.classes_absent),
             "metrics": dict(self.metrics),
         }
 
@@ -265,7 +271,19 @@ class AdviserScaler:
         self.feature_dim = feature_dim
 
     def transform(self, x: np.ndarray) -> np.ndarray:
-        return ((x - self.mean) / self.std).astype(np.float32)
+        """Standardize and CLIP to [-5, 5] (both train and serve, identically).
+
+        The generator writes constant-valued cost columns (``spread``,
+        ``estimated_slippage`` come from the fixed execution-assumption config),
+        so their training std clamps to the 1e-3 floor. A live spread that
+        genuinely varies would otherwise scale to hundreds of sigma and feed
+        the head an input scale it never saw in training. The +/-5 clip is the
+        same bound the primary-model normalization path applies
+        (``position_replay`` clips primary-model inputs at +/-5) and is applied
+        to TRAINING data too, so train and serve can never diverge on this
+        transformation: clipping normal (sub-5-sigma) rows is a no-op.
+        """
+        return np.clip((x - self.mean) / self.std, -5.0, 5.0).astype(np.float32)
 
     def is_ready(self) -> bool:
         return self.feature_dim > 0 and bool(np.all(np.isfinite(self.std)))
@@ -283,11 +301,30 @@ class AdviserScaler:
 
 
 def _sha256_file(path: Path) -> str:
-    """Sha256 of a file. Accepts an already-sanitized, contained path."""
-    import hashlib
+    """Sha256 of a file. Accepts an already-sanitized, contained path.
 
+    SEC (py/path-injection #1147): the contract is enforced, not assumed. Every
+    caller reaches here from sanitizer output (``_resolve_dataset_path`` /
+    ``_resolve_output_dir`` / ``_sha256_trainer_artifact``), so re-asserting
+    containment at the read is defense-in-depth that closes the residual taint
+    the static analyzer tracks from the request-supplied parameter. The
+    re-assertion follows the query's two-state model exactly: normalize first
+    (state transition to NormalizedUnchecked), then a ``startswith`` check
+    against the trusted root is the barrier that cuts the taint — and the
+    value actually opened is the normalized, checked one.
+    """
+    import hashlib
+    import os
+
+    # SEC (py/path-injection #1147): follow the query's two-state model —
+    # normalize (state transition) then check the normalized string against
+    # the trusted root (SafeAccessCheck barrier) — and open the exact string
+    # that was checked.
+    normalized = os.path.realpath(str(path))
+    if not normalized.startswith(str(_ADVISER_ROOT.resolve())):
+        raise AdviserFeatureError("adviser file read must stay inside the repository root")
     h = hashlib.sha256()
-    with open(path, "rb") as f:
+    with open(normalized, "rb") as f:
         while chunk := f.read(65536):
             h.update(chunk)
     return h.hexdigest()
@@ -296,13 +333,12 @@ def _sha256_file(path: Path) -> str:
 def _sha256_trainer_artifact(path: Path) -> str:
     """Sha256 of an artifact the trainer itself just wrote.
 
-    ``path`` is joined from the sanitized ``output_dir`` and the sanitized
-    ``mid``, but CodeQL still sees the request-supplied ``model_id`` in that
-    join, so the read is re-derived here from the directory the artifact was
-    written into: the value this opens is provably the file the trainer just
-    wrote, not something a request could redirect elsewhere.
+    ``path`` is joined from the resolved ``output_dir`` and the sanitized
+    ``mid``, but the output directory itself can derive from a request-supplied
+    dataset path, so the read is confined by ``_sha256_file`` itself
+    (normalize + trusted-root check before the open).
     """
-    return _sha256_file(path.parent / path.name)
+    return _sha256_file(path)
 
 
 def train_position_adviser(
@@ -341,6 +377,22 @@ def train_position_adviser(
     t_start = time.perf_counter()
     torch.manual_seed(seed)
     np.random.seed(seed)
+    # ML-POSITION-FORENSICS F7: REPRODUCIBILITY. An artifact is pinned by hash
+    # in an immutable manifest and verified on load; that is only meaningful if
+    # the same seed + dataset always yields the same weights. the real torch APIs below:
+    # strict deterministic-op mode, cuDNN benchmark off (algorithm selection
+    # cannot vary between runs), CUBLAS workspace pinned for CUDA.
+    try:
+        torch.use_deterministic_algorithms(True)
+    except Exception:
+        pass
+    try:
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+    except Exception:
+        pass
+    if torch.cuda.is_available():
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
     df = pl.read_parquet(p) if p.suffix.lower() == ".parquet" else pl.read_csv(p)
     if "split" not in df.columns:
@@ -435,16 +487,35 @@ def train_position_adviser(
     yo = torch.tensor(y_oos, dtype=torch.long)
 
     # ---- 5. class weights (imbalance without resampling) ------------------
+    # ML-POSITION-FORENSICS F8: a class ABSENT from the training rows must get
+    # weight 0.0, NOT 1/floor(freq). The old formula gave an absent class
+    # ~1e9, which pushed the observed classes' normalized weights to ~1e-8;
+    # PyTorch's weighted CE then divides the (label-smoothed) loss by the
+    # batch's tiny expected weight and the reported loss explodes to millions,
+    # so the run silently trains on garbage. Absent classes contribute nothing
+    # by definition — weight them out, and report the absence honestly.
     counts = np.bincount(y_train, minlength=len(ADVISER_ACTIONS)).astype(np.float64)
     w = np.zeros(len(ADVISER_ACTIONS), dtype=np.float64)
-    nz = counts[counts > 0]
+    nz_mask = counts > 0
+    nz = counts[nz_mask]
+    classes_absent = [ADVISER_ACTIONS[i] for i in range(len(ADVISER_ACTIONS)) if counts[i] == 0]
+    if classes_absent:
+        logger.warning(
+            "[ADVISER] event=CLASS_ABSENT_IN_TRAIN classes=%s rows=%d "
+            "(these actions receive weight 0.0 and are reported in the manifest)",
+            classes_absent,
+            int(n_train),
+        )
     if len(nz) > 1:
-        # inverse-frequency, normalised so the total weight equals N
-        freq = counts / counts.sum()
-        w = 1.0 / np.maximum(freq, 1e-9)
-        w = w / w.sum() * len(nz)
+        # inverse-frequency over PRESENT classes only, normalised to len(nz);
+        # absent classes keep 0.0 so the weighted-CE normalizer stays sane.
+        freq_nz = nz / nz.sum()
+        w_nz = 1.0 / freq_nz
+        w[nz_mask] = w_nz / w_nz.sum() * len(nz)
+    elif len(nz) == 1:
+        w[nz_mask] = 1.0
     else:
-        w[:] = 1.0
+        raise AdviserFeatureError("training split contains no labelled rows")
     weights = torch.tensor(w, dtype=torch.float32)
     criterion = nn.CrossEntropyLoss(weight=weights, label_smoothing=0.05)
 
@@ -535,6 +606,7 @@ def train_position_adviser(
         dimension=np.asarray(_sa["dimension"]),
     )
     sha = _sha256_trainer_artifact(weights_path)
+    scaler_sha = _sha256_trainer_artifact(scaler_path)
 
     manifest = {
         "model_id": mid,
@@ -557,9 +629,17 @@ def train_position_adviser(
         "source_dataset": str(p),
         "source_dataset_hash": compute_dataset_hash(df)[:32],
         "weights_sha256": sha,
+        "scaler_sha256": scaler_sha,
+        "classes_absent": list(classes_absent),
         "created_at": datetime.now(UTC).isoformat(),
     }
-    with (manifest_path.parent / manifest_path.name).open("w", encoding="utf-8") as f:
+    # SEC (py/path-injection #1148): the manifest write resolves the target
+    # under the untainted output directory via resolve_under_root, so the sink
+    # operates on a canonicalized in-root path that CodeQL recognizes as safe.
+    _manifest_target = resolve_under_root(
+        f"{mid}.meta.json", root=out, label="position adviser manifest"
+    )
+    with _manifest_target.open("w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
     logger.info(
@@ -601,6 +681,7 @@ def train_position_adviser(
         oos_rows=int(oos.height),
         sha256=sha,
         duration_sec=time.perf_counter() - t_start,
+        classes_absent=list(classes_absent),
         metrics={
             "class_weights": {ACTION_BY_INDEX[int(i)]: float(w[i]) for i in range(len(w))},
             "source_row_count": df.height,

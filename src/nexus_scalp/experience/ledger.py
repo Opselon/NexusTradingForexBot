@@ -452,7 +452,26 @@ class ExperienceLedger:
     # ------------------------------------------------------------------
 
     def _connect(self, timeout: float = 5.0) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.audit_repo._db_path, timeout=timeout)
+        """One connect site for every ledger read (INV-001 V1, BUG-156).
+
+        The connection comes from the repository's ``_connect_sqlite`` seam so
+        the ``file:``-URI contract (shared in-memory audit DBs need
+        ``uri=True``) lives in exactly one place: a raw
+        ``sqlite3.connect(self._db_path)`` treated the URI string as a literal
+        file name and silently created a junk CWD file on every read. Every
+        caller already gates on ``audit_repo._is_sqlite`` before reaching here,
+        so a non-SQLite repository never opens a SQLite connection.
+        """
+        connect = getattr(self.audit_repo, "_connect_sqlite", None)
+        if connect is not None:
+            if not callable(connect):
+                raise TypeError(
+                    "audit repository declares `_connect_sqlite` but it is not callable; "
+                    "refusing a raw sqlite3.connect fallback (INV-001 URI contract)"
+                )
+            conn: sqlite3.Connection = connect(timeout)
+        else:  # pragma: no cover - defensive, the seam is canonical in prod
+            conn = sqlite3.connect(self.audit_repo._db_path, timeout=timeout)
         conn.row_factory = sqlite3.Row
         return conn
 

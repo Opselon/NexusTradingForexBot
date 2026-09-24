@@ -58,7 +58,10 @@ from nexus_scalp.cli.styling import console
 from nexus_scalp.cli.update_cli import _update_exit_code, _update_orchestrator
 from nexus_scalp.cli.wizard import _get_network_endpoints
 from nexus_scalp.release import evaluate as reval  # re-export: tests patch cmain.reval
-from nexus_scalp.release.metadata import get_version_info  # re-export: tests patch this seam
+from nexus_scalp.release.metadata import (
+    CLI_PROGRAM_NAME,
+    get_version_info,  # re-export: tests patch this seam
+)
 
 __all__ = [
     "_get_network_endpoints",
@@ -83,4 +86,4 @@ __all__ = [
 
 
 if __name__ == "__main__":
-    app()
+    app(prog_name=CLI_PROGRAM_NAME)

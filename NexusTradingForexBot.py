@@ -409,6 +409,29 @@ def run_infrastructure_doctor(config_path: Path) -> bool:
     return True
 
 
+def prompt_first_run_database_choice() -> None:
+    """First-run database provider choice for the double-click launcher.
+
+    DUAL-ENTRY LAW: the launcher must offer the SAME PostgreSQL-or-SQLite
+    question as `nexus setup` (cli/wizard.py) and `nexus start`
+    (cli/engine_boot.py) — NSE never asked, while a silently-persisted
+    database.provider=postgresql (actor 'db-fabric') later sent the runtime
+    at a dead server. Console prompt in the same style as the LIVE
+    confirmation in main() (typer/input). Gated inside the shared step: it
+    fires ONLY when no database.provider row exists (a configured install
+    gets ZERO new prompts) and never blocks a non-TTY session. Failure-
+    isolated: a prompt fault must never stop a boot.
+    """
+    if not sys.stdin.isatty():
+        return
+    try:
+        from nexus_scalp.cli.wizard import run_first_run_database_choice
+
+        run_first_run_database_choice()
+    except Exception as err:
+        logger.warning("[DB] first-run database choice skipped (non-fatal): %s", err)
+
+
 def main() -> None:
     """
     Primary application entry point and engine orchestrator launcher.
@@ -532,6 +555,12 @@ def main() -> None:
             )
         )
         sys.exit(1)
+
+    # 2.5 FIRST-RUN DATABASE CHOICE (dual-entry law): the double-click launcher
+    # asks the same PostgreSQL-or-SQLite question as `nexus setup` and
+    # `nexus start`. Console prompt, same style as the LIVE confirmation below;
+    # gated inside to zero prompts on an already-configured install.
+    prompt_first_run_database_choice()
 
     # 3. Load & Validate System Configuration
     console.print(

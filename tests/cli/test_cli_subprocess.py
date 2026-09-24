@@ -40,7 +40,13 @@ def _resolve_entry() -> list[str]:
         return [explicit]
     venv_exe = REPO_ROOT / ".venv" / "Scripts" / "nexus.exe"
     if venv_exe.exists():
+        # Only a console-script built from THIS tree can be trusted to match
+        # the code under test. The shared main-checkout venv's nexus.exe is a
+        # different tree (possibly a foreign branch) — using it makes the
+        # suite verdict someone else's code (EU-RELEASE-003).
         return [str(venv_exe)]
+    # python -m entry: sys.executable is honored but PYTHONPATH is made
+    # absolute by run_cli(), so the module resolves to THIS tree.
     return [sys.executable, "-m", "nexus_scalp.cli.main"]
 
 
@@ -49,6 +55,21 @@ ENTRY = _resolve_entry()
 
 def run_cli(*args: str, cwd: Path | None = None, timeout: int = 120):
     """Run the real CLI as a subprocess; return (rc, stdout, stderr, seconds)."""
+    # EU-RELEASE-003: worktree import isolation for the CLI subprocess. When
+    # tests run from an agent worktree without its own .venv (the canonical
+    # multi-agent pattern), sys.executable is the shared repo venv, whose
+    # editable .pth pins imports to the MAIN checkout. If the child process
+    # inherits a relative PYTHONPATH (or none) and runs from another cwd
+    # (e.g. TestCrossCwd's temp dir), it imports the MAIN checkout's code,
+    # which may sit on a foreign branch that does not carry this lane's fixes.
+    # Prepend this tree's absolute `src/` to PYTHONPATH so the subprocess
+    # ALWAYS executes the code under test, independent of cwd or venv location.
+    env = dict(os.environ)
+    src_dir = str(REPO_ROOT / "src")
+    existing = env.get("PYTHONPATH", "")
+    if src_dir not in existing.split(os.pathsep):
+        env["PYTHONPATH"] = f"{src_dir}{os.pathsep}{existing}" if existing else src_dir
+
     cmd = [*ENTRY, *args]
     t0 = time.perf_counter()
     proc = subprocess.run(
@@ -60,6 +81,55 @@ def run_cli(*args: str, cwd: Path | None = None, timeout: int = 120):
         encoding="utf-8",
         errors="replace",
         check=False,
+        env=env,
+    )
+    return proc.returncode, proc.stdout, proc.stderr, time.perf_counter() - t0
+
+
+def _python() -> str:
+    """Interpreter for the real-entry-point probes (same one the suite uses)."""
+    return os.environ.get("NEXUS_CLI_PYTHON") or sys.executable
+
+
+def run_python_script(script: Path, *args: str, timeout: int = 120):
+    """Run an arbitrary .py entry point (argv[0] = its path) as a subprocess.
+
+    Used by the EU-RELEASE-002 invariance tests: the wrapper is named
+    anything but ``nexus`` so the CLI cannot inherit the program name from
+    argv[0].
+    """
+    env = dict(os.environ)
+    env.setdefault("PYTHONPATH", str(REPO_ROOT / "src"))
+    cmd = [_python(), str(script), *args]
+    t0 = time.perf_counter()
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=env,
+    )
+    return proc.returncode, proc.stdout, proc.stderr, time.perf_counter() - t0
+
+
+def run_python_module(module: str, *args: str, timeout: int = 120):
+    """Run the CLI via ``python -m <module>`` (argv[0] != "nexus" by design)."""
+    env = dict(os.environ)
+    env.setdefault("PYTHONPATH", str(REPO_ROOT / "src"))
+    cmd = [_python(), "-m", module, *args]
+    t0 = time.perf_counter()
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=env,
     )
     return proc.returncode, proc.stdout, proc.stderr, time.perf_counter() - t0
 
@@ -295,6 +365,111 @@ class TestCrossCwd:
     def test_help_json_free_from_other_cwd(self, tmp_path):
         rc, out, _, _ = run_cli("help", cwd=tmp_path)
         assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# EU-RELEASE-002: the help surface must be independent of the entry-point
+# filename. Click derives the `--help` usage line from ``sys.argv[0]`` when no
+# ``prog_name`` is passed, so the surface used to change with every entry
+# point: ``python -m nexus_scalp.cli.main --help`` printed
+# ``Usage: python -m nexus_scalp.cli.main`` and a packaged
+# ``NexusScalpEngine-CLI.exe --help`` printed its own filename, while the
+# ``nexus help`` word form always said ``nexus`` - breaking the docs/CLI.md
+# contract that both surfaces are identical. Every invocation site now passes
+# the canonical CLI_PROGRAM_NAME. These tests run the CLI under a DELIBERATELY
+# MISNAMED wrapper (argv[0] != "nexus") so a regression that re-derives the
+# name from argv[0] fails here instead of only inside the packaged product.
+# ---------------------------------------------------------------------------
+
+
+class TestProgramNameInvariance:
+    """Help/usage output must be identical regardless of the binary's name."""
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def misnamed_wrapper(tmp_path_factory) -> Path:
+        """A runnable script whose own name is NOT ``nexus``.
+
+        Its argv[0] resolves to the wrapper path, which is exactly the
+        packaged-EXE situation (NexusScalpEngine-CLI.exe / any console-script
+        path): the help surface must not follow it.
+        """
+        wrapper = tmp_path_factory.mktemp("eup_entry") / "NexusScalpEngine-CLI.py"
+        wrapper.write_text(
+            "import sys\n"
+            f"sys.path.insert(0, {str(REPO_ROOT / 'src')!r})\n"
+            "from nexus_scalp.release.cli_shim import app, CLI_PROGRAM_NAME\n"
+            "app(prog_name=CLI_PROGRAM_NAME)\n",
+            encoding="utf-8",
+        )
+        return wrapper
+
+    @staticmethod
+    def _usage_line(text: str) -> str:
+        for line in text.splitlines():
+            s = line.strip()
+            if s.startswith("Usage:"):
+                return s
+        return ""
+
+    def test_help_under_misnamed_entry_point(self, misnamed_wrapper):
+        rc, out, err, _ = run_python_script(misnamed_wrapper, "--help")
+        assert rc == 0, f"--help failed under a misnamed entry point: {err[:300]}"
+        usage = self._usage_line(out)
+        assert usage.startswith("Usage: nexus "), (
+            f"usage line must name the canonical CLI, not the entry filename: {usage!r}"
+        )
+
+    def test_word_and_flag_forms_identical_under_misnamed_entry(self, misnamed_wrapper):
+        """The docs/CLI.md contract: `nexus help` == `nexus --help`."""
+        _, word, _, _ = run_python_script(misnamed_wrapper, "help")
+        _, flag, _, _ = run_python_script(misnamed_wrapper, "--help")
+        assert word.strip() == flag.strip(), (
+            "help word form diverged from --help under a misnamed entry point"
+        )
+
+    def test_usage_error_names_canonical_cli(self, misnamed_wrapper):
+        """Error panels embed the usage line, so they must also say `nexus`."""
+        rc, _, err, _ = run_python_script(misnamed_wrapper, "--not-a-real-option")
+        assert rc == 2
+        assert "Usage: nexus " in err, (
+            f"error usage line does not name the canonical CLI: {err[:300]!r}"
+        )
+        assert "Traceback" not in err
+
+    def test_every_documented_entry_point_agrees(self):
+        """All first-party entry points must render the same canonical usage.
+
+        The console-script shim, the packaged-main entry and the module path
+        share one program name, so no install path can show a different name.
+        """
+        surfaces: dict[str, str] = {}
+
+        # 1. release/cli_shim.py (the `nexus` / `nse` console script + the
+        #    PyInstaller onefile CLI, which builds this module as its entry).
+        rc, out, _, _ = run_python_module("nexus_scalp.release.cli_shim", "--help")
+        assert rc == 0
+        surfaces["cli_shim"] = self._usage_line(out)
+
+        # 2. release/packaged_main.py (the onedir / double-click EXE entry).
+        rc, out, _, _ = run_python_module("nexus_scalp.release.packaged_main", "--help")
+        assert rc == 0
+        surfaces["packaged_main"] = self._usage_line(out)
+
+        # 3. cli/main.py module path (developer / `python -m` invocation).
+        rc, out, _, _ = run_python_module("nexus_scalp.cli.main", "--help")
+        assert rc == 0
+        surfaces["cli_main"] = self._usage_line(out)
+
+        # 4. cli/__main__.py (`python -m nexus_scalp.cli`).
+        rc, out, _, _ = run_python_module("nexus_scalp.cli", "--help")
+        assert rc == 0
+        surfaces["cli_dunder_main"] = self._usage_line(out)
+
+        names = set(surfaces.values())
+        assert len(names) == 1, f"entry points disagree on the CLI program name: {surfaces!r}"
+        only = names.pop()
+        assert only.startswith("Usage: nexus "), f"unexpected usage line: {only!r}"
 
 
 # ---------------------------------------------------------------------------

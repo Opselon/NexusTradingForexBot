@@ -12,8 +12,11 @@ built from downstream. The taint chain therefore ends at the sanitizer rather
 than at the containment check, which is why this module exists separately from
 the ``is_relative_to`` barriers the callers also keep as defense-in-depth.
 
-Nothing here touches the filesystem: these are pure string -> Path reductions
-(``Path.relative_to`` included, which is a PurePath operation).
+Nothing else here touches the filesystem: the other functions are pure string
+-> Path reductions (``Path.relative_to`` included, which is a PurePath
+operation); ``resolve_within_trusted_roots`` resolves only its TRUSTED ROOTS
+(the value itself is resolved inside ``resolve_under_root``), because
+containment must be answered against the real, symlink-followed root paths.
 """
 
 from __future__ import annotations
@@ -141,10 +144,69 @@ def sanitize_name(raw: str | None, *, fallback: str) -> str:
     return m.group(0) if m is not None else fallback
 
 
+def resolve_within_trusted_roots(
+    raw: str | Path, roots: list[Path], *, label: str = "path"
+) -> Path | None:
+    """Resolve ``raw`` through ``resolve_under_root`` and confine it to ``roots``.
+
+    Every value the path machinery sees comes out of :func:`resolve_under_root`
+    — the single-root sanitizer the trainer already uses, whose whitelist match
+    builds the returned value (so the taint chain ends there rather than at a
+    sink here; this helper deliberately performs no ``resolve`` of its own).
+
+    Absolute values are tried against each trusted root in turn (both the
+    caller's spelling and its canonical form, so a ``/tmp`` -> ``/private/tmp``
+    style symlink between candidate and root cannot cause a false refusal);
+    relative values are anchored at the CWD — repo-relative when the app runs
+    from the repo — matching how callers hand over ``data/raw/...`` names.
+
+    Each candidate is then re-checked AFTER resolution against every root's
+    canonical form: the single-root sanitizer's own containment runs
+    PRE-resolve, so this second check is what rejects a symlink under one root
+    that points outside all of them. Returns ``None`` when nothing accepts the
+    value (fail-closed). ``roots`` come from trusted constants (package
+    location, ``REPO_ROOT``, ``tempdir``) or from env values each caller has
+    already shape-guarded.
+    """
+    s = str(raw or "").strip()
+    if not s or "\x00" in s:
+        return None
+    resolved_roots: list[Path] = []
+    sanitize_roots: list[Path] = []
+    for r in roots:
+        candidate_root = Path(r)
+        sanitize_roots.append(candidate_root)
+        try:
+            canonical = candidate_root.resolve()
+        except (OSError, ValueError):
+            continue
+        sanitize_roots.append(canonical)
+        resolved_roots.append(canonical)
+    if not resolved_roots:
+        return None
+
+    def _inside(candidate: Path) -> bool:
+        return any(candidate.is_relative_to(rr) for rr in resolved_roots)
+
+    if Path(s).is_absolute():
+        attempts = sanitize_roots
+    else:
+        attempts = [Path.cwd()]
+    for root in attempts:
+        try:
+            resolved = resolve_under_root(s, root, label=label)
+        except (AdviserPathError, OSError, ValueError):
+            continue
+        if _inside(resolved):
+            return resolved
+    return None
+
+
 __all__ = [
     "ADVISER_ROOT",
     "AdviserPathError",
     "resolve_under_root",
+    "resolve_within_trusted_roots",
     "sanitize_name",
     "sanitize_rel_path",
     "sanitize_repo_relative",

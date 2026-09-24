@@ -1913,3 +1913,16 @@ Risk: MEDIUM-LOW (persistence-path fixes, fail-loud, heavily regression-pinned; 
 Dependencies: none conflicting; foreign WIP never staged.
 Required tests: see critical_suite.txt PERF wave entries.
 Status: VERIFIED (offline; full gate evidence in the handoff doc)
+
+CHANGE-ID: CHG-0067
+Agent: Hermes-DBFABRIC
+Role: Principal database architecture & migration engineer
+Task: TASK-DB-FABRIC-COMPLETE — master wave: complete SQLite<->PostgreSQL forensic audit, end-to-end migration + bidirectional runtime switching through one canonical DB fabric (baseline PR #408 / 8b4d9e5c).
+Scope: PHASE 1 (this registration) = read-only forensic audit: every SQLite DB file/table/index/constraint/trigger/view inventory; classify all sqlite3.connect sites + all _is_sqlite consumers (report INITIAL vs REMAINING); query/dialect/parameter-binding inventory; PG fabric state + logical schema parity; migration/switching/verification plan. PHASE 2 (gated on inventory, registered as follow-on lanes): migration engine + row-level verification, provider switch lifecycle, DB doctor CLI, cross-provider tests + PG CI arm, perf baseline, failure injection, CodeQL. Expected files: src/nexus_scalp/database/**, src/nexus_scalp/adapters/database/**, src/nexus_scalp/cli/db_commands.py, Web DB tab, tests/**, agents/* registries.
+Contracts touched: DB_MIGRATION, SCHEMA_MANIFEST, DATABASE_HYGIENE, RETENTION_POLICY (all additive); INV-001 honored (no sync DB on tick path); NEXUS_AUDIT_DB test-isolation seam ALWAYS wins precedence.
+Runtime paths touched: NONE in phase 1 (read-only audit). Phase 2 must not change numeric/timestamp/boolean semantics for financial tables; no destructive probes against live nexusdb (throwaway DBs only, sqlite probes uri=ro).
+Owners affected: DB platform, audit persistence, news DB, UI/config, CI.
+Risk: HIGH-RISK infrastructure mission — user safety envelope: no silent data loss, no silent duplication, no secrets in logs/history, no auto-deletion of source DBs, "PostgreSQL ready" only after real PG tests + migration validation.
+Dependencies: PG server currently DOWN locally (start before PG lanes); PR #412 OPEN touches database/drivers/*; foreign WIP agent/hermes/db-provider-pro (unmerged switch UI) protected and reconciled at integration.
+Required tests: cross-provider contract suite, migration contract test (populate->migrate->verify->roundtrip), failure-injection battery, existing critical suite green.
+Status: IMPLEMENTING (phase 1 audit)
