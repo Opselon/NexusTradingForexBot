@@ -141,10 +141,24 @@ class TestLinuxGatewayPath:
     def test_gateway_client_fails_closed_when_gateway_dead(self):
         adapter = RemoteMT5GatewayAdapter(
             gateway_url="http://127.0.0.1:1",  # nothing listens on port 1
+            api_key="probe-key",
+            secret_token="probe-secret",
             timeout_seconds=1.0,
         )
         assert adapter.connect() is False
         assert adapter.is_connected() is False
+
+    def test_gateway_client_refuses_default_credentials_without_opt_in(self, monkeypatch):
+        """MT5-PARITY T4: client-side defaults must not be reachable silently."""
+        for var in (
+            "NSE_GATEWAY_URL",
+            "NSE_GATEWAY_API_KEY",
+            "NSE_GATEWAY_SECRET",
+            "NSE_GATEWAY_ALLOW_DEFAULTS",
+        ):
+            monkeypatch.delenv(var, raising=False)
+        with pytest.raises(RuntimeError, match="GATEWAY SECRETS REQUIRED"):
+            RemoteMT5GatewayAdapter(timeout_seconds=1.0)
 
 
 def _load_doctor(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, object]:
