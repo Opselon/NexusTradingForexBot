@@ -321,6 +321,78 @@ def decision_trace(
     decision_inspect(decision_id=decision_id, json_out=json_out)
 
 
+# ---------------------------------------------------------------------------
+# backtest
+# ---------------------------------------------------------------------------
+
+
+backtest_app = typer.Typer(name="backtest", help="Replay MT5 history through providers (no orders).")
+ai_app.add_typer(backtest_app, name="backtest")
+
+
+def _replay_engine(provider: str, mode: str) -> Any:
+    from nexus_scalp.ai_providers.mt5_mcp import MT5MCPClient, SECRET_NAME_MT5_KEY
+    from nexus_scalp.ai_providers.replay import ReplayEngine
+    from nexus_scalp.settings.secret_store import SecureSecretStore
+
+    orch = _orchestrator()
+    store = SecureSecretStore()
+    key = None
+    try:
+        key = store.get_secret(SECRET_NAME_MT5_KEY)
+    except Exception:  # noqa: BLE001 - probe is best effort
+        key = None
+    client = MT5MCPClient(api_key=key)
+    return ReplayEngine(orchestrator=orch, client=client)
+
+
+@backtest_app.command("health")
+def backtest_health(json_out: bool = typer.Option(False, "--json")):
+    """Is the MT5 MCP terminal reachable (Sections 31, 71)? Read-only."""
+    from nexus_scalp.ai_providers.replay import BacktestConfig
+
+    _emit(_replay_engine("internal_nse_ml", "INTERNAL_ONLY").health(BacktestConfig()), json_out)
+
+
+@backtest_app.command("run")
+def backtest_run(
+    provider: str = typer.Option("internal_nse_ml", "--provider", help="Provider to replay through."),
+    symbol: str = typer.Option("XAUUSD", "--symbol"),
+    period: str = typer.Option("M15", "--period"),
+    datetime_from: str = typer.Option(..., "--from", help="ISO datetime, inclusive."),
+    datetime_to: str = typer.Option(..., "--to", help="ISO datetime, exclusive."),
+    steps: int = typer.Option(8, "--steps", help="Decision points to evaluate."),
+    bars_per_step: int = typer.Option(200, "--bars"),
+    json_out: bool = typer.Option(False, "--json"),
+):
+    """Replay historical bars through a provider and score the outcome.
+
+    READ-ONLY: never places, modifies or closes an order (Section 71). Every
+    record is marked SIMULATED TEST DATA. Future bars are read only AFTER each
+    decision, to score it (Section 9).
+    """
+    from nexus_scalp.ai_providers.replay import BacktestConfig
+
+    engine = _replay_engine(provider, "EXTERNAL_ONLY")
+    cfg = BacktestConfig(
+        symbol=symbol,
+        period=period,
+        datetime_from=datetime_from,
+        datetime_to=datetime_to,
+        provider=provider,
+        max_steps=steps,
+        bars_per_step=bars_per_step,
+    )
+    rows, summary = engine.run(cfg)
+    out = {
+        "summary": summary.to_dict(),
+        "steps": [r.to_dict() for r in rows],
+        "decision_horizon_bars": 12,
+        "is_test_data": True,
+    }
+    _emit(out, json_out)
+
+
 def register_ai_commands(app: typer.Typer) -> None:
     """Attach the ``nexus ai`` command tree (called from cli/app_factory.py)."""
     app.add_typer(ai_app, name="ai")
