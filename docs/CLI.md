@@ -20,9 +20,10 @@ release management. Those boundaries never mix.
 4. nexus --version       # one-line build identity (same as `nexus version --plain`)
 5. nexus version         # full build identity (+ --json for tooling)
 6. nexus doctor          # full system diagnostics (read-only)
-7. nexus status          # health + environment + version
-8. nexus config          # inspect the active configuration
-9. nexus start           # PAPER mode by default, never LIVE silently
+7. nexus status          # health + environment + version + running state
+8. nexus dashboard       # open the web dashboard (or report why it is down)
+9. nexus config          # inspect the active configuration
+10. nexus start           # PAPER mode by default, never LIVE silently
 ```
 
 ## First-setup model and local training
@@ -74,7 +75,8 @@ asserts the golden list; run `nexus help` on your install for the live list).
 | `nexus version` | Canonical version + build identity | none | `--json`, `--plain` | fast, no model/MT5/DB work |
 | `nexus doctor` | Full system doctor (SYSTEM..ACCOUNTING) | none by default | `--json` | `--fix` mutates derived state only |
 | `nexus health` | Quick READY / DEGRADED / NOT READY summary | none | `--json` | |
-| `nexus status` | Health + environment + version | none | `--json` | read-only |
+| `nexus status` | Health + environment + version + **running product state** (application / engine / mode / trading) | none | `--json` | read-only |
+| `nexus dashboard` | Open / report the web dashboard ("where is my program?") | opens a browser when interactive | `--json` | `--no-open`; exits non-zero + next action when not running |
 | `nexus start` | Start the engine (**paper default**) | starts engine process | — | `--mode live` requires explicit confirmation |
 | `nexus stop` | Stop the background engine (pidfile-based) | stops engine | — | never kills arbitrary processes |
 | `nexus restart` | stop + start | engine | — | explicit only |
@@ -93,7 +95,7 @@ asserts the golden list; run `nexus help` on your install for the live list).
 | `nexus config` | Inspect/validate active config | none | `--json`, `--show`, `--validate <path>` |
 | `nexus config-validate` | Syntax/schema/migration/secret-masking validation | none | — |
 | `nexus settings` | User-settings store (secrets masked) | none | `--json` |
-| `nexus logs` | Tail/filter/export engine logs | read-only | — |
+| `nexus logs` | Tail/filter/export engine logs (reports the tree the engine actually writes) | read-only | `--json` |
 | `nexus diagnostics` / `nexus export-diagnostics` | Sanitized diagnostics archive (no secrets) | writes archive | — |
 | `nexus forensic` | Forensic health matrix + deploy gate | read-only | `--json` |
 | `nexus incidents` | Incident response diagnostics | read-only by default | — |

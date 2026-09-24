@@ -309,6 +309,15 @@ if (Test-Path $OutDir) { Remove-Item $OutDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $Stage = Join-Path $OutDir "portable"
 
+# EU-01 (payload hygiene): every EXE launch in step 5 anchored its runtime
+# workspace to the bundle dir, so the smoke run wrote SQLite databases,
+# paper state, logs and archive/ INTO this bundle. Shipping them would hand
+# every user the build machine's trading history. Clean here, then let the
+# script's own invariant (no *.db / *.log / paper_state.json anywhere in the
+# payload) fail the release if anything survives.
+& (Join-Path $Root "scripts\build\clean_payload.ps1") -BundleDir (Join-Path $BuildDir "onedir\NexusScalpEngine")
+if ($LASTEXITCODE -ne 0) { Fail "payload hygiene failed: build-machine runtime state survived in the staged bundle" }
+
 # Portable bundle = onedir + asset dirs (configs already embedded; docs)
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 Copy-Item (Join-Path $BuildDir "onedir\NexusScalpEngine\*") $Stage -Recurse -Force
