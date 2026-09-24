@@ -350,13 +350,59 @@ def decision_inspect(
     decision_id: str = typer.Argument(...),
     json_out: bool = typer.Option(False, "--json"),
 ):
-    """Inspect a decision (Section 41)."""
+    """Inspect a decision (Section 41). Prefers the durable ledger."""
+    store = _decision_store()
+    if store is not None:
+        try:
+            row = store.get(decision_id)
+            if row is not None:
+                _emit(row, json_out)
+                return
+        except Exception as exc:  # noqa: BLE001 - degrade to the in-memory ring
+            typer.echo(f"warning: durable read failed: {exc}", err=True)
     for d in _orchestrator().history(200):
         if d.get("decision_id") == decision_id:
             _emit(d, json_out)
             return
     typer.echo(f"decision {decision_id} not found", err=True)
     raise typer.Exit(1)
+
+
+@decision_app.command("list")
+def decision_list(
+    limit: int = typer.Option(20, "--limit", help="How many recent decisions."),
+    json_out: bool = typer.Option(False, "--json"),
+):
+    """Recent decisions (durable ledger when configured)."""
+    store = _decision_store()
+    if store is not None:
+        try:
+            rows = store.list_recent(limit=limit)
+            if rows:
+                _emit({"decisions": rows, "source": "durable"}, json_out)
+                return
+        except Exception as exc:  # noqa: BLE001
+            typer.echo(f"warning: durable read failed: {exc}", err=True)
+    _emit(
+        {"decisions": _orchestrator().history(limit), "source": "in_memory"},
+        json_out,
+    )
+
+
+def _decision_store() -> Any:
+    """Durable decision store, or ``None`` when persistence is off.
+
+    Isolated by ``NEXUS_DECISIONS_DB`` for tests, same convention as the
+    settings DB. Never raises: a bad path degrades to in-memory history.
+    """
+    from nexus_scalp.ai_providers.store import ProviderDecisionStore
+    from nexus_scalp.settings.paths import decisions_db_path
+
+    try:
+        return ProviderDecisionStore(db_path=decisions_db_path())
+    except Exception as exc:  # noqa: BLE001 - CLI must never die on a bad DB path
+        typer.echo(f"warning: decision store unavailable: {exc}", err=True)
+        return None
 
 
 @decision_app.command("trace")

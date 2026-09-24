@@ -210,6 +210,14 @@ export interface DecisionRecord {
   is_test_data: boolean;
 }
 
+/** GET /api/ai-providers/decisions — the envelope the durable route returns
+ * (Sections 41, 63). ``source`` tells the UI whether the row came from the
+ * durable ledger ("durable") or the live in-memory ring ("in_memory"). */
+export interface DecisionsResponse {
+  decisions: DecisionRecord[];
+  source: "durable" | "in_memory";
+}
+
 export interface EvaluateResponse {
   decision: DecisionRecord;
   request: Record<string, unknown>;
