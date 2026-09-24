@@ -146,11 +146,27 @@ def publish(
     if env and not os.environ.get(DOTENV_DISABLE_ENV, "").strip():
         path = _dotenv_path()
         if path is not None:
+            # RT-006: an OPERATOR-set dotfile token is authoritative — the
+            # docker-compose contract and the operator's copied ?token= read
+            # it from here. The resolved token can only be the same value in
+            # that case (the resolver reads the file above the secret store),
+            # but the write is still refused for the token key whenever the
+            # file already carries a non-empty value, so no future resolution
+            # order (env override, store rotation) can silently discard the
+            # operator's credential and 401 every console. The port key is
+            # always publishable: it records the port this boot bound.
             try:
-                update_env_file(path, env)
-                dotenv_written = True
-            except OSError as exc:
-                logger.warning("[AUTH-BOOT] .env write failed", path=str(path), error=str(exc))
+                existing = read_env_file()
+            except Exception:
+                existing = {}
+            if (existing.get(ENV_ACTIVE_TOKEN) or "").strip():
+                env.pop(ENV_ACTIVE_TOKEN, None)
+            if env:
+                try:
+                    update_env_file(path, env)
+                    dotenv_written = True
+                except OSError as exc:
+                    logger.warning("[AUTH-BOOT] .env write failed", path=str(path), error=str(exc))
     if token and print_token_to is not None:
         print_token_to(token)
     return {"token": token, "port": port, "dotenv": dotenv_written}
