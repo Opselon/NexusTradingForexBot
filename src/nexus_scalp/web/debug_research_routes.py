@@ -1254,6 +1254,12 @@ def register_debug_research_routes(
     # TRADE INTELLIGENCE (PHASE 09, CHG-0032 Step 3B): extracted verbatim to
     # web/intelligence_routes.py — registered at the same position.
     # =========================================================================
+    # LD-2: register_*_routes() only populates the module-level `router`; the
+    # include_router below is the SOLE mount for the 10 /api/intelligence/*
+    # endpoints. FastAPI's include_router is not idempotent — on the 2nd+ app
+    # build in a process it re-mounted the accumulated router and emitted
+    # duplicate operation IDs. Clearing the router before registering makes the
+    # mount exactly-once per app while preserving the original route ORDER.
     from nexus_scalp.web.intelligence_routes import (
         register_intelligence_routes,
     )
@@ -1261,6 +1267,7 @@ def register_debug_research_routes(
         router as intelligence_router,
     )
 
+    intelligence_router.routes.clear()
     register_intelligence_routes(app)
     app.include_router(intelligence_router)
 
@@ -2176,13 +2183,16 @@ def register_debug_research_routes(
     # extracted to web/model_governance_routes.py (CHG-0032-A1 Step-3A).
     # Registered at the SAME position the inline routes occupied (order parity).
     # =========================================================================
+    from nexus_scalp.web import model_governance_routes as _mgr
     from nexus_scalp.web.model_governance_routes import (
         register_model_governance_routes,
     )
 
+    # LD-2: as above — include_router(_mgr.router) is the ONLY mount for the 45
+    # /api/models/* endpoints; FastAPI's include_router is not idempotent, so the
+    # accumulated module router was re-mounted on every 2nd+ build in a process.
+    _mgr.router.routes.clear()
     register_model_governance_routes(app)
-    from nexus_scalp.web import model_governance_routes as _mgr
-
     app.include_router(_mgr.router)
 
     # =========================================================================

@@ -16,6 +16,34 @@ from nexus_scalp.observability.logging import get_logger
 logger = get_logger("nexus_scalp.application.live_workers")
 
 
+def _last_cycle_hint(worker_fn: Callable[[], Any]) -> str:
+    """LD-4: best-effort last-known cycle duration of a timed-out worker.
+
+    Kicked worker fns are bound ``tick`` methods, so the worker object is
+    recovered from ``__self__`` — no new plumbing, and nothing here runs on the
+    happy path. Every access is defensive: this is reached from the kick path
+    and must never raise (which would mask the timeout it is reporting).
+
+    Returns a ``last_cycle_duration_sec=<s>`` fragment when the worker exposes
+    a duration, else ``last_cycle_duration=unknown`` — the point is that an
+    operator can tell a slow-but-healthy cycle (duration near the budget) from
+    a genuinely wedged call (duration far below the budget).
+    """
+    try:
+        worker = getattr(worker_fn, "__self__", None)
+        raw = getattr(worker, "last_cycle_duration", None)
+        if raw is None:
+            # IncidentWorker exposes milliseconds instead.
+            raw_ms = getattr(worker, "cycle_duration_ms", None)
+            if raw_ms is None:
+                return "last_cycle_duration=unknown"
+            raw = float(raw_ms) / 1000.0
+        dur = float(raw)
+    except Exception:
+        return "last_cycle_duration=unknown"
+    return f"last_cycle_duration_sec={dur:.1f}" if dur > 0.0 else "last_cycle_duration=unknown"
+
+
 class WorkerSupervisor:
     """Manages start, stop, and kicking of background pipeline workers."""
 
@@ -71,9 +99,10 @@ class WorkerSupervisor:
                 await asyncio.wait_for(asyncio.to_thread(worker_fn), timeout=timeout_sec)
             except TimeoutError:
                 logger.error(
-                    "[WORKER_KICK] event=TIMEOUT worker=%s timeout_sec=%s — detaching hung call",
+                    "[WORKER_KICK] event=TIMEOUT worker=%s timeout_sec=%s %s — detaching hung call",
                     name,
                     timeout_sec,
+                    _last_cycle_hint(worker_fn),
                 )
             except asyncio.CancelledError:
                 pass

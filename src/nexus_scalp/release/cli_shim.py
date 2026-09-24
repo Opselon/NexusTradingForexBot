@@ -12,11 +12,21 @@ into an exit code of 1 on --help.
 """
 
 from __future__ import annotations
-import contextlib
 
+import contextlib
 import sys
 
-from nexus_scalp.cli.main import app
+# WINDOWS-UX-001: the frozen CLI EXE is a product process on the user's
+# taskbar too. Pin the AppUserModelID before the CLI renders so the taskbar
+# entry groups with the engine under one stable identity instead of the
+# bootloader image name. Non-Windows: no-op. Failure-isolated.
+from nexus_scalp.platform.windows_identity import (
+    apply_windows_identity,
+)
+
+apply_windows_identity()
+
+from nexus_scalp.cli.main import app  # noqa: E402
 
 if __name__ == "__main__":
     # BUG-145/147: frozen consoles default to legacy code pages (cp1252/437).

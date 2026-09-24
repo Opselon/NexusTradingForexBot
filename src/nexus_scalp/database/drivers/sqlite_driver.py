@@ -25,7 +25,9 @@ from collections.abc import Iterable, Sequence
 from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig
-from nexus_scalp.database.drivers._sql_guard import assert_safe_sql
+from nexus_scalp.database.drivers._sql_guard import (
+    assert_safe_sql,
+)
 from nexus_scalp.database.drivers.base import DatabaseDriver
 
 #: Case-insensitive map: SQLite type name -> portable logical type.
@@ -246,6 +248,15 @@ class SQLiteDriver(DatabaseDriver):
 
         return sqlite3.SQLITE_DENY
 
+    def set_read_authorizer(self, conn: sqlite3.Connection) -> None:
+        """Attach the kernel-level read-only authorizer to a connection.
+
+        This is the enforcement primitive the fabric's read plane calls; it
+        is deliberately separate from :meth:`configure_connection` (which
+        applies WRITE-side PRAGMAs and must never run on a read-only handle).
+        """
+        conn.set_authorizer(self._readonly_authorizer)
+
     def query(self, sql: str, args: Sequence[Any] = (), conn: Any = None) -> list[dict[str, Any]]:
         """Run a SELECT and return rows as dicts (row_factory applied)."""
         own = conn is None
@@ -260,7 +271,16 @@ class SQLiteDriver(DatabaseDriver):
     def query_readonly(
         self, sql: str, args: Sequence[Any] = (), conn: Any = None
     ) -> list[dict[str, Any]]:
-        """Run a read-only query with SQLite C-level authorizer enforced."""
+        """Run a read-only query with BOTH guard layers enforced.
+
+        Layer 1 is the driver's own verb allow-list (``assert_safe_sql``):
+        it rejects ``ATTACH``/``VACUUM``/``REPLACE`` as ``ValueError`` before
+        the statement ever reaches the kernel. Layer 2 is the SQLite C-level
+        read-only authorizer, which denies every non-read action at the
+        kernel boundary as ``sqlite3.DatabaseError``. Defense in depth — the
+        test contract pins both, and neither layer is allowed to be the only
+        thing standing between ``ATTACH`` and the database.
+        """
         own = conn is None
         c = conn or self.connect()
         try:

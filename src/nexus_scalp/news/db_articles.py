@@ -188,6 +188,25 @@ class ArticlesMixin(_NewsDbCoreProto):
             ).fetchone()
             return dict(row) if row else None
 
+    def find_article_by_source_url(
+        self, source_id: str, canonical_url: str
+    ) -> dict[str, Any] | None:
+        """Exact-URL guard: same story, same source, already stored.
+
+        Re-polls of a feed re-fetch the identical URL with a re-fabricated
+        ``published_at`` (no parseable time in ~88% of feeds), which re-mints
+        the time-bucketed ``article_hash`` and lets the same article be stored
+        again and again (231 copies of one Bank of England notice were seen in
+        production). ``(source_id, canonical_url)`` is stable across polls, so
+        this is the cheapest reliable guard against re-poll duplicates.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM news_articles WHERE source_id = ? AND canonical_url = ?;",
+                (source_id, canonical_url),
+            ).fetchone()
+            return dict(row) if row else None
+
     def get_article(self, article_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
@@ -274,6 +293,12 @@ class ArticlesMixin(_NewsDbCoreProto):
         if status_filter:
             where.append("article_status = ?")
             args.append(status_filter)
+        else:
+            # news-admission-gate: QUARANTINE rows are persisted for threshold
+            # tuning but are NOT part of the primary feed — every default
+            # listing (analysis queue, auto-prune, worker pool, web feeds)
+            # skips them unless a caller asks for a status explicitly.
+            where.append("article_status != 'QUARANTINE'")
         if asset_filter:
             where.append("(title LIKE ? OR summary LIKE ? OR body LIKE ?)")
             args += [f"%{asset_filter}%"] * 3
