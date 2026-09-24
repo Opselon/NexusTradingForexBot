@@ -187,5 +187,18 @@ export const MESSAGES: FeatureMessages = {
   "dependency.violations.explanation": { fa: "توضیح", de: "Erklärung", es: "explicación", ar: "التفسير" },
   "dependency.violations.remediation": { fa: "رفع", de: "Behebung", es: "remediación", ar: "الإصلاح" },
   "dependency.violations.subtitle": { fa: "validate_architecture · قواعد لایه", de: "validate_architecture · Layer-Regeln", es: "validate_architecture · reglas de capas", ar: "validate_architecture · قواعد الطبقات" },
+  "dependency.impact.high_risk": { fa: "HIGH RISK", de: "HOCHES RISIKO", es: "ALTO RIESGO", ar: "خطر مرتفع" },
+  "dependency.impact.row_runtime": { fa: "زمان اجرا (بحرانی/بالا)", de: "Runtime (kritisch/hoch)", es: "tiempo de ejecución (crítico/alto)", ar: "وقت التشغيل (حرج/مرتفع)" },
+  "dependency.impact.row_tests": { fa: "احتمالاً تست‌های متاثر", de: "möglicherweise betroffene Tests", es: "tests probablemente afectados", ar: "اختبارات يُرجَّح تأثرها" },
+  "dependency.impact.row_api": { fa: "نقاط پایانی api", de: "API-Endpunkte", es: "endpoints de api", ar: "نقاط نهاية api" },
+  "dependency.impact.row_direct": { fa: "وابسته‌های مستقیم", de: "direkte Abhängige", es: "dependientes directos", ar: "التابعون المباشرون" },
+  "dependency.impact.summary": { fa: "شعاع انفجار {total} · مستقیم {direct} · غیرمستقیم {transitive}", de: "Sprengradius {total} · direkt {direct} · transitiv {transitive}", es: "radio de explosión {total} · directo {direct} · transitivo {transitive}", ar: "نصف القطر التدميري {total} · مباشر {direct} · غير مباشر {transitive}" },
+  "dependency.path.from_to": { fa: "از {from} به {to}", de: "von {from} nach {to}", es: "de {from} a {to}", ar: "من {from} إلى {to}" },
+  "dependency.flag.cycle": { fa: "حلقه", de: "Zyklus", es: "ciclo", ar: "دورة" },
+  "dependency.flag.architecture_violation": { fa: "نقض معماری", de: "Architekturverstoß", es: "violación de arquitectura", ar: "مخالفة معمارية" },
+  "dependency.flag.unresolved_di": { fa: "DI حل‌نشده", de: "ungelöste DI", es: "DI sin resolver", ar: "DI غير محلول" },
+  "dependency.flag.runtime_critical": { fa: "بحرانی در زمان اجرا", de: "runtime-kritisch", es: "crítico en tiempo de ejecución", ar: "حرج وقت التشغيل" },
+  "dependency.flag.high_fan_in": { fa: "fan in بالا", de: "hoher Fan-in", es: "fan in alto", ar: "استيراد عالٍ" },
+  "dependency.flag.high_fan_out": { fa: "fan out بالا", de: "hoher Fan-out", es: "fan out alto", ar: "تصدير عالٍ" },
 
 };
