@@ -13,9 +13,10 @@
 import { useMemo } from "react";
 import { Skeleton } from "@/components/primitives";
 import { formatAgeMs, formatDateTime } from "@/lib/format";
+import { useI18n } from "@/stores/i18nStore";
 import { bool, notRecorded, num, obj, str, type OperatorSummaryDto } from "../model";
 import { StatusGlow } from "./StatusGlow";
-import { engineTone, modeTone, tickTone } from "./tones";
+import { engineTone, modeTone, tickTone, toneText, type Translate } from "./tones";
 
 interface HeroStripProps {
   summary: OperatorSummaryDto | undefined;
@@ -25,20 +26,23 @@ interface HeroStripProps {
   onRetry: () => void;
 }
 
-/** One snapshot fact cell — dimmed when the backend recorded nothing. */
-function RailCell({ label, value }: { label: string; value: string }) {
+/** One snapshot fact cell — dimmed when the backend recorded nothing.
+ *  `label`/`value` arrive already localized (or verbatim backend data). */
+function RailCell({ label, value, display }: { label: string; value: string; display: string }) {
   const dim = value === "—" || value === "NOT RECORDED";
   return (
     <div className="ctl-rail-cell">
       <span className="ctl-rail-label">{label}</span>
-      <span className={`ctl-rail-value${dim ? " ctl-dim" : ""}`} title={value}>
-        {value}
+      <span className={`ctl-rail-value${dim ? " ctl-dim" : ""}`} title={display}>
+        {display}
       </span>
     </div>
   );
 }
 
 export function HeroStrip({ summary, pending, error, errorMessage, onRetry }: HeroStripProps) {
+  const t = useI18n((s) => s.t);
+  const tr = t as Translate;
   // perf: the runtime object identity is stable across the 15s summary poll
   // unless the backend actually changed it — memo the tone derivations so a
   // re-render reuses the identical tone/text objects (cheap pure helpers, but
@@ -50,43 +54,43 @@ export function HeroStrip({ summary, pending, error, errorMessage, onRetry }: He
   const tickAge = num(rt.tick_freshness_ms);
 
   return (
-    <section className="ctl-hero" aria-label="Runtime state strip">
+    <section className="ctl-hero" aria-label={t("control-center.hero.strip_aria", "Runtime state strip")}>
       <div className="ctl-hero-main">
         <div className="ctl-eyebrow">
           <span className="ctl-eyebrow-bar" aria-hidden="true" />
-          OPERATOR CONSOLE · /api/operator/summary
+          {t("control-center.hero.eyebrow", "OPERATOR CONSOLE · /api/operator/summary")}
         </div>
 
         {pending ? (
           <div className="ctl-glows">
             <span className="ctl-glow ctl-glow--unknown">
               <span className="ctl-dot" aria-hidden="true" />
-              <span className="ctl-glow-label">STATE</span>
-              <span className="ctl-glow-text">LOADING…</span>
+              <span className="ctl-glow-label">{t("control-center.hero.state_label", "STATE")}</span>
+              <span className="ctl-glow-text">{t("control-center.hero.loading", "LOADING…")}</span>
             </span>
           </div>
         ) : error ? (
           <div className="ctl-glows">
-            <span className="ctl-glow ctl-glow--unknown" title="operator/summary request failed">
+            <span className="ctl-glow ctl-glow--unknown" title={t("control-center.err.summary", "operator/summary request failed")}>
               <span className="ctl-dot" aria-hidden="true" />
-              <span className="ctl-glow-label">STATE</span>
-              <span className="ctl-glow-text">UNAVAILABLE</span>
+              <span className="ctl-glow-label">{t("control-center.hero.state_label", "STATE")}</span>
+              <span className="ctl-glow-text">{t("ui.status.unavailable", "UNAVAILABLE")}</span>
             </span>
             <button className="btn small" onClick={onRetry}>
-              Retry
+              {t("common.retry", "Retry")}
             </button>
           </div>
         ) : (
           <div className="ctl-glows">
-            <StatusGlow label="ENGINE" tone={eng.tone} text={eng.text} title="engine_running (operator/summary)" />
-            <StatusGlow label="MODE" tone={mode.tone} text={mode.text} title="runtime_mode / execution_mode" />
-            <StatusGlow label="TICK" tone={tick.tone} text={tick.text} title="tick_stale / tick_freshness_ms" />
+            <StatusGlow label={t("control-center.rack.engine", "ENGINE")} tone={eng.tone} text={toneText(tr, eng.text)} title={t("control-center.hero.eng_title", "engine_running (operator/summary)")} />
+            <StatusGlow label={t("control-center.rack.mode", "MODE")} tone={mode.tone} text={toneText(tr, mode.text)} title={t("control-center.hero.mode_title", "runtime_mode / execution_mode")} />
+            <StatusGlow label={t("control-center.rack.tick", "TICK")} tone={tick.tone} text={toneText(tr, tick.text)} title={t("control-center.hero.tick_title", "tick_stale / tick_freshness_ms")} />
           </div>
         )}
 
         {error && (
           <div className="ctl-hero-error tiny" role="alert">
-            summary unavailable: {errorMessage}
+            {t("control-center.hero.summary_unavailable", "summary unavailable: {msg}", { msg: errorMessage })}
           </div>
         )}
       </div>
@@ -98,10 +102,22 @@ export function HeroStrip({ summary, pending, error, errorMessage, onRetry }: He
           </div>
         ) : (
           <>
-            <RailCell label="SNAPSHOT" value={formatDateTime(str(rt.snapshot_timestamp))} />
-            <RailCell label="STATE VER" value={notRecorded(num(rt.state_version))} />
-            <RailCell label="TICK AGE" value={tickAge === null ? "NOT RECORDED" : formatAgeMs(tickAge)} />
-            <RailCell label="LATEST DECISION" value={formatDateTime(summary?.ledger?.latest_decision_at)} />
+            <RailCell label={t("control-center.rail.snapshot", "SNAPSHOT")} value={formatDateTime(str(rt.snapshot_timestamp))} display={formatDateTime(str(rt.snapshot_timestamp))} />
+            <RailCell
+              label={t("control-center.rail.state_ver", "STATE VER")}
+              value={notRecorded(num(rt.state_version))}
+              display={notRecorded(num(rt.state_version)) === "NOT RECORDED" ? t("control-center.truth.not_recorded", "NOT RECORDED") : notRecorded(num(rt.state_version))}
+            />
+            <RailCell
+              label={t("control-center.rail.tick_age", "TICK AGE")}
+              value={tickAge === null ? "NOT RECORDED" : formatAgeMs(tickAge)}
+              display={tickAge === null ? t("control-center.truth.not_recorded", "NOT RECORDED") : formatAgeMs(tickAge)}
+            />
+            <RailCell
+              label={t("control-center.rail.latest_decision", "LATEST DECISION")}
+              value={formatDateTime(summary?.ledger?.latest_decision_at)}
+              display={formatDateTime(summary?.ledger?.latest_decision_at)}
+            />
           </>
         )}
       </div>

@@ -71,7 +71,7 @@ export function OverviewPanels({ summary, pending, error, errorMessage, onRetry 
               label={t("control-center.label.bid_ask_spread", "bid / ask / spread")}
               value={`${formatPrice(num(rt.bid), 2)} / ${formatPrice(num(rt.ask), 2)} / ${formatPrice(num(rt.spread), 2)}`}
             />
-            <InfoRow label="provenance.price" value={str(obj(rt.provenance).price) ?? "NOT RECORDED"} />
+            <InfoRow label={t("control-center.label.provenance_price", "provenance.price")} value={str(obj(rt.provenance).price) ?? t("control-center.truth.not_recorded", "NOT RECORDED")} />
           </dl>
         </Panel>
         <Panel title={t("control-center.panel.ledger_stats", "Ledger stats (bounded recent window)")} tight>
