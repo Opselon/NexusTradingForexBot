@@ -1,6 +1,61 @@
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { positionSide } from "@/lib/format";
 import { useUiStore, type ToastItem } from "@/stores/uiStore";
+import { useI18n } from "@/stores/i18nStore";
+
+/** t signature shared by the local label maps below. */
+type T = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+
+/** Backend status token -> localized display word. DATA stays verbatim (the
+ *  level is computed from the raw token, never from the translation); only the
+ *  word a user reads is mapped. A status the dictionary does not know renders
+ *  verbatim, so a new health code can never be mistranslated. */
+function statusWord(t: T, status: string): string {
+  switch (status.toUpperCase()) {
+    case "READY": return t("ui.status.ready", "READY");
+    case "IDLE": return t("ui.status.idle", "IDLE");
+    case "CONNECTED": return t("ui.status.connected", "CONNECTED");
+    case "OK": return t("ui.status.ok", "OK");
+    case "RUNNING": return t("ui.status.running", "RUNNING");
+    case "NORMAL": return t("ui.status.normal", "NORMAL");
+    case "DISABLED": return t("ui.status.disabled", "DISABLED");
+    case "WARMING_UP": return t("ui.status.warming_up", "WARMING UP");
+    case "DEGRADED": return t("ui.status.degraded", "DEGRADED");
+    case "ELEVATED": return t("ui.status.elevated", "ELEVATED");
+    case "WARNING": return t("ui.status.warning", "WARNING");
+    case "WAITING_TICK": return t("ui.status.waiting_tick", "WAITING TICK");
+    case "PENDING": return t("ui.status.pending", "PENDING");
+    case "DISCONNECTED": return t("ui.status.disconnected", "DISCONNECTED");
+    case "UNAVAILABLE": return t("ui.status.unavailable", "UNAVAILABLE");
+    case "FAILED": return t("ui.status.failed", "FAILED");
+    case "BLOCKED": return t("ui.status.blocked", "BLOCKED");
+    case "INVALID": return t("ui.status.invalid", "INVALID");
+    case "HALTED": return t("ui.status.halted", "HALTED");
+    case "CONFLICTED": return t("ui.status.conflicted", "CONFLICTED");
+    case "STOPPED": return t("ui.status.stopped", "STOPPED");
+    default: return status.replace(/_/g, " ");
+  }
+}
+
+/** Severity token -> localized display word (unknown values pass through). */
+function severityWord(t: T, severity: string): string {
+  switch (severity.toUpperCase()) {
+    case "CRITICAL": return t("ui.severity.critical", "CRITICAL");
+    case "HIGH": return t("ui.severity.high", "HIGH");
+    case "MEDIUM": return t("ui.severity.medium", "MEDIUM");
+    case "LOW": return t("ui.severity.low", "LOW");
+    default: return severity.toUpperCase();
+  }
+}
+
+/** Side token -> localized display word (unknown values pass through). */
+function sideWord(t: T, side: string): string {
+  switch (side.toUpperCase()) {
+    case "BUY": return t("ui.side.buy", "BUY");
+    case "SELL": return t("ui.side.sell", "SELL");
+    default: return side;
+  }
+}
 
 /** Health/status -> semantic badge level. Backend status strings are trusted;
  *  anything unrecognized renders UNKNOWN (never guessed). */
@@ -19,8 +74,9 @@ export function StatusBadge({ status, label }: { status: string | null | undefin
   // the only non-trivial internal derivation is badgeLevel (uppercase + four
   // category scans), memoized on the exact value it reads. Same status in,
   // same level out — the badge markup is unchanged.
+  const t = useI18n((s) => s.t);
   const level = useMemo(() => badgeLevel(status), [status]);
-  const text = status ? status.replace(/_/g, " ") : "UNKNOWN";
+  const text = status ? statusWord(t, status) : "UNKNOWN";
   const glyph = level === "good" ? "\u2713" : level === "warn" ? "\u26a0" : level === "bad" ? "\u2715" : level === "neutral" ? "\u25cf" : "\u2013";
   return (
     <span className={`badge ${level}`} title={label ?? text}>
@@ -31,14 +87,16 @@ export function StatusBadge({ status, label }: { status: string | null | undefin
 }
 
 export function SeverityBadge({ severity }: { severity: string | null | undefined }) {
+  const t = useI18n((s) => s.t);
   const s = (severity ?? "unknown").toUpperCase();
   const level = s === "CRITICAL" || s === "HIGH" ? "bad" : s === "MEDIUM" ? "warn" : s === "LOW" ? "neutral" : "unknown";
-  return <span className={`badge ${level}`}>{s}</span>;
+  return <span className={`badge ${level}`}>{severityWord(t, s)}</span>;
 }
 
 export function PositionSideBadge({ type }: { type: number | string | null | undefined }) {
+  const t = useI18n((s) => s.t);
   const side = positionSide(type);
-  return <span className={`badge ${side === "BUY" ? "good" : side === "SELL" ? "bad" : "unknown"}`}>{side}</span>;
+  return <span className={`badge ${side === "BUY" ? "good" : side === "SELL" ? "bad" : "unknown"}`}>{sideWord(t, side)}</span>;
 }
 
 export function MetricCard({
@@ -107,6 +165,7 @@ export function LoadingState({ label = "Loading backend state…" }: { label?: s
 }
 
 export function ErrorState({ message, requestId, onRetry }: { message: string; requestId?: string | null; onRetry?: () => void }) {
+  const t = useI18n((s) => s.t);
   return (
     <div className="state-block" role="alert">
       <div className="glyph">⚠</div>
@@ -114,7 +173,7 @@ export function ErrorState({ message, requestId, onRetry }: { message: string; r
       {requestId && <div className="hint inline-mono">request_id: {requestId}</div>}
       {onRetry && (
         <button className="btn small" onClick={onRetry}>
-          Retry
+          {t("ui.state.retry", "Retry")}
         </button>
       )}
     </div>
@@ -231,6 +290,7 @@ export function ConfirmModal({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const t = useI18n((s) => s.t);
   const modalRef = useRef<HTMLDivElement>(null);
   const prevFocusRef = useRef<HTMLElement | null>(null);
   // Focus enters the dialog on open and returns to the trigger on close.
@@ -277,10 +337,10 @@ export function ConfirmModal({
         <div className="modal-body">{children}</div>
         <div className="modal-actions">
           <button className="btn" disabled={busy} onClick={onCancel}>
-            Cancel <kbd>esc</kbd>
+            {t("ui.state.cancel", "Cancel")} <kbd>esc</kbd>
           </button>
           <button className={`btn ${danger ? "danger" : "primary"}`} disabled={busy} onClick={onConfirm}>
-            {busy ? "sending…" : confirmLabel}
+            {busy ? t("ui.confirm.sending", "sending…") : confirmLabel}
           </button>
         </div>
       </div>

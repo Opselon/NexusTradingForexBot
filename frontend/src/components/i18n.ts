@@ -125,4 +125,6 @@ export const MESSAGES: FeatureMessages = {
   "ui.severity.low": { fa: "پایین", de: "NIEDRIG", es: "BAJO", ar: "منخفض" },
   "ui.side.buy": { fa: "خرید", de: "KAUF", es: "COMPRA", ar: "شراء" },
   "ui.side.sell": { fa: "فروش", de: "VERKAUF", es: "VENTA", ar: "بيع" },
+  "ui.state.retry": { fa: "تلاش مجدد", de: "Erneut versuchen", es: "Reintentar", ar: "إعادة المحاولة" },
+  "ui.state.cancel": { fa: "انصراف", de: "Abbrechen", es: "Cancelar", ar: "إلغاء" },
 };
