@@ -290,6 +290,7 @@ tests/unit/test_audit_legacy4_surface.py
 tests/unit/test_backtest_report.py
 tests/unit/test_backtest_report_asset.py
 tests/unit/test_backtest_report_integration.py
+tests/unit/test_broker_valuation_forensics.py
 tests/unit/test_bug185_terminal_state_resolver.py
 tests/unit/test_bug217_news_state_bounds.py
 tests/unit/test_bug225_untrained_champion_canary.py
@@ -403,6 +404,7 @@ tests/unit/test_order_manager_exit_bugs.py
 tests/unit/test_order_write_uncertainty.py
 tests/unit/test_outcome_flush_race_bug140.py
 tests/unit/test_p0_producer_regression.py
+tests/unit/test_paper_broker_honesty.py
 tests/unit/test_paper_live_training_lineage.py
 tests/unit/test_paper_persistence.py
 tests/unit/test_paper_replay_mode.py
@@ -419,6 +421,9 @@ tests/unit/test_policy_flip_protection_pins_bug227.py
 tests/unit/test_policy_throttle_pins_bug227.py
 tests/unit/test_policy_warmup_range_seam_bug230.py
 tests/unit/test_position_replay_pipeline.py
+tests/unit/test_position_adviser.py
+tests/unit/test_position_adviser_forensics.py
+tests/unit/test_position_adviser_e2e.py
 tests/unit/test_predictive_limit_explainability_bug226.py
 tests/unit/test_promotion_economic_integrity.py
 tests/unit/test_promotion_rejects_degenerate_model.py

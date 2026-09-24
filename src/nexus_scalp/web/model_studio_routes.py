@@ -646,7 +646,13 @@ def _capture_layer_activations(
 
 
 def _compute_saliency(model: torch.nn.Module, x_np: np.ndarray, top_k: int = 5) -> dict[str, Any]:
-    """Computes input feature saliency via backprop gradients $\\partial \\text{score}/\\partial x$."""
+    """Computes input feature saliency via backprop gradients.
+
+    SEC (py/stack-trace-exposure #1102/#1164): an exception here is surfaced to
+    the API caller. Its message can contain internal paths/stack frames from
+    the tensor pipeline, so the value is NEVER echoed; the failure is reported
+    server-side and the client gets a fixed, uninformative marker.
+    """
     try:
         x_var = torch.tensor(x_np, dtype=torch.float32, requires_grad=True)
         model.zero_grad()
@@ -676,8 +682,15 @@ def _compute_saliency(model: torch.nn.Module, x_np: np.ndarray, top_k: int = 5) 
             "mean_abs_gradient": round(float(np.mean(np.abs(grads))), 5),
             "max_abs_gradient": round(float(np.max(np.abs(grads))), 5),
         }
-    except Exception as exc:
-        return {"error": str(exc), "top_positive_drivers": [], "top_negative_drivers": []}
+    except Exception as exc:  # any failure must not leak details
+        # SEC (py/stack-trace-exposure): the message is never returned to the
+        # client; diagnostics go to the server log only.
+        logger.warning("model-studio saliency failed", exc_info=exc)
+        return {
+            "error": "saliency computation failed",
+            "top_positive_drivers": [],
+            "top_negative_drivers": [],
+        }
 
 
 def _scan_available_datasets() -> list[dict[str, Any]]:
@@ -836,8 +849,12 @@ def fetch_70d_components(engine: Any = None) -> dict[str, Any]:
     try:
         validate_70d_vector(full_70, schema_hash=feature_schema_hash(), context="studio_fetch")
     except Exception as err:
+        # SEC (py/stack-trace-exposure #1102): ``contract_error`` is echoed in
+        # the API body, so it must never carry the exception text — log the
+        # detail server-side, surface only a fixed marker.
+        logger.warning("model-studio 70d contract validation failed", exc_info=err)
         contract_valid = False
-        contract_error = str(err)
+        contract_error = "feature contract validation failed"
 
     slots: list[dict[str, Any]] = []
     for i in range(70):

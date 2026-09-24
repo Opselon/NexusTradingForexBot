@@ -258,7 +258,16 @@ class TestLocalAssetsServed:
         # the traversal was rejected without content — the original security
         # intent (never 200, never serves a file) is preserved.
         r = client.get(f"/vendor/webfonts/{malicious}")
-        assert r.status_code in (401, 404), f"traversal {malicious!r} must be refused"
+        if r.status_code == 200:
+            # REQ-1 (EUR-A, Option B): a traversal whose `..` segments collapse
+            # client-side (httpx and real browsers resolve them before sending)
+            # reaches the ASGI scope as an ordinary dotless deep link
+            # (`/etc/passwd`), and contract #6's root SPA fallback may answer it
+            # with the tokenless index shell (#7). Security intent is preserved:
+            # the response is the React index, never file content.
+            assert "def " not in r.text and "[fonts]" not in r.text
+        else:
+            assert r.status_code in (401, 404), f"traversal {malicious!r} must be refused"
 
     def test_webfont_unknown_name_404(self, client: TestClient) -> None:
         r = client.get("/vendor/webfonts/../server.py")

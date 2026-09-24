@@ -55,6 +55,84 @@ class TraceStage:
     GATEWAY = "GATEWAY"
 
 
+class TraceState:
+    """Frozen node/request lifecycle vocabulary (contract v2, §4/§59).
+
+    NOT a closed enum: a runtime state string outside this set flows through
+    verbatim and renders as a discovered state. These constants only name the
+    states the brief defines so every lane spells them identically. A state
+    the runtime never emits must never be added here.
+    """
+
+    IDLE = "IDLE"
+    RECEIVED = "RECEIVED"
+    PROCESSING = "PROCESSING"
+    WAITING = "WAITING"
+    COMPLETED = "COMPLETED"
+    PASSED = "PASSED"
+    REJECTED = "REJECTED"
+    FAILED = "FAILED"
+    BLOCKED = "BLOCKED"
+    SKIPPED = "SKIPPED"
+    TIMEOUT = "TIMEOUT"
+    STALE = "STALE"
+    CANCELLED = "CANCELLED"
+    EXECUTING = "EXECUTING"
+    CONFIRMED = "CONFIRMED"
+
+
+class TraceMode:
+    """Frozen run-mode vocabulary for the ``mode`` field (§44/§36 filters).
+
+    ``mode`` is free-string: absence means UNKNOWN — it is NEVER guessed from
+    adapter type, config defaults or inference context (§60). Callers set it
+    only from a runtime fact they can name.
+    """
+
+    LIVE = "LIVE"
+    PAPER = "PAPER"
+    SHADOW = "SHADOW"
+    REPLAY = "REPLAY"
+    BACKTEST = "BACKTEST"
+    TRAINING = "TRAINING"
+
+
+# Provenance of a causal link (§9): 'observed' = explicit runtime evidence
+# (parent_event_id / root_event_id from the emit chain); 'inferred' =
+# timestamp-fallback correlation, which the UI must mark as inferred. A causal
+# edge with neither stays absent and renders PROVENANCE GAP (§56).
+PROVENANCE_OBSERVED = "observed"
+PROVENANCE_INFERRED = "inferred"
+VALID_PROVENANCE = frozenset({PROVENANCE_OBSERVED, PROVENANCE_INFERRED})
+
+
+def coerce_provenance(value: Any) -> str | None:
+    """Pass through a provenance word, or None for anything else.
+
+    Absence is data: an invalid/unprovable value becomes an omitted key
+    (PROVENANCE GAP downstream) rather than an exception or a silent
+    promotion to 'observed'. Never raises.
+    """
+    return value if isinstance(value, str) and value in VALID_PROVENANCE else None
+
+
+def compute_duration_ms(started_at: Any, completed_at: Any) -> int | None:
+    """Elapsed whole milliseconds between two ISO timestamps (§61).
+
+    Returns None unless BOTH endpoints are present and parseable — a single
+    endpoint is NOT extrapolated (no fabricated duration). Never raises.
+    """
+    if not isinstance(started_at, str) or not isinstance(completed_at, str):
+        return None
+    try:
+        a = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        b = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+        delta = (b - a).total_seconds()
+        return round(delta * 1000) if delta >= 0 else None
+    except Exception:
+        return None
+
+
 # Observed terminal states of a decision path (frontend terminal semantics).
 # NO_TRADE is terminal-without-execution (model or gate origin is carried in
 # status_reason, not conflated with REJECTED).
@@ -74,12 +152,22 @@ _SENSITIVE_KEY_TOKENS = (
     "token",
     "api_key",
     "apikey",
+    "api-key",
     "authorization",
     "credential",
     "private",
     "bearer",
     "cookie",
     "login",
+    # contract v2: payload_summary may carry request/payload metadata, so the
+    # same secret classes must be redacted there as in detail (§13/§48).
+    "passphrase",
+    "auth_header",
+    "access_key",
+    "session_key",
+    "dsn",
+    "conn_str",
+    "connection_string",
 )
 
 _REDACTED = "***REDACTED***"
@@ -177,7 +265,57 @@ class TraceEvent:
     unmapped: bool = False  # rootless non-MARKET event (linkage gap)
     provenance_gap: bool = False  # caller observed missing upstream evidence
     detail: dict[str, Any] = field(default_factory=dict)
+    # ---------------------------------------------------------------------
+    # Frozen contract v2 — OPTIONAL causal fields (additive-only; TRACE_SCHEMA
+    # stays 1). None = absent = UNKNOWN downstream: an omitted key is data, it
+    # is NEVER backfilled with a default that could read as runtime evidence.
+    # Order here is the contract's canonical field order (§61).
+    # ---------------------------------------------------------------------
+    request_id: str | None = None
+    root_event_id: str | None = None
+    source: str | None = None
+    destination: str | None = None
+    state: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    duration_ms: int | None = None
+    reason_code: str | None = None
+    error_code: str | None = None
+    mode: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    position_id: str | None = None
+    order_id: str | None = None
+    deal_id: str | None = None
+    execution_id: str | None = None
+    snapshot_id: str | None = None
+    payload_summary: dict[str, Any] | None = None
+    freshness: str | int | None = None
+    provenance: str | None = None
     trace_schema_version: int = TRACE_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        """Validate/normalize the v2 fields — never raises (BUG-311 class).
+
+        - ``provenance`` outside ('observed', 'inferred') becomes absent
+          (PROVENANCE GAP), never a silent promotion to 'observed'.
+        - ``duration_ms`` is derived ONLY when both endpoints exist; a single
+          endpoint or unparseable pair leaves it absent (no fabricated span).
+        - ``payload_summary`` goes through the same bounded, secret-redacting
+          sanitizer as ``detail`` (§13/§48: no Authorization/Bearer/secrets).
+        """
+        try:
+            self.provenance = coerce_provenance(self.provenance)
+            if self.duration_ms is None and self.started_at and self.completed_at:
+                self.duration_ms = compute_duration_ms(self.started_at, self.completed_at)
+            if self.payload_summary is not None:
+                cleaned = sanitize_detail(self.payload_summary)
+                self.payload_summary = cleaned if isinstance(cleaned, dict) else None
+        except Exception:
+            # Absence is data: a value we cannot validate is dropped, never
+            # guessed and never propagated as an exception into the hot path.
+            self.provenance = None
+            self.payload_summary = None
 
     def to_dict(self) -> dict[str, Any]:
         """Flat JSON dict; None-valued optional fields are OMITTED (never
@@ -209,6 +347,36 @@ class TraceEvent:
             d["provenance_gap"] = True
         if self.detail:
             d["detail"] = self.detail
+        # v2 causal fields: absent (None) or empty stays omitted — the reader
+        # must render UNKNOWN/NOT OBSERVED, never zero-fill (§60).
+        for key, value in (
+            ("request_id", self.request_id),
+            ("root_event_id", self.root_event_id),
+            ("source", self.source),
+            ("destination", self.destination),
+            ("state", self.state),
+            ("started_at", self.started_at),
+            ("completed_at", self.completed_at),
+            ("duration_ms", self.duration_ms),
+            ("reason_code", self.reason_code),
+            ("error_code", self.error_code),
+            ("mode", self.mode),
+            ("provider", self.provider),
+            ("model", self.model),
+            ("position_id", self.position_id),
+            ("order_id", self.order_id),
+            ("deal_id", self.deal_id),
+            ("execution_id", self.execution_id),
+            ("snapshot_id", self.snapshot_id),
+            ("payload_summary", self.payload_summary),
+            ("freshness", self.freshness),
+            ("provenance", self.provenance),
+        ):
+            if value is None:
+                continue
+            if isinstance(value, str | dict) and not value:
+                continue
+            d[key] = value
         return d
 
 

@@ -34,6 +34,48 @@ except Exception:  # pragma: no cover - observability failure isolation
     _tr_observer = None  # type: ignore[assignment]
 
 
+# ---------------------------------------------------------------------------
+# DECISION-TRACE enrichment (LIVE-CAUSAL-TOPOLOGY, lane B). Contract fields are
+# read ONLY from real engine objects with getattr; an unknown/absent fact stays
+# None and its key stays omitted downstream ("absence is data", §60). No prose
+# explanation and no latency is ever manufactured. Kept local (mirrors the
+# decision_executor helper) so this module's observability stays self-contained
+# if a sibling import ever fails.
+# ---------------------------------------------------------------------------
+
+
+def _tr_engine_mode(engine: Any) -> str | None:
+    """Frozen ``mode`` vocab word from the engine's real execution config.
+
+    None when the config/mode is unreadable — the UI renders UNKNOWN instead of
+    a guessed trading mode (§44).
+    """
+    try:
+        mode = getattr(getattr(getattr(engine, "config", None), "execution", None), "mode", None)
+    except Exception:
+        return None
+    if mode is None:
+        return None
+    return str(getattr(mode, "value", mode)).upper() or None
+
+
+def _tr_emit(observer: Any, *, extra: dict[str, Any] | None = None, **emit_fields: Any) -> None:
+    """One guarded ``emit()`` that also carries the frozen v2 causal fields.
+
+    ``extra`` holds only REAL, non-None contract fields (``state`` / ``model`` /
+    ``mode`` / ``freshness`` …). Every value is a getattr on a real runtime
+    object; a field the runtime does not know stays omitted (``None`` is
+    dropped here, "absence is data", §60). ``TraceObserver.emit`` wraps its
+    whole body, so an argument-binding failure is swallowed there and this
+    call can never double-record an event. Never raises (BUG-311).
+    """
+    payload = {k: v for k, v in (extra or {}).items() if v is not None}
+    try:
+        observer.emit(**{**emit_fields, **payload})
+    except Exception:  # pragma: no cover - observability failure isolation
+        pass
+
+
 class InferenceService:
     """Feature assembly + validation + model inference (composition root).
 
@@ -83,6 +125,10 @@ class InferenceService:
         import time as _time
 
         _t0 = _time.perf_counter()
+        # DECISION-TRACE (§40 freshness): this build's liquidity causal state is
+        # re-stamped below only when the governor actually ran; reset first so a
+        # 50D build (governor never consulted) can never inherit a stale word.
+        self._last_liquidity_causal_state: str | None = None
         base50 = fv.to_tensor_input()
         base50 = self._validate_50d_tensor(base50, context="live_base50")
         _t_base = _time.perf_counter()
@@ -143,6 +189,11 @@ class InferenceService:
                 except Exception:
                     liq10 = None
         _t_liq = _time.perf_counter()
+
+        # DECISION-TRACE (§40 freshness): the governor's OWN causal verdict for
+        # the liquidity snapshot this inference consumed — STALE here is real
+        # runtime evidence about the input, recorded verbatim (never invented).
+        self._last_liquidity_causal_state = causal if gov is not None else None
 
         if liq10 is None:
             raise RuntimeError(
@@ -376,9 +427,16 @@ class InferenceService:
         # provenance; the observer itself never raises.
         if _tr_observer is not None and _tr_observer.active:
             _d: dict[str, Any] = {}
+            _mid = _mver = _mfp = None
             try:
                 _d["prediction_id"] = getattr(_trace, "prediction_id", None)
                 _d["feature_dim"] = int(self._last_live_tensor_dim)
+                # DECISION-TRACE (§40 freshness): the governor's own causal
+                # verdict on the liquidity snapshot this tensor consumed —
+                # absent (50D build / no governor) rather than a guessed word.
+                _liq_state = getattr(self, "_last_liquidity_causal_state", None)
+                if _liq_state:
+                    _d["liquidity_causal_state"] = _liq_state
                 _d["effective_feature_dim"] = int(self.effective_feature_dim)
                 _d["effective_feature_schema_id"] = str(self.effective_feature_schema_id)
                 _d["declared_schema_id"] = getattr(self, "_last_live_tensor_schema", None)
@@ -410,13 +468,34 @@ class InferenceService:
                     pass
             except Exception:
                 pass  # never fail the emit over a provenance field
-            _tr_observer.emit(
+            # DECISION-TRACE frozen v2 contract fields (only REAL facts; every
+            # one is a getattr on the runtime's own objects, and any that is
+            # absent stays absent — no placeholder identity, §60): the
+            # pipeline state COMPLETED only after the full staged trace marked
+            # its final stage; ``model`` is the serving identity the registry
+            # reported; ``mode`` is the engine's own execution-mode word;
+            # ``freshness`` is the liquidity governor's OWN causal verdict
+            # (VALID/STALE/INVALID, liquidity_runtime.py:655) on the snapshot
+            # this tensor consumed — no governor / 50D build => no liquidity
+            # input existed to judge, so the field stays ABSENT (§40) instead
+            # of borrowing a word that would read as a freshness claim.
+            _tr_state: str | None = "COMPLETED"
+            if int(getattr(self, "_inference_count", 0) or 0) <= 0:
+                _tr_state = None
+            _tr_emit(
+                _tr_observer,
                 stage="INFERENCE",
                 component="inference",
                 event_type="MODEL_INFERENCE",
                 status="OK",
                 latency_us=round(float(self._last_e2e_ms) * 1000.0),
                 detail=_d,
+                extra={
+                    "state": _tr_state,
+                    "model": _mid if _mid else None,
+                    "mode": _tr_engine_mode(self),
+                    "freshness": getattr(self, "_last_liquidity_causal_state", None),
+                },
             )
         return probs
 

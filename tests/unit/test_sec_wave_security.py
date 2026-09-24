@@ -710,3 +710,80 @@ class TestResolveWithinTrustedRoots:
         got = resolve_within_trusted_roots("/tmp/probe/xauusd_M1.csv", [Path("/")])
         assert got is not None
         assert got.is_absolute()
+
+
+# =============================================================================
+# ROUND 2 — post-merge residual alerts (main branch, commit cbabadae)
+# =============================================================================
+class TestRound2SaliencyAndContractExposure:
+    """#1102 / #1164 — exception messages returned to API clients."""
+
+    def test_compute_saliency_failure_returns_no_exception_text(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from nexus_scalp.web import model_studio_routes as ms
+
+        def _boom(*a: object, **kw: object) -> None:
+            raise RuntimeError("internal path C:\\secret\\traceback leak")
+
+        monkeypatch.setattr(ms.torch, "tensor", _boom)
+        res = ms._compute_saliency(object(), np.zeros(3, dtype=np.float32))
+        assert res["error"] == "saliency computation failed"
+        assert res["top_positive_drivers"] == []
+        assert res["top_negative_drivers"] == []
+        assert "secret" not in json.dumps(res)
+        assert "traceback" not in json.dumps(res)
+
+    def test_fetch_70d_contract_error_is_fixed_marker(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import nexus_scalp.features.schema_contract as sc
+        from nexus_scalp.web import model_studio_routes as ms
+
+        def _boom(*a: object, **kw: object) -> None:
+            raise ValueError("dimension contract: internal schema hash abc123 leaked")
+
+        monkeypatch.setattr(sc, "validate_70d_vector", _boom)
+        out = ms.fetch_70d_components(engine=None)
+        assert out["contract_valid"] is False
+        assert out["contract_error"] == "feature contract validation failed"
+        assert "abc123" not in json.dumps(out)
+
+
+class TestRound2QuickSqlNoInterpolation:
+    """#1114 — /quick builds SQL from a canned template, never request input."""
+
+    def test_quote_ident_returns_whitelist_extraction(self) -> None:
+        from nexus_scalp.database.drivers.base import _IDENT_SHAPE
+
+        good = _IDENT_SHAPE.fullmatch("audit_signals")
+        assert good is not None
+        assert good.group(0) == "audit_signals"
+        # anything outside [A-Za-z_][A-Za-z0-9_]* is refused, not truncated
+        assert _IDENT_SHAPE.fullmatch("a; DROP TABLE x") is None
+        assert _IDENT_SHAPE.fullmatch("a b") is None
+        assert _IDENT_SHAPE.fullmatch("a--b") is None
+
+    def test_execution_templates_interpolate_only_a_whitelisted_identifier(self) -> None:
+        from nexus_scalp.web import db_console as dc
+
+        for kind in ("top100", "count", "recent"):
+            assert "{table}" in dc._QUICK_SQL[kind]
+        # the canned schema template is superseded by the bound-parameter arm
+        # (see console_quick); it must never be .format-ed with request input.
+        assert "{table}" in dc._QUICK_SQL["schema"]
+
+
+class TestRound2ProvisioningDatasetsRootSanitizer:
+    """#1149 — ?root= resolves through the canonical sanitizer."""
+
+    def test_bare_root_is_admitted_by_the_route_fallback(self, tmp_path: Path) -> None:
+        """The sanitizer is for FILES, so naming a root verbatim returns None;
+        the route admits it through pure string normalization instead (never a
+        resolve of the raw value)."""
+        importroot = (tmp_path / "importroot").resolve()
+        importroot.mkdir()
+        allowed = [importroot]
+        from nexus_scalp.position_adviser.paths import resolve_within_trusted_roots
+
+        assert resolve_within_trusted_roots(str(importroot), allowed) is None

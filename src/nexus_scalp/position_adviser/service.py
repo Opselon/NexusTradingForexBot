@@ -23,6 +23,7 @@ warning. No fabricated confidence, no fabricated verdict.
 from __future__ import annotations
 
 import hashlib
+import json
 import threading
 import time
 import uuid
@@ -37,6 +38,7 @@ import torch
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.position_adviser.features import (
     ADVISER_FEATURE_DIM,
+    ADVISER_FEATURE_ORDER,
     AdviserFeatureError,
     build_live_vector,
 )
@@ -98,6 +100,113 @@ def _utcnow_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def verify_package_integrity(wp: Path) -> dict[str, Any]:
+    """F6: THE package-integrity gate — ONE canonical implementation shared by
+    ``PositionAdviserService.load`` and the ``position-adviser-packages`` CLI
+    (mission §35: no second copy of the verification logic anywhere).
+
+    For a weights file ``<id>.pt`` this reads the sibling ``<id>.meta.json``
+    written by the trainer and compares its pins against the bytes on disk.
+
+    Returns::
+
+        {
+          "weights_sha256": str,      # sha256 of the weights file
+          "manifest": dict | None,    # parsed sidecar, or None if absent
+          "reason": str,              # note when manifest is absent/unreadable
+          "reject": str | None,       # non-None => package must NOT be served
+        }
+
+    A stale overwrite, a hand-swapped sidecar, or a manifest from a different
+    training run yields ``reject``; a package with no manifest at all loads
+    only with an honest ``reason`` saying integrity is unverified.
+    """
+    if not _contained_artifact_path(wp):
+        return {
+            "weights_sha256": "",
+            "manifest": None,
+            "reason": "",
+            "reject": "path rejected: outside repository root",
+        }
+    weights_sha = sha256_file(wp)
+
+    mp = wp.with_suffix(".meta.json") if wp.suffix == ".pt" else None
+    manifest: dict[str, Any] | None = None
+    reason = ""
+    if mp is not None and mp.is_file():
+        try:
+            if not _contained_artifact_path(mp):
+                return {
+                    "weights_sha256": weights_sha,
+                    "manifest": None,
+                    "reason": "",
+                    "reject": "path rejected: outside repository root",
+                }
+            with open(mp, encoding="utf-8") as mf:
+                manifest = json.load(mf)
+        except Exception as exc:
+            logger.warning("[ADVISER] event=MANIFEST_READ_FAILED err=%s", exc)
+            reason = "manifest unreadable (see server logs)"
+    else:
+        reason = "no sidecar manifest found; integrity unverified"
+
+    if manifest is None:
+        return {"weights_sha256": weights_sha, "manifest": None, "reason": reason, "reject": None}
+
+    want_w = str(manifest.get("weights_sha256", "")).strip()
+    if want_w and want_w.lower() != weights_sha.lower():
+        return {
+            "weights_sha256": weights_sha,
+            "manifest": manifest,
+            "reason": reason,
+            "reject": (
+                "package integrity failure: weights sha256 does not match "
+                "the manifest (stale or mismatched artifact combination)"
+            ),
+        }
+    scaler_path = wp.with_suffix(".scaler.npz")
+    if scaler_path.is_file():
+        want_s = str(manifest.get("scaler_sha256", "")).strip()
+        if want_s and want_s.lower() != sha256_file(scaler_path).lower():
+            return {
+                "weights_sha256": weights_sha,
+                "manifest": manifest,
+                "reason": reason,
+                "reject": (
+                    "package integrity failure: scaler sha256 does not match "
+                    "the manifest (model/scaler from different training runs)"
+                ),
+            }
+    m_feat = manifest.get("feature_order")
+    if isinstance(m_feat, list) and list(m_feat) != list(ADVISER_FEATURE_ORDER):
+        return {
+            "weights_sha256": weights_sha,
+            "manifest": manifest,
+            "reason": reason,
+            "reject": (
+                "package integrity failure: manifest feature schema does not "
+                "match the serving feature contract"
+            ),
+        }
+    return {"weights_sha256": weights_sha, "manifest": manifest, "reason": reason, "reject": None}
+
+
+#: Ceiling on the live throttle/snapshot map. A broker session can open
+#: thousands of distinct tickets over a long runtime; the per-ticket maps must
+#: not grow without bound (F1/F5: long-running inference does not leak memory).
+#: 4096 tickets is far beyond any realistic concurrent position count, and the
+#: map is also drained by ``forget()`` on every broker-verified close.
+_MAX_TRACKED_TICKETS = 4096
+
+
 @dataclass
 class AdviserState:
     """Mutable runtime state. Guarded by ``PositionAdviserService._lock``."""
@@ -107,6 +216,12 @@ class AdviserState:
     weights_path: str = ""
     scaler_path: str = ""
     weights_sha256: str = ""
+    #: F6: sidecar manifest (.meta.json) that pinned this package, its
+    #: verification outcome, and the training dataset's content hash — the
+    #: model's reproducible identity (empty/"" when no manifest existed).
+    manifest_path: str = ""
+    integrity: str = "unverified"
+    source_dataset_hash: str = ""
     feature_dim: int = ADVISER_FEATURE_DIM
     loaded_at: str | None = None
     #: Count of evaluations that actually influenced the hold score.
@@ -115,6 +230,12 @@ class AdviserState:
     evaluated_count: int = 0
     #: Count of refused/error evaluations.
     refused_count: int = 0
+    #: Count of evaluations REJECTED because the position snapshot was stale
+    #: (a newer snapshot already exists for the same ticket, or the caller
+    #: offered a snapshot older than the one a prior evaluation consumed).
+    #: F1: a prediction built from stale position state must be rejected, not
+    #: applied — this is the anti-(duplicate/stale-decision) counter.
+    stale_rejected_count: int = 0
     last_error: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -124,11 +245,15 @@ class AdviserState:
             "weights_path": self.weights_path,
             "scaler_path": self.scaler_path,
             "weights_sha256": self.weights_sha256,
+            "manifest_path": self.manifest_path,
+            "integrity": self.integrity,
+            "source_dataset_hash": self.source_dataset_hash,
             "feature_dim": self.feature_dim,
             "loaded_at": self.loaded_at,
             "applied_count": self.applied_count,
             "evaluated_count": self.evaluated_count,
             "refused_count": self.refused_count,
+            "stale_rejected_count": self.stale_rejected_count,
             "last_error": self.last_error,
             "ready": bool(self.model_id and self._model is not None and self._scaler is not None),
         }
@@ -151,6 +276,14 @@ class AdviserConfig:
     min_action_advantage: float = 0.10
     #: Advisory recalculation throttle, in seconds.
     min_eval_interval_sec: float = 2.0
+    #: Maximum accepted age of the position snapshot a caller hands in, in
+    #: seconds (F1). A snapshot older than this was built from position state
+    #: that may since have changed (SL/TP modified, closed, partial) and is
+    #: REJECTED rather than evaluated — a prediction from stale state must
+    #: never be produced, let alone applied. Requires the caller to stamp
+    #: ``snapshot_observed_at`` (monotonic seconds); callers that do not stamp
+    #: it are refused when this gate is armed by a positive value.
+    max_snapshot_age_sec: float = 5.0
     #: Artifact root for adviser checkpoints (relative to repo root).
     artifact_dir: str = "artifacts/position_adviser"
 
@@ -160,6 +293,7 @@ class AdviserConfig:
             "min_confidence_to_apply": self.min_confidence_to_apply,
             "min_action_advantage": self.min_action_advantage,
             "min_eval_interval_sec": self.min_eval_interval_sec,
+            "max_snapshot_age_sec": self.max_snapshot_age_sec,
             "artifact_dir": self.artifact_dir,
         }
 
@@ -172,6 +306,8 @@ class PositionAdviserService:
         self._state = AdviserState()
         self._lock = threading.RLock()
         self._last_eval_at: dict[int, float] = {}
+        #: Last COMMITTED snapshot id per ticket (F1 duplicate-decision gate).
+        self._last_snapshot_ids: dict[int, str] = {}
 
     # ------------------------------------------------------------------ state
 
@@ -405,10 +541,23 @@ class PositionAdviserService:
         if not _contained_artifact_path(wp):
             logger.warning("[ADVISER] event=HASH_REJECTED reason=path_outside_repo")
             return {"status": "REJECTED", "reason": "path rejected: outside repository root"}
-        h = hashlib.sha256()
-        with open(wp, "rb") as f:
-            while chunk := f.read(65536):
-                h.update(chunk)
+        # F6: ATOMIC MODEL-PACKAGE INTEGRITY GATE — shared canonical
+        # implementation (verify_package_integrity), also used by the
+        # `position-adviser-packages` CLI. Rejects stale/hand-swapped
+        # weight+scaler+manifest combinations BEFORE they can serve; a package
+        # without a sidecar manifest loads with an honest "unverified" note.
+        chk = verify_package_integrity(wp)
+        if chk["reject"] is not None:
+            logger.warning(
+                "[ADVISER] event=PACKAGE_INTEGRITY_FAIL model_id=%s reason=%s",
+                model_id or wp.stem,
+                chk["reject"],
+            )
+            return {"status": "REJECTED", "reason": chk["reject"]}
+        weights_sha = str(chk["weights_sha256"])
+        manifest = cast("dict[str, Any] | None", chk["manifest"])
+        manifest_reason = str(chk["reason"])
+        mp = wp.with_suffix(".meta.json") if wp.suffix == ".pt" else None
 
         with self._lock:
             self._state._model = model
@@ -416,21 +565,31 @@ class PositionAdviserService:
             self._state.model_id = model_id or wp.stem
             self._state.weights_path = str(wp)
             self._state.scaler_path = str(sp)
-            self._state.weights_sha256 = h.hexdigest()
+            self._state.weights_sha256 = weights_sha
+            self._state.manifest_path = str(mp) if (manifest is not None and mp) else ""
+            self._state.integrity = (
+                "verified" if manifest is not None else (manifest_reason or "unverified")
+            )
+            self._state.source_dataset_hash = (
+                str(manifest.get("source_dataset_hash", "")) if manifest else ""
+            )
             self._state.feature_dim = ADVISER_FEATURE_DIM
             self._state.loaded_at = _utcnow_iso()
             self._state.last_error = ""
 
         logger.info(
-            "[ADVISER] event=MODEL_LOADED model_id=%s classes=%d sha256=%.12s",
+            "[ADVISER] event=MODEL_LOADED model_id=%s classes=%d integrity=%s sha256=%.12s",
             self._state.model_id,
             num_classes,
+            self._state.integrity,
             self._state.weights_sha256,
         )
         return {
             "status": "OK",
             "model_id": self._state.model_id,
             "weights_sha256": self._state.weights_sha256,
+            "integrity": self._state.integrity,
+            "source_dataset_hash": self._state.source_dataset_hash,
             "feature_dim": ADVISER_FEATURE_DIM,
             "loaded_at": self._state.loaded_at,
             "message": "adviser model loaded; activation still DISABLED until set",
@@ -478,7 +637,21 @@ class PositionAdviserService:
         """Evaluate one open position. Returns None when disabled/refused/failed.
 
         ``position_state`` must supply the causal keys declared by
-        features.ADVISER_FEATURE_ORDER. A missing key fails loud (never faked).
+        features.ADVISER_FEATURE_ORDER PLUS the snapshot contract keys stamped by
+        ``integration.build_position_state_for_adviser``:
+
+            snapshot_observed_at  monotonic seconds when the position state was
+                                  observed (caller side).
+            snapshot_id           content hash of the decision-relevant position
+                                  fields at observation time.
+
+        Gate order (F1 — a prediction from stale state must be rejected, not
+        applied; a duplicate decision on unchanged state must not fire twice):
+        disabled -> loaded -> throttle READ -> snapshot freshness + duplicate
+        REJECT -> throttle/snapshot COMMIT -> features -> inference. The commit
+        happens only after the snapshot gates pass, so a rejected stale snapshot
+        can never lock a ticket's throttle and swallow the next good evaluation.
+        Every path that returns None leaves the hold score untouched.
         """
         with self._lock:
             st = self._state
@@ -487,12 +660,67 @@ class PositionAdviserService:
             if st._model is None or st._scaler is None:
                 return None
 
-        # Throttle: one advisory per ticket per min_eval_interval_sec.
+        # Throttle READ: one advisory per ticket per min_eval_interval_sec.
         now_mono = time.monotonic()
-        last = self._last_eval_at.get(ticket)
+        with self._lock:
+            last = self._last_eval_at.get(ticket)
         if last is not None and (now_mono - last) < self.config.min_eval_interval_sec:
             return None
-        self._last_eval_at[ticket] = now_mono
+
+        # SNAPSHOT FRESHNESS + DUPLICATE GATE (F1). Rejects before any commit,
+        # so a stale/duplicate snapshot cannot consume the ticket's throttle.
+        try:
+            observed_at = float(position_state.get("snapshot_observed_at"))
+        except (TypeError, ValueError):
+            observed_at = float("nan")
+        snapshot_id = str(position_state.get("snapshot_id") or "")
+        if not np.isfinite(observed_at) or not snapshot_id:
+            with self._lock:
+                st.stale_rejected_count += 1
+            logger.warning(
+                "[ADVISER] event=SNAPSHOT_REJECTED ticket=%s reason=missing_snapshot_contract",
+                ticket,
+            )
+            return None
+        snapshot_age_ms = (now_mono - observed_at) * 1000.0
+        if snapshot_age_ms < -1000.0 or (now_mono - observed_at) > self.config.max_snapshot_age_sec:
+            # Negative beyond clock tolerance = a forged/non-monotonic stamp;
+            # older than the ceiling = position state may have changed since.
+            with self._lock:
+                st.stale_rejected_count += 1
+            logger.warning(
+                "[ADVISER] event=SNAPSHOT_REJECTED ticket=%s reason=stale age_ms=%.1f max_ms=%.1f",
+                ticket,
+                snapshot_age_ms,
+                self.config.max_snapshot_age_sec * 1000.0,
+            )
+            return None
+
+        # COMMIT throttle + snapshot identity (bounded maps, F5).
+        with self._lock:
+            if ticket not in self._last_eval_at and len(self._last_eval_at) >= _MAX_TRACKED_TICKETS:
+                # Evict the oldest tracked ticket so a long session with many
+                # distinct tickets cannot grow this map without bound.
+                self._last_eval_at.pop(next(iter(self._last_eval_at)), None)
+                self._last_snapshot_ids.pop(next(iter(self._last_snapshot_ids)), None)
+            if (
+                ticket not in self._last_snapshot_ids
+                and len(self._last_snapshot_ids) >= _MAX_TRACKED_TICKETS
+            ):
+                self._last_snapshot_ids.pop(next(iter(self._last_snapshot_ids)), None)
+            if self._last_snapshot_ids.get(ticket) == snapshot_id:
+                # Same decision-relevant state as an already-evaluated
+                # snapshot: a duplicate decision. The throttle is committed
+                # anyway so an unchanged ticket cannot re-log this every pass.
+                self._last_eval_at[ticket] = now_mono
+                st.stale_rejected_count += 1
+                logger.warning(
+                    "[ADVISER] event=SNAPSHOT_REJECTED ticket=%s reason=duplicate_snapshot",
+                    ticket,
+                )
+                return None
+            self._last_eval_at[ticket] = now_mono
+            self._last_snapshot_ids[ticket] = snapshot_id
 
         t0 = time.perf_counter()
         applied = False
@@ -561,7 +789,14 @@ class PositionAdviserService:
                 advisory_id=f"adv_{uuid.uuid4().hex[:12]}",
                 applied=applied,
                 not_applied_reason=not_applied,
-                diagnostics={"p_keep": probs.get("KEEP", 0.0)},
+                diagnostics={
+                    "p_keep": probs.get("KEEP", 0.0),
+                    # Decision-trace evidence (mission §22): which exact
+                    # position snapshot produced this prediction, and how old
+                    # the snapshot was when inference ran.
+                    "snapshot_id": snapshot_id,
+                    "snapshot_age_ms": round(snapshot_age_ms, 3),
+                },
             )
 
             with self._lock:
@@ -578,8 +813,15 @@ class PositionAdviserService:
             return None
 
     def forget(self, ticket: int) -> None:
-        """Drop throttling state for a closed ticket (housekeeping)."""
-        self._last_eval_at.pop(ticket, None)
+        """Drop throttle + snapshot state for a closed ticket (housekeeping).
+
+        MUST be called on every broker-verified close (wired in
+        ``order_manager`` teardown): without it both per-ticket maps outlive
+        the position and grow for the process lifetime (F1/F5).
+        """
+        with self._lock:
+            self._last_eval_at.pop(ticket, None)
+            self._last_snapshot_ids.pop(ticket, None)
 
 
 __all__ = [

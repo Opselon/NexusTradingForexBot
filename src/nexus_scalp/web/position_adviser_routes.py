@@ -146,6 +146,8 @@ class AdviserConfigRequest(BaseModel):
     min_confidence_to_apply: float | None = Field(default=None, ge=0.0, le=1.0)
     min_action_advantage: float | None = Field(default=None, ge=0.0, le=1.0)
     min_eval_interval_sec: float | None = Field(default=None, ge=0.0, le=60.0)
+    #: F1 staleness ceiling for position snapshots (seconds).
+    max_snapshot_age_sec: float | None = Field(default=None, ge=0.0, le=60.0)
 
 
 class AdviserAutoTuneRequest(BaseModel):
@@ -341,6 +343,8 @@ def route_config(req: AdviserConfigRequest) -> dict[str, Any]:
         cfg.min_action_advantage = req.min_action_advantage
     if req.min_eval_interval_sec is not None:
         cfg.min_eval_interval_sec = req.min_eval_interval_sec
+    if req.max_snapshot_age_sec is not None:
+        cfg.max_snapshot_age_sec = req.max_snapshot_age_sec
     return {"status": "OK", "config": cfg.to_dict()}
 
 

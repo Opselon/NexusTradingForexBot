@@ -5,6 +5,85 @@
 # Release locks when done (remove entry or mark released).
 
 exclusive_locks:
+  # --- END-USER-RUNTIME-UI-INTEGRATION WAVE (2026-09-24, EUR) ---------------
+  # Base a758fe46 (= origin/main tip). 4 file-disjoint implementer lanes +
+  # integrator. Wave contract lives OUTSIDE the repo at
+  # C:/Users/Capsizer/source/repos/nse-enduser-runtime/CONTRACT.md.
+  # Taskboard TASK-EUR-001. NOTE — the SEC-WAVE rows seen as dirty WIP in the
+  # shared main checkout belong to a FOREIGN branch and are intentionally not
+  # duplicated here.
+  - path: src/nexus_scalp/web/frontend_assets.py
+    owner: EUR-LANE-A
+    exclusive: true
+    scope: EUR-WAVE canonical dist resolver + status seam (other lanes import read-only)
+    since: 2026-09-24
+    task: EUR-A
+    expiry: 2026-10-01
+  - path: src/nexus_scalp/web/server.py
+    owner: EUR-LANE-A
+    exclusive: true
+    scope: EUR-WAVE root static serving + SPA fallback + /legacy relocation + /alt dual-serve
+    since: 2026-09-24
+    task: EUR-A
+    expiry: 2026-10-01
+  - path: src/nexus_scalp/web/auth.py
+    owner: EUR-LANE-A
+    exclusive: true
+    scope: EUR-WAVE public static-shell rule (GET/HEAD dotless) + /legacy bootstrap entries
+    since: 2026-09-24
+    task: EUR-A
+    expiry: 2026-10-01
+  - path: src/nexus_scalp/cli/browser_launch.py
+    owner: EUR-LANE-D
+    exclusive: true
+    scope: EUR-WAVE browser auto-launch seam (never raises, engine-independent)
+    since: 2026-09-24
+    task: EUR-D
+    expiry: 2026-10-01
+  - path: src/nexus_scalp/cli/engine_boot.py
+    owner: EUR-LANE-D
+    exclusive: true
+    scope: EUR-WAVE post-readiness browser launch + --no-browser wiring in engine start
+    since: 2026-09-24
+    task: EUR-D
+    expiry: 2026-10-01
+  - path: scripts/build/build_release.ps1
+    owner: EUR-LANE-C
+    exclusive: true
+    scope: EUR-WAVE release build — npm ci + vite build + dist validation + frontend add-data
+    since: 2026-09-24
+    task: EUR-C
+    expiry: 2026-10-01
+  - path: scripts/build/validate_frontend_dist.py
+    owner: EUR-LANE-C
+    exclusive: true
+    scope: EUR-WAVE stdlib-only frontend dist validator (release.yml + js-tests.yml consume it)
+    since: 2026-09-24
+    task: EUR-C
+    expiry: 2026-10-01
+  - path: frontend/vite.config.ts
+    owner: EUR-LANE-B
+    exclusive: true
+    scope: EUR-WAVE base / + dev proxy (dual-serve root and /alt)
+    since: 2026-09-24
+    task: EUR-B
+    expiry: 2026-10-01
+  - path: frontend/src/main.tsx
+    owner: EUR-LANE-B
+    exclusive: true
+    scope: EUR-WAVE runtime router basename (pathname-driven /alt or /)
+    since: 2026-09-24
+    task: EUR-B
+    expiry: 2026-10-01
+  - path: scripts/build/update_helpers.py
+    owner: EUR-LANE-C
+    exclusive: true
+    scope: EUR-WAVE narrow scanner-precision fix - inherited false positive where
+      the all-caps env-var NAME NSE_GATEWAY_API_KEY trips SECRET_PATTERNS[0];
+      token_guard + private-key paths untouched, positive regression test required
+    since: 2026-09-24
+    task: EUR-C
+    expiry: 2026-10-01
   - path: src/nexus_scalp/web/diagnostics_state_routes.py
     owner: Hermes-CFGUI
     exclusive: true
