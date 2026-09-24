@@ -52,6 +52,14 @@ export function buildTradeWaterfall(outcome: {
 
 export function PnlWaterfall({ steps, height = 170, formatValue, emptyHint }: PnlWaterfallProps) {
   const t = useI18n((s) => s.t);
+  const stepLabel = (raw: string): string =>
+    raw === "gross" ? t("ui.viz.step_gross", "gross")
+      : raw === "commission" ? t("ui.viz.step_commission", "commission")
+        : raw === "commission?" ? t("ui.viz.step_commission_unknown", "commission?")
+          : raw === "swap" ? t("ui.viz.step_swap", "swap")
+            : raw === "swap?" ? t("ui.viz.step_swap_unknown", "swap?")
+              : raw === "net" ? t("ui.viz.step_net", "net")
+                : raw;
   const emptyHintText = emptyHint ?? t("ui.viz.pnl_empty", "no PnL decomposition reported");
   // Running levels + scale are a pure function of `steps` (memoized so an
   // unchanged trade never re-derives them); the emitted SVG is byte-identical.
@@ -101,7 +109,7 @@ export function PnlWaterfall({ steps, height = 170, formatValue, emptyHint }: Pn
               <g key={i}>
                 <rect x={x} y={zeroY - 3} width={barW} height={6} rx={2} fill="var(--bg-panel-2)" stroke="var(--border-strong)" />
                 <text className="viz-step-label" x={x + barW / 2} y={height - 16} textAnchor="middle">
-                  {b.s.label}
+                  {stepLabel(b.s.label)}
                 </text>
                 <text className="viz-step-value neu" x={x + barW / 2} y={height - 5} textAnchor="middle">
                   {t("ui.word.unknown", "UNKNOWN")}
@@ -126,7 +134,7 @@ export function PnlWaterfall({ steps, height = 170, formatValue, emptyHint }: Pn
                 opacity={b.s.total ? 1 : 0.85}
               />
               <text className="viz-step-label" x={x + barW / 2} y={height - 16} textAnchor="middle">
-                {b.s.label}
+                {stepLabel(b.s.label)}
               </text>
               <text className={`viz-step-value ${cls}`} x={x + barW / 2} y={y0 - 4} textAnchor="middle">
                 {fmt(b.s.value ?? 0)}

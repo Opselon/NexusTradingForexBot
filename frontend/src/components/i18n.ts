@@ -127,4 +127,10 @@ export const MESSAGES: FeatureMessages = {
   "ui.side.sell": { fa: "فروش", de: "VERKAUF", es: "VENTA", ar: "بيع" },
   "ui.state.retry": { fa: "تلاش مجدد", de: "Erneut versuchen", es: "Reintentar", ar: "إعادة المحاولة" },
   "ui.state.cancel": { fa: "انصراف", de: "Abbrechen", es: "Cancelar", ar: "إلغاء" },
+  "ui.viz.step_gross": { fa: "ناخالص", de: "Brutto", es: "bruto", ar: "الإجمالي" },
+  "ui.viz.step_commission": { fa: "کارمزد", de: "Provision", es: "comisión", ar: "العمولة" },
+  "ui.viz.step_commission_unknown": { fa: "کارمزد؟", de: "Provision?", es: "comisión?", ar: "العمولة؟" },
+  "ui.viz.step_swap": { fa: "سوآپ", de: "Swap", es: "swap", ar: "السواپ" },
+  "ui.viz.step_swap_unknown": { fa: "سوآپ؟", de: "Swap?", es: "swap?", ar: "السواپ؟" },
+  "ui.viz.step_net": { fa: "خالص", de: "Neto", es: "neto", ar: "الصافي" },
 };
