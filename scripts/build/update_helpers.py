@@ -100,7 +100,13 @@ def action_scan_tree(args: list[str]) -> int:
 
 
 def action_manifest(args: list[str]) -> int:
-    """Generate release-manifest.json + embedded (portable-rooted) copy."""
+    """Generate release-manifest.json + embedded (portable-rooted) copy.
+
+    CONTRACT frozen decision #11: the packaged frontend bundle is recorded
+    in the manifest payload so a tampered/rolled-back Control Center is
+    detectable (hash exists but the file is absent, or the file exists with
+    a different sha256).
+    """
     out_dir = Path(args[0])
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
     from nexus_scalp.release import packaging as p
@@ -149,11 +155,72 @@ def action_manifest(args: list[str]) -> int:
         "model_runtime_schema": base_meta.get("model_runtime_schema"),
         "artifacts": embedded_arts,
     }
+    embedded["frontend_bundle"] = _frontend_bundle_record(portable_root)
     portable_manifest.write_text(json.dumps(embedded, indent=2), encoding="utf-8")
     print(
         f"manifest: {len(artifacts)} artifacts -> {manifest} (embedded: {len(payload_files)} files)"
     )
     return 0
+
+
+def _stamped_frontend_hash(portable_root: Path) -> str | None:
+    """``frontend_index_hash`` from the staged build-info.json (CONTRACT #11)."""
+    for candidate in (
+        portable_root / "build-info.json",
+        portable_root / "_internal" / "build-info.json",
+    ):
+        if not candidate.is_file():
+            continue
+        try:
+            value = json.loads(candidate.read_text(encoding="utf-8")).get("frontend_index_hash")
+        except (OSError, ValueError):
+            continue
+        if value:
+            return str(value)
+    return None
+
+
+def _frontend_bundle_record(portable_root: Path) -> dict:
+    """Record the shipped Control Center bundle (CONTRACT #11).
+
+    ``frontend_index_hash`` is stamped into build-info.json by the release
+    build; the packaged entry mirrors it so a verifier can tell "the bundle
+    the build described" from "the bundle that actually landed". Missing
+    bundle, missing index, or a hash mismatch is reported explicitly rather
+    than being silently absent from the manifest.
+
+    The hash is read from the STAGED build-info.json (not from the
+    release-root manifest), because generate_manifest copies only identity
+    fields and never carried the frontend hash.
+    """
+    record: dict[str, object] = {"relative_path": "frontend/dist"}
+    index = portable_root / "_internal" / "frontend" / "dist" / "index.html"
+    if index.is_file():
+        bundled = [f for f in index.parent.rglob("*") if f.is_file()]
+        record["index_present"] = True
+        record["index_sha256"] = _sha256(index)
+        record["dist_size_bytes"] = sum(f.stat().st_size for f in bundled)
+        record["dist_file_count"] = len(bundled)
+    else:
+        record["index_present"] = False
+    expected = _stamped_frontend_hash(portable_root)
+    if expected:
+        record["expected_index_sha256"] = expected
+        if record.get("index_sha256"):
+            record["index_sha256_matches_build_info"] = (
+                str(record["index_sha256"]).lower() == expected.lower()
+            )
+    return record
+
+
+def _sha256(path: Path) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 16), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def action_sbom(args: list[str]) -> int:
