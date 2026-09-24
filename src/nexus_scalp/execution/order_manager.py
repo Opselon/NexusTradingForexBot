@@ -4447,3 +4447,18 @@ class OrderLifecycleManager:
         self._state_machine.drop_ticket(ticket)
         with self._live_tickets_lock:
             self._tickets_cache.pop_ticket(ticket)
+        # BUG-314 F5: the adviser's per-ticket state (throttle timestamps and
+        # the last committed snapshot id) must not outlive the position. Drop
+        # it here so a long session cannot accumulate state for tickets that no
+        # longer exist, and so a ticket id that gets reused starts clean.
+        # Fail-closed: an adviser that cannot forget is not a reason to fail
+        # the ticket teardown itself.
+        try:
+            adviser = self._adviser
+        except Exception:
+            adviser = None
+        if adviser is not None:
+            try:
+                adviser.forget(ticket)
+            except Exception:
+                pass

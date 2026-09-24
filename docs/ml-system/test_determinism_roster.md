@@ -155,6 +155,12 @@ with no production-code impact — suitable for one cycle each, or a batch.
    `uuid4()`. Largest single flaky surface in the push gate. Convert the
    timing probes to injected-clock asserts (assert the ordering/expiry
    invariant, not the elapsed magnitude) and inject the id factory.
+   **ALREADY REMEDIATED (ML-QA-004, PR #402):** recount at `03d2fede` shows
+   **0** `time.monotonic()`/`time.perf_counter()` probes — `ChainClock`
+   (`tests/e2e/chain_clock.py`) is wired at line 109 and every stage line reads
+   the deterministic clock. The only residual sources are 2 `uuid4()` proposal
+   `request_id` stamps that no assertion reads. The 7 `datetime.now` hits the
+   raw grep reports are docstring/prose references, not executable calls.
 2. **`tests/unit/test_training_env_worker.py`** — 4 synchronizer-shaped hits
    (real: 2 `getpid()` asserts at line 47 context + 2 `monotonic()` probes);
    the `cancel.set()`/`release.set()` hits are *correct* synchronization.
@@ -186,14 +192,45 @@ with no production-code impact — suitable for one cycle each, or a batch.
    `tests/unit/test_ml_qa_008_registry_cpu_budget.py` (6 tests), which fails
    on the pre-remediation text (negative control: 5 failed / 1 passed).
 7. **`tests/unit/test_audit_flush_contract.py`** — 4 `monotonic()` probes.
+   **REMEDIATED (ML-QA-009, PR #422):** the remaining wall-clock pair moved to
+   the shared `budget_cpu_ms` CPU-time helper; the hard no-deadlock contract
+   (`ok is False` around a wedged flush) is kept. Residual 2 `monotonic` hits
+   are docstring references.
 8. **`tests/unit/test_70d_bug106_incremental_phase19.py`** — 4
    `perf_counter()` probes.
 9. **`tests/unit/test_runtime_config_hot_reload.py`** — 2 `getpid()` asserts
    + 1 `mkdtemp`; the hot-reload pid invariant is the right thing to assert,
    just not its literal value.
-10. **`tests/unit/test_logging.py`** — 5 `datetime.now()` asserts (line 85:
-    `assert parsed.year == datetime.now().year`) — the cleanest wall-clock
-    fix in the tree (inject the year or freeze the clock).
+10. **`tests/unit/test_logging.py`** (out-of-gate) — 5 `datetime.now()` asserts
+    (line 85: `assert parsed.year == datetime.now().year`) — the cleanest
+    wall-clock fix in the tree (inject the year or freeze the clock).
+
+### Recount at `03d2fede` (ML-QA-010, 2026-09-24)
+
+The census counts above were taken at `229dfeae` and are stale: ML-QA-004
+already remediated candidate #1 (0 timing probes remain — `ChainClock` wired at
+`tests/e2e/test_smoke_chain.py:109`), ML-QA-007 candidate #4, ML-QA-008
+candidate #6, ML-QA-009 candidate #7. Rescanning the §5 top-20 with the same
+stdlib scanner gives the current in-gate exposure, ordered by live source count:
+
+| Sources | File | Status |
+|---|---|---|
+| 15 | `tests/unit/test_bug262_close_time_evidence.py` | **REMEDIATED (ML-QA-010, PR pending)** — 11 `datetime.now` + 4 `mkdtemp` removed via a fixed injected clock + `tmp_path`; 19-test contract battery `tests/unit/test_ml_qa_010_clock_determinism.py` pins it |
+| 8 | `tests/unit/test_shadow70_safety.py` | open (1 `mkdtemp`, 6 `datetime.now`, 1 thread) |
+| 7 | `tests/unit/test_outcome_flush_race_bug140.py` | open (4 timing, 3 `datetime.now`) |
+| 4 | `tests/unit/test_causal_conv_invariants.py` | open (4 timing) |
+| 4 | `tests/unit/test_70d_bug106_incremental_phase19.py` | deferred (`skipif` on a data file absent from git) |
+| 3 | `tests/unit/test_bug285_overflow_drain.py` | open (3 timing) |
+| 3 | `tests/unit/test_bug275_hygiene_cadence_clock.py` | open (3 timing) |
+| 3 | `tests/unit/test_runtime_config_hot_reload.py` | open (2 `getpid`, 1 `mkdtemp`) |
+| 2 | `tests/unit/test_training_env_worker.py` | open (2 `getpid`) |
+| 2 | `tests/unit/test_audit_flush_contract.py` | residual docstring refs only |
+| 2 | `tests/unit/test_sample_weights.py` | open (2 timing) |
+| 2 | `tests/unit/test_research_edge_hardening_20260909.py` | open (2 timing) |
+
+Already at 0 sources: `test_smoke_chain.py` (was 44), `test_perf_r4_runtime_loop_offload.py`
+(was 5), `test_experiment_registry.py` (was 4), `test_strategy_factory_phase22.py`
+(was 2), `test_mt5_adapter_parity.py` (was 7).
 
 ---
 

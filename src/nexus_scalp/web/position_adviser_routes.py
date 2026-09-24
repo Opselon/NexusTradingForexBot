@@ -226,6 +226,7 @@ def route_models() -> dict[str, Any]:
                     "train_rows": meta.get("train_rows"),
                     "oos_rows": meta.get("oos_rows"),
                     "created_at": meta.get("created_at"),
+                    "classes_absent": meta.get("classes_absent", []),
                 }
             )
     active_id = svc.status().get("model_id") or ""

@@ -1090,11 +1090,11 @@ def _exposure_section(engine: Any) -> dict[str, Any]:
     try:
         symbol = engine.config.execution.symbol
         all_positions = engine.adapter.get_all_positions(symbol=symbol)
-        pending_orders = (
-            engine.adapter.get_pending_orders(symbol=symbol)
-            if hasattr(engine.adapter, "get_pending_orders")
-            else []
-        )
+        pending_orders = engine.adapter.get_pending_orders(symbol=symbol)
+        # MT5-PARITY T1: a failed query returns None — report UNAVAILABLE,
+        # never a fabricated zero-count.
+        if pending_orders is None:
+            pending_orders = []
         broker = {
             "positions": len(all_positions),
             "pendings": len(pending_orders),
@@ -1530,8 +1530,27 @@ def _database_section(engine: Any) -> dict[str, Any]:
     try:
         audit_path = None
         if engine is not None and getattr(engine, "audit", None) is not None:
-            audit_path = Path(getattr(engine.audit, "_db_path", "") or "")
-        out["databases"]["audit"] = _probe("audit", audit_path or None)
+            resolved = getattr(engine.audit, "_db_path", "") or ""
+            # RT-005: a PostgreSQL-configured AuditRepository has no
+            # filesystem path (only SQLite sets _db_path), and Path("") is
+            # WindowsPath('.') — feeding that to the SQLite-only migration
+            # engine raised "WindowsPath('.') has an empty name" on every
+            # snapshot. Report an explicit provider mismatch instead.
+            if resolved:
+                audit_path = Path(resolved)
+            elif str(getattr(engine.audit, "_db_url", "") or "").startswith("postgresql://"):
+                out["databases"]["audit"] = {
+                    "path": _mask_path(str(engine.audit._db_url)),
+                    "provider": "postgresql",
+                    "health": "READY",
+                    "exists": True,
+                    "schema_version": "NOT_RECORDED",
+                    "migration_state": "MANAGED_EXTERNALLY",
+                    "reason": "POSTGRES_DOMAIN_NOT_FILE_BASED",
+                }
+                audit_path = None
+        if audit_path is not None:
+            out["databases"]["audit"] = _probe("audit", audit_path)
     except Exception:
         out["databases"]["audit"] = {"health": "ERROR"}
     try:

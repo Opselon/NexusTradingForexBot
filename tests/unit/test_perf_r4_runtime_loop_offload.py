@@ -19,7 +19,7 @@ def _response():
 
 
 def _loop(monkeypatch, transport):
-    adapter = RemoteMT5GatewayAdapter()
+    adapter = RemoteMT5GatewayAdapter(api_key="probe-key", secret_token="probe-secret")
     monkeypatch.setattr(adapter, "_send_request", transport)
     return RuntimeLoop(SimpleNamespace(adapter=adapter))
 

@@ -126,6 +126,9 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
   // dataset is immediately trainable.
   const [trainDataset, setTrainDataset] = useState<string>("");
   const [trainEpochs, setTrainEpochs] = useState<number>(12);
+  // BUG-314 F1: the staleness gate is operator-visible and operator-editable
+  // here (it is part of the adviser's bounded runtime config).
+  const [staleGate, setStaleGate] = useState<number>(5);
 
   // Auto-tune (auto mode): a bounded grid sweep. Fine-tuning by hand stays
   // available — these are the exact knobs the sweep ranges over.
@@ -152,6 +155,10 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       setActiveModelId(m.active_adviser_id || "");
       setAdvisories(a.advisories || []);
       setDatasets(ds.datasets || []);
+      // F1: the gate field mirrors the server, never a local guess.
+      if (s.config?.max_snapshot_age_sec != null) {
+        setStaleGate(Number(s.config.max_snapshot_age_sec));
+      }
       setError("");
     } catch (err) {
       // The backend stays the source of truth; show its message verbatim.
@@ -234,6 +241,23 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
     },
     [checks, refresh],
   );
+
+  const onConfigure = useCallback(async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await positionAdviserApi.configure({ max_snapshot_age_sec: staleGate });
+      await refresh();
+    } catch (err) {
+      const detail = (err as { detail?: string })?.detail ?? String(err);
+      setError(typeof detail === "string" ? detail : JSON.stringify(detail));
+      // Re-sync the field to whatever the server actually holds.
+      const s = await positionAdviserApi.status();
+      setStaleGate(Number(s.config?.max_snapshot_age_sec ?? 5));
+    } finally {
+      setBusy(false);
+    }
+  }, [staleGate, refresh]);
 
   const onUnload = useCallback(async () => {
     setBusy(true);
@@ -523,6 +547,23 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
           <div className="s">{t("position-adviser.metric.weights_sha", "weights sha {v}", { v: status?.weights_sha256 ? status.weights_sha256.slice(0, 12) : "—" })}</div>
         </div>
         <div className="pa-metric">
+          <div className="k">{t("position-adviser.metric.integrity", "Package integrity")}</div>
+          <div
+            className={classNames(
+              "v",
+              status?.integrity === "OK" ? "good" : status?.integrity ? "warn" : "dim",
+            )}
+            title={status?.integrity ? `verified against ${status.manifest_path}` : "no model loaded"}
+          >
+            {status?.integrity || "—"}
+          </div>
+          <div className="s">
+            {status?.source_dataset_hash
+              ? t("position-adviser.metric.dataset_sha", "dataset {v}", { v: status.source_dataset_hash.slice(0, 12) })
+              : t("position-adviser.metric.no_manifest", "no manifest")}
+          </div>
+        </div>
+        <div className="pa-metric">
           <div className="k">{t("position-adviser.metric.feature_dim", "Feature dim")}</div>
           <div className="v">{status?.feature_dim != null ? String(status.feature_dim) : "--"}</div>
           <div className="s">{t("position-adviser.metric.input_width", "input width")}</div>
@@ -538,6 +579,15 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
           <div className="k">{t("position-adviser.metric.evaluated", "Evaluated")}</div>
           <div className="v">{String(status?.evaluated_count ?? 0)}</div>
           <div className="s">{t("position-adviser.metric.refused", "refused: {n}", { n: String(status?.refused_count ?? 0) })}</div>
+        </div>
+        <div className="pa-metric">
+          <div className="k">{t("position-adviser.metric.stale_refused", "Stale refused")}</div>
+          <div className={classNames("v", (status?.stale_rejected_count ?? 0) > 0 ? "warn" : "dim")}>
+            {String(status?.stale_rejected_count ?? 0)}
+          </div>
+          <div className="s">
+            {t("position-adviser.metric.stale_gate", "gate {v}s", { v: fmt(status?.config?.max_snapshot_age_sec, 1) })}
+          </div>
         </div>
       </div>
 
@@ -592,6 +642,25 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                       max={100}
                       value={trainEpochs}
                       onChange={(e) => setTrainEpochs(parseInt(e.target.value, 10) || 12)}
+                      className="pa-input"
+                    />
+                  </div>
+                  <div className="pa-field narrow">
+                    <label htmlFor="pa-stale-gate" title="BUG-314 F1: refuse a snapshot older than this instead of deciding on it (0 = accept any age)">
+                      {t("position-adviser.label.stale_gate", "Stale gate (s)")}
+                    </label>
+                    <input
+                      id="pa-stale-gate"
+                      type="number"
+                      min={0}
+                      max={600}
+                      step={0.5}
+                      value={staleGate}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setStaleGate(Number.isFinite(v) ? Math.min(600, Math.max(0, v)) : 0);
+                      }}
+                      onBlur={() => void onConfigure()}
                       className="pa-input"
                     />
                   </div>
@@ -800,6 +869,16 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                       {isBelow ? <span className="badge bad">{t("position-adviser.badge.below_baseline", "BELOW BASELINE")}</span> : null}
                       {!m.has_scaler ? <span className="badge warn">{t("position-adviser.badge.no_scaler", "NO SCALER")}</span> : null}
                     </div>
+                    {m.classes_absent && m.classes_absent.length > 0 ? (
+                      <div className="pa-notice warn" title="BUG-314 F8: these classes were absent from the training data, get zero weight, and can never be emitted">
+                        <span className="pa-notice-glyph">!</span>
+                        <span>
+                          {t("position-adviser.model.classes_absent", "never trained on: {v}", {
+                            v: m.classes_absent.join(", "),
+                          })}
+                        </span>
+                      </div>
+                    ) : null}
                     <div className="pa-model-facts">
                       <span>
                         {t("position-adviser.label.oos_acc", "OOS acc")} <b>{fmt(m.oos_accuracy)}</b>
@@ -936,6 +1015,35 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
                     ) : null}
                     {a.not_applied_reason ? (
                       <div className="pa-feed-reason">{a.not_applied_reason}</div>
+                    ) : null}
+                    {a.diagnostics && typeof a.diagnostics === "object" ? (
+                      <div className="pa-feed-trace">
+                        {(() => {
+                          const dg = a.diagnostics as Record<string, unknown>;
+                          const pk = dg.p_keep;
+                          const sid = dg.snapshot_id;
+                          const age = dg.snapshot_age_ms;
+                          return (
+                            <>
+                              {typeof pk === "number" ? (
+                                <span title="p(KEEP) — the probability the verdict was built from">
+                                  p_keep {pk.toFixed(4)}
+                                </span>
+                              ) : null}
+                              {typeof sid === "string" && sid ? (
+                                <span title="the exact position snapshot this decision was made on">
+                                  snap {sid.slice(0, 12)}
+                                </span>
+                              ) : null}
+                              {typeof age === "number" ? (
+                                <span title="how old the snapshot was when inference ran">
+                                  age {(age / 1000).toFixed(2)}s
+                                </span>
+                              ) : null}
+                            </>
+                          );
+                        })()}
+                      </div>
                     ) : null}
                   </div>
                 );
