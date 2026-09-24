@@ -1,0 +1,542 @@
+/* ==========================================================================
+ * Lane D — Decision Trace inspector styling (LIVE-CAUSAL-TOPOLOGY wave).
+ *
+ * Namespace: .dti-* only. Never touches lane C's graph classes. Dark theme
+ * tokens from src/styles/theme.css (no raw hex outside rgba()/color-mix()).
+ * Logical properties throughout (margin/padding-block/inline).
+ * ========================================================================== */
+
+.dti-inspector {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.dti-inspector[hidden] { display: none; }
+
+/* ----------------------------------------------------------------- sections
+ * Compact rows keep the panel scannable; full mode is one click away. */
+.dti-section {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-panel) 92%, var(--bg-panel-2));
+  padding: var(--card-pad);
+  margin-block-end: var(--panel-gap);
+}
+
+.dti-section > summary,
+.dti-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-block-end: 6px;
+}
+
+.dti-section > summary::-webkit-details-marker { display: none; }
+
+.dti-section-head .dti-count {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.dti-compact .dti-full-only { display: none; }
+
+/* ------------------------------------------------------------------- fields
+ * label/value rows; absent values are visibly dimmer (UNKNOWN / NOT OBSERVED). */
+.dti-fields {
+  display: grid;
+  grid-template-columns: minmax(96px, 32%) 1fr;
+  gap: 3px 10px;
+  font-size: 12px;
+}
+
+.dti-k {
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dti-v {
+  font-family: var(--mono);
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.dti-v.absent,
+.dti-k.absent { color: var(--text-faint); opacity: 0.85; }
+
+.dti-v.redacted { color: var(--amber); }
+
+.dti-row-empty {
+  color: var(--text-faint);
+  font-style: italic;
+  font-size: 11px;
+  padding-block: 2px;
+}
+
+/* --------------------------------------------------------------- word tones
+ * Tone classes only RESTATE backend words (ok/warn/fail/unknown). */
+.dti-word {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.dti-word.tone-ok { color: var(--green); background: var(--green-dim); }
+.dti-word.tone-warn { color: var(--amber); background: var(--amber-dim); }
+.dti-word.tone-fail { color: var(--red); background: var(--red-dim); }
+.dti-word.tone-info { color: var(--accent-strong); background: var(--paper-blue-bg); }
+.dti-word.tone-unknown { color: var(--text-faint); background: var(--bg-inset); border-color: var(--border); }
+
+.dti-word.gap {
+  color: var(--amber);
+  background: var(--amber-dim);
+  border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+}
+
+/* ------------------------------------------------------------- note / cause
+ * The short explanatory line under every state word (never a bare word). */
+.dti-note {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.dti-cause { font-size: 11px; line-height: 1.5; color: var(--text-dim); }
+
+/* ------------------------------------------------------------------- deltas
+ * §15/§39 what-changed rows. */
+.dti-delta {
+  display: grid;
+  grid-template-columns: minmax(90px, 30%) auto auto 1fr;
+  gap: 4px 8px;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding-block: 1px;
+}
+
+.dti-delta .key { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; }
+
+.dti-delta .kind {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.dti-delta .kind.added { color: var(--green); background: var(--green-dim); }
+.dti-delta .kind.changed { color: var(--amber); background: var(--amber-dim); }
+.dti-delta .kind.removed { color: var(--red); background: var(--red-dim); }
+
+.dti-delta .from { color: var(--text-faint); }
+.dti-delta .arrow { color: var(--text-faint); }
+.dti-delta .to { color: var(--text); }
+
+/* --------------------------------------------------------------- waterfall
+ * §41 latency waterfall: proportional bars from the observed µs only. */
+.dti-waterfall { display: grid; gap: 3px; }
+
+.dti-wf-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 26%) 1fr auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+}
+
+.dti-wf-row .stage { font-family: var(--mono); color: var(--text-dim); }
+
+.dti-wf-bar { display: block; block-size: 9px; background: var(--bg-inset); border: 1px solid var(--border); }
+
+.dti-wf-bar > i {
+  display: block;
+  block-size: 100%;
+  background: color-mix(in srgb, var(--accent) 78%, var(--green));
+  min-inline-size: 2px;
+}
+
+.dti-wf-row.missing .dti-wf-bar > i { background: transparent; }
+.dti-wf-row.missing .us { color: var(--text-faint); font-style: italic; }
+.dti-wf-row .us { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text); }
+
+.dti-wf-total {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-block-start: 6px;
+  padding-block-start: 6px;
+  border-block-start: 1px dashed var(--border);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.dti-wf-total b { color: var(--text-dim); font-family: var(--mono); font-weight: 600; }
+
+/* ---------------------------------------------------------------- cascade
+ * §42 error chain. */
+.dti-cascade { display: grid; gap: 2px; }
+
+.dti-cascade-row {
+  display: grid;
+  grid-template-columns: minmax(64px, 22%) 1fr auto;
+  gap: 8px;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--red-dim);
+}
+
+.dti-cascade-row .stage { color: var(--text-dim); }
+.dti-cascade-row .code { color: var(--red); }
+.dti-cascade-row .reason { color: var(--text-faint); }
+
+/* ------------------------------------------------------- payload / metadata
+ * §14 payload summary + §45-§49 safe metadata. */
+.dti-payload { display: grid; gap: 2px; }
+
+.dti-payload-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 30%) 1fr;
+  gap: 4px 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.dti-payload-row .key { color: var(--text-faint); }
+.dti-payload-row .val { color: var(--text); word-break: break-all; }
+.dti-payload-row .val.nested { color: var(--text-dim); }
+
+/* -------------------------------------------------------------------- pairs
+ * §18 value/threshold pairs (real numbers only). */
+.dti-pairs { display: grid; gap: 3px; }
+
+.dti-pair {
+  display: grid;
+  grid-template-columns: minmax(90px, 34%) auto 1fr auto;
+  gap: 6px;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--amber-dim);
+}
+
+.dti-pair .key { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; }
+.dti-pair .actual { color: var(--amber); }
+.dti-pair .op { color: var(--text-faint); }
+.dti-pair .required { color: var(--text); }
+
+/* ------------------------------------------------------------------ buttons
+ * Clickable counters (§57) + follow/scrubber controls. */
+.dti-counter {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.dti-counter:hover { border-color: var(--accent); color: var(--text); }
+
+.dti-counter b {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-strong);
+}
+
+.dti-counter.active {
+  border-color: var(--accent);
+  background: var(--paper-blue-bg);
+  color: var(--text);
+}
+
+.dti-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-inset);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.dti-chip button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.dti-chip button:hover { color: var(--red); }
+
+/* ----------------------------------------------------------- queue buckets
+ * §31 trace queue (bounded), §64 collapse by trace. */
+.dti-queue { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+
+.dti-bucket {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+  padding: 6px 8px;
+  min-block-size: 0;
+}
+
+.dti-bucket-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  margin-block-end: 4px;
+}
+
+.dti-bucket-head .n { margin-inline-start: auto; font-variant-numeric: tabular-nums; }
+
+.dti-bucket-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 2px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: 3px;
+}
+.dti-bucket-row:hover { background: var(--elevate-hi); color: var(--text); }
+.dti-bucket-row.active { background: var(--paper-blue-bg); color: var(--text); }
+.dti-bucket-row .tid {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.dti-bucket-row .st { color: var(--text-faint); }
+
+/* ----------------------------------------------------------------- stream
+ * §58 compact live stream rail + §62 lifecycle word. */
+.dti-stream { display: grid; gap: 2px; }
+
+.dti-stream-row {
+  display: grid;
+  grid-template-columns: auto minmax(64px, 22%) 1fr auto;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  cursor: pointer;
+  color: var(--text-dim);
+}
+.dti-stream-row:hover { background: var(--elevate-hi); color: var(--text); }
+.dti-stream-row.active { background: var(--paper-blue-bg); color: var(--text); }
+
+.dti-stream-row .seq { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.dti-stream-row .stage { color: var(--accent-strong); }
+.dti-stream-row .tid { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --------------------------------------------------------------- timeline
+ * §59 state timeline with exact timestamps. */
+.dti-timeline { display: grid; gap: 1px; }
+
+.dti-timeline-row {
+  display: grid;
+  grid-template-columns: minmax(118px, 34%) minmax(56px, 20%) 1fr;
+  gap: 6px;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 1px 4px;
+  border-inline-start: 2px solid var(--border);
+}
+.dti-timeline-row.terminal { border-inline-start-color: var(--red); }
+.dti-timeline-row.rejected { border-inline-start-color: var(--amber); }
+.dti-timeline-row.ok { border-inline-start-color: var(--green); }
+.dti-timeline-row .ts { color: var(--text-faint); }
+.dti-timeline-row .stage { color: var(--accent-strong); }
+
+/* --------------------------------------------------------------- controls
+ * §29/§30 scrubber + speed (observer-only — no engine timing is touched). */
+.dti-scrubber {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.dti-scrubber input[type="range"] { inline-size: 100%; accent-color: var(--accent); }
+
+.dti-speeds {
+  display: inline-flex;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+  background: var(--bg-inset);
+}
+
+.dti-speed {
+  border: 0;
+  background: none;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.dti-speed:hover { color: var(--text); }
+.dti-speed.active { background: var(--paper-blue-bg); color: var(--accent-strong); }
+
+/* ------------------------------------------------------------------ panels
+ * §74 desktop layout: the inspector never covers the active path. */
+.dti-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 4fr) minmax(300px, 3fr) minmax(280px, 3fr);
+  gap: var(--panel-gap);
+  align-items: start;
+}
+
+.dti-col { display: grid; gap: var(--panel-gap); min-inline-size: 0; }
+
+@media (max-width: 1180px) {
+  .dti-grid { grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr); }
+  .dti-col-wide { grid-column: 1 / -1; }
+}
+
+@media (max-width: 860px) {
+  .dti-grid { grid-template-columns: minmax(0, 1fr); }
+  .dti-queue { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The inspector column never overlaps the graph: it is a sibling cell, so
+ * focus/follow can stay visible beside the active path (§74). */
+.dti-inspector-col { position: sticky; inset-block-start: 0; max-block-size: 100%; }
+
+.dti-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.dti-bar > .spacer { flex: 1; }
+
+.dti-tabs {
+  display: inline-flex;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+  background: var(--bg-inset);
+}
+
+.dti-tab {
+  border: 0;
+  background: none;
+  color: var(--text-faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.dti-tab:hover { color: var(--text); }
+.dti-tab.active { background: var(--paper-blue-bg); color: var(--accent-strong); }
+
+.dti-toggle {
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  color: var(--text-dim);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.dti-toggle:hover { color: var(--text); border-color: var(--accent); }
+.dti-toggle.active { background: var(--paper-blue-bg); color: var(--accent-strong); border-color: var(--accent); }
+
+/* ------------------------------------------------------------- json / raw
+ * Verbatim payloads, monospaced and scrollable. */
+.dti-json {
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  overflow: auto;
+  max-block-size: 240px;
+  white-space: pre;
+}
+
+/* ------------------------------------------------------- follow / health
+ * §32-§34 follow mode picker + §43 health rows. */
+.dti-follow { display: grid; grid-template-columns: auto 1fr; gap: 6px; align-items: center; }
+.dti-follow input {
+  inline-size: 100%;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 3px 6px;
+}
+.dti-follow input:focus { outline: 1px solid var(--accent); }
+
+.dti-health { display: grid; gap: 2px; }
+.dti-health-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 30%) 1fr;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+}
+.dti-health-row .sub { font-family: var(--mono); color: var(--text-dim); }
+.dti-health-row .src { display: block; color: var(--text-faint); font-size: 9px; }
