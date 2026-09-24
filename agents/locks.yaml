@@ -5,6 +5,59 @@
 # Release locks when done (remove entry or mark released).
 
 exclusive_locks:
+  # --- i18n-COMPLETE WAVE (2026-09-24, UI-I18N-COMPLETE) --------------------
+  # Base: bbbec186 (= origin/main tip at spawn). Integration branch
+  # agent/hermes/i18n-complete. Authoritative per-lane ownership table:
+  # C:/Users/Capsizer/source/repos/i18n-complete-wave/CONTRACT.md
+  - path: frontend/src/features/decision-trace/
+    owner: UI-I18N-DT
+    exclusive: true
+    scope: i18n-COMPLETE lane DT - decision-trace i18n.ts + ui/** (10 files)
+    since: 2026-09-24
+    task: TASK-I18N-COMPLETE
+    expiry: 2026-10-01
+  - path: frontend/src/features/dependency/
+    owner: UI-I18N-A
+    exclusive: true
+    scope: i18n-COMPLETE lane A - features/{dependency,incidents,factory,governance,research}
+    since: 2026-09-24
+    task: TASK-I18N-COMPLETE
+    expiry: 2026-10-01
+  - path: frontend/src/features/ai-analysis/
+    owner: UI-I18N-B
+    exclusive: true
+    scope: i18n-COMPLETE lane B - features/{ai-analysis,control-center,config,health,command-center,debug}
+    since: 2026-09-24
+    task: TASK-I18N-COMPLETE
+    expiry: 2026-10-01
+  - path: frontend/src/pages/
+    owner: UI-I18N-C
+    exclusive: true
+    scope: i18n-COMPLETE lane C - frontend/src/pages/** + frontend/src/components/**
+    since: 2026-09-24
+    task: TASK-I18N-COMPLETE
+    expiry: 2026-10-01
+  - path: frontend/src/features/account/
+    owner: UI-I18N-D
+    exclusive: true
+    scope: i18n-COMPLETE lane D - features/{account,database,liquidity,marketplace,model-studio,news,position-adviser,provisioning,rules}
+    since: 2026-09-24
+    task: TASK-I18N-COMPLETE
+    expiry: 2026-10-01
+  - path: Web/
+    owner: UI-I18N-WEB
+    exclusive: true
+    scope: i18n-COMPLETE lane WEB - legacy dashboard per-panel i18n (incl. Web/ux_i18n.js append-only)
+    since: 2026-09-24
+    task: TASK-I18N-COMPLETE
+    expiry: 2026-10-01
+  - path: tests/js/
+    owner: UI-I18N-GATE
+    exclusive: true
+    scope: i18n-COMPLETE lane GATE - NEW tests/js/frontend_i18n_*.test.js files only
+    since: 2026-09-24
+    task: TASK-I18N-COMPLETE
+    expiry: 2026-10-01
   - path: src/nexus_scalp/web/diagnostics_state_routes.py
     owner: Hermes-CFGUI
     exclusive: true
