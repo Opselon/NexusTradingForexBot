@@ -197,7 +197,7 @@ function BarListBase({
   rows,
   tone = "var(--accent)",
   max = 10,
-  empty = "backend returned no rows",
+  empty,
 }: {
   rows: CountRow[];
   tone?: string;
@@ -205,7 +205,7 @@ function BarListBase({
   empty?: string;
 }) {
   const t = useI18n((s) => s.t);
-  if (rows.length === 0) return <div className="aa-empty">{empty}</div>;
+  if (rows.length === 0) return <div className="aa-empty">{empty ?? t("ai-analysis.chart.no_rows", "backend returned no rows")}</div>;
   // shown/peak read ONLY the rows prop + max: memo deps are exactly those.
   const shown = useMemo(() => rows.slice(0, max), [rows, max]);
   const peak = useMemo(() => Math.max(1, ...shown.map((r) => r.count)), [shown]);
