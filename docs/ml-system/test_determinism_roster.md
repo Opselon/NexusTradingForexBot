@@ -164,10 +164,27 @@ with no production-code impact — suitable for one cycle each, or a batch.
 4. **`tests/integration/test_mt5_adapter_parity.py`** — 6 `perf_counter()`
    probes. Cross-OS matrix exposure: a timing red on one OS of the matrix is
    the tell for this shape, not a platform bug.
+   **REMEDIATED (ML-QA-007):** all three latency tests now measure
+   `time.process_time()` (CPU time, co-tenant-scheduler-insensitive) after an
+   explicit warmup loop, keep the deterministic invariants (call count,
+   action identity, percentile ordering) hard, and re-attach the <1ms
+   serialization SLA as a CPU-time mean bound. The loopback round-trip bound
+   moved onto the shared `budget_cpu_ms` helper. Contract pinned by
+   `tests/unit/test_ml_qa_007_parity_latency_determinism.py` (19 tests),
+   which fails on the pre-remediation text (verified: 3 `perf_counter`
+   anchors, no warmup, no `calls.clear()`).
 5. **`tests/unit/test_perf_r4_runtime_loop_offload.py`** — 5 synchronizer
    hits; verify none are genuine race sources before discounting.
 6. **`tests/unit/test_experiment_registry.py`** — 4 `perf_counter()` probes
    in the registry benchmark path.
+   **REMEDIATED (ML-QA-008):** both benchmark legs (register-1000, top-10
+   query) now measure `time.process_time()` (CPU time, co-tenant-scheduler-
+   insensitive) after an explicit warmup register/finalize/query; the hard
+   `query_ms < 50.0` budget, `n = 1000` scale, ordering and best-element
+   asserts are all kept (only `register_ms > 0.0` -> `>= 0.0`, which would be
+   a new wall-clock-class flake on CPU time). Contract pinned by
+   `tests/unit/test_ml_qa_008_registry_cpu_budget.py` (6 tests), which fails
+   on the pre-remediation text (negative control: 5 failed / 1 passed).
 7. **`tests/unit/test_audit_flush_contract.py`** — 4 `monotonic()` probes.
 8. **`tests/unit/test_70d_bug106_incremental_phase19.py`** — 4
    `perf_counter()` probes.

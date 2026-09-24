@@ -39,6 +39,13 @@ from nexus_scalp.ports.mt5_port import IMT5Port
 
 logger = get_logger("nexus_scalp.adapters.remote_gateway")
 
+# DECISION-TRACE OBSERVER (observability only). Guarded import (BUG-311
+# rule): observability faults must never reach the execution path.
+try:
+    from nexus_scalp.observability.trace_observer import trace_observer as _trace_obsv
+except Exception:  # pragma: no cover - observability failure isolation
+    _trace_obsv = None  # type: ignore[assignment]
+
 
 class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
     """
@@ -217,6 +224,29 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
             "idempotency_key": idempotency_key,
         }
 
+        # DECISION-TRACE: remote-gateway evidence (stage MT5, gateway=
+        # "remote_mt5"). SENT fires only immediately before the real RPC —
+        # a response (accepted or rejected) proves the terminal was reached.
+        if _trace_obsv is not None and _trace_obsv.active:
+            _trace_obsv.emit(
+                stage="MT5",
+                component="remote_gateway",
+                event_type="MT5_SEND",
+                status="SENT",
+                symbol=order.symbol,
+                detail={
+                    "gateway": "remote_mt5",
+                    "order_id": order.order_id,
+                    "order_type": order.order_type.value,
+                    "volume": order.volume,
+                    "price": order.price,
+                    "sl": order.stop_loss,
+                    "tp": order.take_profit,
+                    "magic": order.magic_number,
+                    "idempotency_key": idempotency_key,
+                },
+            )
+        _trace_t0 = time.perf_counter_ns() if _trace_obsv is not None and _trace_obsv.active else 0
         res = self._send_request("SEND_ORDER", payload)
         success = res.get("status") == "SUCCESS"
 
@@ -233,6 +263,23 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
                 reason=res.get("message"),
             )
 
+        if _trace_obsv is not None and _trace_obsv.active:
+            _trace_obsv.emit(
+                stage="MT5",
+                component="remote_gateway",
+                event_type="MT5_RESPONSE",
+                status="ACCEPTED" if success else "REJECTED",
+                symbol=order.symbol,
+                latency_us=(time.perf_counter_ns() - _trace_t0) // 1000 if _trace_t0 else None,
+                detail={
+                    "gateway": "remote_mt5",
+                    "reached": True,
+                    "order_id": order.order_id,
+                    "ticket": res.get("ticket"),
+                    "error": None if success else res.get("message"),
+                    "success": bool(success),
+                },
+            )
         return success
 
     def close_position(self, ticket: int, volume: float | None = None) -> bool:

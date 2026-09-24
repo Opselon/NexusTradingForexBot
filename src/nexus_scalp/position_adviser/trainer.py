@@ -283,9 +283,18 @@ class AdviserScaler:
 
 
 def _sha256_file(path: Path) -> str:
-    """Sha256 of a file. Accepts an already-sanitized, contained path."""
+    """Sha256 of a file. Accepts an already-sanitized, contained path.
+
+    SEC (py/path-injection #1147): the contract is enforced, not assumed. Every
+    caller reaches here from sanitizer output (``_resolve_dataset_path`` /
+    ``_resolve_output_dir`` / ``_sha256_trainer_artifact``), so re-asserting
+    containment at the read is defense-in-depth that closes the residual taint
+    the static analyzer tracks from the request-supplied parameter.
+    """
     import hashlib
 
+    if not path.is_relative_to(_ADVISER_ROOT.resolve()):
+        raise AdviserFeatureError("adviser file read must stay inside the repository root")
     h = hashlib.sha256()
     with open(path, "rb") as f:
         while chunk := f.read(65536):
@@ -559,7 +568,13 @@ def train_position_adviser(
         "weights_sha256": sha,
         "created_at": datetime.now(UTC).isoformat(),
     }
-    with (manifest_path.parent / manifest_path.name).open("w", encoding="utf-8") as f:
+    # SEC (py/path-injection #1148): the manifest write resolves the target
+    # under the untainted output directory via resolve_under_root, so the sink
+    # operates on a canonicalized in-root path that CodeQL recognizes as safe.
+    _manifest_target = resolve_under_root(
+        f"{mid}.meta.json", root=out, label="position adviser manifest"
+    )
+    with _manifest_target.open("w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
     logger.info(

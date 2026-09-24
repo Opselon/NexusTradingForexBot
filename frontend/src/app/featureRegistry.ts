@@ -32,6 +32,7 @@ import modelStudioMeta from "@/features/model-studio";
 import positionAdviserMeta from "@/features/position-adviser";
 import dependencyMeta from "@/features/dependency";
 import provisioningMeta from "@/features/provisioning";
+import decisionTraceMeta from "@/features/decision-trace";
 
 export type FeatureSectionName = "OPERATIONS" | "MARKET & RESEARCH" | "SAFETY & GOVERNANCE" | "PLATFORM";
 
@@ -93,6 +94,7 @@ const FEATURES: RegisteredFeature[] = [
   positionAdviserMeta,
   dependencyMeta,
   provisioningMeta,
+  decisionTraceMeta,
 ].map(toFeature);
 
 export const FEATURE_REGISTRY: RegisteredFeature[] = FEATURES;

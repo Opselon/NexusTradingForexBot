@@ -202,10 +202,16 @@ class SQLiteDriver(DatabaseDriver):
                 c.close()
 
     def executemany(self, sql: str, seq: Iterable[Sequence[Any]], conn: Any = None) -> None:
+        # SEC (py/sql-injection #1114): this was the ONE driver sink that did
+        # not route through the shared boundary guard, so a caller could reach
+        # the engine with an unvalidated statement. The guard is the canonical
+        # shape check (verb allow-list, no stacked statements, no block
+        # comments) already enforced by every query/query_one/scalar sink; the
+        # values themselves stay bound through ``seq`` placeholders.
         own = conn is None
         c = conn or (self.connect_shared() if self.is_in_memory else self.connect())
         try:
-            c.executemany(sql, seq)
+            c.executemany(assert_safe_sql(sql), seq)
         finally:
             if own and not self.is_in_memory:
                 c.close()

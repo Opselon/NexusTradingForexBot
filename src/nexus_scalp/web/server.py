@@ -2808,6 +2808,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     register_operator_routes(app, get_system_state, _err, _log_err, serialize_enums)
 
+    # DECISION TRACE (live trading decision trace + runtime topology
+    # observability): observer lifecycle, discovered topology, latency,
+    # integrity, decisions, event tail, forensic bundle and the live SSE
+    # stream. Purely additive, read-only w.r.t. the trading engine; the
+    # observer is a passive in-memory store these routes read.
+    from nexus_scalp.web.trace_routes import register_trace_routes
+
+    register_trace_routes(app, _err, _log_err)
+
     # CALIBRATION EVIDENCE MONITOR (P0 collection mission): read-only
     # /api/operator/calibration — serving fingerprint, eligible/excluded
     # outcome counts, collector status, and the identity-bound risk

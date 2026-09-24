@@ -133,3 +133,50 @@ exclusive_locks:
 #     exclusive: true
 #     scope: split-fill lineage fix
 #     since: 2026-08-18
+
+  # --- END-USER RELEASE LANE (2026-09-24, TASK-EUP-RELEASE-001) ----------
+  # Base: 5c38c3ef (= origin/main tip). Lane branch
+  # agent/release/eup-release-lane, worktree nse-eup-lane.
+  # Scope: CLI help-surface identity (prog_name) across entry points.
+  - path: src/nexus_scalp/release/metadata.py
+    owner: HERMES-EUP-RELEASE
+    exclusive: true
+    scope: TASK-EUP-RELEASE-001 canonical CLI_PROGRAM_NAME constant (released — task DONE, PR #417 merged as c9851b51)
+    since: 2026-09-24
+    task: TASK-EUP-RELEASE-001
+    expiry: 2026-10-01
+  - path: src/nexus_scalp/cli/help_command.py
+    owner: HERMES-EUP-RELEASE
+    exclusive: true
+    scope: TASK-EUP-RELEASE-001 nexus help word-form surface (audit; unchanged) (released — task DONE, PR #417 merged as c9851b51)
+    since: 2026-09-24
+    task: TASK-EUP-RELEASE-001
+    expiry: 2026-10-01
+  - path: tests/cli/test_cli_subprocess.py
+    owner: HERMES-EUP-RELEASE
+    exclusive: true
+    scope: TASK-EUP-RELEASE-001 program-name invariance golden tests (released — task DONE, PR #417 merged as c9851b51)
+    since: 2026-09-24
+    task: TASK-EUP-RELEASE-001
+    expiry: 2026-10-01
+
+  # --- RESIDUE-POSIX LANE (2026-09-24, TASK-RESIDUE-POSIX-001) ------------
+  # Base: cbabadae (= origin/main tip). Lane branch
+  # agent/ci/residue-posix-paths, worktree nse-residue-posix.
+  # Scope: Windows path-separator regression in the merge-marker residue gate.
+  - path: scripts/ci/check_merge_marker_residue.py
+    owner: HERMES-RESIDUE-POSIX
+    exclusive: true
+    scope: TASK-RESIDUE-POSIX-001 POSIX-canonical diagnostic paths (str -> as_posix at the single derivation site)
+    since: 2026-09-24
+    task: TASK-RESIDUE-POSIX-001
+    expiry: 2026-10-01
+    status: released  # PR #423 merged as squash 5ad2d2f7
+  - path: tests/unit/test_merge_marker_residue.py
+    owner: HERMES-RESIDUE-POSIX
+    exclusive: true
+    scope: TASK-RESIDUE-POSIX-001 Windows regression coverage for the residue gate
+    since: 2026-09-24
+    task: TASK-RESIDUE-POSIX-001
+    expiry: 2026-10-01
+    status: released  # PR #423 merged as squash 5ad2d2f7

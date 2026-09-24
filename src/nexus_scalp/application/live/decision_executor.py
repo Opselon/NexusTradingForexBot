@@ -22,6 +22,29 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.application.live.decision_executor")
 
+# DECISION-TRACE OBSERVER (observability only). Guarded import (BUG-311):
+# a fault in observability code must never reach the execution path.
+try:
+    from nexus_scalp.observability.trace_contract import proposal_summary as _proposal_summary
+    from nexus_scalp.observability.trace_observer import trace_observer as _trace
+except Exception:  # pragma: no cover - observability failure isolation
+    _trace = None  # type: ignore[assignment]
+
+    def _proposal_summary(proposal, *, status, trace_id=None):  # type: ignore[misc]
+        return {}
+
+
+def _trace_decision_id(policy_decision: Any) -> str | None:
+    """Canonical id for the decision: EXEC execution_id, else request_id."""
+    return (
+        str(
+            getattr(policy_decision, "execution_id", None)
+            or getattr(policy_decision, "request_id", None)
+            or ""
+        )
+        or None
+    )
+
 
 class DecisionExecutor:
     """Executes the post-policy decision stage of the live tick pipeline."""
@@ -89,6 +112,9 @@ class DecisionExecutor:
     ) -> None:
         """Runs the BUG-212 shadow boundary, dispatch/lifecycle actions,
         hedging, and survival/equity audit for one processed tick."""
+        # DECISION-TRACE: which executor boundary (if any) suppressed this
+        # decision. Observability only — never read by execution logic.
+        _trace_suppressed_reason: str | None = None
         # =================================================================
         # RUNTIME RESILIENCE (Agent-7 failure injection): a proposal whose
         # decision_stage is DEDUP_GATE is the BUG-169 duplicate re-surface —
@@ -110,6 +136,7 @@ class DecisionExecutor:
                     "rejection_reason": "duplicate market event re-surface is never executable",
                 }
             )
+            _trace_suppressed_reason = "TICK_DUPLICATE_SUPPRESSED"
             logger.info(
                 "[DEDUP_BOUNDARY] event=ORDER_MUTATION_SUPPRESSED suppressed_action=%s",
                 "replayed duplicate",
@@ -143,11 +170,36 @@ class DecisionExecutor:
                     "reversal_action": None,
                 }
             )
+            _trace_suppressed_reason = "SHADOW_OBSERVATION_ONLY"
             logger.info(
                 "[SHADOW_BOUNDARY] event=ORDER_MUTATION_SUPPRESSED suppressed_action=%s ticket=%s",
                 _shadow_action.value,
-                getattr(proposal, "ticket", 0) or 0,
+                getattr(policy_decision, "ticket", 0) or 0,
             )
+        # DECISION-TRACE: exactly one decision record per evaluated proposal.
+        # Source NO_TRADE was already recorded terminally at the post-policy
+        # seam; here we record (a) executor-boundary suppressions as terminal
+        # REJECTED and (b) surviving actionable decisions as non-terminal
+        # APPROVED so RISK/EXECUTION/GATEWAY/ORDER chain onto the same trace.
+        if _trace is not None:
+            _act_v = (
+                policy_decision.action.value
+                if hasattr(policy_decision.action, "value")
+                else str(policy_decision.action)
+            )
+            if _trace_suppressed_reason is not None:
+                _trace.emit_decision(
+                    summary=_proposal_summary(policy_decision, status="REJECTED"),
+                    detail={"suppressed_by": _trace_suppressed_reason},
+                    terminal=True,
+                    component="decision_executor",
+                )
+            elif _act_v != "NO_TRADE":
+                _trace.emit_decision(
+                    summary=_proposal_summary(policy_decision, status="APPROVED"),
+                    terminal=False,
+                    component="decision_executor",
+                )
         if policy_decision.action != ActionType.NO_TRADE:
             # ---------------------------------------------------------------
             # AI POSITION REVERSAL: close-then-flip, never stack
@@ -180,6 +232,35 @@ class DecisionExecutor:
                             atr=atr_for_risk,
                             peak_equity=getattr(self.om, "_peak_equity", None),
                         )
+                        # DECISION-TRACE: the reversal flip's risk verdict.
+                        # NOT terminal — the protective close still executes
+                        # after a flip rejection (close-only is a real path).
+                        if _trace is not None and _trace.active:
+                            _trace.emit(
+                                stage="RISK",
+                                component="risk_engine",
+                                event_type="RISK_EVALUATION",
+                                status="REJECT" if reversal_risk_order is None else "PASS",
+                                symbol=policy_decision.symbol,
+                                decision_id=_trace_decision_id(policy_decision),
+                                detail={
+                                    "allowed": reversal_risk_order is not None,
+                                    "flip_allowed": reversal_risk_order is not None,
+                                    "close_only": reversal_risk_order is None,
+                                    "context": "ai_reversal_flip",
+                                    "reason": (
+                                        "AI_REVERSAL_RISK_REJECTED"
+                                        if reversal_risk_order is None
+                                        else None
+                                    ),
+                                    "volume": (
+                                        reversal_risk_order.volume
+                                        if reversal_risk_order is not None
+                                        else None
+                                    ),
+                                    "request_id": policy_decision.request_id,
+                                },
+                            )
                         if reversal_risk_order is None:
                             logger.warning(
                                 "[ENTRY_BLOCKED] layer=RISK_ENGINE reason=AI_REVERSAL_RISK_REJECTED "
@@ -204,6 +285,31 @@ class DecisionExecutor:
                         getattr(policy_decision, "ticket", 0) or 0,
                     )
 
+                # DECISION-TRACE: execution stage boundary for the reversal
+                # (pre-dispatch evidence; the gateway event follows inside
+                # order dispatch, then the terminal ORDER state below).
+                if _trace is not None and _trace.active:
+                    _trace.emit(
+                        stage="EXECUTION",
+                        component="order_manager",
+                        event_type="ORDER_BUILD",
+                        status="OBSERVED",
+                        symbol=policy_decision.symbol,
+                        decision_id=_trace_decision_id(policy_decision),
+                        detail={
+                            "action": "AI_REVERSAL",
+                            "reversal_action": getattr(
+                                policy_decision.reversal_action, "value", None
+                            ),
+                            "volume": reversal_volume,
+                            "close_only": reversal_volume <= 0,
+                            "ticket": getattr(policy_decision, "ticket", 0) or None,
+                            "engine_mode": getattr(
+                                getattr(self.om.config, "execution", None), "mode", None
+                            ),
+                            "request_id": policy_decision.request_id,
+                        },
+                    )
                 success = self.om.order_manager.execute_ai_reversal(
                     decision=policy_decision,
                     volume=reversal_volume,
@@ -215,6 +321,24 @@ class DecisionExecutor:
                     f"new_action={getattr(policy_decision.reversal_action, 'value', None)} "
                     f"volume={reversal_volume} success={success}"
                 )
+                # DECISION-TRACE: terminal order-state for this trace path.
+                if _trace is not None:
+                    _trace.emit(
+                        stage="ORDER",
+                        component="order_manager",
+                        event_type="ORDER_STATE",
+                        status="EXECUTED" if success else "FAILED",
+                        symbol=policy_decision.symbol,
+                        decision_id=_trace_decision_id(policy_decision),
+                        terminal=True,
+                        detail={
+                            "success": bool(success),
+                            "action": "AI_REVERSAL",
+                            "volume": reversal_volume,
+                            "ticket": getattr(policy_decision, "ticket", 0) or None,
+                            "request_id": policy_decision.request_id,
+                        },
+                    )
 
             # FOR NEW ENTRY SIGNALS
             elif policy_decision.action in (
@@ -263,6 +387,30 @@ class DecisionExecutor:
                         # field). Hedge path forwards the same value.
                         peak_equity=getattr(self.om, "_peak_equity", None),
                     )
+                    # DECISION-TRACE: the entry risk verdict. A rejection is
+                    # terminal (no dispatch can follow); an approval chains
+                    # into the EXECUTION stage below.
+                    if _trace is not None and _trace.active:
+                        _trace.emit(
+                            stage="RISK",
+                            component="risk_engine",
+                            event_type="RISK_EVALUATION",
+                            status="REJECT" if risk_order is None else "PASS",
+                            symbol=policy_decision.symbol,
+                            decision_id=_trace_decision_id(policy_decision),
+                            terminal=risk_order is None,
+                            detail={
+                                "allowed": risk_order is not None,
+                                "context": "primary_entry",
+                                "reason": "RISK_EVALUATION_REJECTED"
+                                if risk_order is None
+                                else None,
+                                "action": policy_decision.action.value,
+                                "atr_for_risk": atr_for_risk,
+                                "volume": risk_order.volume if risk_order is not None else None,
+                                "request_id": policy_decision.request_id,
+                            },
+                        )
                     if risk_order is None:
                         logger.warning(
                             "[ENTRY_BLOCKED] layer=RISK_ENGINE reason=RISK_EVALUATION_REJECTED "
@@ -362,12 +510,57 @@ class DecisionExecutor:
                             }
                         except Exception as snap_err:
                             logger.warning("[ENTRY] setup snapshot failed", error=str(snap_err))
+                        # DECISION-TRACE: execution-stage entry evidence
+                        # (order construction, pre-dispatch).
+                        if _trace is not None and _trace.active:
+                            _trace.emit(
+                                stage="EXECUTION",
+                                component="order_manager",
+                                event_type="ORDER_BUILD",
+                                status="OBSERVED",
+                                symbol=policy_decision.symbol,
+                                decision_id=_trace_decision_id(policy_decision),
+                                detail={
+                                    "action": policy_decision.action.value,
+                                    "volume": dynamic_volume,
+                                    "price": policy_decision.proposed_entry,
+                                    "sl": policy_decision.stop_loss,
+                                    "tp": policy_decision.take_profit,
+                                    "magic": 888101,
+                                    "comment": "NSE_HFT_SIZED",
+                                    "engine_mode": getattr(
+                                        getattr(self.om.config, "execution", None),
+                                        "mode",
+                                        None,
+                                    ),
+                                    "request_id": policy_decision.request_id,
+                                },
+                            )
                         success = self.om.order_manager.dispatch_order(
                             policy_decision, dynamic_volume, setup_snapshot=setup_snapshot
                         )
                         logger.info(
                             f"[info] DISPATCH ORDER action={policy_decision.action.value} price={policy_decision.proposed_entry} volume={dynamic_volume}"
                         )
+                        # DECISION-TRACE: terminal order state for the entry
+                        # path (gateway response events are chained between
+                        # ORDER_BUILD and this event by the adapter seam).
+                        if _trace is not None:
+                            _trace.emit(
+                                stage="ORDER",
+                                component="order_manager",
+                                event_type="ORDER_STATE",
+                                status="EXECUTED" if success else "FAILED",
+                                symbol=policy_decision.symbol,
+                                decision_id=_trace_decision_id(policy_decision),
+                                terminal=True,
+                                detail={
+                                    "success": bool(success),
+                                    "action": policy_decision.action.value,
+                                    "volume": dynamic_volume,
+                                    "request_id": policy_decision.request_id,
+                                },
+                            )
 
                         if success:
                             risk_usd = account.equity * (
@@ -407,6 +600,24 @@ class DecisionExecutor:
                             self.om.signal_policy._last_active_direction_time = None
                             self.om.signal_policy._last_executed_price = 0.0
 
+                # DECISION-TRACE: entry approved but dispatch was never
+                # attempted (no symbol info) — terminal, honestly labeled.
+                elif _trace is not None:
+                    _trace.emit(
+                        stage="EXECUTION",
+                        component="order_manager",
+                        event_type="ORDER_BUILD",
+                        status="NOT_DISPATCHED",
+                        symbol=policy_decision.symbol,
+                        decision_id=_trace_decision_id(policy_decision),
+                        terminal=True,
+                        detail={
+                            "reason": "SYMBOL_INFO_UNAVAILABLE",
+                            "action": policy_decision.action.value,
+                            "request_id": policy_decision.request_id,
+                        },
+                    )
+
             # FOR POSITION LIFECYCLE ACTIONS
             elif policy_decision.action in (
                 ActionType.CLOSE_POSITION,
@@ -414,11 +625,49 @@ class DecisionExecutor:
                 ActionType.MODIFY_SL_TP,
                 ActionType.CANCEL_ORDER,
             ):
-                self.om.order_manager.execute_lifecycle_action(policy_decision)
                 ticket = getattr(policy_decision, "ticket", 0) or 0
+                # DECISION-TRACE: lifecycle dispatch boundaries.
+                if _trace is not None and _trace.active:
+                    _trace.emit(
+                        stage="EXECUTION",
+                        component="order_manager",
+                        event_type="ORDER_BUILD",
+                        status="OBSERVED",
+                        symbol=policy_decision.symbol,
+                        decision_id=_trace_decision_id(policy_decision),
+                        detail={
+                            "action": policy_decision.action.value,
+                            "ticket": ticket or None,
+                            "context": "position_lifecycle",
+                            "engine_mode": getattr(
+                                getattr(self.om.config, "execution", None), "mode", None
+                            ),
+                            "request_id": policy_decision.request_id,
+                        },
+                    )
+                self.om.order_manager.execute_lifecycle_action(policy_decision)
                 logger.info(
                     f"[info] DISPATCH LIFECYCLE ACTION action={policy_decision.action.value} ticket={ticket}"
                 )
+                # DECISION-TRACE: terminal path end. "DISPATCHED" claims only
+                # what this call site proves (the action was handed to the
+                # order manager) — broker response evidence, if any, is the
+                # gateway event chained in between.
+                if _trace is not None:
+                    _trace.emit(
+                        stage="ORDER",
+                        component="order_manager",
+                        event_type="ORDER_STATE",
+                        status="DISPATCHED",
+                        symbol=policy_decision.symbol,
+                        decision_id=_trace_decision_id(policy_decision),
+                        terminal=True,
+                        detail={
+                            "action": policy_decision.action.value,
+                            "ticket": ticket or None,
+                            "request_id": policy_decision.request_id,
+                        },
+                    )
 
         # Evaluate intelligent hedging / counter-position policy
         self.om._evaluate_hedging_policy(
