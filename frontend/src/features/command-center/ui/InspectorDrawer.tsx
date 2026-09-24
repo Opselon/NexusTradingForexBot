@@ -75,9 +75,9 @@ export function InspectorDrawer({ strategyId, onClose }: { strategyId: string; o
                 </div>
                 <div style={{ flex: 1 }}>
                   <dl className="kv">
-                    <InfoRow label="eligibility_state" value={<StatusBadge status={str(ee.eligibility_state)} />} />
+                    <InfoRow label={t("command-center.label.eligibility_state", "eligibility_state")} value={<StatusBadge status={str(ee.eligibility_state)} />} />
                     <InfoRow label={t("command-center.label.reason", "reason")} value={str(ee.reason) ?? "—"} />
-                    <InfoRow label="required_gate" value={str(ee.required_gate) ?? "—"} />
+                    <InfoRow label={t("command-center.label.required_gate", "required_gate")} value={str(ee.required_gate) ?? "—"} />
                     <InfoRow label={t("command-center.label.blockers", "blockers")} value={arr(ee.blockers).length === 0 ? t("command-center.label.none", "none") : t("command-center.label.listed", "{n} listed", { n: arr(ee.blockers).length })} />
                   </dl>
                   {blockerTexts.map((b, i) => (

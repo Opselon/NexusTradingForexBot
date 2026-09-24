@@ -704,10 +704,10 @@ function TelegramPanel() {
   const effectiveEnabled = enabled ?? st?.enabled ?? false;
   const specs = useMemo(
     () => [
-      { key: "bot_token", label: "bot token", kind: "token" as const, secret: true, pattern: BOT_TOKEN_PATTERN, patternMessage: "expected \\d+:\\w{20,} (BotFather shape)" },
-      { key: "admin_id", label: "admin chat id", kind: "regex" as const, pattern: ADMIN_ID_PATTERN, patternMessage: "expected a numeric chat id (-?\\d{4,})" },
+      { key: "bot_token", label: t("config.tg.field_token", "bot token"), kind: "token" as const, secret: true, pattern: BOT_TOKEN_PATTERN, patternMessage: "expected \\d+:\\w{20,} (BotFather shape)" },
+      { key: "admin_id", label: t("config.tg.field_admin", "admin chat id"), kind: "regex" as const, pattern: ADMIN_ID_PATTERN, patternMessage: "expected a numeric chat id (-?\\d{4,})" },
     ],
-    [],
+    [t],
   );
   const errors = useMemo(() => validateFields(specs, { bot_token: token, admin_id: admin }), [specs, token, admin]);
   const dirty = token !== "" || admin !== "" || (enabled !== null && enabled !== (st?.enabled ?? false));

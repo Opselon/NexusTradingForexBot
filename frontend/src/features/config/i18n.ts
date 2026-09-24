@@ -155,6 +155,8 @@ export const MESSAGES: FeatureMessages = {
   "config.tg.configured": { fa: "پیکربندی‌شده:", de: "konfiguriert:", es: "configurado:", ar: "مُعد:" },
   "config.tg.delivery_failed": { fa: "ارسال آزمایشی تلگرام ناموفق بود.", de: "Telegram-Testzustellung fehlgeschlagen.", es: "Falló el envío de prueba de Telegram.", ar: "فشل إرسال اختبار تلگرام." },
   "config.tg.delivery_ok": { fa: "تحویل تأیید شد — message_id {id} (correlation {c}).", de: "Zustellung bestätigt — message_id {id} (correlation {c}).", es: "Entrega confirmada — message_id {id} (correlation {c}).", ar: "أُكِّد التسليم — message_id {id} (correlation {c})." },
+  "config.tg.field_token": { fa: "توکن ربات", de: "Bot-Token", es: "token del bot", ar: "رمز البوت" },
+  "config.tg.field_admin": { fa: "شناسه چت ادمین", de: "Admin-Chat-ID", es: "chat id del admin", ar: "معرّف دردشة المشرف" },
   "config.tg.enabled_label": { fa: "تلگرام فعال", de: "Telegram aktiviert", es: "telegram activado", ar: "تلگرام مفعّل" },
   "config.tg.hint_hot": { fa: "telegram.enabled (HOT_RESTRICTED)", de: "telegram.enabled (HOT_RESTRICTED)", es: "telegram.enabled (HOT_RESTRICTED)", ar: "telegram.enabled (HOT_RESTRICTED)" },
   "config.tg.invalid": { fa: "نامعتبر/مفقود", de: "ungültig/fehlend", es: "no válido/faltante", ar: "غير صالح/مفقود" },
