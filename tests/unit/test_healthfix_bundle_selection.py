@@ -233,13 +233,15 @@ def test_three_checks_agree_on_one_artifact(tmp_path: Path) -> None:
     assert names == {"model.pt"}
     # MODEL reports PASS against the real bundle. The stub's state_dict has no
     # metadata key; the complete bundle here carries only a manifest sidecar,
-    # and check_model_contract still reads state_dict metadata (the sidecar
-    # vocabulary is Lane C / the integrator's seam), so the CONTRACT verdict
-    # stays an honest UNKNOWN — never a fabricated PASS, and the three checks
-    # still agree on the SAME artifact.
+    # and the NSE-HEALTHFIX-001 integrator seam now ALSO reads the sidecar
+    # contract (manifest.json / model.meta.json) when the state_dict carries
+    # no metadata. This bundle's manifest declares scalp_v1@50 while the
+    # runtime expects scalp_v3@70 — a real, honest MISMATCH, so the CONTRACT
+    # verdict is FAIL with the reason named, never a fabricated PASS and never
+    # a vague UNKNOWN. The three checks still agree on the SAME artifact.
     assert model.verdict == "PASS"
-    assert contract.verdict == "WARNING"
-    assert "could not confirm contract" in contract.reason
+    assert contract.verdict == "FAIL"
+    assert "MISMATCH" in contract.reason
 
 
 def test_stub_only_tree_reports_truthful_no_metadata(tmp_path: Path) -> None:

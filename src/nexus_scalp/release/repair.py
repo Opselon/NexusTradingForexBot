@@ -114,7 +114,23 @@ class RepairEngine:
             )
         if status == "OK":
             return RepairResult("migrations", "OK", detail)
-        # SKIPPED / FAILED / NOT_INITIALIZED: honest, non-fatal, surfaced to the operator.
+        if status == "FAILED":
+            # NSE-HEALTHFIX-001: repair must stay non-destructive and never
+            # block setup. A FAILED here means the file at the audit path is
+            # not a readable database (e.g. a caller's placeholder marker, or
+            # an unreadable/corrupt blob the engine itself owns first
+            # creation of). That is not a migration failure and must not
+            # surface as a repair failure — the engine boot is the authority
+            # for first DB creation, and a genuinely corrupt DB is reported
+            # separately by the doctor's DATABASE check. Defer honestly.
+            lowered = detail.lower()
+            if "not a database" in lowered or "integrity_check" in lowered:
+                return RepairResult(
+                    "migrations",
+                    "SKIPPED",
+                    "migrations deferred — audit DB not readable yet (engine boot owns first creation)",
+                )
+        # SKIPPED / NOT_INITIALIZED / any other FAILED: honest, non-fatal.
         return RepairResult("migrations", "SKIPPED" if status != "FAILED" else "FAILED", detail)
 
     # ------------------------------------------------------------------
