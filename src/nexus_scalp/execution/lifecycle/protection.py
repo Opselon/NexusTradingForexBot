@@ -38,6 +38,7 @@ from typing import Any
 
 from nexus_scalp.domain.enums import OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData
+from nexus_scalp.domain.valuation import min_stop_distance_price
 from nexus_scalp.execution.protection_ledger import PositionProtectionState
 from nexus_scalp.observability.logging import get_logger
 
@@ -374,16 +375,31 @@ class ProtectionEngine:
             return False
 
         # Respect the broker's minimum stop distance PLUS the live spread so a
-        # breakeven modification can never cross into the opposing book. The broker
-        # STOP_LEVEL alone is insufficient: on a 2-digit XAUUSD symbol the stops
-        # level can be ~0.10-0.35, smaller than the 0.20-0.25 live spread, so a
-        # breakeven SL placed exactly at STOP_LEVEL distance would still be rejected
-        # (or worse, crossed by the fill). Retry on a later pass instead of burning a
-        # guaranteed-reject modification request.
+        # breakeven modification can never cross into the opposing book. The
+        # broker STOP_LEVEL alone is insufficient: on a 2-digit XAUUSD symbol
+        # the stops level can be smaller than the live spread, so a breakeven
+        # SL placed exactly at STOP_LEVEL distance would still be rejected (or
+        # worse, crossed by the fill). Retry on a later pass instead of burning
+        # a guaranteed-reject modification request.
+        # FORENSIC-LANE-BROKER: the spread floor is expressed in broker POINTS
+        # (1.75), not a fixed 0.35 USD. On 5-digit EURUSD the old fixed 0.35
+        # was a 35,000-point gap; on 2-digit XAUUSD 1.75 points = $0.0175.
         live_spread = (
             float(current_tick.ask - current_tick.bid) if current_tick is not None else 0.0
         )
-        effective_freeze_gap = max(min_stop_gap, 0.35) + max(live_spread, 0.0)
+        point = float(getattr(symbol_info, "point", 0.0) or 0.0) if symbol_info else 0.0
+        min_gap = float(min_stop_gap or 0.0)
+        if symbol_info is not None:
+            min_gap = max(
+                min_gap,
+                min_stop_distance_price(
+                    getattr(symbol_info, "stops_level", 0), point, safety_points=25
+                ),
+            )
+        # The gap never drops below the live spread (so the modified SL can
+        # never sit inside the book); 1.75 points is the no-tick fallback.
+        spread_floor = max(live_spread, 1.75 * point)
+        effective_freeze_gap = min_gap + spread_floor
         if current_tick is not None:
             is_buy = pos.type == OrderType.BUY
             current_market_price = current_tick.bid if is_buy else current_tick.ask

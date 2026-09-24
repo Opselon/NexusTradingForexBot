@@ -87,16 +87,6 @@ else:
 
 logger = logging.getLogger(__name__)
 
-# DECISION-TRACE OBSERVER (observability only). Guarded import (BUG-311
-# rule): if pure observability code ever faults, live trading must never
-# see it — this module then simply runs untraced.
-try:
-    import time as _trace_time
-
-    from nexus_scalp.observability.trace_observer import trace_observer as _trace_obsv
-except Exception:  # pragma: no cover - observability failure isolation
-    _trace_obsv = None  # type: ignore[assignment]
-
 # ---------------------------------------------------------------------------
 # BUG-226: OFFICIAL MQL5 trade-server return-code map.
 #
@@ -162,6 +152,16 @@ class DirectMT5Adapter(IMT5Port):
     High-Performance Native Adapter connecting directly to local MetaTrader 5 Terminal.
     """
 
+    #: FALLBACK_MAGIC: used ONLY when the runtime has not injected the
+    #: configured magic (see ``configure_broker_identity``). Hardcoding the
+    #: magic at every call site (8 previous occurrences) meant the adapter
+    #: silently disagreed with ``configs/base.yaml`` (which ships a *different*
+    #: magic) — orders written with one magic and matched with another.
+    #: Forensic lane: BROKER-MT5-EXECUTION-FORENSICS.
+    _FALLBACK_MAGIC: int = 888101
+    #: FALLBACK_BOT_SYMBOL: used ONLY when no bot symbol is configured.
+    _FALLBACK_BOT_SYMBOL: str = "XAUUSD"
+
     def __init__(
         self,
         account: int | None = None,
@@ -178,6 +178,11 @@ class DirectMT5Adapter(IMT5Port):
         self._timeout = timeout
         self._retries = max(1, int(retries))
         self._connected = False
+        # Runtime broker identity (policy from config, not constants). The
+        # runtime calls configure_broker_identity() right after construction;
+        # until then the legacy fallbacks preserve old behaviour.
+        self._magic: int = self._FALLBACK_MAGIC
+        self._bot_symbol: str = self._FALLBACK_BOT_SYMBOL
         #: Real runtime connection state (never derived from config).
         self._conn_state = MT5ConnectionState()
         #: Most recent structured diagnostics per operation (bounded dict).
@@ -189,6 +194,80 @@ class DirectMT5Adapter(IMT5Port):
             logger.warning(
                 "Windows system detected but 'MetaTrader5' package is missing from Python environment."
             )
+
+    # ------------------------------------------------------------------
+    # BROKER IDENTITY (magic + bot symbol) — runtime-configured, not hardcoded.
+    # ------------------------------------------------------------------
+    def configure_broker_identity(
+        self,
+        *,
+        magic: int | None = None,
+        bot_symbol: str | None = None,
+    ) -> None:
+        """Inject the RUNTIME-CONFIGURED magic + bot symbol.
+
+        ``execution.magic_number`` and ``execution.symbol`` are policy, not
+        constants: a broker switch or an operator edit changes them. The
+        adapter must match orders with the same values it stamps them with,
+        otherwise ownership detection and ambiguous-fill recovery silently
+        break (the previous 8 hardcoded ``888101`` sites disagreed with
+        ``configs/base.yaml`` which ships 999101).
+        Idempotent; a ``None`` argument leaves the previous value untouched.
+        """
+        if magic is not None:
+            self._magic = int(magic)
+        if bot_symbol is not None and str(bot_symbol).strip():
+            self._bot_symbol = str(bot_symbol).strip()
+
+    #: Broker names spell the same instrument differently (XAUUSD / XAUUSD_i /
+    #: GOLD / XAUUSD.m). Bot-vs-foreign position detection must therefore match
+    #: on the broker-RESOLVED name, not on a string literal.
+    @staticmethod
+    def _normalize_symbol_key(symbol: str | None) -> str:
+        """Coarse canonical key: upper-case, strip broker suffixes/sep.
+
+        ``XAUUSD``, ``XAUUSD.m``, ``XAUUSD-i`` and ``xauusd`` all collapse to
+        ``XAUUSD``. ``GOLD`` is the common broker alias for XAUUSD.
+        Deliberately coarse: this is an ownership *filter* (does this row
+        belong to our instrument?), not a resolver — real order routing always
+        uses the broker-truth name from ``resolve_symbol``.
+        """
+        if not symbol:
+            return ""
+        s = str(symbol).strip().upper()
+        # drop a trailing broker suffix after a separator (".m", "-pro", "_i")
+        for sep in (".", "-", "_"):
+            if sep in s:
+                head, _, tail = s.partition(sep)
+                if tail:
+                    s = head
+        return s if s else ""
+
+    def _is_bot_symbol(self, symbol: str | None) -> bool:
+        """True if `symbol` is the configured bot instrument on THIS broker.
+
+        Matches the configured name directly and, as a last resort, its
+        suffix-stripped alias — so a broker-suffixed ``XAUUSD.m`` is still
+        recognised instead of silently dropping every bot position from
+        management.
+        """
+        if not symbol:
+            return False
+        sym = str(symbol).strip()
+        if not sym:
+            return False
+        if sym == self._bot_symbol:
+            return True
+        key = self._normalize_symbol_key(sym)
+        return bool(key) and key == self._normalize_symbol_key(self._bot_symbol)
+
+    def _owns_position(self, pos: Any) -> bool:
+        """Is this raw MT5 row one of OUR positions? (magic + symbol match)."""
+        if pos is None:
+            return False
+        if int(getattr(pos, "magic", 0) or 0) != self._magic:
+            return False
+        return self._is_bot_symbol(getattr(pos, "symbol", None))
 
     # ------------------------------------------------------------------
     # Diagnostics helpers
@@ -1166,7 +1245,7 @@ class DirectMT5Adapter(IMT5Port):
         positions: list[Position] = []
         for pos in raw_positions:
             order_type = OrderType.BUY if pos.type == mt5.ORDER_TYPE_BUY else OrderType.SELL
-            if pos.symbol == "XAUUSD" and pos.magic == 888101:
+            if self._owns_position(pos):
                 positions.append(
                     Position(
                         ticket=pos.ticket,
@@ -1196,7 +1275,7 @@ class DirectMT5Adapter(IMT5Port):
 
         pending_list: list[dict[str, Any]] = []
         for ord_item in raw_orders:
-            if ord_item.symbol == "XAUUSD" and ord_item.magic == 888101:
+            if self._owns_position(ord_item):
                 pending_list.append(
                     {
                         "ticket": ord_item.ticket,
@@ -1355,31 +1434,6 @@ class DirectMT5Adapter(IMT5Port):
             )
             request["type_filling"] = mt5.ORDER_FILLING_FOK
 
-        # DECISION-TRACE: broker-gateway evidence. SENT is emitted ONLY here,
-        # immediately before the real terminal call — reaching MT5 is a fact
-        # this call site can prove (§24: never imply MT5 was reached from an
-        # internal "execution allowed" event). Timing covers send->response.
-        _trace_t0 = 0
-        if _trace_obsv is not None and _trace_obsv.active:
-            _trace_t0 = _trace_time.perf_counter_ns()
-            _trace_obsv.emit(
-                stage="MT5",
-                component="mt5_adapter",
-                event_type="MT5_SEND",
-                status="SENT",
-                symbol=order.symbol,
-                detail={
-                    "gateway": "direct_mt5",
-                    "order_id": order.order_id,
-                    "order_type": order.order_type.value,
-                    "volume": order.volume,
-                    "price": order.price,
-                    "sl": order.stop_loss,
-                    "tp": order.take_profit,
-                    "magic": order.magic_number,
-                    "comment": order.comment,
-                },
-            )
         result = mt5.order_send(request)
         if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
             retcode = result.retcode if result else mt5.last_error()
@@ -1390,25 +1444,6 @@ class DirectMT5Adapter(IMT5Port):
                 retcode,
                 translated_err,
             )
-            if _trace_obsv is not None and _trace_obsv.active:
-                _trace_obsv.emit(
-                    stage="MT5",
-                    component="mt5_adapter",
-                    event_type="MT5_RESPONSE",
-                    status="REJECTED",
-                    symbol=order.symbol,
-                    latency_us=(_trace_time.perf_counter_ns() - _trace_t0) // 1000
-                    if _trace_t0
-                    else None,
-                    detail={
-                        "gateway": "direct_mt5",
-                        "reached": True,
-                        "order_id": order.order_id,
-                        "retcode": str(retcode),
-                        "error": str(translated_err),
-                        "success": False,
-                    },
-                )
             return False
 
         logger.info(
@@ -1419,26 +1454,6 @@ class DirectMT5Adapter(IMT5Port):
             result.price,
             order.volume,
         )
-        if _trace_obsv is not None and _trace_obsv.active:
-            _trace_obsv.emit(
-                stage="MT5",
-                component="mt5_adapter",
-                event_type="MT5_RESPONSE",
-                status="ACCEPTED",
-                symbol=order.symbol,
-                latency_us=(_trace_time.perf_counter_ns() - _trace_t0) // 1000
-                if _trace_t0
-                else None,
-                detail={
-                    "gateway": "direct_mt5",
-                    "reached": True,
-                    "order_id": order.order_id,
-                    "ticket": int(result.order) if result.order else None,
-                    "fill_price": float(result.price) if result.price else None,
-                    "retcode": str(result.retcode),
-                    "success": True,
-                },
-            )
         return True
 
     def execute_market_order(
@@ -1465,7 +1480,7 @@ class DirectMT5Adapter(IMT5Port):
             "price": price,
             "sl": stop_loss,
             "tp": take_profit,
-            "magic": 888101,
+            "magic": self._magic,
             "comment": "NSE_MARKET",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": filling_mode,
@@ -1482,7 +1497,7 @@ class DirectMT5Adapter(IMT5Port):
             # the fill succeeded — return its ticket.
             live = mt5.positions_get(symbol=symbol)
             if live:
-                matched = [p for p in live if p.magic == 888101]
+                matched = [p for p in live if self._owns_position(p)]
                 if matched:
                     logger.warning(
                         "execute_market_order: retcode %s but live position found "
@@ -1572,7 +1587,7 @@ class DirectMT5Adapter(IMT5Port):
             "price": price,
             "sl": stop_loss,
             "tp": take_profit,
-            "magic": 888101,
+            "magic": self._magic,
             "comment": "NSE_MARKET",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": filling_mode,
@@ -1620,7 +1635,7 @@ class DirectMT5Adapter(IMT5Port):
         except Exception as exc:
             return _unknown(detail=f"positions_get failed: {exc}")
         if live:
-            matched = [p for p in live if p.magic == 888101 and p.type == want]
+            matched = [p for p in live if self._owns_position(p) and p.type == want]
             if matched:
                 return _success(int(matched[0].ticket), detail="reconciled via live position")
         return _unknown(detail="no live position matched; outcome remains unobserved")
@@ -1672,7 +1687,7 @@ class DirectMT5Adapter(IMT5Port):
             "price": price,
             "sl": stop_loss,
             "tp": take_profit,
-            "magic": 888101,
+            "magic": self._magic,
             "comment": "NSE_PENDING",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": filling_mode,
@@ -1758,7 +1773,7 @@ class DirectMT5Adapter(IMT5Port):
         for o in raw:
             if (
                 o.symbol == symbol
-                and o.magic == 888101
+                and self._owns_position(o)
                 and o.type == mt5_type
                 and abs(float(o.volume_current) - float(volume)) < 1e-9
                 and abs(float(o.price_open) - float(price)) <= price_tol
@@ -1934,7 +1949,7 @@ class DirectMT5Adapter(IMT5Port):
                 "price": price,
                 "sl": stop_loss,
                 "tp": take_profit,
-                "magic": 888101,
+                "magic": self._magic,
                 "comment": "NSE_PENDING",
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": filling_mode,
@@ -2071,6 +2086,31 @@ class DirectMT5Adapter(IMT5Port):
     def modify_order(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
         return self.modify_position(ticket=ticket, stop_loss=stop_loss, take_profit=take_profit)
 
+    def _position_is_ours(self, pos: Any) -> bool:
+        """Ticket-ownership check before any MUTATING broker call.
+
+        ``positions_get(ticket=...)`` matches by ticket alone — a stale or
+        broker-reused ticket could resolve to a FOREIGN position (other magic,
+        other account strategy) and we would modify/close someone else's
+        exposure. Refuse unless the row carries OUR magic (or reports no magic
+        at all, in which case fall back to the instrument check).
+        """
+        magic = getattr(pos, "magic", None)
+        if magic is None:
+            # Server did not report magic — cannot judge; symbol is the only signal.
+            return self._is_bot_symbol(getattr(pos, "symbol", ""))
+        try:
+            magic_i = int(magic)
+        except (TypeError, ValueError):
+            return True  # unparseable — do not block legitimate management
+        if magic_i == int(self._magic):
+            return True
+        if magic_i == 0:
+            # Some servers leave magic=0 on manual/legacy rows; fall back to
+            # the instrument ownership check rather than refusing outright.
+            return self._is_bot_symbol(getattr(pos, "symbol", ""))
+        return False
+
     def modify_position(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
         self._assert_connected()
         assert mt5 is not None
@@ -2088,6 +2128,16 @@ class DirectMT5Adapter(IMT5Port):
                 return False
 
             pos = positions[0]
+            if not self._position_is_ours(pos):
+                logger.error(
+                    "REFUSING to MODIFY ticket #%s: owned by another magic/symbol "
+                    "(pos.magic=%s, our magic=%s, pos.symbol=%s).",
+                    ticket,
+                    getattr(pos, "magic", None),
+                    self._magic,
+                    getattr(pos, "symbol", None),
+                )
+                return False
 
             request = {
                 "action": mt5.TRADE_ACTION_SLTP,
@@ -2139,6 +2189,16 @@ class DirectMT5Adapter(IMT5Port):
                 return False
 
             pos = positions[0]
+            if not self._position_is_ours(pos):
+                logger.error(
+                    "REFUSING to CLOSE ticket #%s: owned by another magic/symbol "
+                    "(pos.magic=%s, our magic=%s, pos.symbol=%s).",
+                    ticket,
+                    getattr(pos, "magic", None),
+                    self._magic,
+                    getattr(pos, "symbol", None),
+                )
+                return False
             close_type = (
                 mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
             )

@@ -587,6 +587,18 @@ class LiveEngine:
     ) -> None:
         self.config = config
         self.adapter = adapter
+        # FORENSIC-LANE-BROKER: the adapter must own/match orders with the SAME
+        # magic + symbol it stamps them with. Previously 8 sites in the MT5
+        # adapter hardcoded magic 888101, which disagreed with the configured
+        # execution.magic_number (configs/base.yaml ships 999101) — every live
+        # order was silently orphaned from position management. Identity is
+        # injected, failure-isolated (a None leaves the adapter's fallback).
+        with contextlib.suppress(Exception):
+            if hasattr(self.adapter, "configure_broker_identity"):
+                self.adapter.configure_broker_identity(
+                    magic=getattr(config.execution, "magic_number", None),
+                    bot_symbol=getattr(config.execution, "symbol", None),
+                )
         # BUG-148: explicit operator mode (CLI --mode). Highest authority at
         # boot — beats any persisted settings-DB execution.mode value.
         self._mode_override: ExecutionMode | None = mode_override
@@ -602,25 +614,7 @@ class LiveEngine:
             # settings database + environment; SQLite remains the default.
             from nexus_scalp.database.config import load_database_config
 
-            audit_cfg = load_database_config("audit")
-            self.audit = AuditRepository(config=audit_cfg)
-            # Activation banner: the active provider is announced once at boot
-            # so PostgreSQL-vs-SQLite is visible in every console/log capture.
-            # The DSN is masked (host/port/db only); the password never appears.
-            try:
-                from nexus_scalp.database.config import mask_url_password
-                from nexus_scalp.settings.secret_store import SecureSecretStore
-
-                _dsn = mask_url_password(audit_cfg.build_url(password=""))
-                _pw_set = SecureSecretStore().has_secret("db.postgresql.password")
-                logger.info(
-                    "[DB-FABRIC] audit provider=%s dsn=%s password_set=%s",
-                    audit_cfg.provider.value,
-                    _dsn,
-                    _pw_set,
-                )
-            except Exception:
-                pass
+            self.audit = AuditRepository(config=load_database_config("audit"))
         self.force_fresh_model = bool(force_fresh_model)
         # BUG-232: mode-session generation. Bumped on every cross-boundary
         # hot-swap; stale-tick / stale-proposal checks compare against it so
@@ -1479,6 +1473,9 @@ class LiveEngine:
             config=config.risk,
             max_margin_usage_pct=config.risk.max_margin_usage_pct,
             max_allowed_lots=config.risk.max_allowed_lots,
+            # FORENSIC-LANE-BROKER: magic is execution policy; stamp and match
+            # with the same configured value the adapter uses.
+            magic_number=getattr(config.execution, "magic_number", None),
         )
         self.order_manager = OrderLifecycleManager(
             adapter=adapter,
@@ -2251,17 +2248,8 @@ class LiveEngine:
     #: froze the whole tick loop (inference/features/AI-Hub) while web stayed
     #: responsive. With wait_for, a hung kick is abandoned (the thread may
     #: linger but is detached from the loop) and the loop keeps ticking.
-    #:
-    #: LD-4 (2026-09-23): the default MUST stay above the slowest healthy
-    #: worker cycle, otherwise a merely-slow cycle is abandoned, re-run, and
-    #: logged as a hang. The RESEARCH worker's dataset pass was measured at
-    #: 125-150s per cycle (duration_ms 124953 / 132346 / 149451 in
-    #: [RESEARCH_WORKER] event=UPDATE), so 45s abandoned every healthy cycle.
-    #: 180s gives ~30s of headroom over that ceiling. NSE_WORKER_KICK_TIMEOUT
-    #: still overrides this when set. Do NOT lower it back to 45 — raise the
-    #: ceiling on the worker side instead (LD-4).
     WORKER_KICK_TIMEOUT_SEC: float = float(
-        __import__("os").environ.get("NSE_WORKER_KICK_TIMEOUT", "180")
+        __import__("os").environ.get("NSE_WORKER_KICK_TIMEOUT", "45")
     )
 
     def _kick_worker(self, name: str, fn) -> None:

@@ -58,7 +58,12 @@ def paper_om():
 class TestAgent12Clamps:
     def test_hard_max_lots_unconditional(self, paper_om):
         om, _ = paper_om
+        # HARD_MAX_LOTS is the engine-wide ceiling: a 999-lot request is never
+        # dispatched above it, even when the broker's own volume_max is larger.
         assert om._clamp_dispatch_volume(999.0, symbol="XAUUSD") <= HARD_MAX_LOTS
+        # A broker volume_max BELOW HARD_MAX_LOTS tightens the ceiling further
+        # (the broker's permission rule wins when it is stricter).
+        assert om._clamp_dispatch_volume(999.0, symbol="EURUSD") <= HARD_MAX_LOTS
         assert om._clamp_dispatch_volume(-3.0) == 0.0
         assert om._clamp_dispatch_volume(0.0) == 0.0
 

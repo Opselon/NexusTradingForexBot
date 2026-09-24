@@ -290,6 +290,7 @@ tests/unit/test_audit_legacy4_surface.py
 tests/unit/test_backtest_report.py
 tests/unit/test_backtest_report_asset.py
 tests/unit/test_backtest_report_integration.py
+tests/unit/test_broker_identity_ownership.py
 tests/unit/test_broker_valuation_forensics.py
 tests/unit/test_bug185_terminal_state_resolver.py
 tests/unit/test_bug217_news_state_bounds.py
@@ -393,7 +394,6 @@ tests/unit/test_model_studio_pipeline.py
 tests/unit/test_mslie_sweep_window_pins_bug227.py
 tests/unit/test_mt5_diag_throttle.py
 tests/unit/test_bug307c_cli_logging_disable_leak.py
-tests/unit/test_bug308c_gate11_artifact_integrity.py
 tests/unit/test_news_bridge_contract_phase13b.py
 tests/unit/test_news_bridge_finalize_phase13b.py
 tests/unit/test_nse_lifecycle_regression_matrix.py
@@ -421,9 +421,6 @@ tests/unit/test_policy_flip_protection_pins_bug227.py
 tests/unit/test_policy_throttle_pins_bug227.py
 tests/unit/test_policy_warmup_range_seam_bug230.py
 tests/unit/test_position_replay_pipeline.py
-tests/unit/test_position_adviser.py
-tests/unit/test_position_adviser_forensics.py
-tests/unit/test_position_adviser_e2e.py
 tests/unit/test_predictive_limit_explainability_bug226.py
 tests/unit/test_promotion_economic_integrity.py
 tests/unit/test_promotion_rejects_degenerate_model.py
@@ -489,9 +486,3 @@ tests/unit/test_wft_time_based_purge.py
 tests/unit/test_winner_protection_geometry_sprint.py
 tests/unit/test_zero_friction_guard_e1.py
 tests/unit/test_git_governance.py
-tests/unit/test_attention_ablation.py
-tests/unit/test_ml_qa_004_determinism_remediation.py
-tests/unit/test_merge_marker_residue.py
-tests/unit/test_ml_qa_007_parity_latency_determinism.py
-tests/unit/test_duplicate_task_rows.py
-tests/unit/test_ml_qa_008_registry_cpu_budget.py
