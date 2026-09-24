@@ -759,10 +759,11 @@ def _serving_verdict(resp: Any) -> tuple[str, bool]:
     """(verdict, serving) from a /health body; never raises.
 
     ``serving`` is True when the app can present the Control Center:
-    READY / DEGRADED, or NOT_READY whose ONLY failing check is CONFIGURATION
-    in the NOT_INITIALIZED state (a first-run install with no nexus.yaml yet
-    - the app bootstraps from hard defaults in exactly that case, so the UI
-    is live; the state says "not set up", not "broken").
+    READY / DEGRADED, or NOT_READY whose only failing checks are
+    NOT_INITIALIZED lazy first-use (CONFIGURATION: no nexus.yaml yet, DATA:
+    no canonical training bars - a fresh install has neither by design, and
+    the engine bootstraps from hard defaults so the UI is live; the state
+    says "not set up", not "broken").
     """
     try:
         import json as _json
@@ -791,7 +792,8 @@ def _serving_verdict(resp: Any) -> tuple[str, bool]:
                 if isinstance(c, dict) and c.get("verdict") == "FAIL"
             ]
             if fails and all(
-                c.get("category") == "CONFIGURATION" and c.get("state") == "NOT_INITIALIZED"
+                c.get("state") == "NOT_INITIALIZED"
+                and c.get("category") in ("CONFIGURATION", "DATA")
                 for c in fails
             ):
                 return verdict, True
