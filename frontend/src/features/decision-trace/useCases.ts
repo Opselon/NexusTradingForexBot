@@ -3,22 +3,29 @@
  *
  * The page's data lifecycle (§08):
  *   mount   -> POST observer/start + open SSE (detailed tracing begins)
- *   live    -> batches stream in; topology/latency polled slowly
+ *   live    -> batches stream in; topology/latency polled slowly;
+ *              server-filtered /events pages fetched only while filters are on
  *   unmount -> close SSE + POST observer/stop (auto-stop grace covers crashes)
  *
  * Polling is deliberately slow and read-only; the LIVE evidence arrives on
- * the SSE stream, not from polls.
+ * the SSE stream, not from polls. The WHY query (§37) is a one-shot forensic
+ * read of immutable history (staleTime 30s) with an explicit 404 state —
+ * never retried into a fabricated answer.
  */
 
 import { useEffect, useRef } from "react";
 import { useMutation, useQuery, type QueryKey } from "@tanstack/react-query";
+import { ApiError } from "@/types/api";
 import { traceApi } from "./api";
 import { TraceStreamClient, type TraceStreamStatus } from "./stream";
 import {
   selectFilteredDecisions,
+  selectFilteredEvents,
+  selectQueue,
   useDecisionTraceStore,
 } from "./store";
-import type { TraceStreamFrame } from "./types";
+import type { EventsSince, TraceEvent, TraceStreamFrame, WhyResponse } from "./types";
+import { activeFilterWords } from "./types";
 
 export const OBSERVER_KEY: QueryKey = ["trace", "observer"];
 export const TOPOLOGY_KEY: QueryKey = ["trace", "topology"];
@@ -26,6 +33,8 @@ export const LATENCY_KEY: QueryKey = ["trace", "latency"];
 export const INTEGRITY_KEY: QueryKey = ["trace", "integrity"];
 export const DECISIONS_KEY: QueryKey = ["trace", "decisions"];
 export const BUNDLE_KEY: QueryKey = ["trace", "bundle"];
+export const FILTERED_EVENTS_KEY: QueryKey = ["trace", "events", "filtered"];
+export const WHY_KEY: QueryKey = ["trace", "why"];
 
 export function useObserverQuery(paused = false) {
   return useQuery({
@@ -74,6 +83,45 @@ export function useDecisionsQuery(limit = 100) {
   });
 }
 
+/**
+ * Server-filtered /events page (§36): enabled ONLY while at least one AND
+ * filter is active. The response's `filters` echo proves which params the
+ * backend applied; an empty `events` array is the honest filtered-empty state
+ * (§73), never backfilled with unfiltered rows.
+ */
+export function useFilteredEventsQuery() {
+  const filters = useDecisionTraceStore((s) => s.eventFilters);
+  const active =
+    !!(filters.trace_id || filters.stage || filters.status || filters.mode || filters.position_id);
+  return useQuery<EventsSince>({
+    queryKey: [...FILTERED_EVENTS_KEY, filters],
+    queryFn: ({ signal }) => traceApi.events(0, 500, filters, signal),
+    enabled: active,
+    refetchInterval: active ? 5_000 : false,
+    staleTime: 2_000,
+  });
+}
+
+/** WHY (§37): one stored event's reason evidence. 404 => explicit NOT_FOUND. */
+export function useWhyQuery(eventId: string | null, enabled = true) {
+  return useQuery<WhyResponse | null>({
+    queryKey: [...WHY_KEY, eventId],
+    queryFn: async ({ signal }) => {
+      try {
+        return await traceApi.why(eventId!, signal);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          return { found: false } as WhyResponse;
+        }
+        throw err;
+      }
+    },
+    enabled: !!eventId && enabled,
+    staleTime: 30_000, // a stored event's WHY answer is immutable history
+    retry: false,
+  });
+}
+
 /** Hydrate on mount: recent bounded tail so the canvas isn't blank (§8.5). */
 export function useResumeHydration() {
   const lastSeq = useDecisionTraceStore((s) => s.lastSeq);
@@ -112,6 +160,11 @@ export function useStopObserver() {
  * The full stream lifecycle bound to the page (§08 open/close protocol).
  * Opening the page activates the observer; closing it stops the stream —
  * the backend's no-subscriber grace sweep covers a crashed tab.
+ *
+ * §62 honesty: after any reconnect the client runs a RESYNC pass — a bounded
+ * REST fetch from its own `last_seq` — so the page fills what the SSE resume
+ * may have missed, without duplicating or fabricating continuity. A `gap`
+ * flag from either source is surfaced as TRACE GAP, never smoothed over.
  */
 export function useTraceStream(active: boolean): {
   status: TraceStreamStatus;
@@ -120,6 +173,7 @@ export function useTraceStream(active: boolean): {
   const setStreamStatus = useDecisionTraceStore((s) => s.setStreamStatus);
   const appendFrame = useDecisionTraceStore((s) => s.appendFrame);
   const noteGap = useDecisionTraceStore((s) => s.noteGap);
+  const setResyncing = useDecisionTraceStore((s) => s.setResyncing);
   const status = useDecisionTraceStore((s) => s.streamStatus);
   const error = useDecisionTraceStore((s) => s.streamError);
   const clientRef = useRef<TraceStreamClient | null>(null);
@@ -127,9 +181,31 @@ export function useTraceStream(active: boolean): {
   useEffect(() => {
     if (!active) return undefined;
     const store = useDecisionTraceStore.getState();
+    let hadDisconnect = false;
+    const runResync = () => {
+      const st = useDecisionTraceStore.getState();
+      if (st.lastSeq <= 0) return;
+      setResyncing(true);
+      traceApi
+        .events(st.lastSeq, 2000)
+        .then((payload) => {
+          useDecisionTraceStore.getState().appendFrame({ kind: "resume", payload });
+        })
+        .catch(() => {
+          /* resync failure is surfaced by the lifecycle word, never fabricated */
+        })
+        .finally(() => setResyncing(false));
+    };
     const client = new TraceStreamClient({
       lastSeq: store.lastSeq,
-      onStatus: (s, info) => setStreamStatus(s, info?.error),
+      onStatus: (s, info) => {
+        if (s === "reconnecting" || s === "disconnected") hadDisconnect = true;
+        if (s === "connected" && hadDisconnect) {
+          hadDisconnect = false;
+          runResync();
+        }
+        setStreamStatus(s, info?.error);
+      },
       onGap: (msg) => noteGap(msg),
       onFrame: (frame: TraceStreamFrame) => {
         if (frame.event === "batch") {
@@ -153,15 +229,67 @@ export function useTraceStream(active: boolean): {
       client.close();
       clientRef.current = null;
     };
-    // setStreamStatus/appendFrame/noteGap are stable zustand actions
+    // setStreamStatus/appendFrame/noteGap/setResyncing are stable zustand actions
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
   return { status, error };
 }
 
+/** Bounded trace queue (§31) — derived from retained events only. */
+export function useTraceQueue() {
+  return useDecisionTraceStore(selectQueue);
+}
+
 /** Filtered rows for the feed (re-derived when filter/search changes). */
 export function useFilteredDecisions() {
   const store = useDecisionTraceStore();
   return selectFilteredDecisions(store);
+}
+
+/**
+ * Events for the list/stream panels: server-filtered page while a filter is
+ * active (with its echoed `filters`), else the bounded live tail.
+ */
+export function useFilteredEvents(): {
+  events: TraceEvent[];
+  fromServer: boolean;
+  serverFilters: Record<string, string> | null;
+  isPending: boolean;
+  isError: boolean;
+} {
+  const store = useDecisionTraceStore();
+  const filteredQ = useFilteredEventsQuery();
+  const clientFiltered = selectFilteredEvents(store);
+  const hasFilters = !!(
+    store.eventFilters.trace_id ||
+    store.eventFilters.stage ||
+    store.eventFilters.status ||
+    store.eventFilters.mode ||
+    store.eventFilters.position_id
+  );
+  if (!hasFilters) {
+    return {
+      events: clientFiltered,
+      fromServer: false,
+      serverFilters: null,
+      isPending: false,
+      isError: false,
+    };
+  }
+  if (filteredQ.isPending) {
+    return { events: [], fromServer: true, serverFilters: null, isPending: true, isError: false };
+  }
+  if (filteredQ.isError) {
+    return { events: [], fromServer: true, serverFilters: null, isPending: false, isError: true };
+  }
+  return {
+    events: filteredQ.data?.events ?? [],
+    fromServer: true,
+    serverFilters:
+      filteredQ.data?.filters ??
+      Object.fromEntries(activeFilterWords(store.eventFilters).map((w) => [w.key, w.value])),
+    isPending: false,
+    isError: false,
+  };
 }

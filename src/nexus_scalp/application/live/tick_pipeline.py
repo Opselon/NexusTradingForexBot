@@ -434,9 +434,20 @@ class TickPipeline:
         # DECISION-TRACE: open the per-market-decision trace at pipeline
         # entry (the market event that starts the causal chain). No-op
         # unless an observer session is ACTIVE — zero detail work when OFF.
+        # v2 causality (§10/§44): name only what THIS call site actually has
+        # — the origin is a market tick, and the run mode is read from the
+        # live engine config (absent => None => UNKNOWN downstream, never
+        # guessed). Anything the runtime does not know stays omitted.
         if _trace is not None and _trace.active:
+            _exec_mode = getattr(
+                getattr(getattr(self.om, "config", None), "execution", None), "mode", None
+            )
             _trace.begin_trace(
                 symbol=tick.symbol,
+                source="MARKET_TICK",
+                mode=str(getattr(_exec_mode, "value", _exec_mode))
+                if _exec_mode is not None
+                else None,
                 detail={
                     "bid": float(tick.bid),
                     "ask": float(tick.ask),
