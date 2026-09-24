@@ -755,32 +755,49 @@ def _browser_host(bind_host: str) -> str:
     return bind_host
 
 
-def _verdict_of(resp: Any) -> str:
-    """Best-effort ``verdict`` read from a /health body (never raises).
+def _serving_verdict(resp: Any) -> tuple[str, bool]:
+    """(verdict, serving) from a /health body; never raises.
 
-    The HealthEngine contract (``nexus_scalp.release.health``) defines the
-    Read the WHOLE body (any fixed cap re-creates a truncation bug when a
-    health check adds a reason) and degrade to UNKNOWN on a malformed body
-    instead of raising, so the caller simply retries.
+    ``serving`` is True when the app can present the Control Center:
+    READY / DEGRADED, or NOT_READY whose ONLY failing check is CONFIGURATION
+    in the NOT_INITIALIZED state (a first-run install with no nexus.yaml yet
+    - the app bootstraps from hard defaults in exactly that case, so the UI
+    is live; the state says "not set up", not "broken").
     """
     try:
         import json as _json
 
         # Read the WHOLE body: the checks array grows whenever a layer adds a
         # reason, so any fixed cap re-creates the truncation bug it replaces.
-        raw = resp.read()
-        payload = _json.loads(raw)
+        payload = _json.loads(resp.read())
         # Two shapes reach this probe:
         #  * the v1 success envelope: {"data": {"verdict": ...}, "meta": {...}}
         #  * a FastAPI error detail (503): {"detail": {"verdict": ...}}
+        node = None
         for key in ("data", "detail"):
-            node = payload.get(key) if isinstance(payload, dict) else None
-            if isinstance(node, dict) and "verdict" in node:
-                return str(node["verdict"])
-        value = payload.get("verdict") if isinstance(payload, dict) else None
-        return str(value) if value is not None else "UNKNOWN"
+            cand = payload.get(key) if isinstance(payload, dict) else None
+            if isinstance(cand, dict) and "verdict" in cand:
+                node = cand
+                break
+        if node is None:
+            node = payload if isinstance(payload, dict) else {}
+        verdict = str(node.get("verdict") or "UNKNOWN")
+        if verdict in ("READY", "DEGRADED"):
+            return verdict, True
+        if verdict == "NOT_READY":
+            fails = [
+                c
+                for c in node.get("checks", [])
+                if isinstance(c, dict) and c.get("verdict") == "FAIL"
+            ]
+            if fails and all(
+                c.get("category") == "CONFIGURATION" and c.get("state") == "NOT_INITIALIZED"
+                for c in fails
+            ):
+                return verdict, True
+        return verdict, False
     except Exception:
-        return "UNKNOWN"
+        return "UNKNOWN", False
 
 
 def _probe_control_center(host: str, port: int) -> tuple[bool, bool, str]:
@@ -802,29 +819,15 @@ def _probe_control_center(host: str, port: int) -> tuple[bool, bool, str]:
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
         with opener.open(f"{base}/health", timeout=2) as resp:
-            status = getattr(resp, "status", 200)
-            verdict = _verdict_of(resp)
-            # The route maps verdicts to statuses: READY/DEGRADED are 200 or
-            # 503 (DEGRADED answers 503 when an optional subsystem is WARNING
-            # - the app is still serving the Control Center), NOT_READY /
-            # UNHEALTHY are 503 too. The VERDICT is authoritative: only
-            # READY / DEGRADED mean "serving". A 4xx means a routing or auth
-            # problem, which is not readiness.
-            if status >= 500 and verdict not in ("READY", "DEGRADED"):
-                return False, False, f"health HTTP {status} verdict {verdict}"
-            if 400 <= status < 500:
-                return False, False, f"health HTTP {status}"
-            if verdict not in ("READY", "DEGRADED"):
+            verdict, serving = _serving_verdict(resp)
+            if not serving:
                 return False, False, f"health verdict {verdict}"
     except urllib.error.HTTPError as http_err:
-        # urllib raises HTTPError for 503 (and all non-2xx). The verdict in the
-        # body is still authoritative: a DEGRADED 503 means the Control Center
-        # IS being served and the gate may pass; NOT_READY / UNHEALTHY or an
-        # unreadable body must keep it closed (never a false green).
-        verdict = _verdict_of(http_err)
-        if verdict in ("READY", "DEGRADED"):
-            pass
-        else:
+        # urllib raises HTTPError for 503 (and all non-2xx). The body's verdict
+        # is authoritative: READY / DEGRADED / a first-run NOT_READY mean the
+        # Control Center is being served; anything else keeps the gate closed.
+        verdict, serving = _serving_verdict(http_err)
+        if not serving:
             return False, False, f"health HTTP {http_err.code} verdict {verdict}"
     except Exception as exc:
         return False, False, f"health {type(exc).__name__}"
