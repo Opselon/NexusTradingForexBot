@@ -10588,6 +10588,12 @@ async function performEngineModeSet(requested) {
                 window.NX.toast(langSel.options[langSel.selectedIndex].text, 'info', { ttl: 2000 });
             }
         });
+        // P1 (i18n): 'nexus:lang-changed' is dispatched by ux_i18n.js on every
+        // switch. ux.js's central hook re-renders the chrome + registered
+        // panels; __reRenderAll below rebuilds THIS dashboard's tab bodies.
+        document.addEventListener('nexus:lang-changed', function () {
+            if (window.NX && window.NX.reRenderAll) window.NX.reRenderAll();
+        });
     }
 
     const observer = new MutationObserver(() => {
@@ -13483,3 +13489,36 @@ async function dbApiKeyDelete() {
 document.addEventListener('DOMContentLoaded', () => { setTimeout(dbConsoleLoad, 800); });
 // News Auto Analysis — prime toggle state on load (no API key needed)
 document.addEventListener('DOMContentLoaded', () => { setTimeout(() => { try { refreshNewsAutoState(); refreshNewsToggleState(); } catch(_e){} }, 900); });
+
+// =============================================================================
+// P1 (i18n): dashboard-level live re-render on language switch.
+// Called from ux.js's central nexus:lang-changed hook (NX.reRenderAll).
+// Rebuilds the currently-visible tab from the data already in memory; every
+// panel that renders user-facing strings registers its refresh below. Each
+// entry is guarded + try/caught so one unavailable panel never blocks the
+// rest. Network is NOT touched except where a panel's only render path is a
+// refetch (marked) — the common case is a pure DOM rebuild.
+// =============================================================================
+window.__reRenderAll = function () {
+    var jobs = [
+        ['chart', function () { drawChart(); }],
+        ['signals', function () { renderAiSnapshotPanel(); }],
+        ['positions', function () { populatePositionsTable(liveUiSnapshot && liveUiSnapshot.positions || []); }],
+        ['feature-deltas', function () { renderFeatureDeltas(); }],
+        ['rules', function () { loadRules(); }],
+        ['ai-analysis', function () { loadIntelligenceSummary(); renderMarketRadar(liveUiSnapshot && liveUiSnapshot.radar); }],
+        ['research', function () { loadResearchSummary(); loadResearchHealth(); loadResearchWorker(); loadResearchDiag(); }],
+        ['news', function () { loadNewsState(); }],
+        ['factory', function () { loadFactoryStatus(); }],
+        ['liquidity', function () { loadLiquidityState(); }],
+        ['incidents', function () { renderIncidentKpis(); }],
+        ['governance', function () { loadGovernancePanel(); }],
+        ['debug', function () { refreshDebugHub(); }],
+        ['marketplace', function () { if (window.NX && window.NX.marketplace) window.NX.marketplace.render(); }],
+        ['control-center', function () { if (window.NX && window.NX.cc && window.NX.cc.views && window.NX.cc.views.showTab) window.NX.cc.views.showTab(currentTab); }]
+    ];
+    for (var i = 0; i < jobs.length; i++) {
+        try { jobs[i][1](); }
+        catch (e) { /* stale-data or not-yet-loaded panel: skip, do not break the rest */ }
+    }
+};
