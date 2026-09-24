@@ -56,16 +56,30 @@ def _resolve_cycle_store_db_path(audit_repo: AuditRepository) -> str:
     MagicMock()``) make ``_db_path`` a MagicMock whose ``str()`` is not a
     valid filesystem path, and ``sqlite3.connect`` then dies with
     ``OperationalError: unable to open database file`` (observed 2026-09-07:
-    13 red in tests/unit/test_htf_warmup_gate.py). Fall back to the shared
-    in-memory convention (same as AuditRepository's ``:memory:`` handling)
-    whenever the attribute is not a plain string path — the cycle store is
-    process-local state, so in-memory stays hermetic and never touches the
-    production artifacts/audit.db (BUG-223 rule).
+    13 red in tests/unit/test_htf_warmup_gate.py). Fall back to a process-local
+    temp file whenever the attribute is not a plain string path — the cycle
+    store is process-local state, so a temp file stays hermetic and never
+    touches the production artifacts/audit.db (BUG-223 rule).
+
+    RT-007 (2026-09-24): ``:memory:`` is NOT a safe fallback here.
+    LearningCycleStore opens one short-lived ``sqlite3.connect()`` per
+    operation (10 call sites) with no shared connection, and each
+    ``:memory:`` connect mints a brand-new EMPTY database — the table
+    ``ensure_schema()`` creates is invisible to the very next call, so every
+    cycle read/writes raise ``no such table: learning_cycles`` and
+    restart-safe recovery is silently disabled. This was observed in the live
+    error log whenever the audit repo carries no SQLite ``_db_path``.
+    A NamedTemporaryFile gives every connect the SAME schema-carrying file.
     """
     raw = getattr(audit_repo, "_db_path", None)
     if isinstance(raw, str) and raw.strip():
         return raw
-    return ":memory:"
+    import tempfile
+
+    _tmp = tempfile.NamedTemporaryFile(prefix="nse_learning_cycles_", suffix=".db", delete=False)
+    _tmp.close()
+    _rt007_cycle_db_path = _tmp.name
+    return _rt007_cycle_db_path
 
 
 class LearningCycleOrchestrator:
