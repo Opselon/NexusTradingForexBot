@@ -69,6 +69,18 @@ def translate_ddl(statement: str) -> str:
             "schema; refusing to emit a silently-wrong translation"
         )
     out = translate_type(statement)
+    # RTF-001: the additive column heals are authored in the SQLite dialect
+    # (``ALTER TABLE t ADD COLUMN c ...``). SQLite has no ADD COLUMN IF NOT
+    # EXISTS, but PostgreSQL does, and the migration must be re-runnable —
+    # insert the guard here so both providers get idempotent additive heals
+    # without a second, dialect-specific statement list.
+    if re.match(r"(?i)^\s*ALTER\s+TABLE\s+\w+\s+ADD\s+COLUMN\s+", out):
+        out = re.sub(
+            r"(?i)^\s*(ALTER\s+TABLE\s+\w+\s+ADD\s+COLUMN\s+)",
+            r"\1IF NOT EXISTS ",
+            out,
+            count=1,
+        )
     if re.search(r"(?i)^\s*CREATE\s+(UNIQUE\s+)?INDEX", out):
         out = _type_partial_predicate(out)
     # collapse the harmless double space the substitutions can leave

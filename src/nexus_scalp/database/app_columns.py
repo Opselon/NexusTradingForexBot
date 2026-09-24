@@ -635,6 +635,14 @@ APP_UNIQUE_TARGETS: dict[str, tuple[tuple[str, ...], ...]] = {
     "anomaly_events": (("anomaly_id",),),
     "strategy_evolution_candidates": (("candidate_id",),),
     "intelligence_worker_state": (("scope",),),
+    # BUG-054 persistent signal dedup: the audit_signals INSERT is
+    # ``ON CONFLICT(signal_dedup_key) DO NOTHING``. PostgreSQL rejects that
+    # clause unless a UNIQUE constraint/index exists on exactly those columns
+    # (SQLite would raise the equivalent "ON CONFLICT clause does not match").
+    # The SQLite path creates idx_audit_signals_dedup in _create_sqlite_tables;
+    # the provider-agnostic migration heals from THIS contract so a
+    # PostgreSQL domain carries the same dedup guarantee.
+    "audit_signals": (("signal_dedup_key",),),
 }
 
 __all__ = ["APP_REQUIRED_COLUMNS", "APP_UNIQUE_TARGETS"]
