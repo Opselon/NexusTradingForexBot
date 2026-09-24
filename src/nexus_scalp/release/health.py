@@ -924,19 +924,41 @@ class HealthEngine:
         return HealthEntry("MEMORY", "PASS", f"{env.ram_mb} MB RAM")
 
     def check_logging(self) -> HealthEntry:
-        logs = paths.get_logs_dir()
-        recent = sorted(logs.glob("*.log")) if logs.exists() else []
+        # EU-05: the writer lays logs out as <root>/<severity>/<YYYY>/<MM>/*.log
+        # and anchors <root> to the engine's runtime workspace (bundle dir when
+        # frozen, CWD when sourced), while this check used to glob a FLAT
+        # "*.log" under LocalAppData — a path the engine never writes. Result on
+        # every real install: "no log files yet" while a full log tree existed.
+        # One owner for the answer (paths.get_engine_log_root), shared with the
+        # CLI's `nexus logs`; the per-user root stays as a fallback.
+        roots = [paths.get_engine_log_root(), paths.get_logs_dir()]
+        recent: list[Path] = []
+        seen: set[Path] = set()
+        for root in roots:
+            if not root.exists():
+                continue
+            for f in root.rglob("*.log"):
+                if f.resolve() not in seen:
+                    seen.add(f.resolve())
+                    recent.append(f)
         if recent:
-            latest = recent[-1]
+            latest = max(recent, key=lambda p: p.stat().st_mtime)
             try:
                 size = latest.stat().st_size
+                mtime = latest.stat().st_mtime
             except OSError:
-                size = 0
-            return HealthEntry("LOGGING", "PASS", f"{latest.name} ({size} bytes)")
+                size, mtime = 0, 0.0
+            rel = str(latest).replace("\\", "/")
+            age_days = max(0, int((time.time() - mtime) / 86400)) if mtime else 0
+            return HealthEntry(
+                "LOGGING",
+                "PASS",
+                f"{rel} ({size} bytes, last write {age_days}d ago)",
+            )
         return HealthEntry(
             "LOGGING",
             "WARNING",
-            "no log files yet",
+            f"no log files yet under {roots[0]}",
             "Logs appear after the first engine start.",
             state=NOT_INITIALIZED,
             optional=True,

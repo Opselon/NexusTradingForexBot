@@ -108,12 +108,29 @@ def get_artifacts_dir() -> Path:
     return get_runtime_workspace() / "artifacts"
 
 
+def get_engine_log_root() -> Path:
+    """The log tree the ACTUAL engine run uses (EU-05 — single owner).
+
+    ``configure_logging`` anchors its severity-split tree to
+    ``get_runtime_workspace()/logs``, which for a frozen launch is the bundle
+    directory (BUG-149) and for a source launch is the process CWD. Earlier the
+    CLI doctor and the LOGGING health check globbed a FLAT ``*.log`` under the
+    per-user ``app_data_root()/logs``, a path the engine never writes — so a
+    fresh user ran ``nexus doctor`` and read "no log files yet" while a full
+    ``logs/<severity>/<YYYY>/<MM>/*.log`` tree existed elsewhere.
+
+    Everything that shows a user "where are my logs" resolves through this, so
+    the doctor, the health check and the support bundle always agree.
+    """
+    return get_runtime_workspace() / "logs"
+
+
 def ensure_user_dirs() -> None:
     """Create the user-data directory skeleton (idempotent, never deletes)."""
     for d in (
         get_data_root(),
         get_config_dir(),
-        get_logs_dir(),
+        get_engine_log_root(),
         get_models_dir(),
         get_cache_dir(),
         get_diagnostics_dir(),
