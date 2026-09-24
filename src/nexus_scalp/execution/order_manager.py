@@ -84,10 +84,11 @@ logger = get_logger("nexus_scalp.execution.order_manager")
 # =============================================================================
 
 #: Absolute ceiling on lot size for any single dispatch, independent of sizing math.
-#: FORENSIC-LANE-BROKER: this is a SAFETY ceiling only. The broker's own
-#: ``symbol_info.volume_max`` (EURUSD truth on this account: 500.0) is the real
-#: authority; the cap applies only when the broker spec is missing. A fixed
-#: 10.0 lot ceiling silently over-clamped instruments the broker allows 500 on.
+#: FORENSIC-LANE-BROKER: this is the ENGINE-WIDE safety ceiling and is never
+#: exceeded. The broker's own ``symbol_info.volume_max`` composes with it as a
+#: STRICTER rule only (min(HARD_MAX_LOTS, volume_max)): a broker allowing 500
+#: lots does not relax the engine's 10-lot risk ceiling, but a broker allowing
+#: only 5 tightens it. See DispatchEngine._clamp_dispatch_volume.
 HARD_MAX_LOTS: float = 10.0
 
 #: Maximum simultaneous exposure: 1 active position OR 1 pending order, engine-wide.

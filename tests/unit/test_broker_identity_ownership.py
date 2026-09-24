@@ -128,11 +128,12 @@ class TestPositionOwnership:
 
 
 class TestVolumeCeilingIsBrokerAware:
-    """HARD_MAX_LOTS is a fallback; broker volume_max is authoritative."""
+    """HARD_MAX_LOTS is the engine-wide ceiling; volume_max can only tighten it."""
 
     def test_default_ceiling_is_a_safety_fallback(self) -> None:
-        # A fixed 10-lot ceiling over-clamped EURUSD, whose volume_max on this
-        # account is 500.0 — the broker's rule governs when it is known.
+        # The fixed 10-lot ceiling is an engine risk policy, not a broker limit
+        # to relax: a broker whose volume_max is larger (EURUSD truth: 500)
+        # never raises the dispatch ceiling above HARD_MAX_LOTS.
         from nexus_scalp.execution.order_manager import HARD_MAX_LOTS
 
         assert HARD_MAX_LOTS == 10.0

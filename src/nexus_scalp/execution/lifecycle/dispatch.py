@@ -218,10 +218,13 @@ class DispatchEngine:
         if not math.isfinite(vol) or vol <= 0.0:
             return 0.0
 
-        # Broker volume_max is authoritative when known; HARD_MAX_LOTS is only
-        # the fallback safety ceiling for a missing spec (see order_manager).
-        # Keeping min(HARD_MAX_LOTS, volume_max) would still over-clamp every
-        # instrument the broker allows beyond 10 lots (EURUSD truth: 500).
+        # Broker volume_max is authoritative for the symbol's PERMISSION (a
+        # volume the broker forbids is never sent), and HARD_MAX_LOTS remains
+        # the engine-wide ceiling that is never exceeded. The two compose:
+        # allowed = volume_max when known, else HARD_MAX_LOTS; the request is
+        # then capped to allowed (so a broker allowing 500 still gets the
+        # engine's own 10-lot safety ceiling applied — that ceiling is a
+        # risk-policy decision, not a broker limit to relax).
         ceiling = HARD_MAX_LOTS
         broker_max = 0.0
         try:
@@ -229,8 +232,10 @@ class DispatchEngine:
                 broker_max = float(getattr(symbol_info, "volume_max", 0.0) or 0.0)
         except (TypeError, ValueError):
             broker_max = 0.0
+        # A broker that reports a SMALLER volume_max tightens the ceiling (its
+        # rule wins); it never loosens the engine ceiling.
         if broker_max > 0.0:
-            ceiling = broker_max
+            ceiling = min(HARD_MAX_LOTS, broker_max)
         clamped = min(vol, ceiling)
         if clamped < vol:
             logger.warning(
