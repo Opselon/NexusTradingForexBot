@@ -179,7 +179,7 @@ export default function CommandDeck(props: CommandDeckProps) {
                   return (
                     <button key={m.id} type="button" className={`tr-deck-seg tr-deck-seg--${m.id.toLowerCase()}${active ? " is-active" : ""}`} aria-pressed={active} onClick={() => pickMode(m.id)}>
                       <span className="tr-deck-seg-name">{m.id}</span>
-                      <span className="tr-deck-seg-desc">{m.desc}</span>
+                      <span className="tr-deck-seg-desc">{m.id === "PAPER" ? t("trading.seg.paper_desc", m.desc) : m.id === "SHADOW" ? t("trading.seg.shadow_desc", m.desc) : t("trading.seg.live_desc", m.desc)}</span>
                       {currentMode === m.id && <span className="tr-deck-seg-current">{t("trading.mode.current_word", "current")}</span>}
                     </button>
                   );

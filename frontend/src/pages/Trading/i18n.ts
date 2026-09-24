@@ -193,4 +193,9 @@ export const MESSAGES: FeatureMessages = {
   "trading.tile.socket_snapshot": { fa: "اسنپ‌شات سوکت", de: "Socket-Snapshot", es: "instantánea del socket", ar: "لقطة المقبس" },
   "trading.tile.spread_aria": { fa: "متر اسپرد، {p} نقطه", de: "Spread-Meter, {p} Punkte", es: "medidor de spread, {p} puntos", ar: "مقياس السبريد، {p} نقطة" },
   "trading.tile.stale": { fa: "قدیمی", de: "STALE", es: "STALE", ar: "قديم" },
+  "trading.th.sl": { fa: "SL", de: "SL", es: "SL", ar: "SL" },
+  "trading.th.tp": { fa: "TP", de: "TP", es: "TP", ar: "TP" },
+  "trading.seg.paper_desc": { fa: "adapter شبیه‌سازی — بدون پول واقعی", de: "Simulations-Adapter — kein echtes Geld", es: "adaptador de simulación — sin dinero real", ar: "محاكٍ — بدون أموال حقيقية" },
+  "trading.seg.shadow_desc": { fa: "بدون اجرا — فقط ردپای تصمیمات", de: "Ohne Ausführung — nur Entscheidungs-Spur", es: "sin ejecución — solo traza de decisiones", ar: "بدون تنفيذ — أثر القرارات فقط" },
+  "trading.seg.live_desc": { fa: "سرمایهٔ واقعی", de: "echtes Kapital", es: "capital real", ar: "رأس مال حقيقي" },
 };

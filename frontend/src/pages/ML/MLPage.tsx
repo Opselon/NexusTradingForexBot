@@ -18,7 +18,7 @@
  * LIQUIDITY 60..69) — index ranges, not guesses about names.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { mlApi } from "@/api/mlApi";
 import { operatorApi, shadowApi } from "@/pages/_shared/edgeApi";
@@ -69,19 +69,44 @@ function VerdictChip({ disagreement, valid }: { disagreement: string; valid?: bo
 /** Column set for the recent-70D-observations table. perf: built ONCE at
  *  module scope (9 sortValue/render closures) instead of re-allocated on every
  *  render of a 15s-refreshed panel — keys, labels and cell output unchanged. */
-const OBSERVATION_COLUMNS: Array<Column<Record<string, any>>> = [
-  { key: "t", label: "Time", sortValue: (o) => o.timestamp, render: (o) => o.timestamp.slice(0, 19) },
-  { key: "c", label: "Champion", sortValue: (o) => o.champion_action, render: (o) => o.champion_action },
-  { key: "s", label: "Shadow", sortValue: (o) => o.shadow_action, render: (o) => <span className={`l4-chip ${o.shadow_action !== o.champion_action ? "warn" : ""}`}>{o.shadow_action}</span> },
-  { key: "conf", label: "Conf C/S", num: true, sortValue: (o) => o.champion_confidence, render: (o) => `${formatNumber(o.champion_confidence)} / ${formatNumber(o.shadow_confidence)}` },
-  { key: "dis", label: "Disagreement", sortValue: (o) => o.disagreement, render: (o) => <VerdictChip disagreement={o.disagreement} valid={o.valid} /> },
-  { key: "rg", label: "Regime", sortValue: (o) => o.regime, render: (o) => o.regime || "—" },
-  { key: "nw", label: "News", render: (o) => o.news_state || "—" },
-  { key: "liq", label: "Liquidity", render: (o) => o.liquidity_state || "—" },
-  { key: "out", label: "Outcome", sortValue: (o) => o.outcome, render: (o) => o.outcome },
+const OBSERVATION_COLUMN_KEYS: Array<{ key: string; fallback: string; num?: boolean }> = [
+  { key: "t", fallback: "Time" },
+  { key: "c", fallback: "Champion" },
+  { key: "s", fallback: "Shadow" },
+  { key: "conf", fallback: "Conf C/S", num: true },
+  { key: "dis", fallback: "Disagreement" },
+  { key: "rg", fallback: "Regime" },
+  { key: "nw", fallback: "News" },
+  { key: "liq", fallback: "Liquidity" },
+  { key: "out", fallback: "Outcome" },
 ];
 
-/** Backend-word filter for the observations table (stable reference). */
+const OBSERVATION_LABEL_OF: Record<string, string> = { t: "ml.obs.time", c: "ml.obs.champion", s: "ml.obs.shadow", conf: "ml.obs.conf", dis: "ml.obs.disagreement", rg: "ml.obs.regime", nw: "ml.obs.news", liq: "ml.obs.liquidity", out: "ml.obs.outcome" };
+
+const OBSERVATION_RENDER: Record<string, (o: Record<string, any>) => ReactNode> = {
+  t: (o) => o.timestamp.slice(0, 19),
+  c: (o) => o.champion_action,
+  s: (o) => <span className={`l4-chip ${o.shadow_action !== o.champion_action ? "warn" : ""}`}>{o.shadow_action}</span>,
+  conf: (o) => `${formatNumber(o.champion_confidence)} / ${formatNumber(o.shadow_confidence)}`,
+  dis: (o) => <VerdictChip disagreement={o.disagreement} valid={o.valid} />,
+  rg: (o) => o.regime || "—",
+  nw: (o) => o.news_state || "—",
+  liq: (o) => o.liquidity_state || "—",
+  out: (o) => o.outcome,
+};
+
+const OBSERVATION_SORT: Record<string, (o: Record<string, any>) => string | number | null> = {
+  t: (o) => o.timestamp,
+  c: (o) => o.champion_action,
+  s: (o) => o.shadow_action,
+  conf: (o) => o.champion_confidence,
+  dis: (o) => o.disagreement,
+  rg: (o) => o.regime,
+  nw: (o) => o.news_state,
+  liq: (o) => o.liquidity_state,
+  out: (o) => o.outcome,
+};
+
 const OBSERVATION_FILTER = (o: Record<string, any>, q: string): boolean =>
   o.champion_action.toLowerCase().includes(q) ||
   o.shadow_action.toLowerCase().includes(q) ||
@@ -89,9 +114,9 @@ const OBSERVATION_FILTER = (o: Record<string, any>, q: string): boolean =>
 
 /** Canonical 70D family blocks (backend schema_contract / liquidity_runtime). */
 const FAMILY_BLOCKS = [
-  { id: "base", label: "BASE 0–49 (scalp_v1 protected)", from: 0, to: 49 },
-  { id: "family", label: "FAMILY/NEWS 50–59", from: 50, to: 59 },
-  { id: "liquidity", label: "LIQUIDITY 60–69 (70D only)", from: 60, to: 69 },
+  { id: "base", key: "ml.family.base", fallback: "BASE 0–49 (scalp_v1 protected)", from: 0, to: 49 },
+  { id: "family", key: "ml.family.family_news", fallback: "FAMILY/NEWS 50–59", from: 50, to: 59 },
+  { id: "liquidity", key: "ml.family.liquidity", fallback: "LIQUIDITY 60–69 (70D only)", from: 60, to: 69 },
 ] as const;
 
 function featureValue(v: number | null): string {
@@ -132,9 +157,9 @@ function FeatureBlock({
         </span>
       </div>
       <div className="l4-chip-row" style={{ marginBlockEnd: 6 }}>
-        <span className="l4-chip good">{valid} VALID</span>
-        <span className={`l4-chip ${nan ? "warn" : ""}`}>{nan} NAN</span>
-        <span className={`l4-chip ${unavail ? "" : ""}`}>{unavail} UNAVAILABLE</span>
+        <span className="l4-chip good">{valid} {t("ml.feat.valid", "VALID")}</span>
+        <span className={`l4-chip ${nan ? "warn" : ""}`}>{nan} {t("ml.feat.nan", "NAN")}</span>
+        <span className={`l4-chip ${unavail ? "" : ""}`}>{unavail} {t("ml.feat.unavailable", "UNAVAILABLE")}</span>
       </div>
       <div tabIndex={0} className="l4-features" style={{ maxBlockSize: 210 }}>
         {features.map((f) => (
@@ -224,9 +249,10 @@ export default function MLPage({ snapshot }: Props) {
     () =>
       FAMILY_BLOCKS.map((b) => ({
         ...b,
+        label: t(b.key, b.fallback),
         rows: features.filter((f) => f.index >= b.from && f.index <= b.to),
       })),
-    [features],
+    [features, t],
   );
   const dim = snapshot?.model.feature_dimension ?? features.length ?? null;
   const is70 = dim === 70;
@@ -713,7 +739,13 @@ export default function MLPage({ snapshot }: Props) {
           right={<span className="timestamp-note">{t("ml.obs.note", "champion vs 70D, engine-recorded")}</span>}
         >
           <SortableTable
-            columns={OBSERVATION_COLUMNS}
+            columns={OBSERVATION_COLUMN_KEYS.map((c) => ({
+              key: c.key,
+              label: t(OBSERVATION_LABEL_OF[c.key] as string, c.fallback),
+              num: c.num ?? false,
+              sortValue: OBSERVATION_SORT[c.key] as (o: Record<string, any>) => string | number | null,
+              render: OBSERVATION_RENDER[c.key] as (o: Record<string, any>) => ReactNode,
+            }))}
             rows={observations}
             rowKey={(o) => o.observation_id}
             initialSort={{ key: "t", dir: "desc" }}
