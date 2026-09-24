@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import json
 import random
-import threading
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -67,7 +66,7 @@ _STATUS_MAP: dict[int, ProviderErrorCategory] = {
     500: ProviderErrorCategory.UPSTREAM_UNAVAILABLE,
     502: ProviderErrorCategory.UPSTREAM_UNAVAILABLE,
     503: ProviderErrorCategory.UPSTREAM_UNAVAILABLE,
-    504: ProviderErrorCategory.UPSTREAM_UNAVAILABLE,
+    504: ProviderErrorCategory.TIMEOUT,
 }
 
 
@@ -224,7 +223,12 @@ def retrying_json_call(
                 provider_id=provider_id,
             )
             breaker.record_failure()
-            logger.warning("[AI-PROV] %s network error (attempt %d): %s", provider_id, attempt + 1, exc.__class__.__name__)
+            logger.warning(
+                "[AI-PROV] %s network error (attempt %d): %s",
+                provider_id,
+                attempt + 1,
+                exc.__class__.__name__,
+            )
             if attempt >= max_retries or not last_error.retryable:
                 raise
             time.sleep(_backoff_seconds(attempt))
@@ -252,7 +256,10 @@ def retrying_json_call(
             wait = retry_after if retry_after is not None else _backoff_seconds(attempt)
             logger.warning(
                 "[AI-PROV] %s retryable %d (attempt %d, waiting %.2fs)",
-                provider_id, response.status_code, attempt + 1, wait,
+                provider_id,
+                response.status_code,
+                attempt + 1,
+                wait,
             )
             time.sleep(wait)
             attempt += 1

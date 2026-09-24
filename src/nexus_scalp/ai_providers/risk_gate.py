@@ -30,16 +30,13 @@ number the provider returned.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
 from nexus_scalp.ai_providers.contract import (
-    AIProviderAction,
     PositionDecisionRequest,
     PositionDecisionResponse,
-    SlProposal,
 )
 
 __all__ = ["GATE_VERSION", "RiskGateResult", "RiskPolicy", "SlKind", "gate_proposals"]
@@ -138,7 +135,9 @@ def _stops_distance_ok(price: float, request: PositionDecisionRequest) -> bool:
 
 
 def gate_proposals(
-    response: PositionDecisionResponse, request: PositionDecisionRequest, policy: RiskPolicy | None = None
+    response: PositionDecisionResponse,
+    request: PositionDecisionRequest,
+    policy: RiskPolicy | None = None,
 ) -> RiskGateResult:
     """Validate a provider response's TP/SL proposals against broker + risk truth.
 
@@ -156,7 +155,9 @@ def gate_proposals(
         cur_tp = request.current_tp
         if cur_tp and cur_tp > 0:
             # A BUY wants TP above price; a SELL below.
-            direction_ok = (cand > request.current_price) if is_buy else (cand < request.current_price)
+            direction_ok = (
+                (cand > request.current_price) if is_buy else (cand < request.current_price)
+            )
             if not direction_ok:
                 res.tp_allowed = False
                 res.rejections.append("TP_CANDIDATE_WRONG_SIDE")
@@ -174,12 +175,11 @@ def gate_proposals(
                     res.rejections.append("TP_INSIDE_STOPS_LEVEL")
                 else:
                     res.final_tp = cand
+        # No existing TP: allow a new one on the correct side only.
+        elif (cand > request.current_price) if is_buy else (cand < request.current_price):
+            res.final_tp = cand
         else:
-            # No existing TP: allow a new one on the correct side only.
-            if (cand > request.current_price) if is_buy else (cand < request.current_price):
-                res.final_tp = cand
-            else:
-                res.tp_allowed = classify_wrong_side_tp()
+            res.tp_allowed = classify_wrong_side_tp()
     if not res.tp_allowed:
         res.warnings.append("TP proposal rejected; keeping current TP")
         res.final_tp = request.current_tp
@@ -198,7 +198,7 @@ def gate_proposals(
             if kind is SlKind.WIDEN_SL and not p.allow_sl_widen:
                 res.sl_allowed = False
                 res.rejections.append("WIDEN_SL_FORBIDDEN")
-            elif (cand >= request.current_price if is_buy else cand <= request.current_price):
+            elif cand >= request.current_price if is_buy else cand <= request.current_price:
                 res.sl_allowed = False
                 res.rejections.append("SL_CANDIDATE_WRONG_SIDE")
             elif not _stops_distance_ok(cand, request):

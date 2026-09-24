@@ -29,6 +29,7 @@ WHAT AN ADAPTER MAY NEVER DO (Section 1)
 from __future__ import annotations
 
 import abc
+import math
 import threading
 import time
 from dataclasses import dataclass, field
@@ -36,11 +37,16 @@ from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.ai_providers.contract import (
+    AIProviderAction,
     PositionDecisionRequest,
     PositionDecisionResponse,
 )
 from nexus_scalp.ai_providers.errors import ProviderError, ProviderErrorCategory
-from nexus_scalp.ai_providers.registry import PROVIDER_TYPE_EXTERNAL, ProviderConfig, ProviderRegistryStore
+from nexus_scalp.ai_providers.registry import (
+    PROVIDER_TYPE_EXTERNAL,
+    ProviderConfig,
+    ProviderRegistryStore,
+)
 from nexus_scalp.ai_providers.templates import build_position_decision_payload
 from nexus_scalp.ai_providers.transport import CircuitBreaker, TransportResult, retrying_json_call
 from nexus_scalp.observability.logging import get_logger
@@ -69,7 +75,7 @@ def _summarize(payload: Any, limit: int = 400) -> str:
         import json as _json
 
         return _json.dumps(payload, default=str)[:limit]
-    except Exception:  # noqa: BLE001
+    except Exception:
         return str(payload)[:limit]
 
 
@@ -148,7 +154,9 @@ class BaseAIProviderAdapter(abc.ABC):
         self._secret_store = secret_store
         self._lock = threading.RLock()
         self._health = AIProviderHealth()
-        self._breaker = CircuitBreaker(failure_threshold=max(2, config.max_retries + 2), cooldown_sec=60.0)
+        self._breaker = CircuitBreaker(
+            failure_threshold=max(2, config.max_retries + 2), cooldown_sec=60.0
+        )
 
     # -- identity --------------------------------------------------------------
     @property
@@ -189,7 +197,7 @@ class BaseAIProviderAdapter(abc.ABC):
         name = self.config.secret_name or f"ai_provider_{self.provider_id}_key"
         try:
             value = self._secret_store.get_secret(name)
-        except Exception as exc:  # noqa: BLE001 - fail closed, never leak
+        except Exception as exc:
             raise ProviderError(
                 ProviderErrorCategory.AUTH_FAILED,
                 "secret store unavailable",
@@ -258,6 +266,64 @@ class BaseAIProviderAdapter(abc.ABC):
         self._update_health(ok=True, latency_ms=result.latency_ms)
         return result
 
+    # -- normalization boundary (Sections 10, 40) ------------------------------
+    @staticmethod
+    def classify_payload(payload: Any) -> ProviderErrorCategory | None:
+        """Classify a raw provider payload before it becomes a contract object.
+
+        Runs ahead of :class:`PositionDecisionResponse` construction, so an
+        incomplete or impossible proposal is rejected HERE and surfaces as
+        ``SCHEMA_VIOLATION`` -- the category the fallback chain keys off. The
+        contract's own model validator is non-deferrable (it runs at
+        construction), so without this check an adapter would raise an opaque
+        ``pydantic.ValidationError`` that the orchestrator would bucket as
+        ``UNKNOWN``, hiding the real cause.
+
+        Returns ``None`` when the payload is structurally acceptable.
+        """
+        if not isinstance(payload, dict):
+            return ProviderErrorCategory.MALFORMED_RESPONSE
+
+        decision = payload.get("decision")
+        if not isinstance(decision, dict):
+            return ProviderErrorCategory.SCHEMA_VIOLATION
+
+        action = decision.get("action")
+        valid_actions = {a.value for a in AIProviderAction}
+        if action not in valid_actions:
+            return ProviderErrorCategory.SCHEMA_VIOLATION
+
+        for name in ("confidence", "p_hold", "p_close", "p_reduce", "uncertainty"):
+            raw = decision.get(name, 0.0)
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                return ProviderErrorCategory.SCHEMA_VIOLATION
+            if not math.isfinite(float(raw)) or not 0.0 <= float(raw) <= 1.0:
+                return ProviderErrorCategory.SCHEMA_VIOLATION
+
+        # An ADJUST_* action must carry the proposal it is about: an
+        # ADJUST_SL with no candidate price is not a weaker SL opinion, it is a
+        # non-answer, and must not be scored as one (Section 10).
+        tp = payload.get("tp") or {}
+        sl = payload.get("sl") or {}
+        if action == AIProviderAction.ADJUST_SL.value:
+            candidate = sl.get("candidate_price")
+            if (
+                candidate is None
+                or not isinstance(candidate, (int, float))
+                or not math.isfinite(float(candidate))
+            ):
+                return ProviderErrorCategory.SCHEMA_VIOLATION
+        if action == AIProviderAction.ADJUST_TP.value:
+            candidate = tp.get("candidate_price")
+            if (
+                candidate is None
+                or not isinstance(candidate, (int, float))
+                or not math.isfinite(float(candidate))
+            ):
+                return ProviderErrorCategory.SCHEMA_VIOLATION
+
+        return None
+
     # -- the canonical decision call (Sections 7/10) ---------------------------
     def evaluate_position(self, request: PositionDecisionRequest) -> PositionDecisionResponse:
         """Advise on one open position. Returns the canonical contract.
@@ -287,7 +353,9 @@ class BaseAIProviderAdapter(abc.ABC):
         try:
             return self._list_models_impl()
         except ProviderError as exc:
-            logger.warning("[AI-PROV] %s model listing failed: %s", self.provider_id, exc.category.value)
+            logger.warning(
+                "[AI-PROV] %s model listing failed: %s", self.provider_id, exc.category.value
+            )
             return []
 
     def _list_models_impl(self) -> list[str]:
@@ -303,7 +371,9 @@ class BaseAIProviderAdapter(abc.ABC):
         try:
             key = self._resolve_secret()
         except ProviderError as exc:
-            return AIProviderTestResult(False, "no API key configured", stage="authentication", error=str(exc))
+            return AIProviderTestResult(
+                False, "no API key configured", stage="authentication", error=str(exc)
+            )
 
         started = _perf_start()
         headers = {"Content-Type": "application/json", "Accept": "application/json"}

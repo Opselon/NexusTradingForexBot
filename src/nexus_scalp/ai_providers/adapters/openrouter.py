@@ -58,7 +58,7 @@ def _finite(value: Any, default: float = 0.0) -> float:
 def _summarize(payload: Any, limit: int = 400) -> str:
     try:
         return json.dumps(payload, default=str)[:limit]
-    except Exception:  # noqa: BLE001
+    except Exception:
         return str(payload)[:limit]
 
 
@@ -289,8 +289,12 @@ class OpenRouterAdapter(BaseAIProviderAdapter):
         usage = raw_usage if isinstance(raw_usage, dict) else None
         input_tokens = output_tokens = None
         if usage:
-            input_tokens = int(_finite(usage.get("prompt_tokens", usage.get("input_tokens")), 0)) or None
-            output_tokens = int(_finite(usage.get("completion_tokens", usage.get("output_tokens")), 0)) or None
+            input_tokens = (
+                int(_finite(usage.get("prompt_tokens", usage.get("input_tokens")), 0)) or None
+            )
+            output_tokens = (
+                int(_finite(usage.get("completion_tokens", usage.get("output_tokens")), 0)) or None
+            )
             self.config.cost_metadata = {
                 **self.config.cost_metadata,
                 "last_input_tokens": input_tokens,

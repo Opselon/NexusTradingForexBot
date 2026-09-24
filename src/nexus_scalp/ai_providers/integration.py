@@ -33,8 +33,8 @@ from nexus_scalp.observability.logging import get_logger
 logger = get_logger("nexus_scalp.ai_providers.integration")
 
 __all__ = [
-    "build_provider_request_state",
     "apply_provider_evidence_to_hold_score",
+    "build_provider_request_state",
 ]
 
 
@@ -81,7 +81,7 @@ def apply_provider_evidence_to_hold_score(
     try:
         if not getattr(orchestrator, "enabled_for_decide", True):
             return hold_score, None
-    except Exception:  # noqa: BLE001 - fail closed
+    except Exception:
         return hold_score, None
 
     try:

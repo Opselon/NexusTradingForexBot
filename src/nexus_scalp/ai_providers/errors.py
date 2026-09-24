@@ -108,7 +108,7 @@ def redact(text: str, secrets: tuple[str, ...] = ()) -> str:
         idx = out.find(marker)
         while idx != -1:
             end = idx + len(marker)
-            while end < len(out) and out[end] not in ' \t\r\n",\'':
+            while end < len(out) and out[end] not in " \t\r\n\",'":
                 end += 1
             if end > idx + len(marker):
                 out = out[: idx + len(marker)] + "***REDACTED***" + out[end:]

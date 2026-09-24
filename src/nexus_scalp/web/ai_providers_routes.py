@@ -31,6 +31,8 @@ Endpoints (all under /api/ai-providers)
 from __future__ import annotations
 
 import threading
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -64,7 +66,7 @@ def get_ai_provider_orchestrator() -> ProviderOrchestrator:
     settings DB is not yet provisioned. Same singleton semantics as the
     position-adviser service it sits beside.
     """
-    global _ORCHESTRATOR
+    global _ORCHESTRATOR  # noqa: PLW0603  # module-level singleton, mirrors the position-adviser lane
     with _LOCK:
         if _ORCHESTRATOR is None:
             _ORCHESTRATOR = ProviderOrchestrator(
@@ -76,7 +78,7 @@ def get_ai_provider_orchestrator() -> ProviderOrchestrator:
 
 def _reset_orchestrator() -> None:
     """Drop the cached singleton (tests / explicit reset)."""
-    global _ORCHESTRATOR
+    global _ORCHESTRATOR  # noqa: PLW0603  # module-level singleton, mirrors the position-adviser lane
     with _LOCK:
         _ORCHESTRATOR = None
 
@@ -155,7 +157,9 @@ def route_provider_status(provider_id: str) -> dict[str, Any]:
     orch = get_ai_provider_orchestrator()
     out = orch.provider_status(provider_id)
     if not out.get("available"):
-        raise HTTPException(status_code=404, detail=f"provider {provider_id} not configured or disabled")
+        raise HTTPException(
+            status_code=404, detail=f"provider {provider_id} not configured or disabled"
+        )
     return {"status": "OK", **out}
 
 
@@ -171,9 +175,11 @@ def route_configure(provider_id: str, req: ConfigureProviderRequest) -> dict[str
         try:
             store = _secret_store()
             store.set_secret(f"ai_provider_{provider_id}_key", req.api_key)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error("[AI-PROV] failed to store secret for %s: %s", provider_id, exc)
-            raise HTTPException(status_code=500, detail="failed to store credential securely") from exc
+            raise HTTPException(
+                status_code=500, detail="failed to store credential securely"
+            ) from exc
     values: dict[str, Any] = req.model_dump(exclude_none=True)
     values.pop("api_key", None)
     if req.api_key:
@@ -223,7 +229,11 @@ def route_test(provider_id: str) -> dict[str, Any]:
 @router.get("/providers/{provider_id}/models")
 def route_models(provider_id: str) -> dict[str, Any]:
     """Model listing (Section 21). Empty when unsupported."""
-    return {"status": "OK", "provider_id": provider_id, "models": get_ai_provider_orchestrator().list_models(provider_id)}
+    return {
+        "status": "OK",
+        "provider_id": provider_id,
+        "models": get_ai_provider_orchestrator().list_models(provider_id),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +281,9 @@ def route_switch(req: SwitchRequest) -> dict[str, Any]:
         actor="ui",
     )
     if not result.get("switched"):
-        raise HTTPException(status_code=412, detail=result.get("reason", "switch preconditions failed"))
+        raise HTTPException(
+            status_code=412, detail=result.get("reason", "switch preconditions failed")
+        )
     return {"status": "OK", **result}
 
 
@@ -311,7 +323,7 @@ def route_compare(req: CompareRequest) -> dict[str, Any]:
     wanted = req.providers or list(ADAPTER_TYPES_LAZY())
     per_provider: dict[str, Any] = {}
     for pid in wanted:
-        adapter = orch._adapter(pid)  # noqa: SLF001 - same-process access
+        adapter = orch._adapter(pid)
         if adapter is None:
             per_provider[pid] = {"available": False, "reason": "disabled or not configured"}
             continue
@@ -331,7 +343,7 @@ def route_compare(req: CompareRequest) -> dict[str, Any]:
                 "model": resp.model,
                 "regime": resp.decision.regime_change_probability,
             }
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             per_provider[pid] = {"available": False, "reason": str(exc)[:200]}
     return {"status": "OK", "providers": per_provider, "snapshot_id": snapshot.provider_request_id}
 
@@ -368,14 +380,16 @@ def route_export() -> dict[str, Any]:
     orch = get_ai_provider_orchestrator()
     cfgs = []
     for pid in orch.list_providers():
-        row = orch._registry.get(pid)  # noqa: SLF001
+        row = orch._registry.get(pid)
         if row is not None:
             cfgs.append(row.to_public_dict())
     return {
         "status": "OK",
         "exported_at": _now_iso(),
         "providers": cfgs,
-        "activation": (orch._registry.get_activation() or ActivationState(primary_provider="internal_nse_ml")).to_public_dict(),  # noqa: SLF001
+        "activation": (
+            orch._registry.get_activation() or ActivationState(primary_provider="internal_nse_ml")
+        ).to_public_dict(),
         "note": "API keys are never exported; re-enter credentials after import.",
     }
 
@@ -393,7 +407,11 @@ def route_import(req: ImportRequest) -> dict[str, Any]:
         pid = row.get("provider_id")
         if not pid:
             continue
-        values = {k: v for k, v in row.items() if k in ("endpoint", "model", "timeout", "max_retries", "provider_name")}
+        values = {
+            k: v
+            for k, v in row.items()
+            if k in ("endpoint", "model", "timeout", "max_retries", "provider_name")
+        }
         if values:
             orch.configure_provider(pid, values, actor="import")
         key = (req.api_keys or {}).get(pid)
@@ -427,7 +445,7 @@ def route_reset() -> dict[str, Any]:
     orch = get_ai_provider_orchestrator()
     removed: list[str] = []
     for pid in list(ADAPTER_TYPES_LAZY()):
-        if orch._registry.delete(pid):  # noqa: SLF001
+        if orch._registry.delete(pid):
             removed.append(pid)
     _reset_orchestrator()
     return {
@@ -441,9 +459,18 @@ def route_reset() -> dict[str, Any]:
 def route_restart_matrix() -> dict[str, Any]:
     """Hot-reload vs restart classification (Sections 28, 66)."""
     fields_ = [
-        "endpoint", "model", "timeout", "max_retries", "enabled",
-        "provider_name", "secret_name", "primary", "secondary", "fallback",
-        "mode", "shadow",
+        "endpoint",
+        "model",
+        "timeout",
+        "max_retries",
+        "enabled",
+        "provider_name",
+        "secret_name",
+        "primary",
+        "secondary",
+        "fallback",
+        "mode",
+        "shadow",
     ]
     return {
         "status": "OK",

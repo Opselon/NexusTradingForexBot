@@ -27,17 +27,13 @@ source of truth and no duplicated selection logic.
 from __future__ import annotations
 
 import json
-import sys
 from typing import Any
 
 import typer
 
-from nexus_scalp.ai_providers.adapters import ADAPTER_TYPES
 from nexus_scalp.ai_providers.orchestrator import ProviderOrchestrator
-from nexus_scalp.ai_providers.registry import ActivationState, DecisionMode
+from nexus_scalp.ai_providers.registry import ActivationState
 from nexus_scalp.ai_providers.sample import SIMULATED_SAMPLE_REQUEST
-from nexus_scalp.cli.styling import console
-from nexus_scalp.settings.paths import settings_db_path
 from nexus_scalp.settings.secret_store import SecureSecretStore
 
 ai_app = typer.Typer(name="ai", help="AI provider ecosystem: providers, models, decisions.")
@@ -110,7 +106,14 @@ def provider_list(json_out: bool = typer.Option(False, "--json", help="Machine-r
                 "has_secret": p.get("has_secret"),
             }
         )
-    _emit({"providers": rows, "active": state.get("active_provider"), "mode": state.get("decision_mode")}, json_out)
+    _emit(
+        {
+            "providers": rows,
+            "active": state.get("active_provider"),
+            "mode": state.get("decision_mode"),
+        },
+        json_out,
+    )
 
 
 @provider_app.command("status")
@@ -166,44 +169,80 @@ def provider_configure(
     if not values:
         raise typer.BadParameter("no configuration values supplied")
     ok = _orchestrator().configure_provider(provider_id, values, actor="cli")
-    _emit({"configured": ok, "provider_id": provider_id, "restart": ProviderOrchestrator.restart_requirement("model")}, json_out)
+    _emit(
+        {
+            "configured": ok,
+            "provider_id": provider_id,
+            "restart": ProviderOrchestrator.restart_requirement("model"),
+        },
+        json_out,
+    )
 
 
 @provider_app.command("enable")
-def provider_enable(provider_id: str = typer.Argument(...), json_out: bool = typer.Option(False, "--json")):
-    _emit({"enabled": _orchestrator().configure_provider(provider_id, {"enabled": True}, actor="cli")}, json_out)
+def provider_enable(
+    provider_id: str = typer.Argument(...), json_out: bool = typer.Option(False, "--json")
+):
+    _emit(
+        {
+            "enabled": _orchestrator().configure_provider(
+                provider_id, {"enabled": True}, actor="cli"
+            )
+        },
+        json_out,
+    )
 
 
 @provider_app.command("disable")
-def provider_disable(provider_id: str = typer.Argument(...), json_out: bool = typer.Option(False, "--json")):
-    _emit({"disabled": _orchestrator().configure_provider(provider_id, {"enabled": False}, actor="cli")}, json_out)
+def provider_disable(
+    provider_id: str = typer.Argument(...), json_out: bool = typer.Option(False, "--json")
+):
+    _emit(
+        {
+            "disabled": _orchestrator().configure_provider(
+                provider_id, {"enabled": False}, actor="cli"
+            )
+        },
+        json_out,
+    )
 
 
 def _set_role(provider_id: str, role: str, json_out: bool) -> None:
     orch = _orchestrator()
     cur = orch.to_public_dict()
     state = ActivationState(
-        primary_provider=provider_id if role == "primary" else cur.get("active_provider") or "internal_nse_ml",
+        primary_provider=provider_id
+        if role == "primary"
+        else cur.get("active_provider") or "internal_nse_ml",
         secondary_provider=provider_id if role == "secondary" else cur.get("secondary_provider"),
         fallback_provider=provider_id if role == "fallback" else cur.get("fallback_provider"),
         decision_mode=cur.get("decision_mode", "INTERNAL_ONLY"),
         shadow_provider=cur.get("shadow_provider"),
     )
-    _emit({"set": role, "ok": orch.set_activation(state, actor="cli"), **state.to_public_dict()}, json_out)
+    _emit(
+        {"set": role, "ok": orch.set_activation(state, actor="cli"), **state.to_public_dict()},
+        json_out,
+    )
 
 
 @provider_app.command("set-primary")
-def provider_set_primary(provider_id: str = typer.Argument(...), json_out: bool = typer.Option(False, "--json")):
+def provider_set_primary(
+    provider_id: str = typer.Argument(...), json_out: bool = typer.Option(False, "--json")
+):
     _set_role(provider_id, "primary", json_out)
 
 
 @provider_app.command("set-secondary")
-def provider_set_secondary(provider_id: str = typer.Argument(...), json_out: bool = typer.Option(False, "--json")):
+def provider_set_secondary(
+    provider_id: str = typer.Argument(...), json_out: bool = typer.Option(False, "--json")
+):
     _set_role(provider_id, "secondary", json_out)
 
 
 @provider_app.command("set-fallback")
-def provider_set_fallback(provider_id: str = typer.Argument(...), json_out: bool = typer.Option(False, "--json")):
+def provider_set_fallback(
+    provider_id: str = typer.Argument(...), json_out: bool = typer.Option(False, "--json")
+):
     _set_role(provider_id, "fallback", json_out)
 
 
@@ -217,7 +256,9 @@ def provider_switch(
 ):
     """The explicit switch flow (Section 26): preconditions enforced first."""
     _emit(
-        _orchestrator().switch(primary=provider_id, secondary=secondary, fallback=fallback, mode=mode, actor="cli"),
+        _orchestrator().switch(
+            primary=provider_id, secondary=secondary, fallback=fallback, mode=mode, actor="cli"
+        ),
         json_out,
     )
 
@@ -228,9 +269,13 @@ def provider_switch(
 
 
 @model_app.command("list")
-def model_list(provider_id: str = typer.Argument(...), json_out: bool = typer.Option(False, "--json")):
+def model_list(
+    provider_id: str = typer.Argument(...), json_out: bool = typer.Option(False, "--json")
+):
     """Models a provider offers (Section 21)."""
-    _emit({"provider_id": provider_id, "models": _orchestrator().list_models(provider_id)}, json_out)
+    _emit(
+        {"provider_id": provider_id, "models": _orchestrator().list_models(provider_id)}, json_out
+    )
 
 
 @model_app.command("test")
@@ -268,9 +313,11 @@ def position_compare(
     simulated: bool = typer.Option(True, "--simulated/--no-simulated"),
 ):
     """Side-by-side provider comparison (Section 24)."""
-    from nexus_scalp.web.ai_providers_routes import route_compare, CompareRequest
+    from nexus_scalp.web.ai_providers_routes import CompareRequest, route_compare
 
-    req = CompareRequest(snapshot=SIMULATED_SAMPLE_REQUEST if simulated else None, simulated=simulated)
+    req = CompareRequest(
+        snapshot=SIMULATED_SAMPLE_REQUEST if simulated else None, simulated=simulated
+    )
     _emit(route_compare(req), json_out)
 
 
@@ -326,21 +373,22 @@ def decision_trace(
 # ---------------------------------------------------------------------------
 
 
-backtest_app = typer.Typer(name="backtest", help="Replay MT5 history through providers (no orders).")
+backtest_app = typer.Typer(
+    name="backtest", help="Replay MT5 history through providers (no orders)."
+)
 ai_app.add_typer(backtest_app, name="backtest")
 
 
 def _replay_engine(provider: str, mode: str) -> Any:
-    from nexus_scalp.ai_providers.mt5_mcp import MT5MCPClient, SECRET_NAME_MT5_KEY
+    from nexus_scalp.ai_providers.mt5_mcp import SECRET_NAME_MT5_KEY, MT5MCPClient
     from nexus_scalp.ai_providers.replay import ReplayEngine
-    from nexus_scalp.settings.secret_store import SecureSecretStore
 
     orch = _orchestrator()
     store = SecureSecretStore()
     key = None
     try:
         key = store.get_secret(SECRET_NAME_MT5_KEY)
-    except Exception:  # noqa: BLE001 - probe is best effort
+    except Exception:
         key = None
     client = MT5MCPClient(api_key=key)
     return ReplayEngine(orchestrator=orch, client=client)
@@ -356,7 +404,9 @@ def backtest_health(json_out: bool = typer.Option(False, "--json")):
 
 @backtest_app.command("run")
 def backtest_run(
-    provider: str = typer.Option("internal_nse_ml", "--provider", help="Provider to replay through."),
+    provider: str = typer.Option(
+        "internal_nse_ml", "--provider", help="Provider to replay through."
+    ),
     symbol: str = typer.Option("XAUUSD", "--symbol"),
     period: str = typer.Option("M15", "--period"),
     datetime_from: str = typer.Option(..., "--from", help="ISO datetime, inclusive."),

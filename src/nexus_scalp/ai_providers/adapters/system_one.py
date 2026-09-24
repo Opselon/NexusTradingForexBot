@@ -91,7 +91,7 @@ def _snippet(payload: Any, limit: int = 400) -> str:
     """Short non-secret summary for diagnostics and the test centre."""
     try:
         return json.dumps(payload, default=str)[:limit]
-    except Exception:  # noqa: BLE001
+    except Exception:
         return str(payload)[:limit]
 
 
@@ -119,10 +119,22 @@ class SystemOneAdapter(BaseAIProviderAdapter):
             "state": _state_string(canonical_payload),
             "questions": {
                 _Q_HOLD: {"type": "noul", "instructions": "Is holding this position favourable?"},
-                _Q_CLOSE: {"type": "noul", "instructions": "Is closing this position now favourable?"},
-                _Q_REDUCE: {"type": "noul", "instructions": "Is reducing this position's size advisable?"},
-                _Q_TP: {"type": "noul", "instructions": "Is the current take-profit worth adjusting?"},
-                _Q_SL: {"type": "noul", "instructions": "Is the current stop-loss worth adjusting?"},
+                _Q_CLOSE: {
+                    "type": "noul",
+                    "instructions": "Is closing this position now favourable?",
+                },
+                _Q_REDUCE: {
+                    "type": "noul",
+                    "instructions": "Is reducing this position's size advisable?",
+                },
+                _Q_TP: {
+                    "type": "noul",
+                    "instructions": "Is the current take-profit worth adjusting?",
+                },
+                _Q_SL: {
+                    "type": "noul",
+                    "instructions": "Is the current stop-loss worth adjusting?",
+                },
                 _Q_REGIME: {"type": "noul", "instructions": "Is the market regime transitioning?"},
                 _Q_DOWNSIDE: {"type": "noul", "instructions": "Does downside risk dominate here?"},
                 _Q_UPSIDE: {"type": "noul", "instructions": "Does upside potential dominate here?"},
@@ -150,8 +162,14 @@ class SystemOneAdapter(BaseAIProviderAdapter):
             ),
             "questions": {
                 _Q_HOLD: {"type": "noul", "instructions": "Is holding this position favourable?"},
-                _Q_CLOSE: {"type": "noul", "instructions": "Is closing this position now favourable?"},
-                _Q_REDUCE: {"type": "noul", "instructions": "Is reducing this position's size advisable?"},
+                _Q_CLOSE: {
+                    "type": "noul",
+                    "instructions": "Is closing this position now favourable?",
+                },
+                _Q_REDUCE: {
+                    "type": "noul",
+                    "instructions": "Is reducing this position's size advisable?",
+                },
             },
         }
 
@@ -218,8 +236,12 @@ class SystemOneAdapter(BaseAIProviderAdapter):
             action = AIProviderAction.NO_ACTION
 
         # Expectations, in the R units the policy formula consumes.
-        exp_down = -abs(request.distance_to_sl) * (0.25 + 0.75 * _finite(_score(answers, _Q_DOWNSIDE), 0.5))
-        exp_up = abs(request.distance_to_tp) * (0.25 + 0.75 * _finite(_score(answers, _Q_UPSIDE), 0.5))
+        exp_down = -abs(request.distance_to_sl) * (
+            0.25 + 0.75 * _finite(_score(answers, _Q_DOWNSIDE), 0.5)
+        )
+        exp_up = abs(request.distance_to_tp) * (
+            0.25 + 0.75 * _finite(_score(answers, _Q_UPSIDE), 0.5)
+        )
         remaining = (n_hold * exp_up) - (n_reduce * 0.15)
 
         tp_score = _score(answers, _Q_TP)
@@ -256,8 +278,7 @@ class SystemOneAdapter(BaseAIProviderAdapter):
             regime_change_probability=_finite(_score(answers, _Q_REGIME), 0.0),
             uncertainty=1.0 - max(probs.values()),
             rationale=(
-                f"system_one answers: hold={n_hold:.3f} close={n_close:.3f} "
-                f"reduce={n_reduce:.3f}"
+                f"system_one answers: hold={n_hold:.3f} close={n_close:.3f} reduce={n_reduce:.3f}"
             ),
         )
 
@@ -305,7 +326,12 @@ def _state_string(c: dict[str, Any]) -> str:
     Data only: no credentials, no paths, no instruction-shaped text. The model
     is asked to *assess* this, never to act on it (Section 39).
     """
-    pos, mkt, acc, risk = c.get("position", {}), c.get("market", {}), c.get("account", {}), c.get("risk", {})
+    pos, mkt, acc, risk = (
+        c.get("position", {}),
+        c.get("market", {}),
+        c.get("account", {}),
+        c.get("risk", {}),
+    )
     return (
         f"POSITION_SNAPSHOT symbol={pos.get('symbol')} side={pos.get('side')} "
         f"entry={pos.get('entry_price')} current={pos.get('current_price')} "

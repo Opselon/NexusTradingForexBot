@@ -222,8 +222,10 @@ def score_action(
 
     # REDUCE: keeps part of the upside while cutting exposure to the adverse
     # term -- but only beats HOLD when the evidence actually says so.
-    reduce_score = expected_hold * 0.5 + (p_reduce * exp_rem * evidence_scale) - (
-        transaction_cost * 0.5 + uncertainty_penalty * 0.5
+    reduce_score = (
+        expected_hold * 0.5
+        + (p_reduce * exp_rem * evidence_scale)
+        - (transaction_cost * 0.5 + uncertainty_penalty * 0.5)
     )
     if rr <= 1.0:
         reduce_score -= 0.05  # poor reward-to-risk already argues for less size
@@ -261,12 +263,20 @@ def score_action(
     if winner == AIProviderAction.CLOSE and scores[AIProviderAction.CLOSE.value] < (
         scores[AIProviderAction.HOLD.value] + w.close_margin
     ):
-        winner = AIProviderAction.HOLD if scores[AIProviderAction.HOLD.value] > 0 else AIProviderAction.NO_ACTION
+        winner = (
+            AIProviderAction.HOLD
+            if scores[AIProviderAction.HOLD.value] > 0
+            else AIProviderAction.NO_ACTION
+        )
         reasons.append("CLOSE_BELOW_MARGIN")
     if winner == AIProviderAction.REDUCE and scores[AIProviderAction.REDUCE.value] < (
         scores[AIProviderAction.HOLD.value] + w.reduce_margin
     ):
-        winner = AIProviderAction.HOLD if scores[AIProviderAction.HOLD.value] > 0 else AIProviderAction.NO_ACTION
+        winner = (
+            AIProviderAction.HOLD
+            if scores[AIProviderAction.HOLD.value] > 0
+            else AIProviderAction.NO_ACTION
+        )
         reasons.append("REDUCE_BELOW_MARGIN")
 
     # The provider's own hint is recorded as evidence, never as the decision.

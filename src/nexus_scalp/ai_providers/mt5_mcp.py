@@ -68,7 +68,9 @@ class MT5MCPClient:
     def _post(self, body: dict[str, Any]) -> dict[str, Any]:
         """Send one request; empty 202 bodies (notifications) parse as ``{}``."""
         data = json.dumps(body).encode()
-        req = urllib.request.Request(self.endpoint, data=data, headers=self._headers(), method="POST")
+        req = urllib.request.Request(
+            self.endpoint, data=data, headers=self._headers(), method="POST"
+        )
         last: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
@@ -86,8 +88,8 @@ class MT5MCPClient:
                 # 401/403 are credential problems: retrying cannot help.
                 if exc.code in (401, 403):
                     raise ProviderError(
-                        ProviderErrorCategory.AUTH,
-                        f"MT5 MCP rejected credentials (HTTP {exc.code})",
+                        ProviderErrorCategory.AUTH_FAILED,
+                        f"MT5 MCP rejected credentials (HTTP {exc.code}): {detail}",
                     ) from exc
                 if exc.code == 429:
                     raise ProviderError(
@@ -105,7 +107,9 @@ class MT5MCPClient:
             f"MT5 MCP unreachable: {type(last).__name__}: {last}",
         )
 
-    def rpc(self, method: str, params: dict[str, Any] | None = None, notify: bool = False) -> dict[str, Any]:
+    def rpc(
+        self, method: str, params: dict[str, Any] | None = None, notify: bool = False
+    ) -> dict[str, Any]:
         self._rpc_id += 1
         body: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
         if params is not None:
@@ -223,7 +227,7 @@ def _parse_body(raw: str) -> dict[str, Any]:
 def _safe_read(exc: urllib.error.HTTPError) -> str:
     try:
         return exc.read().decode(errors="replace")[:300]
-    except Exception:  # noqa: BLE001 - best effort diagnostics only
+    except Exception:
         return ""
 
 
@@ -248,6 +252,7 @@ def _flatten(result: dict[str, Any]) -> str:
 
 def _normalise_bar(row: dict[str, Any]) -> dict[str, Any]:
     """Map MCP bar keys onto one stable shape for the replay engine."""
+
     def pick(*names: str) -> Any:
         for n in names:
             if n in row:

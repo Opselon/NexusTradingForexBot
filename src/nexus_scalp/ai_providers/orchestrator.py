@@ -47,22 +47,35 @@ from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.ai_providers.adapters import ADAPTER_TYPES, BaseAIProviderAdapter
-from nexus_scalp.ai_providers.adapters.base import AIProviderHealth, AIProviderTestResult
+from nexus_scalp.ai_providers.adapters.base import AIProviderTestResult
 from nexus_scalp.ai_providers.contract import (
     AIProviderAction,
     DecisionEvidence,
     PositionDecisionRequest,
     PositionDecisionResponse,
 )
-from nexus_scalp.ai_providers.errors import PERMANENT_CATEGORIES, ProviderError, ProviderErrorCategory
-from nexus_scalp.ai_providers.policy import POLICY_VERSION, PolicyScores, PolicyWeights, score_action
+from nexus_scalp.ai_providers.errors import (
+    ProviderError,
+    ProviderErrorCategory,
+)
+from nexus_scalp.ai_providers.policy import (
+    POLICY_VERSION,
+    PolicyScores,
+    PolicyWeights,
+    score_action,
+)
 from nexus_scalp.ai_providers.registry import (
     ActivationState,
     DecisionMode,
     ProviderConfig,
     ProviderRegistryStore,
 )
-from nexus_scalp.ai_providers.risk_gate import GATE_VERSION, RiskGateResult, RiskPolicy, gate_proposals
+from nexus_scalp.ai_providers.risk_gate import (
+    GATE_VERSION,
+    RiskGateResult,
+    RiskPolicy,
+    gate_proposals,
+)
 from nexus_scalp.ai_providers.sample import SIMULATED_CONTEXT_VERSION
 from nexus_scalp.ai_providers.templates import TEMPLATE_VERSION
 from nexus_scalp.observability.logging import get_logger
@@ -191,7 +204,7 @@ class ProviderOrchestrator:
                 )
             else:
                 adapter = cls(config=cfg, registry=self._registry, secret_store=self._secret_store)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error("[AI-PROV] failed to build adapter %s: %s", provider_id, exc)
             return None
         return adapter
@@ -221,7 +234,7 @@ class ProviderOrchestrator:
         if mode is DecisionMode.DISABLED or mode is DecisionMode.DETERMINISTIC_ONLY:
             return []
         if mode is DecisionMode.INTERNAL_ONLY:
-            return ["internal_nse_ml"] if primary != "internal_nse_ml" else ["internal_nse_ml"]
+            return ["internal_nse_ml"]
         if mode is DecisionMode.EXTERNAL_ONLY:
             out = [p for p in (primary,) if p != "internal_nse_ml"]
             return out or []
@@ -323,7 +336,9 @@ class ProviderOrchestrator:
             adapter = self._adapter(pid)
             if adapter is None:
                 failures[pid] = ProviderError(
-                    ProviderErrorCategory.UNKNOWN, "provider unavailable or disabled", provider_id=pid
+                    ProviderErrorCategory.UNKNOWN,
+                    "provider unavailable or disabled",
+                    provider_id=pid,
                 )
                 continue
             t_call = time.monotonic()
@@ -334,9 +349,11 @@ class ProviderOrchestrator:
             except ProviderError as exc:
                 failures[pid] = exc
                 logger.warning("[AI-PROV] %s failed: %s", pid, exc.category.value)
-            except Exception as exc:  # noqa: BLE001 - defensive
+            except Exception as exc:
                 failures[pid] = ProviderError(
-                    ProviderErrorCategory.UNKNOWN, f"adapter error: {exc.__class__.__name__}", provider_id=pid
+                    ProviderErrorCategory.UNKNOWN,
+                    f"adapter error: {exc.__class__.__name__}",
+                    provider_id=pid,
                 )
                 logger.exception("[AI-PROV] unexpected adapter failure for %s", pid)
             stage[pid] = (time.monotonic() - t_call) * 1000.0
@@ -382,8 +399,10 @@ class ProviderOrchestrator:
         # Gate the best available response (the fused view carries no proposals;
         # the individual responses do).
         gated_response = _best_response(responses, chain)
-        risk = gate_proposals(gated_response, request, self._risk_policy) if gated_response else RiskGateResult(
-            allowed=False, rejections=["NO_PROVIDER_EVIDENCE"]
+        risk = (
+            gate_proposals(gated_response, request, self._risk_policy)
+            if gated_response
+            else RiskGateResult(allowed=False, rejections=["NO_PROVIDER_EVIDENCE"])
         )
         stage["risk"] = (time.monotonic() - t_gate) * 1000.0
 
@@ -446,7 +465,9 @@ class ProviderOrchestrator:
         try:
             return DecisionMode(act.decision_mode), act
         except ValueError:
-            logger.warning("[AI-PROV] unknown stored mode %r; defaulting to INTERNAL_ONLY", act.decision_mode)
+            logger.warning(
+                "[AI-PROV] unknown stored mode %r; defaulting to INTERNAL_ONLY", act.decision_mode
+            )
             return DecisionMode.INTERNAL_ONLY, act
 
     # --------------------------------------------------------------------------
@@ -487,7 +508,11 @@ class ProviderOrchestrator:
         adapter = self._adapter(provider_id)
         cfg = self._registry.get(provider_id)
         if cfg is None or adapter is None:
-            return {"provider_id": provider_id, "available": False, "error": "not configured or disabled"}
+            return {
+                "provider_id": provider_id,
+                "available": False,
+                "error": "not configured or disabled",
+            }
         return {
             "provider_id": provider_id,
             "available": True,
@@ -513,7 +538,9 @@ class ProviderOrchestrator:
         adapter = self._adapter(provider_id)
         return adapter.list_models() if adapter else []
 
-    def configure_provider(self, provider_id: str, values: dict[str, Any], actor: str = "ui") -> bool:
+    def configure_provider(
+        self, provider_id: str, values: dict[str, Any], actor: str = "ui"
+    ) -> bool:
         """Save provider configuration (Sections 20, 27).
 
         DESIRED -> VALIDATE -> ACCEPT -> APPLY -> ACTIVE. Here: validate at the
@@ -603,8 +630,10 @@ class ProviderOrchestrator:
         return {
             "switched": ok,
             "active_provider": primary,
-            "active_model": (self._registry.get(primary) or ProviderConfig(
-                provider_id=primary, provider_name=primary)).default_model,
+            "active_model": (
+                self._registry.get(primary)
+                or ProviderConfig(provider_id=primary, provider_name=primary)
+            ).default_model,
             "decision_mode": str(mode),
             "activation_time": datetime.now(UTC).isoformat(),
             "config_version": state.configuration_version,
@@ -682,9 +711,7 @@ class ProviderOrchestrator:
 # ------------------------------------------------------------------------------
 # Fusion (Section 12)
 # ------------------------------------------------------------------------------
-def _fuse(
-    responses: dict[str, PositionDecisionResponse], mode: DecisionMode
-) -> DecisionEvidence:
+def _fuse(responses: dict[str, PositionDecisionResponse], mode: DecisionMode) -> DecisionEvidence:
     """Normalize-then-fuse provider evidence (Section 12).
 
     Deliberately NOT a naive majority vote (Section 47): providers have
@@ -712,8 +739,17 @@ def _fuse(
     # unsure of itself cannot outvote one that is sure, which is what stops
     # this from being an unweighted average (Section 47).
     total_w = 0.0
-    acc = {k: 0.0 for k in ("p_hold", "p_close", "p_reduce",
-                            "expected_remaining_r", "expected_downside_r", "expected_upside_r")}
+    acc = {
+        k: 0.0
+        for k in (
+            "p_hold",
+            "p_close",
+            "p_reduce",
+            "expected_remaining_r",
+            "expected_downside_r",
+            "expected_upside_r",
+        )
+    }
     acc_conf = 0.0
     acc_regime = 0.0
     for resp in responses.values():
@@ -755,9 +791,7 @@ def _fuse(
     )
 
 
-def _active_model(
-    registry: ProviderRegistryStore, act: ActivationState | None
-) -> str | None:
+def _active_model(registry: ProviderRegistryStore, act: ActivationState | None) -> str | None:
     """The model the ACTIVE provider is configured to use (Section 42)."""
     if act is None:
         return None

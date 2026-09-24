@@ -150,7 +150,9 @@ class ReplayEngine:
 
     def _load_bars(self, config: BacktestConfig) -> list[dict[str, Any]]:
         client = self._client or MT5MCPClient(config.endpoint, config.api_key)
-        bars = client.chart_history(config.symbol, config.period, config.datetime_from, config.datetime_to)
+        bars = client.chart_history(
+            config.symbol, config.period, config.datetime_from, config.datetime_to
+        )
         bars = [b for b in bars if b.get("close") is not None]
         bars.sort(key=lambda b: str(b.get("time")))
         return bars
@@ -202,7 +204,7 @@ class ReplayEngine:
             )
         except ProviderError as exc:
             category = exc.category.value
-        except Exception as exc:  # noqa: BLE001 - replay must not die on one step
+        except Exception as exc:
             category = f"UNEXPECTED:{type(exc).__name__}"
 
         entry = float(visible[-1]["close"])
@@ -325,10 +327,15 @@ class ReplayEngine:
         """
         ahead = bars[t + 1 : t + 1 + DECISION_HORIZON_BARS]
         if not ahead:
-            return {"exit_price": None, "realized_r": 0.0, "mae_r": 0.0, "mfe_r": 0.0, "bars_held": 0}
+            return {
+                "exit_price": None,
+                "realized_r": 0.0,
+                "mae_r": 0.0,
+                "mfe_r": 0.0,
+                "bars_held": 0,
+            }
 
         visible = bars[max(0, t - config.bars_per_step + 1) : t + 1]
-        entry_idx = max(0, len(visible) // 2)
         atr = _atr(visible[-14:] if len(visible) >= 14 else visible)
         risk_distance = max(atr * config.stop_loss_r, 1e-9)
         direction = 1 if entry <= ahead[0]["close"] else -1
@@ -456,7 +463,9 @@ def _r_multiples(move: float, risk_distance: float, direction: int) -> float:
     return (move * direction) / risk_distance
 
 
-def _worst_r(bars: list[dict[str, Any]], entry: float, risk_distance: float, direction: int) -> float:
+def _worst_r(
+    bars: list[dict[str, Any]], entry: float, risk_distance: float, direction: int
+) -> float:
     worst = 0.0
     for bar in bars:
         extreme = bar.get("low") if direction > 0 else bar.get("high")
@@ -466,7 +475,9 @@ def _worst_r(bars: list[dict[str, Any]], entry: float, risk_distance: float, dir
     return worst
 
 
-def _best_r(bars: list[dict[str, Any]], entry: float, risk_distance: float, direction: int) -> float:
+def _best_r(
+    bars: list[dict[str, Any]], entry: float, risk_distance: float, direction: int
+) -> float:
     best = 0.0
     for bar in bars:
         extreme = bar.get("high") if direction > 0 else bar.get("low")

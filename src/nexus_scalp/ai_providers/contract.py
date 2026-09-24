@@ -42,11 +42,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
     "CONTRACT_VERSION",
+    "RISK_EXPANDING_ACTIONS",
     "AIProviderAction",
     "DecisionEvidence",
     "PositionDecisionRequest",
     "PositionDecisionResponse",
-    "RISK_EXPANDING_ACTIONS",
     "SlProposal",
     "TpProposal",
     "is_finite_prob",
@@ -59,11 +59,24 @@ CONTRACT_VERSION = "1.0.0"
 #: Names no provider may ever see, and no response may ever claim to compute.
 _FORBIDDEN_FIELDS: frozenset[str] = frozenset(
     {
-        "future_return", "future_r", "future_r_net", "best_future_r",
-        "worst_future_r", "mae_usd", "mfe_usd", "time_to_mfe", "time_to_mae",
-        "continuation_value", "continuation_net_r", "continuation_mfe_r",
-        "continuation_mae_r", "horizon_continuation_value",
-        "optimal_action", "close_now_net_r", "realized_pnl", "final_outcome",
+        "future_return",
+        "future_r",
+        "future_r_net",
+        "best_future_r",
+        "worst_future_r",
+        "mae_usd",
+        "mfe_usd",
+        "time_to_mfe",
+        "time_to_mae",
+        "continuation_value",
+        "continuation_net_r",
+        "continuation_mfe_r",
+        "continuation_mae_r",
+        "horizon_continuation_value",
+        "optimal_action",
+        "close_now_net_r",
+        "realized_pnl",
+        "final_outcome",
     }
 )
 
@@ -305,9 +318,15 @@ class PositionDecisionResponse(BaseModel):
         # 2. NaN/Inf sweep across every numeric slot (Section 10 explicitly
         #    names NaN and Infinity as rejectable defects).
         for name in (
-            "confidence", "p_hold", "p_close", "p_reduce",
-            "expected_remaining_r", "expected_downside_r", "expected_upside_r",
-            "regime_change_probability", "uncertainty",
+            "confidence",
+            "p_hold",
+            "p_close",
+            "p_reduce",
+            "expected_remaining_r",
+            "expected_downside_r",
+            "expected_upside_r",
+            "regime_change_probability",
+            "uncertainty",
         ):
             v = getattr(d, name)
             if isinstance(v, bool) or not isinstance(v, int | float):
@@ -342,13 +361,15 @@ class PositionDecisionResponse(BaseModel):
                 )
             # 5. An endorsement must be a real endorsement: a named action with
             #    a token probability is an uncalibrated guess wearing a label.
-            need = {AIProviderAction.CLOSE: 0.34, AIProviderAction.HOLD: 0.34,
-                    AIProviderAction.REDUCE: 0.20}[d.action]
+            need = {
+                AIProviderAction.CLOSE: 0.34,
+                AIProviderAction.HOLD: 0.34,
+                AIProviderAction.REDUCE: 0.20,
+            }[d.action]
             got = probs[d.action]
             if got < need:
                 raise ValueError(
-                    f"{d.action.value} recommended with probability {got:.4f} "
-                    f"(needs >= {need})"
+                    f"{d.action.value} recommended with probability {got:.4f} (needs >= {need})"
                 )
 
         # 6. An ADJUST_* action must carry the proposal it is about.

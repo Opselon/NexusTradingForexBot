@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -299,7 +299,12 @@ class ProviderRegistryStore:
                 (cfg.provider_id, blob, cfg.configuration_version, _now_iso()),
             )
             conn.commit()
-        logger.info("[AI-PROV] saved provider=%s actor=%s v=%s", cfg.provider_id, actor, cfg.configuration_version)
+        logger.info(
+            "[AI-PROV] saved provider=%s actor=%s v=%s",
+            cfg.provider_id,
+            actor,
+            cfg.configuration_version,
+        )
         return True
 
     def delete(self, provider_id: str) -> bool:
@@ -382,8 +387,12 @@ class ProviderRegistryStore:
             conn.commit()
         logger.info(
             "[AI-PROV] activation primary=%s secondary=%s fallback=%s mode=%s shadow=%s actor=%s",
-            state.primary_provider, state.secondary_provider, state.fallback_provider,
-            state.decision_mode, state.shadow_provider, actor,
+            state.primary_provider,
+            state.secondary_provider,
+            state.fallback_provider,
+            state.decision_mode,
+            state.shadow_provider,
+            actor,
         )
         return True
 
@@ -416,6 +425,6 @@ def _blob_to_config(blob: str) -> ProviderConfig | None:
             if isinstance(raw, str):
                 d[key] = json.loads(raw) if raw else ([] if key != "cost_metadata" else {})
         return ProviderConfig(**d)
-    except Exception as exc:  # noqa: BLE001 - defensive: corrupt row isolation
+    except Exception as exc:
         logger.error("[AI-PROV] dropped unreadable provider row: %s", exc)
         return None

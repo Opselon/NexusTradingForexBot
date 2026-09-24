@@ -36,18 +36,20 @@ from nexus_scalp.ai_providers.contract import (
     TpProposal,
 )
 from nexus_scalp.ai_providers.errors import ProviderError, ProviderErrorCategory
-from nexus_scalp.ai_providers.registry import PROVIDER_TYPE_INTERNAL, ProviderConfig, ProviderRegistryStore
+from nexus_scalp.ai_providers.registry import (
+    PROVIDER_TYPE_INTERNAL,
+    ProviderConfig,
+    ProviderRegistryStore,
+)
 from nexus_scalp.ai_providers.templates import TEMPLATE_VERSION
-from nexus_scalp.ai_providers.transport import TransportResult
 from nexus_scalp.observability.logging import get_logger
-from nexus_scalp.position_adviser.models import ADVISER_ACTIONS
 from nexus_scalp.settings.secret_store import SecureSecretStore
 
 from .base import BaseAIProviderAdapter
 
 logger = get_logger("nexus_scalp.ai_providers.adapters.internal_ml")
 
-__all__ = ["InternalNSEMLAdapter", "PROBABILITY_SLOT_BY_ADVISER_ACTION"]
+__all__ = ["PROBABILITY_SLOT_BY_ADVISER_ACTION", "InternalNSEMLAdapter"]
 
 #: The adviser's own action vocabulary -> canonical probability slot. The
 #: adviser head is trained over exactly ADVISER_ACTIONS (KEEP/CLOSE/REDUCE),
@@ -106,7 +108,7 @@ class InternalNSEMLAdapter(BaseAIProviderAdapter):
 
                 svc = get_position_adviser_service()
                 self._adviser_service = svc
-            except Exception as exc:  # noqa: BLE001 - fail closed
+            except Exception as exc:
                 raise ProviderError(
                     ProviderErrorCategory.UPSTREAM_UNAVAILABLE,
                     "internal adviser service is unavailable",
@@ -147,7 +149,7 @@ class InternalNSEMLAdapter(BaseAIProviderAdapter):
             advisory = self._adviser().evaluate(request.ticket, state)
         except ProviderError:
             raise
-        except Exception as exc:  # noqa: BLE001 - the adviser's own contract is
+        except Exception as exc:
             # fail-closed; anything escaping it is a bug, not a verdict.
             raise ProviderError(
                 ProviderErrorCategory.UPSTREAM_UNAVAILABLE,
@@ -232,9 +234,9 @@ def _request_to_adviser_state(request: PositionDecisionRequest) -> dict[str, Any
     return {
         "unrealized_pnl_r": request.unrealized_r,
         "current_r_net": request.unrealized_r,
-        "current_return": (
-            request.current_price - request.entry_price
-        ) / max(request.entry_price, 1e-9) * (1 if request.side == "BUY" else -1),
+        "current_return": (request.current_price - request.entry_price)
+        / max(request.entry_price, 1e-9)
+        * (1 if request.side == "BUY" else -1),
         "distance_to_stop_r": request.distance_to_sl,
         "distance_to_target_r": request.distance_to_tp,
         "position_age_bars": max(0, int(request.position_age_sec / 60.0)),

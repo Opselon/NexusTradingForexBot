@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 
 from nexus_scalp.ai_providers.contract import PositionDecisionRequest
 
-__all__ = ["SIMULATED_SAMPLE_REQUEST", "SIMULATED_CONTEXT_VERSION", "build_simulated_request"]
+__all__ = ["SIMULATED_CONTEXT_VERSION", "SIMULATED_SAMPLE_REQUEST", "build_simulated_request"]
 
 #: Written into every simulated request so a persisted test decision is
 #: unambiguously identifiable as test data.
