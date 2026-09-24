@@ -176,3 +176,222 @@ export function layoutCanvas(graph: DerivedGraph): CanvasLayout {
 }
 
 export const CANVAS_CONST = { COLUMN_W, ROW_H, MARGIN_X, MARGIN_Y };
+
+/* ===========================================================================
+ * §8/§12/§44 precomputation — §4 fields the LAYOUT layer needs (a node is a
+ * failure witness; its external kind). Computed HERE, from graph fields, so
+ * this module never needs a sibling VALUE import (Node's TS-stripping gate
+ * runner cannot resolve extensionless relative imports, and tsc forbids the
+ * `.ts` suffix — see traceCanvas.ts for the same constraint).
+ * ======================================================================== */
+function isLayoutFailureWord(word: string | null | undefined): boolean {
+  if (!word) return false;
+  const t = word.toUpperCase();
+  // §8: rejected/error/blocked tones — mirror of stateToneOf in traceGraph
+  // (kept local for the same import-free reason).
+  return (
+    t === "REJECTED" ||
+    t === "REJECT" ||
+    t === "FAILED" ||
+    t === "ERROR" ||
+    t === "TIMEOUT" ||
+    t === "BLOCKED"
+  );
+}
+
+function isLayoutFailureNode(n: GraphNode): boolean {
+  return (
+    isLayoutFailureWord(n.state) ||
+    isLayoutFailureWord(n.lastStatus) ||
+    n.errors > 0
+  );
+}
+
+export interface Viewport {
+  x: number;
+  y: number;
+  k: number;
+}
+
+export const VIEW_K_MIN = 0.4;
+export const VIEW_K_MAX = 2.4;
+
+function clampK(k: number): number {
+  if (!Number.isFinite(k)) return 1;
+  return Math.min(VIEW_K_MAX, Math.max(VIEW_K_MIN, k));
+}
+
+export interface ContentBBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/** Bounding box of node centers (null for an empty layout). */
+export function contentBBox(nodes: readonly PositionedNode[]): ContentBBox | null {
+  if (!nodes.length) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const n of nodes) {
+    if (n.x < minX) minX = n.x;
+    if (n.y < minY) minY = n.y;
+    if (n.x > maxX) maxX = n.x;
+    if (n.y > maxY) maxY = n.y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+/**
+ * FIT: zoom+center so the whole graph fits the viewport (§52).
+ * Deterministic; empty layout => identity transform.
+ */
+export function fitViewport(layout: CanvasLayout, vw: number, vh: number, pad = 56): Viewport {
+  const box = contentBBox(layout.nodes);
+  if (!box || vw <= 0 || vh <= 0) return { x: 0, y: 0, k: 1 };
+  const bw = Math.max(box.maxX - box.minX, 1) + pad * 2;
+  const bh = Math.max(box.maxY - box.minY, 1) + pad * 2;
+  const k = clampK(Math.min(vw / bw, vh / bh));
+  const cx = (box.minX + box.maxX) / 2;
+  const cy = (box.minY + box.maxY) / 2;
+  return { x: vw / 2 - cx * k, y: vh / 2 - cy * k, k };
+}
+
+/**
+ * FOCUS: center the given nodes (e.g. the selected stage or the active
+ * trace's region) at the current zoom (§52 focus, §53 auto-follow). Unknown
+ * ids fall back to the whole layout so a stale selection never blanks the
+ * canvas. Keeps k unchanged — focusing never yanks the zoom level.
+ */
+export function focusViewport(
+  layout: { nodes: readonly PositionedNode[] },
+  nodeIds: ReadonlySet<string> | readonly string[],
+  vw: number,
+  vh: number,
+  k: number,
+): Viewport {
+  const want = nodeIds instanceof Set ? nodeIds : new Set(nodeIds);
+  const targets = layout.nodes.filter((n) => want.has(n.id));
+  const box = contentBBox(targets.length ? targets : layout.nodes);
+  const kk = clampK(k);
+  if (!box || vw <= 0 || vh <= 0) return { x: 0, y: 0, k: kk };
+  const cx = (box.minX + box.maxX) / 2;
+  const cy = (box.minY + box.maxY) / 2;
+  return { x: vw / 2 - cx * kk, y: vh / 2 - cy * kk, k: kk };
+}
+
+/** A filtered render view: nodes/edges kept for drawing after user focus. */
+export interface ViewGroup {
+  nodes: PositionedNode[];
+  edges: PositionedEdge[];
+  /** node ids excluded from this render (collapse/isolation) — never deleted. */
+  hidden: ReadonlySet<string>;
+  /** collapsed node -> number of DIRECT children it swallowed (badge `+N`). */
+  collapsedCounts: ReadonlyMap<string, number>;
+}
+
+export interface ViewOptions {
+  /** node ids the user collapsed (their subtrees hide, §8 carve-outs stay). */
+  collapsed?: ReadonlySet<string>;
+  /** stage name to branch-isolate to (its 1-hop neighbourhood stays, §52). */
+  isolateStage?: string | null;
+}
+
+const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
+
+function outAdj(layout: CanvasLayout): Map<string, string[]> {
+  const m = new Map<string, string[]>();
+  for (const e of layout.edges) {
+    const arr = m.get(e.source) ?? [];
+    arr.push(e.target);
+    m.set(e.source, arr);
+  }
+  return m;
+}
+
+function inAdj(layout: CanvasLayout): Map<string, string[]> {
+  const m = new Map<string, string[]>();
+  for (const e of layout.edges) {
+    const arr = m.get(e.target) ?? [];
+    arr.push(e.source);
+    m.set(e.target, arr);
+  }
+  return m;
+}
+
+/** §8 hard rule — a failure witness and the path that led to it stay visible. */
+function preserveFailurePaths(layout: CanvasLayout, hidden: Set<string>): void {
+  const fails = layout.nodes.filter((n) => isLayoutFailureNode(n));
+  if (!fails.length) return;
+  const parents = inAdj(layout);
+  for (const f of fails) {
+    hidden.delete(f.id);
+    const queue = [...(parents.get(f.id) ?? [])];
+    const seen = new Set<string>(queue);
+    while (queue.length) {
+      const id = queue.pop()!;
+      hidden.delete(id);
+      for (const p of parents.get(id) ?? []) {
+        if (!seen.has(p)) {
+          seen.add(p);
+          queue.push(p);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * COLLAPSE: hides the downstream subtree of the collapsed nodes.
+ * Failure/rejection witnesses are never hidden, and neither is any node on a
+ * path from the root to one (§8) — collapsing a clean branch cannot make a
+ * failure disappear. Expand = collapse with an empty set (identity).
+ */
+export function selectView(layout: CanvasLayout, opts: ViewOptions = {}): ViewGroup {
+  const collapsed = opts.collapsed ?? EMPTY_IDS;
+  const hidden = new Set<string>();
+  const counts = new Map<string, number>();
+
+  if (collapsed.size) {
+    const outs = outAdj(layout);
+    const present = new Set(layout.nodes.map((n) => n.id));
+    const fails = new Set(layout.nodes.filter((n) => isLayoutFailureNode(n)).map((n) => n.id));
+    const visited = new Set<string>();
+    for (const root of collapsed) {
+      if (!present.has(root)) continue;
+      const queue = [...(outs.get(root) ?? [])];
+      while (queue.length) {
+        const id = queue.shift()!;
+        if (visited.has(id)) continue;
+        visited.add(id);
+        if (fails.has(id)) continue; // §8: keep it AND its subtree visible
+        hidden.add(id);
+        for (const t of outs.get(id) ?? []) queue.push(t);
+      }
+      counts.set(root, (outs.get(root) ?? []).filter((t) => hidden.has(t)).length);
+    }
+  }
+
+  if (opts.isolateStage) {
+    const stageNodes = layout.nodes.filter((n) => n.stage === opts.isolateStage);
+    if (stageNodes.length) {
+      const keep = new Set<string>();
+      const stageIds = new Set(stageNodes.map((n) => n.id));
+      for (const id of stageIds) keep.add(id);
+      for (const e of layout.edges) {
+        // 1-hop neighbourhood of the selected stage (§52 branch isolation)
+        if (stageIds.has(e.source)) keep.add(e.target);
+        if (stageIds.has(e.target)) keep.add(e.source);
+      }
+      for (const n of layout.nodes) if (!keep.has(n.id)) hidden.add(n.id);
+    }
+  }
+
+  preserveFailurePaths(layout, hidden);
+
+  const nodes = layout.nodes.filter((n) => !hidden.has(n.id));
+  const edges = layout.edges.filter((e) => !hidden.has(e.source) && !hidden.has(e.target));
+  return { nodes, edges, hidden, collapsedCounts: counts };
+}

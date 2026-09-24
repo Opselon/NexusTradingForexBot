@@ -11,6 +11,12 @@
  * this file directly so the derivation contract is regression-pinned.
  */
 
+// TraceState/TraceMode vocabularies are OWNED by types.ts (lane D). Only the
+// `import type` form is used here: Node's TS-stripping gate runner (gate 3)
+// cannot resolve extensionless relative imports, and types.ts is
+// intentionally import-free for the same reason. The canonical CONSTS are
+// consumed by value in traceCanvas.ts (not node-tested) with a compile-time
+// exhaustiveness pin, so this table can never silently drift from types.ts.
 import type {
   DecisionRow,
   StageName,
@@ -28,6 +34,225 @@ export const UNMAPPED = "UNMAPPED";
 export const INSUFFICIENT_DATA = "INSUFFICIENT DATA";
 export const ORDER_UNCERTAIN = "ORDER UNCERTAIN";
 export const TRACE_GAP = "TRACE GAP";
+
+/* ===========================================================================
+ * §4 — CANONICAL state -> visual token mapping.
+ * One table, consumed by traceCanvas/decision-trace.css (.dt-st-<token>).
+ * Tokens are theme-token driven (no raw hex here): the CSS side maps every
+ * token to theme.css vars so contrast/dark-quant styling stays centralized.
+ * Free runtime strings NOT in the table pass through with tone "unknown"
+ * (label = the runtime's own word, never relabelled).
+ *
+ * The frozen TraceState words are owned by types.ts (`TraceState`). This
+ * table is the VISUAL MAPPING (word -> tone/token/animation), not a second
+ * copy of the vocabulary — traceCanvas.ts pins coverage against the
+ * canonical consts at compile time, so it can never silently drift.
+ * ======================================================================== */
+export type StateTone =
+  | "none"
+  | "neutral"
+  | "info"
+  | "active"
+  | "waiting"
+  | "success"
+  | "confirmed"
+  | "executing"
+  | "executed"
+  | "rejected"
+  | "error"
+  | "blocked"
+  | "warn"
+  | "muted"
+  | "cancelled"
+  | "unknown";
+
+/* §4: tone classification lives in traceCanvas.ts (the rendering layer).
+ * This local classifier exists ONLY to keep graph-derivation self-contained:
+ * a failure/rejection witness is a GRAPH property (§8 keeps it in the
+ * canvas), so buildGraph must decide it without importing the render layer
+ * (Node's TS-stripping gate runner cannot resolve sibling value imports). */
+const TONE_FAILURES = new Set<StateTone>(["rejected", "error", "blocked"]);
+
+export function isFailureWord(word: string | null | undefined): boolean {
+  if (!word) return false;
+  const t = stateToneOf(word);
+  return TONE_FAILURES.has(t);
+}
+
+/** §6/§4: tone for a runtime state/status word (mirror of the render map). */
+export function stateToneOf(state: string | null | undefined): StateTone {
+  if (state == null || state === "") return "none";
+  return TONES[state.toUpperCase()] ?? "unknown";
+}
+
+const TONES: Record<string, StateTone> = {
+  IDLE: "neutral",
+  RECEIVED: "info",
+  PROCESSING: "active",
+  WAITING: "waiting",
+  COMPLETED: "success",
+  PASSED: "success",
+  REJECTED: "rejected",
+  FAILED: "error",
+  BLOCKED: "blocked",
+  SKIPPED: "muted",
+  TIMEOUT: "error",
+  STALE: "muted",
+  CANCELLED: "cancelled",
+  EXECUTING: "executing",
+  CONFIRMED: "confirmed",
+  OBSERVED: "info",
+  OK: "success",
+  PASS: "success",
+  REJECT: "rejected",
+  ERROR: "error",
+  EXECUTED: "executed",
+  DISPATCHED: "executing",
+  WARNING: "warn",
+};
+
+/**
+ * §8: a node that witnessed a failure/rejection/timeout/block. Failure paths
+ * are NEVER removed from the graph — collapse/isolation must preserve them.
+ */
+export function isFailureNode(n: Pick<GraphNode, "state" | "lastStatus" | "errors">): boolean {
+  return isFailureWord(n.state) || isFailureWord(n.lastStatus) || n.errors > 0;
+}
+
+/* ===========================================================================
+ * §44 — mode badges. Six frozen modes => six DISTINCT css classes; absence
+ * => UNKNOWN (never guessed); a non-frozen runtime word renders verbatim
+ * with a neutral class. SHADOW is styled amber-outline and can never match
+ * the executed/confirmed look.
+ *
+ * The VISUAL MAPPING (word -> class) lives in traceCanvas.ts/`modeCls` — the
+ * rendering layer — pinned against the canonical `TraceMode` const at
+ * compile time. This file only surfaces WHICH modes the events proved.
+ * ======================================================================== */
+export function distinctModes(graph: DerivedGraph): string[] {
+  const out: string[] = [];
+  for (const n of graph.nodes) {
+    if (n.mode && !out.includes(n.mode)) out.push(n.mode);
+  }
+  return out;
+}
+
+/* ===========================================================================
+ * §3/§5 — request movement helpers. Packets are derived from REAL event
+ * arrivals only: diffPatches compares the previous observation set against
+ * newly arrived event ids; with no previous set (mount) or a trace switch it
+ * fires NOTHING — animation is never seeded retroactively, never timed.
+ * ======================================================================== */
+export const MAX_PACKETS = 6;
+export const PACKET_SEEN_CAP = 500;
+
+export interface Packet {
+  eventId: string;
+  /** graph edge id `${srcId}->${dstId}` of the observed parent->child hop. */
+  edgeKey: string;
+  traceId: string | null;
+}
+
+export interface PacketSeen {
+  traceId: string | null;
+  seen: ReadonlySet<string>;
+}
+
+/**
+ * Diff real event arrivals into packet animations along REAL graph edges.
+ * Guarantees: no previous observation => no packets; trace switch => no
+ * packets (re-seed only); a hop with no resolvable parent or no existing
+ * edge => no packet (never animate an invented path); output bounded by
+ * MAX_PACKETS, remembered ids bounded by PACKET_SEEN_CAP (§63).
+ */
+export function diffPackets(
+  prev: PacketSeen | null,
+  events: TraceEvent[],
+  graph: DerivedGraph,
+): { packets: Packet[]; next: PacketSeen } {
+  const sorted = events.slice().sort((a, b) => a.sequence - b.sequence);
+  const idRank = new Map<string, number>();
+  sorted.forEach((e, i) => idRank.set(e.event_id, i));
+  const traceId = (sorted[0]?.trace_id ?? null) as string | null;
+  const edgeIds = new Set(graph.edges.map((e) => e.id));
+
+  // Build the remembered set, bounded (§63): keep only the newest window.
+  const seen = new Set<string>();
+  const window = sorted.slice(-PACKET_SEEN_CAP);
+  const sameTrace = prev != null && prev.traceId === traceId;
+  if (sameTrace && prev) {
+    // Retain prior ids only while they still fall inside the newest window;
+    // anything older than PACKET_SEEN_CAP observations is dropped so the set
+    // can never grow with the feed.
+    const limit = Math.max(0, sorted.length - PACKET_SEEN_CAP);
+    for (const id of prev.seen) {
+      const keep = idRank.get(id);
+      if (keep !== undefined && keep >= limit) seen.add(id);
+    }
+  }
+  for (const e of window) seen.add(e.event_id);
+
+  if (prev == null || !sameTrace) {
+    return { packets: [], next: { traceId, seen } };
+  }
+
+  const byId = new Map(sorted.map((e) => [e.event_id, e]));
+  const fresh = sorted.filter((e) => !prev.seen.has(e.event_id)).slice(-MAX_PACKETS);
+  const packets: Packet[] = [];
+  for (const e of fresh) {
+    const parentId = e.parent_event_id;
+    if (!parentId) continue; // root hop: nothing traversed an edge
+    const parent = byId.get(parentId);
+    if (!parent) continue; // broken chain: no observed linkage => no packet
+    const edgeKey = `${nodeId(parent.stage, parent.component)}->${nodeId(e.stage, e.component)}`;
+    if (!edgeIds.has(edgeKey)) continue; // never animate a path the graph doesn't have
+    packets.push({ eventId: e.event_id, edgeKey, traceId });
+  }
+  return { packets, next: { traceId, seen } };
+}
+
+/** Head (newest-by-sequence) observed hop target — auto-focus anchor (§53). */
+export function headStage(
+  events: TraceEvent[],
+): { stage: StageName; eventId: string; state: string | null } | null {
+  if (!events.length) return null;
+  let best = events[0]!;
+  for (const e of events) if (e.sequence > best.sequence) best = e;
+  return { stage: best.stage, eventId: best.event_id, state: best.state ?? best.status };
+}
+
+/** Request origin (§10): first event's typed `source`, else NOT OBSERVED. */
+export function requestOrigin(events: TraceEvent[]): string {
+  if (!events.length) return NOT_OBSERVED;
+  let best = events[0]!;
+  for (const e of events) if (e.sequence < best.sequence) best = e;
+  return best.source ?? NOT_OBSERVED;
+}
+
+/** Distinct trace ids in observation order — multi-trace lane chips (§54). */
+export interface TraceLane {
+  traceId: string;
+  count: number;
+  /** stable visual lane 0..3 (cycled by first appearance, not by hash drift). */
+  lane: number;
+}
+
+export function traceLanes(events: TraceEvent[]): TraceLane[] {
+  const out: TraceLane[] = [];
+  const byId = new Map<string, TraceLane>();
+  for (const e of events) {
+    const tid = e.trace_id;
+    if (!tid) continue;
+    let rec = byId.get(tid);
+    if (!rec) {
+      rec = { traceId: tid, count: 0, lane: out.length % 4 };
+      byId.set(tid, rec);
+      out.push(rec);
+    }
+    rec.count += 1;
+  }
+  return out;
+}
 
 /** Layout rank — visualization hint only, NOT business topology. */
 const RANK: Record<string, number> = {
@@ -55,6 +280,14 @@ export interface GraphNode {
   terminal: boolean;
   provenanceGap: boolean;
   lastStatus: string | null;
+  /** §4: newest TraceState/status word on this stage (typed field first). */
+  state: string | null;
+  /** §44: the mode this stage's events carried (absent => UNKNOWN at render). */
+  mode: string | null;
+  /** §10/§12: external participant (MT5/DB/provider…) when an event says so. */
+  external: boolean;
+  /** §12: external kind word (provider/gateway/db/…) or null. */
+  externalKind: string | null;
   firstSeen: number;
   lastTs: string | null;
   /** fraction of this stage's events that are verdicts (PASS/REJECT/…). */
@@ -71,6 +304,12 @@ export interface GraphEdge {
   firstSeen: number;
   /** parent->child frequency vs. parent total — branch weight for layout. */
   weight: number;
+  /** §6: observed outcome of the hop (parent's own verdict/state word). */
+  state: string | null;
+  /** §56: true when the parent ref named a parent the bundle never retained. */
+  provenanceGap: boolean;
+  /** §12: destination external kind, when the target node is external. */
+  externalKind: string | null;
 }
 
 export interface DerivedGraph {
@@ -84,6 +323,8 @@ export interface DerivedGraph {
   terminals: string[];
   /** stages that appeared with no parent and are not the root. */
   unmappedStages: string[];
+  /** §8: nodes whose events carried a failure/rejection — never removable. */
+  failureNodes: string[];
 }
 
 const TERMINAL_STATUSES = new Set([
@@ -97,6 +338,25 @@ const TERMINAL_STATUSES = new Set([
 ]);
 
 /**
+ * §12 — external participation. A node is external ONLY when a real event
+ * proves it: an event_type naming a gateway/provider/db interaction, a typed
+ * `provider` field, or a stage that is itself an external boundary in the
+ * contract (MT5/GATEWAY). Never invented for "expected" systems (§60).
+ */
+export function externalKindOf(e: TraceEvent): string | null {
+  const et = (e.event_type ?? "").toUpperCase();
+  if (et.includes("MT5")) return "mt5";
+  if (et.includes("GATEWAY")) return "gateway";
+  if (et.includes("PROVIDER")) return "provider";
+  if (et.includes("_DB") || et.startsWith("DB") || et.includes("DATABASE")) return "db";
+  if (e.provider) return "provider";
+  const st = String(e.stage ?? "").toUpperCase();
+  if (st === "MT5") return "mt5";
+  if (st === "GATEWAY") return "gateway";
+  return null;
+}
+
+/**
  * Derive the runtime topology from raw events. Complexity is O(events) with
  * structural sharing: callers pass retained event arrays; nothing is cloned
  * per render (React layers memoize on this result's identity).
@@ -104,6 +364,7 @@ const TERMINAL_STATUSES = new Set([
 export function buildGraph(events: TraceEvent[]): DerivedGraph {
   const nodeMap = new Map<string, GraphNode>();
   const edgeMap = new Map<string, GraphEdge>();
+  const edgeLinked = new Map<string, boolean>();
   const parentTotals = new Map<string, number>();
   const seenEvents = new Set<string>();
   const byTrace = new Map<string, TraceEvent[]>();
@@ -122,6 +383,10 @@ export function buildGraph(events: TraceEvent[]): DerivedGraph {
         terminal: false,
         provenanceGap: false,
         lastStatus: null,
+        state: null,
+        mode: null,
+        external: false,
+        externalKind: null,
         firstSeen: e.sequence,
         lastTs: null,
         rejects: 0,
@@ -134,6 +399,14 @@ export function buildGraph(events: TraceEvent[]): DerivedGraph {
     n.lastStatus = e.status ?? n.lastStatus;
     n.lastTs = e.timestamp ?? n.lastTs;
     n.firstSeen = Math.min(n.firstSeen, e.sequence);
+    // §4: typed v2 `state` wins over the v1 `status` word; both stay honest.
+    n.state = e.state ?? e.status ?? n.state;
+    if (e.mode) n.mode = e.mode;
+    const kind = externalKindOf(e);
+    if (kind) {
+      n.external = true;
+      n.externalKind = kind;
+    }
     if (e.unmapped) n.unmapped = true;
     if (e.provenance_gap) n.provenanceGap = true;
     if (e.terminal) n.terminal = true;
@@ -155,38 +428,70 @@ export function buildGraph(events: TraceEvent[]): DerivedGraph {
   }
 
   // Second pass: link events to their observed parents inside each trace,
-  // in sequence order. A missing parent => provenance gap (visible, §44).
+  // in sequence order (§56). Linkage precedence:
+  //   parent_event_id resolves        -> observed (or inferred if the event
+  //                                      itself says provenance=inferred)
+  //   parent_event_id named, missing  -> PROVENANCE GAP edge (dashed +
+  //                                      explicit label, NEVER a solid arrow)
+  //   no parent, provenance word      -> the runtime's own word
+  //   no parent, no provenance        -> PROVENANCE GAP (never an invented
+  //                                      causal edge from order alone)
   for (const [, arr] of byTrace) {
     arr.sort((a, b) => a.sequence - b.sequence);
     const byEventId = new Map(arr.map((e) => [e.event_id, e]));
     let lastEvent: TraceEvent | null = null;
     for (const e of arr) {
-      let parent: TraceEvent | null = null;
       const pid = e.parent_event_id;
+      let parent: TraceEvent | null = null;
+      let provenanceGap = false;
       if (pid && byEventId.has(pid)) {
         parent = byEventId.get(pid)!;
-      } else if (pid) {
-        // parent named but absent from this bundle -> broken chain
-        parent = null;
-      } else if (lastEvent && lastEvent.stage !== e.stage) {
-        // no explicit parent: chain to the previous observed event
+      } else if (lastEvent) {
+        // endpoints = sequence-adjacent OBSERVED stages; linkage quality:
         parent = lastEvent;
+        const explicit = e.provenance === "observed" || e.provenance === "inferred";
+        provenanceGap = !explicit;
       }
       if (parent) {
         const srcId = nodeId(parent.stage, parent.component);
         const dstId = nodeId(e.stage, e.component);
-        if (srcId !== dstId) {
+        if (srcId !== dstId && !provenanceGap) {
+          // §56: only an OBSERVED/INFERRED link emits a causal edge. When
+          // the fallback fired without a runtime provenance word the pair
+          // gets NO edge — the UI renders the destination with an explicit
+          // PROVENANCE GAP marker instead of an invented arrow.
           const key = `${srcId}->${dstId}`;
           let edge = edgeMap.get(key);
           if (!edge) {
-            edge = { id: key, source: srcId, target: dstId, count: 0, firstSeen: e.sequence, weight: 0 };
+            edge = {
+              id: key,
+              source: srcId,
+              target: dstId,
+              count: 0,
+              firstSeen: e.sequence,
+              weight: 0,
+              state: null,
+              provenanceGap: false,
+              externalKind: null,
+            };
             edgeMap.set(key, edge);
           }
           edge.count += 1;
           edge.firstSeen = Math.min(edge.firstSeen, e.sequence);
+          // §6: the edge's state is the hop's own observed outcome — the
+          // child's typed state (v2) or status word, never a UI verdict.
+          edge.state = e.state ?? e.status ?? edge.state;
+          // A retry is only a retry because the RUNTIME said so (event_type
+          // or typed state) — never inferred from elapsed time (§5/§60).
+          if (!edge.state && (e.event_type ?? "").toUpperCase().includes("RETRY")) {
+            edge.state = "RETRY";
+          }
+          // §56 precedence: a pair with ANY observed linkage renders as a
+          // causal edge; only pairs that NEVER showed linkage stay gaps.
+          if (!provenanceGap) edgeLinked.set(key, true);
+          const kind = externalKindOf(e);
+          if (kind) edge.externalKind = kind;
         }
-      } else if (!pid && lastEvent === null) {
-        // root candidate below
       }
       if (pid && !byEventId.has(pid)) {
         const n = nodeMap.get(nodeId(e.stage, e.component));
@@ -199,6 +504,7 @@ export function buildGraph(events: TraceEvent[]): DerivedGraph {
   for (const e of edgeMap.values()) parentTotals.set(e.source, (parentTotals.get(e.source) ?? 0) + e.count);
   for (const e of edgeMap.values()) {
     e.weight = parentTotals.get(e.source) ? e.count / parentTotals.get(e.source)! : 0;
+    e.provenanceGap = !(edgeLinked.get(e.id) ?? false);
   }
 
   // Root = node with no incoming edge (MARKET by contract; fall back to
@@ -231,6 +537,15 @@ export function buildGraph(events: TraceEvent[]): DerivedGraph {
   const stageIndex: Record<string, string> = {};
   for (const n of nodeMap.values()) if (!(n.stage in stageIndex)) stageIndex[n.stage] = n.id;
 
+  // §8: failure/rejection witnesses are first-class — the UI may never
+  // auto-remove them from the graph.
+  const failureNodes: string[] = [];
+  for (const n of nodeMap.values()) {
+    if (isFailureWord(n.state) || isFailureWord(n.lastStatus) || n.errors > 0) {
+      failureNodes.push(n.id);
+    }
+  }
+
   return {
     nodes: [...nodeMap.values()].sort((a, b) => a.rank - b.rank || a.firstSeen - b.firstSeen),
     edges: [...edgeMap.values()].sort((a, b) => b.count - a.count),
@@ -238,11 +553,118 @@ export function buildGraph(events: TraceEvent[]): DerivedGraph {
     root,
     terminals: [...new Set(terminals)],
     unmappedStages: [...new Set(unmappedStages)],
+    failureNodes: [...new Set(failureNodes)],
   };
 }
 
 export function nodeId(stage: StageName, component: string | null): string {
   return component ? `${stage}|${component}` : String(stage);
+}
+
+/* ===========================================================================
+ * §6/§7 — edge state and branch subduing. Only the ACTUALLY TAKEN branch is
+ * lit; every other outgoing edge of the same source renders subdued (never
+ * removed — the topology still shows what was possible, §8).
+ * ======================================================================== */
+export type EdgeState = "idle" | "active" | "success" | "rejected" | "error" | "blocked" | "retry";
+
+export const EDGE_STATES: readonly EdgeState[] = [
+  "idle",
+  "active",
+  "success",
+  "rejected",
+  "error",
+  "blocked",
+  "retry",
+] as const;
+
+/**
+ * Derive an edge's live state from the real hop words it carries (§6).
+ * Rules, all evidence-driven:
+ *   idle      — no hop word yet (an edge exists because SOME event crossed
+ *               it, but none carried a verdict/state word)
+ *   active    — the last crossing was an in-flight state (RECEIVED/…)
+ *   success   — a verdict word (PASS/PASSED/COMPLETED/CONFIRMED/EXECUTED/OK)
+ *   rejected  — REJECT/REJECTED/SKIPPED/CANCELLED
+ *   error     — FAILED/ERROR/TIMEOUT
+ *   blocked   — BLOCKED
+ *   retry     — a retry marker the runtime emitted (`*_RETRY` event type or
+ *               a `retry` detail flag; never a timer)
+ */
+/**
+ * Derive the EDGE's live state from the hop word it carries (§6). Accepts
+ * the word directly (v2 `state`, v1 `status`, or a runtime retry marker) so
+ * the derivation is node-testable without constructing edges; GraphEdge and
+ * GraphNode both narrow to the same call.
+ */
+export function edgeState(state: string | null | undefined): EdgeState {
+  if (!state) return "idle";
+  const word = state.toUpperCase();
+  if (word === "RETRY" || word === "RETRYING") return "retry";
+  // A stale hop is a failure condition the runtime itself named (§40: never
+  // hide stale-state evidence); frozen §6 vocab has no STALE edge, so it
+  // renders as an error edge rather than silently going neutral.
+  if (word === "STALE") return "error";
+  const tone = stateToneOf(state);
+  switch (tone) {
+    case "rejected":
+    case "cancelled":
+    case "muted": // SKIPPED — did not proceed
+      return "rejected";
+    case "error":
+      return "error";
+    case "blocked":
+      return "blocked";
+    case "success":
+    case "confirmed":
+    case "executed":
+      return "success";
+    case "info":
+    case "active":
+    case "waiting":
+    case "executing":
+      return "active";
+    default:
+      // WARNING and unknown runtime words: no frozen §6 state fits — render
+      // neutral (idle). The raw word stays visible in the edge tooltip.
+      return "idle";
+  }
+}
+
+/** True when this edge carried an observed failure/rejection (§8). */
+export function edgeIsFailure(state: string | null | undefined): boolean {
+  const s = edgeState(state);
+  return s === "rejected" || s === "error" || s === "blocked";
+}
+
+/** Edges out of a source that carried a real hop word — the lit branches. */
+export function takenEdges(graph: DerivedGraph): Set<string> {
+  const out = new Set<string>();
+  for (const e of graph.edges) if (edgeState(e.state) !== "idle") out.add(e.id);
+  return out;
+}
+
+/**
+ * A branch edge is SUBDUED when another sibling edge from the same source
+ * was actually taken and this one never carried an observed hop word (§7).
+ * The edge stays in the graph (visible, §8) but renders dimmed.
+ */
+export function isSubduedBranch(
+  edge: GraphEdge,
+  graph: DerivedGraph,
+  taken: Set<string>,
+): boolean {
+  if (taken.has(edge.id)) return false;
+  if (edgeState(edge.state) !== "idle") return false;
+  return graph.edges.some((sib) => sib.source === edge.source && taken.has(sib.id));
+}
+
+/** All edge ids that must render subdued under the current evidence. */
+export function subduedEdges(graph: DerivedGraph): Set<string> {
+  const taken = takenEdges(graph);
+  const out = new Set<string>();
+  for (const e of graph.edges) if (isSubduedBranch(e, graph, taken)) out.add(e.id);
+  return out;
 }
 
 /** A stage the runtime emitted that the UI has no visual mapping for. */
