@@ -38,6 +38,7 @@ from nexus_scalp.bounded_map import BoundedLRUMap
 from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
+from nexus_scalp.domain.valuation import align_price, min_stop_distance_price
 from nexus_scalp.execution.execution_plan import ExecutionPlan
 from nexus_scalp.execution.hold_score_ledger import HoldScoreLedger
 from nexus_scalp.execution.lifecycle import (
@@ -2814,11 +2815,19 @@ class OrderLifecycleManager:
         if not positions:
             return []
 
-        min_stop_gap = (
-            (symbol_info.stops_level * symbol_info.point)
-            if symbol_info and symbol_info.stops_level > 0
-            else 0.25
-        )
+        # FORENSIC-LANE-BROKER: the old fallback `else 0.25` was a PRICE-unit
+        # constant calibrated to 2-digit XAUUSD: on 5-digit EURUSD it became
+        # a 25,000-point gap. Semantics preserved exactly, unit made right:
+        #   broker specifies stops_level -> trust it verbatim (as before);
+        #   broker allows stops at market -> 25 broker POINTS of safety
+        #     (byte-identical 0.25 on XAUUSD);
+        #   no usable spec at all -> legacy 0.25, explicitly documented.
+        if symbol_info and symbol_info.stops_level > 0:
+            min_stop_gap = symbol_info.stops_level * symbol_info.point
+        elif symbol_info and symbol_info.point > 0:
+            min_stop_gap = min_stop_distance_price(0, symbol_info.point, safety_points=25)
+        else:
+            min_stop_gap = 0.25  # legacy XAUUSD-calibrated fallback, spec unknown
         spread = max(current_tick.ask - current_tick.bid, 0.0)
         mid_price = (current_tick.ask + current_tick.bid) * 0.5
 
@@ -3516,6 +3525,10 @@ class OrderLifecycleManager:
         action = plan.action
         scenario = plan.scenario
         rule_target_sl = plan.rule_target_sl
+        # FORENSIC-LANE-BROKER: digits for stop alignment come from the
+        # broker's own symbol spec (XAUUSD=2, EURUSD=5). The old code used
+        # a fixed round(x, 2) which destroyed 5-digit FX stop prices.
+        pos_digits = int(symbol_info.digits) if symbol_info else 2
         if action == "CLOSE":
             msg_id = self._order_message_ids.get(ticket)
             # Attribute engine-initiated exits to hold-score decay unless a more
@@ -3596,7 +3609,10 @@ class OrderLifecycleManager:
                 if pos.type == OrderType.BUY
                 else pos.price_open - max(self.be_lock, spread)
             )
-            target_sl = round(target_sl, 2)
+            # FORENSIC-LANE-BROKER: fixed round(x,2) destroyed FX stops
+            # (an EURUSD SL at 1.08500 became 1.09). Align to the symbol's
+            # own digits instead.
+            target_sl = align_price(target_sl, None, pos_digits)
             valid_stop = False
             if pos.type == OrderType.BUY:
                 if target_sl > pos.sl and (current_tick.bid - target_sl) >= min_stop_gap:
@@ -3651,13 +3667,14 @@ class OrderLifecycleManager:
                     )
 
         elif action == "NORMAL_TRAIL":
-            trail_distance = max(min_stop_gap, round(atr * 1.15, 2))
+            trail_distance = max(min_stop_gap, align_price(atr * 1.15, None, pos_digits))
             target_sl = (
                 price_current - trail_distance
                 if pos.type == OrderType.BUY
                 else price_current + trail_distance
             )
-            target_sl = round(target_sl, 2)
+            # FORENSIC-LANE-BROKER: fixed round(x,2) destroyed FX stops.
+            target_sl = align_price(target_sl, None, pos_digits)
             valid_stop = False
             if pos.type == OrderType.BUY:
                 if target_sl > pos.sl and (current_tick.bid - target_sl) >= min_stop_gap:
@@ -3727,6 +3744,9 @@ class OrderLifecycleManager:
         loop body for this position; returns False to proceed to the
         decision stage."""
         # --- 0. AI DIRECTION FLIP & FAST REVERSAL PROTECTION ---
+        # Broker digits for stop alignment (was fixed round(x, 2), which
+        # destroyed 5-digit FX stops — see domain/valuation.align_price).
+        pos_digits = int(symbol_info.digits) if symbol_info else 2
         ai_flip_detected = False
         ai_flip_action = None
         if probs is not None:
@@ -3921,7 +3941,7 @@ class OrderLifecycleManager:
                 if pos.type == OrderType.BUY
                 else pos.price_open - (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
             )
-            target_mfe_sl = round(target_mfe_sl, 2)
+            target_mfe_sl = align_price(target_mfe_sl, None, pos_digits)
 
             valid_stop = False
             if pos.type == OrderType.BUY:
