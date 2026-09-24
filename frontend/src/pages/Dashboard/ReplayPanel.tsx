@@ -250,7 +250,7 @@ export function ReplayPanel({ onCursorMove }: { onCursorMove?: (iso: string | nu
   const showDecision = async (): Promise<void> => {
     const seq = Number.parseInt(seqInput, 10);
     if (!Number.isFinite(seq)) {
-      setRun({ running: false, message: "Decision sequence must be a number.", ok: false });
+      setRun({ running: false, message: t("dash.replay.seq_nan", "Decision sequence must be a number."), ok: false });
       return;
     }
     const res = await runCmd(`decision ${seq}`, () => replayApi.decision(seq, replayId));

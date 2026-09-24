@@ -344,4 +344,5 @@ export const MESSAGES: FeatureMessages = {
   "dash.tools.snapshot_btn": { fa: "⤓ PNG", de: "⤓ PNG", es: "⤓ PNG", ar: "⤓ PNG" },
   "dash.tools.snapshot_saved": { fa: "✓ ذخیره شد", de: "✓ gespeichert", es: "✓ guardado", ar: "✓ حُفظ" },
   "dash.tools.snapshot_title": { fa: "دانلود اسنپ‌شات نمودار (PNG)", de: "Chart-Snapshot herunterladen (PNG)", es: "descargar instantánea del gráfico (PNG)", ar: "تنزيل لقطة الرسم (PNG)" },
+  "dash.replay.seq_nan": { fa: "شمارهٔ توالی تصمیم باید عدد باشد.", de: "Die Entscheidungssequenz muss eine Zahl sein.", es: "La secuencia de decisión debe ser un número.", ar: "يجب أن تكون تسلسلة القرار رقماً." },
 };

@@ -226,7 +226,7 @@ export default function TradingHero({ snapshot, mt5Positions, pendingOrders, mat
             {SOURCES.map((s) => (
               <span className="tr-src" key={s.id} title={t("trading.hero.prov_tip", "Provenance — {tip}", { tip: s.tip })}>
                 <span className="tr-src-dot" aria-hidden="true" />
-                {s.label}
+                {s.id === "socket" ? t("trading.tile.socket_snapshot", "socket snapshot") : s.id === "ledger" ? t("trading.hero.src_ledger", "ledger OPEN") : s.label}
               </span>
             ))}
           </div>

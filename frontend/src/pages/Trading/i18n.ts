@@ -198,4 +198,5 @@ export const MESSAGES: FeatureMessages = {
   "trading.seg.paper_desc": { fa: "adapter شبیه‌سازی — بدون پول واقعی", de: "Simulations-Adapter — kein echtes Geld", es: "adaptador de simulación — sin dinero real", ar: "محاكٍ — بدون أموال حقيقية" },
   "trading.seg.shadow_desc": { fa: "بدون اجرا — فقط ردپای تصمیمات", de: "Ohne Ausführung — nur Entscheidungs-Spur", es: "sin ejecución — solo traza de decisiones", ar: "بدون تنفيذ — أثر القرارات فقط" },
   "trading.seg.live_desc": { fa: "سرمایهٔ واقعی", de: "echtes Kapital", es: "capital real", ar: "رأس مال حقيقي" },
+  "trading.hero.src_ledger": { fa: "دفتر OPEN", de: "Ledger OPEN", es: "Libro OPEN", ar: "الأست OPEN" },
 };
