@@ -751,8 +751,14 @@ def _running_product_state() -> dict[str, Any]:
     url = ""
     with contextlib.suppress(Exception):
         url = _dashboard_url()
-    probe = _probe_dashboard(url) if url else {"url": "", "reachable": False, "http_status": None}
-    state = derive_product_state(probe.get("status"), reachable=probe["reachable"])
+    probe: dict[str, Any] = (
+        _probe_dashboard(url) if url else {"url": "", "reachable": False, "http_status": None}
+    )
+    status = probe.get("status")
+    reachable = probe.get("reachable", False)
+    state = derive_product_state(
+        status if isinstance(status, dict) else None, reachable=bool(reachable)
+    )
     return {
         "product_state": state,
         "dashboard_url": url,

@@ -50,6 +50,7 @@ from nexus_scalp.cli.styling import (
 # below). They pull torch + polars + networkx (~6s cold on the first
 # `nexus help`), and Typer builds the whole command tree at import time — so a
 # top-level import here is paid by every help listing on the planet.
+from nexus_scalp.domain.enums import ExecutionMode
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.release import exit_codes as xc
 from nexus_scalp.release import paths as rpaths
@@ -58,12 +59,11 @@ from nexus_scalp.release.metadata import get_version_info
 if TYPE_CHECKING:
     # Annotation-only: never imported at runtime (see the NOTE below).
     from nexus_scalp.configuration.config import AppConfig
-    from nexus_scalp.domain.enums import ExecutionMode
 
 logger = get_logger("nexus_scalp.cli.engine_boot")
 
 
-def _heavy_wizard_endpoint(port: int) -> tuple[str, str]:
+def _heavy_wizard_endpoints(port: int) -> list[str]:
     from nexus_scalp.cli.wizard import _get_network_endpoints
 
     return _get_network_endpoints(port=port)
@@ -89,12 +89,6 @@ def _heavy_app_config_default() -> AppConfig:
     from nexus_scalp.configuration.config import AppConfig
 
     return AppConfig()
-
-
-def _heavy_execution_mode() -> type:
-    from nexus_scalp.domain.enums import ExecutionMode
-
-    return ExecutionMode
 
 
 def _pidfile() -> Path:
@@ -434,7 +428,7 @@ def start_cmd(
     if not json_mode:
         _heavy_first_run_database_choice()
 
-    if chosen == _heavy_execution_mode().LIVE:
+    if chosen == ExecutionMode.LIVE:
         panel = Panel(
             "[bold red]WARNING: this starts REAL execution.[/bold red]\n\n"
             f"Account   : {cfg.mt5.account or 'configured'}\n"
@@ -510,7 +504,7 @@ def start_cmd(
     except Exception:
         pass
 
-    endpoints = _heavy_wizard_endpoint(port)
+    endpoints = _heavy_wizard_endpoints(port)
 
     if json_mode:
         _emit(
@@ -738,7 +732,7 @@ def _run_engine_locked(
     # REFUSED without a real verified bundle (starter or silent mint never
     # serves live-money paths). Serving gates are never relaxed.
     _eff_mode = mode_override if mode_override is not None else cfg.execution.mode
-    if _eff_mode in (_heavy_execution_mode().PAPER, _heavy_execution_mode().SHADOW):
+    if _eff_mode in (ExecutionMode.PAPER, ExecutionMode.SHADOW):
         try:
             from nexus_scalp.model_provisioning import FirstRunCoordinator
 
@@ -811,7 +805,7 @@ def _run_engine_locked(
     # BUG-148: adapter boundary must match the operator-selected mode. PAPER
     # starts use the simulation adapter so a double-click/bare `start` can
     # NEVER touch the real broker even when MT5 credentials are configured.
-    if mode_override == _heavy_execution_mode().PAPER and not gateway:
+    if mode_override == ExecutionMode.PAPER and not gateway:
         # BUG-266 (audit K2): PAPER boots route through the paper-data
         # factory so the configured market-data substrate (SYNTHETIC default,
         # REPLAY over real recorded data) is actually honored. Fail-closed:
