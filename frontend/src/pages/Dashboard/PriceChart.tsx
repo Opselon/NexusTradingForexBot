@@ -598,7 +598,7 @@ function PriceChartInner({
         <div
           ref={stageRef}
           tabIndex={0}
-          aria-label="price chart - arrow keys pan the view, Home/End jump to oldest/newest bar"
+          aria-label={t("dash.chart.pan_help", "price chart - arrow keys pan the view, Home/End jump to oldest/newest bar")}
           className={`mc-stage${dragging ? " mc-stage--dragging" : ""}`}
           onPointerDown={(e) => {
             if (e.button !== 0) return;
