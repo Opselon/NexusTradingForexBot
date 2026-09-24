@@ -3326,3 +3326,83 @@ docs/testing/test_value_matrix.md + scripts/testing/classification_overrides.jso
 - **Tests**: tests/unit/test_audit_legacy4_surface.py (+1); tests/integration/test_official_model_tamper_proofing.py (skipif)
 - **Files**: scripts/audit/audit_legacy4_surface.py; tests/unit/test_audit_legacy4_surface.py; tests/integration/test_official_model_tamper_proofing.py
 - **Invariants**: INV-018 (probe stays read-only, torch-free, text-parsed; no source imports)
+
+---
+
+## BUG-314 — ML Position Adviser: six production-defects in the hold/close ML lifecycle (forensic audit)
+
+### F0 — wrong distance units (CRITICAL, silently degrades every live advisory)
+- **Symptom**: `build_position_state_for_adviser` derived `distance_to_target_r` /
+  `distance_to_stop_r` by dividing a DOLLAR distance (`entry_price - tp`,
+  price - `sl`) by `initial_risk_price`, but the generator convention (and the
+  trainer's own `r_distance` columns) is `distance_r = price_distance /
+  initial_risk_amount` where the risk amount is in price units per lot. With
+  XAUUSD 1.00 lot, the divisor was ~100x the wrong scale, so the model was
+  served distances that were wrong by roughly the lot-scaled factor — features
+  looked "valid" numerically while bearing no relation to the labels the model
+  was trained on. `holding_duration` was also out of scope in `_evaluate_hold_score`.
+- **Fix**: `integration.py` rewritten against the generator's own R-unit
+  convention (`initial_risk_price`/`sl`-anchored), plus
+  `position_age_bars`/`signal_age` derived the same way the generator's
+  bar-age columns are, and a friction/cost block (spread, spread_pct_of_r,
+  round_trip_cost_r). `order_manager` now passes `holding_duration_sec`
+  explicitly into `_evaluate_hold_score` instead of reaching for `entry_time`.
+- **Tests**: tests/unit/test_position_adviser.py (integration test rewritten
+  to pin the corrected units); tests/unit/test_position_adviser_forensics.py.
+
+### F1 — no staleness gate, no duplicate-decision gate, unbounded state maps (HIGH)
+- **Symptom**: `service.evaluate` consumed any snapshot, however old, and never
+  recorded which snapshot had already decided for a ticket, so a replayed or
+  delayed tick could re-decide the same state. `_last_eval_at` /
+  per-ticket snapshot maps were also unbounded, growing for the life of the
+  process (F5).
+- **Fix**: `max_snapshot_age_sec` config gate + per-ticket `snapshot_id`
+  duplicate gate, both evaluated BEFORE the throttle commit so a rejected
+  snapshot cannot consume a ticket's evaluation budget. `_CAP`-bounded maps;
+  `forget(ticket)` now also drops snapshot state (wired at broker-verified
+  close); `stale_rejected_count` telemetry; decision-trace diagnostics
+  (`p_keep`, committed snapshot id) on every advisory.
+- **Tests**: 6 new tests (staleness refusal, duplicate refusal, changed-state
+  re-decision, map caps, forget at teardown, decision trace).
+
+### F2 — dataset split boundary was decorative (HIGH, leakage-class)
+- **Symptom**: `position_replay` quarantined *purge* rows for TRAIN and VAL
+  label-horizon overlap, but never applied the computed embargo band to the
+  OOS boundary, and `causality_violations` was hardcoded 0 — the validator
+  asserted a property it never measured.
+- **Fix**: OOS observations whose label horizon crosses the val/oos boundary
+  are now quarantined; embargo applied at every split boundary; the validator
+  now really computes train<val<oos bar-index ordering from the dataset itself
+  and reports genuine violations.
+- **Tests**: 2 new tests (tail truncation quarantined + embargo respected;
+  injected out-of-order split detected).
+
+### F6 — model/scaler/schema could silently mismatch (CRITICAL, artifact integrity)
+- **Symptom**: the sidecar `.meta.json` recorded the weights hash but
+  `service.load` never read it, so a model from dataset A could load with the
+  scaler or feature order from dataset B and serve silently broken inference.
+- **Fix**: one canonical `verify_model_package` gate (shared by the service and
+  the new CLI) — weights sha256, scaler sha256, `feature_order` /
+  `feature_dim` match, source dataset hash — recorded on `AdviserState` as
+  `integrity`/`manifest_path`/`source_dataset_hash` and exposed in status and
+  the new `position-adviser-packages` CLI.
+- **Tests**: mismatch of any one element rejects the whole package.
+
+### F7 — training was not reproducible (MEDIUM, breaks hash-pinned promotion)
+- **Symptom**: identical seed + data produced byte-different artifacts, which
+  defeats the F6 hash pin (the manifest could never attest reproducibility).
+- **Fix**: seed + deterministic flags set before the training loop starts.
+  NOTE: `torch.save`'s zip archive itself embeds the basename, so two saves of
+  an IDENTICAL state dict to different filenames are byte-different — the
+  reproducibility contract is therefore on the weights (verified numerically
+  identical), not on the archive bytes.
+
+### F8 — absent class exploded the loss to millions (MEDIUM, trains garbage silently)
+- **Symptom**: class weights were `1/max(freq, 1e-9)`; a class with zero
+  training rows got weight 1e9 and every observed class's weight collapsed to
+  ~1e-8, driving the weighted cross-entropy to a loss in the millions — no
+  error, no warning, just a useless model.
+- **Fix**: an absent class gets weight 0 and is reported by name in
+  `AdviserTrainingResult.classes_absent` and the manifest.
+- **Tests**: 2-class subset (KEEP+CLOSE, REDUCE absent) → finite loss, zero
+  weight on the absent class, and the absence is reported.

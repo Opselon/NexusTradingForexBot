@@ -2989,6 +2989,7 @@ class OrderLifecycleManager:
                 smart_metrics=smart_metrics,
                 spread=spread,
                 now=now,
+                holding_duration_sec=holding_duration,
             )
 
             # --- Trajectory, Evidence, and State machine Processing (Requirements 13-16, 20) ---
@@ -3429,12 +3430,17 @@ class OrderLifecycleManager:
         smart_metrics: dict[str, Any],
         spread: float = 0.0,
         now: datetime | None = None,
+        holding_duration_sec: float = 0.0,
     ) -> tuple[int, list[str], int]:
         """HOLD-SCORE EVALUATION STAGE (S6-escalation): throttled base-score
         evaluation + position-state recalculation + giveback override + tracker
         store. Moved VERBATIM from manage_active_positions'
-        per-position loop. Returns (hold_score, invalidate_reasons,
-        base_hold_score)."""
+        per-position loop. Returns (hold_score, invalidate_reasons, base_hold_score).
+
+        ``holding_duration_sec`` is the live time-in-trade (ML-POSITION-
+        FORENSICS F4): the adviser's ``position_age_bars``/``signal_age``
+        features derive from it, matching the generator's bar-age semantics.
+        """
         last_eval = self._last_hold_eval_time.get(ticket, 0.0)
         if (current_time - last_eval) >= 0.50:
             base_hold_score, invalidate_reasons = self._calculate_hold_value_score(
@@ -3466,18 +3472,35 @@ class OrderLifecycleManager:
         # one, never extend a position, never weaken a protection verdict. When
         # the adviser is DISABLED (the default) the score is stored unchanged
         # and the decide path is byte-identical to its pre-adviser behaviour.
+        #
+        # ML-POSITION-FORENSICS F0/F4 parity with the position-dataset generator:
+        # the adviser trains on generator rows, so the live state must be built
+        # with the generator's units. Previously this call passed
+        # `initial_risks[ticket]` (DOLLARS: volume*contract_size*stop_distance)
+        # and `holding_duration_sec=0.0`, which made every R-feature ~1/1000th
+        # of its trained scale and `position_age_bars` a constant 0.
         adviser = self._adviser
         if adviser is not None and adviser.enabled:
             try:
+                entry_px = float(self._entry_prices.get(ticket, 0.0) or 0.0)
+                entry_sl = float(self._entry_sls.get(ticket, 0.0) or 0.0)
+                # Generator convention: r_distance = max(|entry - initial_sl|, 0.20)
+                # in PRICE units. Never dollars; never the live (possibly already
+                # trailed) stop.
+                risk_price = max(abs(entry_px - entry_sl), 0.20) if entry_sl > 0.0 else 0.20
+                holding_dur = max(0.0, float(holding_duration_sec))
+                # signal_age == position_age in the generator (entry == signal),
+                # expressed in BARS, not seconds.
+                sig_age_bars = holding_dur / 60.0
                 state = build_position_state_for_adviser(
                     pos=pos,
                     ticket=ticket,
                     price_current=price_current,
                     atr=atr,
                     spread=spread,
-                    initial_risk_usd=float(self._initial_risks.get(ticket, 0.0) or 0.0),
-                    holding_duration_sec=0.0,
-                    signal_age=float(self._signal_ages.get(ticket, 0.0) or 0.0),
+                    initial_risk_price=risk_price,
+                    holding_duration_sec=holding_dur,
+                    signal_age_bars=sig_age_bars,
                     model_probability=float(self._entry_confidences.get(ticket, 0.0) or 0.0),
                     model_confidence=float(self._entry_confidences.get(ticket, 0.0) or 0.0),
                 )
@@ -3491,6 +3514,23 @@ class OrderLifecycleManager:
                         f"{advisory['action']},conf={advisory['confidence']:.4f},"
                         f"adj={advisory['hold_score_adjustment']:.2f})",
                     ]
+                    # F2: publish the advisory to the live decision feed so the
+                    # UI (Model Studio / legacy UI activity feed) can show the
+                    # REAL latest advisory per ticket instead of an empty ring.
+                    # Observability only: import/call failures must never break
+                    # the decide hot path.
+                    try:
+                        from nexus_scalp.web.position_adviser_routes import (
+                            record_advisory_for_ui,
+                        )
+
+                        record_advisory_for_ui(advisory)
+                    except Exception as feed_exc:
+                        logger.debug(
+                            "[ADVISER] event=UI_FEED_RECORD_FAILED ticket=%s error=%s",
+                            ticket,
+                            feed_exc,
+                        )
             except Exception as exc:  # fail closed; never break position management
                 logger.warning("[ADVISER] event=INTEGRATION_SKIP ticket=%s error=%s", ticket, exc)
 
@@ -4383,5 +4423,15 @@ class OrderLifecycleManager:
         self._scoring._trajectory_history.pop(ticket, None)
         self._recovery_ledger.drop_ticket(ticket)
         self._state_machine.drop_ticket(ticket)
+        # ML-POSITION-FORENSICS F5: drop the adviser's per-ticket throttle +
+        # snapshot maps on broker-verified close (service.forget), so the maps
+        # are bounded by OPEN tickets instead of growing for the whole runtime.
+        # Guarded on the resolved attr: teardown must not instantiate the
+        # service just to forget a ticket.
+        if self._position_adviser is not None:
+            try:
+                self._position_adviser.forget(ticket)
+            except Exception as forget_exc:
+                logger.debug("[ADVISER] event=FORGET_FAILED ticket=%s error=%s", ticket, forget_exc)
         with self._live_tickets_lock:
             self._tickets_cache.pop_ticket(ticket)

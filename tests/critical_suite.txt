@@ -421,6 +421,9 @@ tests/unit/test_policy_flip_protection_pins_bug227.py
 tests/unit/test_policy_throttle_pins_bug227.py
 tests/unit/test_policy_warmup_range_seam_bug230.py
 tests/unit/test_position_replay_pipeline.py
+tests/unit/test_position_adviser.py
+tests/unit/test_position_adviser_forensics.py
+tests/unit/test_position_adviser_e2e.py
 tests/unit/test_predictive_limit_explainability_bug226.py
 tests/unit/test_promotion_economic_integrity.py
 tests/unit/test_promotion_rejects_degenerate_model.py
