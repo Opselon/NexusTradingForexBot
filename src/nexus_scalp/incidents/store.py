@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.database.migration.pg_schema import translate_ddl
 from nexus_scalp.incidents.models import (
     BlastRadius,
     EventSource,
@@ -308,6 +309,34 @@ def _incident_row_values(inc: Incident) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+class _PgCursorShim:
+    """Adapts a psycopg connection to the call sites that use a sqlite3 one.
+
+    The store's read path was written against ``sqlite3.Connection``:
+    ``conn.execute(sql, args)`` returning rows, then ``conn.close()``. The two
+    differences on PostgreSQL are the placeholder style (``?`` vs ``%s``) and
+    that psycopg takes a sequence of args positionally rather than variadic.
+    This shim translates those two things so the existing read queries run
+    unchanged, and it owns the connection's lifecycle (``close`` commits first
+    because these are read-only queries, but autocommit is off by default).
+    """
+
+    def __init__(self, conn) -> None:
+        self._conn = conn
+
+    def execute(self, sql: str, args: Any = ()):
+        params = args if isinstance(args, (tuple, list)) else (args,)
+        cur = self._conn.execute(sql.replace("?", "%s"), params)
+        return cur
+
+    def close(self) -> None:
+        try:
+            self._conn.rollback()
+        except Exception:
+            pass
+        self._conn.close()
+
+
 class IncidentStore:
     """Bounded, read/write store for incident records (audit.db).
 
@@ -324,7 +353,19 @@ class IncidentStore:
         self.audit_repo = audit_repo
         if not self.db_path and audit_repo is not None and getattr(audit_repo, "_db_path", None):
             self.db_path = str(audit_repo._db_path)
-        if not self.db_path:
+        # RT-004: a PostgreSQL-configured AuditRepository has no `_db_path`
+        # (only SQLite sets one), so the SQLite fallback above yields "". The
+        # write path already works via the repo's queue, but the store has to
+        # be constructible at all for the incident worker to start. Reads then
+        # go through `_connect`, which follows the repo's provider.
+        if not self.db_path and audit_repo is not None:
+            self.db_url = str(getattr(audit_repo, "_db_url", "") or "")
+            if self.db_url and self.db_url.startswith("sqlite:///"):
+                self.db_path = self.db_url.replace("sqlite:///", "")
+                self.db_url = ""
+        else:
+            self.db_url = ""
+        if not self.db_path and not self.db_url:
             raise ValueError("IncidentStore requires db_path or audit_repo")
 
     # -- schema --------------------------------------------------------------
@@ -334,6 +375,14 @@ class IncidentStore:
 
         Production DBs get the schema via the governed AUDIT-0005 migration.
         """
+        if self.db_url:
+            import psycopg  # local import: not a hard dep for the SQLite path
+
+            with psycopg.connect(self.db_url, connect_timeout=10) as conn:
+                for ddl in INCIDENT_DDL:
+                    conn.execute(translate_ddl(ddl))
+                conn.commit()
+            return
         with sqlite3.connect(self.db_path, timeout=10.0) as conn:
             for ddl in INCIDENT_DDL:
                 conn.execute(ddl)
@@ -429,7 +478,19 @@ class IncidentStore:
 
     # -- read ----------------------------------------------------------------
 
-    def _connect(self) -> sqlite3.Connection:
+    def _connect(self):
+        """Opens a connection following the configured provider.
+
+        SQLite returns a ``sqlite3.Connection`` as before. PostgreSQL returns a
+        psycopg connection; callers use ``execute``/``fetchall`` and ``close``
+        on both, and the read queries here are already portable dialect.
+        """
+        if self.db_url:
+            import psycopg  # local import: not a hard dep for the SQLite path
+
+            conn = psycopg.connect(self.db_url, connect_timeout=10)
+            conn.row_factory = psycopg.rows.dict_row
+            return _PgCursorShim(conn)
         conn = sqlite3.connect(self.db_path, timeout=10.0)
         conn.row_factory = sqlite3.Row
         return conn
@@ -571,7 +632,9 @@ class IncidentStore:
         try:
             conn = self._connect()
             try:
-                counts["total"] = int(conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0])
+                counts["total"] = int(
+                    conn.execute("SELECT COUNT(*) AS n FROM incidents").fetchone()["n"]
+                )
                 row = conn.execute(
                     "SELECT status, COUNT(*) AS n FROM incidents GROUP BY status"
                 ).fetchall()
@@ -588,8 +651,8 @@ class IncidentStore:
                         counts[sev.lower()] = int(r["n"])
                 counts["open"] = int(
                     conn.execute(
-                        "SELECT COUNT(*) FROM incidents WHERE status IN ('OPEN','INVESTIGATING','ROOT_CAUSE_IDENTIFIED','CONTAINED','RECOVERY_READY','RECOVERED')"
-                    ).fetchone()[0]
+                        "SELECT COUNT(*) AS n FROM incidents WHERE status IN ('OPEN','INVESTIGATING','ROOT_CAUSE_IDENTIFIED','CONTAINED','RECOVERY_READY','RECOVERED')"
+                    ).fetchone()["n"]
                 )
             finally:
                 conn.close()
