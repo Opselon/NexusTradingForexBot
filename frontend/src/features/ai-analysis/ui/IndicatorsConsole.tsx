@@ -80,7 +80,7 @@ export default function IndicatorsConsole({ tf, onTf }: { tf: string; onTf: (tf:
   // exists is STALE (lastGood stays on screen), otherwise ERROR.
   const status: FeedStatus =
     snapshotQ.status === "error" ? (data ? "stale" : "error") : data ? "live" : "loading";
-  const errorMessage = status === "stale" || status === "error" ? explainError(snapshotQ.error) : null;
+  const errorMessage = status === "stale" || status === "error" ? explainError(snapshotQ.error, t) : null;
 
   const gauges = data?.gauges ?? {};
   const osc = gauges.oscillators;
@@ -110,30 +110,30 @@ export default function IndicatorsConsole({ tf, onTf }: { tf: string; onTf: (tf:
   return (
     <div className="ic-console">
       {/* 1) MARKET CONTEXT STRIP — every value from the real snapshot */}
-      <section className="ic-card ic-context" aria-label="Market context">
+      <section className="ic-card ic-context" aria-label={t("ai-analysis.ind.context_aria", "Market context")}>
         <div className="ic-idbox">
           <span className="ic-flag" aria-hidden="true">
             ◆
           </span>
           <span className="ic-symbol">{data?.symbol || "—"}</span>
-          <span className="ic-tfchip" title="Active timeframe">
+          <span className="ic-tfchip" title={t("ai-analysis.ind.tfchip_title", "Active timeframe")}>
             {data?.timeframe || tf}
           </span>
           <span className="ic-bars">
-            {data ? `${data.source_bar_count ?? data.bar_count} source bars · ${data.bar_count} in window` : "awaiting snapshot…"}
+            {data ? t("ai-analysis.ind.bars", "{a} source bars · {b} in window", { a: data.source_bar_count ?? data.bar_count, b: data.bar_count }) : t("ai-analysis.ind.awaiting", "awaiting snapshot…")}
           </span>
         </div>
         <div className="ic-pricewrap">
           <span className="ic-plabel">{t("ai-analysis.ind.last_close", "Last close")}</span>
           <span className="ic-price">{formatPrice(data?.last_close ?? null)}</span>
-          <span className="ic-updated" title="When this browser last received a successful snapshot">
-            {status === "loading" ? "updated —" : `updated ${formatTime(snapshotQ.dataUpdatedAt || null)}`}
-            {snapshotQ.isFetching ? " · refreshing…" : ""}
-          </span>
+          <span className="ic-updated" title={t("ai-analysis.ind.updated_hint", "When this browser last received a successful snapshot")}>
+                      {status === "loading" ? t("ai-analysis.ind.updated_none", "updated —") : t("ai-analysis.ind.updated", "updated {time}", { time: formatTime(snapshotQ.dataUpdatedAt || null) })}
+                      {snapshotQ.isFetching ? ` · ${t("ai-analysis.ind.refreshing", "refreshing…")}` : ""}
+                    </span>
         </div>
         <span className={`ic-live ic-live-${status}`} role="status" aria-live="polite">
           <i className="ic-live-dot" aria-hidden="true" />
-          {status === "live" ? "LIVE" : status === "stale" ? "STALE" : status === "error" ? "ERROR" : "WAITING"}
+          {status === "live" ? t("ai-analysis.ind.status_live", "LIVE") : status === "stale" ? t("ai-analysis.ind.status_stale", "STALE") : status === "error" ? t("ai-analysis.ind.status_error", "ERROR") : t("ai-analysis.ind.status_waiting", "WAITING")}
         </span>
       </section>
 
@@ -145,17 +145,17 @@ export default function IndicatorsConsole({ tf, onTf }: { tf: string; onTf: (tf:
           </span>
           <span className="ic-banner-text">
             {status === "stale"
-              ? `Live feed interrupted — showing values from ${formatTime(snapshotQ.dataUpdatedAt || null)} · ${errorMessage}`
-              : errorMessage}
+                          ? t("ai-analysis.ind.stale_banner", "Live feed interrupted — showing values from {time} · {err}", { time: formatTime(snapshotQ.dataUpdatedAt || null), err: errorMessage ?? "" })
+                          : errorMessage}
           </span>
           <button type="button" className="ic-retry" onClick={() => void snapshotQ.refetch()} disabled={snapshotQ.isFetching}>
-            {snapshotQ.isFetching ? "retrying…" : "Retry"}
+            {snapshotQ.isFetching ? t("ai-analysis.ind.retrying", "retrying…") : t("ai-analysis.ind.retry", "Retry")}
           </button>
         </div>
       )}
 
       {/* 2) TIMEFRAME TOOLBAR — curated list, backend-invalid aliases never offered */}
-      <div className="ic-tfbar" role="group" aria-label="Timeframe selection">
+      <div className="ic-tfbar" role="group" aria-label={t("ai-analysis.ind.tf_aria", "Timeframe selection")}>
         {TFS.map((t) => (
           <button
             key={t.id}
@@ -170,7 +170,7 @@ export default function IndicatorsConsole({ tf, onTf }: { tf: string; onTf: (tf:
       </div>
 
       {status === "loading" ? (
-        <div className="ic-loading" aria-label="Loading indicator snapshot">
+        <div className="ic-loading" aria-label={t("ai-analysis.ind.loading_aria", "Loading indicator snapshot")}>
           <div className="skeleton" style={{ height: 96 }} />
           <div className="grid cols-3">
             <div className="skeleton" style={{ height: 190 }} />
@@ -182,18 +182,18 @@ export default function IndicatorsConsole({ tf, onTf }: { tf: string; onTf: (tf:
       ) : (
         <>
           {/* 3) THREE CYCLE GAUGES (Oscillators · Summary hero · Moving Averages) */}
-          <div className="ic-cycles" role="group" aria-label="Technical gauges">
-            <GaugeCard title="Oscillators" gauge={osc} meta={osc ? `${osc.sell + osc.neutral + osc.buy} oscillators` : null} />
-            <GaugeCard title="Summary" gauge={sum} hero meta={sum ? `${sumTotal} signals · ${data?.timeframe || tf}` : null} />
-            <GaugeCard title="Moving Averages" gauge={ma} meta={ma ? `${ma.sell + ma.neutral + ma.buy} averages` : null} />
-          </div>
+          <div className="ic-cycles" role="group" aria-label={t("ai-analysis.ind.gauges_aria", "Technical gauges")}>
+                      <GaugeCard title={t("ai-analysis.ind.oscillators", "Oscillators")} gauge={osc} meta={osc ? t("ai-analysis.ind.osc_meta", "{n} oscillators", { n: osc.sell + osc.neutral + osc.buy }) : null} />
+                      <GaugeCard title={t("ai-analysis.ind.summary", "Summary")} gauge={sum} hero meta={sum ? t("ai-analysis.ind.summary_meta", "{n} signals · {tf}", { n: sumTotal, tf: data?.timeframe || tf }) : null} />
+                      <GaugeCard title={t("ai-analysis.ind.moving_averages", "Moving Averages")} gauge={ma} meta={ma ? t("ai-analysis.ind.ma_meta", "{n} averages", { n: ma.sell + ma.neutral + ma.buy }) : null} />
+                    </div>
 
           {/* 4) DISTRIBUTION SIGNAL BAR — widths ARE the backend counts */}
-          <section className="ic-card ic-signalbar" aria-label="Overall technical summary distribution">
+          <section className="ic-card ic-signalbar" aria-label={t("ai-analysis.ind.signalbar_aria", "Overall technical summary distribution")}>
             <div className="ic-signal-head">
               <span className="ic-signal-name">{t("ai-analysis.ind.signal_name", "Overall Technical Summary")}</span>
               <VerdictPill label={sum?.label ?? null} />
-              <span className="ic-signal-meta">{sum ? `${sumTotal} votes counted by the backend` : "no summary gauge returned"}</span>
+              <span className="ic-signal-meta">{sum ? t("ai-analysis.ind.votes", "{n} votes counted by the backend", { n: sumTotal }) : t("ai-analysis.ind.no_summary", "no summary gauge returned")}</span>
             </div>
             <DistributionBar counts={dist} />
             <div className="ic-counts">
@@ -206,20 +206,20 @@ export default function IndicatorsConsole({ tf, onTf }: { tf: string; onTf: (tf:
           {/* 5) INDICATOR TABLES — rows rendered verbatim {name,value,action} */}
           <div className="ic-tables">
             <ReadingTable
-              title="Oscillators"
-              subtitle="momentum & strength"
+              title={t("ai-analysis.ind.oscillators", "Oscillators")}
+              subtitle={t("ai-analysis.ind.osc_subtitle", "momentum & strength")}
               verdict={osc?.label ?? null}
               rows={data?.oscillators}
               show={status !== "error"}
-              empty="No oscillator data for this timeframe yet — waiting for completed bars."
+              empty={t("ai-analysis.ind.table_osc_empty", "No oscillator data for this timeframe yet — waiting for completed bars.")}
             />
             <ReadingTable
-              title="Moving Averages"
-              subtitle="trend & crossover"
+              title={t("ai-analysis.ind.moving_averages", "Moving Averages")}
+              subtitle={t("ai-analysis.ind.ma_subtitle", "trend & crossover")}
               verdict={ma?.label ?? null}
               rows={data?.moving_averages}
               show={status !== "error"}
-              empty="No moving-average data for this timeframe yet — waiting for completed bars."
+              empty={t("ai-analysis.ind.table_ma_empty", "No moving-average data for this timeframe yet — waiting for completed bars.")}
             />
           </div>
 
@@ -234,14 +234,14 @@ export default function IndicatorsConsole({ tf, onTf }: { tf: string; onTf: (tf:
 /* ─────────────────────────── error translation ─────────────────────────── */
 
 /** Backend error codes -> honest captions (legacy tv_widget.js mapping). */
-function explainError(e: unknown): string {
+function explainError(e: unknown, t: (k: string, f: string, v?: Record<string, string | number>) => string): string {
   if (e instanceof ApiError) {
-    if (e.code === "ENGINE_UNAVAILABLE") return "Waiting for engine — indicators need live completed bars.";
-    if (e.code === "RESOURCE_UNAVAILABLE") return "No bar history yet…";
-    if (e.code === "TIMEOUT") return "Indicator compute timed out (retrying on schedule)…";
-    return `Indicator feed unavailable (${e.code})`;
+    if (e.code === "ENGINE_UNAVAILABLE") return t("ai-analysis.ind.err_engine", "Waiting for engine — indicators need live completed bars.");
+    if (e.code === "RESOURCE_UNAVAILABLE") return t("ai-analysis.ind.err_bars", "No bar history yet…");
+    if (e.code === "TIMEOUT") return t("ai-analysis.ind.err_timeout", "Indicator compute timed out (retrying on schedule)…");
+    return t("ai-analysis.ind.err_unavailable_code", "Indicator feed unavailable ({c})", { c: e.code });
   }
-  return "Indicator feed unavailable";
+  return t("ai-analysis.ind.err_unavailable", "Indicator feed unavailable");
 }
 
 /* ───────────────────────────── gauge card ──────────────────────────────── */
@@ -257,9 +257,10 @@ function GaugeCard({
   meta: string | null;
   hero?: boolean;
 }) {
+  const t = useI18n((s) => s.t);
   const label: GaugeVerdict | null = gauge ? verdictOfSafe(gauge.label) : null;
   return (
-    <section className={`ic-card ic-cycle ${hero ? "is-hero" : ""}`} aria-label={`${title} gauge`}>
+    <section className={`ic-card ic-cycle ${hero ? "is-hero" : ""}`} aria-label={t("ai-analysis.ind.gauge_aria", "{title} gauge", { title })}>
       <div className="ic-cycle-name">{title}</div>
       <IndicatorCycle label={label} angleDeg={gauge ? needleAngle(gauge) : null} />
       <div className="ic-cycle-verdict">
@@ -295,18 +296,19 @@ function needleAngle(g: IndicatorGauge): number | null {
 /* ───────────────────── distribution bar (flex-grow counts) ─────────────── */
 
 function DistributionBar({ counts }: { counts: Pick<IndicatorGauge, "sell" | "neutral" | "buy"> | null }) {
+  const t = useI18n((s) => s.t);
   const total = counts ? counts.sell + counts.neutral + counts.buy : 0;
   if (!counts || total <= 0) {
     return (
-      <div className="ic-gauge-track is-empty" role="img" aria-label="No distribution counts returned yet">
-        <span className="ic-gauge-empty">{counts ? "no votes yet" : "summary not returned"}</span>
+      <div className="ic-gauge-track is-empty" role="img" aria-label={t("ai-analysis.ind.dist_empty_aria", "No distribution counts returned yet")}>
+        <span className="ic-gauge-empty">{counts ? t("ai-analysis.ind.dist_no_votes", "no votes yet") : t("ai-analysis.ind.dist_no_summary", "summary not returned")}</span>
       </div>
     );
   }
   // Widths ARE the backend counts — a pure display transform (legacy seg(): flex-grow).
   const grow = (c: number) => ({ flexGrow: Math.max(0, c), flexBasis: 0 });
   return (
-    <div className="ic-gauge-track" role="img" aria-label={`Sell ${counts.sell}, Neutral ${counts.neutral}, Buy ${counts.buy}`}>
+    <div className="ic-gauge-track" role="img" aria-label={t("ai-analysis.ind.dist_aria", "Sell {s}, Neutral {n}, Buy {b}", { s: counts.sell, n: counts.neutral, b: counts.buy })}>
       <div className="ic-gseg is-sell" style={grow(counts.sell)} />
       <div className="ic-gseg is-neutral" style={grow(counts.neutral)} />
       <div className="ic-gseg is-buy" style={grow(counts.buy)} />
@@ -331,9 +333,10 @@ function ReadingTable({
   empty: string;
   show: boolean;
 }) {
+  const t = useI18n((s) => s.t);
   const list = rows ?? [];
   return (
-    <section className="ic-card ic-table-panel" aria-label={`${title} detail`}>
+    <section className="ic-card ic-table-panel" aria-label={t("ai-analysis.ind.table_aria", "{title} detail", { title })}>
       <div className="ic-panel-h">
         <h3 className="ic-panel-t">{title}</h3>
         <span className="ic-panel-sub">{subtitle}</span>
@@ -348,12 +351,12 @@ function ReadingTable({
           <table className="ic-table">
             <thead>
               <tr>
-                <th scope="col">Indicator</th>
+                <th scope="col">{t("ai-analysis.th.indicator", "Indicator")}</th>
                 <th scope="col" className="ta-r">
-                  Value
+                  {t("ai-analysis.th.value", "Value")}
                 </th>
                 <th scope="col" className="ta-r">
-                  Action
+                  {t("ai-analysis.th.action", "Action")}
                 </th>
               </tr>
             </thead>
@@ -365,7 +368,7 @@ function ReadingTable({
                   <td className="ic-act">
                     <span className={actionClasses(r.action)}>
                       <i aria-hidden="true">{actionGlyph(r.action)}</i>
-                      {r.action ?? "—"}
+                      {r.action ? t(`ai-analysis.action.${r.action.toLowerCase()}`, r.action) : "—"}
                     </span>
                   </td>
                 </tr>
@@ -389,19 +392,19 @@ function PivotMatrixPanel({ pivots, show }: { pivots: IndicatorPivots | undefine
   // Rows above P are resistance, below P support, P itself neutral (TV layout).
   const pIdx = levels.indexOf("P");
   return (
-    <section className="ic-card ic-table-panel ic-pivots" aria-label="Pivot levels">
+    <section className="ic-card ic-table-panel ic-pivots" aria-label={t("ai-analysis.ind.pivot_title", "Pivot Levels")}>
       <div className="ic-panel-h">
         <h3 className="ic-panel-t">{t("ai-analysis.ind.pivot_title", "Pivot Levels")}</h3>
-        <span className="ic-panel-sub">{columns.length ? columns.join(" · ").toLowerCase() : "families as the backend sends them"}</span>
+        <span className="ic-panel-sub">{columns.length ? columns.join(" · ").toLowerCase() : t("ai-analysis.ind.pivot_sub", "families as the backend sends them")}</span>
       </div>
       {empty ? (
-        <div className="ic-empty">No pivot levels available yet — the backend returned an empty matrix.</div>
+        <div className="ic-empty">{t("ai-analysis.ind.pivot_empty", "No pivot levels available yet — the backend returned an empty matrix.")}</div>
       ) : (
         <div tabIndex={0} className="ic-scroll">
           <table className="ic-table ic-pivot-table">
             <thead>
               <tr>
-                <th scope="col">Pivot</th>
+                <th scope="col">{t("ai-analysis.ind.pivot_th", "Pivot")}</th>
                 {columns.map((c) => (
                   <th key={c} scope="col" className="ta-r">
                     {c}

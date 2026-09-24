@@ -19,6 +19,8 @@ import { DataTable, EmptyState, ErrorState, Panel, ProbBar, Segmented, Skeleton 
 import { ConfidenceGauge } from "@/components/viz";
 import type { ShellPageProps } from "@/app/featureModule";
 import { ApiError } from "@/types/api";
+import { useI18n } from "@/stores/i18nStore";
+import { actionLabel, modeLabel } from "./aaLabels";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { FreshnessCaption, GateStepper, InfoRow } from "../../research/ui/lane5Kit";
 import { actionTone, confidence01, isNotFound, obj, str } from "../model";
@@ -64,6 +66,7 @@ const REASONS_MAX = 8;
 
 export default function AiAnalysisPage(props: ShellPageProps) {
   void props;
+  const t = useI18n((s) => s.t);
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTabState] = useState<Tab>(() => {
@@ -221,14 +224,14 @@ export default function AiAnalysisPage(props: ShellPageProps) {
   const reasonBody = reasonsQ.isPending ? (
     <Skeleton count={3} />
   ) : reasonsQ.isError ? (
-    <ErrorState message={reasonsQ.error instanceof Error ? reasonsQ.error.message : "reasons failed"} onRetry={() => void reasonsQ.refetch()} />
+    <ErrorState message={reasonsQ.error instanceof Error ? reasonsQ.error.message : t("ai-analysis.empty.reasons_failed", "reasons failed")} onRetry={() => void reasonsQ.refetch()} />
   ) : (
     <BarList rows={reasonRows} tone="var(--amber)" max={REASONS_MAX} />
   );
   const timelineBody = historyQ.isPending ? (
     <Skeleton count={3} />
   ) : historyQ.isError ? (
-    <ErrorState message={historyQ.error instanceof Error ? historyQ.error.message : "history failed"} onRetry={() => void historyQ.refetch()} />
+    <ErrorState message={historyQ.error instanceof Error ? historyQ.error.message : t("ai-analysis.empty.history_failed", "history failed")} onRetry={() => void historyQ.refetch()} />
   ) : (
     <ConfidenceTimeline series={timeline} />
   );
@@ -255,12 +258,12 @@ export default function AiAnalysisPage(props: ShellPageProps) {
   return (
     <div>
       <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <h2>AI Analysis</h2>
-        <span className="muted small">model signals · decision gates · indicators · shadow 70D · intel</span>
-        <FreshnessCaption timestamp={str(latest?.generated_at)} source="audit_signals ledger" isFetching={latestQ.isFetching} error={latestQ.isError && !isNotFound(latestQ.error)} />
+        <h2>{t("ai-analysis.page.title", "AI Analysis")}</h2>
+                <span className="muted small">{t("ai-analysis.page.subtitle_intel", "model signals · decision gates · indicators · shadow 70D · intel")}</span>
+                <FreshnessCaption timestamp={str(latest?.generated_at)} source={t("ai-analysis.latest.source", "audit_signals ledger")} isFetching={latestQ.isFetching} error={latestQ.isError && !isNotFound(latestQ.error)} />
       </div>
 
-      <Panel title="Latest signal (live card)" accent tight>
+      <Panel title={t("ai-analysis.panel.latest", "Latest signal (live card)")} accent tight>
         {latestQ.isPending ? (
           <div className="aa-hero aa-hero-skel">
             {[0, 1, 2, 3].map((i) => (
@@ -271,9 +274,9 @@ export default function AiAnalysisPage(props: ShellPageProps) {
           </div>
         ) : isNotFound(latestQ.error) ? (
           <EmptyState
-            message="No signals recorded yet."
-            hint="/api/v1/signals/latest answers RESOURCE_NOT_FOUND — the engine has not emitted a decision."
-          />
+                      message={t("ai-analysis.empty.no_signals", "No signals recorded yet.")}
+                      hint={t("ai-analysis.empty.no_signals_hint", "/api/v1/signals/latest answers RESOURCE_NOT_FOUND — the engine has not emitted a decision.")}
+                    />
         ) : latestQ.isError ? (
           <ErrorState
             message={(latestQ.error as Error).message}
@@ -283,39 +286,39 @@ export default function AiAnalysisPage(props: ShellPageProps) {
         ) : latest ? (
           <div className={`panel-body aa-hero aa-fam-${latestFamily}`}>
             <div className="aa-hero-act">
-              <div className="aa-big">{latest.action ?? "—"}</div>
+              <div className="aa-big">{latest.action ? actionLabel(t, latest.action) : "—"}</div>
               <div className="aa-when">{formatDateTime(latest.generated_at)}</div>
               <button className="btn small primary" disabled={!latest.request_id} onClick={() => inspectDecision(String(latest.request_id))}>
-                inspect decision
+                {t("ai-analysis.card.inspect", "inspect decision")}
               </button>
-              <span className="tiny muted">gates · evidence · explanation</span>
+              <span className="tiny muted">{t("ai-analysis.card.meta", "gates · evidence · explanation")}</span>
             </div>
 
             <div className="aa-gauge">
-              <ConfidenceGauge value={confidence01(latest.confidence)} label="confidence" />
+              <ConfidenceGauge value={confidence01(latest.confidence)} label={t("ux.signal.confidence", "confidence")} />
             </div>
 
             <div className="aa-details">
               <div className="aa-chips aa-meta">
                 <b className="aa-symbol">{latest.symbol ?? "—"}</b>
-                {latest.regime ? <span className="aa-chip aa-fam-unknown">{latest.regime}</span> : <span className="tiny faint">regime not recorded</span>}
-                {latest.execution_mode ? <span className="aa-chip aa-fam-unknown">{latest.execution_mode}</span> : null}
-                <span className="aa-chip aa-fam-unknown">{latest.decision_stage ?? "stage not recorded"}</span>
+                {latest.regime ? <span className="aa-chip aa-fam-unknown">{latest.regime}</span> : <span className="tiny faint">{t("ai-analysis.card.regime_missing", "regime not recorded")}</span>}
+                {latest.execution_mode ? <span className="aa-chip aa-fam-unknown">{modeLabel(t, latest.execution_mode)}</span> : null}
+                <span className="aa-chip aa-fam-unknown">{latest.decision_stage ?? t("ai-analysis.card.stage_missing", "stage not recorded")}</span>
               </div>
               <ProbBar
                 rows={[
-                  { label: "confidence", value: confidence01(latest.confidence), tone: actionTone(latest.action) },
-                  { label: "before filters", value: confidence01(latest.confidence_before_filters), tone: "flat" },
-                  { label: "after filters", value: confidence01(latest.confidence_after_filters), tone: "flat" },
+                  { label: t("ux.signal.confidence", "confidence"), value: confidence01(latest.confidence), tone: actionTone(latest.action) },
+                                    { label: t("ai-analysis.card.before_filters", "before filters"), value: confidence01(latest.confidence_before_filters), tone: "flat" },
+                                    { label: t("ai-analysis.card.after_filters", "after filters"), value: confidence01(latest.confidence_after_filters), tone: "flat" },
                 ]}
               />
               <dl className="kv" style={{ marginTop: 2 }}>
-                <InfoRow label="htf / smc score" value={`${formatNumber(latest.htf_score ?? null, 3)} / ${formatNumber(latest.smc_score ?? null, 3)}`} />
-                <InfoRow label="blocked_by" value={latest.blocked_by ?? "—"} />
+                <InfoRow label={t("ai-analysis.card.htf_smc", "htf / smc score")} value={`${formatNumber(latest.htf_score ?? null, 3)} / ${formatNumber(latest.smc_score ?? null, 3)}`} />
+                <InfoRow label={t("ai-analysis.decision.blocked_by", "blocked_by")} value={latest.blocked_by ?? "—"} />
               </dl>
               <div className="aa-reason-line" title={latest.reason_code ?? ""}>
-                reason: {latest.reason_code ?? "—"}
-              </div>
+                              {t("ai-analysis.card.reason", "reason: {r}", { r: latest.reason_code ?? "—" })}
+                            </div>
             </div>
 
             <div className="aa-hero-ladder">
@@ -328,11 +331,11 @@ export default function AiAnalysisPage(props: ShellPageProps) {
       <div style={{ marginBlock: 12 }}>
         <Segmented
           options={[
-            { id: "signals" as const, label: "Decisions & history" },
-            { id: "indicators" as const, label: "Indicators wall" },
-            { id: "shadow" as const, label: "Shadow 70D" },
-            { id: "intel" as const, label: "Intel & timeline" },
-          ]}
+                      { id: "signals" as const, label: t("ai-analysis.tab.decisions", "Decisions & history") },
+                      { id: "indicators" as const, label: t("ai-analysis.tab.indicators", "Indicators wall") },
+                      { id: "shadow" as const, label: t("ai-analysis.tab.shadow", "Shadow 70D") },
+                      { id: "intel" as const, label: t("ai-analysis.tab.intel", "Intel & timeline") },
+                    ]}
           value={tab}
           onChange={setTab}
           onPrefetch={(id) => prefetchTab(id as Tab)}
@@ -367,7 +370,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
       {tab === "shadow" && (
         <div className="aa-stack">
           <Panel
-            title="Shadow 70D observer (health · disagreements · drift)"
+            title={t("ai-analysis.panel.shadow_observer", "Shadow 70D observer (health · disagreements · drift)")}
             right={<FreshnessCaption timestamp={shadowQ.data?.generated_at} isFetching={shadowQ.isFetching} error={shadowQ.isError} />}
             tight
           >
@@ -375,7 +378,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
               <Skeleton count={3} />
             ) : shadowQ.isError ? (
               <ErrorState
-                message={shadowQ.error instanceof Error ? shadowQ.error.message : "shadow store unavailable"}
+                message={shadowQ.error instanceof Error ? shadowQ.error.message : t("ai-analysis.empty.shadow_unavailable", "shadow store unavailable")}
                 requestId={shadowQ.error instanceof ApiError ? shadowQ.error.requestId : null}
                 onRetry={() => void shadowQ.refetch()}
               />
@@ -383,7 +386,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
               <div className="grid cols-2">
                 <div>
                   <div className="section-title">
-                    summary ({Object.keys(obj(shadowQ.data?.summary)).length} keys, showing first {SUMMARY_ROWS})
+                    {t("ai-analysis.shadow.summary_line", "summary ({n} keys, showing first {m})", { n: Object.keys(obj(shadowQ.data?.summary)).length, m: SUMMARY_ROWS })}
                   </div>
                   <dl className="kv">
                     {shadowSummaryEntries.map(([k, v]) => (
@@ -391,18 +394,18 @@ export default function AiAnalysisPage(props: ShellPageProps) {
                       ))}
                   </dl>
                   <div className="section-title" style={{ marginTop: 10 }}>
-                    disagreement counts
-                  </div>
+                                      {t("ai-analysis.shadow.disagreement_counts", "disagreement counts")}
+                                    </div>
                   <GateStepper gates={shadowGates} />
                 </div>
                 <div>
                   <div className="section-title">
-                    drift alerts ({(shadowQ.data?.drift_alerts ?? []).length} recorded, showing first {Math.min(DRIFT_SHOW, (shadowQ.data?.drift_alerts ?? []).length)})
+                    {t("ai-analysis.shadow.drift_alerts_shown", "drift alerts ({t} recorded, showing first {n})", { t: (shadowQ.data?.drift_alerts ?? []).length, n: Math.min(DRIFT_SHOW, (shadowQ.data?.drift_alerts ?? []).length) })}
                   </div>
                   {(shadowQ.data?.drift_alerts ?? []).length === 0 ? (
-                    <EmptyState message="No drift alerts recorded." />
+                    <EmptyState message={t("ai-analysis.empty.no_drift", "No drift alerts recorded.")} />
                   ) : (
-                    <DataTable headers={[{ label: "feature" }, { label: "kind" }, { label: "value", num: true }, { label: "at" }]}>
+                    <DataTable headers={[{ label: t("ai-analysis.th.feature", "feature") }, { label: t("ai-analysis.th.kind", "kind") }, { label: t("ai-analysis.th.value", "value"), num: true }, { label: t("ai-analysis.th.at", "at") }]}>
                       {shadowAlerts.map((a, i) => (
                         <tr key={i}>
                           <td className="tiny">{str(a.feature) ?? str(a.name) ?? "—"}</td>
@@ -427,7 +430,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
 
       {tab === "intel" && (
         <div className="aa-stack">
-          <div className="tiny faint">behaviour coverage — legacy tab-ai-analysis also loads intelligence centre + position timeline (orphaned components, now wired).</div>
+          <div className="tiny faint">{t("ai-analysis.intel.coverage_note", "behaviour coverage — legacy tab-ai-analysis also loads intelligence centre + position timeline (orphaned components, now wired).")}</div>
           <Suspense fallback={<TabFallback />}>
             <IntelligenceTelemetryPanel />
           </Suspense>

@@ -21,6 +21,7 @@
  */
 
 import { memo, useMemo } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import { formatTime } from "@/lib/format";
 import { actionTone } from "../model";
 import {
@@ -41,6 +42,7 @@ const FAM_CLASS = (f: ReturnType<typeof actionFamily>): string => `aa-fam-${f}`;
 /** Donut of /api/v1/decisions/stats by_action collapsed to display families,
  *  with the real backend labels as a legend (counts + share of the map). */
 function ActionDonutBase({ byAction }: { byAction: Record<string, number> | undefined }) {
+  const t = useI18n((s) => s.t);
   const R = 44;
   // Every derivation below reads ONLY byAction: memo deps are exactly the
   // payload map the vizMath call consumes (re-runs only when it changes).
@@ -50,12 +52,12 @@ function ActionDonutBase({ byAction }: { byAction: Record<string, number> | unde
   const aria = useMemo(() => legend.map((r) => `${r.label} ${r.count}`).join(", "), [legend]);
 
   if (total <= 0) {
-    return <div className="aa-empty">backend returned no by_action counts for this window</div>;
+    return <div className="aa-empty">{t("ai-analysis.chart.no_by_action", "backend returned no by_action counts for this window")}</div>;
   }
   const circ = 2 * Math.PI * R;
   return (
     <div className="aa-donut-wrap">
-      <svg viewBox="0 0 120 120" className="aa-donut" role="img" aria-label={`decision mix: ${aria}`}>
+      <svg viewBox="0 0 120 120" className="aa-donut" role="img" aria-label={t("ai-analysis.chart.decision_mix_aria", "decision mix: {s}", { s: aria })}>
         <g transform="rotate(-90 60 60)">
           <circle className="aa-donut-track" cx="60" cy="60" r={R} />
           {segs.map((s) => (
@@ -76,8 +78,8 @@ function ActionDonutBase({ byAction }: { byAction: Record<string, number> | unde
           {kpi.total.toLocaleString("en-US")}
         </text>
         <text className="aa-donut-cap" x="60" y="72" textAnchor="middle">
-          decisions
-        </text>
+                  {t("ai-analysis.chart.decisions_cap", "decisions")}
+                </text>
       </svg>
       <ul className="aa-legend">
         {legend.map((r) => (
@@ -100,6 +102,7 @@ function ActionDonutBase({ byAction }: { byAction: Record<string, number> | unde
 /** Confidence (0..1) over time from the CURRENT history page's rows. Gaps
  *  where the backend recorded no confidence; dropped rows are captioned. */
 function ConfidenceTimelineBase({ series }: { series: TimelineSeries }) {
+  const t = useI18n((s) => s.t);
   const { points, dropped, from, to } = series;
   const W = 640;
   const H = 210;
@@ -136,13 +139,13 @@ function ConfidenceTimelineBase({ series }: { series: TimelineSeries }) {
   const nActions = useMemo(() => new Set(points.map((p) => p.action ?? "?")).size, [points]);
   const aria = useMemo(
     () =>
-      `confidence timeline, ${plottable.length} samples from ${formatTime(from)} to ${formatTime(to)}` +
-      (dropped > 0 ? `, ${dropped} rows dropped for unparsable timestamps` : ""),
+      t("ai-analysis.chart.tl_aria", "confidence timeline, {n} samples from {a} to {b}", { n: plottable.length, a: formatTime(from), b: formatTime(to) }) +
+      (dropped > 0 ? ` · ${t("ai-analysis.chart.tl_dropped", "{n} rows dropped for unparsable timestamps", { n: dropped })}` : ""),
     [plottable, from, to, dropped],
   );
 
   if (points.length === 0) {
-    return <div className="aa-empty">no history rows with a parseable timestamp on this page</div>;
+    return <div className="aa-empty">{t("ai-analysis.chart.no_history_rows", "no history rows with a parseable timestamp on this page")}</div>;
   }
 
   const gridVals = [0, 0.25, 0.5, 0.75, 1];
@@ -180,8 +183,8 @@ function ConfidenceTimelineBase({ series }: { series: TimelineSeries }) {
         </text>
       </svg>
       <div className="aa-tl-cap">
-        {plottable.length} samples · {nActions} action label{nActions === 1 ? "" : "s"} in view
-        {dropped > 0 ? ` · ${dropped} row${dropped === 1 ? "" : "s"} dropped (unparsable timestamp)` : ""}
+        {t("ai-analysis.chart.tl_caption", "{n} samples · {m} action label{s} in view", { n: plottable.length, m: nActions, s: nActions === 1 ? "" : "s" })}
+        {dropped > 0 ? ` · ${t("ai-analysis.chart.tl_dropped_paren", "{n} row{s} dropped (unparsable timestamp)", { n: dropped, s: dropped === 1 ? "" : "s" })}` : ""}
       </div>
     </div>
   );
@@ -194,14 +197,15 @@ function BarListBase({
   rows,
   tone = "var(--accent)",
   max = 10,
-  empty = "backend returned no rows",
+  empty,
 }: {
   rows: CountRow[];
   tone?: string;
   max?: number;
   empty?: string;
 }) {
-  if (rows.length === 0) return <div className="aa-empty">{empty}</div>;
+  const t = useI18n((s) => s.t);
+  if (rows.length === 0) return <div className="aa-empty">{empty ?? t("ai-analysis.chart.no_rows", "backend returned no rows")}</div>;
   // shown/peak read ONLY the rows prop + max: memo deps are exactly those.
   const shown = useMemo(() => rows.slice(0, max), [rows, max]);
   const peak = useMemo(() => Math.max(1, ...shown.map((r) => r.count)), [shown]);
@@ -220,11 +224,11 @@ function BarListBase({
             <i style={{ width: `${(r.count / peak) * 100}%`, background: tone }} />
           </span>
           <span className="aa-bar-v">{r.count.toLocaleString("en-US")}</span>
-          <span className="aa-bar-p">{r.pct.toFixed(1)}%</span>
+                    <span className="aa-bar-p">{r.pct.toFixed(1)}%</span>
         </div>
       ))}
       {rows.length > max && (
-        <div className="aa-bars-more">+{(rows.length - max).toLocaleString("en-US")} smaller rows not shown</div>
+        <div className="aa-bars-more">{t("ai-analysis.chart.bars_more", "+{n} smaller rows not shown", { n: (rows.length - max).toLocaleString("en-US") })}</div>
       )}
     </div>
   );
@@ -247,6 +251,7 @@ function PriceLadderBase({
   sl: number | null | undefined;
   tp: number | null | undefined;
 }) {
+  const t = useI18n((s) => s.t);
   // levels/distances read ONLY the three level props — memo deps are exactly
   // those (distances are arithmetic over the same recorded levels).
   const levels = useMemo(
@@ -254,9 +259,9 @@ function PriceLadderBase({
       const reward = finite(entry) && finite(tp) ? Math.abs(tp - entry) : null;
       const risk = finite(entry) && finite(sl) ? Math.abs(entry - sl) : null;
       return [
-        { key: "tp", label: "TP", v: tp, dist: reward !== null ? `reward ${reward.toFixed(2)}` : null },
+        { key: "tp", label: "TP", v: tp, dist: reward !== null ? t("ai-analysis.chart.reward", "reward {v}", { v: reward.toFixed(2) }) : null },
         { key: "entry", label: "ENTRY", v: entry, dist: null },
-        { key: "sl", label: "SL", v: sl, dist: risk !== null ? `risk ${risk.toFixed(2)}` : null },
+        { key: "sl", label: "SL", v: sl, dist: risk !== null ? t("ai-analysis.chart.risk", "risk {v}", { v: risk.toFixed(2) }) : null },
       ].filter((l): l is { key: string; label: string; v: number; dist: string | null } => finite(l.v));
     },
     [entry, sl, tp],
@@ -278,7 +283,7 @@ function PriceLadderBase({
   }, [levels]);
 
   if (levels.length === 0) {
-    return <div className="aa-empty">no entry / SL / TP recorded for this decision</div>;
+    return <div className="aa-empty">{t("ai-analysis.chart.no_levels", "no entry / SL / TP recorded for this decision")}</div>;
   }
   const { max, spread, positioned } = layout;
 

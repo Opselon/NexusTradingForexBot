@@ -64,4 +64,10 @@ export const MESSAGES: FeatureMessages = {
   "health.caps.endpoints": { fa: "نقطه‌های پایانی", de: "Endpunkte", es: "endpoints", ar: "نقاط النهاية" },
   "health.caps.spec": { fa: "مشخصات", de: "Spezifikation", es: "especificación", ar: "المواصفة" },
   "health.workers.engine_attached": { fa: "engine_attached={v}", de: "engine_attached={v}", es: "engine_attached={v}", ar: "engine_attached={v}" },
+  "health.hero.kicker": { fa: "ایمنی و حاکمیت", de: "Sicherheit & Governance", es: "seguridad y gobernanza", ar: "الأمان والحوكمة" },
+  "health.hero.title": { fa: "سلامت سیستم", de: "Zustand", es: "salud", ar: "الصحة" },
+  "health.chip.readiness": { fa: "آمادگی {v}", de: "Bereitschaft {v}", es: "preparación {v}", ar: "الجاهزية {v}" },
+  "health.chip.engine": { fa: "موتور {v}", de: "Motor {v}", es: "motor {v}", ar: "المحرك {v}" },
+  "health.cell.reread_busy": { fa: "خواندن مجدد در حال انجام است", de: "erneutes Lesen läuft", es: "re-lectura en curso", ar: "إعادة القراءة جارية" },
+  "health.cell.retrying": { fa: "در حال تلاش دوباره…", de: "wird erneut versucht…", es: "reintentando…", ar: "إعادة المحاولة…" },
 };

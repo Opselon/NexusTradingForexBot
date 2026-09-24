@@ -13,6 +13,38 @@ import { bool, num, type Row } from "../model";
 
 export type GlowTone = "on" | "off" | "live" | "paper" | "shadow" | "stale" | "unknown";
 
+/** Minimal t() shape so these display helpers stay import-light. */
+export type Translate = (key: string, fallback: string) => string;
+
+/** Localized DISPLAY of a raw execution-mode token. Comparisons/logic must
+ *  keep using the raw token — only the visible word is localized. Composite
+ *  or unknown backend words render verbatim (never guessed). */
+export function modeLabel(t: Translate, mode: string): string {
+  const m = mode.trim().toUpperCase();
+  if (m === "PAPER") return t("control-center.mode.paper", "PAPER");
+  if (m === "LIVE") return t("control-center.mode.live", "LIVE");
+  if (m === "SHADOW") return t("control-center.mode.shadow", "SHADOW");
+  return mode;
+}
+
+/** Localized DISPLAY of the closed tone-word set emitted above. */
+export function toneText(t: Translate, text: string): string {
+  switch (text) {
+    case "RUNNING":
+      return t("control-center.engine.running", "RUNNING");
+    case "STOPPED":
+      return t("control-center.engine.stopped", "STOPPED");
+    case "UNKNOWN":
+      return t("control-center.engine.unknown_chip", "UNKNOWN");
+    case "READY":
+      return t("ui.status.ready", "READY");
+    case "STALE":
+      return t("ux.data.stale", "STALE");
+    default:
+      return modeLabel(t, text);
+  }
+}
+
 export interface ToneView {
   tone: GlowTone;
   text: string;
