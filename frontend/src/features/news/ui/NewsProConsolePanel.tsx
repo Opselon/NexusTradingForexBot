@@ -84,18 +84,18 @@ export function NewsProConsolePanel() {
   const autoOn = autoState.data?.enabled ?? null;
 
   const badge = useMemo(() => {
-    const auto = autoOn === null ? "AUTO ?" : autoOn ? "AUTO ON" : "AUTO OFF";
+    const auto = autoOn === null ? t("news.pro.auto_unknown", "AUTO ?") : autoOn ? t("news.pro.auto_on", "AUTO ON") : t("news.pro.auto_off", "AUTO OFF");
     const route = prov?.provider_available ? "LLM" : "LOCAL";
-    return `${auto} · ${route}`;
+    return t("news.pro.badge", "{auto} · {route}", { auto, route });
   }, [autoOn, prov?.provider_available]);
 
   const providerLine = prov
     ? prov.provider_available
-      ? [prov.provider_name, prov.model].filter(Boolean).join(" ") || "LLM provider ready"
+      ? [prov.provider_name, prov.model].filter(Boolean).join(" ") || t("news.pro.provider_ready", "LLM provider ready")
       : prov.ai_status?.state
-        ? `${prov.ai_status.state} → local fallback`
+        ? t("news.pro.provider_fallback", "{state} → local fallback", { state: prov.ai_status.state })
         : "LLM unavailable → local fallback"
-    : "provider —";
+    : t("news.pro.provider_none", "provider —");
 
   const busy = analyzeAll.isPending || purge.isPending || prune.isPending;
   const logRef = useAutoScroll(log.entries.length);
@@ -153,27 +153,27 @@ export function NewsProConsolePanel() {
 
   return (
     <Panel
-      title="Pro auto console"
+      title={t("news.pro.title", "Pro auto console")}
       right={
         <>
-          <span className={`news-pro-badge ${autoOn ? "on" : ""}`} title="auto-analysis toggle (backend /api/news/auto-analysis) + LLM routing">{badge}</span>
+          <span className={`news-pro-badge ${autoOn ? "on" : ""}`} title={t("news.pro.badge_title", "auto-analysis toggle (backend /api/news/auto-analysis) + LLM routing")}>{badge}</span>
           <button className="btn small" onClick={() => { void log.pollNow(); void status.refetch(); void answers.refetch(); }} disabled={status.isFetching || answers.isFetching}>
-            {status.isFetching || answers.isFetching ? "refreshing…" : "Refresh"}
+            {status.isFetching || answers.isFetching ? t("news.pro.refreshing", "refreshing…") : t("common.refresh", "Refresh")}
           </button>
           <button className="btn small primary" onClick={() => setConfirm("analyze-all")} disabled={busy}>
-            {analyzeAll.isPending ? "draining…" : "Analyze ALL"}
+            {analyzeAll.isPending ? t("news.pro.draining", "draining…") : t("news.pro.analyze_all", "Analyze ALL")}
           </button>
           <button className="btn small" onClick={log.clear} disabled={log.entries.length === 0}>
             Clear
           </button>
           <button className="btn small" onClick={() => setConfirm("auto-prune")} disabled={busy}>
-            {prune.isPending ? "pruning…" : "Auto-prune"}
+            {prune.isPending ? t("news.pro.pruning", "pruning…") : t("news.pro.prune", "Auto-prune")}
           </button>
           <button className="btn small" onClick={() => setConfirm("purge-soft")} disabled={busy}>
-            {purge.isPending ? "purging…" : "Purge junk (count)"}
+            {purge.isPending ? t("news.pro.purging", "purging…") : t("news.pro.purge_junk", "Purge junk (count)")}
           </button>
           <button className="btn small danger" onClick={() => setConfirm("purge-hard")} disabled={busy}>
-            {purge.isPending ? "purging…" : "Hard purge"}
+            {purge.isPending ? t("news.pro.purging", "purging…") : t("news.pro.hard_purge", "Hard purge")}
           </button>
         </>
       }
@@ -183,7 +183,7 @@ export function NewsProConsolePanel() {
           GET /api/news/pro/status · /console · /latest-answers — polled live (log {LOG_LIMIT}-row window)
         </span>
         <span className="spacer" />
-        <FreshnessNote updatedAtMs={status.dataUpdatedAt ?? null} label="pro-status" staleAfterMs={60_000} />
+        <FreshnessNote updatedAtMs={status.dataUpdatedAt ?? null} label={t("news.pro.fresh_status", "pro-status")} staleAfterMs={60_000} />
       </div>
 
       {status.isPending ? (
@@ -192,18 +192,18 @@ export function NewsProConsolePanel() {
         <ErrorState message={asErrorText(status.error)} onRetry={() => status.refetch()} />
       ) : (
         <div className="grid cols-4">
-          <MetricCard label="Pending analysis" value={counts?.pending ?? "—"} tone="dim" sub={`total articles ${counts?.total ?? "—"}`} />
+          <MetricCard label={t("news.pro.pending", "Pending analysis")} value={counts?.pending ?? "—"} tone="dim" sub={t("news.pro.pending_sub", "total articles {n}", { n: counts?.total ?? "—" })} />
           <MetricCard
-            label="Worker route"
+            label={t("news.pro.route", "Worker route")}
             value={<span className={prov?.provider_available ? "news-pro-ok" : "news-pro-warn"}>{prov?.provider_available ? "LLM" : "LOCAL"}</span>}
             tone="dim"
             sub={providerLine}
           />
           <MetricCard
-            label="Console ring"
+            label={t("news.pro.ring", "Console ring")}
             value={consoleRing?.size ?? "—"}
             tone="dim"
-            sub={`latest seq ${consoleRing?.latest_seq ?? "—"} · cursor ${log.cursor}`}
+            sub={t("news.pro.ring_sub", "latest seq {n} · cursor {c}", { n: consoleRing?.latest_seq ?? "—", c: log.cursor })}
           />
           <MetricCard label="Status counts" value={<span className="news-pro-counts">{jsonish(counts?.status_counts)}</span>} tone="dim" sub={autoOn === null ? "auto toggle not reported" : autoOn ? "auto-analysis ON (worker drains each cycle)" : "auto-analysis OFF (manual drains only)"} />
         </div>
@@ -211,7 +211,7 @@ export function NewsProConsolePanel() {
 
       {latestAi && (
         <div className="news-pro-last" title={latestAi.summary ?? ""}>
-          <span className="tiny uppercase faint">last PRO answer</span>{" "}
+          <span className="tiny uppercase faint">{t("news.pro.last_answer", "last PRO answer")}</span>{" "}
           {truncate(latestAi.summary, 180) || "—"}
           {latestAi.sentiment ? ` · ${latestAi.sentiment}` : ""}
           {latestAi.analyzed_at ? ` · ${formatDateTime(latestAi.analyzed_at)}` : ""}
@@ -226,7 +226,7 @@ export function NewsProConsolePanel() {
           {log.polling ? "polling /api/news/pro/console every 1.5s" : "polling paused"}
         </span>
       </div>
-      {log.error && <div className="news-status-line err">console: {log.error}</div>}
+      {log.error && <div className="news-status-line err">{t("news.pro.console_prefix", "console: ")}{log.error}</div>}
       <div tabIndex={0} className="news-pro-log" ref={logRef}>
         {log.entries.length === 0 ? (
           <div className="news-pro-log-empty">
@@ -250,15 +250,15 @@ export function NewsProConsolePanel() {
       ) : answers.isError ? (
         <ErrorState message={asErrorText(answers.error)} onRetry={() => answers.refetch()} />
       ) : (answers.data ?? []).length === 0 ? (
-        <EmptyState message="No AI answers stored yet." hint="Analyze an article or enable auto-analysis — rows come from news_ai_analysis verbatim." />
+        <EmptyState message={t("news.pro.answers_empty", "No AI answers stored yet.")} hint={t("news.pro.answers_empty_hint", "Analyze an article or enable auto-analysis — rows come from news_ai_analysis verbatim.")} />
       ) : (
         <DataTable
           headers={[
-            { label: "analyzed" },
-            { label: "summary" },
-            { label: "sentiment" },
-            { label: "provider / model" },
-            { label: "status" },
+            { label: t("news.pro.h_analyzed", "analyzed") },
+            { label: t("news.pro.h_summary", "summary") },
+            { label: t("news.pro.h_sentiment", "sentiment") },
+            { label: t("news.pro.h_provider", "provider / model") },
+            { label: t("news.pro.h_status", "status") },
           ]}
         >
           {(answers.data ?? []).map((a: NewsAiAnalysisRow, i) => (
@@ -279,20 +279,20 @@ export function NewsProConsolePanel() {
             confirm === "analyze-all"
               ? "Drain ALL pending articles (PRO cycle)"
               : confirm === "purge-hard"
-                ? "Hard purge — DELETE IRRELEVANT articles"
+                ? t("news.pro.confirm_hard_title", "Hard purge — DELETE IRRELEVANT articles")
                 : confirm === "purge-soft"
-                  ? "Purge junk — count only"
-                  : "Auto-prune unrelated news"
+                  ? t("news.pro.confirm_soft_title", "Purge junk — count only")
+                  : t("news.pro.confirm_prune_title", "Auto-prune unrelated news")
           }
           danger={confirm === "purge-hard"}
           confirmLabel={
             confirm === "analyze-all"
               ? "Run full drain"
               : confirm === "purge-hard"
-                ? "Delete IRRELEVANT rows"
+                ? t("news.pro.confirm_hard_label", "Delete IRRELEVANT rows")
                 : confirm === "purge-soft"
-                  ? "Count candidates"
-                  : "Mark unrelated IRRELEVANT"
+                  ? t("news.pro.confirm_soft_label", "Count candidates")
+                  : t("news.pro.confirm_prune_label", "Mark unrelated IRRELEVANT")
           }
           busy={busy}
           onConfirm={() => {

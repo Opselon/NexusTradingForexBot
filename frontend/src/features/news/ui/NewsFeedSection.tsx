@@ -12,7 +12,7 @@ import { useI18n } from "@/stores/i18nStore";
 import { ConfirmModal, EmptyState, ErrorState, Panel, Segmented, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
 import { useAnalyzeArticle, useAutoPrune, useBatchAnalyze, useNewsAiStatus, useNewsFeed, useRestoreArticle } from "../hooks";
-import { batchVerdict, directionOf, errorText, impactPct, NEWS_FILTERS, xauusdRelPct } from "../model";
+import { batchVerdict, directionOf, dirWord, errorText, impactPct, NEWS_FILTERS, xauusdRelPct } from "../model";
 import type { NewsFeedArticle, NewsFilter } from "../types";
 import { ArticleDrawer } from "./ArticleDrawer";
 import { FreshnessNote, asErrorText } from "./shared";
@@ -60,7 +60,7 @@ export function NewsFeedSection() {
 
   const runBatch = (): void => {
     if (ids.length === 0) {
-      setNote({ err: false, text: "No visible articles to analyze." });
+      setNote({ err: false, text: t("news.feed.batch_empty", "No visible articles to analyze.") });
       return;
     }
     batch.mutate(ids, {
@@ -68,7 +68,7 @@ export function NewsFeedSection() {
         const v = batchVerdict(res);
         setNote({ err: !v.ok, text: v.message(t) });
       },
-      onError: (e) => setNote({ err: true, text: `Batch failed: ${asErrorText(e)}` }),
+      onError: (e) => setNote({ err: true, text: t("news.feed.batch_failed", "Batch failed: {e}", { e: asErrorText(e) }) }),
     });
   };
 
@@ -77,31 +77,31 @@ export function NewsFeedSection() {
       onSuccess: (res) => {
         setPruneOpen(false);
         if (res.available === false || res.error) {
-          setNote({ err: true, text: `Auto-prune refused: ${errorText(res.error)}` });
+          setNote({ err: true, text: t("news.feed.prune_refused", "Auto-prune refused: {e}", { e: errorText(res.error) }) });
           return;
         }
         setNote({
           err: false,
-          text: `Pruning complete — ${res.marked_irrelevant ?? 0} marked irrelevant, ${res.preserved ?? 0} preserved (${res.already_irrelevant ?? 0} already irrelevant, ${res.failed ?? 0} failed). Recoverable via the Irrelevant filter.`,
+          text: t("news.feed.prune_done", "Pruning complete — {marked} marked irrelevant, {preserved} preserved ({already} already irrelevant, {failed} failed). Recoverable via the Irrelevant filter.", { marked: res.marked_irrelevant ?? 0, preserved: res.preserved ?? 0, already: res.already_irrelevant ?? 0, failed: res.failed ?? 0 }),
         });
       },
       onError: (e) => {
         setPruneOpen(false);
-        setNote({ err: true, text: `Auto-prune failed: ${asErrorText(e)}` });
+        setNote({ err: true, text: t("news.feed.prune_failed", "Auto-prune failed: {e}", { e: asErrorText(e) }) });
       },
     });
   };
 
   const runRestore = (articleId: string): void => {
     restore.mutate(articleId, {
-      onSuccess: (res) => setNote({ err: !!res.error, text: res.error ? `Restore refused: ${res.error}` : "Article restored to ACTIVE (backend-confirmed)." }),
-      onError: (e) => setNote({ err: true, text: `Restore failed: ${asErrorText(e)}` }),
+      onSuccess: (res) => setNote({ err: !!res.error, text: res.error ? t("news.feed.restore_refused", "Restore refused: {e}", { e: res.error }) : t("news.feed.restore_done", "Article restored to ACTIVE (backend-confirmed).") }),
+      onError: (e) => setNote({ err: true, text: t("news.feed.restore_failed", "Restore failed: {e}", { e: asErrorText(e) }) }),
     });
   };
 
   return (
     <Panel
-      title={`Headlines (${articles.length})`}
+      title={t("news.feed.headlines", "Headlines ({n})", { n: articles.length })}
       tight={false}
       right={
         <>
@@ -114,27 +114,27 @@ export function NewsFeedSection() {
             }}
           />
           <button className="btn small primary" onClick={runBatch} disabled={batch.isPending}>
-            {batch.isPending ? "analyzing…" : "AI-analyze visible"}
+            {batch.isPending ? t("news.feed.analyzing", "analyzing…") : t("news.feed.ai_analyze_visible", "AI-analyze visible")}
           </button>
           <button className="btn small" onClick={() => setPruneOpen(true)} disabled={prune.isPending}>
-            {prune.isPending ? "pruning…" : "Hide unrelated"}
+            {prune.isPending ? t("news.feed.pruning", "pruning…") : t("news.feed.hide_unrelated", "Hide unrelated")}
           </button>
         </>
       }
     >
       <div className="news-toolbar">
-        <span className="badge unknown" title="AI readiness from /api/news/ai-status (secret-free)">
-          AI {ai?.state ?? "UNKNOWN"}
+        <span className="badge unknown" title={t("news.feed.ai_badge_title", "AI readiness from /api/news/ai-status (secret-free)")}>
+          {t("news.feed.ai_badge", "AI {state}", { state: ai?.state ?? "UNKNOWN" })}
           {ai?.provider ? ` · ${ai.provider}` : ""}
           {ai?.model ? ` ${ai.model}` : ""}
         </span>
         {counts && (
           <span className="timestamp-note">
-            active {counts.ACTIVE ?? "—"} · irrelevant {counts.IRRELEVANT ?? "—"}
+            {t("news.feed.counts", "active {active} · irrelevant {irrelevant}", { active: counts.ACTIVE ?? "—", irrelevant: counts.IRRELEVANT ?? "—" })}
           </span>
         )}
         <span className="spacer" />
-        <FreshnessNote updatedAtMs={feed.dataUpdatedAt ?? null} label="feed" staleAfterMs={150_000} />
+        <FreshnessNote updatedAtMs={feed.dataUpdatedAt ?? null} label={t("news.fresh.feed", "feed")} staleAfterMs={150_000} />
       </div>
       {note && <div className={`news-status-line ${note.err ? "err" : ""}`}>{note.text}</div>}
 
@@ -144,8 +144,8 @@ export function NewsFeedSection() {
         <ErrorState message={asErrorText(feed.error)} onRetry={() => feed.refetch()} />
       ) : articles.length === 0 ? (
         <EmptyState
-          message={`No ${filter.toLowerCase()} articles.`}
-          hint={filter === "IRRELEVANT" ? "Nothing was pruned — the auto-prune pass marks unrelated stories here." : 'Use "Fetch news" above, or wait for the ingestion worker.'}
+          message={t("news.feed.empty_any", "No {filter} articles.", { filter: filter.toLowerCase() })}
+          hint={filter === "IRRELEVANT" ? t("news.feed.empty_hint_irrelevant", "Nothing was pruned — the auto-prune pass marks unrelated stories here.") : t("news.feed.empty_hint_fetch", "Use \"Fetch news\" above, or wait for the ingestion worker.")}
         />
       ) : (
         <div tabIndex={0} className="news-list">
@@ -177,8 +177,8 @@ export function NewsFeedSection() {
 
       {pruneOpen && (
         <ConfirmModal
-          title="Hide unrelated news (auto-prune)"
-          confirmLabel="Mark unrelated as IRRELEVANT"
+          title={t("news.feed.prune_title", "Hide unrelated news (auto-prune)")}
+          confirmLabel={t("news.feed.prune_confirm", "Mark unrelated as IRRELEVANT")}
           busy={prune.isPending}
           onConfirm={runPrune}
           onCancel={() => setPruneOpen(false)}
@@ -218,6 +218,7 @@ export function ArticleRow({
   onAnalyze: (force: boolean) => void;
   onRestore: () => void;
 }) {
+  const t = useI18n((s) => s.t);
   const dir = directionOf(a);
   const imp = impactPct(a);
   const rel = xauusdRelPct(a);
@@ -229,16 +230,16 @@ export function ArticleRow({
         <span className="title" style={{ flex: 1, minWidth: 0 }}>
           {a.title}
         </span>
-        <span className={`news-dir ${dir}`}>{dir}</span>
+        <span className={`news-dir ${dir}`}>{dirWord(t, dir)}</span>
       </div>
       <div className="metarow">
         <span>{a.source_name || a.source_id || "—"}</span>
-        <span className={impClass(imp)}>{imp === null ? "imp —" : `imp ${imp}`}</span>
-        <span className="tx-warn" >XAU {rel === null ? "—" : `${rel}%`}</span>
+        <span className={impClass(imp)}>{imp === null ? t("news.feed.imp_dash", "imp —") : t("news.feed.imp", "imp {v}", { v: imp })}</span>
+        <span className="tx-warn" >{t("news.feed.xau_rel", "XAU {v}", { v: rel === null ? "—" : `${rel}%` })}</span>
         {a.importance ? <span>{String(a.importance)}</span> : null}
         <span>{a.published_at ? formatDateTime(a.published_at) : "—"}</span>
         {status !== "ACTIVE" && <StatusBadge status={status} />}
-        {a.is_duplicate && <span className="badge warn">DUPLICATE</span>}
+        {a.is_duplicate && <span className="badge warn">{t("news.feed.duplicate", "DUPLICATE")}</span>}
       </div>
       {a.analysis?.market_mechanism && <div className="mech">{a.analysis.market_mechanism}</div>}
       {a.keyword_hits && a.keyword_hits.length > 0 && (
@@ -253,20 +254,20 @@ export function ArticleRow({
       <div className="news-actions" onClick={(e) => e.stopPropagation()}>
         {status === "IRRELEVANT" && (
           <button className="btn small" onClick={onRestore} disabled={busy || restoreBusy}>
-            {restoreBusy ? "restoring…" : "Restore"}
+            {restoreBusy ? t("news.feed.restoring", "restoring…") : t("news.feed.restore", "Restore")}
           </button>
         )}
         {aiDone ? (
           <button className="btn small primary" onClick={() => onAnalyze(true)} disabled={busy || restoreBusy}>
-            {busy ? "analyzing…" : "Re-analyze (force)"}
+            {busy ? t("news.feed.analyzing", "analyzing…") : t("news.feed.reanalyze", "Re-analyze (force)")}
           </button>
         ) : (
           <button className="btn small primary" onClick={() => onAnalyze(false)} disabled={busy || restoreBusy}>
-            {busy ? "analyzing…" : "Analyze with AI"}
+            {busy ? t("news.feed.analyzing", "analyzing…") : t("news.feed.analyze_ai", "Analyze with AI")}
           </button>
         )}
-        {a.ai_analysis?.analysis_status === "failed" && <span className="badge bad">AI FAILED</span>}
-        {a.ai_analysis?.insufficient_evidence && <span className="badge warn">INSUFFICIENT EVIDENCE</span>}
+        {a.ai_analysis?.analysis_status === "failed" && <span className="badge bad">{t("news.feed.ai_failed", "AI FAILED")}</span>}
+        {a.ai_analysis?.insufficient_evidence && <span className="badge warn">{t("news.feed.insufficient_evidence", "INSUFFICIENT EVIDENCE")}</span>}
       </div>
     </article>
   );
