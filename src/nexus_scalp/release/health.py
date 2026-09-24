@@ -207,6 +207,8 @@ def _resolve_serving_artifact(model_dir: Path) -> Path | None:
        downstream as ``NO_MODEL_METADATA``.
     3. Never fabricate metadata: this helper only SELECTS an artifact; the
        checks read whatever the artifact actually declares.
+    4. ``configured_hint`` (optional): reserved for a caller that already
+       holds the engine's resolved artifact; unused by the checks today.
 
     Returns ``None`` when the model dir is absent or holds no ``model.pt``.
     """
@@ -240,7 +242,7 @@ class HealthEngine:
         news_db_path: Path | None = None,
         model_dir: Path | None = None,
     ) -> None:
-        self.config_path = config_path or paths.get_user_config_path()
+        self.config_path = config_path  # explicit None -> engine resolution chain (below)
         self.workspace = workspace or paths.get_runtime_workspace()
         self.db_path = db_path or (self.workspace / "artifacts" / "audit.db")
         self.news_db_path = news_db_path or (self.workspace / "artifacts" / "news.db")
@@ -257,10 +259,31 @@ class HealthEngine:
         try:
             from nexus_scalp.configuration.config import AppConfig
 
-            if not self.config_path.exists():
+            # NSE-HEALTHFIX-001: mirror the engine's own resolution order
+            # (cli/engine_boot.py) instead of only accepting an explicit user
+            # config. On first run there is no nexus.yaml and the engine
+            # falls back to the packaged defaults (configs/live.yaml then
+            # configs/base.yaml); if health does not do the same it silently
+            # reports no configured artifact, picks a bundle by tiebreak
+            # alone, and can contradict the bundle the engine actually
+            # serves. An explicit user config (or --config) still wins.
+            candidates: list[Path] = []
+            if self.config_path is not None:
+                candidates.append(self.config_path)
+            else:
+                candidates.append(paths.get_user_config_path())
+                candidates.append(Path("configs/live.yaml"))
+                candidates.append(Path("configs/base.yaml"))
+            chosen = next((c for c in candidates if c.exists()), None)
+            if chosen is None:
                 self._config = False
                 return None
-            self._config = AppConfig.load_from_yaml(self.config_path)
+            try:
+                self._config = AppConfig.load_from_yaml(chosen)
+            except FileNotFoundError:
+                self._config = False
+                return None
+            self._config_source = chosen  # type: ignore[attr-defined]
             return self._config
         except Exception as e:
             self._config = False
@@ -304,7 +327,7 @@ class HealthEngine:
             return HealthEntry(
                 "CONFIGURATION",
                 "FAIL",
-                f"config '{self.config_path}' failed to load: {err}",
+                f"config '{self._config_report_path()}' failed to load: {err}",
                 "Run `nexus repair` to restore from template, or fix the YAML.",
                 state=ERROR,
             )
@@ -315,7 +338,7 @@ class HealthEngine:
             return HealthEntry(
                 "CONFIGURATION",
                 "FAIL",
-                f"config '{self.config_path}' missing (first run / not set up yet)",
+                f"config '{self._config_report_path()}' missing (first run / not set up yet)",
                 "Run `nexus setup` or `nexus repair` to create the configuration.",
                 state=NOT_INITIALIZED,
             )
@@ -324,8 +347,22 @@ class HealthEngine:
         return HealthEntry(
             "CONFIGURATION",
             "PASS",
-            f"mode={mode_txt} symbol={cfg.execution.symbol} schema={cfg.model.feature_schema_version}",
+            f"mode={mode_txt} symbol={cfg.execution.symbol} schema={cfg.model.feature_schema_version}"
+            f" · {self._config_report_path()}",
         )
+
+    def _config_report_path(self) -> str:
+        """Path shown in the CONFIGURATION check (NSE-HEALTHFIX-001).
+
+        ``self.config_path`` is ``None`` in default mode (the engine chain is
+        resolved inside ``_load_config``), so the check reports whichever file
+        actually loaded — including a packaged default like
+        ``configs/base.yaml`` on first run.
+        """
+        if self.config_path is not None:
+            return str(self.config_path)
+        resolved = getattr(self, "_config_source", None)
+        return str(resolved) if resolved is not None else "configs/base.yaml (default chain)"
 
     def check_database(self) -> HealthEntry:
         verdict, reason = _db_health(self.db_path)
@@ -553,6 +590,24 @@ class HealthEngine:
             model_dim = (
                 meta.get("dimension") or meta.get("feature_dimension") or model_dim_from_schema
             )
+        if model_schema_id is None and model_dim is None:
+            # NSE-HEALTHFIX-001 (lane C seam): no real NSE bundle carries its
+            # contract inside the state_dict — it lives in SIBLING files
+            # (signed manifest.json / model.meta.json; proven on every bundle
+            # in this repo). Fall back to the sidecar resolver before
+            # concluding the bundle declares nothing. Read-only, never
+            # fabricates: a bundle with no sidecar contract still yields
+            # (None, None) and the UNKNOWN/NO_MODEL_METADATA verdict below.
+            try:
+                from nexus_scalp.release.model_bootstrap import resolve_bundle_contract
+
+                side_schema, side_dim, _report = resolve_bundle_contract(candidate.parent)
+            except Exception:
+                side_schema, side_dim = None, None
+            if side_schema is not None:
+                model_schema_id = side_schema
+            if side_dim is not None:
+                model_dim = side_dim
         if model_dim is None:
             try:
                 first_w = next(

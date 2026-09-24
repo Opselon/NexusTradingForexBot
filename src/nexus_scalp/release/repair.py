@@ -83,7 +83,39 @@ class RepairEngine:
         results.append(self._ensure_settings_database())
         results.append(self._ensure_models())
         results.append(self._ensure_logs())
+        results.append(self._apply_pending_migrations())
         return results
+
+    def _apply_pending_migrations(self) -> RepairResult:
+        """Bring a healthy audit DB to the expected schema version (NSE-HEALTHFIX-001 lane D seam).
+
+        The probe's DATABASE WARNING was a 71-table, integrity-ok audit.db
+        parked at schema 7 while the registry expects 9: ``nexus db migrate``
+        applies the pending pair, but nothing on this path ever ran it, so the
+        gap never closed automatically. Delegates to the DB command surface's
+        idempotent, integrity-gated step, which never races a live engine and
+        SKIPPEDs on a lock instead.
+
+        Failure isolation (same contract as every other ``_ensure_*`` step): a
+        step that cannot apply reports SKIPPED/FAILED and never aborts the
+        whole run — setup must never be blocked by a migration.
+        """
+        try:
+            from nexus_scalp.cli.db_commands import apply_pending_audit_migrations
+
+            status, detail = apply_pending_audit_migrations(
+                self.workspace / "artifacts" / "audit.db"
+            )
+        except Exception as e:  # never block the repair sequence
+            return RepairResult(
+                "migrations",
+                "SKIPPED",
+                f"pending-schema migration step unavailable ({type(e).__name__}: {e})",
+            )
+        if status == "OK":
+            return RepairResult("migrations", "OK", detail)
+        # SKIPPED / FAILED / NOT_INITIALIZED: honest, non-fatal, surfaced to the operator.
+        return RepairResult("migrations", "SKIPPED" if status != "FAILED" else "FAILED", detail)
 
     # ------------------------------------------------------------------
     # Public, side-effect-free seams for callers that need ONE repair action
