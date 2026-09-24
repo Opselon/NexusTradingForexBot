@@ -9,6 +9,7 @@
  *    (web/errors.py `safe_error_payload`).
  * Both families are normalized here — pages never parse envelopes themselves.
  */
+import { localErrorMessage } from "@/lib/errorMessages";
 
 export interface V1Meta {
   request_id: string;
@@ -52,6 +53,19 @@ export class ApiError extends Error {
 
   get isAuthError(): boolean {
     return this.status === 401 || this.status === 403 || this.code === "AUTH_CONFIG_ERROR";
+  }
+
+  /**
+   * User-facing text for this error (i18n rules §31/§70): resolves the
+   * backend CODE through the frontend error-code map and never surfaces the
+   * raw backend `message` (route-local codes can carry exception prose).
+   * Unknown codes render a safe generic localized message plus the code and
+   * request id as a reference.
+   */
+  localized(
+    t: (key: string, fallback: string, vars?: Record<string, string | number>) => string,
+  ): string {
+    return localErrorMessage(this.code, this.status, this.requestId, t);
   }
 }
 

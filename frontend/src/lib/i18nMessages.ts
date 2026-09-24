@@ -8,6 +8,7 @@
  * dictionary is registered before any component calls t().
  */
 import { registerMessages } from "@/lib/i18n";
+import { MESSAGES as errorScope } from "@/lib/errors/i18n";
 import { MESSAGES as app } from "@/app/i18n";
 import { MESSAGES as components } from "@/components/i18n";
 import { MESSAGES as sharedWidgets } from "@/pages/_shared/i18n";
@@ -44,6 +45,7 @@ import { MESSAGES as rules } from "@/features/rules/i18n";
 /** Every scope, registered sequentially so duplicate keys can be reported
  *  per scope by registerMessages (first registration wins). */
 for (const scope of [
+  errorScope,
   app,
   components,
   sharedWidgets,
