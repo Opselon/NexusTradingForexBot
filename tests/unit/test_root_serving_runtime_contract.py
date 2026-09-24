@@ -141,6 +141,16 @@ def test_index_html_alias_falls_back_to_legacy(legacy_client: TestClient) -> Non
     assert _LEGACY_TITLE in r.text
 
 
+def test_no_dist_unknown_path_stays_pre_wave_404(legacy_client: TestClient) -> None:
+    """Contract #6 "serving dist": with no build there is no SPA fallback, so
+    an unknown deep link keeps EXACTLY the pre-wave answer (an honest 404
+    from the router) — the legacy page is never handed out for free, and the
+    mount's deny/escape machinery has nothing to weaken."""
+    r = legacy_client.get("/trading")
+    assert r.status_code == 404
+    assert _REACT_MARKER not in r.text
+
+
 # =============================================================================
 # #5 — legacy dashboard relocation
 # =============================================================================
@@ -343,6 +353,36 @@ def test_traversal_never_serves_outside_dist(client: TestClient) -> None:
         r = client.get(path)
         assert r.status_code == 404, path
         assert "NEVER-SERVED" not in r.text, path
+
+
+@pytest.mark.parametrize(
+    "malicious",
+    [
+        "..%2f..%2f..%2fetc%2fpasswd",
+        "..\\..\\..\\Windows\\win.ini",
+        "....//....//etc/passwd",
+        "%2e%2e%2f%2e%2e%2fsecret.txt",
+        "index-Ab12Cd34Ef.js/../../secret.txt",
+        "C:/Windows/system.ini",
+        "//etc/hosts",
+        # NOTE: the shape "../../../../etc/passwd" is resolved by httpx and
+        # real browsers BEFORE it reaches the ASGI scope (arrives as
+        # "/etc/passwd", indistinguishable from a deep link — contract #6
+        # serves the index shell, never a file). Server-visible traversal
+        # in every other form is pinned here; the collapsed shape is
+        # escalated in nse-enduser-runtime/REQUESTS.md re: phase-14's
+        # pre-wave expectation for that param.
+    ],
+)
+def test_root_fallback_refuses_traversal_shapes(client: TestClient, malicious: str) -> None:
+    """Every traversal vector is refused by the root fallback (never a 200
+    shell or a file outside the dist) — httpx resolving ``../..`` client-side
+    means the ASGI scope can hold an already-collapsed absolute path, so the
+    guard refuses resolved-absolute shapes too (phase-14 traversal parity)."""
+    r = client.get(f"/assets/{malicious}")
+    assert r.status_code in (401, 404), f"traversal {malicious!r} must be refused"
+    assert _REACT_MARKER not in r.text, malicious
+    assert "NEVER-SERVED" not in r.text, malicious
 
 
 def test_auth_public_paths_unaffected_by_seam(monkeypatch: pytest.MonkeyPatch) -> None:

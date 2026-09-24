@@ -493,6 +493,33 @@ class _AltSpaStaticFiles(StaticFiles):
     #: Root-mount only: apply immutable cache headers to hashed assets.
     immutable_asset_hashes: bool = False
 
+    @staticmethod
+    def _scope_escape_attempt(scope: dict) -> bool:
+        """Traversal/escape shapes in the ORIGINAL request path.
+
+        Checked from the request scope — NEVER from the mount's normpath'd
+        path, whose ``\\`` are ordinary Windows separators (a backslash test
+        there would refuse every multi-segment SPA route on Windows).
+
+        httpx and real browsers resolve ``..`` segments BEFORE sending, so a
+        collapsed ``/etc/passwd`` is indistinguishable from a deep link at
+        the ASGI layer (contract #6 serves the index shell there — never a
+        file; escalated in REQUESTS.md re: phase-14's pre-wave expectation).
+        Everything still visible in the scope — raw ``..``, backslash
+        traversal, UNC/triple-slash, drive letters — is refused here before
+        ANY lookup (defense in depth alongside CodeQL #62/#63/#67 and the
+        auth middleware's own guards).
+        """
+        scope_path = scope.get("path", "") if scope else ""
+        if not scope_path:
+            return False
+        if ".." in scope_path or "\\" in scope_path or "//" in scope_path:
+            return True
+        head = scope_path.lstrip("/")
+        first = head.split("/", 1)[0]
+        # Windows drive letter / device path
+        return bool(len(first) >= 2 and first[1] == ":" and first[0].isalpha())
+
     async def get_response(self, path: str, scope):
         from starlette.exceptions import HTTPException
 
@@ -502,6 +529,11 @@ class _AltSpaStaticFiles(StaticFiles):
             normalized = "/" + path.lstrip("/")
             if any(normalized.startswith(p) for p in self.deny_prefixes):
                 raise HTTPException(status_code=404)
+        if self._scope_escape_attempt(scope):
+            # Defense in depth (phase-14 traversal suite + CodeQL #62/#63/#67):
+            # traversal-shaped requests are refused before ANY lookup, so they
+            # can never be answered with the index document or a file.
+            raise HTTPException(status_code=404)
         try:
             resp = await super().get_response(path, scope)
         except HTTPException as exc:
@@ -3119,29 +3151,34 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     # END-USER-RUNTIME-UI-INTEGRATION — ROOT SPA FALLBACK (frozen #6).
     # Registered as the VERY LAST route in create_app, so every registered
     # route above and the /alt mount keep winning (Starlette first-match).
-    # Unknown DOTLESS paths (/trading, /positions, ...) receive the SPA
-    # index (client-side routing); deny classes (/api, /ws, /web) and
-    # missing non-.html files answer with an honest 404 — NEVER index.html
-    # (§60). Registered UNCONDITIONALLY (contract #6: the fallback is
-    # structurally the last route, so no future route can be shadowed by
-    # accident): with a resolved dist it serves the React index; with the
-    # dist MISSING it degrades to the legacy Web/ document for unknown
-    # paths — registered routes keep winning either way, and contract #4's
-    # legacy-at-/ behavior is untouched (serve_index above owns "/").
+    # Unknown DOTLESS paths (/trading, /positions, ...) receive the React
+    # index (client-side routing); deny classes (/api, /ws, /web),
+    # escape-shaped requests and missing non-.html files answer with an
+    # honest 404 — NEVER index.html (§60).
+    #
+    # Registered ONLY when a dist resolves — "serving dist" (#6): with no
+    # build there is no SPA fallback to register, and unknown paths keep
+    # EXACTLY the pre-wave behavior (honest 404 from the router, zero
+    # regression — contract #4's legacy-at-/ answer comes from
+    # serve_index above, not from this mount). Order invariant holds
+    # either way: when registered, this is the last route.
     # ==================================================================
-    _root_spa = _AltSpaStaticFiles(
-        directory=str(_alt_ui_dir if _alt_ui_dir is not None else WEB_DIR),
-        html=True,
-        # A missing directory must degrade to honest 404s, never refuse
-        # to start the app (portable releases can ship without Web/).
-        check_dir=False,
-    )
-    # Instance-level config: StaticFiles.__init__ takes no such kwargs.
-    # Deny classes + immutable asset caching are ROOT-only — the /alt
-    # instance above keeps the class defaults (byte-compat, frozen #6).
-    _root_spa.deny_prefixes = ROOT_SPA_DENY_PREFIXES
-    _root_spa.immutable_asset_hashes = True
-    app.mount("/", _root_spa, name="root_spa")
+    if _alt_ui_dir is not None:
+        _root_spa = _AltSpaStaticFiles(
+            directory=str(_alt_ui_dir),
+            html=True,
+        )
+        # Instance-level config: StaticFiles.__init__ takes no such kwargs.
+        # Deny classes + immutable asset caching are ROOT-only — the /alt
+        # instance above keeps the class defaults (byte-compat, frozen #6).
+        _root_spa.deny_prefixes = ROOT_SPA_DENY_PREFIXES
+        _root_spa.immutable_asset_hashes = True
+        app.mount("/", _root_spa, name="root_spa")
+    else:
+        logger.info(
+            "[SPA-ROOT] no built frontend/dist — root fallback not mounted "
+            "(unknown paths keep the pre-wave honest-404 behavior)"
+        )
 
     # WEB-AUTH-P0: LAST step in create_app — wraps the fully-built app so
     # every route (current and future) is behind token auth (audit B1).
