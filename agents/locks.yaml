@@ -131,3 +131,22 @@ exclusive_locks:
     since: 2026-09-24
     task: TASK-EUP-RELEASE-001
     expiry: 2026-10-01
+
+  # --- RESIDUE-POSIX LANE (2026-09-24, TASK-RESIDUE-POSIX-001) ------------
+  # Base: cbabadae (= origin/main tip). Lane branch
+  # agent/ci/residue-posix-paths, worktree nse-residue-posix.
+  # Scope: Windows path-separator regression in the merge-marker residue gate.
+  - path: scripts/ci/check_merge_marker_residue.py
+    owner: HERMES-RESIDUE-POSIX
+    exclusive: true
+    scope: TASK-RESIDUE-POSIX-001 POSIX-canonical diagnostic paths (str -> as_posix at the single derivation site)
+    since: 2026-09-24
+    task: TASK-RESIDUE-POSIX-001
+    expiry: 2026-10-01
+  - path: tests/unit/test_merge_marker_residue.py
+    owner: HERMES-RESIDUE-POSIX
+    exclusive: true
+    scope: TASK-RESIDUE-POSIX-001 Windows regression coverage for the residue gate
+    since: 2026-09-24
+    task: TASK-RESIDUE-POSIX-001
+    expiry: 2026-10-01

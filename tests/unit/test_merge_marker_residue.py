@@ -144,6 +144,36 @@ def test_diff3_original_arm_detected(tmp_path: Path) -> None:
     assert "eb73440a" in found[0].detail
 
 
+def test_findings_paths_are_posix_on_every_platform(tmp_path: Path) -> None:
+    """Diagnostic paths must be POSIX regardless of the host OS.
+
+    ``str(Path.relative_to(...))`` yields backslashes on Windows, so the
+    windows-latest matrix leg saw ``docs\\ledger.md`` where the golden
+    assertion above expects ``docs/ledger.md`` — the required Full Critical
+    Suite went red on every main push since PR #405 while every PR fast-lane
+    run stayed green (it never exercised this path on a Windows host).
+
+    The gate must emit repository-relative paths in canonical POSIX form on
+    EVERY OS, so a finding is byte-identical across matrix legs and a nested
+    path can never smuggle a host-OS separator into CI output.
+    """
+    root = _sandbox_repo(tmp_path)
+    nested = root / "docs" / "deep" / "nested"
+    nested.mkdir(parents=True)
+    victim = nested / "conflict.md"
+    victim.write_text("# header\n<<<<<<< HEAD\nbody text\n", encoding="utf-8")
+    _git("add", "docs/deep/nested/conflict.md", cwd=root)
+    _git("commit", "-q", "-m", "add nested conflict", cwd=root)
+
+    rep = GATE_MOD.check_residue(root)
+    assert not rep.ok
+    paths = [f.path for f in rep.findings]
+    assert paths, "the nested conflict must be detected"
+    # no host-OS separator may leak into a diagnostic path
+    assert all(chr(92) not in finding_path for finding_path in paths), paths
+    assert "docs/deep/nested/conflict.md" in paths, paths
+
+
 @pytest.mark.parametrize(
     "kind, line",
     [
