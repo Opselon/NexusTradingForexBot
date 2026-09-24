@@ -3216,7 +3216,7 @@ domain "v1:research":
     path: /api/v1/research/datasets
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/research.py
     source_line: 166
     handler: research_datasets
@@ -3226,7 +3226,7 @@ domain "v1:research":
     path: /api/v1/research/runs
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/research.py
     source_line: 135
     handler: research_runs
@@ -3236,7 +3236,7 @@ domain "v1:research":
     path: /api/v1/research/status
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/research.py
     source_line: 44
     handler: research_status
@@ -3246,7 +3246,7 @@ domain "v1:research":
     path: /api/v1/research/strategies
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/research.py
     source_line: 71
     handler: research_strategies
@@ -3266,7 +3266,7 @@ domain "v1:risk":
     path: /api/v1/risk/status
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/risk.py
     source_line: 25
     handler: risk_status
@@ -3276,7 +3276,7 @@ domain "v1:risk":
     path: /api/v1/risk/summary
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/risk.py
     source_line: 63
     handler: risk_summary
@@ -3288,7 +3288,7 @@ domain "v1:runtime":
     path: /api/v1/runtime/freshness
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/runtime.py
     source_line: 74
     handler: runtime_freshness
@@ -3298,7 +3298,7 @@ domain "v1:runtime":
     path: /api/v1/runtime/mode
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/runtime.py
     source_line: 19
     handler: runtime_mode
@@ -3308,7 +3308,7 @@ domain "v1:runtime":
     path: /api/v1/runtime/shutdown
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/runtime.py
     source_line: 49
     handler: runtime_shutdown

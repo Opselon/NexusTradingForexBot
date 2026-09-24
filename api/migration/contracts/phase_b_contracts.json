@@ -1,0 +1,382 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/research/status",
+    "status": 200,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "data": {
+        "available": true,
+        "health": {
+          "available": false
+        },
+        "registry": {
+          "available": false,
+          "total": 0,
+          "by_lifecycle": {}
+        },
+        "generated_at": "2026-09-24T14:30:59.797745+00:00"
+      },
+      "meta": {
+        "request_id": "req_030a7e43b7",
+        "generated_at": "2026-09-24T14:30:59.797745+00:00"
+      }
+    },
+    "raw_head": "{\"data\":{\"available\":true,\"health\":{\"available\":false},\"registry\":{\"available\":false,\"total\":0,\"by_lifecycle\":{}},\"generated_at\":\"2026-09-24T14:30:59.797745+00:00\"},\"meta\":{\"request_id\":\"req_030a7e43b7\",\"generated_at\":\"2026-09-24T14:30:59.797745+00:00\"}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/strategies",
+    "status": 200,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "data": {
+        "items": [],
+        "page": 1,
+        "page_size": 50,
+        "has_more": false
+      },
+      "meta": {
+        "request_id": "req_988f72024a",
+        "generated_at": "2026-09-24T14:30:59.803740+00:00"
+      }
+    },
+    "raw_head": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_988f72024a\",\"generated_at\":\"2026-09-24T14:30:59.803740+00:00\"}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/strategies?page=1&page_size=2",
+    "status": 200,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "data": {
+        "items": [],
+        "page": 1,
+        "page_size": 2,
+        "has_more": false
+      },
+      "meta": {
+        "request_id": "req_b681cfe8c1",
+        "generated_at": "2026-09-24T14:30:59.810245+00:00"
+      }
+    },
+    "raw_head": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":2,\"has_more\":false},\"meta\":{\"request_id\":\"req_b681cfe8c1\",\"generated_at\":\"2026-09-24T14:30:59.810245+00:00\"}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/strategies?lifecycle=stable",
+    "status": 200,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "data": {
+        "items": [],
+        "page": 1,
+        "page_size": 50,
+        "has_more": false
+      },
+      "meta": {
+        "request_id": "req_b18a2c4ffa",
+        "generated_at": "2026-09-24T14:30:59.814251+00:00"
+      }
+    },
+    "raw_head": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_b18a2c4ffa\",\"generated_at\":\"2026-09-24T14:30:59.814251+00:00\"}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/strategies/does-not-exist",
+    "status": 404,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "error": {
+        "code": "RESOURCE_NOT_FOUND",
+        "message": "strategy does-not-exist not found",
+        "details": {},
+        "request_id": "req_13930c449b",
+        "retryable": false
+      }
+    },
+    "raw_head": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"strategy does-not-exist not found\",\"details\":{},\"request_id\":\"req_13930c449b\",\"retryable\":false}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/runs",
+    "status": 200,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "data": {
+        "items": [],
+        "page": 1,
+        "page_size": 50,
+        "has_more": false
+      },
+      "meta": {
+        "request_id": "req_f581dfd822",
+        "generated_at": "2026-09-24T14:30:59.825260+00:00"
+      }
+    },
+    "raw_head": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_f581dfd822\",\"generated_at\":\"2026-09-24T14:30:59.825260+00:00\"}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/runs?page=1&page_size=3",
+    "status": 200,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "data": {
+        "items": [],
+        "page": 1,
+        "page_size": 3,
+        "has_more": false
+      },
+      "meta": {
+        "request_id": "req_7352240cd2",
+        "generated_at": "2026-09-24T14:30:59.831256+00:00"
+      }
+    },
+    "raw_head": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":3,\"has_more\":false},\"meta\":{\"request_id\":\"req_7352240cd2\",\"generated_at\":\"2026-09-24T14:30:59.831256+00:00\"}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/datasets",
+    "status": 200,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "data": {
+        "datasets": [],
+        "distinct": 0,
+        "generated_at": "2026-09-24T14:30:59.836257+00:00"
+      },
+      "meta": {
+        "request_id": "req_36aba370d1",
+        "generated_at": "2026-09-24T14:30:59.836257+00:00"
+      }
+    },
+    "raw_head": "{\"data\":{\"datasets\":[],\"distinct\":0,\"generated_at\":\"2026-09-24T14:30:59.836257+00:00\"},\"meta\":{\"request_id\":\"req_36aba370d1\",\"generated_at\":\"2026-09-24T14:30:59.836257+00:00\"}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/runs?page=0",
+    "status": 422,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "Request validation failed.",
+        "details": {
+          "errors": [
+            {
+              "field": "page",
+              "issue": "greater_than_equal",
+              "input_present": true
+            }
+          ]
+        },
+        "request_id": "req_e6db55a3ff",
+        "retryable": false
+      }
+    },
+    "raw_head": "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Request validation failed.\",\"details\":{\"errors\":[{\"field\":\"page\",\"issue\":\"greater_than_equal\",\"input_present\":true}]},\"request_id\":\"req_e6db55a3ff\",\"retryable\":false}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/runs?page_size=0",
+    "status": 422,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "Request validation failed.",
+        "details": {
+          "errors": [
+            {
+              "field": "page_size",
+              "issue": "greater_than_equal",
+              "input_present": true
+            }
+          ]
+        },
+        "request_id": "req_a40df8fea8",
+        "retryable": false
+      }
+    },
+    "raw_head": "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Request validation failed.\",\"details\":{\"errors\":[{\"field\":\"page_size\",\"issue\":\"greater_than_equal\",\"input_present\":true}]},\"request_id\":\"req_a40df8fea8\",\"retryable\":false}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/runs?page_size=201",
+    "status": 422,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "Request validation failed.",
+        "details": {
+          "errors": [
+            {
+              "field": "page_size",
+              "issue": "less_than_equal",
+              "input_present": true
+            }
+          ]
+        },
+        "request_id": "req_633454ed9c",
+        "retryable": false
+      }
+    },
+    "raw_head": "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Request validation failed.\",\"details\":{\"errors\":[{\"field\":\"page_size\",\"issue\":\"less_than_equal\",\"input_present\":true}]},\"request_id\":\"req_633454ed9c\",\"retryable\":false}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/runs?lifecycle=x",
+    "status": 200,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "data": {
+        "items": [],
+        "page": 1,
+        "page_size": 50,
+        "has_more": false
+      },
+      "meta": {
+        "request_id": "req_be41447fe0",
+        "generated_at": "2026-09-24T14:30:59.864793+00:00"
+      }
+    },
+    "raw_head": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_be41447fe0\",\"generated_at\":\"2026-09-24T14:30:59.864793+00:00\"}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/risk/status",
+    "status": 503,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "error": {
+        "code": "ENGINE_UNAVAILABLE",
+        "message": "The trading engine is not attached to the API server.",
+        "details": {},
+        "request_id": "req_6eda2be61a",
+        "retryable": true
+      }
+    },
+    "raw_head": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_6eda2be61a\",\"retryable\":true}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/risk/summary",
+    "status": 503,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "error": {
+        "code": "ENGINE_UNAVAILABLE",
+        "message": "The trading engine is not attached to the API server.",
+        "details": {},
+        "request_id": "req_a1d1df86e2",
+        "retryable": true
+      }
+    },
+    "raw_head": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_a1d1df86e2\",\"retryable\":true}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/runtime/mode",
+    "status": 200,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "data": {
+        "mode": null,
+        "effective_mode": null,
+        "engine_attached": false,
+        "replaying": null
+      },
+      "meta": {
+        "request_id": "req_0896dd0cca",
+        "generated_at": "2026-09-24T14:30:59.891944+00:00"
+      }
+    },
+    "raw_head": "{\"data\":{\"mode\":null,\"effective_mode\":null,\"engine_attached\":false,\"replaying\":null},\"meta\":{\"request_id\":\"req_0896dd0cca\",\"generated_at\":\"2026-09-24T14:30:59.891944+00:00\"}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/runtime/freshness",
+    "status": 503,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "error": {
+        "code": "ENGINE_UNAVAILABLE",
+        "message": "The trading engine is not attached to the API server.",
+        "details": {},
+        "request_id": "req_1f3a08ddd2",
+        "retryable": true
+      }
+    },
+    "raw_head": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_1f3a08ddd2\",\"retryable\":true}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/runtime/shutdown",
+    "status": 200,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "data": {
+        "engine_attached": false,
+        "phase": "UNKNOWN"
+      },
+      "meta": {
+        "request_id": "req_ad5266bf85",
+        "generated_at": "2026-09-24T14:30:59.902954+00:00"
+      }
+    },
+    "raw_head": "{\"data\":{\"engine_attached\":false,\"phase\":\"UNKNOWN\"},\"meta\":{\"request_id\":\"req_ad5266bf85\",\"generated_at\":\"2026-09-24T14:30:59.902954+00:00\"}}"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/risk/nope",
+    "status": 404,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "error": {
+        "code": "RESOURCE_NOT_FOUND",
+        "message": "The requested resource was not found.",
+        "details": {},
+        "request_id": "req_d74f7b5109",
+        "retryable": false
+      }
+    },
+    "raw_head": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"The requested resource was not found.\",\"details\":{},\"request_id\":\"req_d74f7b5109\",\"retryable\":false}}"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/risk/status",
+    "status": 405,
+    "request_id": "",
+    "content_type": "",
+    "body": {
+      "error": {
+        "code": "METHOD_NOT_ALLOWED",
+        "message": "The HTTP method is not allowed for this resource.",
+        "details": {},
+        "request_id": "req_59281af9df",
+        "retryable": false
+      }
+    },
+    "raw_head": "{\"error\":{\"code\":\"METHOD_NOT_ALLOWED\",\"message\":\"The HTTP method is not allowed for this resource.\",\"details\":{},\"request_id\":\"req_59281af9df\",\"retryable\":false}}"
+  }
+]
