@@ -7,6 +7,7 @@
  */
 
 import { memo, useEffect, useRef } from "react";
+import { useI18n } from "@/stores/i18nStore";
 
 interface Props {
   active: boolean;
@@ -37,6 +38,7 @@ export const ReplayControls = memo(function ReplayControls({
   onPlaying,
 }: Props) {
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const t = useI18n((s) => s.t);
 
   useEffect(() => {
     if (!playing || !active || total === 0) return undefined;
@@ -55,28 +57,32 @@ export const ReplayControls = memo(function ReplayControls({
   if (!active) {
     return (
       <div className="dt-replay">
-        <button className="dt-replay-btn" onClick={onStart} title="Replay this trace step-by-step (recorded events only — the engine is never rewound)">
-          ⟳ Replay trace
+        <button
+          className="dt-replay-btn"
+          onClick={onStart}
+          title={t("trace.replay.start_hint", "Replay this trace step-by-step (recorded events only — the engine is never rewound)")}
+        >
+          {t("trace.replay.start", "⟳ Replay trace")}
         </button>
       </div>
     );
   }
 
   return (
-    <div className="dt-replay active" role="group" aria-label="Replay controls">
-      <button className="dt-replay-btn" onClick={() => onStep(-1)} disabled={index <= 0} aria-label="Previous event">⏮</button>
+    <div className="dt-replay active" role="group" aria-label={t("trace.replay.region", "Replay controls")}>
+      <button className="dt-replay-btn" onClick={() => onStep(-1)} disabled={index <= 0} aria-label={t("trace.replay.prev", "Previous event")}>⏮</button>
       <button
         className="dt-replay-btn play"
         onClick={() => onPlaying(!playing)}
-        aria-label={playing ? "Pause replay" : "Play replay"}
+        aria-label={playing ? t("trace.replay.pause", "Pause replay") : t("trace.replay.play", "Play replay")}
       >
         {playing ? "⏸" : "⏵"}
       </button>
-      <button className="dt-replay-btn" onClick={() => onStep(1)} disabled={index >= total - 1} aria-label="Next event">⏭</button>
+      <button className="dt-replay-btn" onClick={() => onStep(1)} disabled={index >= total - 1} aria-label={t("trace.replay.next", "Next event")}>⏭</button>
       <span className="dt-replay-pos">
-        {total ? `${index + 1} / ${total}` : "0 / 0"} events
+        {t("trace.replay.position", "{pos} / {total} events", { pos: total ? index + 1 : 0, total })}
       </span>
-      <span className="dt-replay-speeds" role="group" aria-label="Speed">
+      <span className="dt-replay-speeds" role="group" aria-label={t("trace.replay.speed_aria", "Speed")}>
         {SPEEDS.map((s) => (
           <button
             key={s}
@@ -88,7 +94,9 @@ export const ReplayControls = memo(function ReplayControls({
           </button>
         ))}
       </span>
-      <button className="dt-replay-btn exit" onClick={onStop} aria-label="Exit replay">✕ Exit</button>
+      <button className="dt-replay-btn exit" onClick={onStop} aria-label={t("trace.replay.exit_aria", "Exit replay")}>
+        ✕ {t("trace.replay.exit", "Exit")}
+      </button>
     </div>
   );
 });

@@ -280,4 +280,20 @@ export const MESSAGES: FeatureMessages = {
   "trace.dstatus.rejected": { fa: "رد شد", de: "ABGELEHNT", es: "RECHAZADO", ar: "رُفض" },
   "trace.dstatus.no_trade": { fa: "بدون معامله", de: "KEIN HANDEL", es: "SIN OPERACIÓN", ar: "بلا تداول" },
   "trace.dstatus.pending": { fa: "در انتظار", de: "AUSSTEHEND", es: "PENDIENTE", ar: "معلّق" },
+
+  // ---- batch 3: replay controls + canvas
+  "trace.replay.start_hint": { fa: "بازپخش گام‌به‌گام این ردپا (فقط رویدادهای ثبت‌شده — موتور هرگز به عقب برنمی‌گردد)", de: "Trace schrittweise abspielen (nur aufgezeichnete Ereignisse — die Engine wird nie zurückgespult)", es: "Reproducir este trace paso a paso (solo eventos registrados — el motor nunca se rebobina)", ar: "إعادة تشغيل هذا التتبع خطوة بخطوة (أحداث مسجَّلة فقط — لا يُرجَع بالمحرك أبدًا)" },
+  "trace.replay.region": { fa: "کنترل‌های بازپخش", de: "Wiedergabesteuerung", es: "Controles de reproducción", ar: "عناصر تحكم إعادة التشغيل" },
+  "trace.canvas.region": { fa: "توپولوژی زمان اجرا", de: "Laufzeit-Topologie", es: "Topología en tiempo de ejecución", ar: "طوبولوجية وقت التشغيل" },
+  "trace.canvas.zoom_aria": { fa: "کنترل‌های بزرگ‌نمایی", de: "Zoomsteuerung", es: "Controles de zoom", ar: "عناصر تحكم التكبير" },
+
+  // ---- batch 3b: page banners, tabs, integrity, stage panel
+  "trace.banner.offline": { fa: "قابلیت مشاهده آفلاین — جریان ناموفق بود؛ نظرسنجی ادامه دارد.", de: "OBSERVABILITY OFFLINE — Stream fehlgeschlagen; Polling läuft weiter.", es: "OBSERVABILIDAD FUERA DE LÍNEA — el flujo falló; el sondeo continúa.", ar: "المراقبة غير متصلة — فشل البث؛ يستمر الاستطلاع." },
+  "trace.banner.more": { fa: " +{n} مورد دیگر", de: " +{n} weitere", es: " +{n} más", ar: " +{n} أخرى" },
+  "trace.stage.close": { fa: "بستن", de: "Schließen", es: "Cerrar", ar: "إغلاق" },
+  "trace.integrity.duplicate": { fa: "شناسه‌های رویداد تکراری: {n}", de: "Duplikate Ereignis-IDs: {n}", es: "ids de eventos duplicados: {n}", ar: "معرّفات أحداث مكررة: {n}" },
+  "trace.integrity.seq": { fa: "شکاف‌های توالی: {n}", de: "Sequenzlücken: {n}", es: "brechas de secuencia: {n}", ar: "فجوات التسلسل: {n}" },
+  "trace.integrity.parent": { fa: "ارجاع‌های والد مفقود: {n}", de: "Fehlende Eltern-Referenzen: {n}", es: "referencias padre faltantes: {n}", ar: "مراجع أصلية مفقودة: {n}" },
+  "trace.integrity.exec_no_dec": { fa: "اجرا بدون تصمیم: {n}", de: "Ausführung ohne Entscheidung: {n}", es: "ejecución sin decisión: {n}", ar: "تنفيذ بدون قرار: {n}" },
+  "trace.integrity.mt5_no_order": { fa: "MT5 بدون سفارش: {n}", de: "MT5 ohne Order: {n}", es: "MT5 sin orden: {n}", ar: "MT5 بدون أمر: {n}" },
 };

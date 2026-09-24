@@ -10,9 +10,10 @@
  * provenance-gap come straight from buildGraph flags.
  */
 
-import { memo, useCallback, useMemo, useRef, useState } from "react";
-import { describeCanvas } from "../traceCanvas";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { describeCanvas, type CanvasT } from "../traceCanvas";
 import { layoutCanvas } from "../traceLayout";
+import { useI18n } from "@/stores/i18nStore";
 import type { DerivedGraph } from "../traceGraph";
 import type { TraceEvent } from "../types";
 
@@ -41,6 +42,7 @@ const NodeView = memo(function NodeView({
   selected: boolean;
   onSelect: (stage: string) => void;
 }) {
+  const t = useI18n((s) => s.t);
   return (
     <g
       className={`dt-node ${v.tone} ${selected ? "selected" : ""} ${dimmed ? "dim" : ""}`}
@@ -48,7 +50,7 @@ const NodeView = memo(function NodeView({
       onClick={() => onSelect(v.node.stage)}
       role="button"
       tabIndex={0}
-      aria-label={`stage ${v.node.stage}, ${v.node.count} events`}
+      aria-label={t("trace.canvas.node_aria", "stage {stage}, {count} events", { stage: v.node.stage, count: v.node.count })}
     >
       <rect width={v.width} height={v.height} rx={8} className="dt-node-body" />
       <text x={v.width / 2} y={17} textAnchor="middle" className="dt-node-label">{v.label}</text>
@@ -73,6 +75,17 @@ const EdgeView = memo(function EdgeView({ v, dimmed }: { v: EdgeVisual; dimmed: 
   );
 });
 
+/** Redraw the canvas when the language changes (labels are locale-dependent). */
+function useLangChanged(onLang: () => void): void {
+  useEffect(() => {
+    const handler = () => onLang();
+    document.addEventListener("nexus:lang-changed", handler);
+    return () => {
+      document.removeEventListener("nexus:lang-changed", handler);
+    };
+  }, [onLang]);
+}
+
 export function TraceGraphCanvas({
   graph,
   selectedTraceId,
@@ -83,9 +96,14 @@ export function TraceGraphCanvas({
   const [vp, setVp] = useState({ x: 0, y: 0, k: 1 });
   const dragRef = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const t = useI18n((s) => s.t);
+
+  // Locale bump → recompute canvas labels (force a new visuals object).
+  const [langTick, setLangTick] = useState(0);
+  useLangChanged(useCallback(() => setLangTick((n) => n + 1), []));
 
   const layout = useMemo(() => layoutCanvas(graph), [graph]);
-  const visuals = useMemo(() => describeCanvas(layout), [layout]);
+  const visuals = useMemo(() => describeCanvas(layout, t as CanvasT), [layout, t, langTick]);
   const activeStages = useMemo(() => {
     if (!activeEvents) return null;
     return new Set(activeEvents.map((e) => e.stage));
@@ -118,7 +136,7 @@ export function TraceGraphCanvas({
     !!(selectedTraceId && activeStages && !stages.some((s) => activeStages.has(s)));
 
   return (
-    <div className="dt-canvas" role="region" aria-label="Runtime topology">
+    <div className="dt-canvas" role="region" aria-label={t("trace.canvas.region", "Runtime topology")}>
       <svg
         ref={svgRef}
         className="dt-canvas-svg"
@@ -151,26 +169,25 @@ export function TraceGraphCanvas({
 
       {!layout.nodes.length ? (
         <div className="dt-canvas-empty">
-          <div className="dt-canvas-empty-title">OBSERVING RUNTIME — NO DECISION PATH OBSERVED YET</div>
+          <div className="dt-canvas-empty-title">{t("trace.canvas.empty_title", "OBSERVING RUNTIME — NO DECISION PATH OBSERVED YET")}</div>
           <div className="dt-canvas-empty-sub">
-            The graph derives only from real decision events. Nodes appear exactly when the
-            runtime proves each stage ran.
+            {t("trace.canvas.empty_sub", "The graph derives only from real decision events. Nodes appear exactly when the runtime proves each stage ran.")}
           </div>
         </div>
       ) : null}
 
-      <div className="dt-canvas-zoom" aria-label="Zoom controls">
-        <button className="dt-zoom-btn" onClick={() => zoomBy(1.25)} aria-label="Zoom in">+</button>
+      <div className="dt-canvas-zoom" aria-label={t("trace.canvas.zoom_aria", "Zoom controls")}>
+        <button className="dt-zoom-btn" onClick={() => zoomBy(1.25)} aria-label={t("trace.canvas.zoom_in", "Zoom in")}>+</button>
         <span className="dt-zoom-k">{vp.k.toFixed(1)}x</span>
-        <button className="dt-zoom-btn" onClick={() => zoomBy(0.8)} aria-label="Zoom out">-</button>
-        <button className="dt-zoom-btn fit" onClick={reset} aria-label="Reset view">R</button>
+        <button className="dt-zoom-btn" onClick={() => zoomBy(0.8)} aria-label={t("trace.canvas.zoom_out", "Zoom out")}>-</button>
+        <button className="dt-zoom-btn fit" onClick={reset} aria-label={t("trace.canvas.reset", "Reset view")}>R</button>
       </div>
 
       <div className="dt-canvas-legend" aria-hidden="true">
-        <span className="dt-legend-item"><i className="dt-dot observed" />observed stage</span>
-        <span className="dt-legend-item"><i className="dt-dot terminal" />terminal (execution evidence)</span>
-        <span className="dt-legend-item"><i className="dt-dot unmapped" />UNMAPPED</span>
-        <span className="dt-legend-item"><i className="dt-dot gap" />PROVENANCE GAP</span>
+        <span className="dt-legend-item"><i className="dt-dot observed" />{t("trace.canvas.legend_observed", "observed stage")}</span>
+        <span className="dt-legend-item"><i className="dt-dot terminal" />{t("trace.canvas.legend_terminal", "terminal (execution evidence)")}</span>
+        <span className="dt-legend-item"><i className="dt-dot unmapped" />{t("trace.marker.unmapped", "UNMAPPED")}</span>
+        <span className="dt-legend-item"><i className="dt-dot gap" />{t("trace.marker.provenance_gap", "PROVENANCE GAP")}</span>
       </div>
     </div>
   );
