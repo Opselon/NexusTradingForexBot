@@ -759,13 +759,16 @@ def _verdict_of(resp: Any) -> str:
     """Best-effort ``verdict`` read from a /health body (never raises).
 
     The HealthEngine contract (``nexus_scalp.release.health``) defines the
-    verdict; this reads it defensively so a malformed body degrades the gate
-    to a retry instead of raising.
+    Read the WHOLE body (any fixed cap re-creates a truncation bug when a
+    health check adds a reason) and degrade to UNKNOWN on a malformed body
+    instead of raising, so the caller simply retries.
     """
     try:
         import json as _json
 
-        raw = resp.read(65536)
+        # Read the WHOLE body: the checks array grows whenever a layer adds a
+        # reason, so any fixed cap re-creates the truncation bug it replaces.
+        raw = resp.read()
         payload = _json.loads(raw)
         # Two shapes reach this probe:
         #  * the v1 success envelope: {"data": {"verdict": ...}, "meta": {...}}
