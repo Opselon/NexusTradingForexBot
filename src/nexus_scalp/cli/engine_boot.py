@@ -783,6 +783,9 @@ def _serving_verdict(resp: Any) -> tuple[str, bool]:
         if node is None:
             node = payload if isinstance(payload, dict) else {}
         verdict = str(node.get("verdict") or "UNKNOWN")
+        # The health engine renders this verdict with a space ("NOT READY"),
+        # not an underscore - normalize before comparing.
+        verdict = verdict.replace(" ", "_")
         if verdict in ("READY", "DEGRADED"):
             return verdict, True
         if verdict == "NOT_READY":
