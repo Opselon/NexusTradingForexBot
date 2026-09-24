@@ -48,6 +48,12 @@ export interface AdviserStatusResponse {
   last_error: string;
   ready: boolean;
   config: AdviserConfigDto;
+  /** BUG-314 F6: package-integrity verdict from the immutable sidecar manifest ("OK" | …). */
+  integrity: string;
+  manifest_path: string;
+  source_dataset_hash: string;
+  /** BUG-314 F1: snapshots refused solely for being stale. */
+  stale_rejected_count: number;
   activation_ladder: { current: string; available: string[] };
   actions: string[];
   now?: string;
@@ -59,6 +65,9 @@ export interface AdviserConfigDto {
   min_action_advantage: number;
   min_eval_interval_sec: number;
   artifact_dir: string;
+  /** BUG-314 F1: staleness gate — a snapshot older than this is refused. */
+  max_snapshot_age_sec: number;
+  manifest_path: string;
 }
 
 export interface AdviserModelDto {
@@ -75,6 +84,11 @@ export interface AdviserModelDto {
   train_rows: number | null;
   oos_rows: number | null;
   created_at: string | null;
+  /** BUG-314 F8: action classes the training data did not contain. These
+   *  receive zero weight in training and the model can never emit them —
+   *  shown so the operator never mistakes a silent 0% for "the model
+   *  considered it and ruled it out". */
+  classes_absent: string[];
 }
 
 export interface AdviserModelsResponse {
@@ -178,6 +192,9 @@ export interface AdviserConfigRequest {
   min_confidence_to_apply?: number;
   min_action_advantage?: number;
   min_eval_interval_sec?: number;
+  /** BUG-314 F1: set to 0 to accept snapshots of any age. */
+  max_snapshot_age_sec?: number;
+  manifest_path?: string;
 }
 
 /* --------------------- auto-tune (auto mode) ----------------------------- */
