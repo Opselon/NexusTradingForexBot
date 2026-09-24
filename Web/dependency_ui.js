@@ -3,6 +3,16 @@
  */
 (function () {
   "use strict";
+
+  // i18n seam (P3): local helper mirroring the ux_signal.js:24-27 pattern.
+  // qualified_name / kind / layer / cycle_id / severity stay verbatim (protocol).
+  function t(key, fallback, vars) {
+    var i = window.NX_I18N;
+    var s = i ? i.t(key, fallback, vars) : (fallback || key);
+    if (vars) Object.keys(vars).forEach(function (k) { s = s.split("{" + k + "}").join(vars[k]); });
+    return s;
+  }
+
   var api = window.NXDependency.api;
   var GraphCtor = window.NXDependencyGraph;
 
@@ -29,7 +39,7 @@
 
     if (!e) return;
     if (msg) {
-      e.innerHTML = '<div class="text-center p-6 bg-[#111a2e] rounded-xl border border-rose-900 shadow-2xl max-w-md"><div class="text-rose-500 font-bold mb-2">DEPENDENCY GRAPH UNAVAILABLE</div><div class="text-xs text-slate-300 mb-4">' + esc(msg) + '</div><button onclick="window.location.reload()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded text-sm font-semibold transition-colors">Retry</button></div>';
+      e.innerHTML = '<div class="text-center p-6 bg-[#111a2e] rounded-xl border border-rose-900 shadow-2xl max-w-md"><div class="text-rose-500 font-bold mb-2">' + t("dep.graph_unavailable", "DEPENDENCY GRAPH UNAVAILABLE") + '</div><div class="text-xs text-slate-300 mb-4">' + esc(msg) + '</div><button onclick="window.location.reload()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded text-sm font-semibold transition-colors">' + t("dep.retry", "Retry") + '</button></div>';
       e.classList.remove("hidden");
       e.classList.add("flex");
 
@@ -137,7 +147,7 @@
       els["inspector-path-view"].classList.remove("hidden");
 
       $("path-source-node").textContent = node.qualified_name.split('.').pop();
-      $("path-target-node").textContent = "Select node from graph...";
+      $("path-target-node").textContent = t("dep.select_node_from_graph", "Select node from graph...");
       $("path-results").innerHTML = "";
     };
 
@@ -256,9 +266,9 @@
 
   function renderHeader(s) {
     if (!s) return;
-    els["scan-timestamp"].textContent = "Scan: " + (s.generated_at || "—");
+    els["scan-timestamp"].textContent = t("dep.scan", "Scan: ") + (s.generated_at || "—");
     els["graph-version-number"].textContent = s.analyzer_version || "—";
-    els["api-status"].textContent = "API: OK";
+    els["api-status"].textContent = t("dep.api_ok", "API: OK");
   }
 
   function renderHealthStrip(s) {
@@ -274,7 +284,7 @@
       healthStatus = "CRITICAL";
       healthClass = "chip-severity-critical";
     }
-    els["health-status-text"].textContent = "HEALTH: " + healthStatus;
+    els["health-status-text"].textContent = t("dep.health", "HEALTH: ") + healthStatus;
     els["health-status-chip"].textContent = healthStatus;
     els["health-status-chip"].className = "px-2 py-0.5 text-xs " + healthClass;
     
@@ -297,19 +307,19 @@
   function renderLegend() {
     var legend = [
       { shape: "●", color: "#38bdf8", label: "Class / Module" },
-      { shape: "●", color: "#fbbf24", label: "Runtime Critical" },
-      { shape: "●", color: "#f87171", label: "Unresolved" },
-      { shape: "●", color: "#64748b", label: "External" },
+      { shape: "●", color: "#fbbf24", label: t("dep.legend_runtime_critical", "Runtime Critical") },
+      { shape: "●", color: "#f87171", label: t("dep.legend_unresolved", "Unresolved") },
+      { shape: "●", color: "#64748b", label: t("dep.legend_external", "External") },
     ];
     var html = legend.map(function (item) {
       return '<div class="flex items-center gap-2"><span style="color:' + item.color + '">' + item.shape + '</span><span>' + item.label + '</span></div>';
     }).join("");
     html += '<div class="nx-divider"></div>';
     var edgeLegend = [
-      { color: "#2b3a5e", label: "Import" },
-      { color: "#38bdf8", label: "Injects" },
-      { color: "#a78bfa", label: "Implements" },
-      { color: "#34d399", label: "Registers" },
+      { color: "#2b3a5e", label: t("dep.legend_import", "Import") },
+      { color: "#38bdf8", label: t("dep.legend_injects", "Injects") },
+      { color: "#a78bfa", label: t("dep.legend_implements", "Implements") },
+      { color: "#34d399", label: t("dep.legend_registers", "Registers") },
     ];
     html += edgeLegend.map(function (item) {
       return '<div class="flex items-center gap-2"><div style="width:12px;height:2px;background:' + item.color + '"></div><span>' + item.label + '</span></div>';
@@ -402,18 +412,18 @@
   function updateGraphInfo(nodeCount, edgeCount) {
     if (els["graph-info-left"]) {
       els["graph-info-left"].innerHTML = 
-        '<span>Nodes: <span class="text-slate-200 font-medium">' + nodeCount + '</span></span>' +
-        '<span>Edges: <span class="text-slate-200 font-medium">' + edgeCount + '</span></span>' +
-        '<span>Zoom: <span class="text-slate-200 font-medium">' + (state.graph._view.k * 100).toFixed(0) + '%</span></span>';
+        '<span>' + t("dep.nodes", "Nodes: ") + '<span class="text-slate-200 font-medium">' + nodeCount + '</span></span>' +
+        '<span>' + t("dep.edges", "Edges: ") + '<span class="text-slate-200 font-medium">' + edgeCount + '</span></span>' +
+        '<span>' + t("dep.zoom", "Zoom: ") + '<span class="text-slate-200 font-medium">' + (state.graph._view.k * 100).toFixed(0) + '%</span></span>';
     }
     if (els["graph-status"]) {
       var filters = [];
-      if (state.filters.cycleOnly) filters.push("Cycles");
-      if (state.filters.unresolvedOnly) filters.push("Unresolved");
-      if (state.filters.criticalOnly) filters.push("Critical");
-      if (state.filters.hotspotOnly) filters.push("Hotspots");
-      var filterText = filters.length > 0 ? " (Filters: " + filters.join(", ") + ")" : "";
-      els["graph-status"].textContent = "Rendering " + nodeCount + " nodes" + filterText;
+      if (state.filters.cycleOnly) filters.push(t("dep.f_cycles", "Cycles"));
+      if (state.filters.unresolvedOnly) filters.push(t("dep.f_unresolved", "Unresolved"));
+      if (state.filters.criticalOnly) filters.push(t("dep.f_critical", "Critical"));
+      if (state.filters.hotspotOnly) filters.push(t("dep.f_hotspots", "Hotspots"));
+      var filterText = filters.length > 0 ? t("dep.filters_prefix", " (Filters: ") + filters.join(", ") + ")" : "";
+      els["graph-status"].textContent = t("dep.rendering", "Rendering ") + nodeCount + t("dep.rendering_nodes", " nodes") + filterText;
     }
   }
 
@@ -445,7 +455,7 @@
   function clearSelection() {
     state.selectedNode = null;
     state.graph.unfocus();
-    els["selection-info"].textContent = "Nothing selected";
+    els["selection-info"].textContent = t("dep.nothing_selected", "Nothing selected");
     els["btn-focus"].disabled = true;
     els["btn-path"].disabled = true;
     els["btn-impact"].disabled = true;
@@ -495,7 +505,7 @@
     var m = d.metrics || {};
 
     // Update active view
-    els["inspector-title"].textContent = "NODE INSPECTOR";
+    els["inspector-title"].textContent = t("dep.node_inspector", "NODE INSPECTOR");
 
     if (els["inspector-overview"]) els["inspector-overview"].classList.add("hidden");
     if (els["inspector-path-view"]) els["inspector-path-view"].classList.add("hidden");
@@ -518,25 +528,25 @@
     els["node-layer"].textContent = (n.layer || "—").toUpperCase();
 
     if (n.criticality === "CRITICAL") {
-      els["node-criticality"].innerHTML = '<span class="text-amber-500 flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> CRITICAL</span>';
+      els["node-criticality"].innerHTML = '<span class="text-amber-500 flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> ' + t("dep.critical", "CRITICAL") + '</span>';
     } else if (m.in_cycle) {
-      els["node-criticality"].innerHTML = '<span class="text-rose-400 flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-8.27l5.67-5.67"></path></svg> CYCLE</span>';
+      els["node-criticality"].innerHTML = '<span class="text-rose-400 flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-8.27l5.67-5.67"></path></svg> ' + t("dep.cycle", "CYCLE") + '</span>';
     } else {
       els["node-criticality"].textContent = "";
     }
     
     // Metrics
     els["node-metrics"].innerHTML = 
-      '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded"><span class="text-xs nx-muted font-semibold tracking-wider">FAN-IN</span><span class="font-bold">' + (m.fan_in || 0) + '</span></div>' +
-      '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded"><span class="text-xs nx-muted font-semibold tracking-wider">FAN-OUT</span><span class="font-bold">' + (m.fan_out || 0) + '</span></div>' +
-      '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded"><span class="text-xs nx-muted font-semibold tracking-wider">INSTABILITY</span><span class="font-bold">' + (m.instability != null ? m.instability.toFixed(2) : "—") + '</span></div>' +
-      '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded"><span class="text-xs nx-muted font-semibold tracking-wider">CENTRALITY</span><span class="font-bold">' + (m.centrality != null ? m.centrality.toFixed(2) : "—") + '</span></div>';
+      '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded"><span class="text-xs nx-muted font-semibold tracking-wider">' + t("dep.fan_in", "FAN-IN") + '</span><span class="font-bold">' + (m.fan_in || 0) + '</span></div>' +
+      '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded"><span class="text-xs nx-muted font-semibold tracking-wider">' + t("dep.fan_out", "FAN-OUT") + '</span><span class="font-bold">' + (m.fan_out || 0) + '</span></div>' +
+      '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded"><span class="text-xs nx-muted font-semibold tracking-wider">' + t("dep.instability", "INSTABILITY") + '</span><span class="font-bold">' + (m.instability != null ? m.instability.toFixed(2) : "—") + '</span></div>' +
+      '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded"><span class="text-xs nx-muted font-semibold tracking-wider">' + t("dep.centrality", "CENTRALITY") + '</span><span class="font-bold">' + (m.centrality != null ? m.centrality.toFixed(2) : "—") + '</span></div>';
     
     // Dependencies
     var deps = (d.dependencies || []);
     els["node-dependencies"].innerHTML = deps.length > 0 
       ? deps.map(function (x) { return '<div class="text-xs font-mono py-1 px-2 hover:bg-[#1e293b] rounded cursor-pointer truncate transition-colors text-sky-200" data-node="' + esc(x) + '" title="' + esc(x) + '">' + esc(x.split(":").pop()) + '</div>'; }).join("")
-      : '<div class="text-xs nx-muted px-2 py-1 italic">No direct dependencies</div>';
+      : '<div class="text-xs nx-muted px-2 py-1 italic">' + t("dep.no_deps", "No direct dependencies") + '</div>';
     els["node-dependencies"].querySelectorAll("[data-node]").forEach(function(el) {
       el.onclick = function() { onNodeSelect(this.getAttribute("data-node")); };
     });
@@ -545,7 +555,7 @@
     var dependents = (d.dependents || []);
     els["node-dependents"].innerHTML = dependents.length > 0
       ? dependents.map(function (x) { return '<div class="text-xs font-mono py-1 px-2 hover:bg-[#1e293b] rounded cursor-pointer truncate transition-colors text-sky-200" data-node="' + esc(x) + '" title="' + esc(x) + '">' + esc(x.split(":").pop()) + '</div>'; }).join("")
-      : '<div class="text-xs nx-muted px-2 py-1 italic">No direct dependents</div>';
+      : '<div class="text-xs nx-muted px-2 py-1 italic">' + t("dep.no_dependents", "No direct dependents") + '</div>';
     els["node-dependents"].querySelectorAll("[data-node]").forEach(function(el) {
       el.onclick = function() { onNodeSelect(this.getAttribute("data-node")); };
     });
@@ -567,11 +577,11 @@
 
     els["node-evidence"].innerHTML = evRows.length > 0
       ? evRows
-      : '<div class="text-xs nx-muted italic">No edge evidence available</div>';
+      : '<div class="text-xs nx-muted italic">' + t("dep.no_evidence", "No edge evidence available") + '</div>';
   }
 
   function renderInspectorOverview() {
-    els["inspector-title"].textContent = "COMMAND CENTER";
+    els["inspector-title"].textContent = t("dep.command_center", "COMMAND CENTER");
 
     els["inspector-overview"].classList.remove("hidden");
     if (els["inspector-node-view"]) els["inspector-node-view"].classList.add("hidden");
@@ -581,19 +591,19 @@
     // Health
     var h = (state.summary && state.summary.health) || {};
     var html = '<div class="space-y-2">';
-    html += '<div class="flex items-center justify-between"><span class="text-xs font-semibold tracking-wider text-slate-400">CYCLES</span><span class="font-bold text-slate-200">' + (h.cycles || 0) + '</span></div>';
-    html += '<div class="flex items-center justify-between"><span class="text-xs font-semibold tracking-wider text-slate-400">UNRESOLVED</span><span class="font-bold text-slate-200">' + (h.unresolved_imports || 0) + '</span></div>';
-    html += '<div class="flex items-center justify-between"><span class="text-xs font-semibold tracking-wider text-slate-400">VIOLATIONS</span><span class="font-bold text-slate-200">' + (h.architecture_violations || 0) + '</span></div>';
+    html += '<div class="flex items-center justify-between"><span class="text-xs font-semibold tracking-wider text-slate-400">' + t("dep.cycles", "CYCLES") + '</span><span class="font-bold text-slate-200">' + (h.cycles || 0) + '</span></div>';
+    html += '<div class="flex items-center justify-between"><span class="text-xs font-semibold tracking-wider text-slate-400">' + t("dep.unresolved", "UNRESOLVED") + '</span><span class="font-bold text-slate-200">' + (h.unresolved_imports || 0) + '</span></div>';
+    html += '<div class="flex items-center justify-between"><span class="text-xs font-semibold tracking-wider text-slate-400">' + t("dep.violations", "VIOLATIONS") + '</span><span class="font-bold text-slate-200">' + (h.architecture_violations || 0) + '</span></div>';
     html += '</div>';
     els["overview-health"].innerHTML = html;
     
     // Active Filters
     var activeFilters = [];
-    if (state.filters.cycleOnly) activeFilters.push("Cycles");
-    if (state.filters.unresolvedOnly) activeFilters.push("Unresolved");
-    if (state.filters.criticalOnly) activeFilters.push("Critical");
-    if (state.filters.hotspotOnly) activeFilters.push("Hotspots");
-    if (state.filters.diOnly) activeFilters.push("DI");
+    if (state.filters.diOnly) activeFilters.push(t("dep.f_di", "DI"));
+    if (state.filters.registrationsOnly) activeFilters.push(t("dep.f_registrations", "Registrations"));
+    if (state.filters.layer) activeFilters.push(t("dep.f_layer", "Layer: ") + state.filters.layer);
+    if (state.filters.nodeType) activeFilters.push(t("dep.f_type", "Type: ") + state.filters.nodeType);
+    if (state.filters.edgeType) activeFilters.push(t("dep.f_edge", "Edge: ") + state.filters.edgeType);
     if (state.filters.registrationsOnly) activeFilters.push("Registrations");
     if (state.filters.layer) activeFilters.push("Layer: " + state.filters.layer);
     if (state.filters.nodeType) activeFilters.push("Type: " + state.filters.nodeType);
@@ -601,7 +611,7 @@
     
     var filtersHtml = activeFilters.length > 0
       ? '<div class="flex flex-wrap gap-2">' + activeFilters.map(function(f) { return '<span class="px-2 py-0.5 rounded text-xs bg-cyan-900/40 text-cyan-400 border border-solid border-cyan-800">' + esc(f) + '</span>'; }).join('') + '</div>'
-      : '<div class="text-xs nx-muted italic">No active filters</div>';
+      : '<div class="text-xs nx-muted italic">' + t("dep.no_filters", "No active filters") + '</div>';
     els["overview-filters"].innerHTML = filtersHtml;
     
     // Hotspots
@@ -610,10 +620,10 @@
       ? '<div class="space-y-2">' + hotspots.slice(0, 5).map(function(h) {
           return '<div class="bg-[#1e293b] rounded p-2 border border-solid border-[#2b3a5e] cursor-pointer hover:border-[#38bdf8] transition-colors" data-node="' + esc(h.node_id) + '">' +
             '<div class="text-[13px] font-bold text-slate-200 truncate" title="' + esc(h.node_id) + '">' + esc(h.node_id.split(".").pop()) + '</div>' +
-            '<div class="flex items-center gap-4 text-[10px] text-slate-400 mt-1 font-semibold tracking-wider"><span>FAN-IN: <span class="text-slate-200">' + (h.fan_in || 0) + '</span></span><span>FAN-OUT: <span class="text-slate-200">' + (h.fan_out || 0) + '</span></span></div>' +
+            '<div class="flex items-center gap-4 text-[10px] text-slate-400 mt-1 font-semibold tracking-wider"><span>' + t("dep.fan_in_colon", "FAN-IN: ") + '<span class="text-slate-200">' + (h.fan_in || 0) + '</span></span><span>' + t("dep.fan_out_colon", "FAN-OUT: ") + '<span class="text-slate-200">' + (h.fan_out || 0) + '</span></span></div>' +
             '</div>';
         }).join('') + '</div>'
-      : '<div class="text-xs nx-muted italic">No hotspots detected</div>';
+      : '<div class="text-xs nx-muted italic">' + t("dep.no_hotspots", "No hotspots detected") + '</div>';
     els["overview-hotspots"].innerHTML = hotspotsHtml;
     els["overview-hotspots"].querySelectorAll("[data-node]").forEach(function(el) {
       el.onclick = function() { onNodeSelect(this.getAttribute("data-node")); };
@@ -629,7 +639,7 @@
             '<div class="text-[10px] text-slate-400 mt-1 font-mono truncate">' + (c.path || []).map(function(p) { return esc(p.split(".").pop()); }).join(" → ") + '</div>' +
             '</div>';
         }).join('') + '</div>'
-      : '<div class="text-xs nx-muted italic">No cycles detected</div>';
+      : '<div class="text-xs nx-muted italic">' + t("dep.no_cycles", "No cycles detected") + '</div>';
     els["overview-cycles"].innerHTML = cyclesHtml;
   }
 
@@ -649,7 +659,7 @@
     if (!node) return;
     
     // UI Transitions
-    els["inspector-title"].textContent = "IMPACT ANALYSIS";
+    els["inspector-title"].textContent = t("dep.impact_analysis", "IMPACT ANALYSIS");
     if (els["inspector-overview"]) els["inspector-overview"].classList.add("hidden");
     if (els["inspector-node-view"]) els["inspector-node-view"].classList.add("hidden");
     if (els["inspector-path-view"]) els["inspector-path-view"].classList.add("hidden");
@@ -657,33 +667,33 @@
 
     api.impact(nodeId).then(function (r) {
       if (!r.ok) {
-        showError("Impact analysis failed: " + r.error);
+        showError(t("dep.impact_failed", "Impact analysis failed: ") + r.error);
         return;
       }
       var d = r.data || {};
 
       var riskLevelEl = $("impact-risk-level");
       if (d.impact_kind === "CRITICAL") {
-        riskLevelEl.innerHTML = '<span class="text-rose-500">CRITICAL RISK</span>';
+        riskLevelEl.innerHTML = '<span class="text-rose-500">' + t("dep.critical_risk", "CRITICAL RISK") + '</span>';
       } else if (d.impact_kind === "HIGH") {
-        riskLevelEl.innerHTML = '<span class="text-amber-500">HIGH RISK</span>';
+        riskLevelEl.innerHTML = '<span class="text-amber-500">' + t("dep.high_risk", "HIGH RISK") + '</span>';
       } else {
-        riskLevelEl.innerHTML = '<span class="text-emerald-500">' + esc(d.impact_kind || "MODERATE RISK") + '</span>';
+        riskLevelEl.innerHTML = '<span class="text-emerald-500">' + esc(d.impact_kind || t("dep.moderate_risk", "MODERATE RISK")) + '</span>';
       }
 
       var html = '';
       html += '<div class="bg-[#1e293b] rounded p-3 border border-solid border-[#2b3a5e] mb-3">';
-      html += '<div class="text-xs font-semibold text-slate-400 mb-1 tracking-wider">TARGET NODE</div>';
+      html += '<div class="text-xs font-semibold text-slate-400 mb-1 tracking-wider">' + t("dep.target_node", "TARGET NODE") + '</div>';
       html += '<div class="text-sm font-bold text-slate-200">' + esc(node.qualified_name.split('.').pop()) + '</div>';
       html += '<div class="text-[10px] font-mono text-slate-500 mt-1">' + esc(node.qualified_name) + '</div>';
       html += '</div>';
 
       html += '<div class="space-y-2">';
-      html += '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]"><span class="text-xs nx-muted font-semibold tracking-wider">DIRECT IMPACT</span><span class="font-bold text-slate-200">' + (d.direct || []).length + '</span></div>';
-      html += '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]"><span class="text-xs nx-muted font-semibold tracking-wider">TRANSITIVE IMPACT</span><span class="font-bold text-slate-200">' + (d.transitive || []).length + '</span></div>';
-      html += '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]"><span class="text-xs nx-muted font-semibold tracking-wider">TESTS AFFECTED</span><span class="font-bold text-slate-200">' + (d.tests_likely_affected || []).length + '</span></div>';
-      html += '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]"><span class="text-xs nx-muted font-semibold tracking-wider">API SURFACES</span><span class="font-bold text-slate-200">' + (d.api_impact || []).length + '</span></div>';
-      html += '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]"><span class="text-xs nx-muted font-semibold tracking-wider">RUNTIME CRITICAL</span><span class="font-bold text-slate-200">' + (d.runtime_impact || []).length + '</span></div>';
+      html += '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]"><span class="text-xs nx-muted font-semibold tracking-wider">' + t("dep.direct_impact", "DIRECT IMPACT") + '</span><span class="font-bold text-slate-200">' + (d.direct || []).length + '</span></div>';
+      html += '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]"><span class="text-xs nx-muted font-semibold tracking-wider">' + t("dep.transitive_impact", "TRANSITIVE IMPACT") + '</span><span class="font-bold text-slate-200">' + (d.transitive || []).length + '</span></div>';
+      html += '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]"><span class="text-xs nx-muted font-semibold tracking-wider">' + t("dep.tests_affected", "TESTS AFFECTED") + '</span><span class="font-bold text-slate-200">' + (d.tests_likely_affected || []).length + '</span></div>';
+      html += '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]"><span class="text-xs nx-muted font-semibold tracking-wider">' + t("dep.api_surfaces", "API SURFACES") + '</span><span class="font-bold text-slate-200">' + (d.api_impact || []).length + '</span></div>';
+      html += '<div class="flex items-center justify-between p-2 bg-[#1e293b] rounded border border-solid border-[#2b3a5e]"><span class="text-xs nx-muted font-semibold tracking-wider">' + t("dep.runtime_critical", "RUNTIME CRITICAL") + '</span><span class="font-bold text-slate-200">' + (d.runtime_impact || []).length + '</span></div>';
       html += '</div>';
 
       $("impact-results").innerHTML = html;
@@ -706,7 +716,7 @@
     $("path-source-node").textContent = sNode ? sNode.qualified_name.split('.').pop() : sourceId;
     $("path-target-node").textContent = tNode ? tNode.qualified_name.split('.').pop() : targetId;
 
-    $("path-results").innerHTML = '<div class="text-xs text-center nx-muted py-4">Finding path...</div>';
+    $("path-results").innerHTML = '<div class="text-xs text-center nx-muted py-4">' + t("dep.finding_path", "Finding path...") + '</div>';
 
     api.path(sourceId, targetId).then(function (r) {
       if (!r.ok) {
@@ -716,11 +726,11 @@
 
       var path = r.data || [];
       if (path.length === 0) {
-        $("path-results").innerHTML = '<div class="text-xs nx-muted italic p-2 bg-[#1e293b] rounded">No path found.</div>';
+        $("path-results").innerHTML = '<div class="text-xs nx-muted italic p-2 bg-[#1e293b] rounded">' + t("dep.no_path", "No path found.") + '</div>';
         return;
       }
 
-      var html = '<div class="text-xs font-semibold tracking-wider text-emerald-400 mb-3">FOUND PATH (LENGTH: ' + path.length + ')</div>';
+      var html = '<div class="text-xs font-semibold tracking-wider text-emerald-400 mb-3">' + t("dep.found_path", "FOUND PATH (LENGTH: {n})", { n: path.length }) + '</div>';
       html += '<div class="space-y-1 relative before:absolute before:inset-y-0 before:left-3 before:w-px before:bg-[#2b3a5e]">';
 
       path.forEach(function(step, idx) {

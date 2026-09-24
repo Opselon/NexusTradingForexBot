@@ -233,4 +233,41 @@
         }
     }
     global.NX.markStale = markStale;
+
+    /* ------------------------------------------------------------------
+     * P1 (i18n): live re-render on language switch.
+     * ux_i18n.js dispatches 'nexus:lang-changed' on document whenever the
+     * operator picks a language. Every module that renders user-facing
+     * strings must rebuild its DOM on that event, otherwise a switch
+     * mid-session leaves stale English in every already-rendered panel.
+     * Registered below is a central re-render entry per panel; each is
+     * wrapped in try/catch and guarded for presence so a panel that has
+     * not loaded yet (or is on another page) can never break the others.
+     */
+    var RE_RENDER_HOOKS = [
+        function () { return window.NXAttention && window.NXAttention.render; },
+        function () { return window.NXConn && window.NXConn.refresh; },
+        function () { return window.NXSignal && window.NXSignal.render; },
+        function () { return window.NXPalette && window.NXPalette.close; },
+        function () { return window.NX && window.NX.cc && window.NX.cc.views && window.NX.cc.views.showTab; },
+        function () { return window.NX && window.NX.scc && window.NX.scc.load; },
+        function () { return window.NX && window.NX.marketplace && window.NX.marketplace.render; },
+        function () { return window.__tvIndicatorRefresh; },
+        function () { return window.NewsIntel && window.NewsIntel.startProConsole; },
+        function () { return window.__reRenderAll; }
+    ];
+
+    function reRenderAll() {
+        for (var i = 0; i < RE_RENDER_HOOKS.length; i++) {
+            try {
+                var fn = RE_RENDER_HOOKS[i]();
+                if (typeof fn === 'function') fn();
+            } catch (e) { /* a failing panel must not block the others */ }
+        }
+    }
+    global.NX.reRenderAll = reRenderAll;
+
+    document.addEventListener('nexus:lang-changed', function () {
+        reRenderAll();
+    });
 })(window);
