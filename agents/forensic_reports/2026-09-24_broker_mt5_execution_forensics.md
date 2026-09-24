@@ -365,9 +365,41 @@ safety contract).
 
 ## N. POST-MERGE VERIFICATION (deliverable N)
 
-Not yet performed — this lane has not pushed or merged. Requires the repo's
-push → CI → CodeQL → fix-red → merge loop, then a re-run of the verification journey
-against `origin/main`.
+Executed against the **merged `origin/main` tree @ `edd84399`** with live MT5,
+read-only (`order_check`, `symbol_info`, `symbol_info_tick`; **no `order_send`**).
+Evidence: `evidence/post_merge_verification.json` + `evidence/post_merge_out.txt`.
+
+**Result — canonical law vs broker `order_check` on the merged code:**
+
+| Symbol | digits | filling (bits→used) | retcode | native margin | canonical margin | match |
+|---|---|---|---|---|---|---|
+| XAUUSD | 2 | 3 → IOC | 0 | 428.97 | 428.97 | **EXACT** |
+| EURUSD | 5 | 1 → FOK | 0 | 113.84 | 113.844 | **EXACT** (0.004¢ FP) |
+| USDCAD | 5 | 1 → FOK | 0 | **100.00** | 141.023 | MISMATCH — see below |
+
+Free margin semantics on all three: `native_free_margin == equity − margin` → **true**.
+The broker's own `margin_free` is the source of truth and the canonical law agrees.
+
+**USDCAD mismatch — EXPECTED BROKER DIFFERENCE (not a code bug).**
+`order_check` reports 100.00 where the canonical Forex/CFD formula gives 141.02.
+Inspection of the symbol spec shows `margin_hedged = 100000.0` with account
+`margin_mode = 2` (RETAIL_HEDGING): the broker reserves one lot's notional in the
+*hedged* tier regardless of price and leverage, so 0.10 × 100000 ÷ 100 = 100.00.
+The 141.02 local estimate is wrong **for this broker/symbol combination**.
+`required_margin_estimate` is therefore correctly documented as a LOCAL ESTIMATE
+whose provenance must be carried at the call site; the broker's `order_check`
+remains authoritative (§50). This is precisely the class of difference the
+mission warns about: one broker's margin is not another broker's margin.
+
+**Probe-side finding reproduced:** forcing `ORDER_FILLING_IOC` on EURUSD/USDCAD
+(these expose **FOK only**, filling bits = 1) returned retcode **10030
+INVALID_FILL** and margin = 0.0 — the exact defect class of filling-mode
+hardcoding (§Filling). The adapter defaults FOK without reading
+`symbol_info.filling_mode` (Lane D finding; the adapter-side fix is out of this
+lane's file scope and filed there).
+
+CI: all gates green on PR #426 (Code Quality & Tests, CodeQL, Trivy, OSV, Py
+Tests windows/macos, dependency drift). Merged as `edd84399`; branch deleted.
 
 ---
 
