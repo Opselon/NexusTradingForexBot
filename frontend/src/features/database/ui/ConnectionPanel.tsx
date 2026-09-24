@@ -57,7 +57,7 @@ export function ConnectionPanel(props: {
 
   return (
     <div className="dbcp-panel">
-      <div className="dbc-section-title">connection</div>
+      <div className="dbc-section-title">{t("database.manage.section_connection", "connection")}</div>
 
       <ConnectionUrlField values={values} set={set} onPassword={capturePassword} />
 

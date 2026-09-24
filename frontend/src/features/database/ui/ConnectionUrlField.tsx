@@ -23,6 +23,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import type { FieldValues } from "@/features/config/validation";
 import { buildPgUrl, isUrlParseFailure, maskUrl, parsePgUrl, type ParsedPgConfig } from "./connectionUrl";
 
@@ -63,6 +64,7 @@ export function ConnectionUrlField({
   /** The operator's in-progress text; null = mirror the discrete fields. */
   const [typed, setTyped] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
+  const t = useI18n((s) => s.t);
 
   const derived = useMemo(() => urlFromValues(values), [values]);
 
@@ -111,12 +113,12 @@ export function ConnectionUrlField({
     <div className="dbcp-url">
       <div className="dbcp-url-head">
         <span className="dbcp-section-title" style={{ margin: 0 }}>
-          connection string
+          {t("database.pg.connection_string", "connection string")}
         </span>
-        <span className="dbcp-url-mode">parsed client-side · never sent whole</span>
+        <span className="dbcp-url-mode">{t("database.pg.parsed_clientside", "parsed client-side · never sent whole")}</span>
         {attempted && (
           <button className="btn small ghost" onClick={() => setTyped(null)}>
-            reset to fields
+            {t("database.pg.reset_to_fields", "reset to fields")}
           </button>
         )}
       </div>
@@ -126,7 +128,7 @@ export function ConnectionUrlField({
         value={shown}
         spellCheck={false}
         autoComplete="off"
-        aria-label="PostgreSQL connection URL"
+        aria-label={t("database.pg.url_aria", "PostgreSQL connection URL")}
         aria-invalid={malformed ? true : undefined}
         placeholder="postgresql://user@host:5432/database?sslmode=require"
         onFocus={() => setFocused(true)}
@@ -135,21 +137,20 @@ export function ConnectionUrlField({
       />
       {malformed && !focused ? (
         <div className="dbcp-url-message bad" role="alert">
-          refused client-side — {malformed.reason}
+          {t("database.pg.refused_clientside", "refused client-side — {reason}", { reason: malformed.reason })}
         </div>
       ) : refused ? (
         <div className="dbcp-url-message">
-          {refused.reason} — keep typing, or edit the fields below (the URL stays local either way).
+          {t("database.pg.refused_keep_typing", "{reason} — keep typing, or edit the fields below (the URL stays local either way).", { reason: refused.reason })}
         </div>
       ) : (
         <div className="dbcp-hint">
-          Type one URL instead of six fields; accepted schemes:{" "}
+          {t("database.pg.url_hint", "Type one URL instead of six fields; accepted schemes:")}{" "}
           <span className="dbcp-mono">postgresql</span>, <span className="dbcp-mono">postgres</span>,{" "}
-          <span className="dbcp-mono">pgsql</span>. A malformed URL is refused here client-side and never sent to the
-          backend.
+          <span className="dbcp-mono">pgsql</span>. {t("database.pg.url_hint_2", "A malformed URL is refused here client-side and never sent to the backend.")}
         </div>
       )}
-      {shown.length > 0 && <div className="dbcp-url-echo">echo: {maskUrl(shown)}</div>}
+      {shown.length > 0 && <div className="dbcp-url-echo">{t("database.pg.echo", "echo: {url}", { url: maskUrl(shown) })}</div>}
     </div>
   );
 }
