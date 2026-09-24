@@ -409,4 +409,5 @@ export const MESSAGES: FeatureMessages = {
   "account.strategies.loss_meter": { fa: "سهم از زیان ناخالص حساب (نسبت بک‌اند)", de: "Anteil am Bruttoverlust des Kontos (Backend-Verhältnis)", es: "cuota de la pérdida bruta de la cuenta (ratio del backend)", ar: "حصة من الخسارة الإجمالية للحساب (نسبة الخادم)" },
   "account.strategies.lab_loss": { fa: "زیان", de: "loss", es: "loss", ar: "خسارة" },
   "account.strategies.loss_item_title": { fa: "خالص {v}", de: "net {v}", es: "net {v}", ar: "صافي {v}" },
+  "account.studio.emph_bars_aria": { fa: "میله‌های دامنه مقیاس‌شده بر بزرگ‌ترین مقدار روی صفحه", de: "Betragsbalken, skaliert auf den größten Wert auf dem Bildschirm", es: "barras de magnitud escaladas al mayor valor en pantalla", ar: "أعمدة المقدار المكيفة لأكبر قيمة على الشاشة" },
 };

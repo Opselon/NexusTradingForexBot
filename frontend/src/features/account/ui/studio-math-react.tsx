@@ -13,6 +13,7 @@
  */
 
 import type { ReactNode } from "react";
+import { useI18n } from "@/stores/i18nStore";
 import { moneyOrDash } from "./shared";
 
 
@@ -25,10 +26,11 @@ import "./account-studio.css";
  * A null sample renders as an empty gap slot (never a synthetic bar).
  */
 export function EmphBars({ bars, minPct, maxPct }: { bars: EmphSegment[]; minPct?: number; maxPct?: number }) {
+  const t = useI18n((s) => s.t);
   const scaled = scaleEmphBars([{ segments: bars, minPct, maxPct }]);
   const segs = scaled[0] ?? [];
   return (
-    <div className="acc-emph" role="img" aria-label="magnitude bars scaled to the largest on-screen value">
+    <div className="acc-emph" role="img" aria-label={t("account.studio.emph_bars_aria", "magnitude bars scaled to the largest on-screen value")}>
       {segs.map((s, j) => (
         <i key={j} className={s.tone} style={s.h === null ? undefined : { height: `${s.h}%` }} />
       ))}

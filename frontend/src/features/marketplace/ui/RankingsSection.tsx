@@ -28,6 +28,7 @@ import { FreshnessNote, asErrorText } from "./shared";
 import "./marketplace.css";
 import "./marketplace-store.css";
 import "./marketplace-store-detail.css";
+import { useI18n } from "@/stores/i18nStore";
 
 const DIMENSIONS = [
   { id: "OVERALL", label: "Overall" },
@@ -47,6 +48,7 @@ const SCORE_FLOOR = 0;
 const SCORE_CEIL = 1;
 
 export function RankingsSection() {
+  const t = useI18n((s) => s.t);
   const [dim, setDim] = useState("OVERALL");
   const rankings = useMktRankings(dim);
 
@@ -60,7 +62,7 @@ export function RankingsSection() {
       right={
         <>
           <Segmented options={DIMENSIONS} value={dim} onChange={setDim} />
-          <FreshnessNote updatedAtMs={rankings.dataUpdatedAt ?? null} label="rankings" />
+          <FreshnessNote updatedAtMs={rankings.dataUpdatedAt ?? null} label={t("marketplace.fresh.rankings", "rankings")} />
         </>
       }
     >
@@ -72,7 +74,7 @@ export function RankingsSection() {
       ) : rankings.isError ? (
         <ErrorState message={asErrorText(rankings.error)} onRetry={() => rankings.refetch()} />
       ) : rows.length === 0 ? (
-        <EmptyState message="No rankings computed yet." hint="Install seeds, then queue research runs — score snapshots populate this table." />
+        <EmptyState message={t("marketplace.rankings.empty", "No rankings computed yet.")} hint={t("marketplace.rankings.empty_hint", "Install seeds, then queue research runs — score snapshots populate this table.")} />
       ) : (
         <>
           {podium.length > 0 && (

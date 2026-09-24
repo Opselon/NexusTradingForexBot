@@ -59,14 +59,14 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
   return (
     <div className="mkt-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <aside ref={boxRef} className="mkt-drawer" role="dialog" aria-modal="true" aria-label={`Seed detail ${seedId}`}>
-        <header aria-label="Seed detail">
+        <header aria-label={t("marketplace.drawer.title", "Seed detail")}>
           <span>{t("marketplace.drawer.title", "Seed detail")}</span>
           <span className="inline-mono tiny faint">{seedId}</span>
           <button className="btn small" style={{ marginInlineStart: "auto" }} onClick={() => setShowRaw((v) => !v)}>
-            {showRaw ? "structured" : "raw JSON"}
+            {showRaw ? t("marketplace.drawer.structured", "structured") : t("marketplace.drawer.raw_json", "raw JSON")}
           </button>
           <button className="btn small ghost" onClick={onClose}>
-            Close <kbd>esc</kbd>
+            {t("marketplace.drawer.close", "Close")} <kbd>esc</kbd>
           </button>
         </header>
         <div className="body">
@@ -75,7 +75,7 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
           ) : detail.isError ? (
             <ErrorState message={asErrorText(detail.error)} onRetry={() => detail.refetch()} />
           ) : !d ? (
-            <EmptyState message="Seed detail payload was empty." />
+            <EmptyState message={t("marketplace.drawer.empty", "Seed detail payload was empty.")} />
           ) : showRaw ? (
             <pre>{rawJson}</pre>
           ) : (
@@ -122,7 +122,7 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
                   <span className="pill">{(d.enablement ?? []).length} row{(d.enablement ?? []).length === 1 ? "" : "s"}</span>
                 </div>
                 {(d.enablement ?? []).length === 0 ? (
-                  <EmptyState message="No enablement rows — this seed is not enabled for any mode." />
+                  <EmptyState message={t("marketplace.detail.enablement_empty", "No enablement rows — this seed is not enabled for any mode.")} />
                 ) : (
                   <DataTable headers={[{ label: "mode" }, { label: "status" }, { label: "reason" }, { label: "actor" }, { label: "updated" }]}>
                     {(d.enablement ?? []).map((e, i) => (
@@ -150,13 +150,13 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
                 ) : history.isError ? (
                   <ErrorState message={asErrorText(history.error)} onRetry={() => history.refetch()} />
                 ) : (history.data?.items ?? []).length === 0 ? (
-                  <EmptyState message="No score snapshots yet." hint="Queue a research run — totals and factors are written by scoring." />
+                  <EmptyState message={t("marketplace.detail.score_empty", "No score snapshots yet.")} hint={t("marketplace.detail.score_empty_hint", "Queue a research run — totals and factors are written by scoring.")} />
                 ) : (
                   <>
                     <Sparkline
                       values={sparkValues}
                       tone="neu"
-                      label="score total history"
+                      label={t("marketplace.detail.spark_label", "score total history")}
                       width={200}
                       height={26}
                     />
@@ -179,7 +179,7 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
                         </tr>
                       ))}
                     </DataTable>
-                    <FreshnessNote updatedAtMs={history.dataUpdatedAt ?? null} label="scores" />
+                    <FreshnessNote updatedAtMs={history.dataUpdatedAt ?? null} label={t("marketplace.fresh.scores", "scores")} />
                   </>
                 )}
               </section>
@@ -190,7 +190,7 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
                   <span className="pill">{(d.lifecycle_events ?? []).length} transition{(d.lifecycle_events ?? []).length === 1 ? "" : "s"}</span>
                 </div>
                 {(d.lifecycle_events ?? []).length === 0 ? (
-                  <EmptyState message="No lifecycle transitions recorded." />
+                  <EmptyState message={t("marketplace.detail.lifecycle_empty", "No lifecycle transitions recorded.")} />
                 ) : (
                   <div className="mkt-store-timeline">
                     {(d.lifecycle_events ?? []).map((e, i) => (
@@ -210,7 +210,7 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
                   <span className="pill">{(d.recent_repairs ?? []).length} record{(d.recent_repairs ?? []).length === 1 ? "" : "s"}</span>
                 </div>
                 {(d.recent_repairs ?? []).length === 0 ? (
-                  <EmptyState message="No repair records reference this seed." />
+                  <EmptyState message={t("marketplace.detail.repairs_empty", "No repair records reference this seed.")} />
                 ) : (
                   <DataTable headers={[{ label: "created" }, { label: "trigger" }, { label: "status" }, { label: "seed → child" }]}>
                     {(d.recent_repairs ?? []).map((r, i) => (
@@ -236,7 +236,7 @@ export function SeedDetailDrawer({ seedId, onClose }: { seedId: string; onClose:
                 </section>
               )}
               {sections.length < 7 && (
-                <Panel title="Backend sections present" tight={false}>
+                <Panel title={t("marketplace.detail.sections_title", "Backend sections present")} tight={false}>
                   <div className="tiny muted">
                     {sections.length === 0 ? "only the base seed row was returned" : sections.join(" · ")}
                     {" · "}missing sections are not rendered rather than filled with placeholders.
