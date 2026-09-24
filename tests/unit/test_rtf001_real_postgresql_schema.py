@@ -16,6 +16,7 @@ the persisted provider, so the persisted settings cannot be reached from a
 unit test — the env URL is the supported way to exercise a live PostgreSQL
 domain. No credential is written into this file or any log line.
 """
+
 from __future__ import annotations
 
 import os
@@ -24,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-import pytest  # noqa: E402
+import pytest
 
 psycopg = pytest.importorskip("psycopg")
 
@@ -88,9 +89,7 @@ def test_live_domain_gap_is_fully_covered_by_the_replay() -> None:
             )
             live = {(t, c.lower()) for t, c in cur.fetchall()}
 
-    required = {
-        (t, c.lower()) for t, cols in APP_REQUIRED_COLUMNS.items() for c, _ in cols
-    }
+    required = {(t, c.lower()) for t, cols in APP_REQUIRED_COLUMNS.items() for c, _ in cols}
     missing = sorted(required - live)
     assert missing, "the configured domain already carries every required column"
 
@@ -135,7 +134,5 @@ def test_replay_provisions_a_fresh_postgresql_domain_completely(scratch: str) ->
 
         # The dedup guarantee the runtime relies on (ON CONFLICT clause).
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT 1 FROM pg_indexes WHERE indexname = 'idx_audit_signals_dedup'"
-            )
+            cur.execute("SELECT 1 FROM pg_indexes WHERE indexname = 'idx_audit_signals_dedup'")
             assert cur.fetchone() is not None, "signal_dedup_key UNIQUE index missing"

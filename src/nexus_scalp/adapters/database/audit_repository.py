@@ -2740,9 +2740,7 @@ class AuditRepository:
                 backend.execute(sql, args)
                 return True
             except Exception as sink_err:
-                logger.error(
-                    "[DEAD-LETTER] write sink failed: %s", sink_err
-                )
+                logger.error("[DEAD-LETTER] write sink failed: %s", sink_err)
                 return False
 
         return _sink

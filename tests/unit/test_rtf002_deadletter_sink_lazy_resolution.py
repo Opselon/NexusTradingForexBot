@@ -17,6 +17,7 @@ The sink must resolve the backend lazily, at call time.
 NOTE: no network. ``_build_pooled_write_backend`` is stubbed so constructing
 the repository never dials the (fake) PostgreSQL DSN.
 """
+
 from __future__ import annotations
 
 import sys
@@ -154,9 +155,7 @@ def test_store_receives_the_sink_and_lands_a_row(
     the full path the runtime log showed failing."""
     store = pg_repo.dead_letter_store
     assert store is not None
-    assert store._write_sink is not None, (
-        "DeadLetterStore was constructed with write_sink=None"
-    )
+    assert store._write_sink is not None, "DeadLetterStore was constructed with write_sink=None"
 
     backend = get_domain_backend("audit", readonly=False)
     assert isinstance(backend, _RecordingBackend)
@@ -168,6 +167,4 @@ def test_store_receives_the_sink_and_lands_a_row(
     )
     assert ok is True, "dead-letter row was not persisted to the sink"
     assert len(backend.calls) == 1
-    assert backend.calls[0][0].strip().upper().startswith(
-        "INSERT INTO AUDIT_DEAD_LETTER"
-    )
+    assert backend.calls[0][0].strip().upper().startswith("INSERT INTO AUDIT_DEAD_LETTER")
