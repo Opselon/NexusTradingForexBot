@@ -207,7 +207,11 @@ def calculate_smart_metrics(inputs: SmartMetricsInputs) -> dict[str, Any]:
     min_stop_gap = (
         (symbol_info.stops_level * symbol_info.point)
         if symbol_info and symbol_info.stops_level > 0
-        else 0.25
+        else 0.0  # FORENSIC-LANE-BROKER: the old `else 0.25` was an
+        # XAUUSD-price-unit floor: on 5-digit EURUSD it demanded a 25,000-point
+        # stop distance. A missing stops_level means the broker imposes NO
+        # minimum — callers that need a floor express it in POINTS
+        # (lifecycle/protection uses ~1.75 points + the live spread).
     )
     stop_gap_pressure = min_stop_gap / max(atr, eps)
     wick_tolerance_pressure = (atr * 0.50) / max(atr, eps)

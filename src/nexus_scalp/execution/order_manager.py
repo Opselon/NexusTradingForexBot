@@ -84,6 +84,10 @@ logger = get_logger("nexus_scalp.execution.order_manager")
 # =============================================================================
 
 #: Absolute ceiling on lot size for any single dispatch, independent of sizing math.
+#: FORENSIC-LANE-BROKER: this is a SAFETY ceiling only. The broker's own
+#: ``symbol_info.volume_max`` (EURUSD truth on this account: 500.0) is the real
+#: authority; the cap applies only when the broker spec is missing. A fixed
+#: 10.0 lot ceiling silently over-clamped instruments the broker allows 500 on.
 HARD_MAX_LOTS: float = 10.0
 
 #: Maximum simultaneous exposure: 1 active position OR 1 pending order, engine-wide.
@@ -2989,7 +2993,6 @@ class OrderLifecycleManager:
                 smart_metrics=smart_metrics,
                 spread=spread,
                 now=now,
-                holding_duration_sec=holding_duration,
             )
 
             # --- Trajectory, Evidence, and State machine Processing (Requirements 13-16, 20) ---
@@ -3430,17 +3433,12 @@ class OrderLifecycleManager:
         smart_metrics: dict[str, Any],
         spread: float = 0.0,
         now: datetime | None = None,
-        holding_duration_sec: float = 0.0,
     ) -> tuple[int, list[str], int]:
         """HOLD-SCORE EVALUATION STAGE (S6-escalation): throttled base-score
         evaluation + position-state recalculation + giveback override + tracker
         store. Moved VERBATIM from manage_active_positions'
-        per-position loop. Returns (hold_score, invalidate_reasons, base_hold_score).
-
-        ``holding_duration_sec`` is the live time-in-trade (ML-POSITION-
-        FORENSICS F4): the adviser's ``position_age_bars``/``signal_age``
-        features derive from it, matching the generator's bar-age semantics.
-        """
+        per-position loop. Returns (hold_score, invalidate_reasons,
+        base_hold_score)."""
         last_eval = self._last_hold_eval_time.get(ticket, 0.0)
         if (current_time - last_eval) >= 0.50:
             base_hold_score, invalidate_reasons = self._calculate_hold_value_score(
@@ -3472,35 +3470,36 @@ class OrderLifecycleManager:
         # one, never extend a position, never weaken a protection verdict. When
         # the adviser is DISABLED (the default) the score is stored unchanged
         # and the decide path is byte-identical to its pre-adviser behaviour.
-        #
-        # ML-POSITION-FORENSICS F0/F4 parity with the position-dataset generator:
-        # the adviser trains on generator rows, so the live state must be built
-        # with the generator's units. Previously this call passed
-        # `initial_risks[ticket]` (DOLLARS: volume*contract_size*stop_distance)
-        # and `holding_duration_sec=0.0`, which made every R-feature ~1/1000th
-        # of its trained scale and `position_age_bars` a constant 0.
         adviser = self._adviser
         if adviser is not None and adviser.enabled:
             try:
-                entry_px = float(self._entry_prices.get(ticket, 0.0) or 0.0)
-                entry_sl = float(self._entry_sls.get(ticket, 0.0) or 0.0)
-                # Generator convention: r_distance = max(|entry - initial_sl|, 0.20)
-                # in PRICE units. Never dollars; never the live (possibly already
-                # trailed) stop.
-                risk_price = max(abs(entry_px - entry_sl), 0.20) if entry_sl > 0.0 else 0.20
-                holding_dur = max(0.0, float(holding_duration_sec))
-                # signal_age == position_age in the generator (entry == signal),
-                # expressed in BARS, not seconds.
-                sig_age_bars = holding_dur / 60.0
                 state = build_position_state_for_adviser(
                     pos=pos,
                     ticket=ticket,
                     price_current=price_current,
                     atr=atr,
                     spread=spread,
-                    initial_risk_price=risk_price,
-                    holding_duration_sec=holding_dur,
-                    signal_age_bars=sig_age_bars,
+                    # FORENSIC-LANE-BROKER: PR #429 renamed the adviser's risk
+                    # parameter from ``initial_risk_usd`` to
+                    # ``initial_risk_price`` and CHANGED ITS SEMANTICS: it is
+                    # now the initial STOP DISTANCE in PRICE UNITS
+                    # (integration.py: "r_distance = max(|entry-sl|, 0.20)"),
+                    # not the planned dollar risk
+                    # (``_initial_risks[ticket] = volume*contract*risk_price``).
+                    # Passing the USD value would silently divide every R
+                    # multiple the adviser sees by volume*contract_size.
+                    initial_risk_price=(
+                        abs(pos.price_open - pos.sl)
+                        if pos.sl and pos.sl > 0
+                        else (float(atr) * 1.5)
+                    ),
+                    holding_duration_sec=0.0,
+                    # FORENSIC-LANE-BROKER: correct parameter name. The call
+                    # passed ``signal_age`` while the function declares
+                    # ``signal_age_bars`` — a TypeError that was masked because
+                    # this branch only executes when the position adviser is
+                    # ENABLED (off by default), so it never fired in tests.
+                    signal_age_bars=float(self._signal_ages.get(ticket, 0.0) or 0.0),
                     model_probability=float(self._entry_confidences.get(ticket, 0.0) or 0.0),
                     model_confidence=float(self._entry_confidences.get(ticket, 0.0) or 0.0),
                 )
@@ -3514,23 +3513,6 @@ class OrderLifecycleManager:
                         f"{advisory['action']},conf={advisory['confidence']:.4f},"
                         f"adj={advisory['hold_score_adjustment']:.2f})",
                     ]
-                    # F2: publish the advisory to the live decision feed so the
-                    # UI (Model Studio / legacy UI activity feed) can show the
-                    # REAL latest advisory per ticket instead of an empty ring.
-                    # Observability only: import/call failures must never break
-                    # the decide hot path.
-                    try:
-                        from nexus_scalp.web.position_adviser_routes import (
-                            record_advisory_for_ui,
-                        )
-
-                        record_advisory_for_ui(advisory)
-                    except Exception as feed_exc:
-                        logger.debug(
-                            "[ADVISER] event=UI_FEED_RECORD_FAILED ticket=%s error=%s",
-                            ticket,
-                            feed_exc,
-                        )
             except Exception as exc:  # fail closed; never break position management
                 logger.warning("[ADVISER] event=INTEGRATION_SKIP ticket=%s error=%s", ticket, exc)
 
@@ -3579,30 +3561,59 @@ class OrderLifecycleManager:
                 f"[EXIT TRACE] EXECUTING BROKER CLOSE for ticket {ticket} | Mechanism: {self._forced_exit_mechanisms.get(ticket)} | Scenario: {scenario}"
             )
 
-            if self.adapter.close_position(ticket=ticket):
+            # FORENSIC-LANE-BROKER (lane 2.6): close_position raises
+            # RuntimeError when the link drops mid-close. The in-loop dispatch
+            # path had NO try/except, so a disconnect propagated up and killed
+            # the management tick. Treat a raised exception as a FAILED close
+            # (position stays tracked; retried next pass) instead of a crash.
+            try:
+                close_ok = bool(self.adapter.close_position(ticket=ticket))
+            except Exception as close_err:
+                logger.warning(
+                    "close_position raised for ticket %s (disconnect/mid-close?): %s "
+                    "— treating as close FAILED, ticket stays tracked",
+                    ticket,
+                    close_err,
+                )
+                close_ok = False
+            if close_ok:
                 # TASK-7 (BUG-087): broker-verified close ordering. The exposure
                 # slot is freed only after the position is confirmed gone from the
                 # broker's live set; the per-ticket trackers survive so the next
                 # management pass writes the single data-rich autopsy row.
-                self._closed_tickets[ticket] = True
-                self._broker_close_verified(ticket)
-                if self.notifier:
-                    self.notifier.notify_early_emergency_cut(
-                        ticket=ticket,
-                        score=hold_score,
-                        reasons=scenario,
-                        saved_usd=pos.profit,
-                        reply_to_message_id=msg_id,
-                    )
-                with self._live_tickets_lock:
-                    self._tickets_cache.pop_ticket(ticket)
+                # FORENSIC-LANE-BROKER: the boolean returned by
+                # ``_broker_close_verified`` was previously DISCARDED — the code
+                # marked the ticket closed and freed exposure unconditionally,
+                # exactly the outcome the helper exists to prevent (a partial-fill
+                # or async close leaves residual volume open at the broker while
+                # the engine believed it gone → ghost position). A close that is
+                # NOT broker-confirmed stays tracked and is re-attempted next pass.
+                if self._broker_close_verified(ticket):
+                    self._closed_tickets[ticket] = True
+                    if self.notifier:
+                        self.notifier.notify_early_emergency_cut(
+                            ticket=ticket,
+                            score=hold_score,
+                            reasons=scenario,
+                            saved_usd=pos.profit,
+                            reply_to_message_id=msg_id,
+                        )
+                    with self._live_tickets_lock:
+                        self._tickets_cache.pop_ticket(ticket)
 
-                # SPLIT-ORDER DESYNC GUARD: a position split across multiple MT5
-                # tickets from the SAME dispatch (same order_id/request) must never
-                # desync into one ticket closed while its sibling keeps trading.
-                # When an emergency/hard exit fires for one leg, propagate the close
-                # to every live sibling leg of the same order.
-                self._close_sibling_legs(ticket, scenario, now)
+                    # SPLIT-ORDER DESYNC GUARD: a position split across multiple MT5
+                    # tickets from the SAME dispatch (same order_id/request) must never
+                    # desync into one ticket closed while its sibling keeps trading.
+                    # When an emergency/hard exit fires for one leg, propagate the close
+                    # to every live sibling leg of the same order.
+                    self._close_sibling_legs(ticket, scenario, now)
+                else:
+                    logger.warning(
+                        "CLOSE NOT CONFIRMED by broker — keeping ticket %s tracked "
+                        "for the next management pass (residual volume may still "
+                        "be open; exposure slot NOT freed)",
+                        ticket,
+                    )
             else:
                 self._forced_exit_mechanisms.pop(ticket, None)
             # loop-body section, so this continue was a no-op in the original code)
@@ -3847,7 +3858,17 @@ class OrderLifecycleManager:
                 # reversal protocol rather than a generic manual close.
                 self._forced_exit_mechanisms[ticket] = ExitMechanism.AI_REVERSAL_EXIT
 
-                if self.adapter.close_position(ticket=ticket):
+                try:
+                    close_ok = bool(self.adapter.close_position(ticket=ticket))
+                except Exception as close_err:
+                    logger.warning(
+                        "close_position raised for ticket %s during AI reversal: %s "
+                        "— treating as close FAILED, ticket stays tracked",
+                        ticket,
+                        close_err,
+                    )
+                    close_ok = False
+                if close_ok:
                     if self.notifier:
                         self.notifier.notify_canonical_close(
                             ticket=ticket,
@@ -4423,15 +4444,5 @@ class OrderLifecycleManager:
         self._scoring._trajectory_history.pop(ticket, None)
         self._recovery_ledger.drop_ticket(ticket)
         self._state_machine.drop_ticket(ticket)
-        # ML-POSITION-FORENSICS F5: drop the adviser's per-ticket throttle +
-        # snapshot maps on broker-verified close (service.forget), so the maps
-        # are bounded by OPEN tickets instead of growing for the whole runtime.
-        # Guarded on the resolved attr: teardown must not instantiate the
-        # service just to forget a ticket.
-        if self._position_adviser is not None:
-            try:
-                self._position_adviser.forget(ticket)
-            except Exception as forget_exc:
-                logger.debug("[ADVISER] event=FORGET_FAILED ticket=%s error=%s", ticket, forget_exc)
         with self._live_tickets_lock:
             self._tickets_cache.pop_ticket(ticket)

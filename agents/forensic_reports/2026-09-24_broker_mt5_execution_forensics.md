@@ -441,3 +441,67 @@ Tests windows/macos, dependency drift). Merged as `edd84399`; branch deleted.
 law for PnL, reward, margin and stop geometry, and PAPER can no longer validate
 production semantics against numbers no broker would report. The remaining
 structural risks are the order/deal confirmation layer and netting/hedging detection.
+
+---
+
+## WAVE 2 — identity, ownership, close-confirmation (three audit lanes)
+
+Wave 1 consolidated money math. The three read-only forensic lanes returned a
+further set of HIGH-severity defects in the **identity** layer; these are fixed
+and regression-tested here.
+
+### Fixed in this wave
+
+| # | Defect | Evidence | Fix |
+|---|---|---|---|
+| W2.1 | Order **magic** was a hardcoded literal in 9 sites (8 in `mt5_adapter`, 1 in `risk_engine`) that **disagreed with the config** — `config.py:ExecutionConfig.magic_number` defaults to `888101` but `configs/base.yaml` ships `999101`, so orders were stamped with one magic and matched with another, silently orphaning every live order from position management. | `mt5_adapter.py` 8x `888101`; `risk_engine.py:704` `magic_number=888101` | `RiskEngine` takes `magic_number` explicitly; the MT5 adapter gets a single `configure_broker_identity(magic, bot_symbol)` injected from config at engine boot **and** on every live↔paper mode swap (`runtime_mode.py`); one `_FALLBACK_MAGIC` constant preserves the legacy value when no runtime injects. |
+| W2.2 | Bot position/pending filters used **string equality** on the symbol (`pos.symbol == "XAUUSD"`), so a broker-suffixed name (`XAUUSD.m`, `XAUUSD_i`) — the exact case `resolve_symbol` exists to handle — silently dropped every bot position from management. | `mt5_adapter.py:1158,1188` | Instrument ownership now goes through `_is_bot_symbol`, which matches the configured name and its suffix-stripped alias via `_normalize_symbol_key`. |
+| W2.3 | Mutating calls (`close_position`, `modify_position`) resolved rows by **ticket alone**; a stale or broker-reused ticket could resolve to a FOREIGN position and we would close someone else's exposure. | `mt5_adapter.py:2100,2151` (`positions_get(ticket=…)`, no magic/symbol check) | New `_position_is_ours(pos)` gate on both mutating paths: refuse unless the row carries our magic (magic=0/absent falls back to the instrument check). |
+| W2.4 | `_broker_close_verified(ticket)` return value was **discarded** — the engine marked the ticket closed, freed the exposure slot and fired the "closed" notification before confirming the position was actually gone (a partial-fill close returns DONE while leaving residual volume open → ghost position). | `order_manager.py:3551-3552` (`self._closed_tickets[ticket] = True; self._broker_close_verified(ticket)`) | The boolean now gates `_closed_tickets`, the notifier call and `pop_ticket`. An unconfirmed close logs `CLOSE NOT CONFIRMED` and stays tracked for the next management pass. |
+| W2.5 | A disconnect mid-close raised `RuntimeError` from `close_position` with **no try/except** in the in-loop dispatch path, propagating up and killing the management tick. | `mt5_adapter.py:2401` (`_assert_connected` raises) ← `order_manager.py:3546` (no handler) | Both close call sites wrap the call: an exception is a FAILED close (ticket stays tracked, retried), never a crash. |
+| W2.6 | `HARD_MAX_LOTS=10.0` was an **absolute** ceiling applied after sizing, ignoring the broker's own `volume_max` (EURUSD truth on this account: 500.0) and silently over-clamping legal broker volumes. | `order_manager.py:86`; `dispatch.py:217` (`min(vol, HARD_MAX_LOTS)`) | The broker spec is fetched first; `volume_max` governs when known and `HARD_MAX_LOTS` is the documented fallback safety ceiling. |
+| W2.7 | Two more **XAUUSD-price-unit** stop floors: `else 0.25` in `position_intelligence.py` and `max(min_stop_gap, 0.35)` in `protection.py`. On 5-digit EURUSD these demanded 25,000- and 35,000-point stop distances. | `position_intelligence.py:207-211`; `protection.py:386` | A missing `stops_level` now means the broker imposes NO minimum (0.0); the freeze gap is `min_stop_distance_price(stops_level, point, 25) + max(live_spread, 1.75*point)` — point-relative everywhere. |
+
+### Still open (carried, not hidden)
+
+The lanes surfaced a larger structural set that is deliberately **not** patched
+in this wave — each needs its own design pass and its own evidence, and
+half-fixing them is worse than leaving them explicit:
+
+1. **ORDER/DEAL/POSITION conflation (HIGH).** `execute_market_order` returns
+   `result.order` and the engine treats it as the position ticket; the deal
+   (`result.deal`) is never read; the ledger OPENED row is keyed by order
+   ticket while the close side joins on `position_ticket` from deal history
+   (an implicit, unverified join). The codebase already contains a complete,
+   tested tri-state replacement (`order_write.py` `WriteOutcome`,
+   `write_market_order`/`write_pending_order` + `OrderIntentStore` in both
+   adapters) — but it is **dead code**: the production dispatch path still
+   calls the legacy `execute_market_order`/`place_pending_order`
+   (`dispatch.py:447,532`). Wiring that surface is the single highest-value
+   change remaining.
+2. **Netting/hedging is UNSUPPORTED.** `Position` carries `ticket` and `magic`
+   but no `identifier`/position id; `margin_mode` is surfaced only for display
+   and never consumed by any execution decision; no account-mode detection
+   exists anywhere. On a netting account a position merge is not modeled — the
+   old ticket vanishes from the broker view and is autopsied as a close. **The
+   engine must fail safe on a netting account until this is built.**
+3. **TP/SL modification has no broker-constraint validation (HIGH).**
+   `_validate_pending_request` (stops/freeze/tick alignment) is only wired to
+   pending orders, never to `modify_position`; server state is not confirmed
+   after modify, and the manual UI path bypasses the duplicate-modification
+   gate. Post-merge sync then "confirms" whatever the broker reports.
+4. **Account freshness is not gated (HIGH).** `AccountInfo` has no timestamp;
+   `classify_account_freshness` exists in `runtime_safety.py` but is bypassed
+   on the fast path (`decision_executor` reuses `engine._account` across ticks).
+5. **Legacy web console shows stale data as live.** `Web/app.js` sets the
+   connection pill to `CONNECTED` whenever HTTP polling succeeds, and
+   synthesizes floating PnL with a hardcoded `* 100.0` contract multiplier.
+   The React frontend has neither defect.
+6. **`sizing_policy.py` hardcodes the 10 USD/pip standard-lot rule** (broken on
+   XAUUSD and any non-USD quote) — superseded by the canonical law on the
+   production path, but still importable.
+
+Regression coverage added: `tests/unit/test_broker_identity_ownership.py` (12
+tests) — magic provenance, suffix-robust instrument keying, foreign-ticket
+refusal and the broker-aware volume ceiling.
+

@@ -181,20 +181,24 @@ class DispatchEngine:
         if not math.isfinite(vol) or vol <= 0.0:
             return 0.0
 
+        # FORENSIC-LANE-BROKER: the broker's own spec is fetched up front so
+        # volume_max (EURUSD truth: 500.0) can govern instead of a fixed
+        # 10-lot ceiling that over-clamped legal broker volumes.
+        symbol_info = None
+        try:
+            if symbol:
+                symbol_info = self.om.adapter.get_symbol_info(symbol)
+        except Exception:
+            symbol_info = None
+
         if self.om.risk_engine is not None and hasattr(
             self.om.risk_engine, "get_clamped_position_size"
         ):
             account = None
-            symbol_info = None
             try:
                 account = self.om.adapter.get_account_info()
             except Exception:
                 account = None
-            try:
-                if symbol:
-                    symbol_info = self.om.adapter.get_symbol_info(symbol)
-            except Exception:
-                symbol_info = None
 
             try:
                 vol = float(
@@ -214,13 +218,27 @@ class DispatchEngine:
         if not math.isfinite(vol) or vol <= 0.0:
             return 0.0
 
-        clamped = min(vol, HARD_MAX_LOTS)
+        # Broker volume_max is authoritative when known; HARD_MAX_LOTS is only
+        # the fallback safety ceiling for a missing spec (see order_manager).
+        # Keeping min(HARD_MAX_LOTS, volume_max) would still over-clamp every
+        # instrument the broker allows beyond 10 lots (EURUSD truth: 500).
+        ceiling = HARD_MAX_LOTS
+        broker_max = 0.0
+        try:
+            if symbol_info is not None:
+                broker_max = float(getattr(symbol_info, "volume_max", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            broker_max = 0.0
+        if broker_max > 0.0:
+            ceiling = broker_max
+        clamped = min(vol, ceiling)
         if clamped < vol:
             logger.warning(
-                "LOT SIZE CLAMPED to HARD_MAX_LOTS",
+                "LOT SIZE CLAMPED to ceiling",
                 requested=round(vol, 2),
                 clamped=round(clamped, 2),
                 hard_max=HARD_MAX_LOTS,
+                broker_volume_max=getattr(symbol_info, "volume_max", None),
             )
         return round(clamped, 2)
 

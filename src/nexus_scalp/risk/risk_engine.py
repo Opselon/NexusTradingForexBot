@@ -56,7 +56,18 @@ class RiskEngine:
         min_risk_reward_ratio: float = 1.8,
         min_rr_high_confidence: float = 1.2,
         high_confidence_threshold: float | None = None,
+        magic_number: int | None = None,
     ) -> None:
+        # FORENSIC-LANE-BROKER: the magic is an execution-policy value, not a
+        # RiskConfig field. The old hardcoded 888101 disagreed with
+        # configs/base.yaml (999101) — orders were stamped with one magic while
+        # the MT5 adapter matched positions with another, silently orphaning
+        # every live order. Callers pass execution.magic_number; the fallback
+        # preserves the legacy value for paths that never set it.
+        if magic_number is None:
+            from nexus_scalp.configuration.config import ExecutionConfig
+
+            magic_number = ExecutionConfig().magic_number
         # THRESHOLD OWNERSHIP (P0 policy-governance): high_confidence_threshold
         # defaults to the canonical AlgoConfig value (same constant the runtime
         # snapshot syncs); the local literal duplicate default is gone.
@@ -65,6 +76,7 @@ class RiskEngine:
 
             high_confidence_threshold = AlgoConfig().high_confidence_threshold
         self.config = config
+        self.magic_number = int(magic_number)
         self.max_margin_usage_pct = max_margin_usage_pct
         self.max_allowed_lots = max_allowed_lots
         self.eta_coefficient = eta_coefficient
@@ -701,7 +713,7 @@ class RiskEngine:
             price=proposal.proposed_entry,
             stop_loss=proposal.stop_loss,
             take_profit=proposal.take_profit,
-            magic_number=888101,
+            magic_number=self.magic_number,
             comment="NSE_HFT_SIZED",
         )
 
