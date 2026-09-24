@@ -266,4 +266,18 @@ export const MESSAGES: FeatureMessages = {
   "trace.tab.topo_note": { fa: "توپولوژی {nodes} گره / {edges} یال", de: "Topologie {nodes} Knoten / {edges} Kanten", es: "topología {nodes} nodos / {edges} aristas", ar: "الطوبولوجيا {nodes} عقدة / {edges} حافة" },
   "trace.footer": { fa: "ناظر {observer} · جریان {stream} · رویدادها {events} · ترکیب‌شده {coalesced} · حذف‌شده {dropped} · بد‌قالب {malformed} · آخرین شماره {lastSeq}", de: "Observer {observer} · Stream {stream} · Ereignisse {events} · zusammengefasst {coalesced} · verworfen {dropped} · fehlerhaft {malformed} · last_seq {lastSeq}", es: "observador {observer} · flujo {stream} · eventos {events} · consolidados {coalesced} · descartados {dropped} · malformados {malformed} · last_seq {lastSeq}", ar: "المراقب {observer} · التدفق {stream} · الأحداث {events} · المُدمجة {coalesced} · المُتجاهلة {dropped} · التالفة {malformed} · آخر تسلسل {lastSeq}" },
   "trace.footer_note": { fa: "هر عدد، داده مشاهده‌شده زمان اجرا است.", de: "Jede Zahl ist beobachtete Laufzeitdaten.", es: "Cada cifra es dato observado del tiempo de ejecución.", ar: "كل رقم هو بيانات مُلاحَظة من وقت التشغيل." },
+  // ---- batch 2: events, timeline, compare, decisions, filters, markers
+  "trace.compare.region": { fa: "مقایسه A با B", de: "A vs B vergleichen", es: "Comparar A vs B", ar: "مقارنة A مع B" },
+  "trace.decisions.region": { fa: "فید تصمیمات", de: "Entscheidungs-Feed", es: "Feed de decisiones", ar: "تغذية القرارات" },
+  "trace.decisions.row_hint": { fa: "برای مقایسه دوبار کلیک کنید", de: "Doppelklick zum Vergleichen", es: "Doble clic para comparar", ar: "انقر مرتين للمقارنة" },
+
+  // ---- batch 2b: decision status tokens (display side)
+  "trace.dstatus.error": { fa: "خطا", de: "FEHLER", es: "ERROR", ar: "خطأ" },
+  "trace.dstatus.failed": { fa: "ناموفق", de: "FEHLGESCHLAGEN", es: "FALLIDO", ar: "فشل" },
+  "trace.dstatus.approved": { fa: "تأیید شد", de: "GENEHMIGT", es: "APROBADO", ar: "تمت الموافقة" },
+  "trace.dstatus.executed": { fa: "اجرا شد", de: "AUSGEFÜHRT", es: "EJECUTADO", ar: "نُفِّذ" },
+  "trace.dstatus.dispatched": { fa: "ارسال شد", de: "WEITERGELEITET", es: "ENVIADO", ar: "أُرسل" },
+  "trace.dstatus.rejected": { fa: "رد شد", de: "ABGELEHNT", es: "RECHAZADO", ar: "رُفض" },
+  "trace.dstatus.no_trade": { fa: "بدون معامله", de: "KEIN HANDEL", es: "SIN OPERACIÓN", ar: "بلا تداول" },
+  "trace.dstatus.pending": { fa: "در انتظار", de: "AUSSTEHEND", es: "PENDIENTE", ar: "معلّق" },
 };
