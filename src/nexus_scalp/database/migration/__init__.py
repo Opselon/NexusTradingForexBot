@@ -19,8 +19,18 @@ from collections.abc import Callable
 from typing import Any
 
 from nexus_scalp.database.migration.pg_schema import apply_schema
+from nexus_scalp.database.models import DatabaseDomain
 
 logger = logging.getLogger(__name__)
+
+#: The replay-based statement extractor for each provisioned domain. A domain
+#: absent from this map has no authored DDL, and ``migrate_domain`` refuses to
+#: provision it rather than silently reporting success with zero schema.
+_DOMAIN_STATEMENTS: dict[str, str] = {
+    DatabaseDomain.AUDIT.value: "audit_schema_statements",
+    DatabaseDomain.NEWS.value: "news_schema_statements",
+    DatabaseDomain.CANDLE_INTEL.value: "candle_intel_schema_statements",
+}
 
 
 def sqlite_ddl_statements() -> list[str]:
@@ -45,6 +55,23 @@ def sqlite_ddl_statements() -> list[str]:
     return list(audit_schema_statements())
 
 
+def _domain_statements(domain: str) -> list[str]:
+    """The domain's complete logical schema, in the SQLite dialect.
+
+    Raises :class:`NotImplementedError` for a domain with no authored DDL so the
+    caller can distinguish "not provisioned yet" from a genuine failure.
+    """
+    from nexus_scalp.database import migration
+
+    extractor_name = _DOMAIN_STATEMENTS.get(domain)
+    if extractor_name is None:
+        raise NotImplementedError(
+            f"migration is not authored for domain {domain!r} "
+            f"(known: {', '.join(sorted(_DOMAIN_STATEMENTS))})"
+        )
+    return list(getattr(migration.schema_snapshot, extractor_name)())
+
+
 def migrate_domain(
     domain: str,
     execute: Callable[[str], Any],
@@ -57,13 +84,13 @@ def migrate_domain(
     migration's audit trail — applied count, per-statement errors — so a
     failed migration is visible rather than silently leaving a half-built
     schema behind.
-    """
-    if domain != "audit":
-        # Only the audit domain has authored DDL today. Refusing (rather than
-        # no-oping) keeps "migrate" honest as other domains come online.
-        raise NotImplementedError(f"migration is authored for the audit domain, not {domain!r}")
 
-    statements = sqlite_ddl_statements()
+    Covers every domain with authored DDL (audit, news, candle_intel — the
+    replay in :mod:`migration.schema_snapshot` produces each list). A domain
+    with no authored DDL raises :class:`NotImplementedError` instead of
+    no-oping, so a caller can never mistake "not provisioned" for success.
+    """
+    statements = _domain_statements(domain)
     logger.info("[DB-MIGRATE] domain=%s statements=%d", domain, len(statements))
     return apply_schema(statements, execute, stop_on_error=stop_on_error)
 
@@ -74,15 +101,10 @@ def verify_domain_schema(domain: str, list_tables: Callable[[], list[str]]) -> d
     ``list_tables`` returns the table names present on the target. Returns the
     set the domain expects, the set found, and the difference — never writes.
     """
-    if domain != "audit":
-        raise NotImplementedError(
-            f"schema verification is authored for the audit domain, not {domain!r}"
-        )
-
     import re
 
     expected: set[str] = set()
-    for raw in sqlite_ddl_statements():
+    for raw in _domain_statements(domain):
         m = re.search(r"(?i)CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)", raw)
         if m:
             expected.add(m.group(1).strip())

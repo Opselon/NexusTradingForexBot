@@ -593,8 +593,19 @@ def provision_domain(domain: str, dsn: str, **pool_kwargs: Any) -> Any:
                 domain,
                 migration["error_count"],
             )
-    except NotImplementedError:
-        pass  # domain has no authored DDL yet — loud, not silent
+    except NotImplementedError as exc:
+        # CHG-0067 wave 3: this used to be a bare `pass`, which made
+        # `nexus db connect` report success while the domain had ZERO tables on
+        # PostgreSQL (news and candle_intel hit this for the whole Wave 2 span —
+        # migrate_domain raised NotImplementedError for them and no one saw it).
+        # Every registry domain now has authored DDL, so an unimplemented domain
+        # is a real configuration error, not a pending feature: log it loudly so
+        # the operator sees the domain was left unprovisioned.
+        logger.error(
+            "[DB-FABRIC] domain=%s schema NOT provisioned: no authored DDL (%s)",
+            domain,
+            exc,
+        )
     read_backend = fabric.read_backend(domain)
     # Same pool-not-opened-by-fabric.open() hazard as the write plane, with a
     # worse symptom: an un-opened read pool raises only on the first checkout,
