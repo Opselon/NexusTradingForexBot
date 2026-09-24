@@ -468,24 +468,60 @@ def _pg_user(dsn: str) -> str:
 
 
 # -- Domain backend registry ----------------------------------------------
-# Per-domain pooled write backends for providers that need a pool (Phase 6).
+# Per-domain pooled backends for providers that need a pool (Phase 6).
 # A domain is "provisioned" when the operator has pointed it at a provider
 # through the fabric configuration; until then it resolves to None and the
 # consumer refuses to write instead of silently dropping (Phase 24).
+#
+# The key carries a read/write intent: (domain, False) is the pooled WRITE
+# backend, (domain, True) is the pooled READ backend.  The two are separate
+# pools on purpose — read connections are read-only by construction — so a
+# domain that has been provisioned for writes is NOT automatically readable
+# until its read backend is registered too (CHG-0067).
 
-_DOMAIN_BACKENDS: dict[str, Any] = {}
+_DOMAIN_BACKENDS: dict[tuple[str, bool], Any] = {}
 _DOMAIN_BACKEND_LOCK = threading.Lock()
 
 
 def register_domain_backend(domain: str, backend: Any) -> None:
     """Register a pooled write backend for a domain (idempotent)."""
+    _register_domain_backend(domain, False, backend)
+
+
+def register_domain_read_backend(domain: str, backend: Any) -> None:
+    """Register a pooled read backend for a domain (idempotent).
+
+    Distinct from the write backend: reads must never share the write path
+    (the audit read guard refuses a write-shaped backend outright), and the
+    read pool carries ``default_transaction_read_only = on`` on every
+    connection.  The previous occupant — if any — is closed first so
+    re-provisioning never leaks a pool.
+    """
+    _register_domain_backend(domain, True, backend)
+
+
+def _register_domain_backend(domain: str, readonly: bool, backend: Any) -> None:
+    """Install one registry slot, closing the previous occupant (if any).
+
+    Never raises: a failed close must not prevent the fresh backend from
+    being published, or the domain would stay pointed at a dead pool.
+    """
     with _DOMAIN_BACKEND_LOCK:
-        _DOMAIN_BACKENDS[domain] = backend
+        existing = _DOMAIN_BACKENDS.get((domain, readonly))
+        if existing is not None and existing is not backend:
+            with contextlib_suppress():
+                existing.close()
+        _DOMAIN_BACKENDS[(domain, readonly)] = backend
 
 
 def unregister_domain_backend(domain: str) -> None:
+    """Unregister the write backend for a domain (best-effort close)."""
     with _DOMAIN_BACKEND_LOCK:
-        _DOMAIN_BACKENDS.pop(domain, None)
+        for key in ((domain, False), (domain, True)):
+            existing = _DOMAIN_BACKENDS.pop(key, None)
+            if existing is not None:
+                with contextlib_suppress():
+                    existing.close()
 
 
 def get_domain_backend(domain: str, readonly: bool = False) -> Any:
@@ -494,18 +530,33 @@ def get_domain_backend(domain: str, readonly: bool = False) -> Any:
     Returns None when the domain is not provisioned for a pooled provider so
     callers can fail loudly rather than silently no-op (the pre-fabric
     behaviour).  SQLite domains never need this: their writer connection is
-    owned by the consumer.
+    owned by the consumer.  ``readonly=True`` resolves the READ backend: it
+    stays None when only the write side has been provisioned, which is why
+    :func:`provision_domain` registers both.
     """
     with _DOMAIN_BACKEND_LOCK:
-        return _DOMAIN_BACKENDS.get(domain)
+        return _DOMAIN_BACKENDS.get((domain, readonly))
 
 
 def provision_domain(domain: str, dsn: str, **pool_kwargs: Any) -> Any:
-    """Provision a domain on a pooled provider and return its backend.
+    """Provision a domain on a pooled provider and return its write backend.
 
     Builds the domain's fabric (write + read pools) from a DSN, opens it,
-    registers its write backend, and returns it.  Idempotent: re-provisioning
-    replaces the pools and closes the old ones.
+    registers BOTH backends — the write backend under ``(domain, False)`` and
+    the read backend under ``(domain, True)`` — and returns the write backend.
+
+    The read registration matters as much as the write one: the audit read
+    guard resolves its read plane through ``get_domain_backend(domain,
+    readonly=True)``.  Registering only the write backend left every read the
+    guard had declared (sql/args/kind) degrading to its documented default
+    under PostgreSQL — observable, but still wrong data (CHG-0067).
+
+    Idempotent: re-provisioning replaces both pools and closes the old ones.
+
+    The read plane is opened AFTER the schema bootstrap: a pooled read
+    connection is configured once at checkout and never reconfigured, so a
+    pool opened before its tables exist would keep serving connections that
+    predate the DDL for their whole lifetime.
     """
     cfg = FabricConfig.for_postgresql(
         dsn,
@@ -515,10 +566,6 @@ def provision_domain(domain: str, dsn: str, **pool_kwargs: Any) -> Any:
         ),
     )
     domain_cfg = cfg.for_domain(domain)
-    existing = get_domain_backend(domain)
-    if existing is not None:
-        with contextlib_suppress():
-            existing.close()
     fabric = DatabaseFabric(domain, domain_cfg)
     fabric.open()
     backend = fabric.write_backend(domain)
@@ -548,7 +595,17 @@ def provision_domain(domain: str, dsn: str, **pool_kwargs: Any) -> Any:
             )
     except NotImplementedError:
         pass  # domain has no authored DDL yet — loud, not silent
+    read_backend = fabric.read_backend(domain)
+    # Same pool-not-opened-by-fabric.open() hazard as the write plane, with a
+    # worse symptom: an un-opened read pool raises only on the first checkout,
+    # so the reads would degrade (not crash) while the schema is fine — the
+    # exact fail-silent shape the read guard exists to make visible.
+    read_open = getattr(read_backend, "open", None)
+    if callable(read_open):
+        with contextlib_suppress():
+            read_open()
     register_domain_backend(domain, backend)
+    register_domain_read_backend(domain, read_backend)
     return backend
 
 
