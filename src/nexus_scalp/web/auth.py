@@ -240,14 +240,35 @@ def _generate_token() -> str:
 
 
 def _resolve_token() -> tuple[str, str]:
-    """Returns (token, source) where source in {"env", "secret_store", "generated"}.
+    """Returns (token, source) where source in {"env", "dotenv", "secret_store", "generated"}.
 
     Raises RuntimeError only when a token must exist and cannot be produced
     (never silently returns an empty token — fail-closed).
+
+    RT-006 (2026-09-24, observed live): the repo-root ``.env`` is the
+    OPERATOR-authored authority for ``NSE_WEB_AUTH_TOKEN`` (the docker-compose
+    contract and the launcher's own banner copy read it from there), but the
+    file was never loaded into ``os.environ`` and this resolver only consulted
+    ``os.environ``. So a machine where the operator had set the token in
+    ``.env`` still resolved the secret-STORE value, and ``auth_boot.publish()``
+    then OVERWROTE the ``.env`` token with the store value. The operator's
+    copied ``?token=<...>`` was rejected with 401 on every transport, and no
+    bootstrap cookie was ever issued because the browser never held the value
+    the middleware actually enforced. The dotfile is now read here as the
+    second-highest source, below a real process env override (containers/CI)
+    but above the secret store, and ``publish()`` no longer overwrites an
+    operator-set dotfile token.
     """
     env_token = os.environ.get("NSE_WEB_AUTH_TOKEN", "").strip()
     if env_token:
         return env_token, "env"
+
+    from nexus_scalp.web.auth_boot import read_env_file
+
+    file_env = read_env_file()
+    file_token = (file_env.get("NSE_WEB_AUTH_TOKEN") or "").strip()
+    if file_token:
+        return file_token, "dotenv"
 
     try:
         from nexus_scalp.settings.secret_store import SecureSecretStore
@@ -290,12 +311,17 @@ def current_web_auth_token() -> str | None:
     """The token the middleware enforces right now (bootstrap accessor).
 
     Same resolution chain as _resolve_token but NEVER generates: returns
-    None when no env/secret-store token exists (the generator owns
+    None when no env/dotenv/secret-store token exists (the generator owns
     persistence; this accessor must not mint a second value).
     """
     env_token = os.environ.get("NSE_WEB_AUTH_TOKEN", "").strip()
     if env_token:
         return env_token
+    from nexus_scalp.web.auth_boot import read_env_file
+
+    file_token = (read_env_file().get("NSE_WEB_AUTH_TOKEN") or "").strip()
+    if file_token:
+        return file_token
     try:
         from nexus_scalp.settings.secret_store import SecureSecretStore
 
