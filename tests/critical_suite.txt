@@ -495,3 +495,4 @@ tests/unit/test_ml_qa_010_clock_determinism.py
 tests/unit/test_healthfix_bundle_selection.py
 tests/unit/test_healthfix_config_bootstrap.py
 tests/unit/test_healthfix_contract_metadata.py
+tests/unit/test_ml_qa_011_shadow70_clock_determinism.py

@@ -215,9 +215,9 @@ stdlib scanner gives the current in-gate exposure, ordered by live source count:
 
 | Sources | File | Status |
 |---|---|---|
-| 15 | `tests/unit/test_bug262_close_time_evidence.py` | **REMEDIATED (ML-QA-010, PR pending)** — 11 `datetime.now` + 4 `mkdtemp` removed via a fixed injected clock + `tmp_path`; 19-test contract battery `tests/unit/test_ml_qa_010_clock_determinism.py` pins it |
-| 8 | `tests/unit/test_shadow70_safety.py` | open (1 `mkdtemp`, 6 `datetime.now`, 1 thread) |
-| 7 | `tests/unit/test_outcome_flush_race_bug140.py` | open (4 timing, 3 `datetime.now`) |
+| 15 | `tests/unit/test_bug262_close_time_evidence.py` | **REMEDIATED (ML-QA-010, PR #432)** — 11 `datetime.now` + 4 `mkdtemp` removed via a fixed injected clock + `tmp_path`; 19-test contract battery `tests/unit/test_ml_qa_010_clock_determinism.py` pins it (merged as squash `6a7e2e7e`) |
+| 8 | `tests/unit/test_shadow70_safety.py` | **REMEDIATED (ML-QA-011, PR pending)** — 6 `datetime.now` + 1 `mkdtemp` removed via ONE module-level frozen instant (`_FIXED_NOW`) replayed through `_now()` + `tmp_path`; the persistence wait gained a `budget_cpu_ms` CPU-time bound; spec 13/14 retry idempotency is now *provable* (it was unprovable under six independent wall-clock reads). 23-test contract battery `tests/unit/test_ml_qa_011_shadow70_clock_determinism.py` pins it (negative control: 8 rules fail on the pre-remediation file) |
+| 7 | `tests/unit/test_outcome_flush_race_bug140.py` | open (4 timing, 3 `datetime.now`) — **NEXT** |
 | 4 | `tests/unit/test_causal_conv_invariants.py` | open (4 timing) |
 | 4 | `tests/unit/test_70d_bug106_incremental_phase19.py` | deferred (`skipif` on a data file absent from git) |
 | 3 | `tests/unit/test_bug285_overflow_drain.py` | open (3 timing) |
