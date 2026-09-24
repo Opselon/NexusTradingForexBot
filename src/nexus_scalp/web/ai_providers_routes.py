@@ -378,11 +378,7 @@ def route_decision_detail(decision_id: str) -> dict[str, Any]:
 def route_export() -> dict[str, Any]:
     """Export provider configuration. NEVER exports API keys (Section 48)."""
     orch = get_ai_provider_orchestrator()
-    cfgs = []
-    for pid in orch.list_providers():
-        row = orch._registry.get(pid)
-        if row is not None:
-            cfgs.append(row.to_public_dict())
+    cfgs = [c.to_public_dict() for c in orch._registry.list_configs()]
     return {
         "status": "OK",
         "exported_at": _now_iso(),

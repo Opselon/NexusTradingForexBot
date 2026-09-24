@@ -321,7 +321,9 @@ class ProviderRegistryStore:
             logger.info("[AI-PROV] removed provider=%s", provider_id)
         return bool(cur)
 
-    def get(self, provider_id: str) -> ProviderConfig | None:
+    def get_config(self, provider_id: str) -> ProviderConfig | None:
+        """One provider config, or ``None`` if absent. Named ``get_config`` to
+        avoid shadowing the ``ProviderConfig`` ``get``/``list`` helpers."""
         with self._lock, self._connect() as conn:
             row = conn.execute(
                 f"SELECT blob FROM {self._TABLE_CONFIG} WHERE provider_id = ?",
@@ -329,7 +331,9 @@ class ProviderRegistryStore:
             ).fetchone()
         return None if row is None else _blob_to_config(row["blob"])
 
-    def list(self) -> list[ProviderConfig]:
+    def list_configs(self) -> list[ProviderConfig]:
+        """All stored provider configs. (Named ``list_configs``: ``ProviderConfig``
+        also has a ``list`` helper, and shadowing it here made the type invalid.)"""
         with self._lock, self._connect() as conn:
             rows = conn.execute(f"SELECT provider_id, blob FROM {self._TABLE_CONFIG}").fetchall()
         return [c for c in (_blob_to_config(r["blob"]) for r in rows) if c is not None]

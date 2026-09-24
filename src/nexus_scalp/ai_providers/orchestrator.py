@@ -162,7 +162,7 @@ class ProviderOrchestrator:
         request_deadline_sec: float = 5.0,
         adviser_service: Any | None = None,
     ) -> None:
-        self._registry = registry
+        self._registry: ProviderRegistryStore = registry
         self._secret_store = secret_store
         self._weights = weights or PolicyWeights()
         self._risk_policy = risk_policy or RiskPolicy()
@@ -185,7 +185,7 @@ class ProviderOrchestrator:
         adapter class -- never raises, because a broken provider must not break
         the whole decision path.
         """
-        cfg = self._registry.get(provider_id)
+        cfg = self._registry.get_config(provider_id)
         if cfg is None:
             return None
         if not cfg.enabled:
@@ -492,7 +492,7 @@ class ProviderOrchestrator:
         """All providers with identity + health (Section 19)."""
         out: list[dict[str, Any]] = []
         for pid in ADAPTER_TYPES:
-            cfg = self._registry.get(pid)
+            cfg = self._registry.get_config(pid)
             if cfg is None:
                 cfg = ProviderConfig(provider_id=pid, provider_name=pid, enabled=False)
             adapter = self._adapter(pid)
@@ -506,7 +506,7 @@ class ProviderOrchestrator:
 
     def provider_status(self, provider_id: str) -> dict[str, Any]:
         adapter = self._adapter(provider_id)
-        cfg = self._registry.get(provider_id)
+        cfg = self._registry.get_config(provider_id)
         if cfg is None or adapter is None:
             return {
                 "provider_id": provider_id,
@@ -546,7 +546,7 @@ class ProviderOrchestrator:
         DESIRED -> VALIDATE -> ACCEPT -> APPLY -> ACTIVE. Here: validate at the
         schema level, then persist. Activation is a separate, explicit step.
         """
-        cfg = self._registry.get(provider_id) or ProviderConfig(
+        cfg = self._registry.get_config(provider_id) or ProviderConfig(
             provider_id=provider_id, provider_name=provider_id
         )
         if values.get("endpoint") is not None:
@@ -606,7 +606,7 @@ class ProviderOrchestrator:
                 return {"switched": False, "reason": f"unknown mode {mode}"}
         problems: list[str] = []
         for pid in {primary, secondary, fallback} - {None}:
-            cfg = self._registry.get(pid)
+            cfg = self._registry.get_config(pid)
             if cfg is None or not cfg.enabled:
                 problems.append(f"{pid}: not enabled")
                 continue
@@ -631,7 +631,7 @@ class ProviderOrchestrator:
             "switched": ok,
             "active_provider": primary,
             "active_model": (
-                self._registry.get(primary)
+                self._registry.get_config(primary)
                 or ProviderConfig(provider_id=primary, provider_name=primary)
             ).default_model,
             "decision_mode": str(mode),
@@ -641,7 +641,7 @@ class ProviderOrchestrator:
 
     # --------------------------------------------------------------------------
     def _persist_health(self, provider_id: str, result: AIProviderTestResult) -> None:
-        cfg = self._registry.get(provider_id)
+        cfg = self._registry.get_config(provider_id)
         if cfg is None:
             return
         cfg.last_test = datetime.now(UTC).isoformat()
@@ -795,7 +795,7 @@ def _active_model(registry: ProviderRegistryStore, act: ActivationState | None) 
     """The model the ACTIVE provider is configured to use (Section 42)."""
     if act is None:
         return None
-    cfg = registry.get(act.primary_provider)
+    cfg = registry.get_config(act.primary_provider)
     return cfg.default_model if cfg else None
 
 

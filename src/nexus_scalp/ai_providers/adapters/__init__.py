@@ -24,7 +24,7 @@ from nexus_scalp.ai_providers.adapters.system_one import SystemOneAdapter
 #: Registry id -> adapter class. This mapping IS the provider catalogue: the
 #: orchestrator builds an adapter from here and never constructs one directly.
 ADAPTER_TYPES: dict[str, type[BaseAIProviderAdapter]] = {
-    InternalNSEMLAdapter.provider_id: InternalNSEMLAdapter,
+    InternalNSEMLAdapter.provider_id: InternalNSEMLAdapter,  # type: ignore[type-abstract]
     SystemOneAdapter.provider_id: SystemOneAdapter,
     OpenRouterAdapter.provider_id: OpenRouterAdapter,
 }

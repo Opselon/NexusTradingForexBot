@@ -148,10 +148,15 @@ class BaseAIProviderAdapter(abc.ABC):
         config: ProviderConfig,
         registry: ProviderRegistryStore,
         secret_store: SecureSecretStore,
+        adviser_service: Any | None = None,
     ) -> None:
         self.config = config
         self._registry = registry
         self._secret_store = secret_store
+        #: Subclasses that bridge an internal service (e.g. the NSE position
+        #: adviser) accept it here; other adapters ignore it. Declared on the
+        #: base so the orchestrator can construct any adapter uniformly.
+        self._adviser_service = adviser_service
         self._lock = threading.RLock()
         self._health = AIProviderHealth()
         self._breaker = CircuitBreaker(
