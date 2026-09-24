@@ -75,6 +75,15 @@ exclusive_locks:
     since: 2026-09-24
     task: EUR-B
     expiry: 2026-10-01
+  - path: scripts/build/update_helpers.py
+    owner: EUR-LANE-C
+    exclusive: true
+    scope: EUR-WAVE narrow scanner-precision fix - inherited false positive where
+      the all-caps env-var NAME NSE_GATEWAY_API_KEY trips SECRET_PATTERNS[0];
+      token_guard + private-key paths untouched, positive regression test required
+    since: 2026-09-24
+    task: EUR-C
+    expiry: 2026-10-01
   - path: src/nexus_scalp/web/diagnostics_state_routes.py
     owner: Hermes-CFGUI
     exclusive: true
