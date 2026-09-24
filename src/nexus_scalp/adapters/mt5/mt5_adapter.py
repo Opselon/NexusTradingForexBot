@@ -63,6 +63,7 @@ from nexus_scalp.domain.models import (
     TickData,
     TradeOrder,
 )
+from nexus_scalp.domain.valuation import min_stop_distance_price
 
 # BUG-308: the broker returns the still-forming current bar in the same payload
 # as its sealed history; marking it complete would hand reseed() a future anchor
@@ -2305,7 +2306,14 @@ class DirectMT5Adapter(IMT5Port):
                 reasons.append("price_not_tick_aligned")
 
         # --- SL/TP geometry ------------------------------------------------
-        min_stop_dist = max(stops_level * point, 0.10)
+        # FORENSIC-LANE-BROKER: the minimum stop gap must be expressed in
+        # POINTS, not as a fixed 0.10 price distance. The old literal
+        # max(stops_level * point, 0.10) was calibrated to 2-digit XAUUSD
+        # only: on a 5-digit symbol (EURUSD, point 0.00001) it demanded a
+        # 1000-pip gap, and on a 3-digit symbol 100 points. The safety floor
+        # is now 10 broker POINTS — byte-identical on XAUUSD (10 * 0.01 =
+        # 0.10) and precision-correct everywhere else.
+        min_stop_dist = min_stop_distance_price(stops_level, point, safety_points=10)
         if is_sell_side:
             if stop_loss > 0 and stop_loss <= price + min_stop_dist - 1e-9:
                 reasons.append("sl_not_above_entry")
@@ -2423,7 +2431,10 @@ class DirectMT5Adapter(IMT5Port):
             new_tp = round(round(raw_tp / tick_size) * tick_size, digits)
 
         # Post-conditions: correct sides and minimum gaps from the new entry.
-        min_stop_dist = max(stops_level * point, 0.10)
+        # See _validate_pending_request: safety floor is 10 broker POINTS
+        # (0.10 on 2-digit XAUUSD, 0.0001 on 5-digit EURUSD), not a fixed
+        # 0.10 price distance.
+        min_stop_dist = min_stop_distance_price(stops_level, point, safety_points=10)
         if stop_loss > 0:
             if is_sell and new_sl <= new_price + min_stop_dist:
                 return False, price, stop_loss, take_profit
