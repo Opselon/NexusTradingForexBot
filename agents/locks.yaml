@@ -5,6 +5,41 @@
 # Release locks when done (remove entry or mark released).
 
 exclusive_locks:
+  # --- END-USER-MODEL-LIFECYCLE WAVE (2026-09-24) --------------------------
+  # Base: 366cbe58 (= origin/main tip). Integration branch
+  # agent/feature/END-USER-MODEL-LIFECYCLE. See
+  # source/repos/nse-model-lifecycle-wave/CONTRACT.md.
+  - path: NexusTradingForexBot.py
+    owner: EUML-L-STARTUP
+    exclusive: true
+    scope: EUML safe first-run setup mode + launcher first-run model gate +
+      traceback secret redaction (brief 33/52-54)
+    since: 2026-09-24
+    task: TASK-MODEL-LIFECYCLE-001
+    expiry: 2026-10-08
+  - path: src/nexus_scalp/cli/engine_boot.py
+    owner: EUML-L-STARTUP
+    exclusive: true
+    scope: EUML unify first-run model gate between CLI and launcher
+    since: 2026-09-24
+    task: TASK-MODEL-LIFECYCLE-001
+    expiry: 2026-10-08
+  - path: src/nexus_scalp/model_provisioning/
+    owner: EUML-L-PROVISION
+    exclusive: true
+    scope: EUML extend FirstRunCoordinator/setup states for launcher path
+      (web routes of this domain stay PR 412-owned)
+    since: 2026-09-24
+    task: TASK-MODEL-LIFECYCLE-001
+    expiry: 2026-10-08
+  - path: tests/unit/test_end_user_model_lifecycle.py
+    owner: EUML-L-TESTS
+    exclusive: true
+    scope: EUML new regression battery for the no-model startup state
+    since: 2026-09-24
+    task: TASK-MODEL-LIFECYCLE-001
+    expiry: 2026-10-08
+
   - path: src/nexus_scalp/web/diagnostics_state_routes.py
     owner: Hermes-CFGUI
     exclusive: true
