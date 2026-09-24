@@ -133,6 +133,17 @@ $IconPath = Join-Path $Root "installer\NexusScalpEngine.ico"
 if (-not (Test-Path $IconPath)) {
     Fail "Application icon missing: $IconPath — run: python scripts\build\generate_app_icon.py (it converts the canonical frontend/public/icon-512.png)"
 }
+
+# WINDOWS-UX-001: PE version-info resource (ProductName / FileDescription /
+# InternalName / OriginalFilename / CompanyName). Without it PyInstaller
+# embeds the default Python resource, and Explorer + Task Manager + the
+# taskbar brand the process image as Python instead of the product.
+& $Py (Join-Path $Root "scripts\build\generate_version_info.py") $Version
+if ($LASTEXITCODE -ne 0) { Fail "version-info generation failed" }
+$VersionInfoPath = Join-Path $Root "installer\version_info.txt"
+if (-not (Test-Path $VersionInfoPath)) {
+    Fail "Version-info resource missing: $VersionInfoPath — run: python scripts\build\generate_version_info.py"
+}
 $PyInstaller = Join-Path $Root ".venv\Scripts\pyinstaller.exe"
 if (-not (Test-Path $PyInstaller)) { Fail "pyinstaller not found — install with: .venv\Scripts\python -m pip install pyinstaller" }
 
@@ -164,6 +175,7 @@ $buildInfo = @{
 & $PyInstaller --noconfirm --clean `
     --onedir --name "NexusScalpEngine" `
     --icon $IconPath `
+    --version-file $VersionInfoPath `
     --add-data "$Root\Web;Web" `
     --add-data "$Root\configs;configs" `
     --add-data "$Root\docs;docs" `
@@ -202,6 +214,7 @@ Pass "onedir build: $BuildDir\onedir\NexusScalpEngine\NexusScalpEngine.exe"
 & $PyInstaller --noconfirm --clean `
     --onefile --name "NexusScalpEngine-CLI" `
     --icon $IconPath `
+    --version-file $VersionInfoPath `
     --exclude-module "torch" `
     --exclude-module "polars" `
     --exclude-module "numpy" `

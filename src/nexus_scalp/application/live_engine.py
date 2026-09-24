@@ -602,7 +602,25 @@ class LiveEngine:
             # settings database + environment; SQLite remains the default.
             from nexus_scalp.database.config import load_database_config
 
-            self.audit = AuditRepository(config=load_database_config("audit"))
+            audit_cfg = load_database_config("audit")
+            self.audit = AuditRepository(config=audit_cfg)
+            # Activation banner: the active provider is announced once at boot
+            # so PostgreSQL-vs-SQLite is visible in every console/log capture.
+            # The DSN is masked (host/port/db only); the password never appears.
+            try:
+                from nexus_scalp.database.config import mask_url_password
+                from nexus_scalp.settings.secret_store import SecureSecretStore
+
+                _dsn = mask_url_password(audit_cfg.build_url(password=""))
+                _pw_set = SecureSecretStore().has_secret("db.postgresql.password")
+                logger.info(
+                    "[DB-FABRIC] audit provider=%s dsn=%s password_set=%s",
+                    audit_cfg.provider.value,
+                    _dsn,
+                    _pw_set,
+                )
+            except Exception:
+                pass
         self.force_fresh_model = bool(force_fresh_model)
         # BUG-232: mode-session generation. Bumped on every cross-boundary
         # hot-swap; stale-tick / stale-proposal checks compare against it so
@@ -2233,8 +2251,17 @@ class LiveEngine:
     #: froze the whole tick loop (inference/features/AI-Hub) while web stayed
     #: responsive. With wait_for, a hung kick is abandoned (the thread may
     #: linger but is detached from the loop) and the loop keeps ticking.
+    #:
+    #: LD-4 (2026-09-23): the default MUST stay above the slowest healthy
+    #: worker cycle, otherwise a merely-slow cycle is abandoned, re-run, and
+    #: logged as a hang. The RESEARCH worker's dataset pass was measured at
+    #: 125-150s per cycle (duration_ms 124953 / 132346 / 149451 in
+    #: [RESEARCH_WORKER] event=UPDATE), so 45s abandoned every healthy cycle.
+    #: 180s gives ~30s of headroom over that ceiling. NSE_WORKER_KICK_TIMEOUT
+    #: still overrides this when set. Do NOT lower it back to 45 — raise the
+    #: ceiling on the worker side instead (LD-4).
     WORKER_KICK_TIMEOUT_SEC: float = float(
-        __import__("os").environ.get("NSE_WORKER_KICK_TIMEOUT", "45")
+        __import__("os").environ.get("NSE_WORKER_KICK_TIMEOUT", "180")
     )
 
     def _kick_worker(self, name: str, fn) -> None:

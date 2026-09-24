@@ -24,8 +24,24 @@ from typing import Any
 from nexus_scalp.database.provider import DatabaseProvider
 from nexus_scalp.settings.secret_store import SecureSecretStore
 
+
+class DatabaseConfigError(RuntimeError):
+    """Configuration contract violation — FAIL LOUDLY, never silently degrade.
+
+    A PostgreSQL configuration that is missing required fields or holds
+    out-of-range values must NOT silently fall back to SQLite (the observed
+    defect: a malformed ``database.postgresql_config`` row reverted the whole
+    stack to SQLite with no signal). This error is raised at validation
+    boundaries so the operator sees exactly what is wrong.
+    """
+
+
 #: SettingsDatabase key where the active provider is persisted.
 PROVIDER_SETTING_KEY = "database.provider"
+
+#: SQL-standard SSL mode values accepted by both the driver and the UI.
+#: Matches nexus_scalp.database.connection_url._SSL_MODES (canonical set).
+_VALID_SSL_MODES = frozenset({"disable", "allow", "prefer", "require", "verify-ca", "verify-full"})
 
 #: SettingsDatabase key where the PostgreSQL connection config is persisted
 #: (JSON).  The password is stored separately in the SecretStore under
@@ -137,6 +153,34 @@ class DatabaseConfig:
     def is_postgresql(self) -> bool:
         return self.provider.is_postgresql
 
+    def validate(self) -> None:
+        """Validate this configuration against the persistence contract.
+
+        Raises :class:`DatabaseConfigError` with a single actionable sentence
+        naming the offending field. A PostgreSQL configuration that cannot be
+        used MUST raise here rather than degrade to SQLite.
+        """
+        if self.is_sqlite:
+            return
+        if self.is_postgresql:
+            if not self.host:
+                raise DatabaseConfigError("PostgreSQL config is missing its host.")
+            if not self.database:
+                raise DatabaseConfigError("PostgreSQL config is missing its database name.")
+            if not self.username:
+                raise DatabaseConfigError("PostgreSQL config is missing its username.")
+            if not (1 <= self.port <= 65535):
+                raise DatabaseConfigError(f"PostgreSQL port {self.port} is out of range (1-65535).")
+            if self.connect_timeout_sec is not None and self.connect_timeout_sec <= 0:
+                raise DatabaseConfigError(
+                    f"connect_timeout_sec must be positive, got {self.connect_timeout_sec}."
+                )
+            if self.ssl_mode and self.ssl_mode not in _VALID_SSL_MODES:
+                raise DatabaseConfigError(
+                    f"ssl_mode '{self.ssl_mode}' is not a recognized SSL mode "
+                    f"(expected one of: {', '.join(sorted(_VALID_SSL_MODES))})."
+                )
+
     @property
     def sqlite_connect_path(self) -> str:
         """Path/URI passed to the sqlite3 driver."""
@@ -186,11 +230,18 @@ class DatabaseConfig:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any] | None, domain: str = "audit") -> DatabaseConfig:
-        """Rebuild a config from persisted settings (see :meth:`to_dict`)."""
+        """Rebuild a config from persisted settings (see :meth:`to_dict`).
+
+        Fails loudly on a malformed PostgreSQL configuration: a partial or
+        corrupt row raises :class:`DatabaseConfigError` rather than silently
+        reverting to SQLite. ``raw`` being ``None``/empty still means "no
+        persisted configuration" and returns the SQLite default — that is the
+        legitimate unset case, not a fallback.
+        """
         if not raw:
             return cls.for_sqlite(domain)
         try:
-            return cls(
+            cfg = cls(
                 provider=DatabaseProvider.parse(raw.get("provider")),
                 domain=raw.get("domain") or domain,
                 host=str(raw.get("host") or ""),
@@ -206,8 +257,15 @@ class DatabaseConfig:
                 sqlite_path=str(raw.get("sqlite_path") or ""),
                 sqlite_uri=str(raw.get("sqlite_uri") or ""),
             )
-        except (TypeError, ValueError):
-            return cls.for_sqlite(domain)
+        except (TypeError, ValueError) as exc:
+            raise DatabaseConfigError(
+                f"PostgreSQL configuration row is malformed: {exc}. "
+                "Fix the stored database.postgresql_config or switch the "
+                "provider explicitly with `nexus db-portability switch sqlite`."
+            ) from exc
+        # An unknown provider string is a config error, not a SQLite default.
+        cfg.validate()
+        return cfg
 
 
 def mask_url_password(url: str) -> str:
@@ -279,22 +337,35 @@ def load_database_config(
             if pg_raw and pg_raw.value:
                 import json
 
+                # SettingsDatabase.get() already decodes value_type=json
+                # rows to a dict (service.py persists this key as json).
+                # Accept either shape: raw string (older rows) or dict.
+                # FAIL LOUDLY (Phase 5/6 contract): a malformed PG config
+                # row raises DatabaseConfigError — it must never silently
+                # fall through and leave the SQLite default in place.
                 try:
-                    # SettingsDatabase.get() already decodes value_type=json
-                    # rows to a dict (service.py persists this key as json).
-                    # Accept either shape: raw string (older rows) or dict.
                     parsed = (
                         json.loads(pg_raw.value) if isinstance(pg_raw.value, str) else pg_raw.value
                     )
-                    if isinstance(parsed, dict):
-                        pg = DatabaseConfig.from_dict(parsed, domain)
-                        if pg.is_postgresql:
-                            pg.domain = domain
-                            if not pg.sqlite_path:
-                                pg.sqlite_path = cfg.sqlite_path
-                            cfg = pg
-                except (TypeError, ValueError):
-                    pass
+                except (TypeError, ValueError) as exc:
+                    raise DatabaseConfigError(
+                        "database.postgresql_config is not valid JSON: "
+                        f"{exc}. Fix or remove the stored row, or switch the "
+                        "provider explicitly with `nexus db-portability switch sqlite`."
+                    ) from exc
+                if not isinstance(parsed, dict):
+                    raise DatabaseConfigError(
+                        "database.postgresql_config must be a JSON object, got "
+                        f"{type(parsed).__name__}."
+                    )
+                pg = DatabaseConfig.from_dict(parsed, domain)
+                if pg.is_postgresql:
+                    pg.domain = domain
+                    if not pg.sqlite_path:
+                        pg.sqlite_path = cfg.sqlite_path
+                    cfg = pg
+        except DatabaseConfigError:
+            raise
         except Exception:
             pass
         finally:

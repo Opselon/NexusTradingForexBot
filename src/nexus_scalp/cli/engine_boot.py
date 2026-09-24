@@ -406,6 +406,23 @@ def _write_pid(pidfile: Path) -> None:
 def _run_engine_locked(
     cfg: AppConfig, *, gateway: bool, port: int, mode_override: ExecutionMode | None = None
 ) -> None:
+    # WINDOWS-UX-001: establish the Windows taskbar identity for THIS process
+    # before the console window is shown and the engine banner renders. On the
+    # packaged EXE the AppUserModelID is already pinned at packaged_main
+    # import; this covers the `nexus start` console-script + daemon path too,
+    # and keeps the taskbar entry under one stable identity (no ghost
+    # "python" group on restart). Non-Windows: no-op. Failure-isolated.
+    try:
+        from nexus_scalp.platform.windows_identity import apply_windows_identity
+
+        apply_windows_identity()
+    except Exception as identity_err:  # pragma: no cover - defensive
+        console.print(
+            Panel(
+                f"[yellow]Windows taskbar identity skipped[/yellow]\n[dim]{identity_err}[/dim]",
+                border_style="yellow",
+            )
+        )
     # BUG-293: packaged launches must first anchor the runtime workspace
     # (double-click CWD is arbitrary) and mirror bundled configs into
     # <root>/configs so canonical consumers (execution_assumptions.json)

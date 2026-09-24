@@ -100,6 +100,40 @@ def _print_error(message: str) -> None:
     raise typer.Exit(1)
 
 
+def _parse_connection_string(raw: str) -> dict[str, Any]:
+    """Delegate to the canonical connection_url contract (Phase 5 conflict resolution).
+
+    This function exists only to maintain the CLI's spec-evasive export surface.
+    All decision work is handled by nexus_scalp.database.connection_url.parse_pg_url.
+    """
+    from nexus_scalp.database.connection_url import is_parse_failure, parse_pg_url
+
+    parsed = parse_pg_url(raw)
+    if is_parse_failure(parsed):
+        _print_error(str(parsed["reason"]))
+    return dict(parsed)
+
+
+def _build_dsn(fields: dict[str, Any], secret_store: Any) -> str:
+    """Assemble a psycopg DSN (with the secret) from parsed fields.
+
+    The password is injected from the OS-backed store — never from the
+    persisted settings, where it must never live.
+    """
+    parts = [
+        f"host={fields['host']}",
+        f"port={fields.get('port', 5432)}",
+        f"dbname={fields.get('database') or ''}",
+        f"user={fields.get('username') or fields.get('user') or ''}",
+    ]
+    from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
+
+    pw = secret_store.get_secret(PG_PASSWORD_SECRET_KEY)
+    if pw:
+        parts.append("password=" + pw)
+    return " ".join(parts)
+
+
 def make_portability_app() -> typer.Typer:
     """`nexus db-portability` — DATABASE PORTABILITY workflow (SQLite <-> PostgreSQL)."""
     app = typer.Typer(help="DATABASE PORTABILITY: provider status, config, migration.")
@@ -154,6 +188,90 @@ def make_portability_app() -> typer.Typer:
             "password_set": svc.postgres_password_set(),
         }
         _emit(payload, json_mode, plain_title="POSTGRESQL CONFIG SAVED")
+
+    @app.command("connect")
+    def portability_connect(
+        connection_string: str = typer.Argument(
+            ...,
+            help=(
+                "PostgreSQL connection string. Either a URL "
+                "(postgresql://user:password@host:port/database) or a libpq "
+                "key=value DSN (host=... port=... dbname=... user=... "
+                "password=...). The password is stored in the OS secret store "
+                "and NEVER written to the settings database."
+            ),
+        ),
+        json_mode: bool = typer.Option(False, "--json"),
+    ) -> None:
+        """Bind NSE to a PostgreSQL database via a connection string.
+
+        Parses the string, persists the (password-free) connection details,
+        stores the credential in the OS-backed secret store, provisions the
+        domain's schema on the target, and marks PostgreSQL the active
+        provider — so the NEXT startup runs on PostgreSQL. Idempotent: a
+        re-run re-provisions (IF NOT EXISTS) and never drops data.
+        """
+        import json as _json
+
+        from nexus_scalp.database.config import (
+            PG_CONFIG_SETTING_KEY,
+            PG_PASSWORD_SECRET_KEY,
+        )
+        from nexus_scalp.database.provider import DatabaseProvider
+        from nexus_scalp.settings.secret_store import SecureSecretStore
+        from nexus_scalp.settings.service import load_settings_service
+
+        parsed = _parse_connection_string(connection_string)
+        store = SecureSecretStore()
+        # parse_pg_url never returns a password, so capture it from the raw
+        # string only to route the credential into the OS-backed secret store.
+        from urllib.parse import urlparse
+
+        _url_pw = urlparse(connection_string).password if "://" in connection_string else ""
+        if _url_pw:
+            store.set_secret(PG_PASSWORD_SECRET_KEY, _url_pw)
+
+        svc = load_settings_service()
+        svc.set_database_provider(DatabaseProvider.POSTGRESQL.value)
+        svc.db.set(
+            PG_CONFIG_SETTING_KEY,
+            _json.dumps(parsed),
+            value_type="json",
+            source="USER_SETTINGS",
+            actor="db-connect",
+        )
+
+        # Provision the schema on the target so the next boot finds tables
+        # waiting (non-destructive: CREATE ... IF NOT EXISTS).
+        provision_summary: dict[str, object] = {}
+        try:
+            from nexus_scalp.database.fabric import provision_domain
+
+            dsn = _build_dsn(parsed, store)
+            backend = provision_domain("audit", dsn, min_size=1, max_size=4)
+            provision_summary = {
+                "backend": type(backend).__name__,
+                "schema": "provisioned",
+            }
+        except Exception as exc:
+            provision_summary = {"schema": f"FAILED: {type(exc).__name__}: {exc}"}
+
+        payload = {
+            "success": True,
+            "provider": DatabaseProvider.POSTGRESQL.value,
+            "host": parsed.get("host", ""),
+            "port": parsed.get("port", 5432),
+            "database": parsed.get("database", ""),
+            "user": parsed.get("username", ""),
+            "password_stored": store.has_secret(PG_PASSWORD_SECRET_KEY),
+            "provision": provision_summary,
+            "restart_required": True,
+        }
+        _emit(
+            payload,
+            json_mode,
+            plain_title=f"CONNECTED TO POSTGRESQL {payload['host']}:{payload['port']}/{payload['database']}",
+        )
 
     @app.command("switch")
     def portability_switch(

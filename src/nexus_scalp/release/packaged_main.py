@@ -14,7 +14,19 @@ from __future__ import annotations
 import contextlib
 import sys
 
-from nexus_scalp.cli.main import app
+# WINDOWS-UX-001 (taskbar identity): the packaged EXE is the product's real
+# Windows process. Pin the AppUserModelID + console title BEFORE the CLI is
+# imported and anything renders, so the taskbar entry is created under the
+# product identity instead of falling back to the bootloader image name
+# (which is what made the taskbar show "python"). Failure-isolated: branding
+# never blocks the boot. Non-Windows: no-op.
+from nexus_scalp.platform.windows_identity import (
+    apply_windows_identity,
+)
+
+apply_windows_identity()
+
+from nexus_scalp.cli.main import app  # noqa: E402
 from nexus_scalp.release.metadata import CLI_PROGRAM_NAME
 
 if __name__ == "__main__":
