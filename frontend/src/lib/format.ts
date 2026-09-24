@@ -26,6 +26,39 @@ type NumFormatter = (v: number) => string;
 type DateFormatter = (d: Date) => string;
 
 /**
+ * Active presentation locale for the formatters below. Defaults to "en" (the
+ * historically pinned output: en-US digits, en-GB 24h time, en-CA ISO dates).
+ * `setFormatLocale` (called from the i18n store on language change) switches
+ * presentation only — the numeric VALUE is never touched, only its rendering.
+ *
+ * Locale mapping: the product's languages map to ICU locales that keep
+ * technical readability (Latin digits for fa/ar via -u-nu-latn, which probe
+ * confirmed renders 1,234.57 instead of ۱٬۲۳۴٫۵۷ — a trading console must not
+ * silently change the digits an operator reads). en -> the pinned en trio.
+ */
+export type FormatLocale = "en" | "fa" | "de" | "es" | "ar";
+
+const LOCALE_MAP: Record<FormatLocale, string> = {
+  en: "en-US",
+  fa: "fa-IR-u-nu-latn",
+  de: "de-DE",
+  es: "es-ES",
+  ar: "ar-EG-u-nu-latn",
+};
+
+let activeLocale: FormatLocale = "en";
+
+/** Presentation locale switch (i18n store calls this on language change). */
+export function setFormatLocale(lang: FormatLocale): void {
+  if (LOCALE_MAP[lang] !== undefined) activeLocale = lang;
+}
+
+/** Current presentation locale (tests + diagnostics). */
+export function getFormatLocale(): FormatLocale {
+  return activeLocale;
+}
+
+/**
  * Per-option-key NumberFormat cache. `Intl.NumberFormat` construction is the
  * expensive part (~1-2 us); `format()` on a cached instance is ~40 ns.
  */
@@ -38,6 +71,21 @@ function getNumberFormatter(min: number, max: number): NumFormatter {
     const instance = new Intl.NumberFormat("en-US", {
       minimumFractionDigits: min,
       maximumFractionDigits: max,
+    });
+    fmt = (v: number) => instance.format(v);
+    numberFormatCache.set(key, fmt);
+  }
+  return fmt;
+}
+
+function getNumberFormatterLocale(min: number, max: number, locale: string, grouped = true): NumFormatter {
+  const key = `${locale}:${min}:${max}:${grouped ? "g" : "n"}`;
+  let fmt = numberFormatCache.get(key);
+  if (fmt === undefined) {
+    const instance = new Intl.NumberFormat(locale, {
+      minimumFractionDigits: min,
+      maximumFractionDigits: max,
+      useGrouping: grouped,
     });
     fmt = (v: number) => instance.format(v);
     numberFormatCache.set(key, fmt);
@@ -59,8 +107,36 @@ function getTimeFormatter(hour12: boolean): DateFormatter {
   return fmt;
 }
 
+function getTimeFormatterLocale(hour12: boolean, locale: string): DateFormatter {
+  const key = `${locale}:${hour12 ? "h12" : "h24"}`;
+  let fmt = timeFormatCache.get(key);
+  if (fmt === undefined) {
+    const instance = new Intl.DateTimeFormat(locale, { hour12, timeStyle: "medium" });
+    fmt = (d: Date) => instance.format(d);
+    timeFormatCache.set(key, fmt);
+  }
+  return fmt;
+}
+
 /** "YYYY-MM-DD" — the "en-CA" locale yields this shape directly. */
 const dateFormat = new Intl.DateTimeFormat("en-CA");
+
+const dateTimeFormatCache = new Map<string, DateFormatter>();
+
+/** Locale-aware date+time: date part localized, time 24h with seconds. */
+function getDateTimeFormatterLocale(locale: string): DateFormatter {
+  let fmt = dateTimeFormatCache.get(locale);
+  if (fmt === undefined) {
+    const instance = new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      timeStyle: "medium",
+      hour12: false,
+    });
+    fmt = (d: Date) => instance.format(d);
+    dateTimeFormatCache.set(locale, fmt);
+  }
+  return fmt;
+}
 
 /** NaN/null/undefined sentinel; checked once per call. */
 function isBlank(value: unknown): boolean {
@@ -140,4 +216,78 @@ export function positionSide(type: number | string | null | undefined): "BUY" | 
   if (String(type).toUpperCase().includes("BUY")) return "BUY";
   if (String(type).toUpperCase().includes("SELL")) return "SELL";
   return "UNKNOWN";
+}
+
+/* ==========================================================================
+ * Locale-aware variants (i18n-complete wave).
+ *
+ * The functions above carry a PINNED output contract (perf_wave7_format.test
+ * asserts byte-identical en rendering, regex-pinned shapes like
+ * YYYY-MM-DD HH:MM:SS), so they are NEVER modified. These variants take the
+ * active presentation locale from setFormatLocale() and are what NEW call
+ * sites (and the locale pass over migrated sites) must use. Presentation
+ * only — the numeric value, timezone instant and stored timestamp are never
+ * altered. en resolves to exactly the pinned en trio (en-US / en-GB / en-CA),
+ * so locale-variant output on en matches the classic functions.
+ * ========================================================================== */
+
+function activeIcuLocale(): string {
+  return LOCALE_MAP[activeLocale];
+}
+
+/** Grouped, locale-aware number (e.g. de-DE: 1.234,57). */
+export function formatNumberLocale(value: number | null | undefined, digits = 2): string {
+  if (isBlank(value)) return "—";
+  if (activeLocale === "en") return getNumberFormatter(digits, digits)(value as number);
+  return getNumberFormatterLocale(digits, digits, activeIcuLocale())(value as number);
+}
+
+/** Money with currency sign, locale separators (presentation only). */
+export function formatMoneyLocale(value: number | null | undefined, currency = "$"): string {
+  if (isBlank(value)) return "—";
+  const n = value as number;
+  const sign = n < 0 ? "-" : "";
+  if (activeLocale === "en") return `${sign}${currency}${getNumberFormatter(2, 2)(Math.abs(n))}`;
+  return `${sign}${currency}${getNumberFormatterLocale(2, 2, activeIcuLocale())(Math.abs(n))}`;
+}
+
+export function formatPnlLocale(value: number | null | undefined): string {
+  if (isBlank(value)) return "—";
+  const n = value as number;
+  const s = formatMoneyLocale(Math.abs(n));
+  return n >= 0 ? `+${s}` : `-${s}`;
+}
+
+/** Price without grouping, locale decimal mark (e.g. de: 4012,35). */
+export function formatPriceLocale(value: number | null | undefined, digits = 2): string {
+  if (isBlank(value)) return "—";
+  if (activeLocale === "en") return (value as number).toFixed(digits);
+  return getNumberFormatterLocale(digits, digits, activeIcuLocale(), false)((value as number));
+}
+
+/** Percentage with locale decimal mark (value already in percent units). */
+export function formatPctLocale(value: number | null | undefined, digits = 2): string {
+  if (isBlank(value)) return "—";
+  if (activeLocale === "en") return `${(value as number).toFixed(digits)}%`;
+  return `${getNumberFormatterLocale(digits, digits, activeIcuLocale(), false)(value as number)}%`;
+}
+
+/** Locale date + 24h time, seconds preserved (instant unchanged). */
+export function formatDateTimeLocale(iso: string | number | null | undefined): string {
+  const d = toDate(iso);
+  if (d === null || Number.isNaN(d.getTime())) {
+    return iso === null || iso === undefined || iso === "" ? "—" : String(iso);
+  }
+  if (activeLocale === "en") return `${dateFormat.format(d)} ${getTimeFormatter(false)(d)}`;
+  return getDateTimeFormatterLocale(activeIcuLocale())(d);
+}
+
+/** Locale 24h time with seconds (instant unchanged). */
+export function formatTimeLocale(iso: string | number | null | undefined): string {
+  const d = toDate(iso);
+  if (d === null || Number.isNaN(d.getTime())) {
+    return iso === null || iso === undefined || iso === "" ? "—" : String(iso);
+  }
+  if (activeLocale === "en") return getTimeFormatter(false)(d);
+  return getTimeFormatterLocale(false, activeIcuLocale())(d);
 }
