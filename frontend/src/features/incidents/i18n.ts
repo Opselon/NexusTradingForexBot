@@ -152,4 +152,12 @@ export const MESSAGES: FeatureMessages = {
   "incidents.tab.note_search": { fa: "جست‌وجوی محدود و قطعی · پرش‌های گمشدهٔ ردیابی گزارش می‌شوند، هرگز ساخته نمی‌شوند", de: "begrenzte, deterministische Suche · fehlende Trace-Sprünge werden gemeldet, nie erfunden", es: "búsqueda acotada y determinista · los saltos de traza ausentes se reportan, nunca se inventan", ar: "بحث محدود وحتمي النتيجة · قفزات التتبّع المفقودة تُبلَّغ ولا تُختلق أبدًا" },
   "incidents.tab.note_lineage": { fa: "نحوهٔ به‌دست‌آمدن یک عدد · why_closed / why_no_learning", de: "wie eine Zahl entsteht · why_closed / why_no_learning", es: "cómo se deriva una cifra · why_closed / why_no_learning", ar: "كيفية اشتقاق الرقم · why_closed / why_no_learning" },
   "incidents.tab.note_forensics": { fa: "کاوش‌های فقط‌خواندنی · شمارش‌ها مستقیم از موتور بک‌اند", de: "schreibgeschützte Sonden · Zähler direkt vom Backend-Engine", es: "sondas de solo lectura · conteos directos del motor del backend", ar: "استكشافات للقراءة فقط · العدّ مباشر من محرك الخادم" },
+  "incidents.drawer.no_root_cause": { fa: "هنوز منتسب نشده", de: "noch nicht zugeordnet", es: "aún no atribuida", ar: "غير منسوبة بعد" },
+  "incidents.drawer.refs": { fa: "ارجاع‌ها", de: "Refs", es: "Referencias", ar: "المراجع" },
+  "incidents.drawer.size_unit": { fa: "بایت", de: "Bytes", es: "bytes", ar: "بايت" },
+  "incidents.drawer.tabs_a11y": { fa: "بخش‌های رویداد", de: "Vorfallsabschnitte", es: "Secciones del incidente", ar: "أقسام الحادثة" },
+  "incidents.drawer.what_happened": { fa: "چه رخ داد", de: "Was ist passiert", es: "Qué sucedió", ar: "ماذا حدث" },
+  "incidents.drawer.when": { fa: "زمان", de: "Wann", es: "Cuándo", ar: "متى" },
+  "incidents.drawer.zip_path": { fa: "مسیر zip", de: "zip_path", es: "ruta_zip", ar: "مسار zip" },
+  "incidents.trace.ph": { fa: "incident_id | ticket | execution_id | order_id | model_id | research_run_id", de: "incident_id | ticket | execution_id | order_id | model_id | research_run_id", es: "incident_id | ticket | execution_id | order_id | model_id | research_run_id", ar: "incident_id | ticket | execution_id | order_id | model_id | research_run_id" },
 };
