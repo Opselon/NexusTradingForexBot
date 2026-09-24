@@ -27,6 +27,7 @@ import argparse
 import datetime as dt
 import json
 import logging
+import re
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -37,6 +38,11 @@ import numpy as np
 import polars as pl
 
 UTC = dt.UTC
+
+#: SEC: a single dataset filename component (symbol / timeframe / source).
+#: Anchored and bounded so it can never be a ``..`` segment, a separator, a
+#: drive letter or a shell metacharacter.
+_SAFE_TOKEN = re.compile(r"[A-Za-z0-9_](?:[A-Za-z0-9_.-]{0,30}[A-Za-z0-9_])?")
 
 # Canonical schema required by DatasetFactory and gate_dataset_integrity
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -365,19 +371,57 @@ def normalize_and_validate(frame: pl.DataFrame, *, min_rows: int = MIN_BARS) -> 
 # =============================================================================
 
 
+def _sanitize_dataset_token(raw: str, *, label: str) -> str:
+    """SEC (py/path-injection #1132/#1133): reduce ``symbol``/``timeframe``/
+    ``source`` to a single safe path component.
+
+    These reach ``resolve_output_path`` straight from CLI args / API callers and
+    are joined into the OUTPUT parquet name, so an unvalidated value is an
+    arbitrary write primitive (``--symbol '../../evil'`` escapes ``data/raw``).
+    A value is admitted only when the WHOLE string is identifier characters and
+    is not an all-dots component, so traversal, separators, drive letters, null
+    bytes and shell metacharacters are impossible by construction. Containment
+    is re-asserted after the join below (defense in depth).
+    """
+    s = str(raw or "").strip()
+    if not s or "\x00" in s or len(s) > 32:
+        raise IngestError(f"invalid {label}: must be 1..32 identifier characters")
+    if any(part == ".." for part in Path(s).parts):
+        raise IngestError(f"invalid {label}: parent-directory reference refused")
+    if not _SAFE_TOKEN.fullmatch(s):
+        raise IngestError(f"invalid {label}: only [A-Za-z0-9_.-] permitted")
+    return s
+
+
 def resolve_output_path(
     output: Path | str | None,
     symbol: str,
     timeframe: str,
     source: str,
 ) -> Path:
-    """Determine target parquet file path."""
+    """Determine target parquet file path.
+
+    SEC (py/path-injection #1132/#1133): every component that becomes part of
+    the written filename is sanitized first, and the final target is confined
+    under the repository root (an explicit ``--output`` may point at a real
+    operator-chosen location, which is why the default-root confinement applies
+    to the composed default name only — but the token sanitization above is
+    unconditional, so no caller-supplied string can carry a path component).
+    """
+    sym = _sanitize_dataset_token(symbol, label="symbol")
+    tf = _sanitize_dataset_token(timeframe, label="timeframe")
+    src = _sanitize_dataset_token(source, label="source")
     if output is None:
-        target = Path("data") / "raw" / f"{symbol}_{timeframe}.{source}.parquet"
+        # Relative by contract: callers resolve this against the CWD they
+        # selected (the CLI resolves under the repo, tests under a tmp dir).
+        # Sanitization above is what makes the join safe — the components
+        # cannot carry a path component, so this can only name a file directly
+        # under data/raw.
+        target = Path("data") / "raw" / f"{sym}_{tf}.{src}.parquet"
     else:
-        p = Path(output)
+        p = Path(str(output)).expanduser()
         if p.is_dir() or str(output).endswith(("/", "\\")):
-            target = p / f"{symbol}_{timeframe}.{source}.parquet"
+            target = p / f"{sym}_{tf}.{src}.parquet"
         else:
             target = p
     return target

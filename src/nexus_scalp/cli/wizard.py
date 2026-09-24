@@ -17,8 +17,11 @@ DO-NOT-PUT-HERE: start/stop commands, config validation commands (doctor.py).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import shutil
+import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -145,6 +148,19 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
             )
             raise typer.Exit(1) from None
 
+    # DATABASE STEP (first-run provider choice, 2026-09-24) — the banner above
+    # advertises "… → database → …" but the flow used to jump repair → mode with
+    # NO database question at all, so NSE never asked PostgreSQL-or-SQLite while
+    # a silently-persisted database.provider=postgresql (actor 'db-fabric') sent
+    # the runtime at a dead server. Gated inside: asks ONLY when the settings DB
+    # has no database.provider row — a configured install gets ZERO new prompts.
+    db_choice = run_first_run_database_choice()
+    if db_choice.get("reason") == "non_interactive":
+        console.print(
+            "[dim]Database choice deferred (no interactive terminal) — "
+            "rerun nexus setup to be asked.[/dim]"
+        )
+
     # Mode selection — never silently LIVE.
     mode = typer.prompt("Execution mode (PAPER / SHADOW / LIVE)", default="PAPER").strip().upper()
     if mode.lower() not in MODE_ALIASES:
@@ -187,6 +203,9 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
     return {
         "mode": mode,
         "symbol": symbol,
+        # First-run database step outcome (secret-free).
+        "database_provider": db_choice.get("provider", ""),
+        "database_prompted": bool(db_choice.get("prompted")),
         "port": 8080,
         "web_endpoints": _get_network_endpoints(port=8080),
         "health_overall": verdict2,
@@ -226,6 +245,400 @@ def _get_network_endpoints(port: int = 8080) -> list[str]:
     except Exception:
         pass
     return endpoints
+
+
+# ---------------------------------------------------------------------------
+# First-run DATABASE PROVIDER CHOICE (2026-09-24) — dual-entry surface.
+# ---------------------------------------------------------------------------
+#
+# WHERE/WHY: the advertised wizard flow is "compatibility → install → DATABASE
+# → model → mode → health", but _wizard_flow jumped from repair straight to
+# mode selection with no database step, while app_settings.db silently carried
+# database.provider=postgresql (actor 'db-fabric') — so NSE never asked the
+# operator PostgreSQL-or-SQLite and the runtime later chased a dead PostgreSQL
+# server. This step asks the question ONCE on every entry surface: `nexus setup`
+# (here, inside _wizard_flow), `nexus start` (cli/engine_boot.py) and the
+# double-click launcher (NexusTradingForexBot.py).
+#
+# GATE (idempotency contract): it fires ONLY when the SettingsDatabase has NO
+# database.provider row. An already-configured install boots with ZERO new
+# prompts; non-interactive sessions (--json, CI, piped stdin) are never blocked.
+#
+# SECURITY CONTRACT (existing pattern, unchanged): the password is read with
+# hide_input, written ONLY through the OS-backed secret store path
+# (SettingsService.set_postgres_config → PG_PASSWORD_SECRET_KEY) and never
+# echoed, logged or persisted anywhere else. DatabaseConfig carries the secret
+# KEY name (`password_secret`), settings rows carry no secret at all, and every
+# URL shown on the console goes through mask_url_password() first.
+#
+# NON-DESTRUCTIVE CONTRACT: a PostgreSQL config is persisted ONLY after a live
+# validation succeeds. A failed validation never falls back to SQLite
+# automatically — the operator gets a categorized error (UNREACHABLE /
+# AUTHENTICATION FAILED / DATABASE NOT FOUND) plus an explicit choice: retry,
+# or switch to SQLite (their choice, never ours).
+
+#: Prompt label for the provider question (single source for tests/UX parity).
+PROVIDER_PROMPT_LABEL = "Database provider (SQLITE / POSTGRESQL)"
+
+_SQLITE_ANSWERS = frozenset({"", "sqlite", "sqlite3", "lite", "s", "local"})
+_POSTGRES_ANSWERS = frozenset({"postgresql", "postgres", "pgsql", "pg", "p", "server"})
+
+#: Sentinel: a prompt was cancelled (EOF / Ctrl+C / click Abort) — never a value.
+_PROMPT_CANCELLED = object()
+
+
+def _default_prompt(text: str, default: Any = None, hide_input: bool = False) -> Any:
+    """Console prompt via typer (the LIVE-confirmation style used everywhere)."""
+    return typer.prompt(text, default=default, hide_input=hide_input)
+
+
+def _ask(
+    ask: Callable[..., Any], text: str, *, default: Any = None, hide_input: bool = False
+) -> Any:
+    """One prompt that can never crash its caller: EOF/Ctrl+C/Abort → sentinel."""
+    try:
+        return str(ask(text, default=default, hide_input=hide_input) or "")
+    except (EOFError, KeyboardInterrupt, Exception):
+        return _PROMPT_CANCELLED
+
+
+def _categorize_postgres_error(exc: BaseException) -> tuple[str, str]:
+    """Bucket a PostgreSQL failure into an operator-facing category.
+
+    Returns (CATEGORY, detail) with CATEGORY one of UNREACHABLE /
+    AUTHENTICATION FAILED / DATABASE NOT FOUND — the three answers that tell
+    the operator what to fix. The raw driver message is returned as detail
+    (it never contains the password).
+    """
+    sqlstate = str(getattr(exc, "sqlstate", "") or "")
+    msg = str(exc) or exc.__class__.__name__
+    low = msg.lower()
+    if (
+        sqlstate in {"28000", "28001", "28P01"}
+        or "password authentication failed" in low
+        or "no password supplied" in low
+        or ("role" in low and "does not exist" in low)
+    ):
+        return "AUTHENTICATION FAILED", msg
+    if sqlstate == "3D000" or ("database" in low and "does not exist" in low):
+        return "DATABASE NOT FOUND", msg
+    return "UNREACHABLE", msg
+
+
+def _validate_postgres_connection(
+    cfg: Any, password: str, *, timeout: int = 8
+) -> tuple[bool, str, str]:
+    """Live PostgreSQL connectivity check, run BEFORE anything is persisted.
+
+    Uses the existing driver/config path (get_driver → build_postgres_url →
+    SELECT 1), with the password resolved from the OS secret store exactly the
+    way the runtime resolves it. The typed password is staged in the secret
+    store only for the duration of the attempt; on failure the store is
+    restored to exactly what it held before, so a rejected configuration
+    leaves NO settings row and NO secret behind.
+
+    Returns (ok, category, detail); detail is always scrubbed/masked.
+    """
+    from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY, mask_url_password
+    from nexus_scalp.database.drivers import driver_available, get_driver
+    from nexus_scalp.settings.secret_store import SecureSecretStore
+
+    def _scrub(text: str) -> str:
+        return text.replace(password, "***") if password else text
+
+    if not driver_available(cfg):
+        return (
+            False,
+            "UNREACHABLE",
+            "PostgreSQL driver unavailable — psycopg is not installed "
+            "(pip install 'nexus[postgres]').",
+        )
+    store = SecureSecretStore()
+    previous = store.get_secret(PG_PASSWORD_SECRET_KEY)
+    store.set_secret(PG_PASSWORD_SECRET_KEY, password)
+    ok = False
+    category = "UNREACHABLE"
+    detail = ""
+    try:
+        driver = get_driver(cfg)
+        conn = driver.connect(timeout=float(timeout))
+        try:
+            ok = bool(driver.ping(conn=conn))
+        finally:
+            with contextlib.suppress(Exception):
+                conn.close()
+        if ok:
+            # Evidence URL only — password masked before it can reach a console.
+            detail = mask_url_password(cfg.build_url(password=password))
+            category = ""  # success carries no failure category
+        else:
+            detail = "server answered but 'SELECT 1' did not return 1."
+    except Exception as exc:
+        category, detail = _categorize_postgres_error(exc)
+        detail = _scrub(str(detail))
+    finally:
+        if not ok:
+            # Non-destructive: put the secret store back the way we found it.
+            with contextlib.suppress(Exception):
+                if previous:
+                    store.set_secret(PG_PASSWORD_SECRET_KEY, previous)
+                else:
+                    store.delete_secret(PG_PASSWORD_SECRET_KEY)
+    return ok, category, detail
+
+
+def _persist_sqlite_choice(svc: Any) -> None:
+    """Persist an EXPLICIT SQLite choice (and clear a stale PG config row).
+
+    First run only (this path exists solely when database.provider was absent).
+    Clearing matters: load_database_config applies a leftover
+    database.postgresql_config row whenever it exists, regardless of the
+    provider — so a stale, never-validated row would hijack the operator's
+    SQLite choice and send the runtime back to PostgreSQL.
+    """
+    svc.set_database_provider("sqlite", actor="first_run_setup")
+    try:
+        from nexus_scalp.database.config import PG_CONFIG_SETTING_KEY
+
+        if svc.db.get(PG_CONFIG_SETTING_KEY) is not None:
+            svc.db.delete(PG_CONFIG_SETTING_KEY)
+            console.print(
+                "[dim]Cleared a stale database.postgresql_config row "
+                "(never validated, not chosen).[/dim]"
+            )
+    except Exception:
+        pass
+
+
+def _cancelled_out(reason: str = "cancelled") -> dict[str, Any]:
+    console.print(
+        Panel(
+            "[yellow]Database choice not completed — nothing was saved. "
+            "You will be asked again on the next interactive run.[/yellow]",
+            border_style="yellow",
+        )
+    )
+    return {
+        "provider": "",
+        "persisted": False,
+        "validated": False,
+        "category": "",
+        "detail": "",
+        "reason": reason,
+    }
+
+
+def _configure_postgres(svc: Any, ask: Callable[..., Any]) -> dict[str, Any]:
+    """Prompt for PostgreSQL details, VALIDATE them, persist only on success.
+
+    On failure: categorized error + explicit retry-or-SQLite choice. Never a
+    silent fallback, never a persisted broken config, never an echoed password.
+    """
+    from nexus_scalp.database.config import DatabaseConfig, DatabaseConfigError
+
+    out: dict[str, Any] = {
+        "provider": "postgresql",
+        "persisted": False,
+        "validated": False,
+        "category": "",
+        "detail": "",
+        "reason": "",
+    }
+    while True:
+        host = _ask(ask, "PostgreSQL host", default="localhost")
+        if host is _PROMPT_CANCELLED:
+            return _cancelled_out()
+        port_raw = _ask(ask, "PostgreSQL port", default="5432")
+        if port_raw is _PROMPT_CANCELLED:
+            return _cancelled_out()
+        try:
+            port = int(str(port_raw).strip())
+        except ValueError:
+            console.print(
+                _error_panel(
+                    "Invalid port",
+                    f"'{str(port_raw).strip()}' is not a number.",
+                    hint="Enter a port like 5432 (nothing was saved)",
+                )
+            )
+            continue
+        database = _ask(ask, "PostgreSQL database", default="nse_audit")
+        username = _ask(ask, "PostgreSQL username", default="nse_user")
+        if database is _PROMPT_CANCELLED or username is _PROMPT_CANCELLED:
+            return _cancelled_out()
+        password = ""
+        while not password:
+            password = _ask(
+                ask,
+                "PostgreSQL password (stored in the OS secret store — never echoed)",
+                hide_input=True,
+            )
+            if password is _PROMPT_CANCELLED:
+                return _cancelled_out()
+            if not password:
+                console.print(
+                    "[yellow]A password is required — it is written only to the "
+                    "OS secret store, never to config files or logs.[/yellow]"
+                )
+        cfg = DatabaseConfig.for_postgres(
+            domain="audit",
+            host=str(host).strip(),
+            port=port,
+            database=str(database).strip(),
+            username=str(username).strip(),
+        )
+        try:
+            cfg.validate()
+        except DatabaseConfigError as exc:
+            console.print(
+                _error_panel(
+                    "Invalid PostgreSQL settings",
+                    str(exc),
+                    hint="Re-enter the connection details (nothing was saved)",
+                )
+            )
+            continue
+        ok, category, detail = _validate_postgres_connection(cfg, password)
+        if not ok:
+            out.update(category=category, detail=detail, validated=False)
+            console.print(
+                _error_panel(
+                    f"PostgreSQL validation failed — {category}",
+                    detail,
+                    hint="Nothing was saved. Fix the details and retry, or explicitly "
+                    "switch to SQLite.",
+                )
+            )
+            action = _ask(
+                ask,
+                "PostgreSQL did not validate. [R]etry / [S]witch to SQLite (your explicit choice)",
+                default="R",
+            )
+            if action is _PROMPT_CANCELLED:
+                return {**_cancelled_out(), "category": category, "detail": detail}
+            if str(action).strip().lower().startswith("s"):
+                # EXPLICIT operator choice — never an automatic fallback.
+                _persist_sqlite_choice(svc)
+                console.print(
+                    Panel(
+                        "[yellow]Using SQLite — your explicit choice after the failed "
+                        "PostgreSQL validation.[/yellow]",
+                        border_style="yellow",
+                    )
+                )
+                return {
+                    "provider": "sqlite",
+                    "persisted": True,
+                    "validated": False,
+                    "category": category,
+                    "detail": detail,
+                    "reason": "explicit_sqlite_after_validation_failure",
+                }
+            continue  # retry the PostgreSQL details from the top
+        payload = cfg.to_dict()
+        payload["password"] = password
+        svc.set_postgres_config(payload, actor="first_run_setup")
+        svc.set_database_provider("postgresql", actor="first_run_setup")
+        console.print(
+            _success_panel(
+                "PostgreSQL validated",
+                f"Connected to {cfg.host}:{cfg.port}/{cfg.database} as {cfg.username}\n"
+                f"URL (masked): {detail}\n"
+                "Password stored in the OS secret store only — config rows are secret-free.",
+                border="green",
+            )
+        )
+        return {
+            "provider": "postgresql",
+            "persisted": True,
+            "validated": True,
+            "category": "",
+            "detail": detail,
+            "reason": "validated_and_persisted",
+        }
+
+
+def run_first_run_database_choice(
+    settings_service: Any | None = None,
+    *,
+    prompt_fn: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    """Interactive first-run database provider choice (idempotent, secret-free).
+
+    Shared by all three entry surfaces: `nexus setup` (_wizard_flow),
+    `nexus start` (cli/engine_boot.py) and the double-click launcher
+    (NexusTradingForexBot.py).
+
+    Gates, in order:
+      1. database.provider row already present → return immediately, ZERO prompts;
+      2. non-interactive session (no TTY, no injected prompt_fn) → deferred, never blocks;
+      3. otherwise ask the question and persist only what the operator chose
+         (PostgreSQL only after a successful live validation).
+
+    Returns a secret-free outcome dict: prompted / provider / persisted /
+    validated / category / detail / reason. Never raises.
+    """
+    from nexus_scalp.database.config import PROVIDER_SETTING_KEY
+    from nexus_scalp.settings.service import SettingsService
+
+    out: dict[str, Any] = {
+        "prompted": False,
+        "provider": "",
+        "persisted": False,
+        "validated": False,
+        "category": "",
+        "detail": "",
+        "reason": "",
+    }
+    try:
+        svc = settings_service or SettingsService()
+        row = svc.db.get(PROVIDER_SETTING_KEY)
+    except Exception as exc:
+        out["reason"] = f"settings_db_unavailable: {exc}"
+        return out
+    if row is not None and row.value:
+        # GATE 1 — an already-configured install must boot with ZERO new prompts.
+        out.update(provider=str(row.value), reason="already_configured")
+        return out
+    if prompt_fn is None and not sys.stdin.isatty():
+        # GATE 2 — CI / --json / piped stdin: defer, never hang a boot.
+        out["reason"] = "non_interactive"
+        return out
+
+    ask = prompt_fn or _default_prompt
+    out["prompted"] = True
+    console.print(
+        Panel(
+            "Choose where NSE stores its operational data.\n\n"
+            "  [bold]SQLITE[/bold]      — zero-config local file (default path, nothing else to ask)\n"
+            "  [bold]POSTGRESQL[/bold]  — server host/port/database/user/password, "
+            "validated BEFORE anything is saved",
+            title="DATABASE (first run)",
+            border_style="cyan",
+            box=box.ROUNDED,
+        )
+    )
+    while True:
+        answer = _ask(ask, PROVIDER_PROMPT_LABEL, default="SQLITE")
+        if answer is _PROMPT_CANCELLED:
+            return _cancelled_out(reason="cancelled") | {"prompted": True}
+        norm = str(answer).strip().lower().replace("-", "").replace("_", "").replace(" ", "")
+        if norm in _SQLITE_ANSWERS:
+            _persist_sqlite_choice(svc)
+            out.update(provider="sqlite", persisted=True, reason="sqlite_selected")
+            console.print(
+                _success_panel(
+                    "Database: SQLite",
+                    "Local file (default path) — no further questions.",
+                    border="green",
+                )
+            )
+            return out
+        if norm in _POSTGRES_ANSWERS:
+            out.update(_configure_postgres(svc, ask))
+            out["prompted"] = True
+            return out
+        console.print("[yellow]Please answer SQLITE or POSTGRESQL (blank = SQLITE).[/yellow]")
 
 
 @app.command("install")

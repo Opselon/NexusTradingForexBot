@@ -59,6 +59,15 @@ from nexus_scalp.ports.mt5_port import IMT5Port
 
 logger = get_logger("nexus_scalp.adapters.paper")
 
+# DECISION-TRACE OBSERVER (observability only). Guarded import (BUG-311
+# rule): observability faults must never reach the execution path. Paper
+# gateway events use stage GATEWAY (never MT5) — a simulated fill must
+# never read as broker-reached evidence (§24 truth rule).
+try:
+    from nexus_scalp.observability.trace_observer import trace_observer as _trace_obsv
+except Exception:  # pragma: no cover - observability failure isolation
+    _trace_obsv = None  # type: ignore[assignment]
+
 
 def _get_seed() -> int | None:
     """Read deterministic seed from NEXUS_PAPER_STRESS_SEED if set.
@@ -1455,6 +1464,27 @@ class PaperMT5Adapter(IMT5Port):
 
     def send_order(self, order: TradeOrder) -> bool:
         """Simulates immediate market fill. F: duplicate order_id guard."""
+        # DECISION-TRACE: paper-gateway evidence (stage GATEWAY, gateway=
+        # "paper" — never an MT5 claim; simulated=True is explicit).
+        if _trace_obsv is not None and _trace_obsv.active:
+            _trace_obsv.emit(
+                stage="GATEWAY",
+                component="paper_adapter",
+                event_type="GATEWAY_SEND",
+                status="SENT",
+                symbol=order.symbol,
+                detail={
+                    "gateway": "paper",
+                    "simulated": True,
+                    "order_id": order.order_id,
+                    "order_type": order.order_type.value,
+                    "volume": order.volume,
+                    "price": order.price,
+                    "sl": order.stop_loss,
+                    "tp": order.take_profit,
+                    "magic": order.magic_number,
+                },
+            )
         oid = getattr(order, "order_id", None)
         if oid:
             if oid in self._seen_order_ids:
@@ -1476,25 +1506,56 @@ class PaperMT5Adapter(IMT5Port):
                     slippage=None,
                     rejection_reason="duplicate_order_id",
                 )
+                if _trace_obsv is not None and _trace_obsv.active:
+                    _trace_obsv.emit(
+                        stage="GATEWAY",
+                        component="paper_adapter",
+                        event_type="GATEWAY_RESPONSE",
+                        status="REJECTED",
+                        symbol=order.symbol,
+                        detail={
+                            "gateway": "paper",
+                            "simulated": True,
+                            "reached": True,
+                            "order_id": order.order_id,
+                            "reason": "duplicate_order_id",
+                            "success": False,
+                        },
+                    )
                 return False
             self._seen_order_ids.add(oid)
             # also reject if any open position already reflects that order_id via magic/comment deduplication window
             # simple: still-open order_id map
-        ok = (
-            self._open_simulated_position(
-                symbol=order.symbol,
-                order_type=order.order_type,
-                volume=order.volume,
-                price=order.price,
-                stop_loss=order.stop_loss,
-                take_profit=order.take_profit,
-                magic=order.magic_number,
-            )
-            > 0
+        sim_ticket = self._open_simulated_position(
+            symbol=order.symbol,
+            order_type=order.order_type,
+            volume=order.volume,
+            price=order.price,
+            stop_loss=order.stop_loss,
+            take_profit=order.take_profit,
+            magic=order.magic_number,
         )
+        ok = sim_ticket > 0
         if not ok and oid:
             # release id so retry after failure is allowed (only block while open)
             self._seen_order_ids.discard(oid)
+        if _trace_obsv is not None and _trace_obsv.active:
+            _trace_obsv.emit(
+                stage="GATEWAY",
+                component="paper_adapter",
+                event_type="GATEWAY_RESPONSE",
+                status="ACCEPTED" if ok else "REJECTED",
+                symbol=order.symbol,
+                detail={
+                    "gateway": "paper",
+                    "simulated": True,
+                    "reached": True,
+                    "order_id": order.order_id,
+                    "ticket": int(sim_ticket) if ok else None,
+                    "fill_price": float(order.price),
+                    "success": bool(ok),
+                },
+            )
         return ok
 
     def execute_market_order(
