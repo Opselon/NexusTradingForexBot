@@ -307,6 +307,21 @@ jobs:
         run: |
           .\scripts\build\start_smoke.ps1 -ExePath "release\build\windows-x64\onedir\NexusScalpEngine\NexusScalpEngine.exe" -DurationSec 90
           if ($LASTEXITCODE -ne 0) { throw "BUG293_START_SMOKE_FAILED: packaged first-start crashed — release blocked" }
+
+        # EU-01 (P0): the START smoke just ran the packaged EXE, and the onedir
+        # build anchors its runtime artifacts (audit.db / news.db /
+        # paper_state.json / archive/ / logs/) INSIDE its own bundle dir. Without
+        # this gate those build-machine databases ship inside the installer and
+        # the portable zip — v9.0.14 shipped audit.db with 52 tables and 23
+        # foreign user signals plus 405 news rows from this box. clean_payload
+        # deletes them and then hard-fails if any survive, so a dirty payload
+        # can never reach the stage step below.
+      - name: Payload hygiene gate (EU-01)
+        shell: pwsh
+        run: |
+          .\scripts\build\clean_payload.ps1 -BundleDir "release\build\windows-x64\onedir\NexusScalpEngine"
+          if ($LASTEXITCODE -ne 0) { throw "EU01_PAYLOAD_DIRTY: build-machine runtime state survived the hygiene gate — release blocked" }
+
       - name: Stage release tree
         shell: pwsh
         run: |
