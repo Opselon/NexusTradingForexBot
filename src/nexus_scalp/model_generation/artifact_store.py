@@ -124,8 +124,28 @@ class ArtifactStore:
     # Dataset artifacts
     # ------------------------------------------------------------------
 
+    def _resolve_within_root(self, *parts: str) -> Path:
+        """SEC (py/path-injection #1109): every store location is built by
+        joining a validated id under the store root, then RESOLVING and
+        re-asserting containment before any caller can open it.
+
+        ``validate_artifact_id`` already rejects separators and ``..`` in the
+        identifier; this is the canonical defense-in-depth at the join: it
+        catches a separator the allow-list missed and any symlink escape, and
+        guarantees the returned path stays inside this store's root. Callers
+        use the returned value (never the input) at the sink.
+        """
+        joined = self.root.joinpath(*parts)
+        try:
+            resolved = joined.resolve()
+        except (OSError, ValueError) as exc:
+            raise ValueError("artifact path could not be resolved") from exc
+        if not resolved.is_relative_to(self.root.resolve()):
+            raise ValueError("artifact path escapes the store root")
+        return resolved
+
     def dataset_dir(self, dataset_id: str) -> Path:
-        return self.datasets_dir / validate_artifact_id(dataset_id)
+        return self._resolve_within_root("datasets", validate_artifact_id(dataset_id))
 
     def dataset_path(self, dataset_id: str) -> Path:
         return self.dataset_dir(dataset_id) / "dataset.parquet"
@@ -221,7 +241,7 @@ class ArtifactStore:
     # ------------------------------------------------------------------
 
     def model_dir(self, model_id: str) -> Path:
-        return self.models_dir / validate_artifact_id(model_id)
+        return self._resolve_within_root("models", validate_artifact_id(model_id))
 
     def model_weights_path(self, model_id: str) -> Path:
         return self.model_dir(model_id) / "model.pt"

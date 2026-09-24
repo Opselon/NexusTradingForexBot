@@ -27,6 +27,7 @@ resolve inside an allowed root (``DATASETS_ROOT_REJECTED`` otherwise).
 
 from __future__ import annotations
 
+import re as _re
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -42,6 +43,7 @@ from nexus_scalp.model_provisioning import (
     service as prov,
 )
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.position_adviser.paths import resolve_within_trusted_roots
 
 logger = get_logger("nexus_scalp.web.provisioning_routes")
 
@@ -113,11 +115,64 @@ def _allowed_import_roots() -> list[Path]:
         cleaned = raw.strip()
         if not cleaned:
             continue
-        resolved = Path(cleaned).expanduser().resolve()
+        # SEC (py/path-injection #1149): validate shape before resolving
+        # operator-supplied env paths so traversal and shell tokens are refused.
+        if ".." in cleaned or "\x00" in cleaned or not _IMPORT_PATH_SHAPE.fullmatch(cleaned):
+            continue
+        try:
+            resolved = Path(cleaned).expanduser().resolve()
+        except (ValueError, RuntimeError):
+            continue
         if resolved not in seen:
             seen.add(resolved)
             roots.append(resolved)
     return roots
+
+
+def _validate_import_path_shape(s: str) -> None:
+    """SEC (py/path-injection #1098): reject a raw import path that can carry a
+    path component, BEFORE it is resolved.
+
+    The ``..`` / null-byte checks already ran, so this is the shape barrier:
+    every component must be an identifier segment, which admits legitimate
+    nested imports (``data/raw/xauusd_M1.csv.parquet``) and refuses separators
+    used for traversal, drive letters, UNC prefixes and shell metacharacters.
+    The message never echoes the payload.
+    """
+    if not _IMPORT_PATH_SHAPE.fullmatch(s):
+        raise ValueError("import path has characters outside the safe set")
+
+
+def _resolve_within_import_roots(raw: str) -> Path:
+    """Canonical untainted resolution for a user-supplied import file path.
+
+    Delegates to ``resolve_within_trusted_roots`` so the returned Path is the
+    canonical sanitizer output: absolute, symlink-followed and strictly
+    contained in one of the allowed import roots. An escaping or unresolvable
+    value raises ``ValueError`` fail-closed.
+
+    The import is at module scope on purpose: resolving a path lazily pulled
+    ``position_adviser`` (and torch) into the middle of a request/test where
+    ``threading.Thread`` may be monkeypatched, crashing tqdm's monitor import.
+    """
+    s = str(raw).strip()
+    _validate_import_path_shape(s)
+    resolved = resolve_within_trusted_roots(s, _allowed_import_roots())
+    if resolved is None:
+        raise ValueError("import path is outside allowed import roots")
+    return resolved
+
+
+#: A relative or absolute filename whose every component is an identifier
+#: segment. Anchored and bounded so no traversal, drive letter or UNC prefix can
+#: survive; ``\\`` and ``/`` are both admitted as separators only BETWEEN safe
+#: segments. ``re`` is imported at module scope (``import re as _re`` below) so
+#: this pattern compiles exactly once.
+_IMPORT_PATH_SHAPE = _re.compile(
+    r"(?:[A-Za-z]:[\\/]{1,2})?/?"  # optional Windows drive and/or POSIX root slash
+    r"(?:[A-Za-z0-9_ -][A-Za-z0-9_ . -]{0,127}[\\/])*"  # safe nested dirs (spaces permitted)
+    r"[A-Za-z0-9_ -][A-Za-z0-9_ . -]{0,191}"  # final file name (incl. extension dots and spaces)
+)
 
 
 def _allowed_import_path(raw: str) -> Path:
@@ -126,10 +181,15 @@ def _allowed_import_path(raw: str) -> Path:
     Defense layers (closes the CodeQL py/path-injection taint + a real
     prefix-bypass class a naive str.startswith check carries — "data/rawx"
     starts-with "data/raw"):
-      1. reject null bytes and any ``..`` traversal segment BEFORE resolving;
-      2. resolve to an absolute real path (symlinks followed);
-      3. containment via Path.is_relative_to (not string prefix);
-      4. the pipeline then only ever READS the file (training input).
+      1. reject null bytes, empty values and any ``..`` traversal segment
+         BEFORE any path is constructed or resolved;
+      2. reduce the raw string to a whitelist-only relative-or-absolute form so
+         it cannot carry a path component at all (this is what lets the resolve
+         below run on a value that is already untainted, rather than relying on
+         a suppression at the sink);
+      3. resolve to an absolute real path (symlinks followed);
+      4. containment via Path.is_relative_to (not string prefix);
+      5. the pipeline then only ever READS the file (training input).
     """
     import os
 
@@ -139,10 +199,14 @@ def _allowed_import_path(raw: str) -> Path:
     parts = Path(s).parts
     if any(part == ".." for part in parts) or (os.altsep and ".." in s.split(os.altsep)):
         raise ValueError("path traversal segments are refused")
-    p = Path(s).expanduser().resolve()  # codeql[py/path-injection] traversal segments
-    # rejected above; the containment loop below admits ONLY paths under an
-    # operator-configured import root (path containment, not string prefix), and
-    # the pipeline reads the file — never writes, never executes it.
+    # The string must be a plain name under an import root or an absolute path
+    # the operator chose; either way every component must be a safe identifier
+    # segment, so separators can smuggle no traversal.
+    _validate_import_path_shape(s)
+    # Resolve through the canonical safe-path sanitizer so the resulting Path
+    # is recognized as untainted (canonicalized + in-root) before the suffix /
+    # containment checks below read it.
+    p = _resolve_within_import_roots(s)
     if p.suffix.lower() not in (".csv", ".parquet"):
         raise ValueError("unsupported file type (accepted: .csv, .parquet)")
     roots = _allowed_import_roots()
@@ -441,13 +505,13 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
         if source not in ("file", "broker"):
             return _err(code="TRAIN_INPUT_REJECTED", detail="source must be file or broker")
         try:
-            file = None if source == "broker" else _allowed_import_path(str(body.get("file", "")))
-        except ValueError as ve:
-            return _err(code="TRAIN_INPUT_REJECTED", detail=str(ve))
-        try:
             req_backend = _backend(body.get("backend"))
         except ValueError:
             return _err(code="TRAIN_BACKEND_INVALID", message="accepted: auto | cpu | cuda")
+        try:
+            file = None if source == "broker" else _allowed_import_path(str(body.get("file", "")))
+        except ValueError as ve:
+            return _err(code="TRAIN_INPUT_REJECTED", detail=str(ve))
         from nexus_scalp.model_provisioning.dataset_source import validate_dataset_request
 
         symbol = str(body.get("symbol", "XAUUSD"))
