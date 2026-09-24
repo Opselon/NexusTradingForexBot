@@ -1011,6 +1011,20 @@
   padding-inline-start: 2px;
 }
 
+/* BUG-314 §22: decision trace — the actual evidence a verdict was built from
+ * (p_keep, the snapshot id it decided on, how old that snapshot was). Shown
+ * as a sub-line so no advisory is ever an unexplained number. */
+.pa-feed-trace {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-faint);
+  padding-inline-start: 2px;
+  margin-top: 2px;
+}
+
 /* confidence meter */
 .pa-conf {
   display: flex;
