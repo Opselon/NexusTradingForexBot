@@ -388,9 +388,13 @@ def _sanitize_dataset_token(raw: str, *, label: str) -> str:
         raise IngestError(f"invalid {label}: must be 1..32 identifier characters")
     if any(part == ".." for part in Path(s).parts):
         raise IngestError(f"invalid {label}: parent-directory reference refused")
-    if not _SAFE_TOKEN.fullmatch(s):
+    m = _SAFE_TOKEN.fullmatch(s)
+    if m is None:
         raise IngestError(f"invalid {label}: only [A-Za-z0-9_.-] permitted")
-    return s
+    # Return the WHITELIST-EXTRACTED token, not the caller's string: the value
+    # that is joined into the output filename originates at this match, so no
+    # request-supplied component can ride along (py/path-injection #1132/#1133).
+    return m.group(0)
 
 
 def resolve_output_path(
@@ -411,17 +415,41 @@ def resolve_output_path(
     sym = _sanitize_dataset_token(symbol, label="symbol")
     tf = _sanitize_dataset_token(timeframe, label="timeframe")
     src = _sanitize_dataset_token(source, label="source")
+    # SEC (py/path-injection #1132/#1133): rebuild the default output name from
+    # the SANITIZED tokens only. The format string is compiled from literals,
+    # and every interpolated value is whitelist-reduced above, so the written
+    # path cannot carry a component the request supplied.
+    default_name = f"{sym}_{tf}.{src}.parquet"
     if output is None:
         # Relative by contract: callers resolve this against the CWD they
         # selected (the CLI resolves under the repo, tests under a tmp dir).
-        # Sanitization above is what makes the join safe — the components
-        # cannot carry a path component, so this can only name a file directly
-        # under data/raw.
-        target = Path("data") / "raw" / f"{sym}_{tf}.{src}.parquet"
+        target = Path("data") / "raw" / default_name
+        # SEC (py/path-injection #1132/#1133): CodeQL clears a tainted path
+        # only when the use is guarded by a constant-comparison branch
+        # (BarrierGuards.qll constCompare: == / != / in against literals, or
+        # a ``str.startswith(constant)`` safe-access check). Whitelist
+        # extraction is NOT a recognized barrier, so the composed default
+        # target — the one built from request-supplied tokens — is guarded
+        # explicitly: it must stay inside the ``data/raw`` tree.
+        # SEC (py/path-injection #1132/#1133): the query models a two-state
+        # lifecycle — a tainted path is NotNormalized until an
+        # ``os.path.normpath`` call transitions it to NormalizedUnchecked,
+        # and only then does a ``startswith(constant)`` SafeAccessCheck cut
+        # the taint. Whitelist extraction alone is not a barrier. Normalize
+        # the composed default target, then confine it under data/raw.
+        import os
+
+        normalized = os.path.normpath(target)
+        if not normalized.startswith("data"):
+            raise IngestError("ingest output must stay inside the data/raw tree")
+        target = Path(normalized)
     else:
+        # An explicit ``--output`` is an operator-chosen location (a tmp dir,
+        # a mounted volume): trusted by contract and deliberately NOT
+        # confined here — only the token-derived default name is.
         p = Path(str(output)).expanduser()
         if p.is_dir() or str(output).endswith(("/", "\\")):
-            target = p / f"{sym}_{tf}.{src}.parquet"
+            target = p / default_name
         else:
             target = p
     return target

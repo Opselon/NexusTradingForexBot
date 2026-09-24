@@ -65,6 +65,10 @@ release = [
 ]
 postgres = [
     "psycopg[binary]>=3.1,<4.0",
+    # Connection pool imported by src/nexus_scalp/database/fabric/pg_planes.py.
+    # Version range mirrors psycopg's own <4.0 ceiling; 3.3.3 is the
+    # installed/tested line.
+    "psycopg-pool>=3.1,<4.0",
 ]
 
 [project.scripts]

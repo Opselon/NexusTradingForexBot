@@ -297,6 +297,14 @@ def load_database_config(
       3. environment overrides (``NSE_DATABASE__PROVIDER``,
          ``NSE_DATABASE__PG_HOST`` etc. — the double-underscore convention
          used throughout the configuration system; env wins for containers).
+
+    Exception — the audit test-isolation seam (``NEXUS_AUDIT_DB``, BUG-223 /
+    BUG-278 / CHG-0067) sits ABOVE the persisted settings: for domain
+    ``"audit"`` an explicit ``NSE_DATABASE__PROVIDER`` still beats everything,
+    an explicit ``NSE_DATABASE__SQLITE_PATH`` beats the seam, and the seam
+    itself beats the persisted provider and persisted PostgreSQL connection
+    settings. Without the seam, persisted settings keep their full authority.
+    Non-audit domains ignore the seam entirely.
     """
     from nexus_scalp.settings.service import SettingsDatabase
 
@@ -305,23 +313,40 @@ def load_database_config(
     envd = env if env is not None else os.environ
     provider_env = envd.get("NSE_DATABASE__PROVIDER", "").strip()
 
-    # BUG-278: the BUG-223 test-isolation seam (NEXUS_AUDIT_DB) must reach
-    # THIS resolver too — LiveEngine's implicit audit construction goes
+    # BUG-278 / CHG-0067: the BUG-223 test-isolation seam (NEXUS_AUDIT_DB) must
+    # reach THIS resolver too — LiveEngine's implicit audit construction goes
     # through load_database_config("audit"), which previously anchored to the
     # PRODUCTION artifacts/audit.db regardless of the env (the seam was only
-    # honored inside AuditRepository's legacy implicit default). Precedence
-    # matches BUG-223 exactly: it applies ONLY to the implicit sqlite default
-    # — an explicit NSE_DATABASE__PROVIDER / NSE_DATABASE__SQLITE_PATH or a
-    # persisted PostgreSQL setting still wins, and non-audit domains ignore
-    # the variable entirely.
+    # honored inside AuditRepository's legacy implicit default).
+    #
+    # Precedence ladder for domain == "audit" (CHG-0067 standing user
+    # directive — supersedes the persisted-wins wording of the original
+    # BUG-278 note):
+    #   1. an explicit NSE_DATABASE__PROVIDER always wins (containers / CI);
+    #   2. an explicit NSE_DATABASE__SQLITE_PATH wins over the seam;
+    #   3. NEXUS_AUDIT_DB wins over the PERSISTED provider AND the persisted
+    #      PostgreSQL connection settings — a machine that chose PostgreSQL
+    #      must not lose its test-isolation just because the settings DB says
+    #      so (this is the fix; previously the persisted block below overrode
+    #      the seam);
+    #   4. without the seam, persisted settings behave exactly as before — a
+    #      production install that chose PostgreSQL keeps PostgreSQL;
+    #   5. non-audit domains ignore the seam entirely.
+    audit_seam_applies = False
     if domain == "audit" and not provider_env:
         env_audit_db = envd.get("NEXUS_AUDIT_DB", "").strip()
         if env_audit_db and not envd.get("NSE_DATABASE__SQLITE_PATH", "").strip():
+            audit_seam_applies = True
             cfg = DatabaseConfig.for_sqlite(domain, path=env_audit_db)
 
     # --- persisted settings (authoritative for interactive installs) -------
+    # When the audit test-isolation seam applies (CHG-0067 contract 3), the
+    # persisted provider and persisted PostgreSQL connection settings must NOT
+    # be allowed to flip the resolution off the seam — so the whole persisted
+    # override is skipped for that path. Every other run (seam absent, another
+    # domain, or an explicit env provider) keeps today's behavior.
     db = None
-    if settings_db_path is not None or not provider_env:
+    if (settings_db_path is not None or not provider_env) and not audit_seam_applies:
         # Opening the settings DB is best-effort: a fresh environment (no
         # app_settings.db yet) must fall back to SQLite defaults silently.
         try:

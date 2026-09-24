@@ -199,6 +199,31 @@ jobs:
           # pytest-cov ships in the [dev] extra installed above.
           python -m pip install -e ".[dev,web,release]"
           Write-Host "torch/pyinstaller ready"
+      # EUR-WAVE (contract #11): the release artifact MUST contain the
+      # production React Control Center. Node exists ONLY at build time —
+      # the shipped EXE serves the static dist, the end user never runs npm.
+      - name: Set up Node.js (frontend build toolchain)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Frontend production build (React Control Center)
+        shell: pwsh
+        run: |
+          Push-Location frontend
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw "frontend npm ci failed" }
+          npx tsc -b
+          if ($LASTEXITCODE -ne 0) { throw "frontend typecheck failed" }
+          npx vite build
+          if ($LASTEXITCODE -ne 0) { throw "frontend production build failed" }
+          Pop-Location
+      - name: Validate frontend bundle (fail-loud asset contract)
+        shell: pwsh
+        run: |
+          python scripts/build/validate_frontend_dist.py frontend/dist
+          if ($LASTEXITCODE -ne 0) { throw "frontend dist validation failed - release blocked" }
       - name: Write build-info.json
         shell: pwsh
         run: |
@@ -245,6 +270,7 @@ jobs:
             --version-file "installer\version_info.txt" `
             --add-data "$PWD\Web;Web" --add-data "$PWD\configs;configs" `
             --add-data "$PWD\docs;docs" --add-data "$PWD\build-info.json;." `
+            --add-data "$PWD\frontend\dist;frontend/dist" `
             --collect-submodules "uvicorn" --collect-submodules "fastapi" `
             --collect-submodules "feedparser" `
             --hidden-import "MetaTrader5" --hidden-import "torch" --hidden-import "polars" `
@@ -330,6 +356,11 @@ jobs:
           #   installer:    NexusScalpEngine-<version>-win-x64-setup.exe
           $zip = "$Out\NexusScalpEngine-$V-win-x64.zip"
           Compress-Archive -Path "$Out\portable\*" -DestinationPath $zip
+          # EUR-WAVE: the portable/installed tree must carry the production
+          # UI - the runtime serves it from _internal/frontend/dist.
+          if (-not (Test-Path "$Out\portable\_internal\frontend\dist\index.html")) {
+            throw "EUR_FRONTEND_MISSING: staged portable tree has no _internal/frontend/dist/index.html"
+          }
           Write-Host "staged: $Out"
       # BUG-166 pre-stage: the installer EMBEDS the verification contract
       # (SHA256SUMS.txt + release-manifest.json) into the installed tree so

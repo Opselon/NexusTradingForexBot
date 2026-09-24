@@ -32,6 +32,7 @@ import json
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -1023,14 +1024,26 @@ class PositionReplayPipeline:
                     action_decision = "CLOSE"
 
                 # Assign split ensuring Trade Group Isolation and Purge/Embargo boundaries
-                if is_entry_purged or (
-                    cur_idx + self.exec_cfg.max_holding_bars >= train_end_idx
-                    and cur_idx < train_end_idx
-                ):
-                    sample_split = "purge"
-                elif (
-                    cur_idx + self.exec_cfg.max_holding_bars >= val_end_idx
-                    and cur_idx < val_end_idx
+                horizon_end = cur_idx + self.exec_cfg.max_holding_bars
+                # ML-POSITION-FORENSICS F2: three quarantine conditions, applied
+                # symmetrically at both interior boundaries AND at the dataset
+                # tail (the old code purged only the two interior boundaries):
+                #   (a) entry sits in the pre-boundary purge window,
+                #   (b) the label horizon crosses an interior boundary or is
+                #       TRUNCATED by the dataset tail (a truncated label is a
+                #       different label than the full-horizon one — it must not
+                #       share the oos partition with complete labels),
+                #   (c) the observation sits in the post-boundary embargo band,
+                #       where feature windows still overlap the prior split.
+                in_embargo = (
+                    train_end_idx <= cur_idx < train_end_idx + self.split_cfg.embargo_bars
+                ) or (val_end_idx <= cur_idx < val_end_idx + self.split_cfg.embargo_bars)
+                if (
+                    is_entry_purged
+                    or in_embargo
+                    or horizon_end >= n_bars
+                    or (horizon_end >= train_end_idx and cur_idx < train_end_idx)
+                    or (horizon_end >= val_end_idx and cur_idx < val_end_idx)
                 ):
                     sample_split = "purge"
                 else:
@@ -1428,6 +1441,36 @@ class PositionDatasetValidator:
             cv_p50 = float(df["continuation_value"].quantile(0.50) or 0.0)
             cv_p95 = float(df["continuation_value"].quantile(0.95) or 0.0)
 
+        # 7. REAL causality check (ML-POSITION-FORENSICS F2): the old value was
+        # a hardcoded 0 — decorative. What is provable from the dataset itself
+        # is the temporal partition property: excluding quarantined (purge)
+        # rows, every train observation must sit strictly before every val
+        # observation, which must sit strictly before every oos observation.
+        # Violation means one split's label horizons are reachable inside
+        # another split's time region — temporal contamination.
+        causality_violations = 0
+        if row_count > 0 and {"split", "bar_index"} <= set(df.columns):
+            live = df.filter(pl.col("split") != "purge")
+            bounds: dict[str, tuple[int, int]] = {}
+            for sp in ("train", "val", "oos"):
+                sub = live.filter(pl.col("split") == sp)
+                if sub.height:
+                    bi_min: Any = sub["bar_index"].min()
+                    bi_max: Any = sub["bar_index"].max()
+                    bounds[sp] = (
+                        int(bi_min) if bi_min is not None else 0,
+                        int(bi_max) if bi_max is not None else 0,
+                    )
+            order = [sp for sp in ("train", "val", "oos") if sp in bounds]
+            for a_s, b_s in pairwise(order):
+                if bounds[a_s][1] >= bounds[b_s][0]:
+                    causality_violations += 1
+                    violations.append(
+                        f"Temporal split contamination: {a_s} rows reach bar "
+                        f"{bounds[a_s][1]}, not strictly before {b_s} rows "
+                        f"starting at bar {bounds[b_s][0]}."
+                    )
+
         valid = len(violations) == 0
         return PositionDatasetValidationReport(
             valid=valid,
@@ -1437,7 +1480,7 @@ class PositionDatasetValidator:
             nan_count=nan_count,
             inf_count=inf_count,
             monotonic_timestamps=monotonic_ts,
-            causality_violations=0,
+            causality_violations=causality_violations,
             trade_split_leakage_count=trade_split_leakage,
             split_counts=split_counts,
             actions_distribution=actions_dist,
