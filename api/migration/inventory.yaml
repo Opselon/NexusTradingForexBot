@@ -3394,7 +3394,7 @@ domain "v1:system":
     path: /api/v1/system/capabilities
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/system.py
     source_line: 202
     handler: system_capabilities
@@ -3402,7 +3402,7 @@ domain "v1:system":
     path: /api/v1/system/diagnostics
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/system.py
     source_line: 324
     handler: system_diagnostics
@@ -3410,7 +3410,7 @@ domain "v1:system":
     path: /api/v1/system/health
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/system.py
     source_line: 108
     handler: system_health
@@ -3418,7 +3418,7 @@ domain "v1:system":
     path: /api/v1/system/readiness
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/system.py
     source_line: 123
     handler: system_readiness
@@ -3426,7 +3426,7 @@ domain "v1:system":
     path: /api/v1/system/runtime
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/system.py
     source_line: 175
     handler: system_runtime
@@ -3434,7 +3434,7 @@ domain "v1:system":
     path: /api/v1/system/status
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/system.py
     source_line: 58
     handler: system_status
@@ -3444,7 +3444,7 @@ domain "v1:system":
     path: /api/v1/system/version
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/system.py
     source_line: 148
     handler: system_version
@@ -3452,7 +3452,7 @@ domain "v1:system":
     path: /api/v1/system/workers
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/system.py
     source_line: 245
     handler: system_workers
@@ -3460,7 +3460,7 @@ domain "v1:system":
     path: /api/v1/system/diagnostics/run
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/system.py
     source_line: 296
     handler: system_diagnostics_run
@@ -3468,7 +3468,7 @@ domain "v1:system":
     path: /api/v1/system/refresh
     kind: http
     surface: dashboard
-    state: DISCOVERED
+    state: PARITY_VERIFIED
     source_file: src/nexus_scalp/web/api_v1/system.py
     source_line: 274
     handler: system_refresh
