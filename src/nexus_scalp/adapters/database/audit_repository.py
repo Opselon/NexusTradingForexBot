@@ -2711,23 +2711,36 @@ class AuditRepository:
         Routes the dead-letter INSERT through the fabric's write plane so a
         PostgreSQL domain keeps durable failure evidence instead of the old
         silent counter increment.
+
+        RTF-002: the backend is resolved LAZILY, at call time, never captured
+        at construction. ``AuditRepository.__init__`` builds the
+        ``DeadLetterStore`` BEFORE ``_build_write_plane()`` runs, and the
+        write plane is what provisions the audit domain on the fabric. A
+        construction-time capture therefore observed ``get_domain_backend``
+        == None on a fresh PostgreSQL process, permanently cached it, and
+        left the store with ``write_sink=None`` — the state that produced
+        ``DEAD-LETTER WRITE IMPOSSIBLE ... financial record unrecoverable``
+        for every failed row. Resolving per call means the first dead-letter
+        that arrives after the plane provisions lands durably.
+
+        Only *reads* the registry (no lazy provisioning): provisioning is the
+        write plane's job, and doing it here could double-provision against a
+        concurrent plane and close a pool that is in use.
         """
         if self._is_sqlite:
-            return None
-        try:
-            from nexus_scalp.database.fabric import get_domain_backend
-
-            backend = get_domain_backend("audit", readonly=False)
-        except Exception:
-            return None
-        if backend is None:
             return None
 
         def _sink(sql: str, args: tuple) -> bool:
             try:
+                from nexus_scalp.database.fabric import get_domain_backend
+
+                backend = get_domain_backend("audit", readonly=False)
+                if backend is None:
+                    return False
                 backend.execute(sql, args)
                 return True
-            except Exception:
+            except Exception as sink_err:
+                logger.error("[DEAD-LETTER] write sink failed: %s", sink_err)
                 return False
 
         return _sink
