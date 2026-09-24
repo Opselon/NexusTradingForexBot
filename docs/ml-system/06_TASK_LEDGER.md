@@ -87,7 +87,9 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-QA-004` | L: CI/CD | P2 | Push-Gate Timing Determinism Remediation (injected clock + CPU-time budgets) | **DONE** (PR #402) | `AGENT-QA` | NO | `ML-QA-003` | `PARALLEL_SAFE` |
 | `ML-QA-005` | L: CI/CD | P2 | Merge-Marker Residue Guard (diff3 arm leak class) | **DONE** (PR #405, `a1a798f2`) | `AGENT-QA` | NO | `ML-QA-004` | `PARALLEL_SAFE` |
 | `ML-QA-006` | L: CI/CD | P2 | Duplicate Canonical Task-Row Detector (SSOT table gate) | **DONE** (PR pending) | `AGENT-QA` | NO | `ML-QA-005` | `PARALLEL_SAFE` |
+| `ML-QA-007` | L: CI/CD | P2 | Push-Gate Latency Determinism: MT5 Parity Suite (roster #4) | **DONE** (PR pending) | `AGENT-QA` | NO | `ML-QA-004` | `PARALLEL_SAFE` |
 | `ML-QA-008` | L: CI/CD | P2 | Push-Gate Latency Determinism: Experiment-Registry Benchmark (roster #6) | **DONE** (PR pending) | `AGENT-QA` | NO | `ML-QA-004` | `PARALLEL_SAFE` |
+| `ML-QA-009` | L: CI/CD | P2 | Push-Gate Determinism: Audit-Flush Bounded-Wait Assert (roster #7) | **DONE** (PR pending) | `AGENT-QA` | NO | `ML-QA-004` | `PARALLEL_SAFE` |
 
 ---
 

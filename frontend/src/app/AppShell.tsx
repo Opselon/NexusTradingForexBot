@@ -14,7 +14,7 @@
  */
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 // Wave 6 (perf): the seven legacy routes are code-split like the feature
 // registry — the entry chunk no longer carries every page up front. Same
@@ -440,6 +440,14 @@ export function AppShell() {
               <Route path="/ml" element={<MlRoute snapshot={snapshot} />} />
               <Route path="/intelligence" element={<IntelRoute snapshot={snapshot} />} />
               <Route path="/audit" element={<AuditRoute />} />
+              {/* CONTRACT #3 aliases: the two renamed feature routes keep
+                  their old deep links working. Paths are basename-relative,
+                  so this works whether the console is served at `/` or at
+                  `/alt` (the same dist, dual-served). The backend keeps the
+                  REAL root `/health` and `/dependency` — these routes only
+                  ever run inside the SPA shell. */}
+              <Route path="/health" element={<Navigate to="/system-health" replace />} />
+              <Route path="/dependency" element={<Navigate to="/dependencies" replace />} />
               {featureRoutes}
                   <Route path="*" element={<ErrorState message={t("shell.unknown_route", "Unknown route")} />} />
                 </Routes>

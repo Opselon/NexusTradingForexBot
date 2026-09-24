@@ -1,0 +1,266 @@
+# NSE Live Error Ledger
+#
+# Maintained by lane agent/nse-always-on-runtime-fix.
+# Authority: real execution + real database state. A log line vanishing once
+# is never sufficient to mark an error resolved.
+#
+# Pre-existing failures NOT caused by this lane (verified against pristine
+# origin/main cbabadae at /tmp/nse-baseline):
+#   test_audit_repository_memory_uri_bug156.py::test_bug149_relative_file_path_still_anchored
+#   FAILS identically on the baseline, so it is not a regression of RTF-001/002.
+version: 1
+cycle: 1
+as_of: "2026-09-24T12:15:00+03:30"
+base_branch: origin/main
+base_sha: cbabadae
+lane: agent/nse-always-on-runtime-fix
+
+errors:
+  - id: RTF-001
+    first_seen: "2026-09-24T05:45:47+03:30"
+    last_seen: "2026-09-24T05:50:09+03:30"
+    severity: CRITICAL
+    subsystem: database/migration + adapters/audit_db
+    exact_message: >-
+      column "signal_dedup_key" of relation "audit_signals" does not exist /
+      column "account_source" of relation "audit_account_snapshots" does not
+      exist
+    root_cause: >-
+      The PostgreSQL schema is Python-generated. migrate_domain applied only
+      the scanned baseline CREATEs (35 tables, 439 of 463 required columns);
+      the other 24 columns were healed at runtime by SQLite-only
+      _add_column_if_missing calls invisible to the migration scan, so the
+      migration legitimately reported applied=37 errors=0 while runtime DDL
+      differed. Proven on the real database: live nexusdb has all 35 tables
+      but lacks exactly those 24 columns.
+    reproduction: >-
+      Boot the engine with audit provider=postgresql against a nexusdb
+      provisioned by the baseline-only migration; every audit_signals INSERT
+      fails with the missing-column error.
+    user_impact: >-
+      Every signal, account snapshot and guard telemetry row is rejected;
+      audit evidence for the whole session is lost.
+    financial_impact: >-
+      HIGH — no durable record of proposed/executed decisions, no dedup key,
+      no post-hoc reconciliation basis.
+    recovery: >-
+      Provider-agnostic additive heal: additive_columns_statements() diffs
+      APP_REQUIRED_COLUMNS against the scanned baseline and emits exactly the
+      24 absent columns (SQLite dialect, translated by translate_ddl to
+      ADD COLUMN IF NOT EXISTS). Idempotent.
+    owner: agent/nse-always-on-runtime-fix
+    related_pr: null
+    status: VERIFIED_LOCAL
+    regression_test: >-
+      tests/unit/test_rtf001_provider_agnostic_schema_contract.py (12) plus
+      tests/unit/test_rtf001_real_postgresql_schema.py (2, real PostgreSQL)
+    runtime_verified: false
+    main_verified: false
+    notes: >-
+      Dry-run against live nexusdb: emitted set == live-missing set
+      (24 == 24, identical). Real-DB test builds the schema on a scratch
+      database and lands all 463 required columns. Not yet healed ON nexusdb
+      itself (that happens on the next boot of the merged fix) and not yet
+      verified in a real runtime session.
+
+  - id: RTF-002
+    first_seen: "2026-09-24T05:46:50+03:30"
+    last_seen: "2026-09-24T05:50:09+03:30"
+    severity: CRITICAL
+    subsystem: adapters/audit_db (dead-letter store)
+    exact_message: >-
+      DEAD-LETTER WRITE IMPOSSIBLE — no write sink on a non-SQLite dead-letter
+      store; financial record unrecoverable
+    root_cause: >-
+      Construction-order race. _dead_letter_write_sink() captured
+      get_domain_backend("audit") at __init__ time, BEFORE _build_write_plane()
+      provisioned the audit domain. On a fresh PostgreSQL process the backend
+      registry is still empty, so the sink was permanently None and every
+      failed row became unrecoverable.
+    reproduction: >-
+      Construct AuditRepository with a PostgreSQL provider while the audit
+      domain is not yet provisioned on the fabric; the DeadLetterStore is
+      handed write_sink=None for the lifetime of the process.
+    user_impact: >-
+      The last-resort persistence path for failed audit writes is silently
+      disabled for the entire process; failed financial records are discarded.
+    financial_impact: HIGH — unrecoverable loss of audit evidence.
+    recovery: >-
+      Resolve the backend lazily at call time inside the returned closure
+      instead of caching it at construction. Reads the registry only (never
+      provisions); returns False rather than raising.
+    owner: agent/nse-always-on-runtime-fix
+    related_pr: null
+    status: VERIFIED_LOCAL
+    regression_test: tests/unit/test_rtf002_deadletter_sink_lazy_resolution.py (5)
+    runtime_verified: false
+    main_verified: false
+
+  - id: RTF-003
+    first_seen: "2026-09-24T05:47:28+03:30"
+    severity: HIGH
+    subsystem: adapters/audit_db
+    exact_message: >-
+      column reference "count" is ambiguous — DO UPDATE SET count = count + 1
+    root_cause: >-
+      audit_guard_telemetry upsert uses an unqualified count in the ON
+      CONFLICT DO UPDATE clause on PostgreSQL.
+    status: DISCOVERED
+    owner: unassigned
+    notes: >-
+      NOT fixed in this cycle. It is masked by RTF-001 (the batch fails on
+      signal_dedup_key first), so it must be revisited once RTF-001 is healed
+      on the live domain — the ambiguity will then be the next failure.
+
+  - id: RTF-004
+    first_seen: "2026-09-24T05:45:47+03:30"
+    severity: MEDIUM
+    subsystem: model_lifecycle/learning_cycle
+    exact_message: "error='no such table: learning_cycles'"
+    root_cause: >-
+      Stale checkout (c9851b51, ~8 commits behind origin/main cbabadae, merged
+      via PR #417). The current baseline CREATEs cover all 35 required tables
+      including learning_cycles; the pasted log is not the current schema set.
+    status: RESOLVED
+    resolution: >-
+      No code change required. Confirmed against origin/main
+      sqlite_ddl_statements(): 35 CREATE TABLE statements cover all 35
+      required tables. The log's checkout was behind; the current code does
+      not reproduce it.
+    owner: agent/nse-always-on-runtime-fix
+    runtime_verified: false
+    main_verified: false
+
+  - id: RTF-005
+    first_seen: "2026-09-24T05:46:33+03:30"
+    severity: HIGH
+    subsystem: adapters/audit_db (runtime_risk_state)
+    exact_message: >-
+      runtime_risk_state persist FAILED error=no such table: runtime_risk_state
+    root_cause: >-
+      Same stale-checkout explanation as RTF-004: runtime_risk_state is in the
+      current baseline CREATE set.
+    status: RESOLVED
+    owner: agent/nse-always-on-runtime-fix
+
+  - id: RTF-006
+    first_seen: "2026-09-24T05:46:33+03:30"
+    severity: MEDIUM
+    subsystem: observability/telegram
+    exact_message: >-
+      [TELEGRAM] event=SEND_FAILED category=TELEGRAM_AUTH_ERROR
+      safe_reason=HTTP Error 401: Unauthorized
+    root_cause: >-
+      Invalid Telegram bot token (401 from the API). The auth breaker already
+      trips correctly (DROPPED_DEAD_TOKEN, AUTH_BREAKER_TRIPPED) and stops the
+      retry storm, so the existing circuit is behaving as designed.
+    status: EXTERNAL_DEPENDENCY
+    owner: operator
+    notes: >-
+      Requires a valid token from the operator. Not a code defect; no
+      autonomous fix is appropriate (would involve handling credentials).
+
+  - id: RTF-007
+    first_seen: "2026-09-24T05:47:17+03:30"
+    severity: MEDIUM
+    subsystem: incidents
+    exact_message: "error='IncidentStore requires db_path or audit_repo'"
+    root_cause: >-
+      Dependency construction incomplete: the incident worker is built without
+      a db_path or audit_repo. Not yet traced to its construction site.
+    status: DISCOVERED
+    owner: unassigned
+
+  - id: RTF-008
+    first_seen: "2026-09-24T05:47:18+03:30"
+    severity: LOW
+    subsystem: web/debug_snapshot
+    exact_message: "error=\"WindowsPath('.') has an empty name\""
+    root_cause: NOT_INVESTIGATED
+    status: DISCOVERED
+    owner: unassigned
+
+  - id: RTF-009
+    first_seen: "2026-09-24T05:45:46+03:30"
+    severity: CRITICAL
+    subsystem: configuration/runtime_config
+    exact_message: >-
+      configs/live.yaml Mode PAPER vs Mode → LIVE (from persisted settings DB)
+      and [MODE] explicit operator override honored mode=LIVE
+    root_cause: NOT_INVESTIGATED
+    status: DISCOVERED
+    owner: unassigned
+    notes: >-
+      P0 safety item from the mission brief. Precedence chain exists
+      (configured then persisted then operator override). Requires the
+      operator to confirm whether the LIVE override is still authorised.
+      Deliberately NOT weakened by this lane.
+
+  - id: RTF-010
+    first_seen: "2026-09-24T05:47:03+03:30"
+    severity: MEDIUM
+    subsystem: hygiene
+    exact_message: >-
+      verdict=ACTION_REQUIRED consistency_violations=1 orphans=3929
+      duplicates=21557 missing_indexes=45
+    root_cause: NOT_INVESTIGATED
+    status: DISCOVERED
+    owner: unassigned
+    notes: >-
+      Forensic classification only per the mission brief. NO auto-delete.
+      Missing indexes may be the same RTF-001 gap (UNIQUE targets not created
+      on the PG domain).
+
+  - id: RTF-011
+    first_seen: "2026-09-24T05:45:46+03:30"
+    severity: LOW
+    subsystem: doctor/data
+    exact_message: >-
+      DATA: canonical bars file missing: data\raw\XAUUSD_M1.parquet (training
+      cannot run)
+    root_cause: NOT_INVESTIGATED
+    status: DISCOVERED
+    owner: unassigned
+
+  - id: RTF-012
+    first_seen: "2026-09-24T05:46:42+03:30"
+    severity: MEDIUM
+    subsystem: application/live/runtime_loop
+    exact_message: >-
+      [WATCHDOG] Tick stream stalled while MT5 reports connected
+      (is_connected=True)
+    root_cause: NOT_INVESTIGATED
+    status: DISCOVERED
+    owner: unassigned
+    notes: >-
+      Recurring roughly every 30-60s with recovery. The freshness gate
+      already downgrades proposals to NO_TRADE on stale data, so the safety
+      property holds; the stall cause itself is unverified.
+
+  - id: RTF-013
+    first_seen: "2026-09-24T05:47:31+03:30"
+    severity: LOW
+    subsystem: news/ingest
+    exact_message: "source=fxstreet status=FAILURE_DEGRADED error=HTTP 403"
+    root_cause: >-
+      External source returns 403 (bot wall). Backoff (1920s) and
+      FAILURE_DEGRADED state already behave correctly.
+    status: EXTERNAL_DEPENDENCY
+    owner: external (fxstreet)
+
+  - id: RTF-014
+    first_seen: "2026-09-24T05:47:17+03:30"
+    severity: LOW
+    subsystem: adapters/broker_history_sync
+    exact_message: "SYNC_COMPLETE deals=131 duplicates=282 inserted=0"
+    root_cause: NOT_INVESTIGATED
+    status: DISCOVERED
+    owner: unassigned
+    notes: >-
+      duplicates=282 vs deals=131 suggests the sync counts both deals and
+      orders or re-counts on retry. Reporting question, not yet a data bug.
+
+preexisting_failures_on_main:
+  - test: test_audit_repository_memory_uri_bug156.py::test_bug149_relative_file_path_still_anchored
+    verified_on: cbabadae (pristine origin/main, /tmp/nse-baseline)
+    note: relative-path anchoring; unrelated to schema/dead-letter work

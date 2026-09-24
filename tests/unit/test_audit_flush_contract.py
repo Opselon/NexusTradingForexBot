@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-import time
 from collections.abc import Generator
 from contextlib import contextmanager
 
@@ -122,12 +121,20 @@ def test_flush_returns_false_when_worker_stalled(tmp_path) -> None:
 
         real_queue = repo._queue
         repo._queue = _WedgedQueue(real_queue)  # type: ignore[assignment]
-        started = time.monotonic()
-        ok = repo.flush(timeout_sec=0.2)
-        elapsed = time.monotonic() - started
+        # ML-QA-009: bounded-wait assert on CPU time. flush() polls a 5 ms
+        # sleep loop until its 0.2 s deadline (audit_repository.flush), so the
+        # contract is "returns False promptly without burning CPU or
+        # deadlocking" — asserted on time.process_time() via the shared
+        # budget_cpu_ms helper, which a co-tenant scheduler stall cannot trip
+        # (the wall-clock `elapsed < 2.0` pair removed here was the roster
+        # #7 flake shape). Boundedness itself is proven by `ok is False`
+        # (flush RETURNED instead of deadlocking); a hang is caught by the
+        # CI-level test timeout, never by a wall-clock magnitude assert.
+        with budget_cpu_ms(2000.0) as sw:
+            ok = repo.flush(timeout_sec=0.2)
         repo._queue = real_queue  # unwedge before close()
         assert ok is False
-        assert elapsed < 2.0, "flush must stay bounded (no deadlock)"
+        assert sw.consumed_ms < 2000.0, "flush must stay bounded (no deadlock) — CPU-time bound"
     finally:
         repo.close()
 

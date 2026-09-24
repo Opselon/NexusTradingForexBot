@@ -38,6 +38,11 @@ from nexus_scalp.features.schema import active_dimension, active_schema
 from nexus_scalp.model_generation.model_registry import ModelRecord, get_model_registry
 from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.web.errors import (
+    log_web_error,
+    new_request_id,
+    safe_error_payload,
+)
 
 logger = get_logger("nexus_scalp.web.model_studio_routes")
 
@@ -641,7 +646,13 @@ def _capture_layer_activations(
 
 
 def _compute_saliency(model: torch.nn.Module, x_np: np.ndarray, top_k: int = 5) -> dict[str, Any]:
-    """Computes input feature saliency via backprop gradients $\\partial \\text{score}/\\partial x$."""
+    """Computes input feature saliency via backprop gradients.
+
+    SEC (py/stack-trace-exposure #1102/#1164): an exception here is surfaced to
+    the API caller. Its message can contain internal paths/stack frames from
+    the tensor pipeline, so the value is NEVER echoed; the failure is reported
+    server-side and the client gets a fixed, uninformative marker.
+    """
     try:
         x_var = torch.tensor(x_np, dtype=torch.float32, requires_grad=True)
         model.zero_grad()
@@ -671,8 +682,15 @@ def _compute_saliency(model: torch.nn.Module, x_np: np.ndarray, top_k: int = 5) 
             "mean_abs_gradient": round(float(np.mean(np.abs(grads))), 5),
             "max_abs_gradient": round(float(np.max(np.abs(grads))), 5),
         }
-    except Exception as exc:
-        return {"error": str(exc), "top_positive_drivers": [], "top_negative_drivers": []}
+    except Exception as exc:  # any failure must not leak details
+        # SEC (py/stack-trace-exposure): the message is never returned to the
+        # client; diagnostics go to the server log only.
+        logger.warning("model-studio saliency failed", exc_info=exc)
+        return {
+            "error": "saliency computation failed",
+            "top_positive_drivers": [],
+            "top_negative_drivers": [],
+        }
 
 
 def _scan_available_datasets() -> list[dict[str, Any]]:
@@ -831,8 +849,12 @@ def fetch_70d_components(engine: Any = None) -> dict[str, Any]:
     try:
         validate_70d_vector(full_70, schema_hash=feature_schema_hash(), context="studio_fetch")
     except Exception as err:
+        # SEC (py/stack-trace-exposure #1102): ``contract_error`` is echoed in
+        # the API body, so it must never carry the exception text — log the
+        # detail server-side, surface only a fixed marker.
+        logger.warning("model-studio 70d contract validation failed", exc_info=err)
         contract_valid = False
-        contract_error = str(err)
+        contract_error = "feature contract validation failed"
 
     slots: list[dict[str, Any]] = []
     for i in range(70):
@@ -1026,7 +1048,14 @@ def execute_stress_test(req: ModelStudioStressRequest, engine: Any = None) -> di
             }
         )
     except Exception as err:
-        results.append({"test": "ZERO_VARIANCE", "passed": False, "detail": str(err)})
+        logger.warning("model-studio stress-test ZERO_VARIANCE failed", exc_info=err)
+        results.append(
+            {
+                "test": "ZERO_VARIANCE",
+                "passed": False,
+                "detail": "Test evaluation raised an internal exception",
+            }
+        )
 
     # 2. Flash Crash (+/- 1e6)
     x_shock = np.full((1, dim), 1e6, dtype=np.float32)
@@ -1041,7 +1070,14 @@ def execute_stress_test(req: ModelStudioStressRequest, engine: Any = None) -> di
             }
         )
     except Exception as err:
-        results.append({"test": "FLASH_CRASH_SHOCK", "passed": False, "detail": str(err)})
+        logger.warning("model-studio stress-test FLASH_CRASH_SHOCK failed", exc_info=err)
+        results.append(
+            {
+                "test": "FLASH_CRASH_SHOCK",
+                "passed": False,
+                "detail": "Test evaluation raised an internal exception",
+            }
+        )
 
     # 3. Non-finite inputs (NaN injection)
     x_nan = np.zeros((1, dim), dtype=np.float32)
@@ -1058,7 +1094,14 @@ def execute_stress_test(req: ModelStudioStressRequest, engine: Any = None) -> di
             }
         )
     except Exception as err:
-        results.append({"test": "NAN_INJECTION_DEFENSE", "passed": False, "detail": str(err)})
+        logger.warning("model-studio stress-test NAN_INJECTION_DEFENSE failed", exc_info=err)
+        results.append(
+            {
+                "test": "NAN_INJECTION_DEFENSE",
+                "passed": False,
+                "detail": "Test evaluation raised an internal exception",
+            }
+        )
 
     # 4. Dimension Boundary
     schema = active_schema()
@@ -2196,7 +2239,17 @@ def execute_verify(req: ModelStudioVerifyRequest) -> dict[str, Any]:
             }
         )
     except Exception as exc:
-        checks.append({"name": "SAFE_DESERIALIZATION", "passed": False, "detail": str(exc)})
+        # SEC (py/stack-trace-exposure): the check detail is returned to the
+        # client, so the raw exception (which may name paths or internals) must
+        # not be echoed. The failure is still fully diagnosable server-side.
+        logger.warning("[MODEL_STUDIO] event=VERIFY_LOAD_FAILED err=%s", exc)
+        checks.append(
+            {
+                "name": "SAFE_DESERIALIZATION",
+                "passed": False,
+                "detail": "checkpoint deserialization rejected (see server logs)",
+            }
+        )
         return {"status": "FAILED", "all_passed": False, "checks": checks}
 
     all_finite = True
@@ -2651,6 +2704,32 @@ def execute_drift_check(req: ModelStudioDriftRequest) -> dict[str, Any]:
 def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     """Registers Deep Learning / Model Studio REST endpoints on the FastAPI app."""
 
+    def _fail_closed(
+        endpoint: str,
+        exc: BaseException,
+        *,
+        resource: str | None = None,
+        status_code: int = 500,
+        code: str = "OPERATION_FAILED",
+    ) -> HTTPException:
+        """SEC: exception details to logs only, a stable code to the client.
+
+        Family E (CodeQL py/stack-trace-exposure #1102/#1103/#1104/#1108): an
+        unhandled ``execute_*`` exception previously formatted its ``str(exc)``
+        straight into the HTTP body, which can carry filesystem paths, internal
+        service names and source locations. The full record (endpoint,
+        request_id, exception type, traceback) goes to the structured logger
+        here; the client receives only the stable ``error.code`` from
+        ``web/errors.py``. Mirrors the established pattern in
+        ``position_adviser_routes.py`` and the ``hot-load`` route below.
+        """
+        rid = new_request_id()
+        log_web_error(logger, endpoint, rid, exc, resource=resource)
+        return HTTPException(
+            status_code=status_code,
+            detail=safe_error_payload(code=code, request_id=rid, success=False)["error"]["message"],
+        )
+
     @app.get("/api/model-studio/overview")
     def route_overview() -> dict[str, Any]:
         engine = getattr(app.state, "engine", None)
@@ -2666,8 +2745,15 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
         engine = getattr(app.state, "engine", None)
         try:
             return execute_predict(req, engine)
+        except HTTPException:
+            raise
         except ValueError as err:
+            # Client-input validation (dimension/feature shape): the message is
+            # derived from the request, not from internals, so it is safe to
+            # surface; it must stay 422 to preserve the client contract.
             raise HTTPException(status_code=422, detail=str(err)) from err
+        except Exception as exc:
+            raise _fail_closed("model-studio/predict", exc, resource="predict") from exc
 
     @app.get("/api/model-studio/datasets")
     def route_datasets() -> dict[str, Any]:
@@ -2701,12 +2787,22 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     @app.post("/api/model-studio/stress-test")
     def route_stress_test(req: ModelStudioStressRequest) -> dict[str, Any]:
         engine = getattr(app.state, "engine", None)
-        return execute_stress_test(req, engine)
+        try:
+            return execute_stress_test(req, engine)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise _fail_closed("model-studio/stress-test", exc, resource="stress-test") from exc
 
     @app.post("/api/model-studio/benchmark")
     def route_benchmark(req: ModelStudioBenchmarkRequest) -> dict[str, Any]:
         engine = getattr(app.state, "engine", None)
-        return execute_benchmark(req, engine)
+        try:
+            return execute_benchmark(req, engine)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise _fail_closed("model-studio/benchmark", exc, resource="benchmark") from exc
 
     # -------------------------------------------------------------------------
     # AI Hub / Model Registry & Hot-Load Endpoints (15 API-First Capabilities)
@@ -2725,11 +2821,8 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
             raise
         except Exception as exc:
             logger.exception("model-studio hot-load failed")
-            _log_err(f"hot-load failed: {exc}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Hot-load failed: {exc}",
-            ) from exc
+            _log_err("hot-load failed")
+            raise _fail_closed("model-studio/models/hot-load", exc, resource="hot-load") from exc
 
     @app.get("/api/model-studio/models/active")
     def route_active_model() -> dict[str, Any]:
@@ -2746,7 +2839,12 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
 
     @app.post("/api/model-studio/models/verify")
     def route_verify(req: ModelStudioVerifyRequest) -> dict[str, Any]:
-        return execute_verify(req)
+        try:
+            return execute_verify(req)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise _fail_closed("model-studio/models/verify", exc, resource="verify") from exc
 
     @app.post("/api/model-studio/models/register")
     def route_register_model(req: ModelStudioRegisterRequest) -> dict[str, Any]:

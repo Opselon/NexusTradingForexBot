@@ -38,6 +38,7 @@ from nexus_scalp.bounded_map import BoundedLRUMap
 from nexus_scalp.configuration.config import AlgoConfig
 from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import Position, SymbolInfo, TickData, TradeOrder
+from nexus_scalp.domain.valuation import align_price, min_stop_distance_price
 from nexus_scalp.execution.execution_plan import ExecutionPlan
 from nexus_scalp.execution.hold_score_ledger import HoldScoreLedger
 from nexus_scalp.execution.lifecycle import (
@@ -83,6 +84,11 @@ logger = get_logger("nexus_scalp.execution.order_manager")
 # =============================================================================
 
 #: Absolute ceiling on lot size for any single dispatch, independent of sizing math.
+#: FORENSIC-LANE-BROKER: this is the ENGINE-WIDE safety ceiling and is never
+#: exceeded. The broker's own ``symbol_info.volume_max`` composes with it as a
+#: STRICTER rule only (min(HARD_MAX_LOTS, volume_max)): a broker allowing 500
+#: lots does not relax the engine's 10-lot risk ceiling, but a broker allowing
+#: only 5 tightens it. See DispatchEngine._clamp_dispatch_volume.
 HARD_MAX_LOTS: float = 10.0
 
 #: Maximum simultaneous exposure: 1 active position OR 1 pending order, engine-wide.
@@ -2814,11 +2820,19 @@ class OrderLifecycleManager:
         if not positions:
             return []
 
-        min_stop_gap = (
-            (symbol_info.stops_level * symbol_info.point)
-            if symbol_info and symbol_info.stops_level > 0
-            else 0.25
-        )
+        # FORENSIC-LANE-BROKER: the old fallback `else 0.25` was a PRICE-unit
+        # constant calibrated to 2-digit XAUUSD: on 5-digit EURUSD it became
+        # a 25,000-point gap. Semantics preserved exactly, unit made right:
+        #   broker specifies stops_level -> trust it verbatim (as before);
+        #   broker allows stops at market -> 25 broker POINTS of safety
+        #     (byte-identical 0.25 on XAUUSD);
+        #   no usable spec at all -> legacy 0.25, explicitly documented.
+        if symbol_info and symbol_info.stops_level > 0:
+            min_stop_gap = symbol_info.stops_level * symbol_info.point
+        elif symbol_info and symbol_info.point > 0:
+            min_stop_gap = min_stop_distance_price(0, symbol_info.point, safety_points=25)
+        else:
+            min_stop_gap = 0.25  # legacy XAUUSD-calibrated fallback, spec unknown
         spread = max(current_tick.ask - current_tick.bid, 0.0)
         mid_price = (current_tick.ask + current_tick.bid) * 0.5
 
@@ -3466,9 +3480,27 @@ class OrderLifecycleManager:
                     price_current=price_current,
                     atr=atr,
                     spread=spread,
-                    initial_risk_usd=float(self._initial_risks.get(ticket, 0.0) or 0.0),
+                    # FORENSIC-LANE-BROKER: PR #429 renamed the adviser's risk
+                    # parameter from ``initial_risk_usd`` to
+                    # ``initial_risk_price`` and CHANGED ITS SEMANTICS: it is
+                    # now the initial STOP DISTANCE in PRICE UNITS
+                    # (integration.py: "r_distance = max(|entry-sl|, 0.20)"),
+                    # not the planned dollar risk
+                    # (``_initial_risks[ticket] = volume*contract*risk_price``).
+                    # Passing the USD value would silently divide every R
+                    # multiple the adviser sees by volume*contract_size.
+                    initial_risk_price=(
+                        abs(pos.price_open - pos.sl)
+                        if pos.sl and pos.sl > 0
+                        else (float(atr) * 1.5)
+                    ),
                     holding_duration_sec=0.0,
-                    signal_age=float(self._signal_ages.get(ticket, 0.0) or 0.0),
+                    # FORENSIC-LANE-BROKER: correct parameter name. The call
+                    # passed ``signal_age`` while the function declares
+                    # ``signal_age_bars`` — a TypeError that was masked because
+                    # this branch only executes when the position adviser is
+                    # ENABLED (off by default), so it never fired in tests.
+                    signal_age_bars=float(self._signal_ages.get(ticket, 0.0) or 0.0),
                     model_probability=float(self._entry_confidences.get(ticket, 0.0) or 0.0),
                     model_confidence=float(self._entry_confidences.get(ticket, 0.0) or 0.0),
                 )
@@ -3516,6 +3548,10 @@ class OrderLifecycleManager:
         action = plan.action
         scenario = plan.scenario
         rule_target_sl = plan.rule_target_sl
+        # FORENSIC-LANE-BROKER: digits for stop alignment come from the
+        # broker's own symbol spec (XAUUSD=2, EURUSD=5). The old code used
+        # a fixed round(x, 2) which destroyed 5-digit FX stop prices.
+        pos_digits = int(symbol_info.digits) if symbol_info else 2
         if action == "CLOSE":
             msg_id = self._order_message_ids.get(ticket)
             # Attribute engine-initiated exits to hold-score decay unless a more
@@ -3526,30 +3562,59 @@ class OrderLifecycleManager:
                 f"[EXIT TRACE] EXECUTING BROKER CLOSE for ticket {ticket} | Mechanism: {self._forced_exit_mechanisms.get(ticket)} | Scenario: {scenario}"
             )
 
-            if self.adapter.close_position(ticket=ticket):
+            # FORENSIC-LANE-BROKER (lane 2.6): close_position raises
+            # RuntimeError when the link drops mid-close. The in-loop dispatch
+            # path had NO try/except, so a disconnect propagated up and killed
+            # the management tick. Treat a raised exception as a FAILED close
+            # (position stays tracked; retried next pass) instead of a crash.
+            try:
+                close_ok = bool(self.adapter.close_position(ticket=ticket))
+            except Exception as close_err:
+                logger.warning(
+                    "close_position raised for ticket %s (disconnect/mid-close?): %s "
+                    "— treating as close FAILED, ticket stays tracked",
+                    ticket,
+                    close_err,
+                )
+                close_ok = False
+            if close_ok:
                 # TASK-7 (BUG-087): broker-verified close ordering. The exposure
                 # slot is freed only after the position is confirmed gone from the
                 # broker's live set; the per-ticket trackers survive so the next
                 # management pass writes the single data-rich autopsy row.
-                self._closed_tickets[ticket] = True
-                self._broker_close_verified(ticket)
-                if self.notifier:
-                    self.notifier.notify_early_emergency_cut(
-                        ticket=ticket,
-                        score=hold_score,
-                        reasons=scenario,
-                        saved_usd=pos.profit,
-                        reply_to_message_id=msg_id,
-                    )
-                with self._live_tickets_lock:
-                    self._tickets_cache.pop_ticket(ticket)
+                # FORENSIC-LANE-BROKER: the boolean returned by
+                # ``_broker_close_verified`` was previously DISCARDED — the code
+                # marked the ticket closed and freed exposure unconditionally,
+                # exactly the outcome the helper exists to prevent (a partial-fill
+                # or async close leaves residual volume open at the broker while
+                # the engine believed it gone → ghost position). A close that is
+                # NOT broker-confirmed stays tracked and is re-attempted next pass.
+                if self._broker_close_verified(ticket):
+                    self._closed_tickets[ticket] = True
+                    if self.notifier:
+                        self.notifier.notify_early_emergency_cut(
+                            ticket=ticket,
+                            score=hold_score,
+                            reasons=scenario,
+                            saved_usd=pos.profit,
+                            reply_to_message_id=msg_id,
+                        )
+                    with self._live_tickets_lock:
+                        self._tickets_cache.pop_ticket(ticket)
 
-                # SPLIT-ORDER DESYNC GUARD: a position split across multiple MT5
-                # tickets from the SAME dispatch (same order_id/request) must never
-                # desync into one ticket closed while its sibling keeps trading.
-                # When an emergency/hard exit fires for one leg, propagate the close
-                # to every live sibling leg of the same order.
-                self._close_sibling_legs(ticket, scenario, now)
+                    # SPLIT-ORDER DESYNC GUARD: a position split across multiple MT5
+                    # tickets from the SAME dispatch (same order_id/request) must never
+                    # desync into one ticket closed while its sibling keeps trading.
+                    # When an emergency/hard exit fires for one leg, propagate the close
+                    # to every live sibling leg of the same order.
+                    self._close_sibling_legs(ticket, scenario, now)
+                else:
+                    logger.warning(
+                        "CLOSE NOT CONFIRMED by broker — keeping ticket %s tracked "
+                        "for the next management pass (residual volume may still "
+                        "be open; exposure slot NOT freed)",
+                        ticket,
+                    )
             else:
                 self._forced_exit_mechanisms.pop(ticket, None)
             # loop-body section, so this continue was a no-op in the original code)
@@ -3596,7 +3661,10 @@ class OrderLifecycleManager:
                 if pos.type == OrderType.BUY
                 else pos.price_open - max(self.be_lock, spread)
             )
-            target_sl = round(target_sl, 2)
+            # FORENSIC-LANE-BROKER: fixed round(x,2) destroyed FX stops
+            # (an EURUSD SL at 1.08500 became 1.09). Align to the symbol's
+            # own digits instead.
+            target_sl = align_price(target_sl, None, pos_digits)
             valid_stop = False
             if pos.type == OrderType.BUY:
                 if target_sl > pos.sl and (current_tick.bid - target_sl) >= min_stop_gap:
@@ -3651,13 +3719,14 @@ class OrderLifecycleManager:
                     )
 
         elif action == "NORMAL_TRAIL":
-            trail_distance = max(min_stop_gap, round(atr * 1.15, 2))
+            trail_distance = max(min_stop_gap, align_price(atr * 1.15, None, pos_digits))
             target_sl = (
                 price_current - trail_distance
                 if pos.type == OrderType.BUY
                 else price_current + trail_distance
             )
-            target_sl = round(target_sl, 2)
+            # FORENSIC-LANE-BROKER: fixed round(x,2) destroyed FX stops.
+            target_sl = align_price(target_sl, None, pos_digits)
             valid_stop = False
             if pos.type == OrderType.BUY:
                 if target_sl > pos.sl and (current_tick.bid - target_sl) >= min_stop_gap:
@@ -3727,6 +3796,9 @@ class OrderLifecycleManager:
         loop body for this position; returns False to proceed to the
         decision stage."""
         # --- 0. AI DIRECTION FLIP & FAST REVERSAL PROTECTION ---
+        # Broker digits for stop alignment (was fixed round(x, 2), which
+        # destroyed 5-digit FX stops — see domain/valuation.align_price).
+        pos_digits = int(symbol_info.digits) if symbol_info else 2
         ai_flip_detected = False
         ai_flip_action = None
         if probs is not None:
@@ -3787,7 +3859,17 @@ class OrderLifecycleManager:
                 # reversal protocol rather than a generic manual close.
                 self._forced_exit_mechanisms[ticket] = ExitMechanism.AI_REVERSAL_EXIT
 
-                if self.adapter.close_position(ticket=ticket):
+                try:
+                    close_ok = bool(self.adapter.close_position(ticket=ticket))
+                except Exception as close_err:
+                    logger.warning(
+                        "close_position raised for ticket %s during AI reversal: %s "
+                        "— treating as close FAILED, ticket stays tracked",
+                        ticket,
+                        close_err,
+                    )
+                    close_ok = False
+                if close_ok:
                     if self.notifier:
                         self.notifier.notify_canonical_close(
                             ticket=ticket,
@@ -3921,7 +4003,7 @@ class OrderLifecycleManager:
                 if pos.type == OrderType.BUY
                 else pos.price_open - (peak_win * 0.70) / max(pos.volume * contract_sz, 1.0)
             )
-            target_mfe_sl = round(target_mfe_sl, 2)
+            target_mfe_sl = align_price(target_mfe_sl, None, pos_digits)
 
             valid_stop = False
             if pos.type == OrderType.BUY:

@@ -443,6 +443,17 @@ class AuditRepository:
         # hosts with uptime < interval, the BUG-273 class).
         self._last_overflow_drain: float | None = None
         self.telemetry_dropped: int = 0
+        # CHG-0067 / CR-02: provider-read degradation observability. Every
+        # SQLite-gated read under a non-SQLite provider used to return its
+        # default SILENTLY (None/0/[] with no exception - fail-silent wrong
+        # data). The guard now counts each degraded read (total + per
+        # operation) and warns once per operation, so the degradation is
+        # observable in the metrics surface instead of plausible-looking.
+        self.provider_reads_routed: int = 0
+        self.provider_read_route_errors: int = 0
+        self.provider_read_degraded_total: int = 0
+        self.provider_read_degraded_ops: dict[str, int] = {}
+        self._provider_read_guard_state: dict[str, tuple[float, int]] = {}
         # BUG-226: execution provenance of the account feeding this audit
         # stream ('LIVE' / 'PAPER' / 'SHADOW'). The engine sets this from the
         # effective mode; ledger + snapshot writes read it at write time so a
@@ -1289,7 +1300,12 @@ class AuditRepository:
         a live HALT row on disk; agent-17 probe, 2026-09-10).
         """
         if not self._is_sqlite:
-            return None
+            return self._provider_read_guard(
+                "get_runtime_risk_state",
+                lambda: None,
+                sql="SELECT * FROM runtime_risk_state WHERE id = 1",
+                kind="row",
+            )
         try:
             with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
@@ -1401,7 +1417,10 @@ class AuditRepository:
         Returns (count, newest_loss_close_time_iso).
         """
         if not self._is_sqlite:
-            return 0, ""
+            return self._provider_read_guard(
+                "get_consecutive_losses",
+                lambda: (0, ""),
+            )
         try:
             from nexus_scalp.risk.runtime_safety import evaluate_consecutive_losses_with_time
 
@@ -1441,18 +1460,23 @@ class AuditRepository:
         no-op (UNIQUE(ticket) / UNIQUE(position_id) insert-or-ignore).
         """
         if not self._is_sqlite:
-            return {
-                "orders_total": len(orders or []),
-                "orders_inserted": 0,
-                "orders_duplicates": len(orders or []),
-                "deals_total": len(deals or []),
-                "deals_inserted": 0,
-                "deals_duplicates": len(deals or []),
-                "trades_total": 0,
-                "trades_inserted": 0,
-                "trades_duplicates": 0,
-                "duration_ms": 0.0,
-            }
+            return self._provider_read_guard(
+                "sync_broker_history",
+                lambda: (
+                    {
+                        "orders_total": len(orders or []),
+                        "orders_inserted": 0,
+                        "orders_duplicates": len(orders or []),
+                        "deals_total": len(deals or []),
+                        "deals_inserted": 0,
+                        "deals_duplicates": len(deals or []),
+                        "trades_total": 0,
+                        "trades_inserted": 0,
+                        "trades_duplicates": 0,
+                        "duration_ms": 0.0,
+                    }
+                ),
+            )
         from datetime import UTC as _UTC
         from datetime import datetime as _dt
 
@@ -1478,7 +1502,10 @@ class AuditRepository:
     def get_broker_history_meta(self, symbol: str | None = None) -> dict[str, Any] | None:
         """Returns the persisted sync watermark (None before the first sync)."""
         if not self._is_sqlite:
-            return None
+            return self._provider_read_guard(
+                "get_broker_history_meta",
+                lambda: None,
+            )
         with self._connect_sqlite(5.0) as conn:
             return last_sync_window(conn, symbol or "")
 
@@ -1490,7 +1517,10 @@ class AuditRepository:
     ) -> list[dict[str, Any]]:
         """Reconstructed logical trades, newest exit first."""
         if not self._is_sqlite:
-            return []
+            return self._provider_read_guard(
+                "get_broker_trades",
+                lambda: ([]),
+            )
         clauses: list[str] = []
         args: list[Any] = []
         if symbol:
@@ -1514,7 +1544,10 @@ class AuditRepository:
     ) -> list[dict[str, Any]]:
         """Normalized broker deals (optionally for one position lifecycle)."""
         if not self._is_sqlite:
-            return []
+            return self._provider_read_guard(
+                "get_broker_deals",
+                lambda: ([]),
+            )
         if position_id is not None:
             sql = "SELECT * FROM audit_broker_deals WHERE position_id = ? ORDER BY time ASC LIMIT ?"
             args: tuple[Any, ...] = (int(position_id), int(limit))
@@ -1532,7 +1565,10 @@ class AuditRepository:
     ) -> list[dict[str, Any]]:
         """Normalized broker orders (optionally for one position lifecycle)."""
         if not self._is_sqlite:
-            return []
+            return self._provider_read_guard(
+                "get_broker_orders",
+                lambda: ([]),
+            )
         if position_id is not None:
             sql = (
                 "SELECT * FROM audit_broker_orders WHERE position_id = ? "
@@ -2341,6 +2377,207 @@ class AuditRepository:
         uri = self._db_path.startswith("file:")
         return sqlite3.connect(self._db_path, timeout=timeout, uri=uri)
 
+    # ------------------------------------------------------------------
+    # Provider read guard (CR-02 / CHG-0067)
+    # ------------------------------------------------------------------
+    #: Minimum spacing between repeated degradation warnings for ONE
+    #: operation. The FIRST occurrence always logs; later repeats are
+    #: rate-limited here while ``provider_read_degraded_total`` keeps
+    #: counting every degraded read, so a hot loop cannot flood the
+    #: warning file while staying observable through the counter.
+    _PROVIDER_READ_LOG_INTERVAL_SEC: float = 60.0
+
+    def _provider_read_guard(
+        self,
+        operation: str,
+        default: Callable[[], Any],
+        *,
+        sql: str = "",
+        args: tuple[Any, ...] = (),
+        kind: str = "value",
+    ) -> Any:
+        """Observable non-SQLite fallback for a SQLite-gated read (CR-02).
+
+        Before CHG-0067 every ``if not self._is_sqlite`` read gate returned
+        its default SILENTLY: under PostgreSQL the caller received
+        ``None``/``0``/``[]`` with no exception and no trace - fail-silent
+        wrong data, which the mission forbids (no silent loss of
+        consistency).
+
+        What happens instead:
+
+        1. ROUTE the read through the fabric read plane when one is
+           genuinely registered for the audit domain AND the gate declared
+           its query here (``sql`` + ``args`` + ``kind``). Today the fabric
+           registry holds only the pooled WRITE backend (writes-only
+           adoption), so this branch does not fire in production;
+           per-query PostgreSQL read routing is the documented follow-up
+           wave, not something this guard invents.
+        2. Otherwise make the degradation OBSERVABLE: bump
+           ``provider_read_degraded_total`` (plus a per-operation
+           breakdown), emit ONE structured warning per operation name
+           (repeats rate-limited by ``_PROVIDER_READ_LOG_INTERVAL_SEC``),
+           and only then return ``default()``. Nothing raises into
+        callers: a recoverable issue stays recoverable (mission s91), and
+           a non-recoverable read is now visible in the log and the
+           metrics surface instead of invisible.
+
+        SQLite never reaches this helper - the gates short-circuit first -
+        so SQLite read semantics are unchanged byte for byte.
+
+        No read-plane health surface exists yet (the fabric health probe
+        covers connectivity only), so this counter plus this warning are
+        today's readiness signal for audit read-plane state.
+        """
+        if self._is_sqlite:
+            # Defensive: the gates make this unreachable, and a SQLite read
+            # must never take a degraded path.
+            return default()
+
+        routed, value = self._route_provider_read(operation, sql, args, kind)
+        if routed:
+            self._bump_provider_read_counter("provider_reads_routed")
+            return value
+
+        total = self._bump_provider_read_counter("provider_read_degraded_total")
+        occurrences = self._bump_provider_read_operation(operation)
+        self._warn_provider_read(operation, kind, occurrences, total)
+        return default()
+
+    def _route_provider_read(
+        self,
+        operation: str,
+        sql: str,
+        args: tuple[Any, ...],
+        kind: str,
+    ) -> tuple[bool, Any]:
+        """Serve the declared read from the fabric read plane, if any.
+
+        Returns ``(True, value)`` when a registered READ plane answered and
+        ``(False, None)`` when the read must degrade observably (no query
+        declared, no read plane registered, or the route failed - a failed
+        route is counted and warned, never swallowed).
+        """
+        if not sql or kind == "value":
+            return False, None  # read not declared here: never guess a query
+        plane = self._registered_audit_read_plane()
+        if plane is None:
+            return False, None
+        try:
+            if kind == "rows":
+                return True, list(plane.query(sql, args))
+            if kind == "row":
+                query_one = getattr(plane, "query_one", None)
+                if callable(query_one):
+                    return True, query_one(sql, args)
+                rows = plane.query(sql, args)
+                return True, (rows[0] if rows else None)
+            if kind == "exists":
+                return True, bool(plane.query(sql, args))
+            if kind == "count":
+                return True, int(plane.scalar(sql, args) or 0)
+            return True, plane.scalar(sql, args)
+        except Exception as exc:
+            # A failed route degrades observably: counted + warned here, then
+            # the caller's documented default is returned below.
+            self._bump_provider_read_counter("provider_read_route_errors")
+            logger.warning(
+                "[DB-FABRIC] audit provider read route failed op=%s kind=%s error=%s",
+                operation,
+                kind,
+                type(exc).__name__,
+            )
+            return False, None
+
+    def _registered_audit_read_plane(self) -> Any:
+        """The fabric's registered READ plane for ``audit``, else ``None``.
+
+        ``get_domain_backend(domain, readonly=True)`` is the fabric's
+        read-side accessor. Until a read plane is actually registered there
+        this returns ``None`` and every gated read degrades observably
+        rather than inventing an ad-hoc connection path. A WRITE-shaped
+        backend is refused outright: reads must never share the write path,
+        and the registry's current occupants are pooled write backends.
+        """
+        if self._is_sqlite:
+            return None
+        try:
+            from nexus_scalp.database.fabric import get_domain_backend
+
+            backend = get_domain_backend("audit", readonly=True)
+        except Exception:
+            return None
+        if backend is None:
+            return None
+        if hasattr(backend, "execute") or not hasattr(backend, "query"):
+            return None
+        return backend
+
+    def _bump_provider_read_counter(self, name: str) -> int:
+        """Increment and return one provider-read counter (public attribute)."""
+        value = int(getattr(self, name, 0) or 0) + 1
+        setattr(self, name, value)
+        return value
+
+    def _bump_provider_read_operation(self, operation: str) -> int:
+        """Per-operation breakdown of degraded reads (never capped)."""
+        breakdown = getattr(self, "provider_read_degraded_ops", None)
+        if not isinstance(breakdown, dict):
+            breakdown = {}
+            self.provider_read_degraded_ops = breakdown
+        count = int(breakdown.get(operation, 0)) + 1
+        breakdown[operation] = count
+        return count
+
+    def _warn_provider_read(
+        self,
+        operation: str,
+        kind: str,
+        occurrences: int,
+        total: int,
+    ) -> None:
+        """One structured warning per operation; repeats rate-limited."""
+        state = getattr(self, "_provider_read_guard_state", None)
+        if not isinstance(state, dict):
+            state = {}
+            self._provider_read_guard_state = state
+        now = time.monotonic()
+        last_seen, emissions = state.get(operation, (0.0, 0))
+        if emissions and (now - float(last_seen)) < self._PROVIDER_READ_LOG_INTERVAL_SEC:
+            return  # suppressed by the rate limit; the counter still moves
+        state[operation] = (now, emissions + 1)
+        logger.warning(
+            "[DB-FABRIC] audit provider read degraded op=%s kind=%s emission=%d "
+            "occurrences=%d provider_read_degraded_total=%d -> documented default "
+            "(no read plane registered for domain 'audit'; PostgreSQL read routing "
+            "is the documented follow-up, never a silent loss of consistency)",
+            operation,
+            kind,
+            emissions + 1,
+            occurrences,
+            total,
+        )
+
+    def provider_read_metrics(self) -> dict[str, Any]:
+        """Provider-read observability surface (CR-02 / CHG-0067).
+
+        The degradation must be inspectable by anything that wants a
+        readiness view of audit reads: total + per-operation counts, routed
+        count, route errors and whether a read plane is registered at all.
+        """
+        degraded = int(getattr(self, "provider_read_degraded_total", 0) or 0)
+        return {
+            "provider": "sqlite" if self._is_sqlite else "non-sqlite",
+            "read_plane_registered": self._registered_audit_read_plane() is not None,
+            "provider_reads_routed": int(getattr(self, "provider_reads_routed", 0) or 0),
+            "provider_read_route_errors": int(getattr(self, "provider_read_route_errors", 0) or 0),
+            "provider_read_degraded_total": degraded,
+            "provider_read_degraded_ops": dict(
+                getattr(self, "provider_read_degraded_ops", None) or {}
+            ),
+            "read_degraded": bool(degraded),
+        }
+
     def flush(self, timeout_sec: float = 5.0) -> bool:
         """Boundedly drains the background write queue.
 
@@ -2474,23 +2711,36 @@ class AuditRepository:
         Routes the dead-letter INSERT through the fabric's write plane so a
         PostgreSQL domain keeps durable failure evidence instead of the old
         silent counter increment.
+
+        RTF-002: the backend is resolved LAZILY, at call time, never captured
+        at construction. ``AuditRepository.__init__`` builds the
+        ``DeadLetterStore`` BEFORE ``_build_write_plane()`` runs, and the
+        write plane is what provisions the audit domain on the fabric. A
+        construction-time capture therefore observed ``get_domain_backend``
+        == None on a fresh PostgreSQL process, permanently cached it, and
+        left the store with ``write_sink=None`` — the state that produced
+        ``DEAD-LETTER WRITE IMPOSSIBLE ... financial record unrecoverable``
+        for every failed row. Resolving per call means the first dead-letter
+        that arrives after the plane provisions lands durably.
+
+        Only *reads* the registry (no lazy provisioning): provisioning is the
+        write plane's job, and doing it here could double-provision against a
+        concurrent plane and close a pool that is in use.
         """
         if self._is_sqlite:
-            return None
-        try:
-            from nexus_scalp.database.fabric import get_domain_backend
-
-            backend = get_domain_backend("audit", readonly=False)
-        except Exception:
-            return None
-        if backend is None:
             return None
 
         def _sink(sql: str, args: tuple) -> bool:
             try:
+                from nexus_scalp.database.fabric import get_domain_backend
+
+                backend = get_domain_backend("audit", readonly=False)
+                if backend is None:
+                    return False
                 backend.execute(sql, args)
                 return True
-            except Exception:
+            except Exception as sink_err:
+                logger.error("[DEAD-LETTER] write sink failed: %s", sink_err)
                 return False
 
         return _sink
@@ -2952,7 +3202,10 @@ class AuditRepository:
         """Public recovery surface: how many stranded overflow rows are
         still waiting on disk right now (BUG-285). -1 = unreadable."""
         if not self._is_sqlite:
-            return 0
+            return self._provider_read_guard(
+                "overflow_pending_count",
+                lambda: 0,
+            )
         try:
             d = self._overflow_dir()
             if not d.is_dir():
@@ -3133,10 +3386,10 @@ class AuditRepository:
         """
         window = proposal.generated_at.replace(second=0, microsecond=0).isoformat()
         query = """
-            INSERT INTO audit_guard_telemetry (window_start, symbol, reason_code, count)
+            INSERT INTO audit_guard_telemetry AS t (window_start, symbol, reason_code, count)
             VALUES (?, ?, ?, 1)
             ON CONFLICT(window_start, symbol, reason_code)
-            DO UPDATE SET count = count + 1
+            DO UPDATE SET count = t.count + 1
         """
         args = (window, proposal.symbol, reason_code)
         self._enqueue_telemetry(query, args)
@@ -3309,7 +3562,13 @@ class AuditRepository:
         reconciliation close-loop to attribute broker-history closes.
         """
         if not self._is_sqlite:
-            return False
+            return self._provider_read_guard(
+                "has_ledger_opened",
+                lambda: False,
+                sql=("SELECT 1 FROM audit_ledger WHERE ticket = ? AND status = 'OPENED' LIMIT 1;"),
+                args=(int(ticket),),
+                kind="exists",
+            )
         try:
             with self._connect_sqlite(5.0) as conn:
                 row = conn.execute(
@@ -3340,7 +3599,15 @@ class AuditRepository:
         caller falls through to the broker fetch.
         """
         if not self._is_sqlite:
-            return -1
+            return self._provider_read_guard(
+                "count_ledger_opened_unclosed",
+                lambda: -1,
+                sql=(
+                    "SELECT COUNT(*) FROM audit_ledger WHERE status = 'OPENED' "
+                    "AND COALESCE(exit_price, 0) = 0;"
+                ),
+                kind="count",
+            )
         try:
             with self._connect_sqlite(5.0) as conn:
                 row = conn.execute(
@@ -3389,7 +3656,10 @@ class AuditRepository:
         False (never raises — parity persistence must not disturb trading).
         """
         if not self._is_sqlite:
-            return False
+            return self._provider_read_guard(
+                "record_paper_execution",
+                lambda: False,
+            )
         try:
             with self._connect_sqlite(5.0) as conn:
                 create_paper_executions_table(conn)
@@ -3431,7 +3701,10 @@ class AuditRepository:
         Honest None when there is no data — never a fabricated 0/0.
         """
         if not self._is_sqlite:
-            return {"fills": 0}
+            return self._provider_read_guard(
+                "paper_execution_stats",
+                lambda: ({"fills": 0}),
+            )
         from datetime import UTC, datetime, timedelta
 
         cutoff = (datetime.now(UTC) - timedelta(days=int(days))).isoformat()
@@ -3468,7 +3741,10 @@ class AuditRepository:
         BrokerHistorySyncWorker). Honest zeros when nothing synced.
         """
         if not self._is_sqlite:
-            return {"trades": 0}
+            return self._provider_read_guard(
+                "broker_execution_stats",
+                lambda: ({"trades": 0}),
+            )
         from datetime import UTC, datetime, timedelta
 
         cutoff = (datetime.now(UTC) - timedelta(days=int(days))).isoformat()
@@ -3509,7 +3785,10 @@ class AuditRepository:
         or [] when nothing is captured.
         """
         if not self._is_sqlite:
-            return []
+            return self._provider_read_guard(
+                "get_broker_deals_for_position",
+                lambda: ([]),
+            )
         try:
             with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
@@ -3558,7 +3837,13 @@ class AuditRepository:
         Used by the reconciliation close-loop to rebuild the autopsy context.
         """
         if not self._is_sqlite:
-            return None
+            return self._provider_read_guard(
+                "get_ledger_opened",
+                lambda: None,
+                sql=("SELECT * FROM audit_ledger WHERE ticket = ? AND status = 'OPENED' LIMIT 1;"),
+                args=(int(ticket),),
+                kind="row",
+            )
         try:
             with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
@@ -3761,13 +4046,18 @@ class AuditRepository:
         Calculates precise WinRate, Profit Factor, Drawdown, and historical trade metrics from the ledger.
         """
         if not self._is_sqlite:
-            return {
-                "total_trades": 0,
-                "win_rate": 0.0,
-                "profit_factor": 0.0,
-                "max_drawdown": 0.0,
-                "avg_duration": 0.0,
-            }
+            return self._provider_read_guard(
+                "get_account_performance_metrics",
+                lambda: (
+                    {
+                        "total_trades": 0,
+                        "win_rate": 0.0,
+                        "profit_factor": 0.0,
+                        "max_drawdown": 0.0,
+                        "avg_duration": 0.0,
+                    }
+                ),
+            )
 
         try:
             with self._connect_sqlite(5.0) as conn:
@@ -3860,7 +4150,10 @@ class AuditRepository:
         served as the predictions table.
         """
         if not self._is_sqlite:
-            return []
+            return self._provider_read_guard(
+                "get_recent_predictions",
+                lambda: ([]),
+            )
         try:
             with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
@@ -3900,7 +4193,10 @@ class AuditRepository:
         Retrieves paginated and filtered historical trade logs.
         """
         if not self._is_sqlite:
-            return []
+            return self._provider_read_guard(
+                "get_ledger_trades",
+                lambda: ([]),
+            )
 
         try:
             with self._connect_sqlite(5.0) as conn:
@@ -3925,7 +4221,10 @@ class AuditRepository:
         Retrieves balance/equity growth history for charting.
         """
         if not self._is_sqlite:
-            return []
+            return self._provider_read_guard(
+                "get_equity_growth_chart_data",
+                lambda: ([]),
+            )
 
         try:
             with self._connect_sqlite(5.0) as conn:
@@ -3944,7 +4243,10 @@ class AuditRepository:
         MT5 IPC Telemetry Console (retcodes/reasons, latency, state transitions).
         """
         if not self._is_sqlite:
-            return []
+            return self._provider_read_guard(
+                "get_recent_order_events",
+                lambda: ([]),
+            )
 
         try:
             with self._connect_sqlite(5.0) as conn:
@@ -3967,7 +4269,13 @@ class AuditRepository:
     def get_ledger_row(self, ticket: int) -> dict[str, Any] | None:
         """Returns the full autopsy row for a single ticket, or None when absent."""
         if not self._is_sqlite:
-            return None
+            return self._provider_read_guard(
+                "get_ledger_row",
+                lambda: None,
+                sql="SELECT * FROM audit_ledger WHERE ticket = ?",
+                args=(ticket,),
+                kind="row",
+            )
         try:
             with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
@@ -3984,7 +4292,12 @@ class AuditRepository:
         Typically called once during system boot in live_engine.py.
         """
         if not self._is_sqlite:
-            return None
+            return self._provider_read_guard(
+                "get_last_account_snapshot",
+                lambda: None,
+                sql="SELECT * FROM audit_account_snapshots ORDER BY id DESC LIMIT 1",
+                kind="row",
+            )
 
         try:
             with self._connect_sqlite(5.0) as conn:
@@ -4014,7 +4327,10 @@ class AuditRepository:
     def get_trading_rules(self) -> list[dict[str, Any]]:
         """Retrieves all 30+ trading rules with their enablement status and parameters."""
         if not self._is_sqlite:
-            return []
+            return self._provider_read_guard(
+                "get_trading_rules",
+                lambda: ([]),
+            )
         try:
             with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
@@ -4039,7 +4355,10 @@ class AuditRepository:
     ) -> bool:
         """Toggles the enablement of a trading rule and optionally updates its parameters."""
         if not self._is_sqlite:
-            return False
+            return self._provider_read_guard(
+                "toggle_trading_rule",
+                lambda: False,
+            )
         try:
             # Execute synchronously to avoid thread-safety mismatch with web thread toggles
             with self._connect_sqlite(5.0) as conn:
@@ -4092,7 +4411,10 @@ class AuditRepository:
         from datetime import UTC, datetime, timedelta
 
         if not self._is_sqlite:
-            return {"error": "not sqlite"}
+            return self._provider_read_guard(
+                "purge_old_audit_data",
+                lambda: ({"error": "not sqlite"}),
+            )
 
         sig_days = float(
             signal_retention_days

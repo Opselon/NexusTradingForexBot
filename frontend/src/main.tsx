@@ -13,11 +13,18 @@ import "@/styles/theme.css";
 // FastAPI process) and proxied same-origin in dev via the Vite proxy — so no
 // absolute URL is baked into the bundle.
 
-// Router base: the production bundle is mounted under /alt (web/server.py
-// StaticFiles), while `vite dev` serves at "/". Vite rewrites import.meta.env
-// .BASE_URL at build time from vite.config `base`, so this stays correct in
-// both habitats without a second config source.
-const ROUTER_BASENAME = import.meta.env.BASE_URL.replace(/\/+$/, "") || "/";
+// Router base (CONTRACT #2 — RUNTIME basename, not build-time):
+// the SAME dist is dual-served — the canonical `/` entrypoint and the legacy
+// `/alt` StaticFiles mount (web/server.py) both serve these byte-identical
+// files, so the prefix cannot be known at build time. Derive it from the
+// runtime location: `/alt` exactly or `/alt/...` -> basename "/alt",
+// anything else -> "/". import.meta.env.BASE_URL is "/" for this build and
+// must NOT drive this decision (it is only a dev diagnostics value now).
+function runtimeBasename(): string {
+  const p = window.location.pathname;
+  return p === "/alt" || p.startsWith("/alt/") ? "/alt" : "/";
+}
+const ROUTER_BASENAME = runtimeBasename();
 
 const queryClient = new QueryClient({
   defaultOptions: {

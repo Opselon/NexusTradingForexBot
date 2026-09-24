@@ -25,6 +25,10 @@ from nexus_scalp.domain.models import (
     TradeOrder,
     TradeProposal,
 )
+from nexus_scalp.domain.valuation import (
+    required_margin_estimate,
+    reward_value,
+)
 from nexus_scalp.features.regime_classifier import MarketRegimeState, RegimeType
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.risk.circuit_breakers import (
@@ -52,7 +56,18 @@ class RiskEngine:
         min_risk_reward_ratio: float = 1.8,
         min_rr_high_confidence: float = 1.2,
         high_confidence_threshold: float | None = None,
+        magic_number: int | None = None,
     ) -> None:
+        # FORENSIC-LANE-BROKER: the magic is an execution-policy value, not a
+        # RiskConfig field. The old hardcoded 888101 disagreed with
+        # configs/base.yaml (999101) — orders were stamped with one magic while
+        # the MT5 adapter matched positions with another, silently orphaning
+        # every live order. Callers pass execution.magic_number; the fallback
+        # preserves the legacy value for paths that never set it.
+        if magic_number is None:
+            from nexus_scalp.configuration.config import ExecutionConfig
+
+            magic_number = ExecutionConfig().magic_number
         # THRESHOLD OWNERSHIP (P0 policy-governance): high_confidence_threshold
         # defaults to the canonical AlgoConfig value (same constant the runtime
         # snapshot syncs); the local literal duplicate default is gone.
@@ -61,6 +76,7 @@ class RiskEngine:
 
             high_confidence_threshold = AlgoConfig().high_confidence_threshold
         self.config = config
+        self.magic_number = int(magic_number)
         self.max_margin_usage_pct = max_margin_usage_pct
         self.max_allowed_lots = max_allowed_lots
         self.eta_coefficient = eta_coefficient
@@ -238,12 +254,26 @@ class RiskEngine:
         ):
             clamp_fraction = min(clamp_fraction, float(_cfg_margin_pct) / 100.0)
         maximum_allowed_margin = account.margin_free * clamp_fraction
-        if contract_size > 0 and entry > 0 and account.leverage > 0:
-            max_margin_volume = (maximum_allowed_margin * account.leverage) / (
-                contract_size * entry
-            )
-        else:
-            max_margin_volume = 0.0
+        # FORENSIC-LANE-BROKER: the classic formula
+        # (volume * contract_size * price) / leverage is EXACT on this
+        # account (SYMBOL_CALC_MODE_CFD_LEVERAGE, USD margin currency) —
+        # verified against native order_calc_margin for XAUUSD
+        # (0.01 -> 42.99, 1.0 -> 4298.95) and EURUSD (0.1 -> 113.78). The
+        # derivation is now the SINGLE canonical implementation in
+        # domain/valuation.py instead of N re-implementations; it degrades
+        # to 0.0 when leverage/contract are non-positive rather than
+        # dividing by zero.
+        max_margin_volume = (
+            (maximum_allowed_margin * account.leverage) / (contract_size * entry)
+            if (contract_size > 0 and entry > 0 and account.leverage > 0)
+            else 0.0
+        )
+        max_margin_volume = (
+            maximum_allowed_margin
+            / max(required_margin_estimate(1.0, contract_size, entry, account.leverage), 0.0)
+            if (contract_size > 0 and entry > 0 and account.leverage > 0)
+            else 0.0
+        )
 
         volume = min(volume, max_margin_volume)
 
@@ -589,7 +619,9 @@ class RiskEngine:
             symbol_info.trade_contract_size if symbol_info.trade_contract_size > 0 else 100.0
         )
         leverage = account.leverage if account.leverage > 0 else 100
-        required_margin = (contract_size * proposal.proposed_entry * final_volume) / leverage
+        required_margin = required_margin_estimate(
+            final_volume, contract_size, proposal.proposed_entry, leverage
+        )
         if required_margin > account.margin_free:
             final_volume = 0.0
 
@@ -602,9 +634,14 @@ class RiskEngine:
         # rejecting the proposal.
         slippage_usd = 0.0
         step = symbol_info.volume_step if symbol_info.volume_step > 0 else 0.01
-        tick_val = symbol_info.tick_value if symbol_info.tick_value > 0 else 1.0
         while final_volume >= symbol_info.volume_min:
-            expected_reward_usd = (tp_dist_price / symbol_info.point) * tick_val * final_volume
+            # FORENSIC-LANE-BROKER: use the canonical reward_value law
+            # (vol * contract * tp_dist). The legacy formula
+            # (tp_dist/point)*tick_value*vol produces 10.0 on this broker's
+            # XAUUSD where the actual profit is 100.0 (a 10x understatement
+            # caused by tick_value=0.10 for 0.01 point; see domain/valuation.py).
+            # The canonical law matches mt5.order_calc_profit identically.
+            expected_reward_usd = reward_value(final_volume, contract_size, tp_dist_price)
             slippage_usd = self._estimate_market_impact(
                 final_volume, symbol_info, current_tick, atr, order_type=proposed_order_type
             )
@@ -676,7 +713,7 @@ class RiskEngine:
             price=proposal.proposed_entry,
             stop_loss=proposal.stop_loss,
             take_profit=proposal.take_profit,
-            magic_number=888101,
+            magic_number=self.magic_number,
             comment="NSE_HFT_SIZED",
         )
 

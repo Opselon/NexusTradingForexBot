@@ -30,6 +30,7 @@ import controlCenterMeta from "@/features/control-center";
 import factoryMeta from "@/features/factory";
 import modelStudioMeta from "@/features/model-studio";
 import positionAdviserMeta from "@/features/position-adviser";
+import aiProvidersMeta from "@/features/ai-providers";
 import dependencyMeta from "@/features/dependency";
 import provisioningMeta from "@/features/provisioning";
 import decisionTraceMeta from "@/features/decision-trace";
@@ -92,6 +93,7 @@ const FEATURES: RegisteredFeature[] = [
   // Registered 2026-09-22 (pro-UIUX wave): three complete defineFeature
   // modules were built but never wired, leaving their screens unreachable.
   positionAdviserMeta,
+  aiProvidersMeta,
   dependencyMeta,
   provisioningMeta,
   decisionTraceMeta,

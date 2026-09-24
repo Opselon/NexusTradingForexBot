@@ -31,6 +31,7 @@ import time  # re-export: tests use cmain.time
 
 # Full-path module imports: each import REGISTERS its commands on app (side
 # effect) and gives the dependency graph the same module edges the monolith had.
+import nexus_scalp.cli.browser_launch as browser_launch  # noqa: PLR0402,F401  (CONTRACT #10 seam edge)
 import nexus_scalp.cli.doctor as doctor  # noqa: PLR0402  (full path = graph edge)
 import nexus_scalp.cli.engine_boot as engine_boot  # noqa: PLR0402  (full path = graph edge)
 import nexus_scalp.cli.provision_commands as provision_commands  # noqa: PLR0402,F401 (BUG-293: registers model-provision + train-once)
@@ -49,12 +50,18 @@ register_help_command(app)
 # duplicate + model-* family AFTER start/stop/restart/run. doctor defers that block;
 # it registers here, after engine_boot commands.
 doctor._register_late_commands()
+from nexus_scalp.cli.browser_launch import (
+    maybe_open_browser,  # re-export: tests patch cmain.maybe_open_browser
+)
 from nexus_scalp.cli.engine_boot import _pidfile, _run_engine, _spawn_daemon
 from nexus_scalp.cli.styling import console
 from nexus_scalp.cli.update_cli import _update_exit_code, _update_orchestrator
 from nexus_scalp.cli.wizard import _get_network_endpoints
 from nexus_scalp.release import evaluate as reval  # re-export: tests patch cmain.reval
-from nexus_scalp.release.metadata import get_version_info  # re-export: tests patch this seam
+from nexus_scalp.release.metadata import (
+    CLI_PROGRAM_NAME,
+    get_version_info,  # re-export: tests patch this seam
+)
 
 __all__ = [
     "_get_network_endpoints",
@@ -68,6 +75,7 @@ __all__ = [
     "doctor",
     "engine_boot",
     "get_version_info",
+    "maybe_open_browser",  # CONTRACT #10 browser-launch seam (cli/browser_launch)
     "os",
     "reval",
     "subprocess",
@@ -78,4 +86,4 @@ __all__ = [
 
 
 if __name__ == "__main__":
-    app()
+    app(prog_name=CLI_PROGRAM_NAME)

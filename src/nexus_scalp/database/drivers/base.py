@@ -25,6 +25,11 @@ from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig
 
+#: SEC (py/sql-injection): the only characters admitted into SQL identifier
+#: text. ``quote_ident`` EXTRACTS this match rather than interpolating the
+#: caller's string, so nothing outside the whitelist can reach a statement.
+_IDENT_SHAPE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
 
 class DatabaseDriver(ABC):
     """Abstract persistence driver (SQLite / PostgreSQL)."""
@@ -48,10 +53,22 @@ class DatabaseDriver(ABC):
         return ",".join(f"%s{i}" for i in range(count))  # pyformat
 
     def quote_ident(self, ident: str) -> str:
-        """Validate and quote a simple SQL identifier."""
-        if not isinstance(ident, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", ident) is None:
+        """Validate and quote a simple SQL identifier.
+
+        Returns the whitelist-extracted identifier in double quotes. SEC
+        (py/sql-injection): the accepted characters are pulled out of the input
+        rather than interpolated whole, so the returned SQL text contains only
+        characters the whitelist admits. Note this is defense-in-depth only —
+        CodeQL does not treat regex extraction as a sanitizer-barrier, so the
+        driver-execute dispositions at the console call sites remain the
+        documented resolution for the flagged boundary.
+        """
+        if not isinstance(ident, str):
             raise ValueError("invalid SQL identifier")
-        return f'"{ident}"'
+        m = _IDENT_SHAPE.fullmatch(ident)
+        if m is None:
+            raise ValueError("invalid SQL identifier")
+        return f'"{m.group(0)}"'
 
     def transaction(self, conn: Any = None):
         """Context manager for an atomic unit of work (savepoint-friendly).

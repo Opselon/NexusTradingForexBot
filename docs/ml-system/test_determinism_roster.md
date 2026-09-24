@@ -164,6 +164,15 @@ with no production-code impact — suitable for one cycle each, or a batch.
 4. **`tests/integration/test_mt5_adapter_parity.py`** — 6 `perf_counter()`
    probes. Cross-OS matrix exposure: a timing red on one OS of the matrix is
    the tell for this shape, not a platform bug.
+   **REMEDIATED (ML-QA-007):** all three latency tests now measure
+   `time.process_time()` (CPU time, co-tenant-scheduler-insensitive) after an
+   explicit warmup loop, keep the deterministic invariants (call count,
+   action identity, percentile ordering) hard, and re-attach the <1ms
+   serialization SLA as a CPU-time mean bound. The loopback round-trip bound
+   moved onto the shared `budget_cpu_ms` helper. Contract pinned by
+   `tests/unit/test_ml_qa_007_parity_latency_determinism.py` (19 tests),
+   which fails on the pre-remediation text (verified: 3 `perf_counter`
+   anchors, no warmup, no `calls.clear()`).
 5. **`tests/unit/test_perf_r4_runtime_loop_offload.py`** — 5 synchronizer
    hits; verify none are genuine race sources before discounting.
 6. **`tests/unit/test_experiment_registry.py`** — 4 `perf_counter()` probes
@@ -176,7 +185,18 @@ with no production-code impact — suitable for one cycle each, or a batch.
    a new wall-clock-class flake on CPU time). Contract pinned by
    `tests/unit/test_ml_qa_008_registry_cpu_budget.py` (6 tests), which fails
    on the pre-remediation text (negative control: 5 failed / 1 passed).
-7. **`tests/unit/test_audit_flush_contract.py`** — 4 `monotonic()` probes.
+7. **`tests/unit/test_audit_flush_contract.py`** — 4 `monotonic()` probes
+   (HEAD recount 2026-09-24: ML-QA-004 had already converted the idle-flush
+   bound; ONE probe pair — 2 calls — actually remained).
+   **REMEDIATED (ML-QA-009):** the bounded-wait assert in
+   `test_flush_returns_false_when_worker_stalled` (`elapsed < 2.0` on the
+   wall clock around a wedged `flush(timeout_sec=0.2)`) now uses the shared
+   `budget_cpu_ms(2000.0)` CPU-time helper. `assert ok is False` — the real
+   contract (flush returned instead of deadlocking) — is kept hard; a hang is
+   caught by the CI test timeout, never by a magnitude assert. Dead
+   `import time` removed. Contract pinned by
+   `tests/unit/test_ml_qa_009_audit_flush_cpu_budget.py` (8 tests), which
+   fails on the pre-remediation text (negative control: 3 failed / 5 passed).
 8. **`tests/unit/test_70d_bug106_incremental_phase19.py`** — 4
    `perf_counter()` probes.
 9. **`tests/unit/test_runtime_config_hot_reload.py`** — 2 `getpid()` asserts

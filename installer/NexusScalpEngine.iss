@@ -91,8 +91,11 @@ Name: "{group}\NexusTraderBot Doctor (diagnostics)"; Filename: "{app}\{#MyAppExe
 Name: "{autodesktop}\NexusTraderBot"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Parameters: "health"; Description: "Run post-install health check"; Flags: nowait postinstall skipifsilent
-Filename: "{app}\{#MyAppExeName}"; Parameters: "setup"; Description: "Open first-run setup wizard"; Flags: nowait postinstall skipifsilent
+; EU-07: these two used to launch in PARALLEL (both `nowait`), so the health
+; report and the first-run wizard raced. Health now runs first and the wizard
+; is launched after it finishes.
+Filename: "{app}\{#MyAppExeName}"; Parameters: "health"; Description: "Run post-install health check"; Flags: postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Parameters: "setup"; Description: "Open first-run setup wizard"; Flags: postinstall skipifsilent
 
 [Registry]
 ; Per-user data root marker (used by the CLI to find user data)
@@ -123,9 +126,13 @@ begin
 end;
 
 [UninstallDelete]
-; Remove ONLY application files. User data (config/logs/db/models) is never
-; touched unless the user explicitly selects the checkbox below.
-Type: filesandordirs; Name: "{app}"
+; EU-02: this section is intentionally EMPTY of an {app} recursion. Inno's own
+; uninstall log already removes every file the installer wrote, and the
+; previous `Type: filesandordirs; Name: "{app}"` additionally deleted the user
+; databases / paper state / logs that release/paths.py anchors INSIDE the
+; install tree. Verified before/after with a real install+uninstall cycle.
+; The ticked "Delete my user data" branch below is now the only path that
+; destroys user data.
 
 [Code]
 var
@@ -136,9 +143,10 @@ begin
   // Only shown in interactive uninstalls; silent (/VERYSILENT) uninstalls
   // must complete without input and always preserve user data.
   RemoveDataPage := CreateInputOptionPage(wpReady, 'Preserve your data?', '',
-    'Your trading data (databases, models, configuration, logs) is stored outside ' +
-    'the application folder and is preserved by default. Tick the box below ONLY ' +
-    'if you really want to delete it too.', True, False);
+    'By default your trading data is preserved: databases, paper state, ' +
+    'models, configuration and logs. Some of it lives inside this ' +
+    'application folder, so it survives uninstall unless you delete it. ' +
+    'Tick the box below ONLY if you really want to delete it too.', True, False);
   RemoveDataPage.Add('Delete my user data as well (databases, models, config, logs)');
 end;
 

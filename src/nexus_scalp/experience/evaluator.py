@@ -157,12 +157,21 @@ class StrategyEvaluator:
         (URI contract: shared in-memory DBs need uri=True; raw connects
         treated the URI string as a literal file name and silently created
         junk CWD files — the 2026-09-09 disk-leak class the pre-fix evaluator
-        sites were part of). Duck-typed repository stubs without the seam
-        keep working via the pre-fix raw form; production never takes that
+        sites were part of). INV-001 V1: a repository that DECLARES the seam
+        but does not expose it is a broken duck-typed stub and fails LOUDLY —
+        a silent raw fallback is exactly the bypass that let raw tick-path
+        connects evade the URI contract unnoticed. Only a stub with NO
+        ``_connect_sqlite`` attribute at all (pre-seam duck-typed test
+        double) takes the legacy raw form; production never takes that
         branch.
         """
-        connect = getattr(self.audit_repo, "_connect_sqlite", None)
-        if callable(connect):
+        if hasattr(self.audit_repo, "_connect_sqlite"):
+            connect = self.audit_repo._connect_sqlite  # type: ignore[attr-defined]
+            if not callable(connect):
+                raise TypeError(
+                    "audit repository declares `_connect_sqlite` but it is not callable; "
+                    "refusing a raw sqlite3.connect fallback (INV-001 URI contract)"
+                )
             conn: sqlite3.Connection = connect(timeout)
             return conn
         return sqlite3.connect(self.audit_repo._db_path, timeout=timeout)

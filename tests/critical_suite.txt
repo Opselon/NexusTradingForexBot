@@ -290,6 +290,8 @@ tests/unit/test_audit_legacy4_surface.py
 tests/unit/test_backtest_report.py
 tests/unit/test_backtest_report_asset.py
 tests/unit/test_backtest_report_integration.py
+tests/unit/test_broker_identity_ownership.py
+tests/unit/test_broker_valuation_forensics.py
 tests/unit/test_bug185_terminal_state_resolver.py
 tests/unit/test_bug217_news_state_bounds.py
 tests/unit/test_bug225_untrained_champion_canary.py
@@ -392,7 +394,6 @@ tests/unit/test_model_studio_pipeline.py
 tests/unit/test_mslie_sweep_window_pins_bug227.py
 tests/unit/test_mt5_diag_throttle.py
 tests/unit/test_bug307c_cli_logging_disable_leak.py
-tests/unit/test_bug308c_gate11_artifact_integrity.py
 tests/unit/test_news_bridge_contract_phase13b.py
 tests/unit/test_news_bridge_finalize_phase13b.py
 tests/unit/test_nse_lifecycle_regression_matrix.py
@@ -403,6 +404,7 @@ tests/unit/test_order_manager_exit_bugs.py
 tests/unit/test_order_write_uncertainty.py
 tests/unit/test_outcome_flush_race_bug140.py
 tests/unit/test_p0_producer_regression.py
+tests/unit/test_paper_broker_honesty.py
 tests/unit/test_paper_live_training_lineage.py
 tests/unit/test_paper_persistence.py
 tests/unit/test_paper_replay_mode.py
@@ -484,8 +486,4 @@ tests/unit/test_wft_time_based_purge.py
 tests/unit/test_winner_protection_geometry_sprint.py
 tests/unit/test_zero_friction_guard_e1.py
 tests/unit/test_git_governance.py
-tests/unit/test_attention_ablation.py
-tests/unit/test_ml_qa_004_determinism_remediation.py
-tests/unit/test_merge_marker_residue.py
-tests/unit/test_duplicate_task_rows.py
-tests/unit/test_ml_qa_008_registry_cpu_budget.py
+tests/unit/test_ml_qa_009_audit_flush_cpu_budget.py

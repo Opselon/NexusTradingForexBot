@@ -21,18 +21,20 @@ DO-NOT-PUT-HERE: model commands, update commands, setup wizard.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
+from nexus_scalp.cli import browser_launch
 from nexus_scalp.cli.app_factory import _resolve_facade_seam, app
 from nexus_scalp.cli.styling import (
     MODE_ALIASES,
@@ -42,19 +44,231 @@ from nexus_scalp.cli.styling import (
     _welcome_panel,
     console,
 )
-from nexus_scalp.cli.wizard import _get_network_endpoints
-from nexus_scalp.configuration.config import AppConfig
+
+# NOTE (EU-03): the heavy domain imports (wizard / AppConfig / ExecutionMode)
+# are DELIBERATELY deferred into the functions that use them (see the shims
+# below). They pull torch + polars + networkx (~6s cold on the first
+# `nexus help`), and Typer builds the whole command tree at import time — so a
+# top-level import here is paid by every help listing on the planet.
 from nexus_scalp.domain.enums import ExecutionMode
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.release import exit_codes as xc
 from nexus_scalp.release import paths as rpaths
 from nexus_scalp.release.metadata import get_version_info
 
+if TYPE_CHECKING:
+    # Annotation-only: never imported at runtime (see the NOTE below).
+    from nexus_scalp.configuration.config import AppConfig
+
 logger = get_logger("nexus_scalp.cli.engine_boot")
+
+
+def _heavy_wizard_endpoints(port: int) -> list[str]:
+    from nexus_scalp.cli.wizard import _get_network_endpoints
+
+    return _get_network_endpoints(port=port)
+
+
+def _heavy_first_run_database_choice() -> None:
+    # TASK-EUR-001 (dual-entry law): `nexus start` offers the same
+    # PostgreSQL/SQLite question as `nexus setup` and the double-click launcher
+    # when no database.provider row exists yet. Deferred for the same latency
+    # reason as the other shims.
+    from nexus_scalp.cli.wizard import run_first_run_database_choice
+
+    run_first_run_database_choice()
+
+
+def _heavy_app_config(path: Path) -> AppConfig:
+    from nexus_scalp.configuration.config import AppConfig
+
+    return AppConfig.load_from_yaml(path)
+
+
+def _heavy_app_config_default() -> AppConfig:
+    from nexus_scalp.configuration.config import AppConfig
+
+    return AppConfig()
 
 
 def _pidfile() -> Path:
     return rpaths.get_data_root() / "nexus.pid"
+
+
+# ---------------------------------------------------------------------------
+# ENDUSER-OPERABILITY (EU-03/EU-04): the dashboard is the product's real UI,
+# yet nothing in the whole repository ever opened it or told a user where it
+# is. These helpers give `nexus start` and the new `nexus dashboard` one
+# shared, honest answer to "where is my program?".
+# ---------------------------------------------------------------------------
+
+
+def _dashboard_host(bind_host: str | None = None) -> str:
+    """Host a HUMAN should type in a browser.
+
+    A bound wildcard address (0.0.0.0 / ::) is not a browsable URL, so the
+    loopback name is substituted; anything else is reported verbatim.
+    """
+    host = (bind_host or "127.0.0.1").strip() or "127.0.0.1"
+    return "127.0.0.1" if host in {"0.0.0.0", "::", "[::]"} else host
+
+
+def _dashboard_url(bind_host: str | None = None, port: int | None = None) -> str:
+    if port is None:
+        # Same precedence the rest of the tooling uses (BUG-267): the port the
+        # server ACTUALLY bound after auto-increment beats the configured one.
+        from nexus_scalp.web.auth_boot import resolved_web_port
+
+        port = resolved_web_port()
+    return f"http://{_dashboard_host(bind_host)}:{int(port)}"
+
+
+def _probe_dashboard(url: str, timeout: float = 2.0) -> dict[str, Any]:
+    """Is the dashboard answering? Pure observation — never raises.
+
+    ANY HTTP response (200/401/403/404) proves the product is up and serving:
+    an auth wall is a running application, not a broken one. Only transport
+    failure means "not running", which is a different user action.
+    """
+    import urllib.error
+    import urllib.request
+
+    probe: dict[str, Any] = {"url": url, "reachable": False, "http_status": None}
+    try:
+        with urllib.request.urlopen(f"{url.rstrip('/')}/api/status", timeout=timeout) as resp:
+            probe["http_status"] = int(getattr(resp, "status", 200) or 200)
+            body = resp.read(64 * 1024).decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:  # server answered with a status
+        probe["http_status"] = int(exc.code)
+        body = ""
+        try:
+            body = exc.read(64 * 1024).decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+    except (urllib.error.URLError, OSError, TimeoutError):
+        return probe
+
+    probe["reachable"] = True
+    if body:
+        import json
+
+        with contextlib.suppress(Exception):
+            parsed = json.loads(body)
+            if isinstance(parsed, dict):
+                probe["status"] = parsed
+    return probe
+
+
+def _browser_allowed() -> bool:
+    """Auto-opening a browser is a courtesy, never a side effect in automation.
+
+    Requires an interactive console (stdout is a TTY) AND a non-CI
+    environment AND no explicit opt-out — so `nexus start > log`, CI smoke
+    runs and service launches never spawn a browser.
+    """
+    if os.getenv("NSE_NO_BROWSER", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return False
+    if os.getenv("CI"):
+        return False
+    with contextlib.suppress(Exception):
+        return bool(sys.stdout.isatty())
+    return False
+
+
+def _open_dashboard(url: str) -> bool:
+    """Open the dashboard in the user's default browser. Never raises."""
+    import webbrowser
+
+    with contextlib.suppress(Exception):
+        return bool(webbrowser.open(url))
+    return False
+
+
+@app.command("dashboard")
+def dashboard_cmd(
+    url: str = typer.Option(
+        "", "--url", help="Dashboard URL (default: the engine's recorded address)."
+    ),
+    open_browser: bool = typer.Option(
+        True, "--open/--no-open", help="Open the dashboard in your browser when it is running."
+    ),
+    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+) -> None:
+    """Open / report the web dashboard — 'where is my program?' in one command.
+
+    Exit codes follow the release contract: 0 the product answered, 1 it is
+    not running (with the exact next action), 2 bad usage.
+    """
+    from nexus_scalp.release.product_state import derive_product_state
+
+    target = (url or _dashboard_url()).strip()
+    if not target.startswith(("http://", "https://")):
+        console.print(
+            _error_panel(
+                "Invalid dashboard URL",
+                f"--url must start with http:// or https:// (got {target!r})",
+                exit_code=xc.EXIT_USAGE,
+            )
+        )
+        raise typer.Exit(xc.EXIT_USAGE) from None
+
+    probe = _probe_dashboard(target)
+    state = derive_product_state(probe.get("status"), reachable=probe["reachable"])
+
+    # EU-03: the installer writes <app data root>/dashboard.url.txt as a
+    # "where is my program?" pointer; refresh it with the address that just
+    # answered so support and the user always read the live one.
+    if probe["reachable"]:
+        with contextlib.suppress(Exception):
+            (rpaths.app_data_root() / "dashboard.url.txt").write_text(
+                target.rstrip("/") + "\n", encoding="utf-8"
+            )
+
+    opened = False
+    if probe["reachable"] and open_browser and not json_mode:
+        opened = _open_dashboard(target)
+
+    payload = {
+        "url": target,
+        "reachable": probe["reachable"],
+        "http_status": probe["http_status"],
+        "product_state": state,
+        "opened": opened,
+        "next_action": (
+            "none — the dashboard is open in your browser"
+            if opened
+            else "none — the dashboard answered"
+            if probe["reachable"]
+            else "start the engine first: NexusScalpEngine.exe start  (or just run the app)"
+        ),
+    }
+
+    if json_mode:
+        _emit(payload, True)
+        raise typer.Exit(0 if probe["reachable"] else xc.EXIT_RUNTIME) from None
+
+    if not probe["reachable"]:
+        console.print(
+            _error_panel(
+                "Dashboard not running",
+                f"Nothing is answering at {target}. The product is installed but not started.",
+                hint=(
+                    "Start it: run NexusScalpEngine.exe from the Start Menu, or "
+                    "`nexus start`. Then run `nexus dashboard` again."
+                ),
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
+
+    lines = [
+        f"[bold]Address[/bold]   {target}",
+        f"[bold]Product[/bold]    {state['summary']}",
+        f"[bold]Note[/bold]      {state['reasons']['application']}",
+    ]
+    console.print(Panel("\n".join(lines), title="Dashboard", border_style="green"))
+    if not opened:
+        console.print(f"[dim]Open it in a browser: {target}[/dim]")
 
 
 @app.command("start")
@@ -68,6 +282,11 @@ def start_cmd(
     gateway: bool = typer.Option(False, "--gateway", "-g", help="Force remote gateway adapter."),
     daemon: bool = typer.Option(False, "--daemon", help="Run as background process."),
     port: int = typer.Option(8080, "--port", help="Web dashboard port."),
+    no_browser: bool = typer.Option(
+        False,
+        "--no-browser",
+        help="Do NOT auto-open the Control Center in the browser once the server is ready.",
+    ),
     animate: bool = typer.Option(True, "--animate/--no-animate", help="Animated startup banner."),
     json_mode: bool = typer.Option(
         False, "--json", help="Machine-readable JSON output (no animation)."
@@ -82,7 +301,18 @@ def start_cmd(
     (real orders -- shows red warning + requires confirmation). Web dashboard
     at http://localhost:8080 when running. Symbol comes from config (setup
     default XAUUSD).
+
+    Once the server is READY the Control Center auto-opens in your default
+    browser at the ACTUAL bound port; pass --no-browser (or set
+    NSE_NO_BROWSER=1) to keep it closed. A browser problem never fails the
+    start, and closing the browser never stops the engine.
     """
+    # CONTRACT #6/#10: --no-browser switches the auto-open off for THIS
+    # process. It is recorded in the seam module rather than passed down the
+    # _run_engine facade (that signature is pinned by
+    # tests/unit/test_cli_end_to_end.py) and it is NOT a config key.
+    if no_browser:
+        browser_launch.request_no_browser()
     mode_key = mode.strip().lower()
     if mode_key not in MODE_ALIASES:
         msg = f"mode must be paper|shadow|live (got '{mode}')"
@@ -125,7 +355,7 @@ def start_cmd(
                 )
             raise typer.Exit(xc.EXIT_RUNTIME) from None
         try:
-            cfg = AppConfig.load_from_yaml(config_path)
+            cfg = _heavy_app_config(config_path)
         except Exception as e:
             if json_mode:
                 _emit(
@@ -160,7 +390,7 @@ def start_cmd(
             config_path = None
         if config_path is not None:
             try:
-                cfg = AppConfig.load_from_yaml(config_path)
+                cfg = _heavy_app_config(config_path)
             except Exception as e:
                 if json_mode:
                     _emit(
@@ -185,8 +415,18 @@ def start_cmd(
             # No file -> bootstrap from hard defaults (same values as base.yaml).
             # This is the user story "downloaded release from GitHub, double-
             # clicked the exe, it just works in PAPER".
-            cfg = AppConfig()
+            cfg = _heavy_app_config_default()
             config_path = None  # type: ignore[assignment]
+
+    # FIRST-RUN DATABASE CHOICE (dual-entry law, TASK-EUR-001): `nexus start`
+    # offers the same PostgreSQL/SQLite question as `nexus setup` (wizard.py)
+    # and the double-click launcher (NexusTradingForexBot.py) when no
+    # database.provider row exists yet — the missing prompt that let a
+    # silently-persisted database.provider=postgresql point the runtime at a
+    # dead server. Gated inside: a configured install prompts ZERO times;
+    # --json and non-TTY sessions are never blocked (reason=non_interactive).
+    if not json_mode:
+        _heavy_first_run_database_choice()
 
     if chosen == ExecutionMode.LIVE:
         panel = Panel(
@@ -236,6 +476,10 @@ def start_cmd(
             cmd += ["--config", str(config_path)]
         if gateway:
             cmd.append("--gateway")
+        if no_browser:
+            # The daemon child re-enters `start` in ITS OWN process, where this
+            # process's seam state no longer exists - propagate the flag.
+            cmd.append("--no-browser")
         # daemon is silent + no animate + no welcome
         if json_mode:
             _emit(
@@ -260,7 +504,7 @@ def start_cmd(
     except Exception:
         pass
 
-    endpoints = _get_network_endpoints(port=port)
+    endpoints = _heavy_wizard_endpoints(port)
 
     if json_mode:
         _emit(
@@ -711,6 +955,197 @@ def _print_shutdown_summary(supervisor: Any) -> None:
     )
 
 
+def _browser_host(bind_host: str) -> str:
+    """Host to probe and to open: loopback for a wildcard bind (the norm).
+
+    CONTRACT #10: the operator-facing URL is the ACTUAL bound port (BUG-147),
+    never a hardcoded 8080/8081. A wildcard bind (0.0.0.0/::) is opened on
+    loopback; an explicit interface bind is opened where it really listens.
+    """
+    if bind_host.strip() in ("", "localhost", "0.0.0.0", "::", "[::]"):
+        return "127.0.0.1"
+    return bind_host
+
+
+def _verdict_of(resp: Any) -> str:
+    """Best-effort ``verdict`` read from a /health body (never raises).
+
+    The HealthEngine contract (``nexus_scalp.release.health``) defines the
+    Read the WHOLE body (any fixed cap re-creates a truncation bug when a
+    health check adds a reason) and degrade to UNKNOWN on a malformed body
+    instead of raising, so the caller simply retries.
+    """
+    try:
+        import json as _json
+
+        # Read the WHOLE body: the checks array grows whenever a layer adds a
+        # reason, so any fixed cap re-creates the truncation bug it replaces.
+        raw = resp.read()
+        payload = _json.loads(raw)
+        # Two shapes reach this probe:
+        #  * the v1 success envelope: {"data": {"verdict": ...}, "meta": {...}}
+        #  * a FastAPI error detail (503): {"detail": {"verdict": ...}}
+        for key in ("data", "detail"):
+            node = payload.get(key) if isinstance(payload, dict) else None
+            if isinstance(node, dict) and "verdict" in node:
+                return str(node["verdict"])
+        value = payload.get("verdict") if isinstance(payload, dict) else None
+        return str(value) if value is not None else "UNKNOWN"
+    except Exception:
+        return "UNKNOWN"
+
+
+def _probe_control_center(host: str, port: int) -> tuple[bool, bool, str]:
+    """Blocking readiness probe -> (health_ok, index_ok, phase).
+
+    health_ok: GET /health answered 200 with a verdict that means the app is
+    serving: READY or DEGRADED (the HealthEngine contract maps UNHEALTHY /
+    NOT_READY / 503 to failure). ``index_ok``: GET / answered 200 with a
+    text/html body, i.e. the Control Center index is actually being served
+    (CONTRACT #4/#6) - process spawn is NOT readiness. ``phase`` is a short,
+    credential-free diagnostic word that the caller prints when the gate has
+    not passed.
+    """
+    base = f"http://{host}:{port}"
+    # Loopback self-probe: never detour through an ambient HTTP proxy.
+    import urllib.error
+    import urllib.request
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(f"{base}/health", timeout=2) as resp:
+            status = getattr(resp, "status", 200)
+            verdict = _verdict_of(resp)
+            # The route maps verdicts to statuses: READY/DEGRADED are 200 or
+            # 503 (DEGRADED answers 503 when an optional subsystem is WARNING
+            # - the app is still serving the Control Center), NOT_READY /
+            # UNHEALTHY are 503 too. The VERDICT is authoritative: only
+            # READY / DEGRADED mean "serving". A 4xx means a routing or auth
+            # problem, which is not readiness.
+            if status >= 500 and verdict not in ("READY", "DEGRADED"):
+                return False, False, f"health HTTP {status} verdict {verdict}"
+            if 400 <= status < 500:
+                return False, False, f"health HTTP {status}"
+            if verdict not in ("READY", "DEGRADED"):
+                return False, False, f"health verdict {verdict}"
+    except urllib.error.HTTPError as http_err:
+        # urllib raises HTTPError for 503 (and all non-2xx). The verdict in the
+        # body is still authoritative: a DEGRADED 503 means the Control Center
+        # IS being served and the gate may pass; NOT_READY / UNHEALTHY or an
+        # unreadable body must keep it closed (never a false green).
+        verdict = _verdict_of(http_err)
+        if verdict in ("READY", "DEGRADED"):
+            pass
+        else:
+            return False, False, f"health HTTP {http_err.code} verdict {verdict}"
+    except Exception as exc:
+        return False, False, f"health {type(exc).__name__}"
+    try:
+        with opener.open(f"{base}/", timeout=2) as resp:
+            status = getattr(resp, "status", 200)
+            ctype = (resp.headers.get("Content-Type") or "").lower()
+            if status == 200 and "text/html" in ctype:
+                return True, True, "ready"
+            if status != 200:
+                return True, False, f"index HTTP {status}"
+            return True, False, "index not html"
+    except urllib.error.HTTPError as http_err:
+        return True, False, f"index HTTP {http_err.code}"
+    except Exception as exc:
+        return True, False, f"index {type(exc).__name__}"
+
+
+async def _open_control_center_when_ready(
+    host: str, port: int, *, timeout: float = 30.0, poll_interval: float = 0.25
+) -> dict[str, Any]:
+    """CONTRACT #10 launch sequence: wait for the gate, then open ONE window.
+
+    Gate (retry budget ``timeout``): GET /health 200 AND GET / 200 text/html.
+    Browser/engine isolation (sections 27/56/57): this NEVER raises, a browser
+    problem never fails the engine start, a backend that never reached the gate
+    never opens a browser, and closing the browser never affects the engine.
+    """
+    url = f"http://{host}:{port}/"
+    outcome: dict[str, Any] = {
+        "url": url,
+        "ready": False,
+        "opened": False,
+        "phase": "starting",
+    }
+    try:
+        deadline = time.monotonic() + timeout
+        ready = False
+        phase = "starting"
+        while True:
+            try:
+                health_ok, index_ok, phase = await asyncio.to_thread(
+                    _probe_control_center, host, port
+                )
+            except Exception as probe_err:  # pragma: no cover - probe is guarded
+                health_ok, index_ok, phase = False, False, f"probe {type(probe_err).__name__}"
+            if health_ok and index_ok:
+                ready = True
+                break
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(poll_interval)
+        outcome["ready"] = ready
+        if not ready:
+            # No evidence the server is serving: NEVER open a browser (section
+            # 57) and never claim a readiness we do not have.
+            outcome["phase"] = f"timeout after {timeout:g}s ({phase})"
+            console.print(
+                Panel(
+                    f"[bold yellow]SERVER NOT READY[/bold yellow]  {url}\n"
+                    f"[dim]phase: {outcome['phase']} - Control Center not opened[/dim]",
+                    border_style="yellow",
+                )
+            )
+            return outcome
+        outcome["phase"] = phase
+        # The gate passed: exactly one window, subject to the --no-browser /
+        # NSE_NO_BROWSER / isatty precedence. Failure is logged as a safe
+        # reason inside the seam and must not disturb the running engine.
+        # The handoff runs off-loop: webbrowser can block for a beat and the
+        # engine tick must never wait on a browser. Readiness is a SERVER fact
+        # (sections 27/56): an exception here must not flip it back to False.
+        open_err = ""
+        try:
+            outcome["opened"] = bool(
+                await asyncio.to_thread(browser_launch.maybe_open_browser, url)
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as open_fault:  # pragma: no cover - seam never raises
+            open_err = type(open_fault).__name__
+            logger.warning("[CONTROL-CENTER] browser auto-open isolated: %s", open_err)
+        state = browser_launch.auto_open_state()
+        if outcome["opened"]:
+            detail = "opened in your browser"
+        elif open_err:
+            detail = f"auto-open failed ({open_err}, safe reason in the log)"
+        elif not state["enabled"]:
+            detail = f"disabled ({state['reason']})"
+        else:
+            detail = "not opened (safe reason in the log)"
+        console.print(
+            Panel(
+                f"[bold green]SERVER READY[/bold green]  {url}\n"
+                f"[dim]phase: {phase} - auto-open: {detail}[/dim]",
+                border_style="green",
+            )
+        )
+        return outcome
+    except asyncio.CancelledError:
+        raise
+    except Exception as gate_err:  # the gate must never fail the engine start
+        outcome["ready"] = False
+        outcome["opened"] = False
+        outcome["phase"] = f"error {type(gate_err).__name__}"
+        logger.warning("[CONTROL-CENTER] readiness gate isolated: %s", type(gate_err).__name__)
+        return outcome
+
+
 def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
     import asyncio
 
@@ -846,9 +1281,23 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
     async def run_concurrently() -> None:
         # The supervisor's request side is signal-safe; the drain runs here,
         # on the loop, when the engine's own loop has exited.
+        # CONTRACT #6/#10: probe the readiness gate in the background on this
+        # loop and open the Control Center at the ACTUAL bound port once
+        # /health and / (HTML) are live. ``uvicorn_config.port`` (not the
+        # remembered 8080/8081 default) is the port uvicorn really binds.
+        launch_task = asyncio.create_task(
+            _open_control_center_when_ready(_browser_host(bind_host), int(uvicorn_config.port))
+        )
         try:
             await asyncio.gather(server.serve(), engine.run_loop(), return_exceptions=False)
         finally:
+            # A bind/startup failure lands here BEFORE the gate ever saw a
+            # 200, so cancelling guarantees a backend failure never opens a
+            # browser (section 57). Await the cancellation so the task can
+            # never outlive the loop it was created on.
+            launch_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await launch_task
             # RuntimeLoop calls _shutdown_async on its way out; the
             # supervisor is the bounded fallback if it did not.
             await supervisor.wait_for_shutdown()
@@ -859,6 +1308,21 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
         # task-cancelling default. (Runner only installs its own SIGINT
         # handler when the current one is the default.)
         _install_supervisor_handlers(supervisor)
+        # EU-03: the user is now looking at a console, not a browser. Tell
+        # them exactly where the product's real UI lives, and open it when
+        # the launch is interactive. A daemonized/silent run never opens
+        # anything (_browser_allowed gates it), so automation is unaffected.
+        dash = _dashboard_url(bind_host, port)
+        console.print(
+            Panel(
+                f"[bold green]Web dashboard:[/bold green] [bold]{dash}[/bold]\n"
+                f"[dim]Open it any time with:  nexus dashboard[/dim]",
+                title="Ready",
+                border_style="green",
+            )
+        )
+        if _browser_allowed():
+            _open_dashboard(dash)
         asyncio.run(run_concurrently())
     except KeyboardInterrupt:
         console.print(
@@ -976,7 +1440,7 @@ def run_cmd(
         console.print(_error_panel("Config not found", str(config_path), hint="Run nexus setup"))
         raise typer.Exit(xc.EXIT_RUNTIME) from None
     try:
-        cfg = AppConfig.load_from_yaml(config_path)
+        cfg = _heavy_app_config(config_path)
     except Exception as e:
         console.print(_error_panel("Config invalid", str(e), exit_code=xc.EXIT_RUNTIME))
         raise typer.Exit(xc.EXIT_RUNTIME) from None

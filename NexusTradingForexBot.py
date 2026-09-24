@@ -409,6 +409,29 @@ def run_infrastructure_doctor(config_path: Path) -> bool:
     return True
 
 
+def prompt_first_run_database_choice() -> None:
+    """First-run database provider choice for the double-click launcher.
+
+    DUAL-ENTRY LAW: the launcher must offer the SAME PostgreSQL-or-SQLite
+    question as `nexus setup` (cli/wizard.py) and `nexus start`
+    (cli/engine_boot.py) — NSE never asked, while a silently-persisted
+    database.provider=postgresql (actor 'db-fabric') later sent the runtime
+    at a dead server. Console prompt in the same style as the LIVE
+    confirmation in main() (typer/input). Gated inside the shared step: it
+    fires ONLY when no database.provider row exists (a configured install
+    gets ZERO new prompts) and never blocks a non-TTY session. Failure-
+    isolated: a prompt fault must never stop a boot.
+    """
+    if not sys.stdin.isatty():
+        return
+    try:
+        from nexus_scalp.cli.wizard import run_first_run_database_choice
+
+        run_first_run_database_choice()
+    except Exception as err:
+        logger.warning("[DB] first-run database choice skipped (non-fatal): %s", err)
+
+
 def main() -> None:
     """
     Primary application entry point and engine orchestrator launcher.
@@ -464,8 +487,24 @@ def main() -> None:
         action="store_true",
         help="Disable animated startup banners (CI / plain terminals).",
     )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help=(
+            "Do NOT auto-open the Web Control Center in the browser once the "
+            "server is ready (headless / CI / server runs)."
+        ),
+    )
 
     args = parser.parse_args()
+    # CONTRACT #10: the --no-browser flag switches the Control Center auto-open
+    # off for THIS launcher process (mirrors `nexus start --no-browser`). It is
+    # NOT a config key and it is never required for a headless run — a
+    # redirected/non-TTY stdout already disables the open.
+    if args.no_browser:
+        from nexus_scalp.cli import browser_launch
+
+        browser_launch.request_no_browser()
 
     config_path = Path(args.config)
 
@@ -516,6 +555,12 @@ def main() -> None:
             )
         )
         sys.exit(1)
+
+    # 2.5 FIRST-RUN DATABASE CHOICE (dual-entry law): the double-click launcher
+    # asks the same PostgreSQL-or-SQLite question as `nexus setup` and
+    # `nexus start`. Console prompt, same style as the LIVE confirmation below;
+    # gated inside to zero prompts on an already-configured install.
+    prompt_first_run_database_choice()
 
     # 3. Load & Validate System Configuration
     console.print(
@@ -801,6 +846,31 @@ def main() -> None:
                 # RuntimeLoop falls through to _shutdown_async when the loop
                 # exits normally; the supervisor is the bounded fallback.
                 await supervisor.wait_for_shutdown()
+
+        # CONTRACT #10: auto-open the Control Center ONCE, only after /health
+        # answers 200 AND / answers 200 html, at the ACTUAL bound port
+        # (BUG-267 web_port auto-increments past an occupied 8080 -> 8081, so
+        # this is NEVER a hardcoded 8080/8081). Runs on a daemon thread: the
+        # engine never blocks on and never depends on the browser (section 27),
+        # and a browser failure is logged and dropped. The canonical loopback
+        # URL is used because this launcher binds 127.0.0.1 explicitly.
+        from nexus_scalp.cli import browser_launch
+
+        def _control_center_report(diag: dict) -> None:
+            # SERVER READY + actual URL + phase diagnostic whenever the window
+            # did not open; the opened case is self-evident but equally clear.
+            console.print(
+                Panel(
+                    browser_launch.report_ready_or_opened(diag),
+                    border_style="green",
+                    box=box.ROUNDED,
+                )
+            )
+
+        browser_launch.start_browser_worker(
+            browser_launch.canonical_root_url(int(uvicorn_config.port)),
+            reporter=_control_center_report,
+        )
 
         try:
             # Register BEFORE the loop runs: asyncio's Runner installs its

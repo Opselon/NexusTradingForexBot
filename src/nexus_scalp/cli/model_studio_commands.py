@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import typer
 from fastapi import HTTPException
@@ -569,3 +570,92 @@ def model_verify_command(
         )
 
     console.print(table)
+
+
+@app.command("position-adviser-packages")
+def position_adviser_packages_command(
+    json_output: bool = typer.Option(False, "--json", help="Emit raw JSON envelope"),
+) -> None:
+    """List Position-Adviser model packages and verify artifact integrity OFFLINE.
+
+    Reads the adviser artifacts directory only (no engine, no live serving
+    state): for every ``<id>.pt`` it applies the SAME package-integrity gate
+    the serving load applies (weights/scaler sha256 + feature-schema pins from
+    the ``<id>.meta.json`` sidecar). This command VERIFIES artifacts; it never
+    loads, activates, promotes or serves a model, and it never implies any
+    prediction was executed.
+    """
+    from nexus_scalp.position_adviser.paths import resolve_under_root
+    from nexus_scalp.position_adviser.service import (
+        AdviserConfig,
+        verify_package_integrity,
+    )
+
+    root = Path.cwd()
+    cfg = AdviserConfig()
+    try:
+        art_dir = resolve_under_root(cfg.artifact_dir, root=root, label="adviser artifact dir")
+    except Exception as err:  # containment refusal must not crash the CLI
+        if json_output:
+            typer.echo(json.dumps({"status": "ERROR", "detail": str(err)}, indent=2))
+        else:
+            console.print(f"[bold red]✗ artifact directory rejected: {err}[/bold red]")
+        raise typer.Exit(code=1) from err
+
+    packages: list[dict[str, object]] = []
+    if art_dir.is_dir():
+        for w in sorted(art_dir.glob("*.pt")):
+            chk = verify_package_integrity(w)
+            manifest = chk["manifest"] if isinstance(chk["manifest"], dict) else {}
+            packages.append(
+                {
+                    "model_id": w.stem,
+                    "weights": w.name,
+                    "weights_sha256": chk["weights_sha256"],
+                    "integrity": "REJECTED"
+                    if chk["reject"]
+                    else ("verified" if chk["manifest"] else chk["reason"]),
+                    "reject_reason": chk["reject"] or "",
+                    "source_dataset_hash": manifest.get("source_dataset_hash", ""),
+                    "created_at": manifest.get("created_at", ""),
+                }
+            )
+
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {"status": "OK", "artifact_dir": str(art_dir), "packages": packages},
+                indent=2,
+            )
+        )
+        return
+
+    table = Table(
+        title="Position Adviser Model Packages (artifact audit — nothing is served by this command)",
+        border_style="cyan",
+    )
+    table.add_column("Model ID", style="bold white")
+    table.add_column("Integrity", style="cyan")
+    table.add_column("Source Dataset (sha256 prefix)", style="green")
+    table.add_column("Created", style="green")
+    table.add_column("Weights sha256 (prefix)", style="dim")
+
+    for p in packages:
+        integ = str(p["integrity"])
+        color = "green" if integ == "verified" else ("red" if integ == "REJECTED" else "yellow")
+        table.add_row(
+            str(p["model_id"]),
+            f"[{color}]{integ}[/{color}]",
+            str(p["source_dataset_hash"])[:16] or "-",
+            str(p["created_at"]) or "-",
+            str(p["weights_sha256"])[:16] or "-",
+        )
+    console.print(table)
+    if not packages:
+        console.print("[yellow]No adviser packages found in the artifacts directory.[/yellow]")
+    rejected = sum(1 for p in packages if p["integrity"] == "REJECTED")
+    if rejected:
+        console.print(
+            f"[bold red]{rejected} package(s) FAILED integrity verification and must not be served.[/bold red]"
+        )
+        raise typer.Exit(code=1)

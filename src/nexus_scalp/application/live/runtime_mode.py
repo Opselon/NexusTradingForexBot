@@ -140,6 +140,20 @@ class RuntimeModeService:
                     timeout=getattr(mt5_cfg, "timeout_ms", 5000),
                     retries=getattr(mt5_cfg, "retries", 3),
                 )
+                # FORENSIC-LANE-BROKER: a freshly swapped adapter must
+                # re-discover identity from CONFIG (mission §45) — never
+                # inherit stale magic/symbol assumptions from the previous
+                # provider. Failure-isolated; None leaves the fallback.
+                with contextlib.suppress(Exception):
+                    if hasattr(new_adapter_direct, "configure_broker_identity"):
+                        new_adapter_direct.configure_broker_identity(
+                            magic=getattr(
+                                getattr(self.config, "execution", None), "magic_number", None
+                            ),
+                            bot_symbol=getattr(
+                                getattr(self.config, "execution", None), "symbol", None
+                            ),
+                        )
                 self.adapter = new_adapter_direct
                 self.order_manager.adapter = new_adapter_direct
                 self.order_manager.mt5_adapter = new_adapter_direct

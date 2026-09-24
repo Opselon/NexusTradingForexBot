@@ -19,6 +19,7 @@ import { TraceEventList } from "./TraceEventList";
 import { TraceGraphCanvas } from "./TraceGraphCanvas";
 import { TraceHeader } from "./TraceHeader";
 import { TraceInspector } from "./TraceInspector";
+import { TraceInspectors } from "./TraceInspectors";
 import { TraceTimeline } from "./TraceTimeline";
 import { TraceToolbar } from "./TraceToolbar";
 import {
@@ -39,6 +40,7 @@ import {
 } from "../useCases";
 
 import "../decision-trace.css";
+import "../traceInspectors.css";
 
 type Panel = "canvas" | "events" | "decisions";
 
@@ -72,6 +74,7 @@ function streamStatusLabel(t: PageT, status: string): string {
 export default function DecisionTracePage({ snapshot }: ShellPageProps) {
   const t = useI18n((s) => s.t);
   const [panel, setPanel] = useState<Panel>("canvas");
+  const [inspectorCompact, setInspectorCompact] = useState(true);
   const [comparePair, setComparePair] = useState<
     [import("../types").DecisionRow, import("../types").DecisionRow] | null
   >(null);
@@ -302,6 +305,9 @@ export default function DecisionTracePage({ snapshot }: ShellPageProps) {
             replayEvent={replayEvent}
             onClose={() => useDecisionTraceStore.getState().selectBundle(null, "LIVE")}
           />
+          {/* §74 desktop layout: lane-D forensics column sits beside the graph
+           * (never over it), compact by default. */}
+          <TraceInspectors compact={inspectorCompact} onToggleCompact={() => setInspectorCompact((v) => !v)} />
           {selectedNodeStage ? (
             <NodeStagePanel
               stage={selectedNodeStage}

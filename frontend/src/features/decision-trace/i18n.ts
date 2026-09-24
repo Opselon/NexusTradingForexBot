@@ -284,7 +284,12 @@ export const MESSAGES: FeatureMessages = {
   // ---- batch 3: replay controls + canvas
   "trace.replay.start_hint": { fa: "بازپخش گام‌به‌گام این ردپا (فقط رویدادهای ثبت‌شده — موتور هرگز به عقب برنمی‌گردد)", de: "Trace schrittweise abspielen (nur aufgezeichnete Ereignisse — die Engine wird nie zurückgespult)", es: "Reproducir este trace paso a paso (solo eventos registrados — el motor nunca se rebobina)", ar: "إعادة تشغيل هذا التتبع خطوة بخطوة (أحداث مسجَّلة فقط — لا يُرجَع بالمحرك أبدًا)" },
   "trace.replay.region": { fa: "کنترل‌های بازپخش", de: "Wiedergabesteuerung", es: "Controles de reproducción", ar: "عناصر تحكم إعادة التشغيل" },
-  "trace.canvas.region": { fa: "توپولوژی زمان اجرا", de: "Laufzeit-Topologie", es: "Topología en tiempo de ejecución", ar: "طوبولوجية وقت التشغيل" },
+  "trace.canvas.region": { fa: "توپولوژی علیّ زمان اجرا", de: "Laufzeit-Kausal-Topologie", es: "Topología causal en tiempo de ejecución", ar: "طوبولوجية السببية في وقت التشغيل" },
+  "trace.canvas.terminal": { fa: "پایانی", de: "terminal", es: "terminal", ar: "نهائي" },
+  "trace.canvas.provenance_gap": { fa: "شکاف منشأ", de: "PROVENANCE GAP", es: "BRECHA DE PROCEDENCIA", ar: "فجوة المنشأ" },
+  "trace.canvas.fit": { fa: "جا دادن گراف به نما", de: "Graph an Ansicht anpassen", es: "Ajustar el grafo a la vista", ar: "ملاءمة الرسم البياني للعرض" },
+  "trace.canvas.toggle_autofocus": { fa: "تغییر تمرکز خودکار", de: "Auto-Fokus umschalten", es: "Alternar el enfoque automático", ar: "تبديل التركيز التلقائي" },
+  "trace.canvas.autofocus_tip": { fa: "دنبال‌کردن خودکار جدیدترین مرحله مشاهده‌شده", de: "Der neuesten beobachteten Phase automatisch folgen", es: "Seguir automáticamente la última etapa observada", ar: "متابعة أحدث مرحلة ملاحظة تلقائيًا" },
   "trace.canvas.zoom_aria": { fa: "کنترل‌های بزرگ‌نمایی", de: "Zoomsteuerung", es: "Controles de zoom", ar: "عناصر تحكم التكبير" },
 
   // ---- batch 3b: page banners, tabs, integrity, stage panel
