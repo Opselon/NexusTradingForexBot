@@ -606,15 +606,24 @@ def provision_domain(domain: str, dsn: str, **pool_kwargs: Any) -> Any:
             domain,
             exc,
         )
-    read_backend = fabric.read_backend(domain)
-    # Same pool-not-opened-by-fabric.open() hazard as the write plane, with a
-    # worse symptom: an un-opened read pool raises only on the first checkout,
-    # so the reads would degrade (not crash) while the schema is fine — the
-    # exact fail-silent shape the read guard exists to make visible.
-    read_open = getattr(read_backend, "open", None)
-    if callable(read_open):
-        with contextlib_suppress():
-            read_open()
+    read_backend: Any = None
+    try:
+        read_backend = fabric.read_backend(domain)
+        # Same pool-not-opened-by-fabric.open() hazard as the write plane, with a
+        # worse symptom: an un-opened read pool raises only on the first checkout,
+        # so the reads would degrade (not crash) while the schema is fine — the
+        # exact fail-silent shape the read guard exists to make visible.
+        read_open = getattr(read_backend, "open", None)
+        if callable(read_open):
+            with contextlib_suppress():
+                read_open()
+    except AttributeError:
+        # A domain whose schema could not be authored has no read plane to
+        # register: read_backend() resolves the plane through the same domain
+        # registry. The schema gap was already logged at ERROR above; leaving
+        # the read slot empty keeps the guard's documented degradation path
+        # (observable default, not a crash) for genuinely-unknown domains.
+        read_backend = None
     register_domain_backend(domain, backend)
     register_domain_read_backend(domain, read_backend)
     return backend

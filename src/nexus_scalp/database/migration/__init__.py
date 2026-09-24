@@ -61,7 +61,7 @@ def _domain_statements(domain: str) -> list[str]:
     Raises :class:`NotImplementedError` for a domain with no authored DDL so the
     caller can distinguish "not provisioned yet" from a genuine failure.
     """
-    from nexus_scalp.database import migration
+    from nexus_scalp.database.migration import schema_snapshot
 
     extractor_name = _DOMAIN_STATEMENTS.get(domain)
     if extractor_name is None:
@@ -69,7 +69,7 @@ def _domain_statements(domain: str) -> list[str]:
             f"migration is not authored for domain {domain!r} "
             f"(known: {', '.join(sorted(_DOMAIN_STATEMENTS))})"
         )
-    return list(getattr(migration.schema_snapshot, extractor_name)())
+    return list(getattr(schema_snapshot, extractor_name)())
 
 
 def migrate_domain(
