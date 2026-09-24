@@ -319,7 +319,10 @@ Copy-Item (Join-Path $Root "docs\*") (Join-Path $Stage "docs") -Recurse -Force
 Copy-Item (Join-Path $Root "build-info.json") (Join-Path $Stage "build-info.json") -Force
 # Portable Web must mirror _internal/Web for the web server fallback (empty portable/Web broke production panel)
 $portableWeb = Join-Path $Stage "Web"
-$internalWeb = Join-Path $Stage "_internal" "Web"
+# Join-Path takes exactly two positional args on Windows PowerShell 5.1 (the
+# release host shell here); only pwsh 7 accepts three. Nest the calls so the
+# script is semantically identical on both 5.1 and CI's pwsh 7.
+$internalWeb = Join-Path (Join-Path $Stage "_internal") "Web"
 if (Test-Path $internalWeb) {
     if (Test-Path $portableWeb) { Remove-Item $portableWeb -Recurse -Force -ErrorAction SilentlyContinue }
     Copy-Item $internalWeb $portableWeb -Recurse -Force
