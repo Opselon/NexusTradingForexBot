@@ -144,13 +144,17 @@ def sanitize_name(raw: str | None, *, fallback: str) -> str:
 
 
 #: Shape barrier for a path string entering ``resolve_within_trusted_roots``:
-#: optional drive + safe nested dirs/filenames (hyphens and spaces allowed, so
-#: ``C:\\Users\\John Doe\\...`` matches). A segment can never START with ``.``,
-#: so ``..`` traversal, a NUL, a newline and shell metacharacters can never
-#: match — the same whitelist contract as ``_SAFE_REL`` above, extended with a
-#: drive prefix for absolute values.
+#: optional drive + optional POSIX leading slash + safe nested dirs/filenames
+#: (hyphens and spaces allowed, so ``C:\\Users\\John Doe\\...`` and
+#: ``/home/runner/...`` both match). A segment can never START with ``.``, so
+#: ``..`` traversal, a NUL, a newline and shell metacharacters can never match —
+#: the same whitelist contract as ``_SAFE_REL`` above, extended with a drive
+#: and root prefix for absolute values. A UNC prefix (``\\server\\share``) is
+#: deliberately NOT matched: it needs a backslash-leading separator, which only
+#: the Windows-drive branch may consume.
 _SAFE_ABS_OR_REL = re.compile(
-    r"(?:[A-Za-z]:[\\/]{1,2})?(?:[A-Za-z0-9_ -][A-Za-z0-9_ .-]{0,127}[\\/])*"
+    r"(?:[A-Za-z]:[\\/]{1,2})?/?"
+    r"(?:[A-Za-z0-9_ -][A-Za-z0-9_ .-]{0,127}[\\/])*"
     r"[A-Za-z0-9_ -][A-Za-z0-9_ .-]{0,191}"
 )
 
@@ -173,10 +177,16 @@ def resolve_within_trusted_roots(raw: str | Path, roots: list[Path]) -> Path | N
     symlinks.
     """
     s = str(raw or "").strip()
-    if not s or not _SAFE_ABS_OR_REL.fullmatch(s):
+    if not s:
+        return None
+    # Barrier: the matched STRING (not the raw input) is the only value the
+    # path machinery below may see — same match-object flow as
+    # ``sanitize_rel_path``, which CodeQL treats as untainted.
+    m = _SAFE_ABS_OR_REL.fullmatch(s)
+    if m is None:
         return None
     try:
-        resolved = Path(s).expanduser().resolve()
+        resolved = Path(m.group(0)).resolve()
     except (OSError, ValueError):
         return None
     for root in roots:

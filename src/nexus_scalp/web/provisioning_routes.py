@@ -169,7 +169,7 @@ def _resolve_within_import_roots(raw: str) -> Path:
 #: segments. ``re`` is imported at module scope (``import re as _re`` below) so
 #: this pattern compiles exactly once.
 _IMPORT_PATH_SHAPE = _re.compile(
-    r"(?:[A-Za-z]:[\\/]{1,2})?"  # optional Windows drive (operator-chosen abs path)
+    r"(?:[A-Za-z]:[\\/]{1,2})?/?"  # optional Windows drive and/or POSIX root slash
     r"(?:[A-Za-z0-9_ -][A-Za-z0-9_ . -]{0,127}[\\/])*"  # safe nested dirs (spaces permitted)
     r"[A-Za-z0-9_ -][A-Za-z0-9_ . -]{0,191}"  # final file name (incl. extension dots and spaces)
 )

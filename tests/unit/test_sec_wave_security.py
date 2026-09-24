@@ -225,6 +225,41 @@ class TestProvisioningImportPath:
         with pytest.raises(ValueError):
             pr._allowed_import_path(str(f))
 
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            "/tmp/../etc/passwd",
+            "/etc/passwd",
+            "/../../root/.ssh/id_rsa",
+        ],
+    )
+    def test_posix_absolute_outside_roots_refused(
+        self, payload: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """POSIX-absolute shapes must REACH the containment boundary.
+
+        The shape barrier used to reject every leading-``/`` path on sight, so
+        on Linux CI it refused legitimate absolute inputs outright (the ubuntu
+        critical-suite failure) and never exercised the trust boundary below.
+        The barrier now admits a POSIX root and the containment loop refuses
+        anything outside an allowed root.
+        """
+        import os
+
+        from nexus_scalp.web import provisioning_routes as pr
+
+        root = tmp_path / "imports"
+        root.mkdir()
+        monkeypatch.setenv(pr._IMPORT_ROOTS_ENV, str(root))
+        with pytest.raises(ValueError):
+            pr._allowed_import_path(payload)
+        # The refusal is containment, not a shape miss: a legit POSIX-absolute
+        # file under the root still resolves.
+        f = os.path.join(str(root), "xauusd_M1.csv")
+        with open(f, "w", encoding="utf-8") as fh:
+            fh.write("time,open,high,low,close\n")
+        assert pr._allowed_import_path(f) == Path(f).resolve()
+
     def test_error_message_does_not_echo_payload(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
@@ -657,3 +692,15 @@ class TestResolveWithinTrustedRoots:
         got = resolve_within_trusted_roots("data/imports/some folder", [REPO_ROOT.resolve()])
         assert got is not None
         assert got.is_relative_to(REPO_ROOT.resolve())
+
+    def test_posix_absolute_under_root_accepted(self) -> None:
+        """CI runs on Linux: a leading-``/`` path must reach containment.
+
+        The shape barrier previously rejected POSIX-absolute paths on sight
+        (no drive letter), which broke the ubuntu critical-suite gate.
+        """
+        from nexus_scalp.position_adviser.paths import resolve_within_trusted_roots
+
+        got = resolve_within_trusted_roots("/tmp/probe/xauusd_M1.csv", [Path("/")])
+        assert got is not None
+        assert got.is_absolute()
