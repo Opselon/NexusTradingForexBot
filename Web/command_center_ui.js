@@ -12,6 +12,16 @@
 (function () {
   'use strict';
 
+  // i18n seam (P3): local helper mirroring the ux_signal.js:24-27 pattern.
+  // Lifecycle/verdict enum VALUES (YES/SHADOW_ONLY/BACKTEST/PASS/FAIL…,
+  // strategy_id, gate names) stay verbatim — only human words are translated.
+  function t(key, fallback, vars) {
+    const i = window.NX_I18N;
+    let s = i ? i.t(key, fallback, vars) : (fallback || key);
+    if (vars) Object.keys(vars).forEach((k) => { s = s.split('{' + k + '}').join(vars[k]); });
+    return s;
+  }
+
   let currentSpatialData = null;
   let selectedStrategyId = null;
   let fleetRows = [];
@@ -68,7 +78,7 @@
     if (activeEl) activeEl.textContent = (ov.by_lifecycle && ov.by_lifecycle.ACTIVE) || 0;
     if (blockedEl) blockedEl.textContent = ov.blocked_count || 0;
     if (validEl) validEl.textContent = (ov.by_lifecycle && ov.by_lifecycle.VALIDATED) || 0;
-    if (fleetNoteEl) fleetNoteEl.textContent = `Fleet: ${ov.total_strategies || 0} strategies`;
+    if (fleetNoteEl) fleetNoteEl.textContent = t('scc.fleet_note', 'Fleet: {n} strategies', { n: ov.total_strategies || 0 });
 
     // --- EVALUATION-PROGRESS METRICS (transient, scope always shown) ---
     // Distinct from the persistent lifecycle counts above. Shows pass/fail rate
@@ -85,7 +95,7 @@
         return `<div class="px-2 py-1"><div class="flex justify-between text-[10px]"><span class="text-gray-300">${g}</span><span class="font-mono text-gray-400">${pr}% pass · ${fr}% fail · n=${m.total}</span></div><div class="h-1 bg-darkBg rounded mt-0.5 overflow-hidden"><div style="width:${pr}%;background:${fr > 50 ? '#ef4444' : pr > 0 ? '#22c55e' : '#475569'};height:100%"></div></div></div>`;
       }).join('');
       const runCount = ov.running_evaluations || 0;
-      metrEl.innerHTML = `<div class="px-3 py-2"><div class="flex items-center justify-between"><p class="text-[9px] font-bold text-textMuted tracking-wider">EVALUATION PIPELINE (SCOPE: TRANSIENT RUNS)</p><span class="text-[9px] text-amber-300">${runCount} running</span></div>${rows}</div>`;
+      metrEl.innerHTML = `<div class="px-3 py-2"><div class="flex items-center justify-between"><p class="text-[9px] font-bold text-textMuted tracking-wider">${t('scc.eval_pipeline', 'EVALUATION PIPELINE (SCOPE: TRANSIENT RUNS)')}</p><span class="text-[9px] text-amber-300">${t('scc.eval_running', '{n} running', { n: runCount })}</span></div>${rows}</div>`;
     }
 
     // --- RESEARCH-BOTTLENECK EXPLANATION (honest, when upper layers empty) ---
@@ -101,12 +111,12 @@
         bnEl.classList.remove('hidden');
         bnEl.innerHTML =
           '<div class="px-3 py-2 border-t border-rose-500/40 bg-rose-500/5">' +
-          '<p class="text-[11px] font-black text-rose-300 tracking-wide">RESEARCH BOTTLENECK</p>' +
-          '<p class="text-[10px] text-gray-300 font-mono mt-1">Upper layers (VALIDATED/SHADOW/ACTIVE) are empty — this is a <b>legitimate</b> rejection, not a UI bug.</p>' +
-          `<p class="text-[10px] text-gray-300 font-mono mt-1">FACT: ${wfFail} of ${wfTotal} walk-forward runs failed (${(Math.round((wf.fail_rate||0)*100))}%).</p>` +
-          '<p class="text-[10px] text-violet-300 font-mono mt-1">INFERENCE: walk-forward is the dominant gate failing candidates.</p>' +
-          '<p class="text-[10px] text-amber-300 font-mono mt-1">HYPOTHESIS: candidate generalization under regime shift is weak.</p>' +
-          '<p class="text-[10px] text-emerald-300 font-mono mt-1">RECOMMENDATION: inspect parameter sensitivity + regime distribution before loosening gates.</p>' +
+          '<p class="text-[11px] font-black text-rose-300 tracking-wide">' + t('scc.bottleneck_title', 'RESEARCH BOTTLENECK') + '</p>' +
+          '<p class="text-[10px] text-gray-300 font-mono mt-1">' + t('scc.bottleneck_upper', 'Upper layers (VALIDATED/SHADOW/ACTIVE) are empty — this is a <b>legitimate</b> rejection, not a UI bug.') + '</p>' +
+          '<p class="text-[10px] text-gray-300 font-mono mt-1">' + t('scc.bottleneck_fact', 'FACT: {fail} of {total} walk-forward runs failed ({pct}%).', { fail: wfFail, total: wfTotal, pct: Math.round((wf.fail_rate||0)*100) }) + '</p>' +
+          '<p class="text-[10px] text-violet-300 font-mono mt-1">' + t('scc.bottleneck_inference', 'INFERENCE: walk-forward is the dominant gate failing candidates.') + '</p>' +
+          '<p class="text-[10px] text-amber-300 font-mono mt-1">' + t('scc.bottleneck_hypothesis', 'HYPOTHESIS: candidate generalization under regime shift is weak.') + '</p>' +
+          '<p class="text-[10px] text-emerald-300 font-mono mt-1">' + t('scc.bottleneck_recommendation', 'RECOMMENDATION: inspect parameter sensitivity + regime distribution before loosening gates.') + '</p>' +
           '</div>';
       } else {
         bnEl.classList.add('hidden');
@@ -118,7 +128,7 @@
     const tbody = document.getElementById('scc-fleet-tbody');
     if (!tbody) return;
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-6 text-center text-textMuted text-xs">No strategies found in authoritative registry.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-6 text-center text-textMuted text-xs">' + t('scc.fleet_empty', 'No strategies found in authoritative registry.') + '</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(r => {
@@ -178,10 +188,10 @@
     el.classList.remove('hidden');
     el.innerHTML =
       '<div class="text-center px-6">' +
-        '<p class="text-lg font-black text-rose-400 tracking-wide">NO VISIBLE STRATEGIES</p>' +
-        '<p class="text-xs text-textMuted mt-2 font-mono">Backend strategies: ' + backendTotal + '</p>' +
-        '<p class="text-xs text-textMuted font-mono">Current filter: ' + (filterLabel || 'ALL') + '</p>' +
-        '<p class="text-xs text-textMuted font-mono">Matching: ' + matching + '</p>' +
+        '<p class="text-lg font-black text-rose-400 tracking-wide">' + t('scc.empty_title', 'NO VISIBLE STRATEGIES') + '</p>' +
+        '<p class="text-xs text-textMuted mt-2 font-mono">' + t('scc.empty_backend', 'Backend strategies: {n}', { n: backendTotal }) + '</p>' +
+        '<p class="text-xs text-textMuted font-mono">' + t('scc.empty_filter', 'Current filter: {f}', { f: filterLabel || 'ALL' }) + '</p>' +
+        '<p class="text-xs text-textMuted font-mono">' + t('scc.empty_matching', 'Matching: {n}', { n: matching }) + '</p>' +
       '</div>';
   }
 
@@ -259,7 +269,7 @@
   function renderInspector(data) {
     const title = document.getElementById('scc-insp-title');
     const content = document.getElementById('scc-insp-content');
-    if (title) title.textContent = `Strategy Inspector: ${data.strategy_id}`;
+    if (title) title.textContent = t('scc.inspector_title', 'Strategy Inspector: {id}', { id: data.strategy_id });
     if (!content) return;
 
     const ee = data.execution_eligibility || {};
@@ -290,7 +300,7 @@
           <span class="text-[9px] font-black tracking-widest text-textMuted">CAN THIS STRATEGY TRADE</span>
           <span class="text-sm font-black">${VERDICT}</span>
         </div>
-        <p class="text-[11px] mt-1">${ee.reason || 'No eligibility verdict returned by backend.'}</p>
+        <p class="text-[11px] mt-1">${ee.reason || t('scc.verdict_none', 'No eligibility verdict returned by backend.')}</p>
         ${ee.required_gate ? `<p class="text-[10px] text-textMuted mt-0.5">required gate: ${ee.required_gate}</p>` : ''}
         ${Array.isArray(ee.blockers) && ee.blockers.length ? `<p class="text-[10px] text-rose-300/80 mt-0.5">blockers: ${ee.blockers.join(', ')}</p>` : ''}
       </div>`;
@@ -399,7 +409,7 @@
             <span class="text-[10px] font-black tracking-widest text-textMuted uppercase flex items-center gap-1.5"><i class="fa-solid fa-gavel text-accentCyan"></i> Execution Verdict</span>
             <span class="px-2 py-0.5 rounded text-xs font-black ${VERDICT === 'YES' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'}">${VERDICT}</span>
           </div>
-          <p class="text-xs text-gray-200 mt-1.5 font-sans">${ee.reason || 'No eligibility verdict returned by backend.'}</p>
+          <p class="text-xs text-gray-200 mt-1.5 font-sans">${ee.reason || t('scc.verdict_none', 'No eligibility verdict returned by backend.')}</p>
           ${ee.required_gate ? `<div class="mt-2 pt-2 border-t border-borderClr/60 text-[11px] text-textMuted font-mono">Required Gate: <span class="text-white font-bold">${ee.required_gate}</span></div>` : ''}
           ${Array.isArray(ee.blockers) && ee.blockers.length ? `<div class="mt-1 text-[11px] text-rose-300 font-mono">Blockers: ${ee.blockers.join(', ')}</div>` : ''}
         </div>
@@ -534,10 +544,10 @@
   function setHistorical(selectedNode, ms) {
     const title = document.getElementById('scc-insp-title');
     const content = document.getElementById('scc-insp-content');
-    if (title) title.textContent = `Time Machine Inspector [${new Date(Number(ms)).toUTCString()}]`;
+    if (title) title.textContent = t('scc.tm_title', 'Time Machine Inspector [{ts}]', { ts: new Date(Number(ms)).toUTCString() });
     if (!content) return;
     if (!selectedNode) {
-      content.innerHTML = `<div class="p-4 text-center text-textMuted text-xs">No strategy selected at timestamp ${new Date(Number(ms)).toUTCString()}.</div>`;
+      content.innerHTML = `<div class="p-4 text-center text-textMuted text-xs">${t('scc.tm_no_strategy', 'No strategy selected at timestamp {ts}.', { ts: new Date(Number(ms)).toUTCString() })}</div>`;
       return;
     }
     content.innerHTML = `
@@ -595,6 +605,18 @@
           else hideSpatialEmptyState();
         }
       });
+    });
+
+    // P1 (i18n): language switch while the inspector/fleet is open — rebuild
+    // from the data already in memory (no refetch needed for string changes).
+    document.addEventListener('nexus:lang-changed', () => {
+      try {
+        if (overviewData) renderOverview(overviewData);
+        if (fleetRows.length) renderFleetTable(fleetRows);
+        if (selectedStrategyId) inspectStrategy(selectedStrategyId);
+        else if (currentSpatialData) applyLifecycleFilter(
+          (document.getElementById('scc-lifecycle-filter') || {}).value || 'ALL');
+      } catch (e) { /* never let a re-render break the panel */ }
     });
 
     // Re-init + auto-fit when the parent dashboard makes this iframe visible.
