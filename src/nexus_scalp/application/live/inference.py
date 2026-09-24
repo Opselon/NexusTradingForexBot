@@ -24,6 +24,15 @@ from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.application.live.inference")
 
+# DECISION-TRACE OBSERVER (observability only). Guarded import (BUG-311):
+# named _tr_observer to avoid colliding with this module's local
+# LatencyTracer variable ``_trace``. A fault here must never break
+# inference — tracing is simply absent.
+try:
+    from nexus_scalp.observability.trace_observer import trace_observer as _tr_observer
+except Exception:  # pragma: no cover - observability failure isolation
+    _tr_observer = None  # type: ignore[assignment]
+
 
 class InferenceService:
     """Feature assembly + validation + model inference (composition root).
@@ -358,6 +367,57 @@ class InferenceService:
         self._last_model_forward_ms = _trace.model_ms()
         self._last_feature_ms = _trace.feature_ms()
         self._last_e2e_ms = _trace.e2e_ms()
+        # DECISION-TRACE: model + prediction provenance for this inference.
+        # Reads the CANONICAL identity owners (effective_feature_dim /
+        # effective_feature_schema_id / _serving_model_identity from the
+        # model_registry, artifact path from the loaded bundle) — never the
+        # class-constant bootstrap values, never a placeholder identity.
+        # Detail building is guarded: partial provenance is still honest
+        # provenance; the observer itself never raises.
+        if _tr_observer is not None and _tr_observer.active:
+            _d: dict[str, Any] = {}
+            try:
+                _d["prediction_id"] = getattr(_trace, "prediction_id", None)
+                _d["feature_dim"] = int(self._last_live_tensor_dim)
+                _d["effective_feature_dim"] = int(self.effective_feature_dim)
+                _d["effective_feature_schema_id"] = str(self.effective_feature_schema_id)
+                _d["declared_schema_id"] = getattr(self, "_last_live_tensor_schema", None)
+                _d["model_forward_ms"] = float(self._last_model_forward_ms)
+                _d["e2e_ms"] = float(self._last_e2e_ms)
+                _d["latency_breakdown_ms"] = getattr(self, "_last_latency_breakdown", None)
+                _d["sequence_mode"] = "sequence" if seq_x is not None else "single"
+                try:
+                    probs_list = probs.detach().cpu().tolist()
+                except Exception:
+                    probs_list = None
+                if probs_list is not None:
+                    _d["probabilities"] = probs_list
+                _artifact = str(getattr(bundle, "artifact_path", "") or "")
+                if _artifact:
+                    _d["artifact_path"] = _artifact
+                _mid, _mver, _mfp = self._serving_model_identity()
+                if _mid:
+                    _d["model_id"] = _mid
+                if _mver:
+                    _d["model_version"] = _mver
+                if _mfp:
+                    _d["artifact_fingerprint"] = _mfp
+                try:
+                    from nexus_scalp.features.schema_contract import feature_schema_hash
+
+                    _d["schema_hash"] = feature_schema_hash()
+                except Exception:
+                    pass
+            except Exception:
+                pass  # never fail the emit over a provenance field
+            _tr_observer.emit(
+                stage="INFERENCE",
+                component="inference",
+                event_type="MODEL_INFERENCE",
+                status="OK",
+                latency_us=round(float(self._last_e2e_ms) * 1000.0),
+                detail=_d,
+            )
         return probs
 
     # ------------------------------------------------------------------
