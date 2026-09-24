@@ -29,9 +29,13 @@ export interface QueryLike<T> {
   dataUpdatedAt?: number;
 }
 
-/** One-line error text for any thrown value (never a silent fallback copy). */
+/** One-line error text for any thrown value (never a silent fallback copy).
+ *  ApiError resolves through the frontend error-code map (§31/§70): known
+ *  codes render localized text, unknown codes render the safe generic message
+ *  with the code + request id — never raw backend prose. The active locale is
+ *  read from the i18n store, so callers need not thread `t` through. */
 export function errorText(error: unknown, fallback: string): string {
-  if (error instanceof ApiError) return `${error.message} (${error.code})`;
+  if (error instanceof ApiError) return error.localized(useI18n.getState().t);
   if (error instanceof Error && error.message) return error.message;
   return fallback;
 }

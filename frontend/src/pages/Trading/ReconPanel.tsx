@@ -99,7 +99,7 @@ export function ReconPanel({ snapshot, mt5Query }: Props) {
           <div style={{ padding: 12 }}><Skeleton count={3} /></div>
         ) : ledgerOpenQuery.isError ? (
           <ErrorState
-            message={ledgerOpenQuery.error instanceof ApiError ? ledgerOpenQuery.error.message : t("trading.err.ledger", "Engine ledger unavailable")}
+            message={ledgerOpenQuery.error instanceof ApiError ? ledgerOpenQuery.error.localized(t) : t("trading.err.ledger", "Engine ledger unavailable")}
             requestId={ledgerOpenQuery.error instanceof ApiError ? ledgerOpenQuery.error.requestId : null}
             onRetry={() => void ledgerOpenQuery.refetch()}
           />

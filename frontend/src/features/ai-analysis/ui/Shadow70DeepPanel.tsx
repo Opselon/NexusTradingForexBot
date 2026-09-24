@@ -17,6 +17,7 @@ import { useI18n } from "@/stores/i18nStore";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, EmptyState, ErrorState, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
+import { ApiError } from "@/types/api";
 import { shadow70Api } from "../shadow70Api";
 import { FreshnessCaption } from "../../research/ui/lane5Kit";
 
@@ -82,7 +83,7 @@ export function Shadow70DeepPanel() {
           <Skeleton count={4} />
         ) : healthQ.isError ? (
           <ErrorState
-            message={healthQ.error instanceof Error ? healthQ.error.message : t("ai-analysis.shadow.health_failed", "shadow70 health endpoint failed")}
+            message={healthQ.error instanceof ApiError ? healthQ.error.localized(t) : t("ai-analysis.shadow.health_failed", "shadow70 health endpoint failed")}
             onRetry={() => void healthQ.refetch()}
           />
         ) : featureHealth.length === 0 ? (
@@ -121,7 +122,7 @@ export function Shadow70DeepPanel() {
           <Skeleton count={3} />
         ) : disQ.isError ? (
           <ErrorState
-            message={disQ.error instanceof Error ? disQ.error.message : t("ai-analysis.shadow.disagreements_failed", "disagreements endpoint failed")}
+            message={disQ.error instanceof ApiError ? disQ.error.localized(t) : t("ai-analysis.shadow.disagreements_failed", "disagreements endpoint failed")}
             onRetry={() => void disQ.refetch()}
           />
         ) : rows.length === 0 ? (

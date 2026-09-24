@@ -43,10 +43,10 @@ function defaultWindow(): { start: string; end: string } {
   return { start: localIso(new Date(now.getTime() - 8 * 3_600_000)), end: localIso(now) };
 }
 
-function describeError(e: unknown): string {
-  if (e instanceof ApiError) return e.status === 422 || e.status === 404 ? e.message : `${e.message}`;
+function describeError(e: unknown, t: (key: string, fb: string, vars?: Record<string, string | number>) => string): string {
+  if (e instanceof ApiError) return e.localized(t);
   if (e instanceof Error) return e.message;
-  return "unknown error";
+  return t("dash.replay.unknown_error", "unknown error");
 }
 
 const PHASE_TONE: Record<string, string> = {
@@ -154,7 +154,7 @@ export function ReplayPanel({ onCursorMove }: { onCursorMove?: (iso: string | nu
         pushToast(accepted ? "ok" : "fail", `${label}: ${fallbackMsg}`);
         return accepted ? res : null;
       } catch (e) {
-        const err = describeError(e);
+        const err = describeError(e, t);
         setRun({ running: false, message: t("dash.replay.cmd_failed", "{l} failed: {m}", { l: label, m: err }), ok: false });
         pushToast("fail", `${label}: ${err}`);
         return null;
@@ -227,7 +227,7 @@ export function ReplayPanel({ onCursorMove }: { onCursorMove?: (iso: string | nu
           setSt(await replayApi.state(replayId).catch(() => null));
         } catch (e) {
           stopPlay();
-          setRun({ running: false, message: `play step failed: ${describeError(e)}`, ok: false });
+          setRun({ running: false, message: `${t("dash.replay.play_step_failed", "play step failed")}: ${describeError(e, t)}`, ok: false });
         }
       })();
     }, intervalMs);

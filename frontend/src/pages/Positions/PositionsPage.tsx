@@ -393,7 +393,7 @@ export default function PositionsPage({ snapshot }: Props) {
           </div>
         ) : positionsQuery.isError && livePositions.length === 0 ? (
           <ErrorState
-            message={positionsQuery.error instanceof ApiError ? positionsQuery.error.message : t("positions.error.positions", "Position endpoint unavailable")}
+            message={positionsQuery.error instanceof ApiError ? positionsQuery.error.localized(t) : t("positions.error.positions", "Position endpoint unavailable")}
             requestId={positionsQuery.error instanceof ApiError ? positionsQuery.error.requestId : null}
             onRetry={() => void positionsQuery.refetch()}
           />

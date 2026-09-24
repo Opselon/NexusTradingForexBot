@@ -274,6 +274,7 @@ export const MESSAGES: FeatureMessages = {
   "dash.replay.title_step": { fa: "یک میله جلو", de: "eine Bar weiter", es: "avanzar una barra", ar: "شريط واحد للأمام" },
   "dash.replay.toggle_failed": { fa: "تغییر وضع بازپخش ناموفق بود", de: "Replay-Umschaltung fehlgeschlagen", es: "falló el alternador de replay", ar: "فشل تبديل إعادة التشغيل" },
   "dash.replay.unknown_error": { fa: "خطای ناشناخته", de: "unbekannter Fehler", es: "error desconocido", ar: "خطأ مجهول" },
+  "dash.replay.play_step_failed": { fa: "گام پخش ناموفق بود", de: "Spielschritt fehlgeschlagen", es: "falló el paso de reproducción", ar: "فشل خطوة التشغيل" },
   "dash.replay.window_end": { fa: "پایان پنجره (محلی)", de: "Fensterende (lokal)", es: "fin de la ventana (local)", ar: "نهاية النافذة (محلية)" },
   "dash.replay.window_start": { fa: "ابتدای پنجره (محلی)", de: "Fensteranfang (lokal)", es: "inicio de la ventana (local)", ar: "بداية النافذة (محلية)" },
   "dash.replay.working": { fa: "در حال کار…", de: "arbeitet…", es: "trabajando…", ar: "جارٍ العمل…" },

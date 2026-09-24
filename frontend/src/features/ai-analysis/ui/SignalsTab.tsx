@@ -12,6 +12,7 @@ import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
+import { ApiError } from "@/types/api";
 import { confidence01, str, type SignalDto, type DecisionStatsDto, type NoTradeReasonsDto } from "../model";
 import type { V1Page } from "@/types/domain";
 import { useI18n } from "@/stores/i18nStore";
@@ -94,7 +95,7 @@ export default function SignalsTab({
           ))}
         </div>
       ) : statsQ.isError ? (
-        <EmptyState message={statsQ.error instanceof Error ? statsQ.error.message : t("ai-analysis.empty.stats_unavailable", "stats unavailable")} />
+        <EmptyState message={statsQ.error instanceof ApiError ? statsQ.error.localized(t) : t("ai-analysis.empty.stats_unavailable", "stats unavailable")} />
       ) : (
         (() => {
           const st = statsQ.data;
@@ -146,7 +147,7 @@ export default function SignalsTab({
         {historyQ.isPending ? (
           <Skeleton count={5} />
         ) : historyQ.isError ? (
-          <ErrorState message={historyQ.error instanceof Error ? historyQ.error.message : t("ai-analysis.empty.history_failed", "history failed")} onRetry={() => void historyQ.refetch()} />
+          <ErrorState message={historyQ.error instanceof ApiError ? historyQ.error.localized(t) : t("ai-analysis.empty.history_failed", "history failed")} onRetry={() => void historyQ.refetch()} />
         ) : (historyQ.data?.items ?? []).length === 0 ? (
           <EmptyState message={t("ai-analysis.empty.window", "No signals in this window.")} />
         ) : (

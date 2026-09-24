@@ -157,7 +157,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
   const chartBusy = chartQuery.isPending && !chartQuery.data && !snapshot.bars?.length;
   const chartErr = !useServerBars && chartQuery.isError && !snapshot.bars?.length
     ? chartQuery.error instanceof ApiError
-      ? chartQuery.error.message
+      ? chartQuery.error.localized(t)
       : t("dash.chart.history_failed", "history endpoint failed")
     : null;
   // snapshot.generated_at is the backend's own wall-clock stamp; the 1s UI
@@ -200,7 +200,7 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
     } catch (e) {
       setReplayCmd({
         busy: false,
-        msg: e instanceof ApiError ? e.message : t("dash.replay.toggle_failed", "replay toggle failed"),
+        msg: e instanceof ApiError ? e.localized(t) : t("dash.replay.toggle_failed", "replay toggle failed"),
         ok: false,
       });
     }
