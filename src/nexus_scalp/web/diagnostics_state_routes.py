@@ -39,6 +39,23 @@ from nexus_scalp.web.errors import log_web_error, new_request_id
 
 logger = get_logger("nexus_scalp.web.diagnostics_state_routes")
 
+
+def _frontend_block() -> dict[str, Any]:
+    """END-USER-RUNTIME-UI-INTEGRATION (contract frozen decision #7):
+    additive /health diagnostics for the production React build.
+
+    Pure/deterministic — the frozen seam is consulted at call time so
+    /health reflects env changes without a restart; a raise never breaks
+    the health probe (defense-in-depth — ``/health`` stays callable).
+    """
+    try:
+        from nexus_scalp.web.frontend_assets import frontend_status
+
+        return frontend_status()
+    except Exception as exc:  # pragma: no cover — probe must never die here
+        return {"mode": "unknown", "error": type(exc).__name__}
+
+
 #: PERF-HEALTH (2026-09-10): /health verdict cache TTL (seconds). The Docker
 #: healthcheck polls /health every 15s; a full HealthEngine sweep costs
 #: ~0.7-2.4s on a 1GB audit.db (PRAGMA integrity_check). A 60s TTL keeps the
@@ -450,12 +467,20 @@ def register_diagnostics_state_routes(
                         "verdict": verdict,
                         "checks": checks,
                         "critical_failures": critical,
+                        # ADDITIVE (contract #7): same frontend block on the
+                        # degraded shape — nothing existing removed/renamed.
+                        "frontend": _frontend_block(),
                     },
                 )
             return {
                 "status": "ok",
                 "verdict": verdict,
                 "checks": checks,
+                # END-USER-RUNTIME-UI-INTEGRATION (contract frozen decision
+                # #7): ADDITIVE frontend diagnostics — never removes/renames
+                # existing fields; present and the same shape whether or not
+                # the build resolved. Only this `frontend` key is new.
+                "frontend": _frontend_block(),
             }
         except HTTPException:
             raise
