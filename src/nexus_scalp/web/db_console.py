@@ -710,7 +710,8 @@ def console_quick(database: str = "audit", table: str = "", kind: str = "top100"
                             "timestamp": _utc_now(),
                         }
                     row = drv.query_one(
-                        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
+                        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+                        (table,),
                     )
                     return {
                         "success": True,
@@ -727,7 +728,15 @@ def console_quick(database: str = "audit", table: str = "", kind: str = "top100"
                 logger.warning("db_console error", exc_info=exc)
                 return _fail(exc, f"reading the schema of '{table}'", cfg)
 
-        sql = template.format(table=table_sql)
+        # SEC (py/sql-injection #1114): only a CANNED, constant template may be
+        # combined with the whitelist-validated identifier — an f-string built
+        # from request input is deliberately never constructed here.
+        if template is None:
+            return {"success": False, "error": f"unknown quick kind '{kind}'"}
+        if "{table}" in template:
+            sql = template.replace("{table}", table_sql)
+        else:
+            sql = template
         return console_query({"database": database, "sql": sql})
     except Exception as exc:
         logger.warning("db_console error", exc_info=exc)

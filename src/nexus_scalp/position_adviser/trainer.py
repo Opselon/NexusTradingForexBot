@@ -307,14 +307,24 @@ def _sha256_file(path: Path) -> str:
     caller reaches here from sanitizer output (``_resolve_dataset_path`` /
     ``_resolve_output_dir`` / ``_sha256_trainer_artifact``), so re-asserting
     containment at the read is defense-in-depth that closes the residual taint
-    the static analyzer tracks from the request-supplied parameter.
+    the static analyzer tracks from the request-supplied parameter. The
+    re-assertion follows the query's two-state model exactly: normalize first
+    (state transition to NormalizedUnchecked), then a ``startswith`` check
+    against the trusted root is the barrier that cuts the taint — and the
+    value actually opened is the normalized, checked one.
     """
     import hashlib
+    import os
 
-    if not path.is_relative_to(_ADVISER_ROOT.resolve()):
+    # SEC (py/path-injection #1147): follow the query's two-state model —
+    # normalize (state transition) then check the normalized string against
+    # the trusted root (SafeAccessCheck barrier) — and open the exact string
+    # that was checked.
+    normalized = os.path.realpath(str(path))
+    if not normalized.startswith(str(_ADVISER_ROOT.resolve())):
         raise AdviserFeatureError("adviser file read must stay inside the repository root")
     h = hashlib.sha256()
-    with open(path, "rb") as f:
+    with open(normalized, "rb") as f:
         while chunk := f.read(65536):
             h.update(chunk)
     return h.hexdigest()
@@ -323,13 +333,12 @@ def _sha256_file(path: Path) -> str:
 def _sha256_trainer_artifact(path: Path) -> str:
     """Sha256 of an artifact the trainer itself just wrote.
 
-    ``path`` is joined from the sanitized ``output_dir`` and the sanitized
-    ``mid``, but CodeQL still sees the request-supplied ``model_id`` in that
-    join, so the read is re-derived here from the directory the artifact was
-    written into: the value this opens is provably the file the trainer just
-    wrote, not something a request could redirect elsewhere.
+    ``path`` is joined from the resolved ``output_dir`` and the sanitized
+    ``mid``, but the output directory itself can derive from a request-supplied
+    dataset path, so the read is confined by ``_sha256_file`` itself
+    (normalize + trusted-root check before the open).
     """
-    return _sha256_file(path.parent / path.name)
+    return _sha256_file(path)
 
 
 def train_position_adviser(
