@@ -545,8 +545,20 @@ def pg_repo() -> Generator[AuditRepository, None, None]:
 
     import psycopg  # the importorskip at collection time guarantees this
 
+    # psycopg v3 rejects a password embedded in a libpq keyword DSN string
+    # (the auth exchange never receives it, so the server reports
+    # password authentication failed). Lift the credential into its own
+    # connection kwarg — the same split the fabric's pools use.
+    from nexus_scalp.database.fabric.pg_planes import _split_dsn_secret
+
+    _admin_conninfo, _admin_kwargs = _split_dsn_secret(PG_URL)
+    if _admin_kwargs:
+        _admin_kwargs = {**_admin_kwargs, "connect_timeout": 10, "autocommit": True}
+    else:
+        _admin_kwargs = {"connect_timeout": 10, "autocommit": True}
+
     def _admin(sql: str, params: tuple[Any, ...] = ()) -> None:
-        with psycopg.connect(PG_URL, connect_timeout=10, autocommit=True) as conn:
+        with psycopg.connect(_admin_conninfo, **_admin_kwargs) as conn:
             with conn.cursor() as cur:
                 cur.execute(sql, params)
 
@@ -613,7 +625,10 @@ def test_postgresql_breaker_anchors_survive_a_restart(pg_repo: AuditRepository) 
     # no in-memory cache can hide a row that never reached PostgreSQL.
     import psycopg
 
-    with psycopg.connect(PG_URL, connect_timeout=10) as conn, conn.cursor() as cur:
+    # Same psycopg v3 caveat as the fixture: the password must be a separate
+    # connection kwarg, not embedded in the libpq keyword DSN string.
+    _verify_conninfo, _verify_kwargs = _split_dsn_secret(PG_URL)
+    with psycopg.connect(_verify_conninfo, **_verify_kwargs) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT breaker_day_anchor, breaker_day_utc, breaker_week_anchor, "
             "breaker_week_iso FROM runtime_risk_state WHERE id = 1"
