@@ -30,7 +30,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.observability.trace_contract import TRACE_SCHEMA_VERSION
@@ -156,7 +156,7 @@ def register_trace_routes(app: Any, _err: Any, _log_err: Any) -> None:
 
     # ------------------------------------------------------------- live SSE
     @app.get("/api/trace/stream")
-    async def sse_trace_stream(request: Request) -> StreamingResponse:
+    async def sse_trace_stream(request: Request) -> Response:
         """Live decision-trace stream (§76).
 
         Named events: ``hello`` (session identity + schema version + resume
@@ -276,6 +276,4 @@ def register_trace_routes(app: Any, _err: Any, _log_err: Any) -> None:
             return StreamingResponse(event_generator(), media_type="text/event-stream")
         except Exception as exc:  # pragma: no cover - isolation guard
             _log_err(exc, "trace stream failed", endpoint="/api/trace/stream")
-            from fastapi.responses import JSONResponse
-
             return JSONResponse(_err_payload("TRACE_STREAM_ERROR"), status_code=500)
