@@ -64,6 +64,11 @@ _SELECT_LEDGER_CLOSED = """
     FROM audit_ledger WHERE ticket = ?;
 """
 
+#: Bounded busy-timeout for the optional closed-ledger enrichment read. Kept
+#: at the pre-INV-001 5.0s semantics: this runs on the position-finalize tick
+#: path and must never wait unbounded on a locked audit DB.
+_LEDGER_ENRICHMENT_TIMEOUT_SEC = 5.0
+
 
 class PositionLifecycleTracker:
     """
@@ -106,6 +111,12 @@ class PositionLifecycleTracker:
         self._last_emitted: dict[str, tuple[PositionEventType, float, float, float, float]] = {}
 
         self.event_count: int = 0
+
+        #: One-shot notice flag for the non-SQLite enrichment skip (INV-001
+        #: V1). The skip is the expected steady state on PostgreSQL — logging
+        #: it per position close would be tick-path log noise, so the debug
+        #: line fires exactly once per tracker instance.
+        self._ledger_enrichment_skip_logged: bool = False
 
     # ------------------------------------------------------------------
     # Public feed API (called from LiveEngine, not from the tick hot path for
@@ -474,9 +485,42 @@ class PositionLifecycleTracker:
     def _read_closed_ledger(
         self, ticket_key: str, perf: PositionPerformance
     ) -> tuple[float, str, float]:
-        """Rescues realized PnL / exit mechanism from the authoritative ledger."""
+        """Rescues realized PnL / exit mechanism from the authoritative ledger.
+
+        INV-001 V1 (BUG-156 uri contract): the read goes through the
+        repository's one connection seam — ``AuditRepository._connect_sqlite``
+        — and NEVER opens a raw ``sqlite3.connect`` from the tick path. The
+        seam owns the ``file:``-URI contract (shared in-memory audit DBs need
+        ``uri=True``); a raw connect treated the URI string as a literal file
+        name and silently created a junk CWD file, and under PostgreSQL
+        ``_db_path`` has no SQLite meaning at all.
+
+        Provider gate: on a non-SQLite repository the enrichment is skipped
+        FAST. It is optional (the caller falls back to its own realized
+        numbers) and must never open a provider-wrong connection or add PG
+        round-trip latency to the tick path. The skip is logged once per
+        process at debug level — steady-state noise control.
+        """
+        if not getattr(self.audit_repo, "_is_sqlite", False):
+            if not self._ledger_enrichment_skip_logged:
+                self._ledger_enrichment_skip_logged = True
+                logger.debug(
+                    "[POSITION_TRACK] closed-ledger enrichment skipped: "
+                    "audit repository is not SQLite (optional enrichment, "
+                    "returns caller-supplied realized values)",
+                )
+            return 0.0, "", 0.0
+
+        connect = getattr(self.audit_repo, "_connect_sqlite", None)
+        if connect is None:  # pragma: no cover - defensive, seam is canonical
+            logger.debug(
+                "[POSITION_TRACK] repository has no _connect_sqlite seam",
+                ticket=ticket_key,
+            )
+            return 0.0, "", 0.0
+
         try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
+            conn = connect(_LEDGER_ENRICHMENT_TIMEOUT_SEC)
             conn.row_factory = sqlite3.Row
             try:
                 row = conn.execute(_SELECT_LEDGER_CLOSED, (int(ticket_key),)).fetchone()

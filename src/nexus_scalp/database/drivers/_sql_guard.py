@@ -38,11 +38,18 @@ _INTERIOR_SEMICOLON = re.compile(r";\s*\S")
 
 
 def assert_safe_sql(sql: str) -> str:
-    """Validates statement shape at the driver sink and returns it unchanged.
+    """Validate statement shape at the driver sink and return the statement.
 
     Raises ValueError on block comments, stacked statements, or an
     unrecognized leading verb — converting a silent injection primitive into
     a loud driver-level contract failure.
+
+    Returns the statement unchanged once it passes the shape checks. This is a
+    runtime integrity check, NOT a taint sanitizer: CodeQL's py/sql-injection
+    query recognizes no regex/whitelist function as a sanitizer-barrier, so
+    rewriting the text here cannot cut the static taint chain (and any rewrite
+    risks changing the statement the engine receives). Dispositions for this
+    driver boundary are documented at the call sites.
     """
     if not isinstance(sql, str) or not sql.strip():
         raise ValueError("empty or non-string SQL rejected by driver guard")

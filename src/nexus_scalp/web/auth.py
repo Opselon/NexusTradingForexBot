@@ -109,6 +109,13 @@ PUBLIC_PATHS: frozenset[str] = frozenset(
         # the other entry documents); every /api/provisioning/* call it
         # makes keeps full token enforcement.
         "/first_setup.html",
+        # CONTRACT frozen decision #5 (END-USER-RUNTIME-UI-INTEGRATION): the
+        # legacy Web/ dashboard moved to /legacy + /legacy.html. It is a
+        # cookie-bootstrap entry document exactly like /alt (the browser's
+        # first request on the legacy console), so it is public here and in
+        # COOKIE_BOOTSTRAP_PATHS below; every /api call it makes stays gated.
+        "/legacy",
+        "/legacy.html",
     }
 )
 #: /vendor/ = fontawesome webfonts (static binaries, no credentials).
@@ -134,20 +141,66 @@ PUBLIC_JS_ASSETS: frozenset[str] = frozenset(
         "command_center_timemachine.js",
         "command_center_ui.js",
         "backtest_report_ui.js",
+        # PHASE-14 completeness (EUR-A follow-up): index.html loads
+        # position_adviser_ui.js; same contract as the entries above — static
+        # script asset, no state or credentials (routes it calls stay gated).
+        "position_adviser_ui.js",
     }
 )
 
 
-def is_public_path(path: str) -> bool:
-    """Single source of truth for the no-token allowlist."""
-    # Path-traversal defense (CodeQL #62/#63/#67 contract): traversal
-    # separators can never be public — refused upstream, 404 at the route.
+#: CONTRACT frozen decision #7 (END-USER-RUNTIME-UI-INTEGRATION): deny
+#: prefixes of the public static-shell rule. /api, /ws and /web are data
+#: classes — an unmatched child must stay gated (every data route keeps full
+#: token enforcement; §60). /alt is included because its surfaces are
+#: allowlisted EXPLICITLY (PUBLIC_PATHS "/alt", "/alt/" + PUBLIC_PREFIXES
+#: "/alt/"): without it the widened rule would wrongly publish the
+#: BUG-267-pinned never-public shapes /altx and /alternative-api
+#: (tests/unit/test_web_auth_bootstrap_bug267.py).
+_SHELL_DENY_PREFIXES: tuple[str, ...] = ("/api", "/ws", "/web", "/alt")
+
+
+def _is_public_static_shell(path: str) -> bool:
+    """CONTRACT frozen decision #7: public static-shell rule.
+
+    A path is a public static shell when its LAST segment contains no "."
+    (a dot marks a file/asset, which needs an explicit allowlist entry
+    instead) AND it starts with no deny prefix. Traversal separators are
+    rejected by the caller before this runs. Static shells carry no state
+    and no credentials — deep links like /trading must render the SPA
+    shell from a tokenless first navigation while every data route stays
+    gated. GET/HEAD-only enforcement happens at the middleware call sites
+    via ``is_public_path(path, method)``.
+    """
+    if any(path.startswith(p) for p in _SHELL_DENY_PREFIXES):
+        return False
+    return "." not in path.rsplit("/", 1)[-1]
+
+
+def is_public_path(path: str, method: str | None = None) -> bool:
+    """Single source of truth for the no-token allowlist.
+
+    ``method`` (CONTRACT #7): the static-shell rule applies to GET/HEAD
+    only. None means "no method context" (path-only callers, e.g. the
+    BUG-267 shadow-layer parity probe) — allowlist membership is
+    method-agnostic exactly as before, only the NEW shell rule is
+    method-restricted at the middleware call sites.
+    """
+    # Path-traversal defense (CodeQL #62/#63/#67 contract + CONTRACT #7):
+    # traversal separators can never be public — refused upstream, 404 at
+    # the route.
     if ".." in path or "\\" in path:
         return False
     name = path.lstrip("/")
     if path in PUBLIC_PATHS or name in PUBLIC_JS_ASSETS:
         return True
-    return any(path.startswith(p) for p in PUBLIC_PREFIXES)
+    if any(path.startswith(p) for p in PUBLIC_PREFIXES):
+        return True
+    # CONTRACT frozen decision #7: GET/HEAD-only public static shells
+    # (dotless SPA deep links). A non-GET/HEAD never widens the surface.
+    if method is not None and method.upper() not in ("GET", "HEAD"):
+        return False
+    return _is_public_static_shell(path)
 
 
 WEB_AUTH_TOKEN_SECRET_NAME = "web_auth_token"
@@ -165,8 +218,20 @@ WEB_AUTH_COOKIE_DISABLE_ENV = "NSE_WEB_AUTH_COOKIE_DISABLE"
 #: browser's first request. Every entry here is public by construction
 #: (a gated path can never be reached tokenless, so setting a cookie on it
 #: would be dead code); pinned by tests/unit/test_web_auth_bootstrap_bug267.py.
+#: CONTRACT frozen decision #5: /legacy + /legacy.html are the legacy
+#: dashboard's entry documents after the relocation (same contract as /alt).
 COOKIE_BOOTSTRAP_PATHS: frozenset[str] = frozenset(
-    {"/", "/index.html", "/app.js", "/api_client.js", "/alt", "/alt/", "/first_setup.html"}
+    {
+        "/",
+        "/index.html",
+        "/app.js",
+        "/api_client.js",
+        "/alt",
+        "/alt/",
+        "/first_setup.html",
+        "/legacy",
+        "/legacy.html",
+    }
 )
 
 
@@ -264,7 +329,8 @@ def require_web_auth(request: Request) -> str:
     the active web auth token using constant-time comparison.
     """
     path = request.url.path
-    if is_public_path(path):
+    # CONTRACT frozen decision #7: the static-shell rule is GET/HEAD-only.
+    if is_public_path(path, request.method):
         return ""
 
     if os.environ.get("NSE_WEB_AUTH_DISABLE", "").strip() == "1":
@@ -347,7 +413,11 @@ class WebAuthMiddleware:
             return
 
         path = scope.get("path", "")
-        if self._is_public(path):
+        # CONTRACT frozen decision #7: the static-shell rule is GET/HEAD-only
+        # (POST/PUT/DELETE never widen the public surface); the immutable
+        # allowlists above stay method-agnostic as before.
+        method = scope.get("method", "")
+        if self._is_public(path, method):
             await self.app(scope, receive, send)
             return
 
@@ -380,12 +450,14 @@ class WebAuthMiddleware:
 
     # ------------------------------------------------------------- internals
     @staticmethod
-    def _is_public(path: str) -> bool:
+    def _is_public(path: str, method: str | None = None) -> bool:
         # BUG-267: routes through is_public_path — the single source of
         # truth. The previous inline copy skipped the traversal guard, so
         # this (test-facing) layer and the installed layer disagreed on
         # paths like /assets/../api/x. One rule, one implementation.
-        return is_public_path(path)
+        # CONTRACT #7: `method` restricts ONLY the static-shell rule
+        # (GET/HEAD); default None keeps the path-only parity probe exact.
+        return is_public_path(path, method)
 
     @staticmethod
     def _extract_token(scope) -> str | None:
@@ -458,7 +530,10 @@ def install_web_auth(app, *, require_always: bool = False) -> None:
                 self._error = str(exc)
 
         async def dispatch(self, request: StarletteRequest, call_next):
-            if self._is_public(request.url.path):
+            # CONTRACT frozen decision #7: method is passed so the
+            # static-shell rule applies to GET/HEAD only (allowlisted
+            # documents stay public for any method, as before).
+            if self._is_public(request.url.path, request.method):
                 response = await call_next(request)
                 # WEB-UI-BOOTSTRAP + BUG-267: the cookie rides EVERY public
                 # entry surface — the legacy bundle's /app.js +
@@ -516,8 +591,8 @@ def install_web_auth(app, *, require_always: bool = False) -> None:
             )
 
         @staticmethod
-        def _is_public(path: str) -> bool:
-            return is_public_path(path)
+        def _is_public(path: str, method: str | None = None) -> bool:
+            return is_public_path(path, method)
 
         @staticmethod
         def _extract(request: StarletteRequest) -> str | None:

@@ -192,7 +192,7 @@ def check_residue(repo: Path | None = None) -> Report:
             text = raw.decode("latin-1")
         rep.text_scanned += 1
         lines = text.splitlines()
-        rep.findings.extend(_scan_lines(path, str(path.relative_to(repo)), lines))
+        rep.findings.extend(_scan_lines(path, path.relative_to(repo).as_posix(), lines))
     rep.elapsed_ms = (time.perf_counter() - t0) * 1000
     return rep
 

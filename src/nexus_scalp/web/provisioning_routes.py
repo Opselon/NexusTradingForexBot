@@ -313,6 +313,8 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
              ``PROVISIONING_DATASETS_ERROR`` envelope — no raw exception text
              (py/stack-trace-exposure discipline).
         """
+        import os
+
         try:
             allowed = _allowed_import_roots()
             targets = allowed
@@ -320,10 +322,21 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
                 raw = str(root).strip()
                 candidate: Path | None = None
                 if "\x00" not in raw:
-                    try:
-                        candidate = Path(raw).expanduser().resolve()
-                    except (OSError, RuntimeError, ValueError):
-                        candidate = None  # unresolvable -> treated as outside
+                    # SEC (py/path-injection #1149): resolve through the
+                    # canonical helper so the value scanned below is the
+                    # sanitizer's output — an escaping or unresolvable root
+                    # stays ``None`` and is rejected as outside, never scanned.
+                    candidate = resolve_within_trusted_roots(raw, allowed)
+                    if candidate is None:
+                        # Naming an allowed root VERBATIM is legitimate (it
+                        # narrows the listing to that root). Compared with pure
+                        # string normalization — never a resolve of the raw
+                        # value — so no tainted path is ever constructed.
+                        _norm = os.path.normcase(os.path.normpath(raw))
+                        for _root in allowed:
+                            if _norm == os.path.normcase(str(_root)):
+                                candidate = _root
+                                break
                 if candidate is None or not any(
                     candidate.is_relative_to(allowed_root) for allowed_root in allowed
                 ):

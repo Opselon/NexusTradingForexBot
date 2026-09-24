@@ -20,6 +20,13 @@ Translation rules
 * partial-index predicates (``WHERE col IS NOT NULL AND col != ''``) are kept
   verbatim — PG supports them — but the literal must be typed when it is a
   parameter-ambiguous string, so '' becomes ''::text.
+* ``ALTER TABLE ... ADD COLUMN`` gains ``IF NOT EXISTS``: SQLite guards the
+  same statement with a PRAGMA pre-check in application code (and has no
+  ``IF NOT EXISTS`` spelling at all), PG spells the guard directly — without it
+  every re-provisioning run would fail on the columns it added last time.
+* ``datetime('now')`` (a SQLite keyword-form call in registry DDL) becomes the
+  equivalent UTC text expression; PG has no ``datetime()`` function, so the
+  statement would otherwise be rejected while the table silently stays absent.
 
 Everything else passes through unchanged. Each statement is idempotent
 (``IF NOT EXISTS``) so the migration is safe to re-run on an existing
@@ -61,6 +68,16 @@ def _type_partial_predicate(sql: str) -> str:
     return re.sub(r"!=\s*''(?!\s*::)", "!= ''::text", sql)
 
 
+#: SQLite's ``datetime('now')`` — UTC 'YYYY-MM-DD HH:MM:SS' as text.
+_SQLITE_DATETIME_NOW = re.compile(r"(?i)\bdatetime\s*\(\s*(['\"])now\1\s*\)")
+_PG_DATETIME_NOW = "to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')"
+
+#: SQLite has no ``ADD COLUMN IF NOT EXISTS``; the application guards it with a
+#: PRAGMA pre-check instead. PG has the guard, and needs it: every extracted
+#: ALTER must survive a re-provisioning run over the schema it created.
+_ADD_COLUMN_GUARD = re.compile(r"(?i)(\bALTER\s+TABLE\s+(?:\"[^\"]+\"|\w+)\s+ADD\s+COLUMN\s+)")
+
+
 def translate_ddl(statement: str) -> str:
     """Translate one SQLite DDL statement to PostgreSQL dialect."""
     if re.match(r"(?i)^\s*CREATE\s+VIRTUAL\s+TABLE", statement):
@@ -69,18 +86,8 @@ def translate_ddl(statement: str) -> str:
             "schema; refusing to emit a silently-wrong translation"
         )
     out = translate_type(statement)
-    # RTF-001: the additive column heals are authored in the SQLite dialect
-    # (``ALTER TABLE t ADD COLUMN c ...``). SQLite has no ADD COLUMN IF NOT
-    # EXISTS, but PostgreSQL does, and the migration must be re-runnable —
-    # insert the guard here so both providers get idempotent additive heals
-    # without a second, dialect-specific statement list.
-    if re.match(r"(?i)^\s*ALTER\s+TABLE\s+\w+\s+ADD\s+COLUMN\s+", out):
-        out = re.sub(
-            r"(?i)^\s*(ALTER\s+TABLE\s+\w+\s+ADD\s+COLUMN\s+)",
-            r"\1IF NOT EXISTS ",
-            out,
-            count=1,
-        )
+    out = _SQLITE_DATETIME_NOW.sub(_PG_DATETIME_NOW, out)
+    out = _ADD_COLUMN_GUARD.sub(r"\1IF NOT EXISTS ", out)
     if re.search(r"(?i)^\s*CREATE\s+(UNIQUE\s+)?INDEX", out):
         out = _type_partial_predicate(out)
     # collapse the harmless double space the substitutions can leave

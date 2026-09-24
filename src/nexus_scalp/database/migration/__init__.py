@@ -24,51 +24,25 @@ logger = logging.getLogger(__name__)
 
 
 def sqlite_ddl_statements() -> list[str]:
-    """The canonical audit-domain DDL, extracted from AuditRepository.
+    """The canonical audit-domain logical schema, in the SQLite dialect.
 
-    This is deliberately the ONLY place the schema is authored. It stays in
-    the SQLite dialect because that is what the domain's own code emits and
-    what the SQLite provider consumes directly; PostgreSQL gets a translated
-    copy (see pg_schema.translate_ddl).
+    This is deliberately the ONLY place the schema is authored for provider
+    provisioning. It stays in the SQLite dialect because that is what the
+    domain's own code emits and what the SQLite provider consumes directly;
+    PostgreSQL gets a translated copy (see pg_schema.translate_ddl).
+
+    The list is produced by replaying the whole schema chain into a disposable
+    in-memory SQLite database (CHG-0067): the application bootstrap — every
+    ``_create_*`` family plus the sibling bootstrap modules it delegates to —
+    then the ordered migration registry, then the engine's ``schema_meta`` /
+    ``schema_migrations`` tables. Tables, indexes (partial / DESC / unique), the
+    runtime ``ALTER TABLE ADD COLUMN`` history and the meta tables all reach the
+    provisioner that way; a source scan of triple-quoted CREATE literals can
+    only ever see the first of those four (see migration.schema_snapshot).
     """
-    import inspect
-    import re
+    from nexus_scalp.database.migration.schema_snapshot import audit_schema_statements
 
-    # The audit schema is authored across a dozen `_create_*_tables` methods on
-    # AuditRepository (core, experience, intelligence, factory, research...).
-    # Every one emits DDL as `conn.execute("""...""")`, so scanning the class's
-    # DDL-bearing members is the reliable way to gather the authoritative set —
-    # a single-method list would silently drift whenever a new family is added.
-    from nexus_scalp.adapters.database import audit_repository as _ar_module
-    from nexus_scalp.adapters.database.audit_repository import AuditRepository
-
-    members: list[str] = []
-    for _name, _obj in inspect.getmembers(AuditRepository, predicate=inspect.isfunction):
-        if not _name.startswith("_create") and _name != "_ensure_unique_constraint_heal":
-            continue
-        try:
-            members.append(inspect.getsource(_obj))
-        except (OSError, TypeError):
-            continue
-    src = "\n".join(members)
-    stmts = re.findall(r'conn\.execute\(\s*(""".*?""")\s*\)', src, flags=re.S)
-    ddl: list[str] = []
-    for raw in stmts:
-        body = raw.strip().strip('"').strip()
-        if re.match(r"(?i)^\s*CREATE", body):
-            ddl.append(body)
-    if not ddl:
-        # Fallback: scan the module file itself, in case a future refactor
-        # moves the DDL off the class (translating *something* beats silently
-        # provisioning an empty schema).
-        src = inspect.getsource(_ar_module)
-        stmts = re.findall(r'conn\.execute\(\s*(""".*?""")\s*\)', src, flags=re.S)
-        ddl = [
-            raw.strip().strip('"').strip()
-            for raw in stmts
-            if re.match(r"(?i)^\s*CREATE", raw.strip().strip('"').strip())
-        ]
-    return ddl
+    return list(audit_schema_statements())
 
 
 def additive_columns_statements() -> list[str]:

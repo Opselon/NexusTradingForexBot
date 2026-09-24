@@ -33,7 +33,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from nexus_scalp.observability.logging import get_logger
-from nexus_scalp.observability.trace_contract import TRACE_SCHEMA_VERSION
+from nexus_scalp.observability.trace_contract import TRACE_SCHEMA_VERSION, sanitize_detail
 from nexus_scalp.observability.trace_observer import trace_observer
 from nexus_scalp.web.errors import log_web_error, new_request_id
 
@@ -56,6 +56,217 @@ def _err_payload(code: str, **kw: Any) -> dict[str, Any]:
     from nexus_scalp.web.errors import safe_error_payload
 
     return safe_error_payload(code=code, request_id=new_request_id(), **kw)
+
+
+def _as_text(value: Any) -> str | None:
+    """Normalize a query param to a non-empty trimmed word, else None.
+
+    Empty string / whitespace means "filter not set" (so ``?stage=`` keeps the
+    legacy unfiltered behavior), never a filter for an unnamed stage.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _filter_echo(*filters: Any) -> dict[str, Any]:
+    """Echo the ACTIVE filters so the UI can show what is narrowing the page."""
+    names = ("trace_id", "stage", "status", "mode", "position_id")
+    return {n: v for n, v in zip(names, filters, strict=False) if v}
+
+
+def _apply_event_filters(
+    events: list[dict[str, Any]],
+    *,
+    trace_id: str | None = None,
+    stage: str | None = None,
+    status: str | None = None,
+    mode: str | None = None,
+    position_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """AND-filter a page of STORED events over verbatim runtime words/ids.
+
+    ``mode`` matches the mode word the emit site recorded (contract field or
+    the ``detail.engine_mode`` legacy value, upper-cased for a stable
+    comparison). A filter that matches nothing yields an empty list — the UI
+    renders the honest empty state (§73), never a fabricated page.
+    """
+    tid = _as_text(trace_id)
+    stg = _as_text(stage)
+    sta = _as_text(status)
+    md = _as_text(mode)
+    pid = _as_text(position_id)
+    if not any((tid, stg, sta, md, pid)):
+        return list(events)
+    out = []
+    for e in events:
+        if tid is not None and e.get("trace_id") != tid:
+            continue
+        if stg is not None and e.get("stage") != stg:
+            continue
+        if sta is not None and e.get("status") != sta:
+            continue
+        if (
+            pid is not None
+            and str(e.get("position_id") or e.get("detail", {}).get("position_id") or "") != pid
+        ):
+            continue
+        if md is not None:
+            ev_mode = e.get("mode") or e.get("detail", {}).get("engine_mode")
+            ev_mode = str(getattr(ev_mode, "value", ev_mode)).upper() if ev_mode else ""
+            if ev_mode != md.upper():
+                continue
+        out.append(e)
+    return out
+
+
+def _stored_event(event_id: str) -> dict[str, Any] | None:
+    """Locate one STORED event by id (linear scan of the bounded ring).
+
+    Returns None when the id was never emitted or the ring evicted it —
+    callers answer 404 / NOT OBSERVED, never a synthesized record.
+    """
+    with trace_observer._lock:
+        return next((e for e in trace_observer._events if e["event_id"] == event_id), None)
+
+
+def _next_event(after: dict[str, Any]) -> dict[str, Any] | None:
+    """The next STORED event of the SAME trace after ``after`` (insertion order).
+
+    None when this was the last retained event of its trace.
+    """
+    trace_id = after.get("trace_id")
+    if not trace_id:
+        return None
+    with trace_observer._lock:
+        refs = trace_observer._trace_events.get(trace_id)
+        if not refs:
+            return None
+        seq = after.get("sequence")
+        for e in refs:
+            if e.get("sequence", 0) > (seq or 0):
+                return e
+    return None
+
+
+def _why_reasons(ev: dict[str, Any]) -> dict[str, Any]:
+    """The event's OWN reason-bearing evidence (§16): verbatim runtime words.
+
+    Only fields the runtime actually recorded are surfaced (reason_code, the
+    rejection/block codes, the frozen ``state`` word). An empty dict means NO
+    REASON OBSERVED — the WHY panel renders UNKNOWN, never an invented
+    explanation (§60).
+    """
+    detail = ev.get("detail") or {}
+    out: dict[str, Any] = {}
+
+    def _put(key: str, *candidates: Any) -> None:
+        if key in out:
+            return
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            text = str(candidate).strip()
+            if text:
+                out[key] = text
+                return
+
+    _put(
+        "reason_code",
+        ev.get("reason_code"),
+        detail.get("reason_code"),
+        detail.get("reason"),
+        detail.get("suppressed_by"),
+    )
+    _put("error_code", ev.get("error_code"), detail.get("error_code"))
+    _put("state", ev.get("state"), detail.get("state"))
+    _put("rejection_reason", detail.get("rejection_reason"))
+    _put("blocked_by", detail.get("blocked_by"))
+    _put("decision_stage", detail.get("decision_stage"))
+    return out
+
+
+def _why_payload(ev: dict[str, Any]) -> dict[str, Any]:
+    """Runtime-derived WHY / NEXT answer for one STORED event (§37/§38).
+
+    WHY  = the event's own reason/state/detail evidence, verbatim.
+    NEXT = the next observed event of the same trace; TERMINATED (with this
+           event's terminal status) when the path observably ended here; or
+           NOT OBSERVED when nothing further was retained — a missing link is
+           reported as missing evidence, never as a fabricated continuation.
+    provenance is ``observed`` for the stored record itself and for an edge the
+    observer explicitly linked (``parent_event_id``); a same-trace successor
+    without that link is marked ``inferred`` (§9/§56), and TERMINATED/NOT
+    OBSERVED carry no edge, so ``provenance`` stays absent (PROVENANCE GAP).
+    """
+    detail = ev.get("detail") or {}
+    reasons = _why_reasons(ev)
+    next_ev = _next_event(ev)
+    if next_ev is not None:
+        linked = next_ev.get("parent_event_id") == ev.get("event_id")
+        nxt: dict[str, Any] = {
+            "observed": True,
+            "destination": next_ev.get("stage"),
+            "event_id": next_ev.get("event_id"),
+            "stage": next_ev.get("stage"),
+            "event_type": next_ev.get("event_type"),
+            "status": next_ev.get("status"),
+            "timestamp": next_ev.get("timestamp"),
+            "terminal": bool(next_ev.get("terminal")),
+            "provenance": "observed" if linked else "inferred",
+            "link": "parent_event_id" if linked else "trace_sequence",
+        }
+        next_reasons = _why_reasons(next_ev)
+        if next_reasons:
+            nxt["why"] = next_reasons
+    elif ev.get("terminal"):
+        nxt = {
+            "observed": True,
+            "destination": "TERMINATED",
+            "terminal_status": ev.get("status"),
+        }
+        if reasons:
+            nxt["why"] = reasons
+    else:
+        nxt = {"observed": False, "destination": "NOT OBSERVED"}
+    payload: dict[str, Any] = {
+        "found": True,
+        "trace_schema_version": TRACE_SCHEMA_VERSION,
+        "event_id": ev.get("event_id"),
+        "trace_id": ev.get("trace_id"),
+        "sequence": ev.get("sequence"),
+        "timestamp": ev.get("timestamp"),
+        "stage": ev.get("stage"),
+        "component": ev.get("component"),
+        "event_type": ev.get("event_type"),
+        "status": ev.get("status"),
+        "terminal": bool(ev.get("terminal")),
+        "why": reasons,
+        "detail": sanitize_detail(detail),
+        "next": nxt,
+        "provenance": "observed",
+    }
+    # Optional contract fields (present only when the emit site recorded them).
+    for key in (
+        "symbol",
+        "decision_id",
+        "latency_us",
+        "state",
+        "reason_code",
+        "error_code",
+        "mode",
+        "position_id",
+        "order_id",
+        "deal_id",
+        "model",
+        "provider",
+        "freshness",
+        "parent_event_id",
+    ):
+        if ev.get(key) is not None:
+            payload[key] = ev[key]
+    return payload
 
 
 def register_trace_routes(app: Any, _err: Any, _log_err: Any) -> None:
@@ -131,12 +342,50 @@ def register_trace_routes(app: Any, _err: Any, _log_err: Any) -> None:
             return _err_payload("TRACE_DECISIONS_ERROR")
 
     @app.get("/api/trace/events")
-    def get_trace_events(last_seq: int = 0, limit: int = 1000) -> dict[str, Any]:
-        """Batched event tail with explicit resume point + gap flag (§77)."""
+    def get_trace_events(
+        last_seq: int = 0,
+        limit: int = 1000,
+        trace_id: str | None = None,
+        stage: str | None = None,
+        status: str | None = None,
+        mode: str | None = None,
+        position_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Batched event tail with explicit resume point + gap flag (§77).
+
+        Optional AND-filters (§57 clickable counters / §36 filtering): every
+        one is a verbatim runtime word (``stage``, ``status``, ``mode``) or id
+        (``trace_id``, ``position_id``). With no filter the response is
+        byte-identical to the legacy tail — filters only narrow.
+        """
         try:
             last_seq = max(0, int(last_seq))
             limit = max(1, min(int(limit), 5000))
-            return trace_observer.events_since(last_seq, limit=limit)
+            with trace_observer._lock:
+                # NOTE: the lock is the observer's own RLock (re-entrant: the
+                # read views below take it too, but this path builds the page
+                # from the ring under one acquisition so a concurrent emit
+                # cannot split the filtered page).
+                base = [e for e in trace_observer._events if e["sequence"] > last_seq][-limit:]
+                events = _apply_event_filters(
+                    base,
+                    trace_id=trace_id,
+                    stage=stage,
+                    status=status,
+                    mode=mode,
+                    position_id=position_id,
+                )
+                gap = False
+                if trace_observer._events and last_seq > 0:
+                    oldest = trace_observer._events[0]["sequence"]
+                    if last_seq < oldest - 1:
+                        gap = True  # ring evicted events the client asked for
+            return {
+                "events": events,
+                "gap": gap,
+                "last_seq": trace_observer._seq,
+                "filters": _filter_echo(trace_id, stage, status, mode, position_id),
+            }
         except Exception as exc:  # pragma: no cover - isolation guard
             _log_err(exc, "events failed", endpoint="/api/trace/events")
             return _err_payload("TRACE_EVENTS_ERROR")
@@ -153,6 +402,35 @@ def register_trace_routes(app: Any, _err: Any, _log_err: Any) -> None:
         except Exception as exc:  # pragma: no cover - isolation guard
             _log_err(exc, "bundle failed", endpoint="/api/trace/bundle")
             return _err_payload("TRACE_BUNDLE_ERROR")
+
+    # --------------------------------------------------------- WHY / NEXT (§37/§38)
+    @app.get("/api/trace/why/{event_id}")
+    def get_trace_why(event_id: str) -> Response:
+        """WHY did this event happen, and WHERE did it go next (§37/§38/§65).
+
+        Built ONLY from the stored record: the event's own reason/state/detail
+        evidence, the next observed event of the same trace (or TERMINATED with
+        the terminal status, or NOT OBSERVED when nothing further was retained)
+        and the provenance mark of that linkage. Stored events only — an
+        unknown id is an honest 404; nothing is synthesized.
+        """
+        try:
+            ev = _stored_event(event_id)
+            if ev is None:
+                return JSONResponse(
+                    _err_payload(
+                        "RESOURCE_NOT_FOUND",
+                        message="No stored event with this id (never emitted or already evicted).",
+                        event_id=str(event_id),
+                    ),
+                    status_code=404,
+                )
+            payload = _why_payload(ev)
+            payload["generated_at"] = _now_iso()
+            return JSONResponse(payload, status_code=200)
+        except Exception as exc:  # pragma: no cover - isolation guard
+            _log_err(exc, "why failed", endpoint="/api/trace/why", resource=str(event_id))
+            return JSONResponse(_err_payload("TRACE_WHY_ERROR"), status_code=500)
 
     # ------------------------------------------------------------- live SSE
     @app.get("/api/trace/stream")
