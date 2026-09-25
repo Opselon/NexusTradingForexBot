@@ -48,6 +48,7 @@ from typing import TYPE_CHECKING, Any
 
 from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
 from nexus_scalp.adapters.paper.replay_source import (
+    RAW_M1_BARS_PATH,
     ReplayDataUnavailableError,
     ReplayTickSource,
 )
@@ -109,7 +110,7 @@ def build_paper_adapter(
             symbol=symbol,
             dataset_id=str(getattr(paper_data, "dataset_id", "") or ""),
             allow_raw_fallback=bool(getattr(paper_data, "allow_raw_fallback", True)),
-            raw_bars_path=str(getattr(paper_data, "raw_bars_path", "") or "data/raw/XAUUSD_M1.csv"),
+            raw_bars_path=str(getattr(paper_data, "raw_bars_path", "") or RAW_M1_BARS_PATH),
         )
     except ReplayDataUnavailableError as exc:
         if on_replay_unavailable != ON_REPLAY_UNAVAILABLE_SYNTHETIC:
