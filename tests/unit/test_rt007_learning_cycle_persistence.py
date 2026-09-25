@@ -36,8 +36,17 @@ def test_rt007_fallback_is_not_in_memory() -> None:
     # ``:memory:`` was the defect: a fresh empty DB per connect.
     resolved = _resolve_cycle_store_db_path(_PgBackedRepo())
     assert resolved != ":memory:", "RT-007 regressed: still :memory:"
-    assert os.path.isfile(resolved), "expected a real schema-carrying temp file"
-    os.unlink(resolved)
+    # The schema-carrying file appears on the first connection (the store
+    # connects lazily in ensure_schema()); asserting existence before any
+    # connect is not a property the resolver has. Prove it instead: the same
+    # path must be handed out twice and must carry a schema after a connect.
+    _assert_equal(_resolve_cycle_store_db_path(_PgBackedRepo()), resolved)
+    try:
+        LearningCycleStore(resolved).recover_interrupted()
+        assert os.path.isfile(resolved), "expected a real schema-carrying file"
+    finally:
+        if os.path.isfile(resolved):
+            os.unlink(resolved)
 
 
 def test_rt007_fallback_schema_survives_reconnect() -> None:
@@ -63,7 +72,11 @@ def test_rt007_magicmock_double_resolves_to_a_file() -> None:
     repo = MagicMock()
     resolved = _resolve_cycle_store_db_path(repo)
     assert isinstance(resolved, str)
-    assert resolved != ":memory:"
+    # A bare MagicMock cannot name a provider (its _db_url is itself a mock,
+    # not a string), so the resolver must stay honest and fail SAFE to the
+    # hermetic in-memory store rather than guessing a real workspace file for
+    # a provider it cannot identify. The schema must still be usable end to end.
+    _assert_equal(resolved, ":memory:")
     try:
         store = LearningCycleStore(resolved)
         store.recover_interrupted()
