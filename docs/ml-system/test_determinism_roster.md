@@ -216,11 +216,11 @@ stdlib scanner gives the current in-gate exposure, ordered by live source count:
 | Sources | File | Status |
 |---|---|---|
 | 15 | `tests/unit/test_bug262_close_time_evidence.py` | **REMEDIATED (ML-QA-010, PR #432)** — 11 `datetime.now` + 4 `mkdtemp` removed via a fixed injected clock + `tmp_path`; 19-test contract battery `tests/unit/test_ml_qa_010_clock_determinism.py` pins it (merged as squash `6a7e2e7e`) |
-| 8 | `tests/unit/test_shadow70_safety.py` | **REMEDIATED (ML-QA-011, PR pending)** — 6 `datetime.now` + 1 `mkdtemp` removed via ONE module-level frozen instant (`_FIXED_NOW`) replayed through `_now()` + `tmp_path`; the persistence wait gained a `budget_cpu_ms` CPU-time bound; spec 13/14 retry idempotency is now *provable* (it was unprovable under six independent wall-clock reads). 23-test contract battery `tests/unit/test_ml_qa_011_shadow70_clock_determinism.py` pins it (negative control: 8 rules fail on the pre-remediation file) |
-| 7 | `tests/unit/test_outcome_flush_race_bug140.py` | open (4 timing, 3 `datetime.now`) — **NEXT** |
+| 8 | `tests/unit/test_shadow70_safety.py` | **REMEDIATED (ML-QA-011, PR #457, squash 33205de2)** — 6 `datetime.now` + 1 `mkdtemp` removed via ONE module-level frozen instant (`_FIXED_NOW`) replayed through `_now()` + `tmp_path`; the persistence wait gained a `budget_cpu_ms` CPU-time bound; spec 13/14 retry idempotency is now *provable* (it was unprovable under six independent wall-clock reads). 23-test contract battery `tests/unit/test_ml_qa_011_shadow70_clock_determinism.py` pins it (negative control: 8 rules fail on the pre-remediation file) |
+| 7 | `tests/unit/test_outcome_flush_race_bug140.py` | **REMEDIATED (ML-QA-012, PR pending)** — 4 `monotonic()` probes + 3 `datetime.now` removed: ONE module-level frozen instant (`_FIXED_NOW`) through a single `_now()` supplier for all 3 timestamp sites (the causality guard is strict `<`, so an equal decision/outcome pair is causal — independent reads made that equality a coin flip across a tick); both poll loops now bounded on CPU time (`budget_cpu_ms` + `time.process_time()` inner fail-fast + `consumed_ms` assert), the `time.sleep()` sleeps gone. 15-test contract battery `tests/unit/test_ml_qa_012_outcome_flush_clock_determinism.py` pins it (negative control: 9 rules fail on the pre-remediation file) |
 | 4 | `tests/unit/test_causal_conv_invariants.py` | open (4 timing) |
 | 4 | `tests/unit/test_70d_bug106_incremental_phase19.py` | deferred (`skipif` on a data file absent from git) |
-| 3 | `tests/unit/test_bug285_overflow_drain.py` | open (3 timing) |
+| 3 | `tests/unit/test_bug285_overflow_drain.py` | open (3 timing) — **NEXT** |
 | 3 | `tests/unit/test_bug275_hygiene_cadence_clock.py` | open (3 timing) |
 | 3 | `tests/unit/test_runtime_config_hot_reload.py` | open (2 `getpid`, 1 `mkdtemp`) |
 | 2 | `tests/unit/test_training_env_worker.py` | open (2 `getpid`) |
