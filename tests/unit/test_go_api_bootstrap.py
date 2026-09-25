@@ -5,18 +5,15 @@ toolchain, with NO network and NO Go compiler required to run this suite:
 
   * version parsing: 1.27 accepted, 1.20 rejected, garbage rejected
   * port helpers: a busy port is detected and a free one is found above it
-  * resolve_api_addr: NSE_GO_ADDR wins, else python_port + 1
+  * resolve_api_addr: NSE_GO_ADDR wins, else the preferred port verbatim
+    (the CALLER adds the +1 — see engine_boot._boot_go_api_plane)
   * build_go_api: missing go-api dir, failing go exe, and the cache-HIT path
     (a stamp matching _source_hash skips the compile entirely)
-  * shipped binary: a release-baked nexus-api.exe is used AS-IS and is never
-    rebuilt (the end user has no Go toolchain)
-  * boot_go_api: no toolchain -> None and NSE_GO_API_ORIGIN is left unset
-  * GoApiSupervisor.start: a binary that does not exist fails FAST, it does
-    not hang until the readiness timeout
+  * boot_go_api: no toolchain -> None and NSE_GO_API_ORIGIN left unset
+  * GoApiSupervisor.start: a missing binary fails FAST, not a 20s hang
 
-The whole point of this subsystem is that a Go failure never stops the
-product: every failure path returns (False, ...) / None and the FastAPI app
-keeps serving on its own port. These tests are that invariant's proof.
+A Go failure must never stop the product: every failure path returns
+(False, ...) / None and the FastAPI app keeps serving on its own port.
 """
 
 from __future__ import annotations
