@@ -134,10 +134,20 @@ export default function CommandDeck(props: CommandDeckProps) {
             </div>
             <div className="tr-deck-card-body">
               <div className="tr-deck-actions">
-                <button className="btn primary tr-deck-btn tr-deck-btn--start" disabled={engineCmd.state.running || running} onClick={onStart}>
+                <button
+                  className="btn primary tr-deck-btn tr-deck-btn--start"
+                  disabled={engineCmd.state.running || running}
+                  onClick={onStart}
+                  aria-label={t("trading.engine.start_aria", "Start engine")}
+                >
                   {t("trading.engine.start", "▶ Start engine")}
                 </button>
-                <button className="btn danger tr-deck-btn tr-deck-btn--stop" disabled={engineCmd.state.running || !running} onClick={onStop}>
+                <button
+                  className="btn danger tr-deck-btn tr-deck-btn--stop"
+                  disabled={engineCmd.state.running || !running}
+                  onClick={onStop}
+                  aria-label={t("trading.engine.stop_aria", "Stop engine")}
+                >
                   {t("trading.engine.stop", "■ Stop engine")}
                 </button>
               </div>
@@ -177,7 +187,14 @@ export default function CommandDeck(props: CommandDeckProps) {
                 {MODE_SEGMENTS.map((m) => {
                   const active = modeTarget === m.id;
                   return (
-                    <button key={m.id} type="button" className={`tr-deck-seg tr-deck-seg--${m.id.toLowerCase()}${active ? " is-active" : ""}`} aria-pressed={active} onClick={() => pickMode(m.id)}>
+                    <button
+                      key={m.id}
+                      type="button"
+                      className={`tr-deck-seg tr-deck-seg--${m.id.toLowerCase()}${active ? " is-active" : ""}`}
+                      aria-pressed={active}
+                      aria-label={t("trading.deck.seg_aria", "Target execution mode: {m}", { m: m.id })}
+                      onClick={() => pickMode(m.id)}
+                    >
                       <span className="tr-deck-seg-name">{m.id}</span>
                       <span className="tr-deck-seg-desc">{m.id === "PAPER" ? t("trading.seg.paper_desc", m.desc) : m.id === "SHADOW" ? t("trading.seg.shadow_desc", m.desc) : t("trading.seg.live_desc", m.desc)}</span>
                       {currentMode === m.id && <span className="tr-deck-seg-current">{t("trading.mode.current_word", "current")}</span>}
@@ -200,6 +217,7 @@ export default function CommandDeck(props: CommandDeckProps) {
                   className={`btn ${modeTarget === "LIVE" ? "danger" : "primary"} tr-deck-apply`}
                   disabled={!modeTarget || modeCmd.state.running || (modeTarget === "LIVE" && liveConfirm !== LIVE_CONFIRM_TEXT) || modeTarget === currentMode}
                   onClick={onApplyMode}
+                  aria-label={t("trading.mode.apply_aria", "Apply mode {m}", { m: modeTarget || "—" })}
                 >
                   {t("trading.mode.apply", "Apply mode")}
                 </button>
