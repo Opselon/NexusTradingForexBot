@@ -2,7 +2,6 @@
 out-of-process rewrites of the serving artifact.
 
 Context
-=======
 The P0-2 trust anchor (``application/live/model_bundle_store.
 _verify_champion_registry_binding``) compares the serving ``model.pt`` bytes
 against the governed CHAMPION fingerprint at BOOT only. BUG-271 gave every
@@ -15,7 +14,6 @@ engine serves poisoned bytes silently and the refusal only fires at the NEXT
 boot — after unbounded trading on unverified weights.
 
 Semantics
-=========
 * ALERT-ONLY. This module NEVER blocks, mutates, quarantines, or halts. The
   enforcement path stays the boot anchor (INV-015 fail-closed load); the
   sentinel converts a between-boot drift into an observable, timestamped

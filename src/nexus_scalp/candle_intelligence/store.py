@@ -836,16 +836,58 @@ class _PooledReadConnection:
 
     ``query_recent``'s DB fallback uses this only when the ring buffer is
     empty (cold start / deep history); the hot path never reaches it.
+
+    The backend is re-resolved per query rather than captured at construction:
+    pooled backends are process-global and another owner (a sibling test's
+    teardown, or the migration bootstrap) may unregister and close the pool
+    this object was built against. A captured reference would then read from a
+    dead pool — the query returns an empty list and the row silently "goes
+    missing" even though the write committed. Re-resolution picks up the
+    replacement pool, and returns None (the empty-result degradation) only when
+    the domain genuinely has no reader.
     """
 
     def __init__(self, backend: Any) -> None:
         self._backend = backend
 
+    def _reader(self) -> Any:
+        backend = self._backend
+        if backend is None:
+            return None
+        # A closed pool still answers attribute lookups; the fabric's
+        # registry is the authority for "is this backend still live".
+        try:
+            from nexus_scalp.database.fabric import get_domain_backend
+
+            live = get_domain_backend("candle_intel", readonly=True)
+            if live is not None:
+                return live
+        except Exception:
+            pass
+        return backend if not _pool_is_closed(backend) else None
+
     def query(self, sql: str, args: Any = ()) -> list[dict[str, Any]]:
-        return self._backend.query(sql, tuple(args) if args else ())
+        backend = self._reader()
+        if backend is None:
+            return []
+        return backend.query(sql, tuple(args) if args else ())
 
     def close(self) -> None:
         return None  # the pool owns the lifecycle
+
+
+def _pool_is_closed(backend: Any) -> bool:
+    """True when a pooled backend has been closed by another owner."""
+    for attr in ("closed", "_closed", "pool_closed"):
+        flag = getattr(backend, attr, None)
+        if isinstance(flag, bool) and flag:
+            return True
+    pool = getattr(backend, "_pool", None)
+    if pool is not None:
+        flag = getattr(pool, "closed", None)
+        if isinstance(flag, bool) and flag:
+            return True
+    return False
 
 
 class _UnusableReadConnection:

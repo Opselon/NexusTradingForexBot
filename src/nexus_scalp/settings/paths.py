@@ -96,6 +96,13 @@ def resolve_decision_store_target() -> Path | str:
         cfg = load_database_config("audit")
         if cfg.is_postgresql and not os.environ.get("NEXUS_DECISIONS_DB", "").strip():
             return build_postgres_url(cfg, SecureSecretStore())
+    except RuntimeError as exc:
+        # A missing/empty PostgreSQL password is a fatal misconfiguration, not
+        # a reason to silently downgrade operational data to SQLite: the
+        # catch-all below used to swallow it and the box kept writing the
+        # ledger to a file while believing it was on PostgreSQL.
+        if "password not found in secret store" in str(exc):
+            raise
     except Exception:  # pragma: no cover - settings DB unavailable / malformed
         pass
     return decisions_db_path()
