@@ -1,6 +1,5 @@
 """
 Immutable Experience Ledger
-===========================
 Phase 08 long-term memory persistence.
 
 Storage model (three tables, all owned by the existing `AuditRepository`; no
@@ -680,19 +679,14 @@ class ExperienceLedger:
         """
         if not self.audit_repo._is_sqlite:
             return []
-        try:
-            conn = self._connect(10.0)
-            try:
-                rows = conn.execute(
-                    "SELECT DISTINCT strategy_id FROM audit_experiences LIMIT ?;",
-                    (max(1, int(limit)),),
-                ).fetchall()
-                return [str(r["strategy_id"]) for r in rows if r["strategy_id"]]
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[EXPERIENCE] strategy id enumeration failed", error=str(e))
-            return []
+
+        rows = query_rows(
+            self.audit_repo,
+            "SELECT DISTINCT strategy_id FROM audit_experiences LIMIT ?;",
+            (max(1, int(limit)),),
+            operation="experience.list_strategy_ids",
+        )
+        return [str(r["strategy_id"]) for r in rows if r["strategy_id"]]
 
     def count_experiences(self) -> int:
         """Total immutable decision rows."""

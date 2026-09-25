@@ -528,9 +528,20 @@ def register_domain_read_backend(domain: str, backend: Any) -> None:
         )
 
 
-def unregister_domain_backend(domain: str) -> None:
+def unregister_domain_backend(domain: str, *, close: bool = True) -> None:
+    """Remove a domain from the backend registry.
+
+    With ``close=True`` (default) the pooled backend is closed first: the pool
+    holds idle connections to the database and an orphaned registry entry is
+    what leaves them behind — a later ``DROP DATABASE`` then fails with
+    ``ObjectInUse``, and any live reference to the old backend hangs on
+    ``getconn`` instead of failing fast. Closing is best-effort: a backend
+    mid-close is not a failure.
+    """
     with _DOMAIN_BACKEND_LOCK:
-        _DOMAIN_BACKENDS.pop(domain, None)
+        entry = _DOMAIN_BACKENDS.pop(domain, None)
+    if entry is not None and close:
+        entry.close()
 
 
 def get_domain_backend(domain: str, readonly: bool = False) -> Any:

@@ -1,6 +1,5 @@
 """
 LearningCycle-driven orchestrator glue (Learning-Loop Closure, Phases 5/7/8).
-============================================================================
 
 Bridges the LearningCycle state machine to the existing controlled pipeline:
 
@@ -53,24 +52,14 @@ def _resolve_cycle_store_db_path(audit_repo: AuditRepository) -> str:
 
     The store is a state machine over the CANONICAL audit.db, so production
     passes the real ``audit_repo._db_path``. Test doubles (``audit_repo =
-    Test doubles (``audit_repo = MagicMock()``) make ``_db_path`` a
-    MagicMock whose ``str()`` is not a valid filesystem path; the resolved
-    value must still be a real openable SQLite location.
-
-    Provider-aware (PG-READ-PLANE-001/D): under a non-SQLite provider
-    ``_db_path`` is the empty string (or, since PR #460, the provider URI).
-    An in-memory DB there is a BUG (RT-007/D4: ``no such table:
-    learning_cycles`` on every boot, state lost on restart), so the cycle
-    store is pointed at a REAL file inside the runtime workspace instead.
-    The file is a local state journal — the learning tables are also
-    authored into the governed audit schema, so this never replaces the
-    audit record, it keeps cycle state durable.
-
-    ``:memory:`` is deliberately never returned by this resolver (RT-007):
-    ``LearningCycleStore`` opens one short-lived ``sqlite3.connect()`` per
-    operation with no shared connection, so each ``:memory:`` connect mints
-    a brand-new EMPTY database and the table ``ensure_schema()`` just created
-    is invisible to the next call. A real file is correct for every caller.
+    MagicMock()``) make ``_db_path`` a MagicMock whose ``str()`` is not a
+    valid filesystem path, and ``sqlite3.connect`` then dies with
+    ``OperationalError: unable to open database file`` (observed 2026-09-07:
+    13 red in tests/unit/test_htf_warmup_gate.py). Fall back to the shared
+    in-memory convention (same as AuditRepository's ``:memory:`` handling)
+    whenever the attribute is not a plain string path — the cycle store is
+    process-local state, so in-memory stays hermetic and never touches the
+    production artifacts/audit.db (BUG-223 rule).
     """
     raw = getattr(audit_repo, "_db_path", None)
     if _is_usable_sqlite_path(raw):
