@@ -5,6 +5,32 @@
 # Release locks when done (remove entry or mark released).
 
 exclusive_locks:
+  # 2026-09-25 — REVIEW LOCK: the review worktree is a READ-ONLY plane.
+  # An agent that wants to change anything in it MUST first open a PR against
+  # agents/REVIEW_LOCK.md and get owner approval. Violating this is a defect.
+  - path: C:/Users/Capsizer/source/repos/nse-review-main
+    owner: USER (human review console — not any agent)
+    exclusive: true
+    scope: review-main-read-only-plane
+    since: 2026-09-25
+    task: REVIEW-LOCK
+    expiry: never
+    note: >
+      Read-only review console. NO agent may commit/push/rebase/clean here.
+      The tree is refreshed ONLY by the owner's /c/tmp/update_review.sh.
+      Enforcement: L1 preflight WORKTREE (§8), L2 this file, L3 engine
+      NSE_REVIEW_MODE env, L4 documented in agents/REVIEW_LOCK.md.
+  - path: review/main
+    owner: USER (human review console — not any agent)
+    exclusive: true
+    scope: review-main-branch-tracking-ref
+    since: 2026-09-25
+    task: REVIEW-LOCK
+    expiry: never
+    note: >
+      The tracking ref checked out in the review worktree. Held by exactly one
+      worktree so the preflight WORKTREE check blocks a second checkout by any
+      agent (git_governance.md §8).
   # --- END-USER-RUNTIME-UI-INTEGRATION WAVE (2026-09-24, EUR) ---------------
   # Base a758fe46 (= origin/main tip). 4 file-disjoint implementer lanes +
   # integrator. Wave contract lives OUTSIDE the repo at
