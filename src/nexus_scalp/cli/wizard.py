@@ -387,6 +387,40 @@ def _validate_postgres_connection(
     return ok, category, detail
 
 
+def _postgres_config_was_validated(row: Any, svc: Any = None) -> bool:
+    """True when a persisted ``database.postgresql_config`` row is NOT stale.
+
+    ``SettingsService.set_postgres_config`` deliberately strips the
+    ``password_secret`` reference before persisting (the settings DB is
+    secret-free), so the row itself cannot distinguish a validated config from a
+    leftover, never-validated one. The signal that can: the OS secret store
+    holds a PostgreSQL password, and the row resolves to a PostgreSQL config.
+    A password only reaches the store after a live validation succeeded, so that
+    combination means the operator has working PostgreSQL credentials and the row
+    must never be cleared by a later SQLite choice.
+
+    Never raises: any read/parsing problem is treated as not-validated, which
+    preserves the original clearing behaviour.
+    """
+    try:
+        from nexus_scalp.database.config import DatabaseConfig
+
+        raw = row.value if hasattr(row, "value") else row
+        if not isinstance(raw, dict):
+            return False
+        cfg = DatabaseConfig.from_dict(raw)
+        if not cfg.is_postgresql:
+            return False
+        if svc is not None:
+            try:
+                return bool(svc.postgres_password_set())
+            except Exception:
+                pass
+        return False
+    except Exception:
+        return False
+
+
 def _persist_sqlite_choice(svc: Any) -> None:
     """Persist an EXPLICIT SQLite choice (and clear a stale PG config row).
 
@@ -395,12 +429,19 @@ def _persist_sqlite_choice(svc: Any) -> None:
     database.postgresql_config row whenever it exists, regardless of the
     provider — so a stale, never-validated row would hijack the operator's
     SQLite choice and send the runtime back to PostgreSQL.
+
+    The clear is deliberately *conditional*: a row that carries a validation
+    fingerprint was validated against a live server, so it is not stale. Deleting
+    it would silently destroy an operator's working PostgreSQL config (the
+    regression where a repeated first run reverted a live install to SQLite).
+    Only never-validated rows are cleared.
     """
     svc.set_database_provider("sqlite", actor="first_run_setup")
     try:
         from nexus_scalp.database.config import PG_CONFIG_SETTING_KEY
 
-        if svc.db.get(PG_CONFIG_SETTING_KEY) is not None:
+        row = svc.db.get(PG_CONFIG_SETTING_KEY)
+        if row is not None and not _postgres_config_was_validated(row, svc):
             svc.db.delete(PG_CONFIG_SETTING_KEY)
             console.print(
                 "[dim]Cleared a stale database.postgresql_config row "
@@ -600,6 +641,27 @@ def run_first_run_database_choice(
         # GATE 1 — an already-configured install must boot with ZERO new prompts.
         out.update(provider=str(row.value), reason="already_configured")
         return out
+    # GATE 1b — a validated PostgreSQL config is present but the provider row is
+    # missing (a concurrent/aborted first run wrote only part of the pair). A
+    # fresh first-run prompt here could answer SQLITE and _persist_sqlite_choice
+    # would then DELETE the validated PG config row, silently reverting a live
+    # install to SQLite. Accept the validated config as the answer instead.
+    # Requires the same signal as the clear guard: a PostgreSQL password in the
+    # OS secret store (only written after a live validation succeeded).
+    try:
+        from nexus_scalp.database.config import PG_CONFIG_SETTING_KEY
+
+        row = svc.db.get(PG_CONFIG_SETTING_KEY)
+        if row is not None and _postgres_config_was_validated(row, svc):
+            svc.set_database_provider("postgresql", actor="first_run_repair")
+            out.update(
+                provider="postgresql",
+                persisted=True,
+                reason="postgres_config_present_provider_row_absent",
+            )
+            return out
+    except Exception:
+        pass
     if prompt_fn is None and not sys.stdin.isatty():
         # GATE 2 — CI / --json / piped stdin: defer, never hang a boot.
         out["reason"] = "non_interactive"

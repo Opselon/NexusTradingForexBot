@@ -161,6 +161,20 @@ class ProviderDecisionStore:
             logger.error("[AI-PROV] %s domain provisioning failed: %s", DECISION_DOMAIN, exc)
             return None
 
+    # -- pooled-connection helper -------------------------------------------
+
+    @staticmethod
+    def _pg_conn(backend: Any) -> Any:
+        """Borrow one connection from a pooled write backend.
+
+        ``PgWritePlane.connection()`` is a context manager (the pool is the
+        boundary; connections are never owned by the caller). Borrowing it
+        here keeps this store on the same pooled write plane the audit domain
+        uses, so the decision ledger never opens its own pool.
+        """
+        with backend.connection() as conn:
+            yield conn
+
     # -- writing --------------------------------------------------------------
 
     def record(self, outcome: dict[str, Any]) -> None:
@@ -232,16 +246,15 @@ class ProviderDecisionStore:
             return
         # The fabric's pooled backend translates placeholders itself.
         sql = _INSERT.replace("?", "%s")
-        cursor = None
         try:
-            conn = backend.conn() if hasattr(backend, "conn") else backend.connection()
-            cursor = conn.cursor()
-            cursor.execute(sql, row)
-            cursor.execute(_PRUNE.replace("?", "%s"), (self._max_rows,))
-            conn.commit()
-        finally:
-            if cursor is not None:
-                cursor.close()
+            # The pooled write plane owns the transaction: it translates,
+            # executes and commits atomically (execute_one), so the ledger row
+            # and its prune share one transaction instead of two statements on
+            # a borrowed connection we would have to commit ourselves.
+            backend.execute_one(sql, row)
+            backend.execute_one(_PRUNE.replace("?", "%s"), (self._max_rows,))
+        except Exception as exc:
+            logger.warning("[AI-PROV] decision write failed: %s", exc)
 
     # -- reading --------------------------------------------------------------
 
@@ -259,24 +272,26 @@ class ProviderDecisionStore:
             return [dict(o) for o in self._mem[:limit]]
 
     def _read_pg(self, limit: int) -> list[dict[str, Any]]:
-        backend = getattr(self, "_pg", None)
-        if backend is None:
-            return []
-        cursor = None
+        # Reads go through the domain's pooled READ backend (a separate
+        # read-only pool), not the write plane: PgWritePlane has no query
+        # surface, and reads must never consume a writer connection.
         try:
-            conn = backend.conn() if hasattr(backend, "conn") else backend.connection()
-            cursor = conn.cursor()
-            cursor.execute(
+            from nexus_scalp.database.fabric import get_domain_backend
+
+            read_backend = get_domain_backend(DECISION_DOMAIN, readonly=True)
+        except Exception as exc:  # pragma: no cover - fabric import failure
+            logger.warning("[AI-PROV] decision read backend resolve failed: %s", exc)
+            read_backend = None
+        if read_backend is None:
+            return []
+        try:
+            rows = read_backend.query(
                 "SELECT * FROM ai_provider_decisions ORDER BY id DESC LIMIT %s", (limit,)
             )
-            cols = [d[0] for d in cursor.description]
-            return [dict(zip(cols, r, strict=True)) for r in cursor.fetchall()]
+            return [dict(r) for r in rows]
         except Exception as exc:
             logger.warning("[AI-PROV] decision read failed: %s", exc)
             return []
-        finally:
-            if cursor is not None:
-                cursor.close()
 
     def get(self, decision_id: str) -> dict[str, Any] | None:
         """One decision by id, as ``DecisionRecord``-shaped dict (or ``None``)."""
