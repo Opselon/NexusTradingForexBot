@@ -59,3 +59,43 @@ def decisions_db_path() -> Path:
     # Follow the settings DB: one override moves both, and the ledger always
     # sits in the same (non-trading) directory as the provider configuration.
     return settings_db_path().parent / "ai_provider_decisions.db"
+
+
+def resolve_decision_store_target() -> Path | str:
+    """Resolve the AI-provider decision ledger to the ACTIVE provider.
+
+    Returns either a SQLite ``Path`` (the ``db_path`` contract) or a
+    PostgreSQL DSN ``str`` (the ``dsn`` contract) — the two shapes
+    ``ProviderDecisionStore`` accepts.
+
+    The decision ledger is OPERATIONAL DATA (a durable record of every final
+    provider decision), so it must follow the persisted application database
+    provider, not an unconditional SQLite file. A box switched to PostgreSQL
+    via ``nexus db-portability switch`` (or the management UI) previously kept
+    writing decisions into ``<user-data>/databases/ai_provider_decisions.db``
+    while the rest of the engine used PostgreSQL — an architecture violation
+    with no runtime signal (PR #454 regression, found by the SQLite runtime
+    trap).
+
+    Resolution order (mirrors ``resolve_audit_db_url``, which is the proven
+    pattern for the audit domain):
+      1. the persisted ``database.provider`` + ``database.postgresql_config``
+         settings (the app-level provider switch): PostgreSQL yields a DSN;
+      2. ``NEXUS_DECISIONS_DB`` explicit override — a TEST-ISOLATION SEAM, not
+         a provider choice: when set, the ledger is pinned to a SQLite file
+         even on a PostgreSQL-configured box, exactly like ``NEXUS_AUDIT_DB``
+         pins the audit domain (BUG-223). A test that points this at a temp
+         file never wants a live PostgreSQL pool.
+    Never raises: a settings DB that cannot be opened falls back to the
+    SQLite path (a fresh install has no settings DB yet).
+    """
+    try:
+        from nexus_scalp.database.config import build_postgres_url, load_database_config
+        from nexus_scalp.settings.secret_store import SecureSecretStore
+
+        cfg = load_database_config("audit")
+        if cfg.is_postgresql and not os.environ.get("NEXUS_DECISIONS_DB", "").strip():
+            return build_postgres_url(cfg, SecureSecretStore())
+    except Exception:  # pragma: no cover - settings DB unavailable / malformed
+        pass
+    return decisions_db_path()
