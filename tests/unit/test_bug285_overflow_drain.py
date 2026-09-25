@@ -31,7 +31,6 @@ from __future__ import annotations
 import inspect
 import json
 import sqlite3
-import time
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +39,66 @@ import pytest
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+# The one deterministic monotonic-domain clock for the cadence tests.
+#
+# The production throttle reads ``time.monotonic()`` at the top of
+# ``_drain_financial_overflow_due`` (audit_repository.py:3272) and compares it
+# against the last stamp. That is correct production code — the drain is a
+# real-time idle-pass concern — but the tests below used to read the SAME
+# clock to simulate the passage of its interval (``time.monotonic()`` and
+# ``time.monotonic() - (INTERVAL + 1)``), which made the suite's throttle
+# coverage depend on the host's uptime monotonic instead of on the comparison:
+# whether the second read landed above or below the stored stamp — and hence on
+# which side of the boundary the test sat — was a property of the host clock
+# domain rather than of the code under test. The comparison is purely against a
+# monotonic *domain*, so a deterministic test-side clock in the same domain
+# exercises the exact production arithmetic, including BOTH edges of the
+# strict ``<`` boundary, without ever touching the host clock and without
+# waiting out a real 60-second interval.
+class _MonotonicClock:
+    """Deterministic stand-in for the ``time.monotonic()`` domain.
+
+    ``_drain_financial_overflow_due(conn, now=clock.read())`` takes the domain
+    value as an explicit argument (the same optional-clock idiom the repo
+    already uses in ``storage/runtime.py::is_due``), so a test advances time by
+    calling ``advance()`` instead of waiting on the wall clock. Values only
+    need to be monotonic and comparable to the last stamp the production code
+    stored.
+    """
+
+    __slots__ = ("_t",)
+
+    def __init__(self) -> None:
+        self._t = 0.0
+
+    def reset(self) -> float:
+        self._t = 0.0
+        return self._t
+
+    def read(self) -> float:
+        return self._t
+
+    def advance(self, dt: float) -> float:
+        self._t += float(dt)
+        return self._t
+
+
+_MONO_CLOCK = _MonotonicClock()
+
+
+@pytest.fixture
+def drain_clock():
+    """Resets the deterministic clock so each cadence test starts at 0.0.
+
+    The clock is module-level (the production method takes the value as an
+    argument), so without this an earlier test's advance would leak into the
+    next one's boundary arithmetic.
+    """
+    _MONO_CLOCK.reset()
+    yield _MONO_CLOCK
+
 
 _ORDERS_SQL = """
             INSERT INTO audit_orders
@@ -177,25 +236,60 @@ def test_first_drain_is_always_due_none_sentinel(ovf) -> None:
     assert repo.financial_overflow_recovered == 1
 
 
-def test_drain_throttled_to_one_pass_per_interval(ovf) -> None:
+def test_drain_throttled_to_one_pass_per_interval(ovf, drain_clock) -> None:
     repo, d, conn = ovf
     _write_ovf_file(
         d,
         "overflow_20260101_000000_00000002.json",
         {"query": _ORDERS_SQL, "args": json.dumps(list(range(13)))},
     )
-    repo._drain_financial_overflow_due(conn)  # first pass consumes + stamps
-    repo._last_overflow_drain = time.monotonic()  # pretend the pass just ran
+    repo._drain_financial_overflow_due(conn, now=drain_clock.read())  # consumes + stamps
     _write_ovf_file(
         d,
         "overflow_20260101_000001_00000003.json",
         {"query": _ORDERS_SQL, "args": json.dumps(list(range(20, 33)))},
     )
-    repo._drain_financial_overflow_due(conn)  # within interval: must NOT touch the dir
+    # not one tick past the interval: must NOT touch the dir
+    repo._drain_financial_overflow_due(conn, now=drain_clock.advance(0.0))
     assert repo.overflow_pending_count() == 1
-    repo._last_overflow_drain = time.monotonic() - (repo.OVERFLOW_RECOVERY_INTERVAL_SEC + 1)
-    repo._drain_financial_overflow_due(conn)  # due again: consumed
+    # one tick past the interval: due again, consumed
+    repo._drain_financial_overflow_due(
+        conn, now=drain_clock.advance(repo.OVERFLOW_RECOVERY_INTERVAL_SEC + 0.001)
+    )
     assert repo.overflow_pending_count() == 0
+
+
+def test_drain_throttle_arithmetic_is_the_production_comparison(ovf, drain_clock) -> None:
+    """The throttle boundary is the production comparison, not a wall-clock
+    magnitude: exactly at the interval the pass is already DUE (the comparison
+    is strict ``<``, so equality does not throttle), while one tick short of it
+    the pass is still throttled. Under the deterministic clock both edges are
+    reproducible to the nanosecond, whereas a wall-clock leg could land on
+    either side of the boundary depending on scheduler jitter alone."""
+    repo, d, conn = ovf
+    _write_ovf_file(
+        d,
+        "overflow_20260101_000000_00000012.json",
+        {"query": _ORDERS_SQL, "args": json.dumps(list(range(13)))},
+    )
+    repo._drain_financial_overflow_due(conn, now=drain_clock.read())
+    assert repo.financial_overflow_recovered == 1
+    # one tick SHORT of the interval: strict < still holds, so still throttled
+    _write_ovf_file(
+        d,
+        "overflow_20260101_000002_00000013.json",
+        {"query": _ORDERS_SQL, "args": json.dumps(list(range(30, 43)))},
+    )
+    repo._drain_financial_overflow_due(
+        conn, now=drain_clock.advance(repo.OVERFLOW_RECOVERY_INTERVAL_SEC - 0.001)
+    )
+    assert repo.overflow_pending_count() == 1, (
+        "one tick short of the interval must NOT drain (strict <)"
+    )
+    # exactly AT the interval: equality is NOT < interval, so the pass is due
+    repo._drain_financial_overflow_due(conn, now=drain_clock.advance(0.001))
+    assert repo.overflow_pending_count() == 0
+    assert repo.financial_overflow_recovered == 2
 
 
 def test_drain_batch_is_bounded(ovf, monkeypatch) -> None:
