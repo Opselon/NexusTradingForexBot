@@ -44,9 +44,7 @@ def _make_incident(now: dt.datetime, incident_id: str = "INC-1") -> Incident:
     inc.timeline.append(
         TimelineEvent(timestamp=now, event_type="CREATED", source=EventSource.RUNTIME)
     )
-    inc.value_traces.append(
-        ValueTrace(field="balance", source="mt5", source_timestamp=now)
-    )
+    inc.value_traces.append(ValueTrace(field="balance", source="mt5", source_timestamp=now))
     return inc
 
 

@@ -38,8 +38,7 @@ def test_archive_tables_exist_after_plain_bootstrap(tmp_path: Path) -> None:
         con = sqlite3.connect(str(tmp_path / "fresh.db"))
         try:
             tables = {
-                r[0]
-                for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")
             }
         finally:
             con.close()
@@ -91,8 +90,7 @@ def test_bootstrap_ddl_matches_migration_ddl(tmp_path: Path) -> None:
             _audit_0009_research_archive_tables(con, Path(str(tmp_path / "fresh.db")))
             con.commit()
             tables = {
-                r[0]
-                for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")
             }
         finally:
             con.close()
