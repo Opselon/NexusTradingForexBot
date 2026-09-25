@@ -86,8 +86,9 @@ fi
 
 # ---------------------------------------------------------------------------
 # 3. Launch. stdout+stderr to the engine log dir so `docker logs` shows the
-#    engine and `docker exec cat go-api.log` shows the plane. & so it is a
-#    sibling of the eventual PID 1, not a child the exec would orphan-kill.
+#    engine and `docker exec cat go-api.log` shows the plane. Backgrounded
+#    (&): the exec below replaces THIS shell image but keeps the PID, so the
+#    child stays parented to PID 1 and is reaped when the engine exits.
 # ---------------------------------------------------------------------------
 mkdir -p "$(dirname "$GO_LOG")" 2>/dev/null || true
 

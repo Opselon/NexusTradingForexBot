@@ -63,7 +63,6 @@ function recordedBackendPort(): number | null {
 //     only when Python stayed on its default; the recorded actual port is
 //     used when Python auto-incremented, BUG-267);
 //   - with a free-port search above that if the port is busy.
-const PY_WEB_DEFAULT_PORT = 8080;
 const GO_API_DEFAULT_PORT = 8087;
 
 // Dev backend resolution, in priority order:
@@ -88,9 +87,11 @@ function resolveBackendOrigin(): string {
   const goAddr = process.env.NSE_GO_ADDR?.trim();
   if (goAddr) return `http://${goAddr.replace(/^[^0-9a-z]+/i, "").replace(/^:\/\//, "")}`;
 
-  // (3) Go convention: one port above the Python web port.
-  const pyPort = recordedBackendPort() ?? PY_WEB_DEFAULT_PORT;
-  return `http://127.0.0.1:${pyPort + 1}`;
+  // (3) Engine convention: a recorded Python web port means the launcher ran
+  //     and Go sits one port ABOVE it. Without a record the engine never ran,
+  //     so Go was started standalone and listens on its own default (:8087).
+  const recorded = recordedBackendPort();
+  return recorded ? `http://127.0.0.1:${recorded + 1}` : `http://127.0.0.1:${GO_API_DEFAULT_PORT}`;
 }
 
 const backendOrigin = resolveBackendOrigin();

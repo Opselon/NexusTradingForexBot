@@ -20,8 +20,11 @@ import (
 const spaMarker = "<title>ROUTES-SPA-INTEGRATION-MARKER</title>"
 
 // apiMarker proves a request reached the API surface rather than being
-// swallowed by the static layer.
-const apiMarker = "RESOURCE_NOT_FOUND"
+// swallowed by the static layer: /api/v1 paths are public-adjacent, so the
+// fail-closed auth layer answers AUTH_CONFIG_ERROR (its honest no-token
+// state) — that answer is itself proof the API surface handled the request
+// instead of the SPA shell serving index.html.
+const apiMarker = "AUTH_CONFIG_ERROR"
 
 // resetDistCache clears the memoized dist resolution so a test that changes
 // NEXUS_ALT_UI_DIR via t.Setenv re-resolves instead of reusing an earlier
@@ -31,8 +34,14 @@ func resetDistCache() { web.ResetDistCache() }
 // withDistFixture builds the full handler chain (routes.Build) against a tiny
 // dist fixture and returns it plus the fixture directory. The memo is reset
 // first so each caller resolves against its own env slot.
+//
+// NSE_WEB_AUTH_DISABLE=1 keeps the fail-closed auth layer out of the picture:
+// these tests prove DISPATCH PRIORITY (which layer answers), not auth, and
+// with the auth layer armed every non-public path short-circuits to its
+// AUTH_CONFIG_ERROR 500 before the SPA layer is ever reached.
 func withDistFixture(t *testing.T) (http.Handler, string) {
 	t.Helper()
+	t.Setenv("NSE_WEB_AUTH_DISABLE", "1")
 	resetDistCache()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.html"),
