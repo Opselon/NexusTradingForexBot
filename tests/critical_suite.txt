@@ -497,3 +497,5 @@ tests/unit/test_healthfix_config_bootstrap.py
 tests/unit/test_healthfix_contract_metadata.py
 tests/unit/test_ml_qa_011_shadow70_clock_determinism.py
 tests/unit/test_ml_qa_012_outcome_flush_clock_determinism.py
+tests/unit/test_fabric_guards.py
+tests/unit/test_ai_provider_registry_driver_migration_chg0067.py
