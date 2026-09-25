@@ -39,6 +39,11 @@ import "./readout.css";
 
 type TFn = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
 
+/** D2: ladder geometry constants — kept in ONE place so the TSX pixel budget and
+ *  the CSS track height stay in sync (CSS mirrors these in readout.css). */
+const TR_LADDER_TRACK_PX = 240; // == .tr-ladder-track block-size (base breakpoint)
+const TR_LADDER_ROW_PX = 13; // min label row height (9px mono line + padding)
+
 export interface MarketReadoutProps {
   snapshot: EngineSnapshot;
   mt5Query: { data?: { orders?: OrderRow[] }; isPending: boolean; isError: boolean; refetch: () => void };
@@ -79,6 +84,23 @@ export default function MarketReadout(props: MarketReadoutProps) {
   const scale = zoneLadderScale(zones, snapshot);
   const ladderHi = scale?.hi ?? null;
   const ladderLo = scale?.lo ?? null;
+
+  // D2: zone labels moved OUT of the bars into a side gutter of label rows
+  // (in-bar labels overlapped when thin zones stacked). The gutter is a
+  // pixel-budgeted axis: rows need >= TR_LADDER_ROW_PX each, so when the
+  // payload carries more zones than the track can separate, the gutter keeps
+  // the tallest-N by price height and the caption discloses the elision —
+  // no zone is ever silently dropped (every bar keeps its full tooltip).
+  const ladderPx = TR_LADDER_TRACK_PX;
+  const labelZoneIdx = scale
+    ? zones
+        .map((z, i) => ({ i, h: Math.abs(z.price_high - z.price_low) }))
+        .sort((a, b) => b.h - a.h)
+        .slice(0, Math.max(0, Math.floor(ladderPx / TR_LADDER_ROW_PX)))
+        .map((x) => x.i)
+        .sort((a, b) => a - b)
+    : [];
+  const elidedCount = zones.length - labelZoneIdx.length;
 
   // Spread meter: 0..1 of the window's observed spread budget, endpoints from
   // the payload itself (window bars); the raw pts value is always printed.
@@ -263,49 +285,76 @@ export default function MarketReadout(props: MarketReadoutProps) {
                     <span className="tr-ladder-end">{formatPrice(ladderHi, digits)}</span>
                     <span className="tr-ladder-end-cap">{t("trading.th.range_high", "window high")}</span>
                   </div>
-                  <div className="tr-ladder-track">
-                    {/* live bid/ask marker — scaled strictly between payload endpoints */}
-                    {scale && snapshot.bid !== null && snapshot.ask !== null ? (
-                      <div
-                        className="tr-ladder-price"
-                        style={{ insetBlockStart: `${scale.pct(Math.max(snapshot.bid, snapshot.ask))}%` }}
-                        title={t("trading.tile.ask_bid_title", "ask {a} / bid {b}", { a: formatPrice(snapshot.ask, digits), b: formatPrice(snapshot.bid, digits) })}
-                      >
-                        <span className="tr-ladder-price-lab">{t("trading.tile.ask_bid_lab", "ask/bid")}</span>
-                      </div>
-                    ) : null}
-                    {zones.map((z, i) => {
-                      const top = scale ? scale.pct(z.price_high) : 50;
-                      const h = scale ? Math.max(1.5, scale.pct(z.price_low) - top) : 6;
-                      const kind = String(z.type ?? "");
-                      const tone = kind.includes("BULL") ? "bull" : kind.includes("BEAR") ? "bear" : "mid";
-                      return (
+                  <div className="tr-ladder-body">
+                    <div className="tr-ladder-labels" aria-hidden={labelZoneIdx.length === 0}>
+                      {labelZoneIdx.map((i) => {
+                        const z = zones[i];
+                        if (!z) return null;
+                        const top = scale ? scale.pct(z.price_high) : 50;
+                        const h = scale ? Math.max(1.5, scale.pct(z.price_low) - top) : 6;
+                        const kind = String(z.type ?? "");
+                        const tone = kind.includes("BULL") ? "bull" : kind.includes("BEAR") ? "bear" : "mid";
+                        return (
+                          <div
+                            key={`lab-${String(z.id ?? i)}`}
+                            className={`tr-ladder-label tr-ladder-label-${tone}`}
+                            style={{ insetBlockStart: `calc(${top}% + ${h / 2}%)`, insetBlockEnd: `auto` }}
+                          >
+                            <span className="tr-ladder-label-connector" />
+                            <span className="tr-ladder-label-text">
+                              {kind || "—"} {formatPrice(z.price_low, digits)}–{formatPrice(z.price_high, digits)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="tr-ladder-track">
+                      {/* live bid/ask marker — scaled strictly between payload endpoints */}
+                      {scale && snapshot.bid !== null && snapshot.ask !== null ? (
                         <div
-                          key={String(z.id ?? i)}
-                          className={`tr-ladder-zone tr-ladder-zone-${tone}`}
-                          style={{ insetBlockStart: `${top}%`, blockSize: `${h}%` }}
-                          title={`${z.type ?? "—"} · ${formatPrice(z.price_low, digits)}–${formatPrice(z.price_high, digits)}${z.time ? ` · since ${formatTime(z.time)}` : ""}`}
+                          className="tr-ladder-price"
+                          style={{ insetBlockStart: `${scale.pct(Math.max(snapshot.bid, snapshot.ask))}%` }}
+                          title={t("trading.tile.ask_bid_title", "ask {a} / bid {b}", { a: formatPrice(snapshot.ask, digits), b: formatPrice(snapshot.bid, digits) })}
                         >
-                          <span className="tr-ladder-zone-lab">
-                            {String(z.type ?? "—")} {formatPrice(z.price_low, digits)}–{formatPrice(z.price_high, digits)}
-                          </span>
+                          <span className="tr-ladder-price-lab">{t("trading.tile.ask_bid_lab", "ask/bid")}</span>
                         </div>
-                      );
-                    })}
-                    {midlines.map((m, i) =>
-                      scale ? (
-                        <div
-                          key={String(m.id ?? `mid-${i}`)}
-                          className="tr-ladder-mid"
-                          style={{ insetBlockStart: `${scale.pct(m.price)}%` }}
-                          title={`equilibrium ${formatPrice(m.price, digits)} (${String(m.label ?? "50%")})`}
-                        />
-                      ) : null,
-                    )}
+                      ) : null}
+                      {zones.map((z, i) => {
+                        const top = scale ? scale.pct(z.price_high) : 50;
+                        const h = scale ? Math.max(1.5, scale.pct(z.price_low) - top) : 6;
+                        const kind = String(z.type ?? "");
+                        const tone = kind.includes("BULL") ? "bull" : kind.includes("BEAR") ? "bear" : "mid";
+                        return (
+                          <div
+                            key={String(z.id ?? i)}
+                            className={`tr-ladder-zone tr-ladder-zone-${tone}`}
+                            style={{ insetBlockStart: `${top}%`, blockSize: `${h}%` }}
+                            title={`${z.type ?? "—"} · ${formatPrice(z.price_low, digits)}–${formatPrice(z.price_high, digits)}${z.time ? ` · since ${formatTime(z.time)}` : ""}`}
+                          />
+                        );
+                      })}
+                      {midlines.map((m, i) =>
+                        scale ? (
+                          <div
+                            key={String(m.id ?? `mid-${i}`)}
+                            className="tr-ladder-mid"
+                            style={{ insetBlockStart: `${scale.pct(m.price)}%` }}
+                            title={`equilibrium ${formatPrice(m.price, digits)} (${String(m.label ?? "50%")})`}
+                          />
+                        ) : null,
+                      )}
+                    </div>
                   </div>
                   <div className="tr-ladder-scale">
                     <span className="tr-ladder-end">{formatPrice(ladderLo, digits)}</span>
-                    <span className="tr-ladder-end-cap">{t("trading.th.range_low", "window low")}</span>
+                    <span className="tr-ladder-end-cap">
+                      {elidedCount > 0
+                        ? t("trading.smc.ladder_elided", "{n} more zones — labels of the {m} thinnest are hidden, hover a bar", {
+                            n: elidedCount,
+                            m: elidedCount,
+                          })
+                        : t("trading.th.range_low", "window low")}
+                    </span>
                   </div>
                 </>
               ) : (

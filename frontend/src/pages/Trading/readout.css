@@ -185,8 +185,6 @@
 .tr-ladder-zone {
   position: absolute; inset-inline: 10px;
   border-radius: 5px;
-  display: flex; align-items: center; justify-content: center;
-  overflow: hidden;
   transition: filter 0.12s ease;
 }
 .tr-ladder-zone:hover { filter: brightness(1.35); }
@@ -204,12 +202,60 @@
   background: linear-gradient(90deg, rgba(65, 166, 242, 0.1), rgba(65, 166, 242, 0.26));
   border: 1px solid rgba(65, 166, 242, 0.45);
 }
-.tr-ladder-zone-lab {
-  font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em;
-  color: var(--text); white-space: nowrap;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
-  opacity: 0.92;
+/* D2: zone label gutter. Labels moved OUT of the bars — an in-bar 9px nowrap
+   label overlapped whenever thin zones stacked and the bar clipped it. The
+   gutter is a range axis beside the track: each .tr-ladder-label row is
+   absolutely positioned at its bar's vertical center (insetBlockStart comes
+   from the component's top% + h/2% calc — the SAME geometry math the bar
+   uses), a hairline connector reaches toward the bar, and the text is
+   ellipsized at the gutter edge instead of overflowing. Bars stay pure color.
+   Pixel budget: rows need >= 13px each on the 240px track, so the component
+   caps the row count (top-N by price height) and discloses the elision in the
+   scale caption — CSS tracks the desktop track height here. */
+.tr-ladder-body {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--tr-ladder-gutter, 128px) minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
 }
+.tr-ladder-labels {
+  position: relative;
+  min-inline-size: 0;
+}
+.tr-ladder-label {
+  position: absolute;
+  inset-inline-end: 0;             /* anchor at the track side of the gutter */
+  inset-block-start: 0;            /* overridden per row by the component */
+  inline-size: 100%;
+  block-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transform: translateY(-50%);     /* center the row on its bar's midline */
+}
+.tr-ladder-label-text {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+  opacity: 0.94;
+}
+.tr-ladder-label-connector {
+  flex: none;
+  inline-size: 8px;
+  block-size: 1px;
+  background: color-mix(in srgb, var(--border-strong) 68%, transparent);
+}
+.tr-ladder-label-bull .tr-ladder-label-connector { background: rgba(62, 207, 142, 0.65); }
+.tr-ladder-label-bear .tr-ladder-label-connector { background: rgba(242, 86, 77, 0.65); }
+.tr-ladder-label-mid .tr-ladder-label-connector { background: rgba(65, 166, 242, 0.6); }
 .tr-ladder-mid {
   position: absolute; inset-inline: 4px; block-size: 2px;
   background: linear-gradient(90deg, transparent, var(--violet), transparent);
@@ -260,6 +306,9 @@
   .tr-tile-symbol { grid-column: span 2; }
   .tr-readout-smc { grid-template-columns: minmax(0, 1fr); }
   .tr-ladder-track, .tr-ladder-empty { block-size: 200px; }
+  /* D2: narrower gutter at the compact breakpoint — the track shrinks to 200px,
+     so the label budget shrinks with it and rows ellipsis more aggressively. */
+  .tr-ladder-body { grid-template-columns: var(--tr-ladder-gutter, 104px) minmax(0, 1fr); }
 }
 @media (max-width: 900px) {
   .tr-readout-grid { grid-template-columns: minmax(0, 1fr); }
@@ -275,6 +324,7 @@
   .tr-orders-table tbody tr,
   .tr-chip,
   .tr-ladder-zone,
+  .tr-ladder-label,
   .tr-tile-meter i { transition: none !important; }
   .tr-tile:hover, .tr-chip:hover { transform: none !important; }
   .tr-tone-warn { animation: none !important; }

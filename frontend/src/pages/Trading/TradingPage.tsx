@@ -46,6 +46,7 @@ import { useI18n } from "@/stores/i18nStore";
 import { formatDateTime, formatNumber, formatPrice } from "@/lib/format";
 import "@/pages/_shared/pages.css";
 import "@/pages/Trading/trading.css";
+import "@/pages/Trading/evidence.css";
 
 type ReconRow = {
   ticket: string;
@@ -206,23 +207,39 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
 
       <MarketReadout snapshot={snapshot} mt5Query={mt5Query} ordersQuery={ordersQuery} />
 
-      {/* Dispatch order flow — audit_orders + backend latency stats */}
-      <Panel
-        title={t("trading.panel.order_flow", "Dispatch order flow (audit_orders)")}
-        right={
-          <>
-            <AgeNote label={t("trading.age.label", "age")} ageSec={ordersQuery.dataUpdatedAt ? Math.max(0, (nowMs - ordersQuery.dataUpdatedAt) / 1000) : null} />
-            <SectionExportButton
-              rows={ordersQuery.data?.rows ?? []}
-              onExport={() =>
-                downloadCsv({
-                  filename: `nse-order-flow-${stampForFilename()}.csv`,
-                  headers: ["timestamp", "id", "ticket", "order_id", "symbol", "action", "volume", "price", "stop_loss", "take_profit", "latency", "execution_mode", "reason", "execution_id"],
-                  rows: (ordersQuery.data?.rows ?? []).map((r) => [r.timestamp, r.id, r.ticket, r.order_id, r.symbol, r.action, r.volume, r.price, r.stop_loss, r.take_profit, r.latency, r.execution_mode, r.reason, r.execution_id]),
-                })
-              }
-            />
-          </>
+      {/* D5 — the three evidence panels are grouped in one scoped section so
+          the tail of the page carries the same structure the hero does:
+          one kicker, numbered panels (CSS counters), shared glass skin.
+          Markup wrap only — panel bodies and headers are untouched. */}
+      <section className="tf-evidence" aria-labelledby="tf-evidence-title">
+        <div className="tf-section-head">
+          <span className="tf-kicker" id="tf-evidence-title">
+            <span className="tf-kicker-dot" aria-hidden="true" />
+            {t("trading.section.evidence.kicker", "Execution evidence")}
+            <span className="tf-kicker-rule" aria-hidden="true" />
+          </span>
+          <span className="tf-section-note">
+            {t("trading.section.evidence.note", "audit_orders · audit_executions · broker ledger")}
+          </span>
+        </div>
+
+        {/* Dispatch order flow — audit_orders + backend latency stats */}
+        <Panel
+  title={t("trading.panel.order_flow", "Dispatch order flow (audit_orders)")}
+  right={
+  <>
+  <AgeNote label={t("trading.age.label", "age")} ageSec={ordersQuery.dataUpdatedAt ? Math.max(0, (nowMs - ordersQuery.dataUpdatedAt) / 1000) : null} />
+  <SectionExportButton
+  rows={ordersQuery.data?.rows ?? []}
+  onExport={() =>
+  downloadCsv({
+  filename: `nse-order-flow-${stampForFilename()}.csv`,
+  headers: ["timestamp", "id", "ticket", "order_id", "symbol", "action", "volume", "price", "stop_loss", "take_profit", "latency", "execution_mode", "reason", "execution_id"],
+  rows: (ordersQuery.data?.rows ?? []).map((r) => [r.timestamp, r.id, r.ticket, r.order_id, r.symbol, r.action, r.volume, r.price, r.stop_loss, r.take_profit, r.latency, r.execution_mode, r.reason, r.execution_id]),
+  })
+  }
+  />
+  </>
         }
         tight
       >
@@ -267,13 +284,15 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
         mt5Query={mt5Query}
       />
 
-
-      {/* Execution history (v1 audit_executions) */}
+      {/* Execution history (v1 audit_executions).
+          Manual order placement / cancel have NO backend route (BUG-242
+          INV-004) — that internal note is kept here in the code as the audit
+          trail, and kept OUT of the operator-facing header: the UI states it
+          once, in the empty state, as a capability statement. */}
       <Panel
         title={t("trading.panel.exec", "Recent executions (audit_executions)")}
         right={
           <>
-            <span className="small faint">{t("trading.exec.no_route", "manual order placement / cancel: NO backend route — no fake buttons here (BUG-242 INV-004)")}</span>
             <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
               <button aria-label={t("trading.pager.prev", "Previous page")} className="btn small" disabled={execPage <= 1} onClick={() => setExecPage((p) => Math.max(1, p - 1))}>‹</button>
               <span className="small faint inline-mono">{t("trading.exec.page", "p{n}", { n: execPage })}</span>
@@ -315,9 +334,13 @@ export default function TradingPage({ snapshot, nowMs }: Props) {
           )}
         </SectionState>
         <div className="small faint" style={{ padding: "8px 12px" }}>
+          {t("trading.exec.no_route", "Manual order placement and cancel are not implemented — there is no backend route for them, so this console shows no buttons for actions it cannot perform.")}
+        </div>
+        <div className="small faint" style={{ padding: "0 12px 8px" }}>
           {t("trading.exec.guardian_label", "Guardian state:")} <StatusBadge status={String(snapshot.health.subsystems.engine ?? "UNKNOWN")} /> {t("trading.exec.guardian_mid", "(engine) · mode")} <span className="inline-mono">{currentMode || "—"}</span> {t("trading.exec.guardian_tail", "· positions and close actions live on the Positions page; model proposals on the Dashboard.")}
         </div>
       </Panel>
+      </section>
 
       {stopConfirm && (
         <ConfirmModal
@@ -347,7 +370,12 @@ function SectionExportButton({ rows, onExport }: { rows: unknown[]; onExport: ()
   const t = useI18n((s) => s.t);
   if (rows.length === 0) return null;
   return (
-    <button className="btn small ghost" onClick={onExport} title={t("trading.csv.title", "exports exactly the rows the backend returned (client-side, no re-query)")}>
+    <button
+      className="btn small ghost"
+      onClick={onExport}
+      aria-label={t("trading.csv.btn_aria", "Export order flow as CSV")}
+      title={t("trading.csv.title", "exports exactly the rows the backend returned (client-side, no re-query)")}
+    >
       {t("trading.csv.btn", "⇩ CSV")}
     </button>
   );
