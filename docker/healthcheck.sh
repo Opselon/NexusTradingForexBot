@@ -54,11 +54,14 @@ if [ -n "${GO_PORT:-}" ]; then
     case "$GO_PORT" in
         ''|*[!0-9]*) go_state="(bad port '$GO_PORT')" ;;
         *)
-            go_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 \
-                "http://127.0.0.1:${GO_PORT}/health" 2>/dev/null || echo 000)"
+            # curl exits non-zero on any 4xx/5xx (22/23) even though -w prints
+            # the real status; `|| echo 000` would append "000" to it
+            # ("503000"), misreporting a healthy 503 as an unknown HTTP code.
+            go_code="$( { curl -s -o /dev/null -w '%{http_code}' --max-time 3 \
+                "http://127.0.0.1:${GO_PORT}/health" 2>/dev/null; } || true )"
             case "$go_code" in
                 200|503) go_state="up(:${GO_PORT})" ;;
-                000)     go_state="down(:${GO_PORT}, not listening — python serves :${PORT})" ;;
+                000|"")   go_state="down(:${GO_PORT}, not listening — python serves :${PORT})" ;;
                 *)       go_state="http${go_code}(:${GO_PORT})" ;;
             esac
             ;;

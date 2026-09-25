@@ -31,6 +31,17 @@ warn() { printf '[NSE-GO-API] WARN: %s\n' "$1" >&2; }
 
 APP_DIR="${NSE_APP_DIR:-/app}"
 GO_BIN="${NSE_GO_API_BIN:-$APP_DIR/nexus-api}"
+
+# On Windows the compiled binary carries the .exe extension (the Go builder
+# names it nexus-api.exe), so the literal $APP_DIR/nexus-api path does not
+# exist and the binary gate below would fall back to Python-only despite a
+# perfectly good binary being shipped. Resolve the extension when the caller
+# did not name an explicit binary.
+if [ -z "${NSE_GO_API_BIN:-}" ] && [ ! -e "$GO_BIN" ]; then
+    if [ -e "$APP_DIR/nexus-api.exe" ]; then
+        GO_BIN="$APP_DIR/nexus-api.exe"
+    fi
+fi
 GO_ADDR="${NSE_GO_ADDR:-0.0.0.0:8087}"
 PY_ORIGIN="${NSE_PYTHON_ORIGIN:-http://127.0.0.1:9090}"
 GO_LOG="$APP_DIR/artifacts/logs/go-api.log"
@@ -109,8 +120,15 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     if ! kill -0 "$GO_PID" 2>/dev/null; then
         break
     fi
-    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
-        "http://127.0.0.1:${GO_PORT}/health" 2>/dev/null || echo 000)
+    # NOTE: curl exits NON-ZERO for any 4xx/5xx response (22/23), even though
+    # -w still prints the real status. `|| echo 000` on the SAME command would
+    # then append "000" to the captured code ("503000"), which the case below
+    # never matches — a healthy plane answering 503 while Python is still
+    # booting would be classified not-ready and killed. Capture the code from
+    # a command whose exit status is always 0, and let curl's own failure to
+    # CONNECT surface as 000 (empty).
+    code=$( { curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
+        "http://127.0.0.1:${GO_PORT}/health" 2>/dev/null; } || true )
     case "$code" in
         200|503) ready=1; break ;;
     esac
