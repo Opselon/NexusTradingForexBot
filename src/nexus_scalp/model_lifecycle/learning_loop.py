@@ -63,25 +63,48 @@ def _resolve_cycle_store_db_path(audit_repo: AuditRepository) -> str:
     production artifacts/audit.db (BUG-223 rule).
 
     Provider-aware (PG-READ-PLANE-001/D): under a non-SQLite provider
-    ``_db_path`` is the empty string. An in-memory DB there is a BUG (D4:
-    ``no such table: learning_cycles`` on every boot, state lost on
-    restart), so the cycle store is pointed at a REAL file inside the
+    ``_db_path`` may carry the provider *DSN* rather than a filesystem
+    path (``_provider_db_path`` keeps it non-empty so observability probes
+    that build a ``Path`` from it resolve the live database instead of
+    ``WindowsPath('.')`` — contract defect D9). A DSN like
+    ``postgresql://host:port/db`` is a non-empty string, so the plain
+    ``isinstance(raw, str)`` check would hand it to ``sqlite3.connect``
+    and the whole engine dies at boot with
+    ``OperationalError: unable to open database file`` (BUG-RT008,
+    observed 2026-09-25 with ``database.provider=postgresql``: RT-007
+    assumed an empty value under PG, PG-READ-PLANE-001 then made it
+    non-empty). Therefore the non-SQLite branch MUST win over the
+    raw-string branch: the store is pointed at a REAL file inside the
     runtime workspace instead. The file is a local state journal — the
     learning tables are also authored into the governed audit schema, so
     this never replaces the audit record, it keeps cycle state durable.
     """
+    if _audit_repo_is_nonsqlite(audit_repo):
+        return _cycle_store_workspace_path()
     raw = getattr(audit_repo, "_db_path", None)
     if isinstance(raw, str) and raw.strip():
         return raw
-    if _audit_repo_is_nonsqlite(audit_repo):
-        return _cycle_store_workspace_path()
     return ":memory:"
 
 
 def _audit_repo_is_nonsqlite(audit_repo: Any) -> bool:
-    """True when the audit repo is bound to a non-SQLite provider."""
+    """True when the audit repo is bound to a non-SQLite provider.
+
+    Only a REAL ``bool``/``int`` flag is authoritative: a test double
+    (``MagicMock``) auto-creates ``_is_sqlite`` as a truthy child mock, which
+    would otherwise report ``not True == False`` and silently re-route a
+    non-SQLite repo to the in-memory branch (BUG-RT008 side case).
+    """
     try:
-        return not bool(getattr(audit_repo, "_is_sqlite", True))
+        flag = getattr(audit_repo, "_is_sqlite", True)
+        if isinstance(flag, bool):
+            return not flag
+        # Any non-boolean (mock, str, None) is not a real provider signal:
+        # fall back to inspecting the location string instead of trusting it.
+        raw = getattr(audit_repo, "_db_path", None)
+        if isinstance(raw, str) and raw.startswith(("postgresql://", "postgres://")):
+            return True
+        return False
     except Exception:
         return False
 
