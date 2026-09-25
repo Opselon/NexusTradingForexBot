@@ -269,13 +269,25 @@ def _is_pg_audit_backend(repo: Any) -> bool:
 def _pg_write_backend(repo: Any) -> Any:
     """The fabric's pooled write backend for the strategy_factory domain.
 
-    Returns ``None`` when the domain is not provisioned in this process. Never
-    raises and never provisions: the audit domain's write plane provisions the
-    fabric, and a second provisioning here could close a pool it does not own.
+    Provisions the domain against the AuditRepository's own resolved DSN when
+    the fabric is already up for a pooled provider but this domain was not
+    registered yet (``AuditRepository`` provisions only the ``audit`` domain;
+    without this the factory's seven operational tables had nowhere to go and
+    every write silently dropped — the ``set_loop_state``-returns-False,
+    row-never-lands defect). Reuses the same pool kwargs as the audit domain.
     """
     try:
-        from nexus_scalp.database.fabric import get_domain_backend
+        from nexus_scalp.database.fabric import get_domain_backend, provision_domain
 
+        backend = get_domain_backend(FACTORY_DOMAIN, readonly=False)
+        if backend is not None:
+            return backend
+        # The fabric is up for another domain but not this one. Follow the
+        # audit domain's DSN so the factory shares its connection settings.
+        dsn = getattr(repo, "_db_url", None) or getattr(repo, "dsn", None)
+        if not dsn:
+            return None
+        provision_domain(FACTORY_DOMAIN, dsn)
         return get_domain_backend(FACTORY_DOMAIN, readonly=False)
     except Exception as exc:  # pragma: no cover - fabric import failure
         logger.warning("[STRATEGY_FACTORY] write backend resolve failed: %s", exc)
