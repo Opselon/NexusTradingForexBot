@@ -16,7 +16,6 @@ appear downstream of the stack either. Both are asserted here.
 
 from __future__ import annotations
 
-import time
 from typing import cast
 
 import pytest
@@ -37,6 +36,7 @@ from nexus_scalp.model_generation.architectures import (
     min_blocks_for_receptive_field,
     receptive_field,
 )
+from tests.e2e.chain_clock import budget_cpu_ms
 
 SCHEDULES = [DILATION_GEOMETRIC, DILATION_LINEAR, DILATION_FIBONACCI]
 
@@ -485,10 +485,31 @@ class TestLatencyAcrossReceptiveFields:
     """Latency must stay bounded as RF grows: cost is dominated by the (fixed)
     sequence budget, not by the dilation depth, since dilation skips taps rather
     than lengthening the tensor. A structural defect — padding that grows the
-    sequence instead of dilating — would blow this up by orders of magnitude."""
+    sequence instead of dilating — would blow this up by orders of magnitude.
 
-    _LATENCY_BUDGET_S = 50e-3
-    _WORST_BEST_RATIO = 25.0
+    All measurements use ``time.process_time()`` (CPU time) via the shared
+    ``budget_cpu_ms`` stopwatch rather than ``time.perf_counter()`` (wall clock).
+    Wall-clock budgets on a shared CI runner measure the co-tenant scheduler
+    load, not the model: a stalled runner slows the wall clock with zero change
+    in the code under test, which is exactly the shape that flakes on one OS of
+    the matrix and not the other. CPU time is insensitive to that. The budgets
+    below carry genuine margin over the observed CPU cost (see
+    ``_LATENCY_BUDGET_CPU_MS``).
+    """
+
+    # CPU-time budget for a single forward pass. Measured on a 2-core CPU-only
+    # host: worst schedule at the deepest block count costs well under 5 ms of
+    # CPU time; 50 ms is a 10x margin that still catches the structural blow-up
+    # this test exists to detect (a padding defect grows cost by orders of
+    # magnitude, not by a factor of ten).
+    _LATENCY_BUDGET_CPU_MS = 50.0
+    # Structural bound: the deepest receptive field may not cost dramatically
+    # more per forward pass than the shallowest. Dilation skips taps, so a
+    # deeper stack does O(blocks) extra work at fixed sequence length — cost
+    # should grow roughly linearly, and 15x covers the 3->6 block span with
+    # margin. A padding defect that grows the tensor would clear this by
+    # orders of magnitude.
+    _WORST_BEST_RATIO = 15.0
 
     @pytest.mark.parametrize("schedule", SCHEDULES)
     def test_latency_bound_across_rf_depths(self, schedule: str) -> None:
@@ -509,23 +530,30 @@ class TestLatencyAcrossReceptiveFields:
             ).eval()
             x = torch.randn(4, seq_len, feature_dim)
             with torch.no_grad():
-                for _ in range(3):  # warm-up
+                for _ in range(5):  # warm-up (conv kernels, thread pools)
                     model(x)
-                start = time.perf_counter()
-                for _ in range(20):
-                    model(x)
-            timings[blocks] = (time.perf_counter() - start) / 20.0
+                with budget_cpu_ms(self._LATENCY_BUDGET_CPU_MS * 20) as sw:
+                    for _ in range(20):
+                        model(x)
+            # CPU-time per forward pass (process_time is co-tenant-load
+            # insensitive; perf_counter measures the scheduler, not the model).
+            timings[blocks] = sw.consumed_ms / 20.0
         worst = max(timings.values())
         best = min(timings.values())
-        assert worst <= best * self._WORST_BEST_RATIO or worst < self._LATENCY_BUDGET_S, (
+        assert worst <= best * self._WORST_BEST_RATIO, (
             f"latency blew up across RF depths for {schedule}: {timings}"
         )
-        assert all(t < self._LATENCY_BUDGET_S for t in timings.values()), (
-            f"forward pass exceeded bench budget for {schedule}: {timings}"
+        assert all(t < self._LATENCY_BUDGET_CPU_MS for t in timings.values()), (
+            f"forward pass exceeded CPU-time budget for {schedule}: {timings}"
         )
 
     def test_latency_measurement_is_stable(self) -> None:
-        """Sanity: the same model measured twice reads within noise."""
+        """Sanity: the same model measured twice reads within noise.
+
+        Both legs measure CPU time (``budget_cpu_ms``), so the comparison is
+        between two measurements of the same work, not between two samples of
+        whatever the OS scheduler happened to do during each leg.
+        """
         torch.manual_seed(0)
         model = TCNAttentionV1(
             input_dim=8, hidden_dim=16, blocks=4, dropout=0.0, max_seq_len=64
@@ -533,12 +561,14 @@ class TestLatencyAcrossReceptiveFields:
         x = torch.randn(2, 64, 8)
         readings = []
         with torch.no_grad():
-            for _ in range(3):
+            for _ in range(5):
                 model(x)
             for _ in range(2):
-                start = time.perf_counter()
-                for _ in range(20):
-                    model(x)
-                readings.append((time.perf_counter() - start) / 20.0)
+                with budget_cpu_ms(self._LATENCY_BUDGET_CPU_MS * 20) as sw:
+                    for _ in range(20):
+                        model(x)
+                readings.append(sw.consumed_ms / 20.0)
         a, b = readings
-        assert max(a, b) <= min(a, b) * 20.0, f"unstable latency measurement: {a} vs {b}"
+        assert max(a, b) <= min(a, b) * self._WORST_BEST_RATIO, (
+            f"unstable latency measurement: {a} vs {b}"
+        )

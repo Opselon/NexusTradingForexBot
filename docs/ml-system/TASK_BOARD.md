@@ -97,3 +97,5 @@ The following tasks are strictly frozen from implementation until the human oper
 3. **[ML-EXP-002](tasks/ML-EXP-002.md)**: Empirical comparison decision: Retain and wire 3D TCN+Attention sequence buffer in live execution or officially retire 3D sequence modeling to favor 2D MLP ResNet.
 4. **[ML-FEAT-003](tasks/ML-FEAT-003.md)**: Approve live production gating criteria and infrastructure requirements for 70D schema adoption.
 5. **[ML-OBS-002](tasks/ML-OBS-002.md)**: Authorize activation of online fine-tuning on live broker demo/paper accounts under quarantined shadow buffers.
+
+- [ML-QA-014](tasks/ML-QA-014.md) — Push-Gate CPU-Time Determinism: Causal-TCN Latency Suite (roster candidate #4, `budget_cpu_ms` CPU-time budgets, unconditional ratio bound) `[P2 | DONE (PR pending) | AGENT-QA]`
