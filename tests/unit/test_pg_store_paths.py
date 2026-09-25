@@ -41,6 +41,7 @@ from nexus_scalp.incidents.store import (
 from nexus_scalp.model_lifecycle.learning_loop import (
     _audit_repo_is_nonsqlite,
     _cycle_store_workspace_path,
+    _is_usable_sqlite_path,
     _resolve_cycle_store_db_path,
 )
 
@@ -550,6 +551,68 @@ def test_audit_repo_is_nonsqlite_classification() -> None:
     sqlite_repo._is_sqlite = True
     assert _audit_repo_is_nonsqlite(sqlite_repo) is False
     assert _audit_repo_is_nonsqlite(None) is False
+
+
+def test_is_usable_sqlite_path_rejects_uris_and_non_paths() -> None:
+    """A scheme-bearing URI is never openable by ``sqlite3.connect``."""
+    assert _is_usable_sqlite_path("postgresql://localhost:5432/nexusdb") is False
+    assert _is_usable_sqlite_path("sqlite:///x.db") is False
+    assert _is_usable_sqlite_path("http://x/db") is False
+    assert _is_usable_sqlite_path("") is False
+    assert _is_usable_sqlite_path(None) is False
+    from unittest.mock import MagicMock
+
+    assert _is_usable_sqlite_path(MagicMock()) is False
+
+
+def test_is_usable_sqlite_path_accepts_real_locations() -> None:
+    assert _is_usable_sqlite_path(r"C:\data\audit.db") is True
+    assert _is_usable_sqlite_path("C:/data/audit.db") is True
+    assert _is_usable_sqlite_path("/tmp/x.db") is True
+    assert _is_usable_sqlite_path("learning_cycles.db") is True
+    assert _is_usable_sqlite_path("  /tmp/x.db  ") is True
+
+
+def test_is_usable_sqlite_path_rejects_memory_uri() -> None:
+    assert _is_usable_sqlite_path(":memory:") is False
+
+
+def test_resolve_cycle_store_db_path_rejects_provider_uri_and_falls_back_to_workspace() -> None:
+    """PG-DBPATH-BOOT-001: the provider URI must never reach sqlite3.connect."""
+    repo = FakeAuditRepo.__new__(FakeAuditRepo)
+    repo._is_sqlite = False
+    repo._db_path = "postgresql://localhost:5432/nexusdb"
+
+    path = _resolve_cycle_store_db_path(repo)
+
+    assert path != "postgresql://localhost:5432/nexusdb"
+    assert path != ":memory:"
+    assert path.endswith("learning_cycles.db")
+    assert Path(path).parent.exists()
+
+
+def test_learning_cycle_store_boots_with_provider_uri_db_path(tmp_path: Path) -> None:
+    """The FATAL reproduction: store construction on a PG provider must not raise."""
+    from nexus_scalp.model_lifecycle.learning_cycle import LearningCycleStore
+
+    cwd = Path.cwd()
+    try:
+        import os
+
+        os.chdir(tmp_path)
+        repo = FakeAuditRepo.__new__(FakeAuditRepo)
+        repo._is_sqlite = False
+        repo._db_url = "postgresql://localhost:5432/nexusdb"
+        repo._db_path = "postgresql://localhost:5432/nexusdb"
+
+        store = LearningCycleStore(_resolve_cycle_store_db_path(repo))
+    finally:
+        import os
+
+        os.chdir(cwd)
+
+    assert Path(store.db_path).suffix == ".db"
+    assert "://" not in store.db_path
 
 
 # ---------------------------------------------------------------------------
