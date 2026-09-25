@@ -94,12 +94,12 @@ CREATE TABLE IF NOT EXISTS incident_events (
     source TEXT NOT NULL,
     payload_json TEXT DEFAULT '{}',
     correlation_id TEXT DEFAULT '',
-    -- The SQLite path has always deduped on this triple (INSERT OR REPLACE
-    -- with a sub-select on the same columns). The pooled/PG write path the
-    -- PG-parity wave opened used a bare INSERT, which re-inserted the whole
-    -- timeline on every save(). The constraint + ON CONFLICT below restores
-    -- one-upsert semantics on both providers (and gives the BUG-276 guard a
-    -- live conflict target).
+    -- The SQLite branch of save() has always deduped events (INSERT OR
+    -- REPLACE keyed on this triple) and traces (INSERT OR IGNORE). The
+    -- pooled/PG write path the PG-parity wave opened used a bare INSERT and
+    -- re-inserted the whole set on every save(); the constraint plus the
+    -- ON CONFLICT clause on that branch restores one-upsert semantics on
+    -- both providers, and gives the BUG-276 guard a live conflict target.
     UNIQUE (incident_id, event_timestamp, event_type)
 )
 """

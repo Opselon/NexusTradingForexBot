@@ -2433,6 +2433,58 @@ class AuditRepository:
             );
             """
         )
+        # Archive tables. AUDIT-0009 owns these on a database that already
+        # exists (the governed migration applies them and records the version
+        # bump), but a *fresh* bootstrap creates every live table above without
+        # running the migration registry. Without them, ``list_events``'s
+        # archive-aware read (live UNION archive) dies with
+        # ``no such table: research_events_archive`` and silently returns zero
+        # rows — the whole research timeline goes invisible on a first-run DB.
+        # The DDL is identical to ``_audit_0009_research_archive_tables`` and
+        # idempotent, so the migration is a no-op re-run on an already-bootstrapped
+        # database.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS research_events_archive (
+                id INTEGER PRIMARY KEY,
+                event_id TEXT,
+                strategy_id TEXT,
+                research_run_id TEXT,
+                gate_id TEXT,
+                event_type TEXT,
+                message TEXT,
+                payload TEXT,
+                occurred_at TEXT,
+                archived_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS research_evidence_archive (
+                id INTEGER PRIMARY KEY,
+                evidence_id TEXT,
+                strategy_id TEXT,
+                research_run_id TEXT,
+                gate_id TEXT,
+                kind TEXT,
+                content TEXT,
+                content_hash TEXT,
+                dataset_version TEXT,
+                engine_version TEXT,
+                created_at TEXT,
+                archived_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_archive_occurred "
+            "ON research_events_archive (occurred_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_evidence_archive_created "
+            "ON research_evidence_archive (created_at)"
+        )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS research_run_snapshots (

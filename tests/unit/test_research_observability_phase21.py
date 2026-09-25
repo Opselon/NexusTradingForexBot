@@ -193,7 +193,14 @@ def make_obs_fixture(
     repo,
 ) -> tuple[ResearchDatasetBuilder, StrategyRegistry, ResearchPipeline, ResearchObservabilityStore]:
     ledger = ExperienceLedger(audit_repo=repo)
-    seed_experiences(ledger, repo, 46, positive=True)
+    # Evidence floors: the OOS bootstrap significance gate is decisive only
+    # above MIN_OOS_SIGNIFICANCE_SAMPLES (12) OOS trades, and scoring never
+    # VALIDATES below MIN_EVIDENCE_SAMPLES. The candidate carries an active
+    # context contract, which scopes the population down (~78% of the seed),
+    # then the temporal split keeps 20% of the scoped samples for OOS. A seed
+    # of 46 left 9 OOS trades -> INCONCLUSIVE -> REJECTED, and every end-to-end
+    # assertion expecting STRATEGY_PROMOTED/VALIDATED saw REJECTED instead.
+    seed_experiences(ledger, repo, 100, positive=True)
     builder = ResearchDatasetBuilder(ledger=ledger)
     reg = StrategyRegistry(repo)
     obs = ResearchObservabilityStore(repo)
