@@ -329,9 +329,19 @@ def test_bug297_b2_rebuild_clear_handle_is_reused(components, temp_audit_repo, m
     )
     # INV-001 V1: the ledger's own reads in those same rebuilds DID enter the
     # seam (they were raw sqlite3.connect sites before the fix).
-    assert any(filename.endswith("nexus_scalp/experience/ledger.py") for _, filename in calls), (
-        "the experience ledger must route its rebuild-time reads through the seam"
-    )
+    #
+    # The ledger reaches the seam either directly (``self._connect``) or via
+    # the shared ``provider_store.query_rows`` helper — both route through
+    # ``_connect_sqlite``, which is what the contract pins. The caller frame
+    # therefore lands in ledger.py *or* provider_store.py depending on which
+    # read it is, so assert the read happened through the seam rather than on
+    # the immediate caller's module.
+    assert any(
+        filename.endswith(
+            ("nexus_scalp/experience/ledger.py", "nexus_scalp/adapters/database/provider_store.py")
+        )
+        for _, filename in calls
+    ), "the experience ledger must route its rebuild-time reads through the seam"
 
 
 # =============================================================================
