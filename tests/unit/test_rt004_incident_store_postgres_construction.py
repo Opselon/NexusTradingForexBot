@@ -14,6 +14,12 @@ not recorded at all.
 The write path already worked (it queues through the repo), so the defect was
 purely at construction. This test locks in that a repo with no ``_db_path``
 but a real ``_db_url`` is accepted.
+
+PG-DBPATH-BOOT-001: since PR #460 ``AuditRepository._db_path`` is no longer
+empty under a non-SQLite provider — ``_provider_db_path()`` stores the
+provider URI (``postgresql://localhost:5432/nexusdb``). The store must treat
+that URI exactly like the empty string, otherwise it takes the SQLite branch
+and ``ensure_schema`` dies in ``sqlite3.connect``.
 """
 
 from __future__ import annotations
@@ -23,18 +29,34 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
+from typing import Any
+
 import pytest
 
 from nexus_scalp.incidents.store import IncidentStore
 
 
+class _PgWritePlane:
+    """Minimal pooled write plane: the shape the store resolves and calls."""
+
+    def __init__(self) -> None:
+        self.executed: list[str] = []
+
+    def execute(self, sql: str, args: Any = ()) -> None:
+        self.executed.append(sql)
+
+
 class _PgLikeRepo:
     """The provider-mismatch shape: a URL, no filesystem path."""
 
-    def __init__(self, url: str = "postgresql://user:[REDACTED_SECRET]@host/nexusdb") -> None:
+    def __init__(self, url: str = "postgresql://user:***@host/nexusdb") -> None:
         self._db_url = url
         self._is_sqlite = False
         self._db_path = ""
+        self._write_backend = _PgWritePlane()
+
+    def _build_pooled_write_backend(self) -> Any:
+        return self._write_backend
 
 
 class _SqliteLikeRepo:
@@ -46,22 +68,44 @@ class _SqliteLikeRepo:
 
 def test_a_postgres_repo_with_no_db_path_is_accepted() -> None:
     """The exact state that raised ``requires db_path or audit_repo``."""
-    store = IncidentStore(db_path="", audit_repo=_PgLikeRepo())
-    assert store.db_url.startswith("postgresql://")
+    repo = _PgLikeRepo()
+    store = IncidentStore(db_path="", audit_repo=repo)
     assert store.db_path == ""
+    # No SQLite path, so the provider-aware branch ran and owns the schema.
+    assert store._write_backend is repo._write_backend
+    assert repo._write_backend.executed, "ensure_schema ran on the write plane"
 
 
 def test_a_sqlite_repo_still_resolves_to_a_filesystem_path() -> None:
     """The pre-existing SQLite behaviour is unchanged: the URL is not kept."""
     store = IncidentStore(db_path="", audit_repo=_SqliteLikeRepo())
     assert store.db_path.endswith("incidents.db")
-    assert store.db_url == ""
+    assert store._write_backend is None
 
 
 def test_an_explicit_sqlite_path_wins_over_the_repo() -> None:
     store = IncidentStore(db_path="explicit.db", audit_repo=_PgLikeRepo())
     assert store.db_path == "explicit.db"
-    assert store.db_url == ""
+    assert store._write_backend is None
+
+
+def test_a_postgres_repo_whose_db_path_is_the_provider_uri_is_accepted() -> None:
+    """The live web-API site (``api_v1/incidents.py:54``): no explicit path."""
+    repo = _PgLikeRepo()
+    repo._db_path = "postgresql://localhost:5432/nexusdb"
+    store = IncidentStore(audit_repo=repo)
+    assert store.db_path == ""
+    assert store._write_backend is repo._write_backend
+
+
+def test_the_worker_call_sites_provider_uri_is_treated_as_absent() -> None:
+    """``live_engine.py:2740`` passes the repo URI explicitly — same outcome."""
+    repo = _PgLikeRepo()
+    repo._db_path = "postgresql://localhost:5432/nexusdb"
+    db_path = getattr(repo, "_db_path", "")
+    store = IncidentStore(db_path=db_path, audit_repo=repo)
+    assert store.db_path == ""
+    assert store._write_backend is repo._write_backend
 
 
 def test_no_path_and_no_repo_still_raises() -> None:
