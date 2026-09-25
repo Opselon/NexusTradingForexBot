@@ -44,7 +44,6 @@ from nexus_scalp.ai_providers.registry import (
 )
 from nexus_scalp.ai_providers.sample import SIMULATED_SAMPLE_REQUEST
 from nexus_scalp.observability.logging import get_logger
-from nexus_scalp.settings.paths import settings_db_path
 from nexus_scalp.settings.secret_store import SecureSecretStore
 
 logger = get_logger("nexus_scalp.web.ai_providers_routes")
@@ -70,7 +69,7 @@ def get_ai_provider_orchestrator() -> ProviderOrchestrator:
     with _LOCK:
         if _ORCHESTRATOR is None:
             _ORCHESTRATOR = ProviderOrchestrator(
-                registry=ProviderRegistryStore(settings_db_path()),
+                registry=ProviderRegistryStore(),  # resolves to the ACTIVE provider (SQLite path | PG DSN)
                 secret_store=_secret_store(),
                 decision_store=_decision_store(),
             )

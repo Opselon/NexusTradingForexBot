@@ -24,7 +24,9 @@ import os
 import re
 import sqlite3
 import sys
+import tokenize
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -107,6 +109,63 @@ def test_guard_no_direct_sqlite3_in_domain_code(py_file: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _is_statement_position(all_tokens: list[Any], idx: int) -> bool:
+    """True when ``all_tokens[idx]`` starts its logical line.
+
+    A STRING token in statement position is a docstring or a standalone
+    expression statement — prose, not code. A STRING in any other position
+    (argument, subscript, concatenation operand) is data the guard must see.
+    """
+    for prev in reversed(all_tokens[:idx]):
+        if prev.type in (tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT):
+            return True
+        if prev.type in (tokenize.COMMENT, tokenize.STRING):
+            continue
+        return False
+    return True
+
+
+def _code_without_docstrings_comments(path: Path) -> str:
+    """Return the file's code with comments and docstrings stripped.
+
+    The guards scan for ``PRAGMA`` and ``sqlite3.connect(`` as raw text, which
+    fires on prose that merely *describes* a violation — a docstring
+    documenting an old bug, or a comment explaining why a pattern is banned.
+    Firing on documentation produces a false positive that will keep
+    recurring as the codebase documents its own migration history.
+
+    Statement-position STRING tokens (docstrings) and COMMENT tokens are
+    dropped. Expression-position STRING tokens are kept, so a dynamic
+    ``getattr(sqlite3, "connect")(...)`` evasion is still detected.
+
+    A file that cannot be tokenized is returned verbatim rather than skipped:
+    a syntax error must not silently exclude a file from the guard's scan.
+    """
+    try:
+        with tokenize.open(path) as fh:
+            tokens = list(tokenize.generate_tokens(fh.readline))
+    except Exception:
+        return path.read_text(encoding="utf-8", errors="replace")
+
+    keep: list[str] = []
+    for idx, tok in enumerate(tokens):
+        if tok.type == tokenize.COMMENT:
+            continue
+        # Keep STRING tokens that are NOT docstrings. Dropping every STRING
+        # would blind the guard to dynamic connects
+        # (``getattr(sqlite3, "connect")(...)``), the exact evasion class this
+        # migration exists to prevent. Only statement-position strings are
+        # docstrings; every other string is code-visible data.
+        if tok.type == tokenize.STRING and _is_statement_position(tokens, idx):
+            continue
+        if tok.string:
+            keep.append(tok.string)
+    # Tokens are unambiguous when concatenated: no separators are needed, and
+    # inserting them would break the multi-token regexes (``sqlite3 . connect``
+    # no longer matches ``sqlite3\\.connect``).
+    return "".join(keep)
+
+
 def test_guard_no_pragma_outside_sqlite_infra() -> None:
     """Guard 2: no NEW PRAGMA appears outside the SQLite infrastructure."""
     offenders: list[str] = []
@@ -118,14 +177,8 @@ def test_guard_no_pragma_outside_sqlite_infra() -> None:
         # where SQLite-specific behavior is allowed to live.
         if rel.startswith("database/") or rel.startswith("adapters/database/"):
             continue
-        text = p.read_text(encoding="utf-8", errors="replace")
-        for m in re.finditer(r"PRAGMA", text):
-            line_start = text.rfind("\n", 0, m.start()) + 1
-            line = text[line_start : text.find("\n", m.end())]
-            stripped = line.strip()
-            if stripped.startswith(("#", "//", '"', "'")):
-                continue
-            offenders.append(f"{rel}: {stripped}")
+        text = _code_without_docstrings_comments(p)
+        offenders.extend([f"{rel}: PRAGMA"] * len(re.findall(r"PRAGMA", text)))
     # Pre-existing violations are tracked in the baseline; anything not on
     # it is a NEW SQLite-specific leak into domain code.
     new_offenders = [o for o in offenders if o.split(":")[0] not in baseline]
@@ -145,13 +198,38 @@ def test_guard_no_raw_connect_outside_infra() -> None:
         rel = p.relative_to(SRC_ROOT).as_posix()
         if rel.startswith("database/") or rel.startswith("adapters/database/"):
             continue
-        text = p.read_text(encoding="utf-8", errors="replace")
-        for m in re.finditer(r"sqlite3\.connect\s*\(", text):
-            line_start = text.rfind("\n", 0, m.start()) + 1
-            line = text[line_start : text.find("\n", m.end())]
-            offenders.append(f"{rel}:{line.strip()[:100]}")
+        text = _code_without_docstrings_comments(p)
+        offenders.extend(
+            [f"{rel}: raw sqlite3.connect"] * len(re.findall(r"sqlite3\.connect\s*\(", text))
+        )
     new_offenders = [o for o in offenders if o.split(":")[0] not in baseline]
     assert not new_offenders, f"NEW raw sqlite3.connect outside infra: {new_offenders[:5]}"
+
+
+def test_guard_still_detects_dynamic_connect_calls(tmp_path: Path) -> None:
+    """The tokenizer must not blind the guard to dynamic connects.
+
+    Dropping every STRING token would let
+    ``getattr(sqlite3, "connect")(...)`` — the exact evasion class this
+    fabric migration exists to prevent — pass CI silently. Statement-position
+    strings (docstrings) are ignored, expression-position strings are kept.
+    """
+    src = tmp_path / "dynamic.py"
+    src.write_text(
+        "def f():\n"
+        '    """docstring mentions sqlite3.connect() and PRAGMA"""\n'
+        "    import sqlite3\n"
+        '    c = getattr(sqlite3, "connect")\n'
+        '    return c("a.db")\n',
+        encoding="utf-8",
+    )
+    text = _code_without_docstrings_comments(src)
+    # the docstring's literal call shape is gone, but the dynamic one — built
+    # from an expression-position STRING — is still visible to the guard
+    assert 'getattr(sqlite3,"connect")' in text, (
+        "expression-position STRING dropped: a dynamic connect call would evade the guard"
+    )
+    assert "sqlite3.connect(" not in text, "docstring prose leaked into the kept code"
 
 
 # ---------------------------------------------------------------------------

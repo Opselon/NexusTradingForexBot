@@ -119,6 +119,121 @@ class HealthEntry:
         }
 
 
+def _repo_root() -> Path:
+    """Repo root for source installs (``src/nexus_scalp/release/`` -> parents[3]).
+
+    Frozen (PyInstaller) layouts resolve the same way via ``paths.exe_dir()``.
+    """
+    if paths.is_frozen():
+        return paths.exe_dir()
+    return Path(__file__).resolve().parents[3]
+
+
+def _bars_time_span(scan: Any) -> str | None:
+    """Human-readable first/last bar window, or None when it cannot be read.
+
+    Prefers ``time_utc`` (the canonical export column); falls back to the MT5
+    epoch ``time`` column used by the older CSV layout.
+    """
+    import polars as pl
+
+    try:
+        cols = scan.collect_schema().names()
+    except Exception:
+        return None
+    col = "time_utc" if "time_utc" in cols else "time" if "time" in cols else None
+    if col is None:
+        return None
+    try:
+        frame = scan.select(
+            pl.col(col).min().alias("first"), pl.col(col).max().alias("last")
+        ).collect()
+        if frame.height != 1:
+            return None
+        first, last = frame.row(0)
+        if first is None or last is None:
+            return None
+        if isinstance(first, int):  # MT5 epoch seconds -> UTC instant
+            from datetime import UTC, datetime
+
+            def _fmt(ts: int) -> str:
+                return datetime.fromtimestamp(ts, tz=UTC).strftime("%Y-%m-%d %H:%M")
+
+            return f"{_fmt(first)}..{_fmt(last)} UTC"
+        first = getattr(first, "to_pydatetime", lambda: first)()
+        last = getattr(last, "to_pydatetime", lambda: last)()
+        return f"{first:%Y-%m-%d %H:%M}..{last:%Y-%m-%d %H:%M} UTC"
+    except Exception:
+        return None
+
+
+def _bars_quality_warnings(scan: Any) -> list[str]:
+    """Duplicate/non-monotonic bar warnings (empty = clean)."""
+    import polars as pl
+
+    try:
+        schema = scan.collect_schema()
+        cols = schema.names()
+    except Exception:
+        return []
+    col = "time_utc" if "time_utc" in cols else "time" if "time" in cols else None
+    if col is None:
+        return []
+    # Durations do not compare against a bare 0; reduce to seconds first.
+    bar = pl.col(col)
+    delta = bar.diff().dt.total_seconds() if str(schema[col]).startswith("Datetime") else bar.diff()
+    try:
+        stats = scan.select(
+            pl.col(col).n_unique().alias("uniq"),
+            pl.len().alias("n"),
+            (delta <= pl.lit(0)).sum().alias("nonmono"),
+        ).collect()
+        if stats.height != 1:
+            return []
+        uniq, n, nonmono = stats.row(0)
+        out: list[str] = []
+        if n and uniq is not None and uniq < n:
+            out.append(f"{n - uniq} duplicate bar times")
+        if nonmono:
+            out.append(f"{nonmono} non-monotonic bar times")
+        return out
+    except Exception:
+        return []
+
+
+def _alternative_bars_source(rel_path: Path) -> Path | None:
+    """A readable bars file that can be canonicalized into the parquet slot.
+
+    Probes, in order: the legacy ``.csv`` sibling of the canonical slot (both
+    CWD-relative and repo-root-relative), then the configured REPLAY
+    ``raw_bars_path``. Returns None when no bars source exists anywhere — the
+    honest first-run message.
+    """
+    candidates: list[Path] = []
+    csv_sibling = rel_path.with_suffix(".csv")
+    candidates.append(csv_sibling)
+    candidates.append(_repo_root() / csv_sibling)
+    try:
+        from nexus_scalp.configuration.config import AppConfig
+
+        configured_root = AppConfig()
+        raw_bars = getattr(getattr(configured_root, "paper_data", None), "raw_bars_path", None)
+        if raw_bars:
+            configured = Path(raw_bars)
+            candidates.append(configured)
+            if not configured.is_absolute():
+                candidates.append(_repo_root() / configured)
+    except Exception:
+        pass
+    for cand in candidates:
+        try:
+            if cand.is_file() and cand.stat().st_size > 0:
+                return cand
+        except (OSError, ValueError):
+            continue
+    return None
+
+
 def _db_health(db_path: Path) -> tuple[str, str]:
     """SQLite integrity probe (verdict, reason).
 
@@ -905,18 +1020,41 @@ class HealthEngine:
         """
         import polars as pl
 
-        data_path = Path("data/raw/XAUUSD_M1.parquet")
+        rel_path = Path("data/raw/XAUUSD_M1.parquet")
+        # The engine may be started from any CWD (installer, IDE, systemd), so a
+        # CWD-relative lookup that misses must fall back to the repo-root path
+        # before it can be reported as a genuine first-run gap. An existing
+        # CWD-relative file keeps its exact legacy path/behaviour.
+        data_path = rel_path if rel_path.exists() else _repo_root() / rel_path
         if not data_path.exists():
+            # DATA-RAW-03: keep FAIL + NOT_INITIALIZED (the gate is NOT
+            # weakened), but make the failure self-healing — if a readable bars
+            # source exists somewhere (the legacy CSV sibling next to the
+            # canonical slot, or the configured REPLAY raw_bars_path), point the
+            # operator at the exact command that canonicalizes it into the
+            # parquet `nexus model-train-3` reads.
+            alt = _alternative_bars_source(rel_path)
+            suggestion = (
+                "Acquire XAUUSD M1 history from the MT5 terminal (copy_rates) "
+                "or restore a data/raw backup, then re-run doctor."
+            )
+            if alt is not None:
+                suggestion += (
+                    f" A readable bars source already exists at {alt} — run "
+                    f"`nexus data-restore --source {alt}` to canonicalize it "
+                    f"into data/raw/XAUUSD_M1.parquet."
+                )
             return HealthEntry(
                 "DATA",
                 "FAIL",
-                f"canonical bars file missing: {data_path} (training cannot run)",
-                "Acquire XAUUSD M1 history from the MT5 terminal (copy_rates) "
-                "or restore a data/raw backup, then re-run doctor.",
+                f"canonical bars file missing: {rel_path} (training cannot run)",
+                suggestion,
                 state=NOT_INITIALIZED,
             )
         try:
-            rows = pl.scan_parquet(data_path).select(pl.len()).collect().item()
+            scan = pl.scan_parquet(data_path)
+            rows = scan.select(pl.len()).collect().item()
+            span = _bars_time_span(scan)
         except Exception as exc:
             return HealthEntry(
                 "DATA",
@@ -925,24 +1063,29 @@ class HealthEngine:
                 "Restore data/raw/XAUUSD_M1.parquet from a known-good source.",
             )
         age_days = max(0.0, time.time() - data_path.stat().st_mtime) / 86400.0
+        detail = f"{rows} rows, span {span}" if span else f"{rows} rows"
+        warnings = _bars_quality_warnings(scan)
         if rows < 10000:
+            warnings.append("walk-forward needs >= 10k")
             return HealthEntry(
                 "DATA",
                 "WARNING",
-                f"{data_path}: only {rows} rows (walk-forward needs >= 10k)",
+                f"{data_path}: only {detail} ({'; '.join(warnings)})",
                 "Capture a longer history window before training.",
             )
         if age_days > 30:
+            warnings.append(f"last modified {age_days:.0f} days ago")
+        if warnings:
             return HealthEntry(
                 "DATA",
                 "WARNING",
-                f"{data_path}: {rows} rows, last modified {age_days:.0f} days ago",
+                f"{data_path}: {detail} ({'; '.join(warnings)})",
                 "Refresh the history window so training reflects current regimes.",
             )
         return HealthEntry(
             "DATA",
             "PASS",
-            f"{data_path}: {rows} rows, age {age_days:.0f}d",
+            f"{data_path}: {rows} rows, span {span}, age {age_days:.0f}d",
             state=AVAILABLE,
         )
 
