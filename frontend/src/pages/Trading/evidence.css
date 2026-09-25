@@ -1,0 +1,160 @@
+/* evidence.css — lane C, wave-9 defect D5.
+ *
+ * Scope: the three bottom evidence panels of /alt/trading (dispatch order
+ * flow / virtual-vs-real reconciliation / recent executions).
+ *
+ * Purpose: give the flat tail of the page the same section structure the
+ * hero has — one kicker for the group, numbered panels, glass panel skin.
+ *
+ * Law compliance:
+ *  - theme tokens only (no literal hex; rgba()/color-mix() derive from them),
+ *  - namespaced .tf-* selectors; the shared .panel/.panel-header/.btn/
+ *    .data-table primitives are only RESTYLED in scope, never redefined,
+ *  - logical properties (inline-size/inset-inline/margin-block) for RTL,
+ *  - no transition/animation except prefers-reduced-motion-guarded ones.
+ */
+
+.tf-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-block: 4px 20px;
+}
+
+/* --------------------------- section head -------------------------------- */
+/* Kicker + hairline rule + provenance note; mirrors .tr-hero-pro .tr-kicker
+   so the page reads as one typographic system top to bottom. */
+.tf-section-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-block-end: 2px;
+}
+.tf-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.tf-kicker-dot {
+  inline-size: 5px;
+  block-size: 5px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+/* symmetric fade so the rule reads the same in LTR and RTL */
+.tf-kicker-rule {
+  flex: 1 1 56px;
+  min-inline-size: 56px;
+  block-size: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--border-strong) 18%,
+    var(--border-strong) 82%,
+    transparent
+  );
+}
+.tf-section-note {
+  flex: 0 1 auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  text-align: end;
+}
+
+/* --------------------- numbered panels (CSS counters) --------------------- */
+/* The counter lives on the section marker, so numbering is structural:
+   add/reorder a panel and the indices re-flow without markup edits. */
+.tf-evidence {
+ counter-reset: tf-panel; }
+.tf-panel { counter-increment: tf-panel; }
+
+.tf-panel { position: relative; }
+
+/* The number badge. Rendered by CSS so the panel bodies and headers stay
+   byte-identical (lane C wraps; it does not edit panel content). It sits in
+   the panel's own padding gutter, never over the header text. */
+.tf-panel::before {
+  content: counter(tf-panel, decimal-leading-zero);
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-end: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 26px;
+  block-size: 19px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  pointer-events: none;
+}
+/* In RTL the counter still reads 01/02/03 left-to-right inside its badge. */
+[dir="rtl"] .tf-panel::before { direction: ltr; }
+
+/* ---------------------- glass panel skin (scoped) ------------------------- */
+/* Same treatment .tr-readout .panel uses, under the tf- marker so the shared
+   .panel primitive is untouched anywhere else on the console. */
+.tf-evidence .panel {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012) 40%),
+    color-mix(in srgb, var(--bg-panel) 92%, transparent);
+  backdrop-filter: blur(10px) saturate(1.1);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
+  border-radius: 14px;
+  box-shadow: var(--elev-2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  margin-bottom: 0;
+}
+.tf-evidence .panel::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  block-size: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(65, 166, 242, 0.45),
+    rgba(157, 123, 240, 0.3),
+    transparent
+  );
+  pointer-events: none;
+}
+.tf-evidence .panel-header {
+  border-bottom-color: color-mix(in srgb, var(--border-strong) 70%, transparent);
+  /* the number badge lives in the header's end gutter */
+  padding-inline-end: 44px;
+}
+/* keep header tools (age note / CSV export / pager) clear of the badge */
+.tf-evidence .panel-tools { margin-inline-end: 6px; }
+
+/* ------------------------------ responsive -------------------------------- */
+@media (max-width: 640px) {
+  .tf-evidence { gap: 12px; }
+  .tf-section-note { display: none; }
+}
+
+/* --------------------------- reduced motion ------------------------------- */
+/* No animation or transition is introduced by this file; the rule is kept so
+   a later transition lands behind the correct guard. */
+@media (prefers-reduced-motion: reduce) {
+  .tf-evidence .panel,
+  .tf-panel::before { transition: none !important; }
+}
