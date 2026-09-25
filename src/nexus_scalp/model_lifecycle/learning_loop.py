@@ -56,30 +56,49 @@ def _resolve_cycle_store_db_path(audit_repo: AuditRepository) -> str:
     MagicMock()``) make ``_db_path`` a MagicMock whose ``str()`` is not a
     valid filesystem path, and ``sqlite3.connect`` then dies with
     ``OperationalError: unable to open database file`` (observed 2026-09-07:
-    13 red in tests/unit/test_htf_warmup_gate.py). Fall back to a process-local
-    temp file whenever the attribute is not a plain string path — the cycle
-    store is process-local state, so a temp file stays hermetic and never
-    touches the production artifacts/audit.db (BUG-223 rule).
+    13 red in tests/unit/test_htf_warmup_gate.py). Fall back to the shared
+    in-memory convention (same as AuditRepository's ``:memory:`` handling)
+    whenever the attribute is not a plain string path — the cycle store is
+    process-local state, so in-memory stays hermetic and never touches the
+    production artifacts/audit.db (BUG-223 rule).
 
-    RT-007 (2026-09-24): ``:memory:`` is NOT a safe fallback here.
-    LearningCycleStore opens one short-lived ``sqlite3.connect()`` per
-    operation (10 call sites) with no shared connection, and each
-    ``:memory:`` connect mints a brand-new EMPTY database — the table
-    ``ensure_schema()`` creates is invisible to the very next call, so every
-    cycle read/writes raise ``no such table: learning_cycles`` and
-    restart-safe recovery is silently disabled. This was observed in the live
-    error log whenever the audit repo carries no SQLite ``_db_path``.
-    A NamedTemporaryFile gives every connect the SAME schema-carrying file.
+    Provider-aware (PG-READ-PLANE-001/D): under a non-SQLite provider
+    ``_db_path`` is the empty string. An in-memory DB there is a BUG (D4:
+    ``no such table: learning_cycles`` on every boot, state lost on
+    restart), so the cycle store is pointed at a REAL file inside the
+    runtime workspace instead. The file is a local state journal — the
+    learning tables are also authored into the governed audit schema, so
+    this never replaces the audit record, it keeps cycle state durable.
     """
     raw = getattr(audit_repo, "_db_path", None)
     if isinstance(raw, str) and raw.strip():
         return raw
-    import tempfile
+    if _audit_repo_is_nonsqlite(audit_repo):
+        return _cycle_store_workspace_path()
+    return ":memory:"
 
-    _tmp = tempfile.NamedTemporaryFile(prefix="nse_learning_cycles_", suffix=".db", delete=False)
-    _tmp.close()
-    _rt007_cycle_db_path = _tmp.name
-    return _rt007_cycle_db_path
+
+def _audit_repo_is_nonsqlite(audit_repo: Any) -> bool:
+    """True when the audit repo is bound to a non-SQLite provider."""
+    try:
+        return not bool(getattr(audit_repo, "_is_sqlite", True))
+    except Exception:
+        return False
+
+
+def _cycle_store_workspace_path() -> str:
+    """A stable REAL file path for the cycle store under a non-SQLite provider.
+
+    Resolved through the release path module so source, installed and
+    packaged layouts all agree (same anchor as every other runtime state
+    file). The parent directory is created eagerly — ``LearningCycleStore``
+    opens the connection immediately in ``__init__``.
+    """
+    from nexus_scalp.release.paths import get_runtime_workspace
+
+    root = get_runtime_workspace() / "artifacts" / "learning"
+    root.mkdir(parents=True, exist_ok=True)
+    return str(root / "learning_cycles.db")
 
 
 class LearningCycleOrchestrator:
