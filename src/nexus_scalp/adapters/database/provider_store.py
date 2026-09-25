@@ -560,6 +560,16 @@ def sqlite_connection(repo: AuditRepository, timeout: float = 5.0) -> Any:
     Raises ``RuntimeError`` for a non-SQLite repository: callers gate on
     ``_is_sqlite`` first, and a SQLite connection on a PostgreSQL box is a
     provider violation this must never paper over.
+
+    The connection is handed back with ``row_factory = sqlite3.Row``: the
+    read helpers (``_sqlite_rows`` / ``query_one`` / ``query_scalar``)
+    promise *dict* rows to their callers, and the repository's own
+    ``_connect_sqlite`` seam leaves the default tuple factory in place. A
+    bare tuple broke ``dict(row)`` for every single-column SELECT
+    ("dictionary update sequence element #0 has length N; 2 is required"),
+    which the helpers' failure contract swallowed as an empty result —
+    40+ tests silently saw zero rows. ``sqlite3.Row`` yields dicts via
+    ``dict(row)`` and keeps positional ``row[0]`` for the scalar path.
     """
     if not _is_sqlite(repo):
         raise RuntimeError(
@@ -568,7 +578,12 @@ def sqlite_connection(repo: AuditRepository, timeout: float = 5.0) -> Any:
         )
     connect = getattr(repo, "_connect_sqlite", None)
     if callable(connect):
-        return connect(timeout)
+        import sqlite3
+
+        conn: Any = connect(timeout)
+        if conn.row_factory is not sqlite3.Row:
+            conn.row_factory = sqlite3.Row
+        return conn
     raise RuntimeError(
         "SQLite repository has no _connect_sqlite seam — the repository owns "
         "the sqlite3 surface; a domain module opening sqlite3 directly is the "
