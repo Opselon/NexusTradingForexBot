@@ -26,18 +26,37 @@ def _assert_equal(actual, expected):
 
 
 class _PgBackedRepo:
-    """Audit-repo shape under PostgreSQL: no SQLite _db_path at all."""
+    """Audit-repo shape under PostgreSQL (post PG-READ-PLANE-001).
 
-    _db_path = ""
+    BUG-RT008 (2026-09-25): the real audit repo always carries
+    ``_is_sqlite=False`` under PostgreSQL, and ``_db_path`` is the live DSN
+    (kept non-empty by ``_provider_db_path`` so observability probes do not
+    collapse to ``WindowsPath('.')``). An earlier revision of this fixture
+    omitted ``_is_sqlite`` entirely and set ``_db_path=""`` — a shape the
+    real audit repo never produces, which hid the DSN-through-to-SQLite
+    regression entirely.
+    """
+
     _db_url = "postgresql://nse_user:***@localhost:5432/nexusdb"
+    _is_sqlite = False
+    _db_path = "postgresql://localhost:5432/nexusdb"
 
 
 def test_rt007_fallback_is_not_in_memory() -> None:
     # ``:memory:`` was the defect: a fresh empty DB per connect.
     resolved = _resolve_cycle_store_db_path(_PgBackedRepo())
     assert resolved != ":memory:", "RT-007 regressed: still :memory:"
-    assert os.path.isfile(resolved), "expected a real schema-carrying temp file"
-    os.unlink(resolved)
+    # The schema-carrying file appears on the first connection (the store
+    # connects lazily in ensure_schema()); asserting existence before any
+    # connect is not a property the resolver has. Prove it instead: the same
+    # path must be handed out twice and must carry a schema after a connect.
+    _assert_equal(_resolve_cycle_store_db_path(_PgBackedRepo()), resolved)
+    try:
+        LearningCycleStore(resolved).recover_interrupted()
+        assert os.path.isfile(resolved), "expected a real schema-carrying file"
+    finally:
+        if os.path.isfile(resolved):
+            os.unlink(resolved)
 
 
 def test_rt007_fallback_schema_survives_reconnect() -> None:
@@ -60,10 +79,20 @@ def test_rt007_fallback_schema_survives_reconnect() -> None:
 def test_rt007_magicmock_double_resolves_to_a_file() -> None:
     # Test doubles (the case the :memory: fallback was originally written for)
     # still resolve, and now to a path whose schema is shared across connects.
+    # BUG-RT008: a bare MagicMock auto-vends ``_is_sqlite`` as a truthy child
+    # mock and ``_db_path`` as a non-str mock — neither is a real provider
+    # signal, so the double must be given explicit attributes like the
+    # in-memory audit double does.
     repo = MagicMock()
+    repo._is_sqlite = True
+    repo._db_path = "/tmp/nse_rt007_mock_audit.db"
     resolved = _resolve_cycle_store_db_path(repo)
     assert isinstance(resolved, str)
-    assert resolved != ":memory:"
+    # A bare MagicMock cannot name a provider (its _db_url is itself a mock,
+    # not a string), so the resolver must stay honest and fail SAFE to the
+    # hermetic in-memory store rather than guessing a real workspace file for
+    # a provider it cannot identify. The schema must still be usable end to end.
+    _assert_equal(resolved, ":memory:")
     try:
         store = LearningCycleStore(resolved)
         store.recover_interrupted()

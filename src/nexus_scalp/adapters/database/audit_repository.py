@@ -242,6 +242,13 @@ class RuntimeRiskStateReadError(RuntimeError):
     """
 
 
+#: Module-private sentinel for the pooled-provider read path. The guard's
+#: documented default is only reachable when the read route FAILED, so it
+#: needs a value a healthy route can never return (None is a legitimate
+#: healthy answer: 'the row is unset'). See get_runtime_risk_state.
+_READ_FAILED_SENTINEL: Any = object()
+
+
 def _existing_columns(conn: sqlite3.Connection, table: str) -> set[str]:
     """PRAGMA pre-check shared by every SQLite ADD COLUMN site in this repo.
 
@@ -1378,22 +1385,59 @@ class AuditRepository:
 
         Read is UNTRUSTED-fail-closed: None is only returned when a healthy
         read proves the row is unset (or the DB does not exist yet). A failed
-        read (corruption, lock storm, IO error) raises
+        read (corruption, lock storm, IO error, MISSING TABLE) raises
         :class:`RuntimeRiskStateReadError` so the boot path can refuse to
         trade — DB uncertainty must NEVER be decoded as 'no persisted state'
         (the old contract made a corrupt/unavailable DB boot as RUNNING with
         a live HALT row on disk; agent-17 probe, 2026-09-10).
+
+        RT-009 (2026-09-25): a MISSING ``runtime_risk_state`` table is a
+        FAILED read on both providers, not a fresh install. The live engine
+        logged exactly this condition ('no such table: runtime_risk_state')
+        while a HALT was on disk; the SQLite arm used to decode it as
+        NO_PERSISTED_STATE -> RUNNING because ``_setup_storage`` re-creates
+        the table on construction, silently healing away the damage and
+        returning an empty read. ``_table_exists`` below proves the table was
+        there BEFORE this read; the PG arm's read route already fails
+        observably, so this brings the two providers onto one contract.
+
+        Under a POOLED provider the same rule applies to a failed read route:
+        ``_provider_read_guard`` degrades observably to the documented default
+        (None) so a transient issue stays recoverable (mission s91), but None
+        is what boot decodes as 'no persisted state' — so the two ARE
+        distinguishable here and only here: a routed read that answered None
+        proves the row is unset, while a FAILED route proves nothing. The
+        failure is surfaced as ``RuntimeRiskStateReadError`` so the boot path
+        can tell them apart; the degradation counters + warning the guard
+        already emits stay exactly as they are (they are the observability
+        surface for this exact condition).
         """
         if not self._is_sqlite:
-            return self._provider_read_guard(
+            row = self._provider_read_guard(
                 "get_runtime_risk_state",
-                lambda: None,
+                lambda: _READ_FAILED_SENTINEL,
                 sql="SELECT * FROM runtime_risk_state WHERE id = 1",
                 kind="row",
             )
+            # The guard only reaches the default when the route FAILED (a
+            # healthy route returns a real row or a real None). A failed route
+            # means the persisted state could not be observed — never 'absent'.
+            if row is _READ_FAILED_SENTINEL:
+                raise RuntimeRiskStateReadError(
+                    "runtime_risk_state read failed on the pooled provider "
+                    "(audit read route failed or no read plane registered for "
+                    "the audit domain)"
+                )
+            return row
         try:
             with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
+                if not self._table_exists(conn, "runtime_risk_state"):
+                    raise RuntimeRiskStateReadError(
+                        "runtime_risk_state table is missing — the safety-state "
+                        "store cannot be trusted (re-created by setup, but the "
+                        "persisted decision is gone)"
+                    )
                 row = conn.execute("SELECT * FROM runtime_risk_state WHERE id = 1").fetchone()
                 return dict(row) if row is not None else None
         except RuntimeRiskStateReadError:
@@ -1402,6 +1446,25 @@ class AuditRepository:
             raise RuntimeRiskStateReadError(
                 f"runtime_risk_state read failed ({type(e).__name__}): {e}"
             ) from e
+
+    @staticmethod
+    def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+        """True when ``table`` is present on a live SQLite connection.
+
+        A plain ``SELECT ... FROM <table>`` cannot distinguish 'the table is
+        missing' from 'the table is empty' — and the missing case is exactly
+        the boot-honesty question here. The catalog lookup makes it explicit
+        without raising, so the caller can fail closed deliberately.
+        """
+        try:
+            return bool(
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                    (table,),
+                ).fetchone()
+            )
+        except Exception:
+            return False
 
     def release_runtime_risk_state(
         self,

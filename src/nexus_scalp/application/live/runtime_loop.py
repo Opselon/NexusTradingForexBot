@@ -28,12 +28,66 @@ from nexus_scalp.risk.runtime_safety import AccountFreshness, classify_account_f
 
 logger = get_logger("nexus_scalp.application.live.runtime_loop")
 
+# RT-008 — watchdog reconnect storm (live evidence 2026-09-25 04:11 IST).
+# The stall watchdog re-fires on essentially every ~0.05s pass after a FAILED
+# reconnect: it only ever resets _last_tick_processed_time, never the stall
+# clock (correct BUG-279 invariant — only a NEW non-duplicate tick may), so a
+# dead feed keeps the watchdog armed forever. Unbounded, that is one
+# disconnect()+connect() per pass, every connect() drives its own
+# mt5.initialize() retry ladder, and the storm on the single process-global
+# MT5 IPC handle yields IPC timeout -10005. The bound below spaces reconnect
+# attempts instead: base 5s, doubling per consecutive failure, capped 300s.
+# The loop never blocks longer than the (already-existing) 1.0s reconnect
+# sleep, so a recovered feed is still detected on the very next pass.
+RECONNECT_BACKOFF_BASE_SEC: float = 5.0
+RECONNECT_BACKOFF_CAP_SEC: float = 300.0
+
+
+def _reconnect_backoff_sec(consecutive_failures: int) -> float:
+    """Forced gap before the next watchdog reconnect attempt.
+
+    0 failures -> 0.0 (no forced wait: the loop polls every ~0.05s and stays
+    ready). Each consecutive failed reconnect doubles the window, capped at
+    ``RECONNECT_BACKOFF_CAP_SEC``. Computed from the failure COUNT (never from
+    the stall clock), so BUG-279 is untouched.
+    """
+    if consecutive_failures <= 0:
+        return 0.0
+    return min(
+        RECONNECT_BACKOFF_BASE_SEC * (2 ** (consecutive_failures - 1)),
+        RECONNECT_BACKOFF_CAP_SEC,
+    )
+
 
 class RuntimeLoop:
     """Async run loop (composition root: LiveEngine)."""
 
     def __init__(self, om: Any) -> None:
         self.om = om
+        # RT-008 watchdog reconnect backoff. Module-local state, read/written
+        # only by this module (per the shared invariant: no new LiveEngine
+        # surface):
+        #   _reconnect_failures   consecutive watchdog reconnects that did NOT
+        #                         restore the feed since the last recovery /
+        #                         successful reconnect. Schedules the window.
+        #   _last_reconnect_at    wall time of the last watchdog connect().
+        #   _next_reconnect_at    earliest wall time the next attempt may run.
+        #   _last_stall_notice_at rate cap on the suppressed-pass stall notice
+        #                         (log hygiene only — note_tick_stream_stall is
+        #                         called on EVERY stall pass regardless).
+        # The stall clock (_last_fresh_tick_at) is NEVER touched here — only a
+        # NEW non-duplicate tick may stamp it (BUG-279). Likewise the counter
+        # is never reset on a bare adapter.is_connected()/connect() True: a
+        # reconnect that leaves the quote frozen has not restored the feed
+        # (production evidence: MT5 reports connected while zero new ticks
+        # arrive), and the stall clock is the proof. The ONLY reset is the
+        # fresh-tick path below. The module-local state is per-process and
+        # does not outlive the loop: ``run()`` returns before the engine can
+        # be restarted, and this object is per-engine, so nothing stale leaks.
+        self._reconnect_failures: int = 0
+        self._last_reconnect_at: float = 0.0
+        self._next_reconnect_at: float = 0.0
+        self._last_stall_notice_at: float = 0.0
 
     async def _poll_tick(self, symbol: str) -> Any:
         """Offload only remote market reads; never detach a poll on cancellation.
@@ -269,39 +323,99 @@ class RuntimeLoop:
                 if _stall_age_sec > 15.0:
                     # Avoid spamming reconnects if connected but market is closed (e.g. weekend or holidays)
                     if not self.om.adapter.is_connected():
-                        logger.warning(
-                            "[WARNING] Tick stream stalled and MT5 disconnected. Triggering MT5 adapter healthcheck & auto-reconnect"
-                        )
+                        # RT-008: after a reconnect that did NOT restore the
+                        # feed the watchdog re-fires on the very next pass
+                        # (only a NEW non-duplicate tick may reset the stall
+                        # clock, BUG-279), which used to mean one
+                        # disconnect()+connect() per ~0.05s iteration — a
+                        # reconnect storm on the single process-global MT5 IPC
+                        # handle that ends in IPC timeout -10005. Bound the
+                        # RECONNECT only: the stall itself stays REPORTED every
+                        # pass (below) and ticks stay POLLED every pass, so the
+                        # engine's stall episode stays honest and the loop
+                        # recovers immediately when the feed revives.
+                        if current_time < self._next_reconnect_at:
+                            # Still inside the backoff window: report the stall
+                            # but do NOT reconnect. The notice is rate-capped so
+                            # a long outage logs one bounded line per window
+                            # instead of one per 0.05s pass.
+                            if current_time >= self._last_stall_notice_at:
+                                logger.warning(
+                                    "[WATCHDOG] Tick stream still stalled and MT5 "
+                                    "disconnected; next reconnect attempt in %.0fs "
+                                    "(consecutive failed reconnects=%s). The feed is "
+                                    "still polled for recovery.",
+                                    self._next_reconnect_at - current_time,
+                                    self._reconnect_failures,
+                                )
+                                self._last_stall_notice_at = current_time + max(
+                                    self._next_reconnect_at - current_time, 1.0
+                                )
+                        else:
+                            logger.warning(
+                                "[WARNING] Tick stream stalled and MT5 disconnected. "
+                                "Triggering MT5 adapter healthcheck & auto-reconnect"
+                            )
+                            try:
+                                self._last_reconnect_at = current_time
+                                self.om.adapter.disconnect()
+                                await asyncio.sleep(1.0)
+                                reconnected = self.om.adapter.connect()
+                                # RT-008: schedule the next attempt from the
+                                # failure COUNT (never the stall clock). A
+                                # success is only provisional here — the feed
+                                # is not proven alive until a NEW tick arrives,
+                                # so the counter is reset on the fresh-tick
+                                # path below, not here.
+                                if not reconnected:
+                                    self._reconnect_failures += 1
+                                self._next_reconnect_at = current_time + _reconnect_backoff_sec(
+                                    self._reconnect_failures
+                                )
+                                logger.warning(
+                                    "[MT5_CONNECT] event=WATCHDOG_RECONNECT result=%s "
+                                    "connected=%s next_attempt_in=%.0fs consecutive_failures=%s",
+                                    "ok" if reconnected else "failed",
+                                    self.om.adapter.is_connected(),
+                                    max(0.0, self._next_reconnect_at - current_time),
+                                    self._reconnect_failures,
+                                )
+                                # RESYNC (BUG-054): after a reconnect the broker may
+                                # have advanced 5-6h; reseed the aggregator from
+                                # broker history so the chart/features/regime all
+                                # rebuild from real candles instead of the stale
+                                # pre-disconnect series.
+                                try:
+                                    await self.om._resync_from_broker(symbol)
+                                except Exception as resync_err:
+                                    logger.error(
+                                        "Watchdog reconnect resync failed",
+                                        error=str(resync_err),
+                                        exc_info=True,
+                                    )
+                            except Exception as conn_err:
+                                # RT-008: an exception is a failed attempt too —
+                                # still schedule the backoff so the storm cannot
+                                # restart from the error path.
+                                self._reconnect_failures += 1
+                                self._next_reconnect_at = current_time + _reconnect_backoff_sec(
+                                    self._reconnect_failures
+                                )
+                                logger.error(
+                                    "Error during auto-reconnect in watchdog",
+                                    error=str(conn_err),
+                                    exc_info=True,
+                                )
                         # BUG-279: episode state + escalation owned by the
                         # engine (one START incident, CRITICAL escalation past
                         # grace -> DEGRADED) instead of a HIGH incident every
-                        # 15s pass while state kept claiming RUNNING.
+                        # 15s pass while state kept claiming RUNNING. RT-008:
+                        # reported on EVERY stall pass, including a suppressed
+                        # one — bounding the reconnect must never silence the
+                        # stall itself.
                         self.om.note_tick_stream_stall(
                             age_sec=_stall_age_sec, adapter_connected=False
                         )
-                        try:
-                            self.om.adapter.disconnect()
-                            await asyncio.sleep(1.0)
-                            self.om.adapter.connect()
-                            # RESYNC (BUG-054): after a reconnect the broker may
-                            # have advanced 5-6h; reseed the aggregator from
-                            # broker history so the chart/features/regime all
-                            # rebuild from real candles instead of the stale
-                            # pre-disconnect series.
-                            try:
-                                await self.om._resync_from_broker(symbol)
-                            except Exception as resync_err:
-                                logger.error(
-                                    "Watchdog reconnect resync failed",
-                                    error=str(resync_err),
-                                    exc_info=True,
-                                )
-                        except Exception as conn_err:
-                            logger.error(
-                                "Error during auto-reconnect in watchdog",
-                                error=str(conn_err),
-                                exc_info=True,
-                            )
                     else:
                         # BUGFIX-G29: connection is *live* but the tick stream is
                         # quiet (is_connected()==True while no new ticks arrive).
@@ -474,6 +588,21 @@ class RuntimeLoop:
                 # above must NOT reach here — a frozen quote never resets the
                 # stall episode.
                 self.om._last_fresh_tick_at = time.time()
+                # RT-008: a NEW tick is the ONLY proof the feed recovered, so
+                # the consecutive-reconnect counter resets HERE (never inside
+                # the watchdog path — a connect() that returned True while the
+                # quote is still frozen proves nothing). This is what returns
+                # the next stall to the base backoff window.
+                if self._reconnect_failures or self._next_reconnect_at:
+                    logger.info(
+                        "[MT5_CONNECT] event=FEED_RECOVERED consecutive_failures=%s -> 0 "
+                        "(new tick %.1fs after the last reconnect attempt)",
+                        self._reconnect_failures,
+                        max(0.0, self.om._last_fresh_tick_at - self._last_reconnect_at),
+                    )
+                    self._reconnect_failures = 0
+                    self._next_reconnect_at = 0.0
+                    self._last_reconnect_at = 0.0
                 self.om.note_tick_stream_recovered()
                 self.om._last_tick_processed_time = time.time()
                 # PHASE 08: accounting worker kick (throttled internally). This
@@ -493,6 +622,13 @@ class RuntimeLoop:
                 await asyncio.sleep(0.05)
 
             except Exception as e:
+                # Run-loop exception isolation (existing semantics preserved):
+                # log + notify and keep looping. The RT-008 backoff state
+                # SURVIVES a loop exception — otherwise a thrown pass would
+                # silently re-arm the reconnect storm. The state is reset only
+                # by a NEW non-duplicate tick, or by this RuntimeLoop being
+                # discarded at shutdown (``run()`` returning is the engine's
+                # shutdown; this object is per-engine).
                 logger.error("Error in live loop", error=str(e), exc_info=True)
                 with contextlib.suppress(Exception):
                     self.om.notifier.notify_error("Real-Time Execution Loop", str(e))

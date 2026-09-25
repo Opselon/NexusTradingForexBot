@@ -84,6 +84,33 @@ var PublicPaths = map[string]bool{
 // /alt/ so the prefix can never match anything outside the console mount.
 var PublicPrefixes = []string{"/static/", "/assets/", "/vendor/", "/alt/"}
 
+// shellDenyPrefixes mirrors _SHELL_DENY_PREFIXES (auth.py). /api, /ws and /web
+// are data classes: an unmatched child must stay gated (every data route keeps
+// full token enforcement). /alt is included because its surfaces are
+// allowlisted EXPLICITLY in PublicPaths + the /alt/ prefix above; without the
+// deny entry the dotless rule below would wrongly publish the never-public
+// shapes /altx and /alternative-api.
+var shellDenyPrefixes = []string{"/api", "/ws", "/web", "/alt"}
+
+// isPublicStaticShell mirrors _is_public_static_shell (CONTRACT frozen
+// decision #7): a path is a public static shell when its LAST segment contains
+// no "." (a dot marks a file/asset, which needs an explicit allowlist entry
+// instead) AND it starts with no deny prefix. Static shells carry no state and
+// no credentials, so deep links like /trading must render the SPA shell from a
+// tokenless first navigation while every data route stays gated.
+func isPublicStaticShell(path string) bool {
+	for _, p := range shellDenyPrefixes {
+		if strings.HasPrefix(path, p) {
+			return false
+		}
+	}
+	last := path
+	if i := strings.LastIndex(path, "/"); i >= 0 {
+		last = path[i+1:]
+	}
+	return !strings.Contains(last, ".")
+}
+
 // PublicJSAssets mirrors PUBLIC_JS_ASSETS (repo-root static scripts).
 var PublicJSAssets = map[string]bool{
 	"ux_i18n.js": true, "ux_conn.js": true, "ux.js": true, "ux_signal.js": true,
@@ -102,7 +129,8 @@ var CookieBootstrapPaths = map[string]bool{
 }
 
 // IsPublicPath is the single source of truth for the no-token allowlist.
-// Path-traversal separators can never be public.
+// Path-traversal separators can never be public. It is path-only: callers
+// without a method context (parity probes, SPA dispatch) keep using it.
 func IsPublicPath(path string) bool {
 	if strings.Contains(path, "..") || strings.Contains(path, "\\") {
 		return false
@@ -120,6 +148,18 @@ func IsPublicPath(path string) bool {
 		}
 	}
 	return false
+}
+
+// IsPublicPathMethod mirrors is_public_path(path, method): the dotless static
+// shell rule is GET/HEAD-only, so a non-GET/HEAD never widens the surface.
+func IsPublicPathMethod(path, method string) bool {
+	if IsPublicPath(path) {
+		return true
+	}
+	if method != "" && method != "GET" && method != "HEAD" {
+		return false
+	}
+	return isPublicStaticShell(path)
 }
 
 // Disabled reports whether the NSE_WEB_AUTH_DISABLE=1 rollback knob is set.
@@ -153,7 +193,7 @@ type middleware struct {
 func (m *middleware) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Public paths pass through (and may receive the bootstrap cookie).
-		if IsPublicPath(r.URL.Path) {
+		if IsPublicPathMethod(r.URL.Path, r.Method) {
 			if CookieBootstrapPaths[r.URL.Path] {
 				m.setBootstrapCookie(w)
 			}

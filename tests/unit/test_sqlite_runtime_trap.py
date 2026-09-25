@@ -1039,11 +1039,14 @@ def test_trap_incident_store(scratch_dsn: str) -> None:
         try:
             assert not repo._is_sqlite
             store = IncidentStore(db_path="", audit_repo=repo)
-            assert store.db_url.startswith("postgresql://"), (
-                f"incident store resolved {store.db_url!r}, expected the pooled PostgreSQL URL"
-            )
             assert store.db_path == "", (
                 f"incident store kept a SQLite path {store.db_path!r} under postgresql"
+            )
+            # The provider-aware resolution runs when db_path is empty: the
+            # store must hold a pooled fabric write plane, not fall back to
+            # a bare sqlite3.connect on a temp file.
+            assert store._write_backend is not None, (
+                "incident store resolved no pooled PostgreSQL write backend"
             )
             store.save(
                 Incident(
