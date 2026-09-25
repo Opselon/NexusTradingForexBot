@@ -268,6 +268,45 @@ func TestTraversalIsNeverPublic(t *testing.T) {
 	}
 }
 
+// TestDotlessShellIsPublicForGET pins CONTRACT frozen decision #7
+// (auth.py _is_public_static_shell): a tokenless first navigation to an
+// unmatched dotless path (a SPA deep link) must render the shell, while
+// data routes stay gated and non-GET never widens the surface.
+func TestDotlessShellIsPublicForGET(t *testing.T) {
+	// GET/HEAD deep links are public shells.
+	for _, p := range []string{"/trading", "/positions/open", "/deep/spa/route"} {
+		if !IsPublicPathMethod(p, http.MethodGet) {
+			t.Errorf("IsPublicPathMethod(%q, GET) = false, want true (SPA deep link)", p)
+		}
+		if !IsPublicPathMethod(p, http.MethodHead) {
+			t.Errorf("IsPublicPathMethod(%q, HEAD) = false, want true", p)
+		}
+	}
+
+	// The rule never applies to non-GET/HEAD.
+	for _, p := range []string{"/trading", "/positions/open"} {
+		for _, m := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch} {
+			if IsPublicPathMethod(p, m) {
+				t.Errorf("IsPublicPathMethod(%q, %s) = true, want false (shell rule is GET/HEAD-only)", p, m)
+			}
+		}
+	}
+
+	// Deny prefixes keep full enforcement: data classes never become shells.
+	for _, p := range []string{"/api/v1/anything", "/api/typo", "/ws/feed", "/web/asset", "/altx", "/alternative-api"} {
+		if IsPublicPathMethod(p, http.MethodGet) {
+			t.Errorf("IsPublicPathMethod(%q, GET) = true, want false (deny prefix)", p)
+		}
+	}
+
+	// A dot marks a file/asset: it needs an explicit entry, not the shell rule.
+	for _, p := range []string{"/trading.js", "/deep/report.json", "/missing.html"} {
+		if IsPublicPathMethod(p, http.MethodGet) {
+			t.Errorf("IsPublicPathMethod(%q, GET) = true, want false (dotless rule must not match assets)", p)
+		}
+	}
+}
+
 // TestBootstrapCookieShape pins SameSite=strict / HttpOnly / MaxAge=43200 /
 // Path=/ — measured from Python's set_cookie call.
 func TestBootstrapCookieShape(t *testing.T) {
