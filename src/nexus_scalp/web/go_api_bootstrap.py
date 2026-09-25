@@ -20,12 +20,14 @@ Design contract:
 Failure modes handled explicitly (proven by tests):
   - go binary absent                     -> WARN, Python-only boot, exit 0
   - go build fails                       -> WARN + stderr tail, Python-only
+  - shipped (release) binary present     -> used AS-IS, never rebuilt
   - configured API port already bound    -> pick the next free port, log it
   - Go server never becomes ready        -> WARN + kill child, Python-only
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -45,6 +47,17 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GO_API_DIR = REPO_ROOT / "go-api"
 MAIN_PACKAGE = "./cmd/nexus-api"
+
+#: SHIPPED Go API binary name. MUST stay in lockstep with the release
+#: orchestrator (scripts/build/build_release.ps1 --add-data "nexus-api.exe")
+#: and the Inno Setup payload. A release build compiles this once; the end
+#: user's machine has no Go toolchain, so the packaged copy is authoritative.
+SHIPPED_BINARY_NAME = "nexus-api.exe"
+
+#: Where the shipped binary lands inside the PyInstaller onedir
+#: (build_release.ps1 --add-data ";go-api"). The runtime resolver looks here,
+#: so the release ship path and the runtime lookup cannot drift.
+SHIPPED_BINARY_DEST = "go-api"
 
 #: Build cache lives OUTSIDE the source tree so a `git clean` of go-api
 #: never wipes a working compiler artifact mid-session.
@@ -165,19 +178,85 @@ def _source_hash() -> str:
 
 
 def _binary_path() -> Path:
+    """Path of the locally COMPILED binary (dev/source build cache)."""
     suffix = ".exe" if os.name == "nt" else ""
     return BUILD_CACHE / f"nexus-api{suffix}"
 
 
-def build_go_api(go_exe: str, timeout_s: int = 300) -> tuple[bool, str]:
-    """Build the nexus-api binary. Returns (ok, message).
+def _shipped_binary_candidates() -> list[Path]:
+    """Where a RELEASE-BUILT Go API binary can live at runtime.
 
-    Uses the content cache: a hit skips the compile entirely. A build
-    failure returns the tail of the compiler output so the operator sees
-    the real cause, not a bare exit code.
+    Mirrors the frontend_assets.py resolution style: first the PyInstaller
+    bundle (frozen _MEIPASS, then the onedir layout next to the running
+    EXE), then the repo-relative ship path as a dev/CI convenience.
     """
+    candidates: list[Path] = []
+
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(str(meipass)) / SHIPPED_BINARY_NAME)
+
+    with contextlib.suppress(OSError):
+        exe_dir = Path(sys.executable).resolve().parent
+        candidates.append(exe_dir / SHIPPED_BINARY_DEST / SHIPPED_BINARY_NAME)
+        candidates.append(exe_dir / SHIPPED_BINARY_NAME)
+        candidates.append(
+            exe_dir / "_internal" / SHIPPED_BINARY_DEST / SHIPPED_BINARY_NAME
+        )
+
+    candidates.append(Path.cwd() / SHIPPED_BINARY_DEST / SHIPPED_BINARY_NAME)
+    candidates.append(Path.cwd() / SHIPPED_BINARY_NAME)
+    candidates.append(Path.cwd() / "_internal" / SHIPPED_BINARY_DEST / SHIPPED_BINARY_NAME)
+    return candidates
+
+
+def resolve_go_api_binary() -> Path | None:
+    """The SHIPPED Go API binary, if this process is running from a package.
+
+    A release build compiles nexus-api.exe once (build_release.ps1) and bakes
+    it into the PyInstaller onedir. The end user has NO Go toolchain, so that
+    copy is authoritative and is used AS-IS — this function never compiles,
+    and never invalidates or rewrites what the release shipped.
+
+    Returns the path when a shipped binary is present, else None (and the
+    caller falls back to a source build, which is the dev-checkout path).
+    """
+    for cand in _shipped_binary_candidates():
+        try:
+            if cand.is_file():
+                return cand
+        except OSError:
+            continue
+    return None
+
+
+def build_go_api(go_exe: str | None = None, timeout_s: int = 300) -> tuple[bool, str]:
+    """Resolve the nexus-api binary. Returns (ok, message).
+
+    SHIPPED FIRST: when this process is running out of a release package,
+    the binary the release compiled is used exactly as shipped — it is never
+    rebuilt (the end user has no compiler and no source tree to build from).
+
+    Otherwise this is a dev/source checkout, so the binary is COMPILED here
+    (toolchain discovered when go_exe is None). Uses the content cache: a hit
+    skips the compile entirely. A build failure returns the tail of the
+    compiler output so the operator sees the real cause, not a bare exit code.
+    """
+    shipped = resolve_go_api_binary()
+    if shipped is not None:
+        _log("using shipped go api binary (release build): %s", shipped)
+        return True, str(shipped)
+
     if not GO_API_DIR.is_dir():
         return False, f"go-api directory missing: {GO_API_DIR}"
+
+    if go_exe is None:
+        go_exe = _find_go()
+        if go_exe is None:
+            return False, (
+                "go toolchain not found and no shipped nexus-api binary — "
+                "serving the python API directly"
+            )
 
     BUILD_CACHE.mkdir(parents=True, exist_ok=True)
     bin_path = _binary_path()
@@ -315,7 +394,7 @@ class GoApiSupervisor:
             self._proc = subprocess.Popen(
                 [self.binary, "-addr", f"{self.host}:{self.port}",
                  "-python-origin", self.python_origin],
-                cwd=str(GO_API_DIR),
+                cwd=_binary_workdir(self.binary),
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -406,6 +485,17 @@ class GoApiSupervisor:
             self._stderr_thread.start()
 
 
+def _binary_workdir(binary: str) -> str:
+    """Cwd for the Go child. Prefers the go-api source dir (its templates /
+    static assets are relative to it); falls back to the binary's own
+    directory so a packaged install (no source tree) still launches."""
+    if GO_API_DIR.is_dir():
+        return str(GO_API_DIR)
+    with contextlib.suppress(OSError):
+        return str(Path(binary).resolve().parent)
+    return os.getcwd()
+
+
 def _creation_flags() -> int:
     """On Windows, put the child in its own process group so Ctrl+C in the
     console only signals the Python parent (which supervises the child
@@ -459,13 +549,13 @@ def boot_go_api(python_host: str, python_port: int, preferred_api_port: int) -> 
     is intentional and is the ONLY one in this subsystem.
     """
     go_exe = _find_go()
-    if go_exe is None:
-        _log("go toolchain not found; serving python API directly (no go plane)")
+    if go_exe is None and resolve_go_api_binary() is None:
+        _log("go toolchain not found and no shipped nexus-api binary; serving python API directly (no go plane)")
         return None
 
     ok, msg = build_go_api(go_exe)
     if not ok:
-        _log("go api build failed — serving python API directly: %s", msg)
+        _log("go api unavailable — serving python API directly: %s", msg)
         return None
 
     addr = resolve_api_addr(preferred_api_port)

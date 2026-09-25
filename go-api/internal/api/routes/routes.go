@@ -21,6 +21,7 @@ import (
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/infrastructure/python"
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/observability"
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/security/auth"
+	"github.com/Opselon/NexusTradingForexBot/go-api/internal/web"
 )
 
 // Build assembles the full middleware chain + route table and returns the
@@ -96,7 +97,24 @@ func Build(py *python.Client) http.Handler {
 	// ---- fallback: unknown /api/v1 path -> canonical v1 404 envelope ----
 	r.HandleFunc("GET", "/api/v1/", v1Fallback)
 
-	return chain(r)
+	// ---- STATIC FRONTEND (END-USER-RUNTIME-UI-INTEGRATION, frozen #4/#6):
+	// the built React Control Center bundle, served from THIS origin so Go is
+	// the single origin for BOTH the API and the UI in production.
+	//
+	// REGISTRATION ORDER IS THE CONTRACT: this is registered LAST, after every
+	// /api route and the /api/v1 fallback, so the API ALWAYS WINS. The regex
+	// router asks the API surface first; only a path the whole API rejected
+	// reaches the static layer. This mirrors Starlette's first-match
+	// semantics — app.mount("/", root_spa) is the VERY LAST route in
+	// server.py's create_app for exactly this reason. Additionally, the SPA
+	// layer's own deny list (web.denyPrefixes/denyPaths, mirroring
+	// ROOT_SPA_DENY_PREFIXES + the Python public-path set) passes /api, /ws,
+	// /web, /health, /healthz, /app.js and /api_client.js through untouched,
+	// so an unmatched API child is an honest 404 — never the index document
+	// (§60: a typo'd API call must never receive HTML the client parses as
+	// data). With no resolvable dist the layer is a no-op and unknown paths
+	// keep the pre-wave honest-404 behavior (contract #4, zero regression). ----
+	return chain(web.ServeSPA(r))
 }
 
 // v1Fallback distinguishes "path unknown" (404) from "method wrong" (405)

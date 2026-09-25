@@ -24,7 +24,7 @@
 | Execution | `execution/` (`order_manager.py`, 6215 lines) | 60-scenario router, 11 position states, BE lock, `HARD_MAX_LOTS=10.0`, `MAX_TOTAL_EXPOSURE=1` | Authoritative for dispatch |
 | Accounting | `accounting/` (`core.py`, `aggregation.py`) | Ledger, PnL, market calendar, retention | Historical rows immutable |
 | Application | `application/` (`live_engine.py`, 4636 lines) | Async event loop `_process_tick_pipeline`, bar aggregation, hygiene cycle, state sync | Never block event loop |
-| Web/API | `web/` (`server.py`, `factory_routes.py`, `db_console.py`, `debug_snapshot.py`), `Web/` frontend | FastAPI, SSE `/api/ticks/stream`, WebSocket `/web`, `serialize_enums()` for JSON | Background tasks in `app.state.background_tasks` |
+| Web/API | `web/` (`server.py`, `factory_routes.py`, `db_console.py`, `debug_snapshot.py`, `go_api_bootstrap.py`), `go-api/` (`cmd/nexus-api`, `internal/api`, `internal/security/auth`, `internal/infrastructure/python`), `Web/` frontend | **Two planes:** Go (`nexus-api`) is the API entrypoint — routing, auth, envelope, correlation; Python (FastAPI) is the fact authority behind it — ML/MT5/DB facts, error classification, sole token minter. SSE `/api/ticks/stream`, WebSocket `/web`, `serialize_enums()` for JSON | Background tasks in `app.state.background_tasks`; see §5.4 for the binding Go-plane rules |
 | Configuration | `configuration/` (`config.py`, `runtime_config.py`), `settings/` (`service.py`, `secret_store.py`) | `AppConfig` is bootstrap/import/export; `RuntimeConfiguration` snapshot via `RuntimeConfigStore.get_snapshot()` is authoritative live state (versioned, hot-reload) | Telegram creds only via `settings_service.set_telegram()` |
 | Observability | `observability/` (`logging.py`, `telegram_notifier.py`, `ci_telegram_reporter.py`, `ci_ai_triage.py`), `hygiene/`, `incidents/`, `forensics/` | Structured logging, hygiene worker (AUDIT_ONLY default), incidents diagnostic-only, forensics health; CI Telegram feed + BUG-300 AI failure triage (reachability-gated, rules fallback, advisory-only) | Incidents never mutate trading/risk/models/DB; AI triage never gates CI verdicts |
 | Model lifecycle / Governance | `model_lifecycle/`, `governance/`, `shadow/`, `mslie/`, `experience/` | Candidate training, 10-gate load gate, shadow comparison, promotion `READY_FOR_REVIEW→APPROVED→CHAMPION` | Auto-promotion forbidden; shadow never mutates execution |
@@ -37,7 +37,9 @@ Ports/adapters isolates MT5 IPC from domain. `LiveEngine` orchestrates tick → 
 |---|---|---|
 | **Primary launcher** | `NexusTradingForexBot.py` | Bootstraps `src/` onto `sys.path`, binds `DirectMT5Adapter` or `RemoteMT5GatewayAdapter`, launches `LiveEngine` + Uvicorn web. Also invoked via `main.py` redirect. |
 | CLI | `src/nexus_scalp/cli/main.py` (`nse` / `nexus` scripts, Typer) | `start`, `setup`, `db`, `forensic`, `update`, `model-artifacts`; `--mode paper` persisted to settings DB; `--doctor` diagnostics |
-| Web server | `src/nexus_scalp/web/server.py` `create_app()` | FastAPI `app` factory; canonical port `9090` in container, `8080→find_available_port` in launcher |
+| Web server | `src/nexus_scalp/web/server.py` `create_app()` | FastAPI `app` factory; canonical port `9090` in container, `8080→find_available_port` in launcher. Behind the Go plane it is the **fact authority**, not the public surface |
+| Go API server | `go-api/cmd/nexus-api` (binary `nexus-api`) | The product's API entrypoint. Default `-addr` `:8087` (`NSE_GO_ADDR`); `-python-origin` (`NSE_PYTHON_ORIGIN`) = Python origin, empty = no engine attached and endpoints answer `DEPENDENCY_UNAVAILABLE` rather than fabricating state; `-log-level` (`NSE_GO_LOG_LEVEL`, default `info`). On boot it serves 466 operations; every non-public path enforces WEB-AUTH-P0 |
+| Go API bootstrap | `src/nexus_scalp/web/go_api_bootstrap.py` — `boot_go_api()`, `GoApiSupervisor` | Called from `cli/engine_boot.py` after Python's origin is known, before uvicorn serves. Builds (content-hash cached) + spawns the Go child, polls `/health` (200 **or 503** = plane ready), tears it down at shutdown. Returns `None` on any failure → Python serves the whole API alone; the boot still succeeds. In a packaged release the binary is shipped prebuilt |
 | Config bootstrap | `src/nexus_scalp/configuration/config.py` (`AppConfig`) + `runtime_config.py` (`RuntimeConfigStore`) | Read live state via `get_snapshot()`, not cached constructor values |
 | Docker | `Dockerfile` + `docker-compose.yml` (service `core` → `nexus-scalp-core`) | Single container engine+web on `0.0.0.0:9090`, Redis `redis:6379`, volumes `nexus-artifacts` + `nexus-data`; PAPER by default; SQLite `audit.db` in `artifacts/` |
 | Quality gate | `beforePush.ps1` / `beforePush.sh` + `pyproject.toml` | ruff lint+format, mypy `src`, pytest critical suite (779 tests, `--cov=src`, xdist `availableGB/1.5`), junit/coverage/html, forensic deploy gate |
@@ -85,6 +87,23 @@ Bar aggregation and broker snapshot are cached off hot path. News context is cac
 ### 5.3 Other contracts (index in `agents/contracts.md` — additive only)
 
 `TRADE_EXECUTION_CONTEXT` v2 (parent-child lineage), `TRADE_OUTCOME` v3, `ACCOUNT_SNAPSHOT`, `MT5_BROKER_SNAPSHOT`, `NEWS_CONTEXT` v1, `EXIT_CLASSIFICATION` v3 (evidence sources `ENGINE_FORCED`/`BROKER_DEAL_REASON`/`…/SL_GEOMETRY`/`TP_GEOMETRY`/`FALLBACK_HEURISTIC`; reason 4=SL never TP; UNKNOWN stays UNKNOWN), `MODEL_GOVERNANCE` v2, `MODEL_LOAD_GATE`/`SHADOW_PARITY`/`PROMOTION_STATE_MACHINE`, `LIQUIDITY_RUNTIME` v2 / `LIQUIDITY_API` v1, `ACCOUNTING_SNAPSHOT`, `DB_MIGRATION`, `INCIDENT_RESPONSE`, `VERSION_CONSISTENCY`, `FORENSIC_HEALTH`. Respect §26: dimension change is never a minor refactor.
+
+### 5.4 Go API plane — routing authority (BINDING RULES)
+
+Merged as `930e6912` (PR #461). The Go API server is the product's API entrypoint — every HTTP request reaches Go — and it proxies the Python runtime for every fact it does not own. Go is an **acceleration plane**, never a fact source.
+
+| Rule | Why |
+|---|---|
+| **ALL API traffic routes through Go.** No new Python route may be served directly; it must be added to the Go route table. | One entrypoint for auth, envelope and correlation. A Python-only route is unreachable through the product's port. |
+| **The route table is GENERATED, not handwritten.** `go-api/internal/api/routes/table_gen.go` (466 operations) is emitted from the live FastAPI dump (`routes_ground_truth.json`, `create_app()` + `create_v1_app()`); regenerate with `scratch_gen_table.py`. | Drift — a path Python serves that Go does not, or a dead Go route — is a visible mismatch, not a silent 404. `scratch_drift_check.py` diffs the two. |
+| **Declaration order is the match contract.** `internal/api/router/router.go` is a first-match-in-declaration-order regex router. Go 1.22 `ServeMux` is insufficient: the surface has ambiguous literal-vs-`{id}` pairs (`POST /api/news/{article_id}/restore` vs `POST /api/news/analyze/{article_id}`) that ServeMux panics on instead of resolving. | The React client depends on Starlette's "first registered wins" priority. 404-vs-405 follows for free: path matches but method does not → 405. |
+| **Envelope split, never unified.** `/api/v1/*` → `{data, meta}` (`request_id` before `generated_at` in `meta` — insertion order, not a Go map); legacy `/api/*` → raw JSON. | Both envelopes are parsed by name/shape by different React code paths (`getV1` vs `getLegacy`). |
+| **A legacy `{"detail":...}` body is an ANSWER, not a boundary failure.** `LegacyResponse` is replayed byte-for-byte with Python's status; only a valid `/api/v1` error envelope counts as a contract response (`BoundaryError`). | Reclassifying a FastAPI 404/422/403 as `DEPENDENCY_UNAVAILABLE` fabricates an outage Python never reported. |
+| **Auth is fail-closed and ported, but Go never mints a token.** `internal/security/auth/middleware.go` resolves `NSE_WEB_AUTH_TOKEN` env > repo-root `.env` (where `auth_boot.publish()` writes it) > `ErrTokenUnresolvable` → 500 `AUTH_CONFIG_ERROR`. Constant-time compare, length checked first; `PUBLIC_PATHS` allowlist; traversal (`..`, `\`) never public. | Python owns the DPAPI secret store. A second Go-minted value would enforce a different token and 401 every request. |
+| **Failure isolation is the contract.** Missing/broken toolchain, build failure, bound port, or readiness timeout → the bootstrap logs a warning, returns `None`, and the FastAPI app serves the full API on its own port. | Go is an acceleration plane. The product must still boot without it — this is the only fallback path in the subsystem. |
+| **Startup is invisible.** `go_api_bootstrap.boot_go_api()` builds + supervises the child; the user only opens the app. | Operator never runs a second command or knows Go exists. |
+
+Boundary client: `internal/infrastructure/python/client.go` — localhost HTTP, never a per-request subprocess; 30s timeout (a slow-but-successful answer is not a circuit failure), circuit breaker after 3 consecutive failures (5s cooldown); forwards `Authorization` + `X-Request-ID` on every hop; `DoRaw` streams byte-for-byte when the caller must preserve Python's exact output.
 
 ## 6. Non-Negotiable Invariants
 
@@ -156,6 +175,18 @@ Targeted suites for risky areas:
 
 Additional: `scripts/ci/scan_secrets.py` (never dummy keys in source), OSV scan, lockfile diff, JS tests, Docker `ci-results` artifacts (`manifest` + `SHA256SUMS`). Mypy/Ruff exclude `scratch/`, `.venv`, `release`, `artifacts`.
 
+### 9.1 Go API plane — test strategy
+
+Three layers, each proving something different. All are required after any `go-api/` or route-table change.
+
+| Layer | Command | What it proves |
+|---|---|---|
+| **Go unit tests** | `cd go-api && go test ./...` | Router declaration-order priority + 405-vs-404 derivation (`internal/api/router`), pagination `int_parsing` vs `greater_than_equal`/`less_than_equal` distinction (`internal/api/handlers/read.go`), both envelope shapes + meta key order (`internal/api/respond`), fail-closed auth + token precedence + traversal-never-public (`internal/security/auth`), generated-table shape (`internal/api/routes`). |
+| **Python bootstrap tests** | `pytest tests/unit/test_go_api_bootstrap.py` | The failure-isolation contract with **no toolchain and no network**: absent `go` binary → WARN + Python-only boot + exit 0; build failure → WARN + compiler-output tail; port bound → next free port; child never ready → kill + fallback. Written by a parallel lane; path is the contract. |
+| **Live A/B parity harness** | `python scratch_parity_full.py` (evidence: `api/migration/parity/full_surface_parity.json`) | Paired per-request py→go probing of the whole route table. Byte comparison after masking volatile live readings (timestamps, `*_ms` timings, hashes, `request_id`, `state_version`). Mutations probed LAST and py-then-go back-to-back, because the two servers share ONE Python backend — a state change between calls would read as a false divergence. SSE/WebSocket routes are skipped (streaming, not request/response). Current evidence: **443/444 PASS**. |
+
+**Known gap (honest, not skipped):** `go test -race` cannot run on the migration host — `CGO_ENABLED=1` needs a C compiler and none is installed. Recorded as a known limitation; the race detector is not part of the verification claim on this branch.
+
 ## 10. Agent Workflow
 
 1. Read **contract gates before coding**: `agents/multi-agent-git-contract.md` then `contracts.md` → `runtime_invariants.md` → `change_control.md` → `taskboard.md` → `repository_state.md` → `locks.yaml`; inspect `git status/log` and preserve unrelated WIP.
@@ -168,6 +199,14 @@ Additional: `scripts/ci/scan_secrets.py` (never dummy keys in source), OSV scan,
 
 No directory-tree dump, no per-method file inventory, no history/P0-P3 recommendations, no generic advice discoverable via `ls`, no speculative dimensions, no marketing, no duplicated research/intelligence tables, no stale 50D-only narrative. Keep this document short; details live in the modules and in `agents/contracts.md`/`runtime_invariants.md`/`bugs.md`.
 
+Go plane negative scope:
+
+- **Do not add a Python route without adding it to the Go route table** — it will be unreachable through the product's port. Regenerate the table from the resolved route dump (§12), never hand-edit `table_gen.go`.
+- **Do not mint an auth token in Go.** Python owns the DPAPI secret store; a second Go-generated value enforces a different token and 401s every client. Go resolves, never creates.
+- **Do not unify the two envelopes.** `/api/v1` `{data,meta}` and legacy raw JSON/`{"detail":...}` are separate client contracts.
+- **Do not reclassify a legacy `{"detail":...}` answer as a boundary failure** — it upgrades every FastAPI 4xx to a fabricated 503.
+- **Do not remove the Python-only fallback.** A Go failure must degrade one plane, not kill the boot.
+
 ## 12. Quick Checks for Common Tasks
 
 | Task | Inspect first | Must not break |
@@ -177,10 +216,12 @@ No directory-tree dump, no per-method file inventory, no history/P0-P3 recommend
 | Execution | `execution/order_manager.py`, `domain/enums.py` `PositionState` | 11 states, BE lock, giveback, 30s lock, ATR drift |
 | Accounting | `accounting/core.py`, `aggregation.py`, `adapters/database/audit_repository.py` | Immutable history, market calendar, WAL |
 | Persistence | `database/engine.py`, `manifest.py`, `migrate_engine.py` | Additive migrations, volume durability |
-| API/runtime | `web/server.py`, `configuration/runtime_config.py`, `src/nexus_scalp/settings/service.py` | `serialize_enums`, `get_snapshot()`, settings DB |
+| API/runtime | `web/server.py`, `configuration/runtime_config.py`, `src/nexus_scalp/settings/service.py`, `go-api/internal/api/routes/table_gen.go` | `serialize_enums`, `get_snapshot()`, settings DB, Go/Python route parity |
 | Config change | `configuration/config.py` + `runtime_config.py` scope table | LIVE_IMMEDIATE vs NEXT_DECISION |
 | Docker/deploy | `docker-compose.yml`, `Dockerfile`, `docker/healthcheck.sh` | PAPER default, single service, healthcheck, volumes |
+| Go route table | `scratch_ground_truth.py` → `scratch_gen_table.py` → `scratch_drift_check.py` | Table matches Python's resolved dump; no drift either direction |
+| Go plane parity | `go-api/` + `python scratch_parity_full.py` | 443/444 PASS, both envelopes, fail-closed auth |
 
 ## 13. Version
 
-NSE v9.0 (`pyproject.toml`). Skill generation: 2026-08-23. Prior 3373-line skill backed up to `agents/skill.md.bak_20260823` (git-untracked; add if retention desired). Treat this file as the current authoritative master skill; code still wins conflicts.
+NSE v9.0 (`pyproject.toml`). Skill generation: 2026-08-23. Go API plane merged as `930e6912` (PR #461), documented here 2026-09-25. Prior 3373-line skill backed up to `agents/skill.md.bak_20260823` (git-untracked; add if retention desired). Treat this file as the current authoritative master skill; code still wins conflicts.
