@@ -73,7 +73,22 @@ class ReviewWriteBlockedError(RuntimeError):
 
 
 def _is_write(sql: str) -> bool:
-    head = sql.lstrip()[:16].upper()
+    """Return True only for statements that actually mutate.
+
+    ``CREATE TABLE IF NOT EXISTS`` is deliberately allowed: it is the
+    idempotent schema-bootstrap the engine runs at boot, it creates a table
+    only when it is absent, and it never alters or drops existing data.
+    Refusing it makes the review console unable to start at all, which
+    defeats the purpose of a guard meant to protect *state*, not schema
+    presence. A plain ``CREATE TABLE`` (no IF NOT EXISTS) is still refused,
+    because that form would raise on an existing table anyway.
+    """
+    head = sql.lstrip()[:32].upper()
+    # The idempotent bootstrap form: allowed.
+    if head.startswith("CREATE TABLE IF NOT EXISTS") or head.startswith(
+        "CREATE INDEX IF NOT EXISTS"
+    ):
+        return False
     return any(head.startswith(p) for p in _WRITE_PREFIXES)
 
 
