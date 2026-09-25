@@ -142,7 +142,7 @@ class SecureSecretStore:
 
     def __init__(self, root: Path | None = None) -> None:
         self.root = root or app_data_root()
-        self.path = self.root / SECRET_STORE_FILENAME
+        self.path = Path(self.root) / SECRET_STORE_FILENAME
 
     # ------------------------------------------------------------------ I/O
     def _load(self) -> dict[str, str]:
@@ -164,7 +164,7 @@ class SecureSecretStore:
         return out
 
     def _save(self, data: dict[str, str]) -> None:
-        self.root.mkdir(parents=True, exist_ok=True)
+        Path(self.root).mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(
             "".join(f"{k}={v}\n" for k, v in sorted(data.items())),

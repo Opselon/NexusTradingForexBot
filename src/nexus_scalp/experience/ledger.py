@@ -1,6 +1,5 @@
 """
 Immutable Experience Ledger
-===========================
 Phase 08 long-term memory persistence.
 
 Storage model (three tables, all owned by the existing `AuditRepository`; no
@@ -688,7 +687,6 @@ class ExperienceLedger:
             operation="experience.list_strategy_ids",
         )
         return [str(r["strategy_id"]) for r in rows if r["strategy_id"]]
-be752f05 (fix(db): PG parity for 9 audit-derived stores + fast-fail migration + DSN parsing)
 
     def count_experiences(self) -> int:
         """Total immutable decision rows."""

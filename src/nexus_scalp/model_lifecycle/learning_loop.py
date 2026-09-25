@@ -1,6 +1,5 @@
 """
 LearningCycle-driven orchestrator glue (Learning-Loop Closure, Phases 5/7/8).
-============================================================================
 
 Bridges the LearningCycle state machine to the existing controlled pipeline:
 
@@ -53,7 +52,6 @@ def _resolve_cycle_store_db_path(audit_repo: AuditRepository) -> str:
 
     The store is a state machine over the CANONICAL audit.db, so production
     passes the real ``audit_repo._db_path``. Test doubles (``audit_repo =
- parent of be752f05 (fix(db): PG parity for 9 audit-derived stores + fast-fail migration + DSN parsing)
     MagicMock()``) make ``_db_path`` a MagicMock whose ``str()`` is not a
     valid filesystem path, and ``sqlite3.connect`` then dies with
     ``OperationalError: unable to open database file`` (observed 2026-09-07:
@@ -62,7 +60,6 @@ def _resolve_cycle_store_db_path(audit_repo: AuditRepository) -> str:
     whenever the attribute is not a plain string path — the cycle store is
     process-local state, so in-memory stays hermetic and never touches the
     production artifacts/audit.db (BUG-223 rule).
-be752f05 (fix(db): PG parity for 9 audit-derived stores + fast-fail migration + DSN parsing)
     """
     raw = getattr(audit_repo, "_db_path", None)
     if _is_usable_sqlite_path(raw):

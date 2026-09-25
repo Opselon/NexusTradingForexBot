@@ -3,7 +3,6 @@
 ML-BT-001 (STREAM I — Backtest / Forward Test), owner AGENT-BACKTEST.
 
 PURPOSE
-=======
 A model with 65% classification accuracy can lose money if its losses are
 larger than its wins, while a model with 40% accuracy can be highly profitable
 with a positive R-expectancy. Classification metrics (accuracy / precision /
@@ -13,7 +12,6 @@ half of that separation: given a list of executed trades it computes the
 institutional trading-quality numbers that gate model promotion.
 
 CONTRACT
-========
 * ``TradeRecord`` is the input unit — one CLOSED trade with its realized
   R-multiple, optional USD PnL, risk distance (stop width in price) and
   friction already paid (spread + slippage in ticks, commission in USD).
@@ -35,7 +33,6 @@ CONTRACT
   that would mask a broken evaluation.
 
 NON_GOALS
-=========
 Does NOT replace classification metrics; ``confusion_and_class_metrics`` keeps
 owning accuracy/F1. This module provides trading metrics ALONGSIDE them
 (task NON_GOALS). It does not re-price under canonical sizing — that is

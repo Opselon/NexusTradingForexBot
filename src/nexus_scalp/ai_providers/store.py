@@ -248,9 +248,7 @@ class ProviderDecisionStore:
             # with no record of it is the fail-silent shape this ledger
             # exists to make visible, and the orchestrator treats record()
             # as fire-and-forget, so nothing upstream would notice.
-            logger.warning(
-                "[AI-PROV] failed to record decision %s: no write backend", row[0]
-            )
+            logger.warning("[AI-PROV] failed to record decision %s: no write backend", row[0])
             return
             # Provisioning already logged why the domain could not be built,
             # but the write must not then vanish silently: a decision lost
@@ -268,9 +266,7 @@ class ProviderDecisionStore:
             backend.execute_one(sql, row)
             backend.execute_one(_PRUNE.replace("?", "%s"), (self._max_rows,))
         except Exception as exc:
- parent of be752f05 (fix(db): PG parity for 9 audit-derived stores + fast-fail migration + DSN parsing)
             logger.warning("[AI-PROV] decision write failed: %s", exc)
-be752f05 (fix(db): PG parity for 9 audit-derived stores + fast-fail migration + DSN parsing)
 
     # -- reading --------------------------------------------------------------
 

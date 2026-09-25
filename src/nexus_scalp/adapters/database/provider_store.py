@@ -1,4 +1,3 @@
-
 """Provider-aware persistence for the operational stores (DB-FABRIC-001/002).
 
 The model_lifecycle / experience / intelligence stores all write OPERATIONAL
@@ -580,4 +579,3 @@ def sqlite_connection(repo: AuditRepository, timeout: float = 5.0) -> Any:
 def provider_name(repo: Any) -> str:
     """A short provider label for telemetry/diagnostics."""
     return "sqlite" if _is_sqlite(repo) else "postgresql"
-be752f05 (fix(db): PG parity for 9 audit-derived stores + fast-fail migration + DSN parsing)
