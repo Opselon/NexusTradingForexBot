@@ -2827,7 +2827,31 @@ class AuditRepository:
         occurrences: int,
         total: int,
     ) -> None:
-        """One structured warning per operation; repeats rate-limited."""
+        """One structured warning per operation; repeats rate-limited.
+
+        The 368-identical-warning flood (2026-09-25 23:44-23:47) is the
+        failure mode this method exists to prevent. Two dedupe layers:
+          * the process-global ``(domain, reason)`` tracker (dedup + a
+            cumulative counter + escalation to ERROR after
+            ``PG_DEGRADED_ESCALATION_AFTER`` consecutive degradations — a
+            persistent condition is an incident, not a warning);
+          * this repository's legacy per-operation rate limit, kept for the
+            tooling that reads the stream by operation name.
+        """
+        # First, the cross-store tracker: one WARNING the first time a
+        # (domain, reason) pair degrades, DEBUG thereafter with a cumulative
+        # counter, ERROR once the degradation proves persistent.
+        try:
+            from nexus_scalp.database.query_logging import note_degraded_read
+
+            note_degraded_read(
+                domain="audit",
+                reason=kind or "read_not_provisioned",
+                operation=operation,
+                detail="no read plane registered for domain 'audit'",
+            )
+        except Exception:
+            pass
         state = getattr(self, "_provider_read_guard_state", None)
         if not isinstance(state, dict):
             state = {}
@@ -3177,6 +3201,29 @@ class AuditRepository:
                                 payload_note="audit worker batch-retry failure",
                             )
                     self.audit_salvaged_rows += salvaged
+                    # The failing QUERY is what makes the failure traceable:
+                    # the live log carried only a truncated error string and
+                    # the "0 placeholders but 32 parameters" mismatch was
+                    # invisible. Log the full error (no truncation) plus the
+                    # masked statement and the arity.
+                    try:
+                        from nexus_scalp.database.query_logging import log_query_failure
+
+                        log_query_failure(
+                            operation="audit_batch_insert",
+                            exc=e,
+                            sql=batch[0][0] if batch else "",
+                            args=batch[0][1] if batch else (),
+                            domain="audit",
+                            kind="batch_write",
+                            extra={
+                                "batch_size": len(batch),
+                                "salvaged": salvaged,
+                                "dead_lettered": dead_lettered,
+                            },
+                        )
+                    except Exception:
+                        pass
                     logger.error(
                         "Audit batch insert failed; recovery applied "
                         "batch=%d salvaged=%d dead_lettered=%d error_type=%s error=%s",

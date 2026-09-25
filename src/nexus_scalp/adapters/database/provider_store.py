@@ -168,7 +168,33 @@ def _read_backend(repo: Any, domain: str = AUDIT_DOMAIN) -> Any:
 
 
 def _degrade(operation: str, kind: str, detail: str, domain: str = AUDIT_DOMAIN) -> None:
-    """Emit one observable degradation warning (rate-limited per operation)."""
+    """Emit one observable degradation warning (rate-limited per operation).
+
+    The degradation itself is counted and deduplicated by
+    :func:`nexus_scalp.database.query_logging.note_degraded_read` per
+    ``(domain, reason)`` — the first occurrence is a WARNING, repeats drop to
+    DEBUG with a cumulative counter, and a pair that degrades for more than
+    ``PG_DEGRADED_ESCALATION_AFTER`` consecutive occurrences escalates to
+    ERROR. 368 identical warnings in three minutes is how operators stop
+    reading a log; one warning plus a counter plus an escalation is the same
+    information, still readable.
+    """
+    reason = kind or "not_provisioned"
+    try:
+        from nexus_scalp.database.query_logging import note_degraded_read
+
+        note_degraded_read(
+            domain=domain,
+            reason=reason,
+            operation=operation,
+            detail=detail,
+        )
+    except Exception:
+        with _Suppress():
+            logger.debug("[DB-FABRIC] degraded-read logging path failed")
+    # The per-store legacy rate limiter stays for callers that read the
+    # log stream by operation name (existing tooling): it is a SECOND dedupe
+    # layer, not a replacement, and it costs one dict lookup on the cold path.
     if _rate_limited(f"{operation}|{kind}"):
         logger.warning(
             "[DB-FABRIC] operational store %s degraded kind=%s: %s "
@@ -237,6 +263,23 @@ def queue_write_batch(
         backend.execute_batch(list(statements))
         return True
     except Exception as exc:
+        # The failing QUERY is the one thing the live log was missing: a
+        # batch fails as one statement and the legacy message carried only the
+        # error string. Log the whole batch (masked) with its arity.
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "queue_write_batch",
+                exc=exc,
+                sql="; ".join(q for q, _a in statements),
+                args=[a for _q, a in statements],
+                domain=AUDIT_DOMAIN,
+                kind="batch_write",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational batch write failed op=%s error=%s",
             operation or "?",
@@ -285,6 +328,20 @@ def queue_write(repo: Any, query: str, args: tuple[Any, ...], *, operation: str 
         backend.execute(query, args)
         return True
     except Exception as exc:
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "queue_write",
+                exc=exc,
+                sql=query,
+                args=args,
+                domain=AUDIT_DOMAIN,
+                kind="write",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational write failed op=%s error=%s",
             operation or "?",
@@ -322,6 +379,24 @@ def ops_queue_write(
         backend.execute(query, args)
         return True
     except Exception as exc:
+        # Full context for a failed write: the masked SQL (placeholders kept,
+        # values never rendered) plus placeholder_count vs arg_count — the
+        # pair that proves the live "syntax error at or near OR / 0
+        # placeholders but 32 parameters" class of failure.
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "ops_queue_write",
+                exc=exc,
+                sql=query,
+                args=args,
+                domain=domain,
+                kind="write",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational write failed domain=%s op=%s error=%s",
             domain,
@@ -357,6 +432,20 @@ def ops_queue_write_batch(
         backend.execute_batch(list(statements))
         return True
     except Exception as exc:
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "ops_queue_write_batch",
+                exc=exc,
+                sql="; ".join(q for q, _a in statements),
+                args=[a for _q, a in statements],
+                domain=domain,
+                kind="batch_write",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational batch write failed domain=%s op=%s error=%s",
             domain,
@@ -434,6 +523,20 @@ def query_rows(
     try:
         return list(backend.query(sql, args))
     except Exception as exc:
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "query_rows",
+                exc=exc,
+                sql=sql,
+                args=args,
+                domain=AUDIT_DOMAIN,
+                kind="read",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational read failed op=%s error=%s",
             operation or "?",
@@ -473,6 +576,20 @@ def ops_query_rows(
     try:
         return list(backend.query(sql, args))
     except Exception as exc:
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "ops_query_rows",
+                exc=exc,
+                sql=sql,
+                args=args,
+                domain=domain,
+                kind="read",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational read failed domain=%s op=%s error=%s",
             domain,
@@ -500,6 +617,20 @@ def ops_query_scalar(
     try:
         return backend.scalar(sql, args)
     except Exception as exc:
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "ops_query_scalar",
+                exc=exc,
+                sql=sql,
+                args=args,
+                domain=domain,
+                kind="read",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational scalar read failed domain=%s op=%s error=%s",
             domain,
@@ -536,6 +667,20 @@ def query_scalar(repo: Any, sql: str, args: Sequence[Any] = (), *, operation: st
     try:
         return backend.scalar(sql, args)
     except Exception as exc:
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "query_scalar",
+                exc=exc,
+                sql=sql,
+                args=args,
+                domain=AUDIT_DOMAIN,
+                kind="read",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational scalar read failed op=%s error=%s",
             operation or "?",

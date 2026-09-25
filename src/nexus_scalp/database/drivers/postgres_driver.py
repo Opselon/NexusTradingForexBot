@@ -20,7 +20,9 @@ Driver responsibilities (portability contract):
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterable, Sequence
+import time
+from collections.abc import Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig, build_postgres_url, mask_url_password
@@ -101,6 +103,109 @@ def _translate_placeholders(sql: str) -> str:
             out.append(ch)
             i += 1
     return "".join(out)
+
+
+# ---------------------------------------------------------------------------
+# Query observability (DB-FABRIC-OBS): slow queries → WARNING, failures →
+# ERROR, both carrying the masked statement + the placeholder/arity pair.
+#
+# These helpers are deliberately thin wrappers over the shared
+# ``nexus_scalp.database.query_logging`` module so the masking discipline
+# (never a bound value, never a credential) lives in ONE place. The driver
+# is the last sink every PostgreSQL statement passes through, so instrumenting
+# it here covers pooled AND ad-hoc connections.
+# ---------------------------------------------------------------------------
+
+
+def _driver_domain(own_connection: bool) -> str:
+    """Domain label for a driver log record: own connection vs a caller's."""
+    return "postgresql" if own_connection else "postgresql:tx"
+
+
+def _log_driver_failure(
+    operation: str,
+    exc: BaseException,
+    sql: str,
+    args: Any,
+    own_connection: bool,
+) -> None:
+    """ERROR for one failed driver query; never raises, never logs values."""
+    try:
+        from nexus_scalp.database.query_logging import log_query_failure
+
+        log_query_failure(
+            operation=f"driver.{operation}",
+            exc=exc,
+            sql=sql,
+            args=args,
+            domain=_driver_domain(own_connection),
+            kind="write" if operation.startswith("execute") else "read",
+        )
+    except Exception:
+        pass
+
+
+class _DriverQueryTimer:
+    """Slow-query timer for the driver (monotonic; log only when slow).
+
+    A cheap object the driver allocates per statement: the fast path is one
+    ``time.monotonic()`` read on enter and one comparison + one attribute
+    store on exit. The structured log line is only formatted past the
+    threshold.
+    """
+
+    __slots__ = ("domain", "op", "rows", "sql", "start")
+
+    def __init__(self, op: str, sql: str, domain: str) -> None:
+        self.op = op
+        self.sql = sql
+        self.domain = domain
+        self.rows: int | None = None
+        self.start: float | None = None
+
+    def __enter__(self) -> _DriverQueryTimer:
+        try:
+            self.start = time.monotonic()
+        except Exception:
+            self.start = None
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        if self.start is None:
+            return None
+        try:
+            elapsed = (time.monotonic() - self.start) * 1000.0
+        except Exception:
+            return None
+        if exc_type is None:
+            try:
+                from nexus_scalp.database.query_logging import log_slow_query
+
+                log_slow_query(
+                    operation=f"driver.{self.op}",
+                    duration_ms=elapsed,
+                    sql=self.sql,
+                    rows=self.rows,
+                    domain=self.domain,
+                )
+            except Exception:
+                pass
+        return None
+
+
+@contextmanager
+def _query_logging(
+    operation: str, sql: str, args: Any, *, own_connection: bool
+) -> Iterator[_DriverQueryTimer]:
+    """Time one driver statement and emit the slow-query WARNING if due.
+
+    ``args`` is accepted but deliberately NOT logged here: the failure path
+    (``_log_driver_failure``) is what renders context, and it masks.
+    """
+    _ = args
+    timer = _DriverQueryTimer(operation, sql, _driver_domain(own_connection))
+    with timer:
+        yield timer
 
 
 class PostgreSQLDriver(DatabaseDriver):
@@ -276,10 +381,16 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            cur = c.execute(assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None)
-            if own:
-                c.commit()
+            with _query_logging("execute", sql, args, own_connection=own):
+                cur = c.execute(
+                    assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None
+                )
+                if own:
+                    c.commit()
             return cur
+        except BaseException as exc:
+            _log_driver_failure("execute", exc, sql, args, own)
+            raise
         finally:
             if own:
                 c.close()
@@ -291,13 +402,17 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            with c.cursor() as cur:
-                # SEC (py/sql-injection #1114 sibling): same boundary as the
-                # sqlite driver — the shared guard runs before the engine sees
-                # the statement; values stay bound through ``seq``.
-                cur.executemany(assert_safe_sql(self.translate_sql(sql)), seq)
-            if own:
-                c.commit()
+            with _query_logging("executemany", sql, seq, own_connection=own):
+                with c.cursor() as cur:
+                    # SEC (py/sql-injection #1114 sibling): same boundary as the
+                    # sqlite driver — the shared guard runs before the engine sees
+                    # the statement; values stay bound through ``seq``.
+                    cur.executemany(assert_safe_sql(self.translate_sql(sql)), seq)
+                if own:
+                    c.commit()
+        except BaseException as exc:
+            _log_driver_failure("executemany", exc, sql, seq, own)
+            raise
         finally:
             if own:
                 c.close()
@@ -306,10 +421,18 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            cur = c.execute(assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None)
-            rows = cur.fetchall()
-            names = [d.name for d in cur.description] if cur.description else []
-            return [dict(zip(names, r, strict=False)) for r in rows]
+            with _query_logging("query", sql, args, own_connection=own) as timer:
+                cur = c.execute(
+                    assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None
+                )
+                rows = cur.fetchall()
+                names = [d.name for d in cur.description] if cur.description else []
+                out = [dict(zip(names, r, strict=False)) for r in rows]
+                timer.rows = len(out)
+            return out
+        except BaseException as exc:
+            _log_driver_failure("query", exc, sql, args, own)
+            raise
         finally:
             if own:
                 c.close()
@@ -320,12 +443,19 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            cur = c.execute(assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None)
-            row = cur.fetchone()
-            if row is None:
-                return None
-            names = [d.name for d in cur.description] if cur.description else []
-            return dict(zip(names, row, strict=False))
+            with _query_logging("query_one", sql, args, own_connection=own) as timer:
+                cur = c.execute(
+                    assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                names = [d.name for d in cur.description] if cur.description else []
+                timer.rows = 1
+                return dict(zip(names, row, strict=False))
+        except BaseException as exc:
+            _log_driver_failure("query_one", exc, sql, args, own)
+            raise
         finally:
             if own:
                 c.close()
@@ -334,10 +464,15 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            row = c.execute(
-                assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None
-            ).fetchone()
-            return row[0] if row is not None else None
+            with _query_logging("scalar", sql, args, own_connection=own) as timer:
+                row = c.execute(
+                    assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None
+                ).fetchone()
+                timer.rows = 1 if row is not None else 0
+                return row[0] if row is not None else None
+        except BaseException as exc:
+            _log_driver_failure("scalar", exc, sql, args, own)
+            raise
         finally:
             if own:
                 c.close()
