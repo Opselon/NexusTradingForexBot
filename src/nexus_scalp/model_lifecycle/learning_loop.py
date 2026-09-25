@@ -71,11 +71,29 @@ def _resolve_cycle_store_db_path(audit_repo: AuditRepository) -> str:
     this never replaces the audit record, it keeps cycle state durable.
     """
     raw = getattr(audit_repo, "_db_path", None)
-    if isinstance(raw, str) and raw.strip():
+    if _is_usable_sqlite_path(raw):
         return raw
     if _audit_repo_is_nonsqlite(audit_repo):
         return _cycle_store_workspace_path()
     return ":memory:"
+
+
+def _is_usable_sqlite_path(raw: object) -> bool:
+    """True only for a string ``sqlite3.connect()`` can actually open.
+
+    Under a non-SQLite provider ``AuditRepository._db_path`` is a *URI*
+    (``postgresql://host:port/db``), not a filesystem path — PR #460's
+    provider-aware ``_provider_db_path``. Passing it to ``sqlite3.connect``
+    is fatal at boot (PG-DBPATH-BOOT-001). A SQLite location never carries a
+    URL scheme; Windows drive paths (``C:\\``, ``C:/``), UNC paths and bare
+    names are not schemes.
+    """
+    if not isinstance(raw, str):
+        return False
+    text = raw.strip()
+    if not text or text.startswith(":memory:"):
+        return False
+    return "://" not in text
 
 
 def _audit_repo_is_nonsqlite(audit_repo: Any) -> bool:
