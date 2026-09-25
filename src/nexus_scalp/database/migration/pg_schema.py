@@ -40,6 +40,37 @@ import re
 
 logger = logging.getLogger(__name__)
 
+# Error names raised when the provider itself is unreachable — as opposed to a
+# per-statement schema problem. Matched on the class name so this never imports
+# psycopg (optional dependency) and works for both psycopg2 and psycopg3.
+_CONNECTION_FAILURE_NAMES = (
+    "OperationalError",
+    "ConnectionFailure",
+    "PoolTimeout",
+    "TimeoutError",
+    "ConnectTimeoutError",
+    "ConnectionRefusedError",
+    "ConnectionResetError",
+)
+
+
+def _is_connection_failure(exc: BaseException) -> bool:
+    """True when ``exc`` means the provider is unreachable (not schema drift)."""
+    if type(exc).__name__ in _CONNECTION_FAILURE_NAMES:
+        return True
+    # psycopg's pool raises these on a dead DSN; the message is the stable part.
+    message = str(exc).lower()
+    return any(
+        token in message
+        for token in (
+            "connection refused",
+            "could not connect",
+            "connection to server at",
+            "timeout expired",
+        )
+    )
+
+
 # --- type mapping (longest-first so INTEGER PRIMARY KEY wins over INTEGER) ----
 _TYPE_MAP = (
     (
@@ -129,6 +160,20 @@ def apply_schema(
             # is a genuine schema drift the operator must see.
             errors.append({"statement": head, "error": f"{type(exc).__name__}: {exc}"})
             logger.error("[DB-MIGRATE] statement failed: %s -> %s", head, exc)
+            # Fast-fail on an unreachable provider. Without this, a dead DSN
+            # replays EVERY remaining statement and each one waits on the pool's
+            # connect timeout (128 statements x timeout = an unbounded,
+            # multi-minute-to-forever provisioning pass that a caller cannot
+            # distinguish from a hang). An unreachable server is not per-statement
+            # drift, so stop replaying and let the caller report the outage.
+            if _is_connection_failure(exc):
+                logger.error(
+                    "[DB-MIGRATE] provider unreachable, aborting schema replay "
+                    "after %d/%d statement(s)",
+                    len(applied),
+                    len(statements),
+                )
+                break
             if stop_on_error:
                 break
     result: dict[str, object] = {

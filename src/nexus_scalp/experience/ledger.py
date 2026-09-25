@@ -37,6 +37,12 @@ from datetime import datetime
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.database.provider_store import (
+    query_one,
+    query_rows,
+    query_scalar,
+    queue_write,
+)
 from nexus_scalp.experience.models import (
     CANONICAL_FEATURE_DIMENSION,
     CANONICAL_FEATURE_SCHEMA_ID,
@@ -207,21 +213,20 @@ class ExperienceLedger:
             payload,
         )
 
-        try:
-            self.audit_repo._queue.put_nowait((_INSERT_EXPERIENCE_SQL, args))
-            self.recorded_count += 1
-            logger.debug(
-                "[EXPERIENCE] RECORDED",
-                experience_id=record.experience_id,
-                strategy_id=record.strategy_id,
-                feature_schema=record.feature_snapshot.feature_schema_id,
-                feature_dim=record.feature_snapshot.feature_dimension,
-            )
-            return True
-        except Exception as e:
+        if not queue_write(
+            self.audit_repo, _INSERT_EXPERIENCE_SQL, args, operation="experience.record_experience"
+        ):
             self.rejected_count += 1
-            logger.error("[EXPERIENCE] INVALID queue failure", error=str(e))
             return False
+        self.recorded_count += 1
+        logger.debug(
+            "[EXPERIENCE] RECORDED",
+            experience_id=record.experience_id,
+            strategy_id=record.strategy_id,
+            feature_schema=record.feature_snapshot.feature_schema_id,
+            feature_dim=record.feature_snapshot.feature_dimension,
+        )
+        return True
 
     def record_outcome(self, outcome: ExperienceOutcome) -> bool:
         """
@@ -264,19 +269,18 @@ class ExperienceLedger:
             outcome.model_dump_json(),
         )
 
-        try:
-            self.audit_repo._queue.put_nowait((_INSERT_OUTCOME_SQL, args))
-            self.outcome_count += 1
-            logger.debug(
-                "[EXPERIENCE] OUTCOME RECORDED",
-                idempotency_key=outcome.idempotency_key,
-                realized_r=round(outcome.realized_r_multiple, 3),
-                flags=[f.value for f in outcome.behavioral_flags],
-            )
-            return True
-        except Exception as e:
-            logger.error("[EXPERIENCE] OUTCOME queue failure", error=str(e))
+        if not queue_write(
+            self.audit_repo, _INSERT_OUTCOME_SQL, args, operation="experience.record_outcome"
+        ):
             return False
+        self.outcome_count += 1
+        logger.debug(
+            "[EXPERIENCE] OUTCOME RECORDED",
+            idempotency_key=outcome.idempotency_key,
+            realized_r=round(outcome.realized_r_multiple, 3),
+            flags=[f.value for f in outcome.behavioral_flags],
+        )
+        return True
 
     def record_terminal_outcome(self, outcome: ExperienceOutcome) -> bool:
         """
@@ -379,19 +383,18 @@ class ExperienceLedger:
             outcome.model_dump_json(),
             outcome.idempotency_key,
         )
-        try:
-            self.audit_repo._queue.put_nowait((_REPAIR_OUTCOME_SQL, args))
-            logger.info(
-                "[BROKER_OUTCOME_REPAIR] event=REPAIRED",
-                idempotency_key=outcome.idempotency_key,
-                realized_r=round(outcome.realized_r_multiple, 4),
-                realized_pnl=round(outcome.realized_pnl_usd, 2),
-                reason=repair_reason or "",
-            )
-            return True
-        except Exception as e:
-            logger.error("[EXPERIENCE] OUTCOME repair queue failure", error=str(e))
+        if not queue_write(
+            self.audit_repo, _REPAIR_OUTCOME_SQL, args, operation="experience.repair_outcome"
+        ):
             return False
+        logger.info(
+            "[BROKER_OUTCOME_REPAIR] event=REPAIRED",
+            idempotency_key=outcome.idempotency_key,
+            realized_r=round(outcome.realized_r_multiple, 4),
+            realized_pnl=round(outcome.realized_pnl_usd, 2),
+            reason=repair_reason or "",
+        )
+        return True
 
     def record_correction(self, correction: ExperienceCorrection) -> bool:
         """
@@ -416,18 +419,15 @@ class ExperienceLedger:
             correction.old_value,
             correction.new_value,
         )
-        try:
-            self.audit_repo._queue.put_nowait((query, args))
-            logger.info(
-                "[EXPERIENCE] CORRECTION recorded",
-                idempotency_key=correction.idempotency_key,
-                field=correction.field_name,
-                reason=correction.reason,
-            )
-            return True
-        except Exception as e:
-            logger.error("[EXPERIENCE] CORRECTION queue failure", error=str(e))
+        if not queue_write(self.audit_repo, query, args, operation="experience.record_correction"):
             return False
+        logger.info(
+            "[EXPERIENCE] CORRECTION recorded",
+            idempotency_key=correction.idempotency_key,
+            field=correction.field_name,
+            reason=correction.reason,
+        )
+        return True
 
     def build_correction(
         self,
@@ -461,6 +461,10 @@ class ExperienceLedger:
         file name and silently created a junk CWD file on every read. Every
         caller already gates on ``audit_repo._is_sqlite`` before reaching here,
         so a non-SQLite repository never opens a SQLite connection.
+
+        Under a pooled provider the reads go through the fabric's audit read
+        backend instead (see ``_query_records`` / the single-row lookups), so
+        this seam is reached on the SQLite path only.
         """
         connect = getattr(self.audit_repo, "_connect_sqlite", None)
         if connect is not None:
@@ -476,11 +480,16 @@ class ExperienceLedger:
         return conn
 
     @staticmethod
-    def _merge_row(row: sqlite3.Row) -> ExperienceRecord | None:
+    def _merge_row(row: sqlite3.Row | dict[str, Any]) -> ExperienceRecord | None:
         """
         Rebuilds a typed `ExperienceRecord` from the merged decision + outcome
         payloads. Legacy revision-1 payloads are migrated by the model
         validator, so old rows remain readable.
+
+        Accepts both row shapes the provider-portable read seam yields:
+        ``sqlite3.Row`` on SQLite and ``dict`` on PostgreSQL (``query_rows``
+        normalizes to dict on pooled backends). Only subscript/key access is
+        used, which both support.
         """
         raw_decision = row["decision_payload"]
         if not raw_decision:
@@ -522,18 +531,13 @@ class ExperienceLedger:
         bounded = max(1, min(int(limit), MAX_RETRIEVAL_LIMIT))
         sql = f"{_SELECT_MERGED} WHERE {where} ORDER BY e.decision_timestamp DESC LIMIT ?;"
         records: list[ExperienceRecord] = []
-        try:
-            conn = self._connect()
-            try:
-                for row in conn.execute(sql, (*args, bounded)).fetchall():
-                    merged = self._merge_row(row)
-                    if merged is not None:
-                        records.append(merged)
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[EXPERIENCE] retrieval failed", error=str(e))
-            return []
+        rows = query_rows(
+            self.audit_repo, sql, (*args, bounded), operation="experience.query_records"
+        )
+        for row in rows:
+            merged = self._merge_row(row)
+            if merged is not None:
+                records.append(merged)
         return records
 
     def get_experiences_for_strategy(
@@ -610,43 +614,31 @@ class ExperienceLedger:
         """
         if not execution_id or not self.audit_repo._is_sqlite:
             return ""
-        try:
-            conn = self._connect()
-            try:
-                sql = (
-                    "SELECT idempotency_key FROM audit_experience_outcomes "
-                    "WHERE execution_id = ? AND is_closed = 1 "
-                )
-                args: list[Any] = [str(execution_id)]
-                if exclude_key:
-                    sql += "AND idempotency_key != ? "
-                    args.append(exclude_key)
-                sql += "ORDER BY outcome_timestamp ASC LIMIT 1;"
-                row = conn.execute(sql, tuple(args)).fetchone()
-                return str(row[0]) if row else ""
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[EXPERIENCE] execution-owner lookup failed", error=str(e))
-            return ""
+        sql = (
+            "SELECT idempotency_key FROM audit_experience_outcomes "
+            "WHERE execution_id = ? AND is_closed = 1 "
+        )
+        args: list[Any] = [str(execution_id)]
+        if exclude_key:
+            sql += "AND idempotency_key != ? "
+            args.append(exclude_key)
+        sql += "ORDER BY outcome_timestamp ASC LIMIT 1;"
+        row = query_one(
+            self.audit_repo, sql, tuple(args), operation="experience.owner_of_execution"
+        )
+        return str(row["idempotency_key"]) if row else ""
 
     def has_outcome(self, idempotency_key: str) -> bool:
         """True when an outcome event already exists for this experience."""
         if not self.audit_repo._is_sqlite:
             return False
-        try:
-            conn = self._connect()
-            try:
-                row = conn.execute(
-                    "SELECT 1 FROM audit_experience_outcomes WHERE idempotency_key = ? LIMIT 1;",
-                    (idempotency_key,),
-                ).fetchone()
-                return row is not None
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[EXPERIENCE] outcome lookup failed", error=str(e))
-            return False
+        row = query_one(
+            self.audit_repo,
+            "SELECT 1 AS one FROM audit_experience_outcomes WHERE idempotency_key = ? LIMIT 1;",
+            (idempotency_key,),
+            operation="experience.has_outcome",
+        )
+        return row is not None
 
     def count_recent_entries_for_strategy(
         self, strategy_id: str, before_timestamp: datetime, window_seconds: float
@@ -660,60 +652,45 @@ class ExperienceLedger:
         from datetime import timedelta
 
         window_start = before_timestamp - timedelta(seconds=max(1.0, window_seconds))
-        try:
-            conn = self._connect()
-            try:
-                row = conn.execute(
-                    """
-                    SELECT COUNT(*) FROM audit_experiences e
-                    WHERE e.strategy_id = ?
-                      AND e.decision_timestamp >= ?
-                      AND e.decision_timestamp < ?;
-                    """,
-                    (
-                        strategy_id,
-                        window_start.isoformat(),
-                        before_timestamp.isoformat(),
-                    ),
-                ).fetchone()
-                return int(row[0]) if row else 0
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[EXPERIENCE] reentry count failed", error=str(e))
-            return 0
+        value = query_scalar(
+            self.audit_repo,
+            """
+            SELECT COUNT(*) FROM audit_experiences e
+            WHERE e.strategy_id = ?
+              AND e.decision_timestamp >= ?
+              AND e.decision_timestamp < ?;
+            """,
+            (
+                strategy_id,
+                window_start.isoformat(),
+                before_timestamp.isoformat(),
+            ),
+            operation="experience.count_recent_entries_for_strategy",
+        )
+        return int(value or 0)
 
     def list_strategy_ids(self, limit: int = 5000) -> list[str]:
         """Distinct strategy families present in the immutable ledger."""
         if not self.audit_repo._is_sqlite:
             return []
-        try:
-            conn = self._connect(timeout=10.0)
-            try:
-                rows = conn.execute(
-                    "SELECT DISTINCT strategy_id FROM audit_experiences LIMIT ?;",
-                    (max(1, int(limit)),),
-                ).fetchall()
-                return [r["strategy_id"] for r in rows if r["strategy_id"]]
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[EXPERIENCE] strategy id enumeration failed", error=str(e))
-            return []
+        rows = query_rows(
+            self.audit_repo,
+            "SELECT DISTINCT strategy_id FROM audit_experiences LIMIT ?;",
+            (max(1, int(limit)),),
+            operation="experience.list_strategy_ids",
+        )
+        return [str(r["strategy_id"]) for r in rows if r["strategy_id"]]
 
     def count_experiences(self) -> int:
         """Total immutable decision rows."""
         if not self.audit_repo._is_sqlite:
             return 0
-        try:
-            conn = self._connect()
-            try:
-                row = conn.execute("SELECT COUNT(*) FROM audit_experiences;").fetchone()
-                return int(row[0]) if row else 0
-            finally:
-                conn.close()
-        except Exception:
-            return 0
+        value = query_scalar(
+            self.audit_repo,
+            "SELECT COUNT(*) FROM audit_experiences;",
+            operation="experience.count_experiences",
+        )
+        return int(value or 0)
 
     def get_schema_distribution(self) -> dict[str, int]:
         """
@@ -724,24 +701,16 @@ class ExperienceLedger:
         """
         if not self.audit_repo._is_sqlite:
             return {}
-        try:
-            conn = self._connect()
-            try:
-                rows = conn.execute(
-                    """
-                    SELECT feature_schema_id, feature_dimension, COUNT(*) AS n
-                    FROM audit_experiences
-                    GROUP BY feature_schema_id, feature_dimension;
-                    """
-                ).fetchall()
-                return {
-                    f"{r['feature_schema_id']}/{r['feature_dimension']}D": int(r["n"]) for r in rows
-                }
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[EXPERIENCE] schema census failed", error=str(e))
-            return {}
+        rows = query_rows(
+            self.audit_repo,
+            """
+            SELECT feature_schema_id, feature_dimension, COUNT(*) AS n
+            FROM audit_experiences
+            GROUP BY feature_schema_id, feature_dimension;
+            """,
+            operation="experience.get_schema_distribution",
+        )
+        return {f"{r['feature_schema_id']}/{r['feature_dimension']}D": int(r["n"]) for r in rows}
 
     # ------------------------------------------------------------------
     # Deterministic identity helpers

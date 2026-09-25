@@ -14,8 +14,9 @@ position moved the way it did.
 * The tracker is fed from the live path (LiveEngine) but is itself pure and
   isolated: it records and asks questions, never executes. It holds no adapter
   and no order manager.
-* State is kept in memory and persisted through the AuditRepository background
-  queue, exactly like the Phase 08 experience ledger.
+* State is kept in memory and persisted on the ACTIVE provider — the
+  AuditRepository background queue under SQLite, the audit domain's pooled
+  write backend under PostgreSQL — exactly like the Phase 08 experience ledger.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.database.provider_store import queue_write
 from nexus_scalp.intelligence.models import (
     DecisionContext,
     MarketContext,
@@ -389,35 +391,32 @@ class PositionLifecycleTracker:
             "performance": performance.model_dump(),
             "market": market.model_dump(),
         }
-        try:
-            self.audit_repo._queue.put_nowait(
-                (
-                    _INSERT_EVENT_SQL,
-                    (
-                        event_key,
-                        ticket,
-                        trade_id,
-                        experience_id,
-                        event.symbol,
-                        event.timeframe,
-                        event_type.value,
-                        seq,
-                        at.isoformat(),
-                        json.dumps(market.model_dump()),
-                        json.dumps(snapshot.model_dump()),
-                        json.dumps(payload),
-                    ),
-                )
-            )
-            self.event_count += 1
-            logger.debug(
-                "[POSITION_TRACK]",
-                ticket=ticket,
-                state=event_type.value,
-                seq=seq,
-            )
-        except Exception as e:
-            logger.error("[POSITION_TRACK] emit failed (isolated)", ticket=ticket, error=str(e))
+        args = (
+            event_key,
+            ticket,
+            trade_id,
+            experience_id,
+            event.symbol,
+            event.timeframe,
+            event_type.value,
+            seq,
+            at.isoformat(),
+            json.dumps(market.model_dump()),
+            json.dumps(snapshot.model_dump()),
+            json.dumps(payload),
+        )
+        if not queue_write(
+            self.audit_repo, _INSERT_EVENT_SQL, args, operation="intelligence_lifecycle.emit"
+        ):
+            logger.error("[POSITION_TRACK] emit failed (isolated)", ticket=ticket)
+            return
+        self.event_count += 1
+        logger.debug(
+            "[POSITION_TRACK]",
+            ticket=ticket,
+            state=event_type.value,
+            seq=seq,
+        )
 
     def finalize_exit(
         self,

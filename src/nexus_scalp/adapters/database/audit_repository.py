@@ -2110,7 +2110,10 @@ class AuditRepository:
                 generation_id TEXT DEFAULT '',
                 checkpoint TEXT DEFAULT '{}',
                 updated_at TEXT DEFAULT '',
-                last_error TEXT DEFAULT ''
+                last_error TEXT DEFAULT '',
+                reason TEXT DEFAULT '',
+                last_cycle_at TEXT DEFAULT '',
+                cycle_count INTEGER DEFAULT 0
             );
             """
         )

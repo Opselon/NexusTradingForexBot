@@ -61,6 +61,10 @@ def _resolve_cycle_store_db_path(audit_repo: AuditRepository) -> str:
     whenever the attribute is not a plain string path — the cycle store is
     process-local state, so in-memory stays hermetic and never touches the
     production artifacts/audit.db (BUG-223 rule).
+
+    Under a pooled (PostgreSQL) provider the store does not use a SQLite path
+    at all — it routes through the fabric's audit-domain backends — so the
+    value is inert here; the store detects the pooled backend itself.
     """
     raw = getattr(audit_repo, "_db_path", None)
     if isinstance(raw, str) and raw.strip():

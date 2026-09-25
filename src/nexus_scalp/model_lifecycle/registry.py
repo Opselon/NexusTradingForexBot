@@ -22,6 +22,11 @@ from pathlib import Path
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.database.provider_store import (
+    query_one,
+    query_rows,
+    queue_write,
+)
 from nexus_scalp.experience.provenance import ModelRegistry, fingerprint_artifact
 from nexus_scalp.features.schema import FEATURE_SCHEMAS
 from nexus_scalp.model_lifecycle.models import ModelStatus
@@ -133,8 +138,8 @@ class ModelLifecycleRegistry:
             model_id,
             model_version,
         )
-        try:
-            self.audit_repo._queue.put_nowait((query, args))
+        ok = queue_write(self.audit_repo, query, args, operation="registry.set_status")
+        if ok:
             logger.info(
                 "[MODEL] event=STATUS",
                 model_id=model_id,
@@ -143,9 +148,7 @@ class ModelLifecycleRegistry:
                 reason=reason or "",
             )
             return True
-        except Exception as e:
-            logger.error("[MODEL_REGISTRY] status update failed", error=str(e))
-            return False
+        return False
 
     def register_candidate(
         self,
@@ -199,21 +202,13 @@ class ModelLifecycleRegistry:
         if not self.audit_repo._is_sqlite:
             return None
         self.ensure_schema()
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                row = conn.execute(
-                    "SELECT * FROM experience_model_registry "
-                    "WHERE model_id=? AND model_version=? ORDER BY registered_at DESC LIMIT 1;",
-                    (model_id, model_version),
-                ).fetchone()
-                return dict(row) if row else None
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[MODEL_REGISTRY] get failed", error=str(e))
-            return None
+        return query_one(
+            self.audit_repo,
+            "SELECT * FROM experience_model_registry "
+            "WHERE model_id=? AND model_version=? ORDER BY registered_at DESC LIMIT 1;",
+            (model_id, model_version),
+            operation="registry.get_status",
+        )
 
     def list_models(
         self, status: ModelStatus | str | None = None, limit: int = 100
@@ -229,19 +224,7 @@ class ModelLifecycleRegistry:
             sql += " WHERE lifecycle_status = ?"
             args = (status.value if isinstance(status, ModelStatus) else str(status),)
         sql += " ORDER BY registered_at DESC LIMIT ?;"
-        out: list[dict[str, Any]] = []
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                rows = conn.execute(sql, (*args, bounded)).fetchall()
-            finally:
-                conn.close()
-            for r in rows:
-                out.append(dict(r))
-        except Exception as e:
-            logger.error("[MODEL_REGISTRY] list failed", error=str(e))
-        return out
+        return query_rows(self.audit_repo, sql, (*args, bounded), operation="registry.list_models")
 
     def champion(self) -> dict[str, Any] | None:
         """The current production-authorized Champion row, if any."""
@@ -304,22 +287,21 @@ class ModelLifecycleRegistry:
 
         serving = _norm(artifact_path)
         try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                champion = conn.execute(
-                    "SELECT * FROM experience_model_registry "
-                    "WHERE lifecycle_status=? ORDER BY registered_at DESC LIMIT 1;",
-                    (ModelStatus.CHAMPION.value,),
-                ).fetchone()
-                new_row = conn.execute(
-                    "SELECT lifecycle_status FROM experience_model_registry "
-                    "WHERE model_id=? AND model_version=? AND artifact_fingerprint=? "
-                    "ORDER BY registered_at DESC LIMIT 1;",
-                    (model_id, model_version, new_fp),
-                ).fetchone()
-            finally:
-                conn.close()
+            champion = query_one(
+                self.audit_repo,
+                "SELECT * FROM experience_model_registry "
+                "WHERE lifecycle_status=? ORDER BY registered_at DESC LIMIT 1;",
+                (ModelStatus.CHAMPION.value,),
+                operation="registry.supersede_champion",
+            )
+            new_row = query_one(
+                self.audit_repo,
+                "SELECT lifecycle_status FROM experience_model_registry "
+                "WHERE model_id=? AND model_version=? AND artifact_fingerprint=? "
+                "ORDER BY registered_at DESC LIMIT 1;",
+                (model_id, model_version, new_fp),
+                operation="registry.supersede_champion",
+            )
         except Exception as e:
             logger.error("[MODEL_REGISTRY] supersession read failed", error=str(e))
             return {"ok": False, "reason": "REGISTRY_READ_FAILED", "detail": str(e)[:200]}
@@ -419,14 +401,12 @@ class ModelLifecycleRegistry:
             _promotable[1],
             _promotable[2],
         )
-        try:
-            self.audit_repo._queue.put_nowait((query, args))
-        except Exception as e:
-            logger.error("[MODEL_REGISTRY] supersession persist failed", error=str(e))
+        if not queue_write(self.audit_repo, query, args, operation="registry.supersede_champion"):
+            logger.error("[MODEL_REGISTRY] supersession persist failed")
             return {
                 "ok": False,
                 "reason": "QUEUE_FAILED",
-                "detail": str(e)[:200],
+                "detail": "write was not accepted by the active provider",
                 "stale_fingerprint": old_fp,
                 "new_fingerprint": new_fp,
             }
@@ -453,19 +433,15 @@ class ModelLifecycleRegistry:
         out: dict[str, Any] = {"available": False, "by_status": {}}
         if not self.audit_repo._is_sqlite:
             return out
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            try:
-                for r in conn.execute(
-                    "SELECT lifecycle_status, COUNT(*) AS c FROM experience_model_registry "
-                    "GROUP BY lifecycle_status;"
-                ).fetchall():
-                    out["by_status"][str(r[0])] = int(r[1])
-                out["available"] = True
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[MODEL_REGISTRY] summary failed", error=str(e))
+        rows = query_rows(
+            self.audit_repo,
+            "SELECT lifecycle_status, COUNT(*) AS c FROM experience_model_registry "
+            "GROUP BY lifecycle_status;",
+            operation="registry.summary",
+        )
+        for r in rows:
+            out["by_status"][str(r["lifecycle_status"])] = int(r["c"])
+        out["available"] = True
         return out
 
 

@@ -24,6 +24,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.database.provider_store import (
+    OPS_SHADOW_DOMAIN,
+    ops_ensure_schema,
+    ops_query_rows,
+    ops_query_scalar,
+    ops_queue_write,
+    ops_queue_write_batch,
+)
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.shadow.shadow70.models import Shadow70Observation
 
@@ -119,7 +127,15 @@ class Shadow70Store(Shadow70Persistence):
     def ensure_schema(self) -> None:
         if self._schema_ensured:
             return
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
+            return
+        if not getattr(self.audit_repo, "_is_sqlite", False):
+            # PostgreSQL: the ops_shadow domain's pooled backend provisions the
+            # translated schema (nexus_scalp.shadow.schema); nothing to CREATE
+            # at runtime — the domain is the single source of truth.
+            self._schema_ensured = ops_ensure_schema(
+                self.audit_repo, OPS_SHADOW_DOMAIN, operation="shadow70.ensure_schema"
+            )
             return
         try:
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
@@ -245,7 +261,7 @@ class Shadow70Store(Shadow70Persistence):
     # ------------------------------------------------------------------
 
     def save_observation(self, obs: Shadow70Observation) -> bool:
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return False
         if self.backpressure.should_drop(
             getattr(self.audit_repo, "_queue", type("Q", (), {"qsize": lambda s: 0})()).qsize()
@@ -292,15 +308,16 @@ class Shadow70Store(Shadow70Persistence):
             obs.outcome_resolved_at.isoformat() if obs.outcome_resolved_at else "",
             datetime.now(UTC).isoformat(),
         )
-        try:
-            self.audit_repo._queue.put_nowait((_INSERT_OBSERVATION_SQL, args))
-            return True
-        except Exception as e:
-            logger.error("[SHADOW70] save_observation failed (isolated)", error=str(e))
-            return False
+        return ops_queue_write(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            _INSERT_OBSERVATION_SQL,
+            args,
+            operation="shadow70.save_observation",
+        )
 
     def record_event(self, event: dict[str, Any]) -> bool:
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return False
         self.ensure_schema()
         args = (
@@ -316,71 +333,82 @@ class Shadow70Store(Shadow70Persistence):
             json.dumps(event.get("payload", {}), default=str),
             event.get("timestamp") or datetime.now(UTC).isoformat(),
         )
-        try:
-            self.audit_repo._queue.put_nowait((_INSERT_EVENT_SQL, args))
-            return True
-        except Exception as e:
-            logger.error("[SHADOW70] record_event failed (isolated)", error=str(e))
-            return False
+        return ops_queue_write(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            _INSERT_EVENT_SQL,
+            args,
+            operation="shadow70.record_event",
+        )
 
     def save_feature_health(self, rows: list[dict[str, Any]]) -> bool:
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return False
         self.ensure_schema()
         snapshot_id = rows[0].get("snapshot_id", "") if rows else ""
         ts = datetime.now(UTC).isoformat()
-        ok = True
+        statements: list[tuple[str, tuple[Any, ...]]] = []
         for row in rows:
-            args = (
-                snapshot_id,
-                ts,
-                row.get("name", ""),
-                int(row.get("index", 0)),  # maps to feat_index
-                int(row.get("samples", 0)),
-                float(row.get("finite_rate", 0.0)),
-                float(row.get("missing_rate", 0.0)),
-                float(row.get("stale_rate", 0.0)),
-                float(row.get("zero_rate", 0.0)),
-                float(row.get("mean", 0.0)),
-                float(row.get("std", 0.0)),
-                float(row.get("min", 0.0)),
-                float(row.get("max", 0.0)),
-                json.dumps(row, default=str),
+            statements.append(
+                (
+                    _INSERT_HEALTH_SQL,
+                    (
+                        snapshot_id,
+                        ts,
+                        row.get("name", ""),
+                        int(row.get("index", 0)),  # maps to feat_index
+                        int(row.get("samples", 0)),
+                        float(row.get("finite_rate", 0.0)),
+                        float(row.get("missing_rate", 0.0)),
+                        float(row.get("stale_rate", 0.0)),
+                        float(row.get("zero_rate", 0.0)),
+                        float(row.get("mean", 0.0)),
+                        float(row.get("std", 0.0)),
+                        float(row.get("min", 0.0)),
+                        float(row.get("max", 0.0)),
+                        json.dumps(row, default=str),
+                    ),
+                )
             )
-            try:
-                self.audit_repo._queue.put_nowait((_INSERT_HEALTH_SQL, args))
-            except Exception as e:
-                ok = False
-                logger.error("[SHADOW70] save_feature_health failed (isolated)", error=str(e))
-        return ok
+        return ops_queue_write_batch(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            statements,
+            operation="shadow70.save_feature_health",
+        )
 
     def save_drift_alerts(self, alerts: list[dict[str, Any]]) -> bool:
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return False
         self.ensure_schema()
-        ok = True
+        statements: list[tuple[str, tuple[Any, ...]]] = []
         for a in alerts:
-            args = (
-                f"drift70_{a.get('feature', '')}_{a.get('metric', '')}_{int(a.get('samples', 0))}",
-                a.get("timestamp") or datetime.now(UTC).isoformat(),
-                a.get("feature", ""),
-                a.get("metric", ""),
-                float(a.get("value", 0.0)),
-                float(a.get("threshold", 0.0)),
-                a.get("severity", "NORMAL"),
-                float(a.get("reference_mean", 0.0)),
-                float(a.get("live_mean", 0.0)),
-                float(a.get("reference_std", 0.0)),
-                float(a.get("live_std", 0.0)),
-                int(a.get("samples", 0)),
-                json.dumps(a, default=str),
+            statements.append(
+                (
+                    _INSERT_DRIFT_SQL,
+                    (
+                        f"drift70_{a.get('feature', '')}_{a.get('metric', '')}_{int(a.get('samples', 0))}",
+                        a.get("timestamp") or datetime.now(UTC).isoformat(),
+                        a.get("feature", ""),
+                        a.get("metric", ""),
+                        float(a.get("value", 0.0)),
+                        float(a.get("threshold", 0.0)),
+                        a.get("severity", "NORMAL"),
+                        float(a.get("reference_mean", 0.0)),
+                        float(a.get("live_mean", 0.0)),
+                        float(a.get("reference_std", 0.0)),
+                        float(a.get("live_std", 0.0)),
+                        int(a.get("samples", 0)),
+                        json.dumps(a, default=str),
+                    ),
+                )
             )
-            try:
-                self.audit_repo._queue.put_nowait((_INSERT_DRIFT_SQL, args))
-            except Exception as e:
-                ok = False
-                logger.error("[SHADOW70] save_drift_alerts failed (isolated)", error=str(e))
-        return ok
+        return ops_queue_write_batch(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            statements,
+            operation="shadow70.save_drift_alerts",
+        )
 
     # ------------------------------------------------------------------
     # Reads (bounded, short-lived connections — API/worker only)
@@ -395,7 +423,7 @@ class Shadow70Store(Shadow70Persistence):
         (BUG-278): a NOT_COMPARED row carries the neutral placeholder
         shadow_action, not a model output, so it is not a disagreement.
         """
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return []
         bounded = max(1, min(int(limit), SHADOW70_MAX_READ))
         sql = "SELECT * FROM shadow70_observations"
@@ -405,7 +433,7 @@ class Shadow70Store(Shadow70Persistence):
         return self._query(sql, (bounded,))
 
     def list_events(self, limit: int = 100) -> list[dict[str, Any]]:
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return []
         bounded = max(1, min(int(limit), SHADOW70_MAX_READ))
         return self._query(
@@ -413,7 +441,7 @@ class Shadow70Store(Shadow70Persistence):
         )
 
     def latest_drift_alerts(self, limit: int = 50) -> list[dict[str, Any]]:
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return []
         bounded = max(1, min(int(limit), SHADOW70_MAX_READ))
         return self._query(
@@ -421,7 +449,7 @@ class Shadow70Store(Shadow70Persistence):
         )
 
     def latest_feature_health(self) -> list[dict[str, Any]]:
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return []
         return self._query("SELECT * FROM shadow70_feature_health ORDER BY id DESC LIMIT 10;", ())
 
@@ -439,23 +467,20 @@ class Shadow70Store(Shadow70Persistence):
         Historical invalid rows remain queryable via list_observations —
         no evidence is deleted.
         """
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return {}
         out: dict[str, int] = {}
-        with contextlib.suppress(Exception):
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            try:
-                if valid_only:
-                    sql = (
-                        "SELECT disagreement, COUNT(*) AS c FROM shadow70_observations "
-                        "WHERE valid = 1 AND error_code = '' GROUP BY disagreement;"
-                    )
-                else:
-                    sql = "SELECT disagreement, COUNT(*) AS c FROM shadow70_observations GROUP BY disagreement;"
-                for r in conn.execute(sql).fetchall():
-                    out[str(r[0])] = int(r[1])
-            finally:
-                conn.close()
+        if valid_only:
+            sql = (
+                "SELECT disagreement, COUNT(*) AS c FROM shadow70_observations "
+                "WHERE valid = 1 AND error_code = '' GROUP BY disagreement;"
+            )
+        else:
+            sql = "SELECT disagreement, COUNT(*) AS c FROM shadow70_observations GROUP BY disagreement;"
+        for r in ops_query_rows(
+            self.audit_repo, OPS_SHADOW_DOMAIN, sql, (), operation="shadow70.disagreement_counts"
+        ):
+            out[str(r["disagreement"])] = int(r["c"])
         return out
 
     def summary(self) -> dict[str, Any]:
@@ -466,39 +491,69 @@ class Shadow70Store(Shadow70Persistence):
         instead of '[SHADOW70] summary failed: no such table'.
         """
         out: dict[str, Any] = {"available": False, "observations": 0, "agreements": 0}
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return out
         self.ensure_schema()
         try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            try:
-                row = conn.execute("SELECT COUNT(*) FROM shadow70_observations;").fetchone()
-                out["observations"] = int(row[0]) if row else 0
-                row = conn.execute(
-                    "SELECT COUNT(*) FROM shadow70_observations WHERE agreement = 1 AND valid = 1;"
-                ).fetchone()
-                out["agreements"] = int(row[0]) if row else 0
-                row = conn.execute(
-                    "SELECT COUNT(*) FROM shadow70_observations WHERE valid = 0;"
-                ).fetchone()
-                out["invalid"] = int(row[0]) if row else 0
-                row = conn.execute("SELECT COUNT(*) FROM shadow70_events;").fetchone()
-                out["events"] = int(row[0]) if row else 0
-                out["available"] = True
-            finally:
-                conn.close()
+            out["observations"] = int(
+                ops_query_scalar(
+                    self.audit_repo,
+                    OPS_SHADOW_DOMAIN,
+                    "SELECT COUNT(*) FROM shadow70_observations;",
+                    (),
+                    operation="shadow70.summary.observations",
+                )
+                or 0
+            )
+            out["agreements"] = int(
+                ops_query_scalar(
+                    self.audit_repo,
+                    OPS_SHADOW_DOMAIN,
+                    "SELECT COUNT(*) FROM shadow70_observations WHERE agreement = 1 AND valid = 1;",
+                    (),
+                    operation="shadow70.summary.agreements",
+                )
+                or 0
+            )
+            out["invalid"] = int(
+                ops_query_scalar(
+                    self.audit_repo,
+                    OPS_SHADOW_DOMAIN,
+                    "SELECT COUNT(*) FROM shadow70_observations WHERE valid = 0;",
+                    (),
+                    operation="shadow70.summary.invalid",
+                )
+                or 0
+            )
+            out["events"] = int(
+                ops_query_scalar(
+                    self.audit_repo,
+                    OPS_SHADOW_DOMAIN,
+                    "SELECT COUNT(*) FROM shadow70_events;",
+                    (),
+                    operation="shadow70.summary.events",
+                )
+                or 0
+            )
+            out["available"] = True
         except Exception as e:
             logger.error("[SHADOW70] summary failed", error=str(e))
         return out
 
     def _query(self, sql: str, args: tuple[Any, ...]) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        with contextlib.suppress(Exception):
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                for r in conn.execute(sql, args).fetchall():
-                    out.append(dict(r))
-            finally:
-                conn.close()
-        return out
+        if not self.audit_repo:
+            return []
+        if getattr(self.audit_repo, "_is_sqlite", False):
+            out: list[dict[str, Any]] = []
+            with contextlib.suppress(Exception):
+                conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
+                conn.row_factory = sqlite3.Row
+                try:
+                    for r in conn.execute(sql, args).fetchall():
+                        out.append(dict(r))
+                finally:
+                    conn.close()
+            return out
+        return ops_query_rows(
+            self.audit_repo, OPS_SHADOW_DOMAIN, sql, args, operation="shadow70._query"
+        )

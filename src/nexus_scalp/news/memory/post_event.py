@@ -15,7 +15,6 @@ phases; it NEVER directly modifies the production model.
 
 from __future__ import annotations
 
-import sqlite3
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -28,6 +27,27 @@ logger = get_logger("nexus_scalp.news.memory")
 
 #: Minimum market-response samples before a feedback row is meaningful.
 MIN_RESPONSE_SAMPLES = 3
+
+#: Schema for the post-event feedback table (SQLite dialect — the schema the
+#: ``NewsDatabase`` store carries to both providers, translated by the store
+#: under PostgreSQL exactly like its own DDL).
+_POST_EVENT_DDL = """
+    CREATE TABLE IF NOT EXISTS news_post_event (
+        record_id TEXT PRIMARY KEY,
+        article_id TEXT NOT NULL,
+        predicted_direction TEXT NOT NULL,
+        predicted_strength REAL NOT NULL DEFAULT 0.0,
+        predicted_horizon TEXT NOT NULL DEFAULT 'MACRO',
+        actual_move_pct REAL NOT NULL DEFAULT 0.0,
+        actual_volatility REAL NOT NULL DEFAULT 0.0,
+        direction_accuracy REAL NOT NULL DEFAULT 0.0,
+        magnitude_error REAL NOT NULL DEFAULT 0.0,
+        timing_error_sec REAL NOT NULL DEFAULT 0.0,
+        persistence_sec REAL NOT NULL DEFAULT 0.0,
+        regime TEXT DEFAULT '',
+        evaluated_at TEXT NOT NULL
+    );
+    """
 
 
 #: A direction call is "correct" when the actual move matches the prediction.
@@ -49,27 +69,9 @@ class PostEventValidator:
     def _ensure_table(self) -> None:
         """Creates the news_post_event table (idempotent, additive)."""
         try:
-            conn = sqlite3.connect(str(self.db.db_path), timeout=5.0)
+            conn = self.db._connect()
             try:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS news_post_event (
-                        record_id TEXT PRIMARY KEY,
-                        article_id TEXT NOT NULL,
-                        predicted_direction TEXT NOT NULL,
-                        predicted_strength REAL NOT NULL DEFAULT 0.0,
-                        predicted_horizon TEXT NOT NULL DEFAULT 'MACRO',
-                        actual_move_pct REAL NOT NULL DEFAULT 0.0,
-                        actual_volatility REAL NOT NULL DEFAULT 0.0,
-                        direction_accuracy REAL NOT NULL DEFAULT 0.0,
-                        magnitude_error REAL NOT NULL DEFAULT 0.0,
-                        timing_error_sec REAL NOT NULL DEFAULT 0.0,
-                        persistence_sec REAL NOT NULL DEFAULT 0.0,
-                        regime TEXT DEFAULT '',
-                        evaluated_at TEXT NOT NULL
-                    );
-                    """
-                )
+                conn.execute(_POST_EVENT_DDL)
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_post_event_article ON news_post_event(article_id);"
                 )
@@ -154,16 +156,29 @@ class PostEventValidator:
 
     def _insert(self, row: dict[str, Any]) -> None:
         try:
-            conn = sqlite3.connect(str(self.db.db_path), timeout=5.0)
+            conn = self.db._connect()
             try:
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO news_post_event
+                    INSERT INTO news_post_event
                         (record_id, article_id, predicted_direction, predicted_strength,
                          predicted_horizon, actual_move_pct, actual_volatility,
                          direction_accuracy, magnitude_error, timing_error_sec,
                          persistence_sec, regime, evaluated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(record_id) DO UPDATE SET
+                        article_id=excluded.article_id,
+                        predicted_direction=excluded.predicted_direction,
+                        predicted_strength=excluded.predicted_strength,
+                        predicted_horizon=excluded.predicted_horizon,
+                        actual_move_pct=excluded.actual_move_pct,
+                        actual_volatility=excluded.actual_volatility,
+                        direction_accuracy=excluded.direction_accuracy,
+                        magnitude_error=excluded.magnitude_error,
+                        timing_error_sec=excluded.timing_error_sec,
+                        persistence_sec=excluded.persistence_sec,
+                        regime=excluded.regime,
+                        evaluated_at=excluded.evaluated_at
                     """,
                     (
                         row["record_id"],
@@ -197,9 +212,8 @@ class PostEventValidator:
         sql += " ORDER BY evaluated_at DESC LIMIT ?;"
         args.append(bounded)
         try:
-            conn = sqlite3.connect(str(self.db.db_path), timeout=5.0)
+            conn = self.db._connect()
             try:
-                conn.row_factory = sqlite3.Row
                 return [dict(r) for r in conn.execute(sql, args).fetchall()]
             finally:
                 conn.close()

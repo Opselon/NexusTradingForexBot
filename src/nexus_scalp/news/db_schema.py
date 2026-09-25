@@ -279,11 +279,77 @@ _INDEX_SQL: list[str] = [
 ]
 
 
+def _ddl_for_provider(ddl: str, config: Any) -> str:
+    """Return DDL in the dialect the active provider speaks.
+
+    The news schema is authored once, in the SQLite dialect (the default
+    provider), and translated to PostgreSQL through the repository's proven
+    DDL translator (the same one ``provision_domain`` runs for the news
+    domain — one translation path, no second spelling of the schema).
+    """
+    if getattr(config, "is_sqlite", True):
+        return ddl
+    from nexus_scalp.database.migration.pg_schema import translate_ddl
+
+    return translate_ddl(ddl)
+
+
+def _column_names(conn: Any, table: str) -> list[str]:
+    """Column names of ``table`` on whichever provider ``conn`` speaks.
+
+    SQLite: ``PRAGMA table_info``; PostgreSQL: ``information_schema.columns``
+    (the portable ``current_schema()`` keeps it schema-agnostic).
+    """
+    if hasattr(conn, "execute") and not _is_pg_conn(conn):
+        try:
+            return [str(r[1]) for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+        except Exception:
+            return []
+    try:
+        rows = conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = %s AND table_schema = current_schema() "
+            "ORDER BY ordinal_position",
+            (table,),
+        ).fetchall()
+        return [str(r[0]) for r in rows]
+    except Exception:
+        return []
+
+
+def _is_pg_conn(conn: Any) -> bool:
+    """True when ``conn`` is a psycopg connection (or the portable proxy)."""
+    module = type(conn).__module__ or ""
+    if module.startswith("psycopg"):
+        return True
+    # PortableConnection wraps a driver; its cursor proxies a psycopg cursor.
+    proxy = getattr(conn, "_pg", None)
+    if proxy is not None:
+        return True
+    cursor = getattr(conn, "_cursor", None)
+    if cursor is not None and (type(cursor).__module__ or "").startswith("psycopg"):
+        return True
+    return False
+
+
+def _add_column_sql(table: str, column: str, decl: str, *, sqlite: bool = True) -> str:
+    """Provider-spelled idempotent ADD COLUMN.
+
+    SQLite has no ``ADD COLUMN IF NOT EXISTS`` (the caller guards it with a
+    PRAGMA pre-check in :meth:`SchemaMixin._ensure_article_status_column`);
+    PostgreSQL spells the guard in the statement, which it needs — without it
+    every re-initialization would fail on the columns it added last time.
+    """
+    if sqlite:
+        return f"ALTER TABLE {table} ADD COLUMN {column} {decl}"
+    return f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {decl}"
+
+
 class SchemaMixin(_NewsDbCoreProto):
     """SchemaMixin — verbatim method cluster from NewsDatabase."""
 
     def initialize_schema(self) -> None:
-        """Creates the news schema + indexes (idempotent)."""
+        """Creates the news schema + indexes (idempotent, both providers)."""
         try:
             conn = self._connect()
             try:
@@ -291,13 +357,13 @@ class SchemaMixin(_NewsDbCoreProto):
                     conn.execute("PRAGMA journal_mode=WAL;")
                     conn.execute("PRAGMA synchronous=NORMAL;")
                 for ddl in _SCHEMA_SQL:
-                    conn.execute(ddl)
+                    conn.execute(_ddl_for_provider(ddl, self._config))
                 # Migration-safe: add recoverable article_status column BEFORE
                 # building indexes that reference it. Existing rows default to
                 # ACTIVE (never auto-classified).
                 self._ensure_article_status_column(conn)
                 for idx in _INDEX_SQL:
-                    conn.execute(idx)
+                    conn.execute(_ddl_for_provider(idx, self._config))
                 conn.commit()
             finally:
                 conn.close()
@@ -309,10 +375,21 @@ class SchemaMixin(_NewsDbCoreProto):
 
         Safe default 'ACTIVE' so existing records are never silently reclassified.
         """
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(news_articles)").fetchall()]
+        # ``self._config`` is absent when the mixin is replayed bare by the
+        # schema snapshot extractor (it applies the column heal to a throwaway
+        # SQLite connection); that path is always SQLite, so a missing config
+        # means "spell it the SQLite way".
+        config = getattr(self, "_config", None)
+        is_sqlite = True if config is None else bool(config.is_sqlite)
+        cols = _column_names(conn, "news_articles")
         if "article_status" not in cols:
             conn.execute(
-                "ALTER TABLE news_articles ADD COLUMN article_status TEXT NOT NULL DEFAULT 'ACTIVE'"
+                _add_column_sql(
+                    "news_articles",
+                    "article_status",
+                    "TEXT NOT NULL DEFAULT 'ACTIVE'",
+                    sqlite=is_sqlite,
+                )
             )
         # BUG-282: publication-time provenance. Legacy rows were all written
         # by the ISO-only parser, so their published_at is overwhelmingly the
@@ -320,6 +397,10 @@ class SchemaMixin(_NewsDbCoreProto):
         # the fact, so existing rows are marked UNKNOWN (never retro-guessed).
         if "published_at_source" not in cols:
             conn.execute(
-                "ALTER TABLE news_articles ADD COLUMN published_at_source "
-                "TEXT NOT NULL DEFAULT 'UNKNOWN'"
+                _add_column_sql(
+                    "news_articles",
+                    "published_at_source",
+                    "TEXT NOT NULL DEFAULT 'UNKNOWN'",
+                    sqlite=is_sqlite,
+                )
             )

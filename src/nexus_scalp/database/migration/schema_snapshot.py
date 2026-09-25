@@ -135,6 +135,18 @@ def _apply_news_bootstrap(conn: sqlite3.Connection) -> None:
     )
     for idx in _INDEX_SQL:
         conn.execute(idx)
+    # The post-event memory table is created lazily by PostEventValidator
+    # rather than by the store's schema init, so its DDL never reached the
+    # provisioner — a PostgreSQL box had every news table except this one and
+    # the validator's writes failed on it. Its DDL lives with the validator;
+    # the replay applies it here so provisioning stays the one path a domain's
+    # schema reaches PostgreSQL through.
+    from nexus_scalp.news.memory.post_event import _POST_EVENT_DDL
+
+    conn.execute(_POST_EVENT_DDL)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_post_event_article ON news_post_event(article_id);"
+    )
 
 
 def _apply_candle_intel_bootstrap(conn: sqlite3.Connection) -> None:
@@ -324,3 +336,60 @@ def ai_provider_decisions_schema_statements() -> tuple[str, ...]:
     from nexus_scalp.ai_providers.store import _SCHEMA
 
     return tuple(s.strip() for s in _SCHEMA.split(";") if s.strip())
+
+
+def model_lifecycle_schema_statements() -> tuple[str, ...]:
+    """The model_lifecycle-owned operational tables as SQLite DDL statements.
+
+    Those tables (``learning_cycles`` / ``learning_cycle_events`` /
+    ``training_runs`` / ``model_comparisons``) live in the AUDIT domain's
+    database but were not part of its authored DDL, so a fresh PostgreSQL
+    install had no ``learning_cycles`` while the migrated nexusdb did (the
+    table-set divergence recorded in tests/unit/test_pg_schema_convergence.py).
+    The DDL is authored in the owning package (``model_lifecycle.schema``)
+    because those tables are the package's contract, exactly as
+    ``ai_providers.store._SCHEMA`` owns the decision ledger's DDL above.
+    """
+    from nexus_scalp.model_lifecycle.schema import model_lifecycle_schema_statements
+
+    return model_lifecycle_schema_statements()
+
+
+def strategy_factory_schema_statements() -> tuple[str, ...]:
+    """The complete strategy-factory domain schema as SQLite DDL statements.
+
+    Same contract as ``ai_provider_decisions_schema_statements``: the schema is
+    authored directly in ``strategies.factory.store._SCHEMA`` (SQLite dialect,
+    mirrored by the audit bootstrap for PostgreSQL), so the statements are read
+    from it verbatim and the store is deliberately NOT constructed (its
+    constructor opens a real database file).
+    """
+    from nexus_scalp.strategies.factory.store import _SCHEMA
+
+    return tuple(s.strip() for s in _SCHEMA.split(";") if s.strip())
+
+
+def ops_shadow_schema_statements() -> tuple[str, ...]:
+    """The shadow / shadow70 / governance tables as SQLite DDL statements.
+
+    Same ownership contract as ``model_lifecycle_schema_statements``: the DDL is
+    authored in the owning package (``nexus_scalp.shadow.schema``) because those
+    tables are the stores' own ``ensure_schema`` output, not an audit-domain
+    replay. The registry resolves the extractor by name against this module, so
+    the package-owned function is re-exported here.
+    """
+    from nexus_scalp.shadow.schema import ops_shadow_schema_statements
+
+    return ops_shadow_schema_statements()
+
+
+def ops_hygiene_schema_statements() -> tuple[str, ...]:
+    """The hygiene-state / quarantine tables as SQLite DDL statements.
+
+    Same contract as ``ops_shadow_schema_statements``: the DDL is authored in
+    ``nexus_scalp.hygiene.schema`` and re-exported so the registry's name-based
+    resolution finds it.
+    """
+    from nexus_scalp.hygiene.schema import ops_hygiene_schema_statements
+
+    return ops_hygiene_schema_statements()

@@ -46,6 +46,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.adapters.database.provider_store import query_rows
 from nexus_scalp.model_lifecycle.calibration_identity import (
     SERVING_ARTIFACT_PATH,
     SERVING_CALIBRATION_PATH,
@@ -107,7 +108,7 @@ class CollectionResult:
         }
 
 
-def _outcomes(cur: sqlite3.Cursor, fingerprint: str) -> list[dict[str, Any]]:
+def _outcomes(cur: Any, fingerprint: str) -> list[dict[str, Any]]:
     q = """
     SELECT e.payload, e.signal_confidence, o.realized_pnl_usd,
            e.decision_ts, o.outcome_ts
@@ -153,11 +154,79 @@ def _outcomes(cur: sqlite3.Cursor, fingerprint: str) -> list[dict[str, Any]]:
     return rows
 
 
+def _load_outcome_rows(fingerprint: str, audit_repo: Any) -> list[dict[str, Any]]:
+    """Fetch the resolved-outcome rows on the ACTIVE provider.
+
+    SQLite reads them through the repository's own connection (the historical
+    path, unchanged); PostgreSQL reads them through the audit domain's pooled
+    read backend. Both then run the same E1..E5 eligibility filters in
+    ``_outcomes`` — the read surface is provider-agnostic by construction.
+    """
+    return query_rows(
+        audit_repo,
+        """
+        SELECT e.payload, e.signal_confidence, o.realized_pnl_usd,
+               e.decision_timestamp AS decision_ts,
+               o.outcome_timestamp AS outcome_ts
+        FROM (
+          SELECT idempotency_key, payload, signal_confidence,
+                 decision_timestamp AS decision_ts
+          FROM audit_experiences
+          WHERE model_id LIKE 'primary_scalp%'
+        ) e
+        JOIN (
+          SELECT idempotency_key, realized_pnl_usd,
+                 outcome_timestamp AS outcome_ts, is_executed, is_closed
+          FROM audit_experience_outcomes
+          WHERE is_executed = 1 AND is_closed = 1
+            AND realized_pnl_usd IS NOT NULL AND realized_pnl_usd != 0.0
+        ) o ON o.idempotency_key = e.idempotency_key
+        ORDER BY o.outcome_ts
+        """,
+        operation="calibration_collector.load_outcome_rows",
+    )
+
+
+def _rows_to_evidence(rows: list[dict[str, Any]], fingerprint: str) -> list[dict[str, Any]]:
+    """Apply the E1..E5 eligibility contract to raw provider rows."""
+    out: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for row in rows:
+        # E5 duplicate defense at read time (defense in depth)
+        try:
+            rec = json.loads(row.get("payload") or "{}")
+        except Exception:
+            continue
+        key = str(rec.get("idempotency_key", ""))
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        # E1 exact artifact identity from the row's own provenance
+        prov = rec.get("provenance", {})
+        if str(prov.get("artifact_fingerprint", "")) != fingerprint:
+            continue
+        # E2 real model confidence
+        c = float(row.get("signal_confidence") or 0.0)
+        if c < MIN_CONFIDENCE:
+            continue
+        dec_ts = str(row.get("decision_ts") or "")
+        out_ts = str(row.get("outcome_ts") or "")
+        # E4 causality (schema normally enforces; verify without trusting)
+        try:
+            if datetime.fromisoformat(out_ts) < datetime.fromisoformat(dec_ts):
+                continue
+        except (TypeError, ValueError):
+            continue
+        out.append({"ts": out_ts, "decision_ts": dec_ts, "conf": c, "pnl": row.get("pnl")})
+    return out
+
+
 def collect_calibration_evidence(
     *,
     oos_cutoff: str,
     serving_artifact_path: str | Path = SERVING_ARTIFACT_PATH,
     audit_db_path: str = AUDIT_DB_PATH,
+    audit_repo: Any = None,
     cal_fraction: float = 0.6,
 ) -> CollectionResult:
     """Assembles the eligible OOS sample for the SERVING artifact.
@@ -166,6 +235,10 @@ def collect_calibration_evidence(
     (no identity to bind), INSUFFICIENT_EVIDENCE with the exact deficit when
     fewer eligible rows exist than the contract requires — and a COLLECTED
     (fit+validated+persisted) result only when every gate passes.
+
+    ``audit_repo`` is the provider-aware path (SQLite or the pooled
+    PostgreSQL backend); ``audit_db_path`` remains the SQLite-only fallback
+    for callers that only have a path.
     """
     fp = resolve_serving_fingerprint(serving_artifact_path)
     if not fp:
@@ -176,11 +249,14 @@ def collect_calibration_evidence(
             notes=[f"serving artifact missing/unreadable: {serving_artifact_path}"],
         )
     cutoff_dt = datetime.fromisoformat(oos_cutoff)
-    con = sqlite3.connect(audit_db_path)
-    try:
-        rows = _outcomes(con.cursor(), fp)
-    finally:
-        con.close()
+    if audit_repo is not None:
+        rows = _rows_to_evidence(_load_outcome_rows(fp, audit_repo), fp)
+    else:
+        con = sqlite3.connect(audit_db_path)
+        try:
+            rows = _outcomes(con.cursor(), fp)
+        finally:
+            con.close()
     # E6: holdout = observed while serving, AFTER the training data window
     eligible = [r for r in rows if datetime.fromisoformat(r["ts"]) >= cutoff_dt]
     result = CollectionResult(

@@ -196,12 +196,20 @@ class DatabaseConfig:
         if self.is_sqlite:
             return f"sqlite:///{self.sqlite_connect_path}"
         pw = password if password else self.password_secret
+        # A credential is operator-chosen and may carry characters that are
+        # illegal in a URL (spaces, '@', '/', ':', '%'). Emitting them raw
+        # makes psycopg reject the whole string with "unexpected spaces", so
+        # every userinfo component is percent-encoded before assembly.
+        from urllib.parse import quote
+
         host_part = self.host
         if ":" in host_part and not host_part.startswith("["):
             host_part = f"[{host_part}]"
         return (
-            f"postgresql://{self.username}:{pw}@{host_part}:{self.port or DEFAULT_PG_PORT}"
-            f"/{self.database}"
+            f"postgresql://{quote(self.username or '', safe='')}"
+            f":{quote(pw, safe='')}"
+            f"@{host_part}:{self.port or DEFAULT_PG_PORT}"
+            f"/{quote(self.database or '', safe='')}"
         )
 
     # -- persistence ------------------------------------------------------

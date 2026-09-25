@@ -8,18 +8,20 @@ function here is a read-path query used for observability, forensics and the
 self-healing rebuild. Writes are performed by the individual engines through the
 AuditRepository background queue - this module owns no write path.
 
-Every read is bounded and opens a short-lived read-only SQLite connection so the
-live path is never blocked.
+Every read is bounded and runs on the ACTIVE provider: a short-lived read-only
+SQLite connection (so the live path is never blocked) or the audit domain's
+pooled read-only backend under PostgreSQL. Both paths run the same SQL; the
+provider helper resolves the connection.
 """
 
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.database.provider_store import query_rows
 from nexus_scalp.intelligence.models import (
     DecisionContext,
     MarketContext,
@@ -58,13 +60,8 @@ def load_lifecycle_events(
         args = (str(ticket),)
     sql += " ORDER BY sequence ASC LIMIT ?;"
     out: list[PositionLifecycleEvent] = []
+    rows = query_rows(repo, sql, (*args, bounded), operation="intelligence.load_lifecycle_events")
     try:
-        conn = sqlite3.connect(repo._db_path, timeout=5.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            rows = conn.execute(sql, (*args, bounded)).fetchall()
-        finally:
-            conn.close()
         for r in rows:
             payload = json.loads(r["payload"] or "{}")
             # Rebuild the full self-describing event from its persisted payload.
@@ -103,19 +100,13 @@ def load_autopsy(repo: AuditRepository, ticket: int | str) -> dict[str, Any] | N
     """Returns the persisted forensic autopsy row for a ticket, or None."""
     if not repo._is_sqlite:
         return None
-    try:
-        conn = sqlite3.connect(repo._db_path, timeout=5.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            row = conn.execute(
-                "SELECT * FROM trade_autopsies WHERE ticket = ?;", (str(ticket),)
-            ).fetchone()
-            return dict(row) if row else None
-        finally:
-            conn.close()
-    except Exception as e:
-        logger.error("[TRADE_AUTOPSY] load failed", ticket=str(ticket), error=str(e))
-        return None
+    rows = query_rows(
+        repo,
+        "SELECT * FROM trade_autopsies WHERE ticket = ?;",
+        (str(ticket),),
+        operation="intelligence.load_autopsy",
+    )
+    return dict(rows[0]) if rows else None
 
 
 def list_autopsies(
@@ -134,17 +125,9 @@ def list_autopsies(
         args = (strategy_id,)
     sql += " ORDER BY autopsied_at DESC LIMIT ?;"
     out: list[dict[str, Any]] = []
-    try:
-        conn = sqlite3.connect(repo._db_path, timeout=5.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            rows = conn.execute(sql, (*args, bounded)).fetchall()
-        finally:
-            conn.close()
-        for r in rows:
-            out.append(dict(r))
-    except Exception as e:
-        logger.error("[TRADE_AUTOPSY] list failed", error=str(e))
+    rows = query_rows(repo, sql, (*args, bounded), operation="intelligence.list_autopsies")
+    for r in rows:
+        out.append(dict(r))
     return out
 
 
@@ -171,17 +154,11 @@ def list_behavior_detections(
         sql += " WHERE " + " AND ".join(clauses)
     sql += " ORDER BY detected_at DESC LIMIT ?;"
     out: list[dict[str, Any]] = []
-    try:
-        conn = sqlite3.connect(repo._db_path, timeout=5.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            rows = conn.execute(sql, (*args, bounded)).fetchall()
-        finally:
-            conn.close()
-        for r in rows:
-            out.append(dict(r))
-    except Exception as e:
-        logger.error("[BEHAVIOR] list failed", error=str(e))
+    rows = query_rows(
+        repo, sql, (*args, bounded), operation="intelligence.list_behavior_detections"
+    )
+    for r in rows:
+        out.append(dict(r))
     return out
 
 
@@ -216,18 +193,9 @@ def list_anomaly_events(
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
     sql += " ORDER BY detected_at DESC LIMIT ?;"
-    rows: list[dict[str, Any]] = []
-    try:
-        conn = sqlite3.connect(repo._db_path, timeout=5.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            for r in conn.execute(sql, (*args, bounded)).fetchall():
-                rows.append(dict(r))
-        finally:
-            conn.close()
-    except Exception as e:
-        logger.error("[BEHAVIOR] anomaly list failed", error=str(e))
-        return []
+    rows: list[dict[str, Any]] = query_rows(
+        repo, sql, (*args, bounded), operation="intelligence.list_anomaly_events"
+    )
 
     if not grouped:
         return rows
@@ -272,43 +240,29 @@ def load_evolution_candidates(
         args = (str(status),)
     sql += " ORDER BY discovered_at DESC LIMIT ?;"
     out: list[dict[str, Any]] = []
-    try:
-        conn = sqlite3.connect(repo._db_path, timeout=5.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            rows = conn.execute(sql, (*args, bounded)).fetchall()
-        finally:
-            conn.close()
-        for r in rows:
-            out.append(dict(r))
-    except Exception as e:
-        logger.error("[STRATEGY] evolution list failed", error=str(e))
+    rows = query_rows(
+        repo, sql, (*args, bounded), operation="intelligence.load_evolution_candidates"
+    )
+    for r in rows:
+        out.append(dict(r))
     return out
 
 
 def count_autopsies(repo: AuditRepository) -> int:
     if not repo._is_sqlite:
         return 0
-    try:
-        conn = sqlite3.connect(repo._db_path, timeout=5.0)
-        try:
-            row = conn.execute("SELECT COUNT(*) FROM trade_autopsies;").fetchone()
-            return int(row[0]) if row else 0
-        finally:
-            conn.close()
-    except Exception:
-        return 0
+    rows = query_rows(
+        repo, "SELECT COUNT(*) AS c FROM trade_autopsies;", operation="intelligence.count_autopsies"
+    )
+    return int(rows[0]["c"]) if rows else 0
 
 
 def count_lifecycle_events(repo: AuditRepository) -> int:
     if not repo._is_sqlite:
         return 0
-    try:
-        conn = sqlite3.connect(repo._db_path, timeout=5.0)
-        try:
-            row = conn.execute("SELECT COUNT(*) FROM position_lifecycle_events;").fetchone()
-            return int(row[0]) if row else 0
-        finally:
-            conn.close()
-    except Exception:
-        return 0
+    rows = query_rows(
+        repo,
+        "SELECT COUNT(*) AS c FROM position_lifecycle_events;",
+        operation="intelligence.count_lifecycle_events",
+    )
+    return int(rows[0]["c"]) if rows else 0

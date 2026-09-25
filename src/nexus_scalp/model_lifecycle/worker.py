@@ -22,12 +22,15 @@ CONTRACT
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.database.provider_store import (
+    query_one,
+    queue_write_batch,
+)
 from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.model_lifecycle.orchestrator import ModelLifecycleOrchestrator
 from nexus_scalp.observability.logging import get_logger
@@ -106,26 +109,29 @@ class TrainingWorker:
 
     def _restore_inflight_state(self) -> None:
         """On restart, any RUNNING row is marked INCOMPLETE (never VALIDATED)."""
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            try:
-                row = conn.execute(
-                    "SELECT run_id FROM training_runs WHERE status='RUNNING' LIMIT 1;"
-                ).fetchone()
-                if row:
-                    conn.execute(
-                        "UPDATE training_runs SET status='INCOMPLETE' WHERE run_id=?;",
-                        (row[0],),
-                    )
-                    conn.commit()
-                    logger.warning(
-                        "[TRAINING_WORKER] interrupted run marked INCOMPLETE",
-                        run_id=row[0],
-                    )
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.debug("[TRAINING_WORKER] restore state skipped", error=str(e))
+        row = query_one(
+            self.audit_repo,
+            "SELECT run_id FROM training_runs WHERE status='RUNNING' LIMIT 1;",
+            operation="training_worker.restore_inflight",
+        )
+        if not row:
+            return
+        run_id = row["run_id"]
+        if not queue_write_batch(
+            self.audit_repo,
+            [
+                (
+                    "UPDATE training_runs SET status='INCOMPLETE' WHERE run_id=?;",
+                    (run_id,),
+                )
+            ],
+            operation="training_worker.restore_inflight",
+        ):
+            return
+        logger.warning(
+            "[TRAINING_WORKER] interrupted run marked INCOMPLETE",
+            run_id=run_id,
+        )
 
     # ------------------------------------------------------------------
     # Cycle

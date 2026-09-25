@@ -679,9 +679,10 @@ class StrategyEvaluator:
                 conn.execute("DELETE FROM strategy_intelligence_registry;")
                 conn.commit()
         except Exception as e:
-            logger.error("[SELF_HEAL] registry clear failed", error=str(e))
+            logger.error(
+                "[SELF_HEAL] registry clear failed", error=str(e)
+            )  # ------------------------------------------------------------------
 
-    # ------------------------------------------------------------------
     # Derived registry persistence
     # ------------------------------------------------------------------
 
@@ -728,21 +729,23 @@ class StrategyEvaluator:
             score.model_dump_json(),
             score.last_updated.isoformat(),
         )
-        try:
-            self.audit_repo._queue.put_nowait((query, args))
-            logger.debug(
-                "[STRATEGY] UPDATED",
-                strategy_id=score.strategy_id,
-                lifecycle=score.lifecycle_state.value,
-                samples=score.sample_count,
-                confidence=score.confidence_score,
-            )
-        except Exception as e:
+        from nexus_scalp.adapters.database.provider_store import queue_write
+
+        if not queue_write(
+            self.audit_repo, query, args, operation="evaluator.persist_strategy_score"
+        ):
             logger.error(
                 "[STRATEGY] score persistence failed",
                 strategy_id=score.strategy_id,
-                error=str(e),
             )
+            return
+        logger.debug(
+            "[STRATEGY] UPDATED",
+            strategy_id=score.strategy_id,
+            lifecycle=score.lifecycle_state.value,
+            samples=score.sample_count,
+            confidence=score.confidence_score,
+        )
 
     def get_registered_strategy_score(self, strategy_id: str) -> StrategyScore | None:
         """Reads a derived score from the registry cache (None when absent).

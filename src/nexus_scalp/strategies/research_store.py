@@ -269,14 +269,54 @@ def _now() -> str:
 # ---------------------------------------------------------------------------
 
 
+def _existing_columns_pg(conn: Any, table: str) -> set[str]:
+    """Provider-portable column pre-check (information_schema).
+
+    The shared SQLite helper in audit_repository uses ``PRAGMA table_info``,
+    which PostgreSQL does not implement: the statement aborts the transaction
+    it executes in, and its bare ``except`` swallowed that, leaving every
+    later statement in the same transaction dead with
+    ``InFailedSqlTransaction``. Works on both providers, so the SQLite path is
+    unaffected.
+    """
+    try:
+        cur = conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = %s AND table_schema = 'public'",
+            (table,),
+        )
+        return {r[0] for r in cur.fetchall()}
+    except Exception:
+        return set()
+
+
 def default_config(workspace: str | None = None) -> DatabaseConfig:
-    """SQLite config for the isolated strategy database (default path)."""
+    """Default config: follows the ACTIVE provider (SQLite by default).
+
+    The store is provider-portable by construction; anchoring the default to
+    SQLite unconditionally kept it on ``artifacts/strategies.db`` even after an
+    operator switched the box to PostgreSQL. Resolves the persisted provider
+    (the same app-level switch the audit domain honors) and only falls back to
+    the SQLite path when no PostgreSQL configuration is active. An explicit
+    ``config`` passed to the store still wins.
+    """
     from nexus_scalp.database.provider import DEFAULT_DB_FILES
 
     path = default_sqlite_path(DOMAIN, workspace)
     # Register the domain so default_sqlite_path keeps resolving it.
     if DOMAIN not in DEFAULT_DB_FILES:
         DEFAULT_DB_FILES[DOMAIN] = DEFAULT_DB_FILENAME
+    try:
+        from nexus_scalp.database.config import load_database_config
+
+        cfg = load_database_config(DOMAIN)
+        if cfg.is_postgresql:
+            # Keep the SQLite path populated so a later switch back still
+            # resolves the canonical file (for_sqlite's default derives it).
+            cfg.sqlite_path = path
+            return cfg
+    except Exception:  # pragma: no cover - settings DB unavailable
+        pass
     return DatabaseConfig.for_sqlite(DOMAIN, path=path)
 
 
@@ -349,11 +389,25 @@ class StrategyResearchStore:
                 )
             # Safe forward migration for existing factory_loop_state tables
             # that predate the generation_id / last_error columns (mission
-            # NEXUS-STRATEGY-FACTORY-PERSISTENCE-RECOVERY-G29). PRAGMA
+            # NEXUS-STRATEGY-FACTORY-PERSISTENCE-RECOVERY-G29). Column
             # pre-check (shared helper) so no duplicate-column exception is
             # ever raised — not even a first-chance one for a debugger.
+            # The PRAGMA helper is SQLite-only: on PostgreSQL a PRAGMA
+            # statement aborts the transaction it runs in, and the swallowed
+            # exception left every later statement in this transaction dead
+            # (InFailedSqlTransaction at _set_meta). Information_schema is the
+            # portable equivalent and works on both providers.
+            # All columns added after the initial release are listed here. A
+            # live table created by an older build can be missing ANY of them
+            # (not only the oldest pair), so the whole set must be reconciled —
+            # otherwise the INSERT below raises 'column ... does not exist'.
             for col, col_def in (
                 ("generation_id", "TEXT DEFAULT ''"),
+                ("reason", "TEXT DEFAULT ''"),
+                ("last_cycle_at", "TEXT DEFAULT ''"),
+                ("cycle_count", "INTEGER DEFAULT 0"),
+                ("checkpoint", "TEXT DEFAULT '{}'"),
+                ("updated_at", "TEXT DEFAULT ''"),
                 ("last_error", "TEXT DEFAULT ''"),
             ):
                 try:
@@ -361,7 +415,11 @@ class StrategyResearchStore:
                         _existing_columns as _have_cols,
                     )
 
-                    if col in _have_cols(conn, "factory_loop_state"):
+                    if self.config.is_postgresql:
+                        existing = _existing_columns_pg(conn, "factory_loop_state")
+                    else:
+                        existing = _have_cols(conn, "factory_loop_state")
+                    if col in existing:
                         continue
                 except Exception:
                     pass

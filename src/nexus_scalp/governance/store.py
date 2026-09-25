@@ -27,6 +27,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.database.provider_store import (
+    OPS_SHADOW_DOMAIN,
+    ops_ensure_schema,
+    ops_query_rows,
+    ops_query_scalar,
+    ops_queue_write,
+    query_rows,
+    queue_write,
+)
 from nexus_scalp.governance.models import (
     GovernanceEvent,
     GovernanceStage,
@@ -106,7 +115,15 @@ class GovernanceStore:
     def ensure_schema(self) -> None:
         if self._schema_ensured:
             return
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
+            return
+        if not getattr(self.audit_repo, "_is_sqlite", False):
+            # PostgreSQL: the ops_shadow domain provisions the translated
+            # schema; the audit-domain tables (model_promotion_audit /
+            # model_rollback_audit) are provisioned WITH the audit domain.
+            self._schema_ensured = ops_ensure_schema(
+                self.audit_repo, OPS_SHADOW_DOMAIN, operation="governance.ensure_schema"
+            )
             return
         try:
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
@@ -261,7 +278,7 @@ class GovernanceStore:
     # ------------------------------------------------------------------
 
     def record_event(self, event: GovernanceEvent) -> bool:
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return False
         self.ensure_schema()
         args = (
@@ -282,12 +299,13 @@ class GovernanceStore:
             json.dumps(event.payload, default=str),
             event.timestamp.isoformat(),
         )
-        try:
-            self.audit_repo._queue.put_nowait((_INSERT_EVENT_SQL, args))
-            return True
-        except Exception as e:
-            logger.error("[MODEL_GOVERNANCE] event write failed", error=str(e))
-            return False
+        return ops_queue_write(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            _INSERT_EVENT_SQL,
+            args,
+            operation="governance.record_event",
+        )
 
     def record_transition(self, t: PromotionTransition) -> bool:
         """Persists an audited lifecycle transition (spec 31)."""
@@ -320,7 +338,7 @@ class GovernanceStore:
         lifecycle_state: str,
         evidence: dict[str, Any] | None = None,
     ) -> bool:
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return False
         self.ensure_schema()
         args = (
@@ -330,16 +348,17 @@ class GovernanceStore:
             datetime.now(UTC).isoformat(),
             json.dumps(evidence or {}, default=str),
         )
-        try:
-            self.audit_repo._queue.put_nowait((_UPSERT_STATE_SQL, args))
-            return True
-        except Exception as e:
-            logger.error("[MODEL_GOVERNANCE] state write failed", error=str(e))
-            return False
+        return ops_queue_write(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            _UPSERT_STATE_SQL,
+            args,
+            operation="governance.set_state",
+        )
 
     def save_shadow_comparison(self, row: dict[str, Any]) -> bool:
         """Bounded canonical comparison row (spec 9 / 14: no raw ticks)."""
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return False
         self.ensure_schema()
         args = (
@@ -372,15 +391,16 @@ class GovernanceStore:
             1 if row.get("simulated", True) else 0,
             json.dumps(row.get("payload", {}), default=str),
         )
-        try:
-            self.audit_repo._queue.put_nowait((_INSERT_COMPARISON_SQL, args))
-            return True
-        except Exception as e:
-            logger.error("[MODEL_GOVERNANCE] comparison write failed", error=str(e))
-            return False
+        return ops_queue_write(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            _INSERT_COMPARISON_SQL,
+            args,
+            operation="governance.save_shadow_comparison",
+        )
 
     def save_health(self, row: dict[str, Any]) -> bool:
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return False
         self.ensure_schema()
         args = (
@@ -401,46 +421,41 @@ class GovernanceStore:
             str(row.get("last_update", "")),
             json.dumps(row.get("payload", {}), default=str),
         )
-        try:
-            self.audit_repo._queue.put_nowait((_INSERT_HEALTH_SQL, args))
-            return True
-        except Exception as e:
-            logger.error("[MODEL_GOVERNANCE] health write failed", error=str(e))
-            return False
+        return ops_queue_write(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            _INSERT_HEALTH_SQL,
+            args,
+            operation="governance.save_health",
+        )
 
     # ------------------------------------------------------------------
     # Reads (bounded, short-lived RO connections)
     # ------------------------------------------------------------------
 
     def get_state(self, model_id: str, model_version: str = "") -> dict[str, Any] | None:
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return None
         # Governance transitions are rare operator actions (never the tick
         # hot path): flush the async queue so a just-recorded transition is
         # visible to the next transition read (consistency of the chain).
         with contextlib.suppress(Exception):
             self.audit_repo._queue.join()
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                row = conn.execute(
-                    "SELECT * FROM model_governance_state WHERE model_id=? AND (?='' OR model_version=?) "
-                    "ORDER BY updated_at DESC LIMIT 1;",
-                    (model_id, model_version, model_version),
-                ).fetchone()
-                return dict(row) if row else None
-            finally:
-                conn.close()
-        except Exception:
-            return None
+        rows = ops_query_rows(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            "SELECT * FROM model_governance_state WHERE model_id=? AND (?='' OR model_version=?) "
+            "ORDER BY updated_at DESC LIMIT 1;",
+            (model_id, model_version, model_version),
+            operation="governance.get_state",
+        )
+        return rows[0] if rows else None
 
     def list_events(
         self, limit: int = 200, event: str = "", model_id: str = ""
     ) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
-            return out
+        if not self.audit_repo:
+            return []
         # Flush queued writes so freshly recorded events are visible to
         # operators/auditors (read path is never the tick hot path).
         with contextlib.suppress(Exception):
@@ -458,23 +473,17 @@ class GovernanceStore:
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY timestamp DESC LIMIT ?;"
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                rows = conn.execute(sql, (*args, bounded)).fetchall()
-                for r in rows:
-                    out.append(dict(r))
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[MODEL_GOVERNANCE] events read failed", error=str(e))
-        return out
+        return ops_query_rows(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            sql,
+            (*args, bounded),
+            operation="governance.list_events",
+        )
 
     def list_comparisons(self, limit: int = 200, run_id: str = "") -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
-            return out
+        if not self.audit_repo:
+            return []
         bounded = max(1, min(int(limit), MAX_EVENTS_READ))
         sql = "SELECT * FROM model_shadow_comparisons"
         args: list[Any] = []
@@ -482,34 +491,25 @@ class GovernanceStore:
             sql += " WHERE run_id = ?"
             args.append(run_id)
         sql += " ORDER BY timestamp DESC LIMIT ?;"
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                rows = conn.execute(sql, (*args, bounded)).fetchall()
-                for r in rows:
-                    out.append(dict(r))
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[MODEL_GOVERNANCE] comparisons read failed", error=str(e))
-        return out
+        return ops_query_rows(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            sql,
+            (*args, bounded),
+            operation="governance.list_comparisons",
+        )
 
     def latest_health(self) -> dict[str, Any] | None:
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return None
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                row = conn.execute(
-                    "SELECT * FROM model_runtime_health ORDER BY checked_at DESC LIMIT 1;"
-                ).fetchone()
-                return dict(row) if row else None
-            finally:
-                conn.close()
-        except Exception:
-            return None
+        rows = ops_query_rows(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            "SELECT * FROM model_runtime_health ORDER BY checked_at DESC LIMIT 1;",
+            (),
+            operation="governance.latest_health",
+        )
+        return rows[0] if rows else None
 
     # ------------------------------------------------------------------
     # Promotion / rollback audit (TASK-08, persisted in model_promotion_audit
@@ -518,7 +518,7 @@ class GovernanceStore:
 
     def record_promotion_audit(self, row: dict[str, Any]) -> bool:
         """Persists ONE promotion transaction audit record (spec 29)."""
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return False
         self.ensure_schema()
         args = (
@@ -542,16 +542,16 @@ class GovernanceStore:
             if hasattr(row.get("recorded_at"), "isoformat")
             else str(row.get("recorded_at", datetime.now(UTC).isoformat())),
         )
-        try:
-            self.audit_repo._queue.put_nowait((_INSERT_PROMOTION_AUDIT_SQL, args))
-            return True
-        except Exception as e:
-            logger.error("[MODEL_GOVERNANCE] promotion audit write failed", error=str(e))
-            return False
+        return queue_write(
+            self.audit_repo,
+            _INSERT_PROMOTION_AUDIT_SQL,
+            args,
+            operation="governance.record_promotion_audit",
+        )
 
     def record_rollback_audit(self, row: dict[str, Any]) -> bool:
         """Persists ONE rollback audit record (spec 30)."""
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return False
         self.ensure_schema()
         args = (
@@ -571,77 +571,76 @@ class GovernanceStore:
             if hasattr(row.get("recorded_at"), "isoformat")
             else str(row.get("recorded_at", datetime.now(UTC).isoformat())),
         )
-        try:
-            self.audit_repo._queue.put_nowait((_INSERT_ROLLBACK_AUDIT_SQL, args))
-            return True
-        except Exception as e:
-            logger.error("[MODEL_GOVERNANCE] rollback audit write failed", error=str(e))
-            return False
+        return queue_write(
+            self.audit_repo,
+            _INSERT_ROLLBACK_AUDIT_SQL,
+            args,
+            operation="governance.record_rollback_audit",
+        )
 
     def list_promotion_audits(self, limit: int = 100) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
-            return out
+        if not self.audit_repo:
+            return []
         with contextlib.suppress(Exception):
             self.audit_repo._queue.join()
         bounded = max(1, min(int(limit), MAX_EVENTS_READ))
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                rows = conn.execute(
-                    "SELECT * FROM model_promotion_audit ORDER BY recorded_at DESC LIMIT ?;",
-                    (bounded,),
-                ).fetchall()
-                out = [dict(r) for r in rows]
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[MODEL_GOVERNANCE] promotion audits read failed", error=str(e))
-        return out
+        return query_rows(
+            self.audit_repo,
+            "SELECT * FROM model_promotion_audit ORDER BY recorded_at DESC LIMIT ?;",
+            (bounded,),
+            operation="governance.list_promotion_audits",
+        )
 
     def list_rollback_audits(self, limit: int = 100) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
-            return out
+        if not self.audit_repo:
+            return []
         with contextlib.suppress(Exception):
             self.audit_repo._queue.join()
         bounded = max(1, min(int(limit), MAX_EVENTS_READ))
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                rows = conn.execute(
-                    "SELECT * FROM model_rollback_audit ORDER BY recorded_at DESC LIMIT ?;",
-                    (bounded,),
-                ).fetchall()
-                out = [dict(r) for r in rows]
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[MODEL_GOVERNANCE] rollback audits read failed", error=str(e))
-        return out
+        return query_rows(
+            self.audit_repo,
+            "SELECT * FROM model_rollback_audit ORDER BY recorded_at DESC LIMIT ?;",
+            (bounded,),
+            operation="governance.list_rollback_audits",
+        )
 
     def summary(self) -> dict[str, Any]:
         out: dict[str, Any] = {"available": False}
-        if not self.audit_repo or not getattr(self.audit_repo, "_is_sqlite", False):
+        if not self.audit_repo:
             return out
         try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            try:
-                ev = conn.execute("SELECT COUNT(*) FROM model_governance_events;").fetchone()
-                st = conn.execute(
-                    "SELECT lifecycle_state, COUNT(*) FROM model_governance_state GROUP BY lifecycle_state;"
-                ).fetchall()
-                cm = conn.execute("SELECT COUNT(*) FROM model_shadow_comparisons;").fetchone()
-                out = {
-                    "available": True,
-                    "events": int(ev[0]) if ev else 0,
-                    "by_state": {str(r[0]): int(r[1]) for r in st},
-                    "comparisons": int(cm[0]) if cm else 0,
-                }
-            finally:
-                conn.close()
+            st = ops_query_rows(
+                self.audit_repo,
+                OPS_SHADOW_DOMAIN,
+                "SELECT lifecycle_state, COUNT(*) AS c FROM model_governance_state "
+                "GROUP BY lifecycle_state;",
+                (),
+                operation="governance.summary.by_state",
+            )
+            out = {
+                "available": True,
+                "events": int(
+                    ops_query_scalar(
+                        self.audit_repo,
+                        OPS_SHADOW_DOMAIN,
+                        "SELECT COUNT(*) FROM model_governance_events;",
+                        (),
+                        operation="governance.summary.events",
+                    )
+                    or 0
+                ),
+                "by_state": {str(r["lifecycle_state"]): int(r["c"]) for r in st},
+                "comparisons": int(
+                    ops_query_scalar(
+                        self.audit_repo,
+                        OPS_SHADOW_DOMAIN,
+                        "SELECT COUNT(*) FROM model_shadow_comparisons;",
+                        (),
+                        operation="governance.summary.comparisons",
+                    )
+                    or 0
+                ),
+            }
         except Exception as e:
             logger.error("[MODEL_GOVERNANCE] summary failed", error=str(e))
         return out

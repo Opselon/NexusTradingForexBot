@@ -20,12 +20,12 @@ from __future__ import annotations
 
 import contextlib
 import json
-import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from nexus_scalp.adapters.database.provider_store import query_rows
 from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.experience.models import (
     ExperienceOutcome,
@@ -99,21 +99,13 @@ class OutcomeRepairJob:
         """All outcome rows with a broker ticket, newest first (bounded)."""
         if not self.ledger.audit_repo._is_sqlite:
             return []
-        try:
-            conn = sqlite3.connect(self.ledger.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                rows = conn.execute(
-                    "SELECT * FROM audit_experience_outcomes "
-                    "WHERE execution_id != '' ORDER BY outcome_timestamp DESC LIMIT ?;",
-                    (self.max_candidates,),
-                ).fetchall()
-                return [dict(r) for r in rows]
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[BROKER_OUTCOME_REPAIR] event=SCAN_FAILED", error=str(e))
-            return []
+        return query_rows(
+            self.ledger.audit_repo,
+            "SELECT * FROM audit_experience_outcomes "
+            "WHERE execution_id != '' ORDER BY outcome_timestamp DESC LIMIT ?;",
+            (self.max_candidates,),
+            operation="outcome_repair.scan_outcomes",
+        )
 
     def _candidates(self) -> list[dict[str, Any]]:
         """Outcome rows that are zero-R and carry a broker ticket."""
@@ -373,7 +365,12 @@ class OutcomeRepairJob:
 
 
 def flush_repair_queue(ledger: ExperienceLedger) -> None:
-    """Joins the audit background queue so repaired outcomes are durable and
-    immediately readable. Safe to call after a repair pass."""
+    """Makes repaired outcomes durable and immediately readable.
+
+    SQLite: joins the audit background queue. PostgreSQL: the pooled write
+    backend already committed each repair synchronously, so this is a no-op.
+    """
+    if not getattr(ledger.audit_repo, "_is_sqlite", False):
+        return
     with contextlib.suppress(Exception):
         ledger.audit_repo._queue.join()

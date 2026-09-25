@@ -206,12 +206,27 @@ def _now() -> str:
 
 
 def default_config(workspace: str | None = None) -> DatabaseConfig:
-    """SQLite config for the isolated marketplace database (artifacts/marketplace.db)."""
+    """Default config: follows the ACTIVE provider (SQLite by default).
+
+    Mirrors strategies/research_store.default_config: the store is already
+    provider-portable, but an unconditional SQLite default kept it on
+    ``artifacts/marketplace.db`` after an operator switched the box to
+    PostgreSQL. An explicit ``config`` passed to the store still wins.
+    """
     from nexus_scalp.database.provider import DEFAULT_DB_FILES
 
     path = default_sqlite_path(DOMAIN, workspace)
     if DOMAIN not in DEFAULT_DB_FILES:
         DEFAULT_DB_FILES[DOMAIN] = DEFAULT_DB_FILENAME
+    try:
+        from nexus_scalp.database.config import load_database_config
+
+        cfg = load_database_config(DOMAIN)
+        if cfg.is_postgresql:
+            cfg.sqlite_path = path
+            return cfg
+    except Exception:  # pragma: no cover - settings DB unavailable
+        pass
     return DatabaseConfig.for_sqlite(DOMAIN, path=path)
 
 

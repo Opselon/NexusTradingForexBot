@@ -17,6 +17,38 @@ from typing import Any
 from nexus_scalp.news._db_core_protocol import _NewsDbCoreProto
 
 
+def _epoch_seconds(column: str) -> str:
+    """Portable epoch-seconds expression for an ISO-8601 text column.
+
+    SQLite and PostgreSQL spell this differently and neither accepts the
+    other's spelling: SQLite has ``strftime('%s', x)`` and PostgreSQL has
+    ``EXTRACT(EPOCH FROM x)``. The news timestamps are stored as ISO-8601
+    TEXT on both providers, so the SQLite form is a text-to-epoch cast and
+    the PG form parses the text into a timestamptz first.
+
+    Used by the impact-anchor backfill, whose ``ABS(analyzed_at -
+    evaluated_at) <= 5`` window only exists to detect rows anchored to the
+    analysis time instead of the publication time.
+    """
+    if _provider_is_sqlite():
+        return f"CAST(strftime('%s', {column}) AS INTEGER)"
+    return f"EXTRACT(EPOCH FROM {column}::timestamptz)"
+
+
+def _provider_is_sqlite() -> bool:
+    """The active news provider, resolved lazily (SQL is built at call time).
+
+    Falls back to SQLite (the default provider) so the SQL is always valid
+    for the default path, and never raises into a query builder.
+    """
+    from nexus_scalp.database.config import load_database_config
+
+    try:
+        return load_database_config("news").is_sqlite
+    except Exception:
+        return True
+
+
 class QueriesMixin(_NewsDbCoreProto):
     """QueriesMixin — verbatim method cluster from NewsDatabase."""
 
@@ -162,10 +194,8 @@ class QueriesMixin(_NewsDbCoreProto):
                               EXISTS (
                                   SELECT 1 FROM news_analysis na
                                   WHERE na.article_id = news_impacts.article_id
-                                    AND ABS(
-                                        CAST(strftime('%s', na.analyzed_at) AS INTEGER)
-                                      - CAST(strftime('%s', news_impacts.evaluated_at) AS INTEGER)
-                                    ) <= 5
+                                    AND ABS(_epoch_seconds(na.analyzed_at)
+                                      - _epoch_seconds(news_impacts.evaluated_at)) <= 5
                               )
                           )
                     );
@@ -273,11 +303,20 @@ class QueriesMixin(_NewsDbCoreProto):
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO news_health
+                INSERT INTO news_health
                     (source_id, last_success_at, last_failure_at, last_status,
                      consecutive_failures, rate_limited, retry_after_sec,
                      backoff_until, healthy)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(source_id) DO UPDATE SET
+                    last_success_at=excluded.last_success_at,
+                    last_failure_at=excluded.last_failure_at,
+                    last_status=excluded.last_status,
+                    consecutive_failures=excluded.consecutive_failures,
+                    rate_limited=excluded.rate_limited,
+                    retry_after_sec=excluded.retry_after_sec,
+                    backoff_until=excluded.backoff_until,
+                    healthy=excluded.healthy
                 """,
                 (
                     source_id,
@@ -311,9 +350,14 @@ class QueriesMixin(_NewsDbCoreProto):
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO news_worker_state
+                INSERT INTO news_worker_state
                     (scope, cycle_count, last_cycle_at, last_error, last_checkpoint)
                 VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(scope) DO UPDATE SET
+                    cycle_count=excluded.cycle_count,
+                    last_cycle_at=excluded.last_cycle_at,
+                    last_error=excluded.last_error,
+                    last_checkpoint=excluded.last_checkpoint
                 """,
                 (
                     state.get("scope", "news"),

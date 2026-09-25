@@ -20,12 +20,16 @@ CONTRACT
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.database.provider_store import (
+    OPS_SHADOW_DOMAIN,
+    ops_query_rows,
+    ops_queue_write_batch,
+)
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.shadow.engine import ShadowEngine
 
@@ -82,19 +86,22 @@ class ShadowWorker:
     def _mark_interrupted_runs(self) -> None:
         """Restart safety: any RUNNING shadow run becomes INCOMPLETE."""
         try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            try:
-                row = conn.execute(
-                    "SELECT run_id FROM shadow_runs WHERE status='RUNNING' LIMIT 1;"
-                ).fetchone()
-                if row:
-                    conn.execute(
-                        "UPDATE shadow_runs SET status='INCOMPLETE' WHERE run_id=?;",
-                        (row[0],),
-                    )
-                    conn.commit()
-            finally:
-                conn.close()
+            rows = ops_query_rows(
+                self.audit_repo,
+                OPS_SHADOW_DOMAIN,
+                "SELECT run_id FROM shadow_runs WHERE status='RUNNING' LIMIT 1;",
+                (),
+                operation="shadow_worker.mark_interrupted.read",
+            )
+            if not rows:
+                return
+            run_id = rows[0]["run_id"]
+            ops_queue_write_batch(
+                self.audit_repo,
+                OPS_SHADOW_DOMAIN,
+                [("UPDATE shadow_runs SET status='INCOMPLETE' WHERE run_id=?;", (run_id,))],
+                operation="shadow_worker.mark_interrupted.write",
+            )
         except Exception as e:
             logger.debug("[SHADOW_WORKER] interrupted-run mark skipped", error=str(e))
 

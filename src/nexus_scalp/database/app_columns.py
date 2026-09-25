@@ -389,6 +389,9 @@ APP_REQUIRED_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
         ("checkpoint", "TEXT DEFAULT ''"),
         ("updated_at", "TEXT DEFAULT ''"),
         ("last_error", "TEXT DEFAULT ''"),
+        ("reason", "TEXT DEFAULT ''"),
+        ("last_cycle_at", "TEXT DEFAULT ''"),
+        ("cycle_count", "INTEGER DEFAULT 0"),
     ),
     "strategy_registry": (
         ("strategy_id", "TEXT"),
