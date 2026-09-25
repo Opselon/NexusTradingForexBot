@@ -22,7 +22,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const SCOPE = "C:/c/tmp/nse-ux9/frontend/src/pages/Trading";
+const SCOPE = path.resolve(__dirname, "../../frontend/src/pages/Trading");
 const INTERACTIVE = new Set(["button", "a", "input", "select", "textarea", "summary"]);
 const ROLES = new Set(["button", "tab", "link", "checkbox", "radio", "menuitem", "switch"]);
 
