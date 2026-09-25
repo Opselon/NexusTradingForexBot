@@ -20,11 +20,11 @@ Registration is idempotent per (model_id, model_version, artifact_fingerprint).
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.database.provider_store import query_rows, queue_write
 from nexus_scalp.experience.models import (
     CANONICAL_FEATURE_DIMENSION,
     CANONICAL_FEATURE_SCHEMA_ID,
@@ -177,7 +177,11 @@ class ModelRegistry:
         return provenance
 
     def _persist(self, provenance: ModelProvenance, artifact_path: str, replaced: bool) -> None:
-        """Queues the provenance row through the async audit worker."""
+        """Persists the provenance row on the ACTIVE provider.
+
+        SQLite: the async audit worker queue (unchanged). PostgreSQL: the
+        audit domain's pooled write backend.
+        """
         if not self.audit_repo._is_sqlite:
             return
         query = """
@@ -203,29 +207,19 @@ class ModelRegistry:
             1 if replaced else 0,
             provenance.registered_at.isoformat(),
         )
-        try:
-            self.audit_repo._queue.put_nowait((query, args))
-        except Exception as e:
-            logger.error("[MODEL] registry persistence failed", error=str(e))
+        if not queue_write(self.audit_repo, query, args, operation="provenance.register"):
+            logger.error("[MODEL] registry persistence failed")
 
     def list_registered_models(self, limit: int = 50) -> list[dict[str, object]]:
         """Bounded listing of registered model identities, newest first."""
         if not self.audit_repo._is_sqlite:
             return []
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            try:
-                conn.row_factory = sqlite3.Row
-                rows = conn.execute(
-                    """
-                    SELECT * FROM experience_model_registry
-                    ORDER BY registered_at DESC LIMIT ?;
-                    """,
-                    (max(1, int(limit)),),
-                ).fetchall()
-                return [dict(r) for r in rows]
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[MODEL] registry listing failed", error=str(e))
-            return []
+        return query_rows(
+            self.audit_repo,
+            """
+            SELECT * FROM experience_model_registry
+            ORDER BY registered_at DESC LIMIT ?;
+            """,
+            (max(1, int(limit)),),
+            operation="provenance.list_registered_models",
+        )

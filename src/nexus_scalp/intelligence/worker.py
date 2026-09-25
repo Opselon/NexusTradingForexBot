@@ -28,12 +28,15 @@ CONTRACT
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.database.provider_store import (
+    query_one,
+    queue_write,
+)
 from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.intelligence.autopsy import TradeAutopsyEngine
 from nexus_scalp.intelligence.behavior import BehaviorDetectionEngine
@@ -114,46 +117,47 @@ class IntelligenceWorker:
         The table is created by the audit schema; a missing table or row simply
         means "first run" - never an error on the live path.
         """
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
+        row = query_one(
+            self.audit_repo,
+            "SELECT cycle_count, last_checkpoint FROM intelligence_worker_state "
+            "WHERE scope = 'intelligence' LIMIT 1;",
+            operation="intelligence_worker.load_checkpoint",
+        )
+        if row is not None:
             try:
-                conn.row_factory = sqlite3.Row
-                row = conn.execute(
-                    "SELECT cycle_count, last_checkpoint FROM intelligence_worker_state "
-                    "WHERE scope = 'intelligence' LIMIT 1;"
-                ).fetchone()
-            finally:
-                conn.close()
-            if row is not None:
-                self.cycle_count = max(self.cycle_count, int(row["cycle_count"] or 0))
-                prior = str(row["last_checkpoint"] or "")
+                self.cycle_count = max(self.cycle_count, int(row.get("cycle_count") or 0))
+                prior = str(row.get("last_checkpoint") or "")
                 if prior:
                     self._last_autopsy_count = max(self._last_autopsy_count, int(prior))
-        except Exception as e:
-            logger.debug("[INTELLIGENCE_WORKER] checkpoint load skipped", error=str(e))
+            except Exception as e:
+                logger.debug("[INTELLIGENCE_WORKER] checkpoint load skipped", error=str(e))
 
     def _save_checkpoint(self) -> None:
-        """Persists restart-safe bookkeeping through the async audit queue."""
-        try:
-            query = """
-                INSERT INTO intelligence_worker_state
-                (scope, last_checkpoint, last_cycle_at, last_error, cycle_count)
-                VALUES ('intelligence', ?, ?, ?, ?)
-                ON CONFLICT(scope) DO UPDATE SET
-                    last_checkpoint=excluded.last_checkpoint,
-                    last_cycle_at=excluded.last_cycle_at,
-                    last_error=excluded.last_error,
-                    cycle_count=excluded.cycle_count;
-            """
-            args = (
-                str(self._last_autopsy_count),
-                self.last_cycle_start.isoformat() if self.last_cycle_start else "",
-                self.last_error or "",
-                self.cycle_count,
-            )
-            self.audit_repo._queue.put_nowait((query, args))
-        except Exception as e:
-            logger.debug("[INTELLIGENCE_WORKER] checkpoint save skipped", error=str(e))
+        """Persists restart-safe bookkeeping on the ACTIVE provider.
+
+        SQLite: the async audit queue (unchanged). PostgreSQL: the audit
+        domain's pooled write backend, which commits synchronously.
+        """
+        query = """
+            INSERT INTO intelligence_worker_state
+            (scope, last_checkpoint, last_cycle_at, last_error, cycle_count)
+            VALUES ('intelligence', ?, ?, ?, ?)
+            ON CONFLICT(scope) DO UPDATE SET
+                last_checkpoint=excluded.last_checkpoint,
+                last_cycle_at=excluded.last_cycle_at,
+                last_error=excluded.last_error,
+                cycle_count=excluded.cycle_count;
+        """
+        args = (
+            str(self._last_autopsy_count),
+            self.last_cycle_start.isoformat() if self.last_cycle_start else "",
+            self.last_error or "",
+            self.cycle_count,
+        )
+        if not queue_write(
+            self.audit_repo, query, args, operation="intelligence_worker.save_checkpoint"
+        ):
+            logger.debug("[INTELLIGENCE_WORKER] checkpoint save skipped")
 
     # ------------------------------------------------------------------
     # Cycle

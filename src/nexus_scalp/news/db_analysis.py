@@ -120,13 +120,30 @@ class AnalysisMixin(_NewsDbCoreProto):
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO news_analysis
+                INSERT INTO news_analysis
                     (analysis_id, article_id, run_id, status, local_only, provider,
                      summary, entities, topics, direction, impact_strength, confidence,
                      horizon, importance, importance_score, relevance_to_xauusd,
                      relevance_to_usd, impacts, surprise_assessment, market_mechanism,
                      contradictory_factors, novelty, risks, reasoning_trace_id, analyzed_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(analysis_id) DO UPDATE SET
+                    article_id=excluded.article_id, run_id=excluded.run_id,
+                    status=excluded.status, local_only=excluded.local_only,
+                    provider=excluded.provider, summary=excluded.summary,
+                    entities=excluded.entities, topics=excluded.topics,
+                    direction=excluded.direction, impact_strength=excluded.impact_strength,
+                    confidence=excluded.confidence, horizon=excluded.horizon,
+                    importance=excluded.importance,
+                    importance_score=excluded.importance_score,
+                    relevance_to_xauusd=excluded.relevance_to_xauusd,
+                    relevance_to_usd=excluded.relevance_to_usd, impacts=excluded.impacts,
+                    surprise_assessment=excluded.surprise_assessment,
+                    market_mechanism=excluded.market_mechanism,
+                    contradictory_factors=excluded.contradictory_factors,
+                    novelty=excluded.novelty, risks=excluded.risks,
+                    reasoning_trace_id=excluded.reasoning_trace_id,
+                    analyzed_at=excluded.analyzed_at
                 """,
                 (
                     row["analysis_id"],
@@ -261,10 +278,18 @@ class AnalysisMixin(_NewsDbCoreProto):
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO news_consensus
+                INSERT INTO news_consensus
                     (article_id, source_count, independent_count, agreement, conflict,
                      directions, weighted_direction, confidence, evaluated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(article_id) DO UPDATE SET
+                    source_count=excluded.source_count,
+                    independent_count=excluded.independent_count,
+                    agreement=excluded.agreement, conflict=excluded.conflict,
+                    directions=excluded.directions,
+                    weighted_direction=excluded.weighted_direction,
+                    confidence=excluded.confidence,
+                    evaluated_at=excluded.evaluated_at
                 """,
                 (
                     row["article_id"],
@@ -311,9 +336,12 @@ class AnalysisMixin(_NewsDbCoreProto):
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO news_entities
+                INSERT INTO news_entities
                     (article_id, name, entity_type, relevance, mentions, is_primary)
                 VALUES (?, ?, ?, ?, 1, 1)
+                ON CONFLICT(id) DO UPDATE SET
+                    relevance=excluded.relevance, mentions=excluded.mentions,
+                    is_primary=excluded.is_primary
                 """,
                 (
                     article_id,
@@ -353,12 +381,28 @@ class AnalysisMixin(_NewsDbCoreProto):
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO news_ai_analysis
+                INSERT INTO news_ai_analysis
                     (ai_analysis_id, article_id, run_id, provider, model, analysis_version,
                      prompt_version, status, summary, market_relevance, xauusd_relevance,
                      sentiment, importance_assessment, key_facts, potential_market_impact,
                      uncertainties, analysis_status, insufficient_evidence, error_detail, analyzed_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(ai_analysis_id) DO UPDATE SET
+                    article_id=excluded.article_id, run_id=excluded.run_id,
+                    provider=excluded.provider, model=excluded.model,
+                    analysis_version=excluded.analysis_version,
+                    prompt_version=excluded.prompt_version, status=excluded.status,
+                    summary=excluded.summary, market_relevance=excluded.market_relevance,
+                    xauusd_relevance=excluded.xauusd_relevance,
+                    sentiment=excluded.sentiment,
+                    importance_assessment=excluded.importance_assessment,
+                    key_facts=excluded.key_facts,
+                    potential_market_impact=excluded.potential_market_impact,
+                    uncertainties=excluded.uncertainties,
+                    analysis_status=excluded.analysis_status,
+                    insufficient_evidence=excluded.insufficient_evidence,
+                    error_detail=excluded.error_detail,
+                    analyzed_at=excluded.analyzed_at
                 """,
                 (
                     row["ai_analysis_id"],

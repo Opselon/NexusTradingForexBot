@@ -22,6 +22,7 @@ import statistics
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.database.provider_store import query_rows, queue_write
 from nexus_scalp.intelligence.behavior_detect import (
     EXCESSIVE_HOLD_MIN_SAMPLE,
     INSERT_ANALYSIS_SQL,
@@ -92,30 +93,25 @@ def analyze_canonical_trades(
     if not audit_repo._is_sqlite:
         return {"analyzed": 0, "skipped": 0, "flags": 0, "anomalies": 0, "coverage": 0.0}
 
-    import sqlite3
+    from nexus_scalp.adapters.database.provider_store import query_rows
 
-    conn = None
-    try:
-        conn = sqlite3.connect(audit_repo._db_path, timeout=5.0)
-        conn.row_factory = None
+    # Existing analysis keys under these versions (idempotency set).
+    done_rows = query_rows(
+        audit_repo,
+        "SELECT analysis_key, ticket FROM behavior_analysis "
+        "WHERE behavior_version = ? AND anomaly_version = ?",
+        (behavior_version, anomaly_version),
+        operation="behavior_canonical.existing_analysis",
+    )
+    done_tickets = {str(r.get("ticket")) for r in done_rows}
 
-        # Existing analysis keys under these versions (idempotency set).
-        done_rows = conn.execute(
-            "SELECT analysis_key, ticket FROM behavior_analysis "
-            "WHERE behavior_version = ? AND anomaly_version = ?",
-            (behavior_version, anomaly_version),
-        ).fetchall()
-        done_tickets = {str(r[1]) for r in done_rows}
-
-        rows = conn.execute(
-            "SELECT * FROM audit_ledger WHERE status != 'OPENED' "
-            "AND close_time != '' ORDER BY close_time DESC LIMIT ?",
-            (max_trades,),
-        ).fetchall()
-        cols = [d[0] for d in conn.execute("SELECT * FROM audit_ledger LIMIT 0").description]
-    finally:
-        if conn is not None:
-            conn.close()
+    rows = query_rows(
+        audit_repo,
+        "SELECT * FROM audit_ledger WHERE status != 'OPENED' "
+        "AND close_time != '' ORDER BY close_time DESC LIMIT ?",
+        (max_trades,),
+        operation="behavior_canonical.closed_trades",
+    )
 
     analyzed = 0
     skipped = 0
@@ -124,7 +120,7 @@ def analyze_canonical_trades(
     coverage_sum = 0.0
 
     for raw in rows:
-        row = dict(zip(cols, raw, strict=False))
+        row = dict(raw)
         ticket = str(row.get("ticket", ""))
         if not ticket or ticket in done_tickets:
             skipped += 1
@@ -195,9 +191,12 @@ def analyze_canonical_trades(
     # Deterministic batch semantics: drain the async audit queue so the
     # caller can observe persisted records immediately after this returns.
     # This is the OFFLINE path (never the tick hot path) — a bounded join is
-    # safe and keeps idempotency checks truthful.
-    with contextlib.suppress(Exception):
-        audit_repo._queue.join()
+    # safe and keeps idempotency checks truthful. Under PostgreSQL the pooled
+    # write backend commits each write synchronously, so there is no queue to
+    # drain (no-op).
+    if getattr(audit_repo, "_is_sqlite", False):
+        with contextlib.suppress(Exception):
+            audit_repo._queue.join()
 
     return {
         "analyzed": analyzed,
@@ -377,41 +376,34 @@ def _duplicate_outcome_anomalies(
     Idempotent: the anomaly_id is deterministic for (execution_id, type,
     version), and executions already flagged under this version are skipped.
     """
-    import sqlite3
-
     out: list[AnomalyEvent] = []
-    try:
-        conn = sqlite3.connect(audit_repo._db_path, timeout=5.0)
-        try:
-            rows = conn.execute(
-                "SELECT execution_id, COUNT(*) c, "
-                "MIN(realized_pnl_usd) min_pnl, MAX(realized_pnl_usd) max_pnl "
-                "FROM audit_experience_outcomes WHERE is_closed = 1 "
-                "GROUP BY execution_id HAVING c > 1"
-            ).fetchall()
-        finally:
-            conn.close()
-    except Exception as e:
-        logger.error("[BEHAVIOR] duplicate-outcome scan failed (isolated)", error=str(e))
+    rows = query_rows(
+        audit_repo,
+        "SELECT execution_id, COUNT(*) AS c, "
+        "MIN(realized_pnl_usd) AS min_pnl, MAX(realized_pnl_usd) AS max_pnl "
+        "FROM audit_experience_outcomes WHERE is_closed = 1 "
+        "GROUP BY execution_id HAVING c > 1",
+        operation="behavior_canonical.duplicate_outcomes",
+    )
+    if not rows:
         return out
 
     # Skip executions already flagged under THIS anomaly version (idempotency).
-    try:
-        conn = sqlite3.connect(audit_repo._db_path, timeout=5.0)
-        try:
-            existing = {
-                str(r[0])
-                for r in conn.execute(
-                    "SELECT anomaly_id FROM anomaly_events WHERE algorithm_version = ?",
-                    (anomaly_version,),
-                ).fetchall()
-            }
-        finally:
-            conn.close()
-    except Exception:
-        existing = set()
+    existing = {
+        str(r.get("anomaly_id"))
+        for r in query_rows(
+            audit_repo,
+            "SELECT anomaly_id FROM anomaly_events WHERE algorithm_version = ?",
+            (anomaly_version,),
+            operation="behavior_canonical.existing_anomalies",
+        )
+    }
 
-    for execution_id, count, min_pnl, max_pnl in rows:
+    for row in rows:
+        execution_id = row.get("execution_id")
+        count = int(row.get("c") or 0)
+        min_pnl = row.get("min_pnl")
+        max_pnl = row.get("max_pnl")
         delta = abs(float(max_pnl or 0.0) - float(min_pnl or 0.0))
         if delta > 1e-9:
             anomaly_id = _duplicate_anomaly_id(
@@ -465,12 +457,12 @@ def _persist_analysis(audit_repo: AuditRepository, analysis: BehaviorAnalysis) -
         json.dumps(analysis.flags, default=_json_default),
         json.dumps(analysis.anomalies, default=_json_default),
     )
-    try:
-        audit_repo._queue.put_nowait((INSERT_ANALYSIS_SQL, args))
-        return True
-    except Exception as e:
-        logger.error("[BEHAVIOR] analysis persist failed (isolated)", error=str(e))
+    if not queue_write(
+        audit_repo, INSERT_ANALYSIS_SQL, args, operation="behavior_canonical.persist_analysis"
+    ):
+        logger.error("[BEHAVIOR] analysis persist failed (isolated)")
         return False
+    return True
 
 
 def _persist_anomaly(audit_repo: AuditRepository, anomaly: AnomalyEvent, version: str) -> bool:
@@ -488,9 +480,9 @@ def _persist_anomaly(audit_repo: AuditRepository, anomaly: AnomalyEvent, version
         anomaly.detected_at.isoformat(),
         version,
     )
-    try:
-        audit_repo._queue.put_nowait((INSERT_ANOMALY_SQL, args))
-        return True
-    except Exception as e:
-        logger.error("[BEHAVIOR] anomaly persist failed (isolated)", error=str(e))
+    if not queue_write(
+        audit_repo, INSERT_ANOMALY_SQL, args, operation="behavior_canonical.persist_anomaly"
+    ):
+        logger.error("[BEHAVIOR] anomaly persist failed (isolated)")
         return False
+    return True

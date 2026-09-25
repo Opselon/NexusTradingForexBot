@@ -27,7 +27,6 @@ from typing import Any
 from nexus_scalp.candle_intelligence.config import CandleIntelligenceConfig
 from nexus_scalp.database.config import DatabaseConfig, load_database_config
 from nexus_scalp.database.drivers import get_driver
-from nexus_scalp.database.drivers.proxy import PortableConnection
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.candle_intelligence.store")
@@ -209,6 +208,36 @@ _SCHEMAS: dict[str, str] = {
 }
 
 
+def _redirect_database(dsn: str, database: str) -> str:
+    """Re-point a URL or libpq DSN at ``database``, leaving host/user/secret alone.
+
+    The fabric derives the connection role from the DSN and its pools reconnect
+    lazily, so the role and the credential must survive the redirect — a plain
+    string replace of the last path segment does that for a URL DSN, and the
+    keyword form needs ``dbname=`` rewritten in place.
+    """
+    if not database:
+        return dsn
+    if "://" in dsn:
+        head, _, _old = dsn.rpartition("/")
+        return f"{head}/{database}"
+    parts = []
+    seen = False
+    for pair in dsn.split():
+        if "=" not in pair:
+            parts.append(pair)
+            continue
+        key, _, _unused_value = pair.partition("=")
+        if key.strip().lower() in {"dbname", "database"}:
+            parts.append(f"{key}={database}")
+            seen = True
+        else:
+            parts.append(pair)
+    if not seen:
+        parts.append(f"dbname={database}")
+    return " ".join(parts)
+
+
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -302,10 +331,17 @@ class CandleIntelStore:
         self.config = config or CandleIntelligenceConfig()
         if db_config is not None:
             self._config = db_config
-        elif not self.config.db_path:
+        else:
+            # DATABASE PORTABILITY (the audit-domain contract): the ACTIVE
+            # provider is the one the operator chose — resolved through
+            # load_database_config('candle_intel'), never hard-coded. The
+            # caller's explicit db_config still wins (tests + explicit paths).
             self._config = load_database_config("candle_intel")
-            self.config.db_path = self._config.sqlite_connect_path
-        elif not Path(self.config.db_path).is_absolute():
+            if self._config.is_sqlite and self.config.db_path:
+                # Keep honoring an explicit SQLite path the caller passed; a
+                # relative one is anchored to the runtime workspace below.
+                self._config = DatabaseConfig.for_sqlite("candle_intel", path=self.config.db_path)
+        if self._config.is_sqlite and not Path(self.config.db_path or "").is_absolute():
             # BUG-149: a relative default ("artifacts/candle_intel.db") anchors
             # to the canonical runtime workspace (bundle when frozen), never
             # the raw process CWD.
@@ -313,8 +349,15 @@ class CandleIntelStore:
 
             self.config.db_path = str(get_runtime_workspace() / self.config.db_path)
             self._config = DatabaseConfig.for_sqlite("candle_intel", path=self.config.db_path)
+        if self._config.is_sqlite:
+            self.config.db_path = self._config.sqlite_connect_path
         else:
-            self._config = DatabaseConfig.for_sqlite("candle_intel", path=self.config.db_path)
+            # Under PostgreSQL the SQLite path is meaningless: keep the config's
+            # default populated (a later switch back still resolves the file)
+            # but never CREATE it — an makedirs / a driver connect on a path the
+            # provider does not use resurrects the "SQLite silently kept
+            # writing" defect this store's resolution order exists to prevent.
+            self.config.db_path = self.config.db_path or self._config.sqlite_path
         self._db_path = self.config.db_path
         self._driver = get_driver(self._config)
         if self._config.is_sqlite:
@@ -338,22 +381,34 @@ class CandleIntelStore:
         self._start_worker()
         logger.info(
             "Candle intelligence store initialized (RAM ring + async worker)",
-            db_path=self._db_path,
+            db_path=self._db_path if self._config.is_sqlite else None,
+            provider=self._config.provider.value,
         )
 
     def _connect_reader(self) -> Any:
-        """Portable reader connection (SQLite native; PostgreSQL proxied)."""
+        """Portable reader connection (SQLite native; PostgreSQL pooled)."""
         if self._config.is_sqlite:
             conn = self._driver.connect(timeout=15.0)
             conn.row_factory = sqlite3.Row
             return conn
-        return PortableConnection(self._driver, timeout=15.0)
+        # PostgreSQL: the fabric's pooled READ backend — a separate read-only
+        # pool, exactly as the audit domain resolves reads. A borrowed pooled
+        # connection is a context manager (never caller-owned), so it is held
+        # for the store's lifetime and only used for the read-only fallback
+        # path of query_recent(). Never used for writes (see _connect_writer).
+        backend = self._resolve_read_backend()
+        if backend is None:
+            return _UnusableReadConnection(self._config)
+        return _PooledReadConnection(backend)
 
     def _connect_writer(self) -> Any:
         """Portable writer connection (worker thread)."""
         if self._config.is_sqlite:
             return self._driver.connect(timeout=15.0)
-        return PortableConnection(self._driver, timeout=15.0)
+        # PostgreSQL: the fabric's pooled WRITE backend, resolved lazily on
+        # this worker thread (the pool is shared; a fresh lease per batch is
+        # exactly what the pooled write plane is for). See _flush_batch.
+        return _PooledWriteConnection(self)
 
     def _init_schema(self) -> None:
         """Schema bootstrap on the reader connection (safe; worker uses same DB
@@ -389,16 +444,54 @@ class CandleIntelStore:
                         self._conn.commit()
                     except Exception:
                         pass
-        with self._reader_conn:
-            if self._config.is_sqlite:
+        if self._config.is_sqlite:
+            # SQLite: schema bootstrap on the reader connection is safe — the
+            # worker uses the same DB file and WAL allows concurrent access.
+            with self._reader_conn:
                 self._reader_conn.execute("PRAGMA journal_mode = WAL;")
                 self._reader_conn.execute("PRAGMA synchronous = NORMAL;")
-            for sql in _SCHEMAS.values():
-                self._reader_conn.execute(sql)
-            for table in TABLES:
-                self._reader_conn.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{table}_ts ON {table}(ts);"
-                )
+                for sql in _SCHEMAS.values():
+                    self._reader_conn.execute(sql)
+                for table in TABLES:
+                    self._reader_conn.execute(
+                        f"CREATE INDEX IF NOT EXISTS idx_{table}_ts ON {table}(ts);"
+                    )
+            return
+        # PostgreSQL: the fabric's pooled write backend owns DDL (a pooled read
+        # connection is read-only by construction — it would reject the DDL),
+        # and the SQLite-dialect _SCHEMAS must go through translate_ddl first
+        # (``AUTOINCREMENT`` is not PostgreSQL syntax). The translated
+        # statements are re-applied idempotently, so a domain provisioned by
+        # ``nexus db connect`` and a direct store construction converge on the
+        # same physical schema.
+        #
+        # A placeholder reader (an unprovisioned domain at construction time)
+        # must NOT short-circuit this: ``_init_schema_postgres`` resolves the
+        # write backend — provisioning the domain, which is what creates the
+        # tables — and a store built before ``nexus db connect`` would
+        # otherwise silently converge on an empty database (the exact
+        # model-but-table-missing defect the convergence test exists for).
+        self._init_schema_postgres()
+
+    def _init_schema_postgres(self) -> None:
+        """Bootstrap the domain schema on the pooled PostgreSQL backend.
+
+        ``provision_domain`` already migrates the domain's authored DDL through
+        ``migrate_domain`` — re-running the translated ``_SCHEMAS`` here races
+        with that pass for the same relation names (observed as
+        ``duplicate key value violates unique constraint
+        "pg_type_typname_nsp_index"`` when both passes create the same table
+        inside overlapping transactions).  Resolve, which provisions, is
+        enough; the store only owns the *choice* to provision, not the DDL.
+        """
+        backend = self._resolve_write_backend()
+        if backend is None:
+            raise RuntimeError(
+                "CandleIntelStore resolved a PostgreSQL provider but the "
+                "candle_intel domain has no pooled write backend. Provision it "
+                "via the database fabric (`nexus db connect`) before switching "
+                "providers — refusing to silently drop the schema bootstrap."
+            )
 
     # ------------------------------------------------------------------
     # background worker
@@ -437,9 +530,21 @@ class CandleIntelStore:
                 item = None
             if item is not None:
                 batch.append(item)
-                if len(batch) >= self.config.max_batch_size:
-                    self._flush_batch(batch)
-                    batch = []
+                # Drain everything already queued before flushing: a flush must
+                # commit the whole visible batch in one transaction, and
+                # ``flush()`` returns as soon as the QUEUE is empty — so unless
+                # an emptied queue implies a committed batch, a caller that
+                # enqueues 5 rows and waits for ``flush()`` would read 0 back
+                # (the rows were dequeued into a worker-side buffer that had
+                # not reached ``max_batch_size`` and would not until the idle
+                # timer fired).
+                while True:
+                    try:
+                        batch.append(self._write_queue.get_nowait())
+                    except queue.Empty:
+                        break
+                self._flush_batch(batch)
+                batch = []
             elif batch:
                 self._flush_batch(batch)
                 batch = []
@@ -450,6 +555,15 @@ class CandleIntelStore:
                 self._conn.close()
 
     def _flush_batch(self, batch: list[tuple[str, list[str], list[Any]]]) -> None:
+        if self._config.is_sqlite:
+            self._flush_batch_sqlite(batch)
+            return
+        # PostgreSQL: batched through the fabric's pooled write plane —
+        # `execute_batch` commits the whole batch atomically (or rolls it all
+        # back), the same one-transaction-per-batch contract SQLite has.
+        self._flush_batch_postgres(batch)
+
+    def _flush_batch_sqlite(self, batch: list[tuple[str, list[str], list[Any]]]) -> None:
         if not self._conn:
             return
         try:
@@ -463,6 +577,33 @@ class CandleIntelStore:
                     self._conn.execute(sql, list(vals))
         except Exception as e:
             logger.error("[CANDLE_INTEL] batch flush failed", error=str(e))
+
+    def _flush_batch_postgres(self, batch: list[tuple[str, list[str], list[Any]]]) -> None:
+        """Apply one batched transaction on the pooled PostgreSQL backend."""
+        backend = self._resolve_write_backend()
+        if backend is None:
+            logger.error(
+                "[CANDLE_INTEL] PostgreSQL batch dropped: candle_intel domain is "
+                "not provisioned on the database fabric (run `nexus db connect`)"
+            )
+            return
+        # Group by statement (same table + columns share one executemany call);
+        # the pooled write plane translates the placeholders and commits once.
+        grouped: list[tuple[str, list[tuple[Any, ...]]]] = []
+        index: dict[str, int] = {}
+        for table, cols, vals in batch:
+            cols_csv = ", ".join(cols)
+            sql = f"INSERT INTO {table} ({cols_csv}) VALUES ({self._driver.qmarks(len(cols))})"
+            sql += " ON CONFLICT DO NOTHING"
+            pos = index.get(sql)
+            if pos is None:
+                index[sql] = pos = len(grouped)
+                grouped.append((sql, []))
+            grouped[pos][1].append(tuple(vals))
+        try:
+            backend.execute_batch(grouped)
+        except Exception as e:
+            logger.error("[CANDLE_INTEL] PG batch flush failed", error=str(e))
 
     # ------------------------------------------------------------------
     # enqueue API (hot path — O(1), no disk)
@@ -541,9 +682,17 @@ class CandleIntelStore:
                 return out
 
         # 2) DB fallback (history/restart).
-        rows = self._reader_conn.execute(
-            f"SELECT * FROM {table} ORDER BY id DESC LIMIT ?", (limit,)
-        ).fetchall()
+        if self._config.is_sqlite:
+            rows = self._reader_conn.execute(
+                f"SELECT * FROM {table} ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        else:
+            # Pooled read backend (read-only pool). The ring is empty here, so
+            # this is a cold-start / deep-history path, never the hot path.
+            read_backend = self._resolve_read_backend()
+            if read_backend is None:
+                return []
+            rows = read_backend.query(f"SELECT * FROM {table} ORDER BY id DESC LIMIT %s", (limit,))
         out = []
         for r in rows:
             d = dict(r)
@@ -587,6 +736,139 @@ class CandleIntelStore:
             return bool(row and row[0] == "ok")
         except Exception:
             return False
+
+    # ------------------------------------------------------------------
+    # fabric backend resolution (PostgreSQL only)
+    # ------------------------------------------------------------------
+    # The pooled backends are the fabric's shared resource: this store never
+    # owns or closes them (the SQLite writer connection it owns is a different
+    # contract — see close()). Resolution is LAZY and per call, never captured
+    # at construction: ``__init__`` builds the schema on the write backend and
+    # only then is the domain registered, so a construction-time capture would
+    # observe ``None`` on a fresh PostgreSQL process and cache it forever.
+    # Mirrors the audit domain's ``_build_pooled_write_backend`` contract.
+
+    def _resolve_write_backend(self) -> Any:
+        """The fabric's pooled write backend for candle_intel, or None."""
+        try:
+            from nexus_scalp.database.fabric import get_domain_backend, provision_domain
+
+            backend = get_domain_backend("candle_intel", readonly=False)
+            if backend is not None:
+                return backend
+            # Not provisioned in this process — bootstrap it from the resolved
+            # DSN (provision_domain also creates the schema, idempotently).
+            dsn = self._pg_dsn()
+            if not dsn:
+                return None
+            return provision_domain("candle_intel", dsn, min_size=1, max_size=4)
+        except Exception as exc:
+            logger.error("[CANDLE_INTEL] fabric write backend resolve failed: %s", exc)
+            return None
+
+    def _resolve_read_backend(self) -> Any:
+        """The fabric's pooled READ backend for candle_intel, or None.
+
+        Only resolves the registry (never provisions): the write path owns
+        provisioning, and doing it here could double-provision against a
+        concurrent writer and close a pool that is in use.
+        """
+        try:
+            from nexus_scalp.database.fabric import get_domain_backend
+
+            return get_domain_backend("candle_intel", readonly=True)
+        except Exception as exc:
+            logger.error("[CANDLE_INTEL] fabric read backend resolve failed: %s", exc)
+            return None
+
+    def _pg_dsn(self) -> str:
+        """The resolved PostgreSQL DSN for this domain (secret included).
+
+        Prefers the environment override (``NSE_PG_TEST_URL`` / container DSN),
+        which names the operator's real role; the persisted settings path is
+        the production default and resolves the secret from the OS-backed
+        store. Never logs the value.
+        """
+        try:
+            env_dsn = os.environ.get("NSE_PG_TEST_URL", "").strip()
+            if env_dsn:
+                # Point the DSN at this store's database while keeping the
+                # operator's role + credential (the fabric reconnects lazily,
+                # so a mismatched role becomes a fatal auth failure).
+                return _redirect_database(env_dsn, self._config.database)
+            from nexus_scalp.database.config import build_postgres_url
+            from nexus_scalp.settings.secret_store import SecureSecretStore
+
+            return build_postgres_url(self._config, SecureSecretStore())
+        except Exception as exc:
+            logger.error("[CANDLE_INTEL] PostgreSQL DSN resolution failed: %s", exc)
+            return ""
+
+
+class _PooledWriteConnection:
+    """Writer facade over the fabric's pooled PostgreSQL write backend.
+
+    The store's worker loop calls ``self._conn`` for the SQLite WAL PRAGMAs and
+    the batch flush. Under PostgreSQL neither applies (the pool configures each
+    connection; batches go through ``execute_batch``), so this object exists to
+    keep the worker's connection slot populated and to no-op its SQLite-shaped
+    uses (``PRAGMA``/``commit``/``close``) instead of raising.
+    """
+
+    def __init__(self, store: CandleIntelStore) -> None:
+        self._store = store
+
+    def execute(self, sql: str, args: Any = ()) -> Any:  # pragma: no cover - unused on PG
+        backend = self._store._resolve_write_backend()
+        if backend is None:
+            raise RuntimeError("candle_intel domain is not provisioned for PostgreSQL")
+        backend.execute(sql, tuple(args) if args else ())
+
+    def commit(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None  # the pool owns the lifecycle
+
+
+class _PooledReadConnection:
+    """Reader facade over the fabric's pooled, read-only PostgreSQL backend.
+
+    ``query_recent``'s DB fallback uses this only when the ring buffer is
+    empty (cold start / deep history); the hot path never reaches it.
+    """
+
+    def __init__(self, backend: Any) -> None:
+        self._backend = backend
+
+    def query(self, sql: str, args: Any = ()) -> list[dict[str, Any]]:
+        return self._backend.query(sql, tuple(args) if args else ())
+
+    def close(self) -> None:
+        return None  # the pool owns the lifecycle
+
+
+class _UnusableReadConnection:
+    """Reads against an unprovisioned PostgreSQL domain return no rows.
+
+    The domain is resolved PostgreSQL but has no pooled read backend (not yet
+    provisioned). Failing loudly here would break the engine's read facade on a
+    misconfigured box; returning an empty result keeps the documented
+    degradation observable (the resolver already logged the cause) — the same
+    contract the audit domain's read guard has.
+    """
+
+    def __init__(self, config: Any) -> None:
+        self._config = config
+
+    def query(self, sql: str, args: Any = ()) -> list[dict[str, Any]]:
+        return []
+
+    def execute(self, sql: str, args: Any = ()) -> Any:
+        raise RuntimeError("candle_intel PostgreSQL read backend is not provisioned")
+
+    def close(self) -> None:
+        return None
 
 
 # ---------------------------------------------------------------------------

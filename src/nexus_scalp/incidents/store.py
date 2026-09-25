@@ -476,11 +476,15 @@ class IncidentStore:
         Production DBs get the schema via the governed AUDIT-0005 migration.
         """
         if self._write_backend is not None:
-            # Non-SQLite provider: the fabric plane translates the DDL, and
-            # the governed migration owns production schema, so this is a
-            # best-effort idempotent heal (CREATE ... IF NOT EXISTS).
+            # Non-SQLite provider: translate the SQLite-dialect DDL to
+            # PostgreSQL (the plane only translates placeholders, not DDL, so
+            # ``INTEGER PRIMARY KEY AUTOINCREMENT`` would reach the server
+            # verbatim and fail). The governed migration owns production
+            # schema, so this is a best-effort idempotent heal.
+            from nexus_scalp.database.migration.pg_schema import translate_ddl
+
             for ddl in INCIDENT_DDL:
-                self._write_backend.execute(ddl)
+                self._write_backend.execute(translate_ddl(ddl))
             return
         # NOTE: ``with sqlite3.connect(...)`` only ends a transaction, it does
         # NOT close the connection. Leaking it keeps the .db/-wal/-shm files

@@ -49,6 +49,13 @@ class PoolLimits:
     idle_timeout_sec: int = 0
     max_lifetime_sec: int = 0
     health_check_interval_sec: int = 30
+    #: psycopg_pool 3.3's default ``reconnect_timeout`` is 300s: a background
+    #: worker keeps retrying an unreachable host for five minutes before it
+    #: gives up. On a dead DSN (or a server that died mid-run) that is a
+    #: 300s+ hang on every pool the fabric opens, and the pool survives long
+    #: enough to be re-provisioned on top of itself. Bound it to the same
+    #: order as the connection timeout so an unreachable provider fails fast.
+    reconnect_timeout_sec: float = 30.0
 
     def __post_init__(self) -> None:
         if self.max_size < 1:
@@ -116,6 +123,10 @@ class PgPool:
             # connection; raising there makes the pool discard and replace it.
             # The probe interval is the pool's own scheduling concern.
             kwargs["check"] = self._pool_check
+        if self._limits.reconnect_timeout_sec:
+            # psycopg_pool 3.3 defaults reconnect_timeout to 300s, which makes
+            # a dead DSN hang a background worker for five minutes per pool.
+            kwargs["reconnect_timeout"] = float(self._limits.reconnect_timeout_sec)
         # The password is NEVER embedded in the DSN the pool holds: psycopg
         # takes it as a separate connection parameter, resolved from the
         # OS-backed secret store exactly as the existing driver does.  The

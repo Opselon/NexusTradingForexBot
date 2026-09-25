@@ -47,6 +47,110 @@ MAX_READ_LIMIT = 2000
 #: matrices {session_matrix, hourly_matrix, weekday_matrix, regime_matrix}.
 CONTEXT_MATRICES_COLUMN = "context_matrices"
 
+#: Persistence domain name registered with the DB fabric for PostgreSQL
+#: provisioning (mirrors ``ai_providers.store.DECISION_DOMAIN``).
+FACTORY_DOMAIN = "strategy_factory"
+
+#: The seven factory tables' schema, authored ONCE in the SQLite dialect.
+#:
+#: This is the provisioning source of truth for the ``strategy_factory``
+#: domain: ``schema_snapshot.strategy_factory_schema_statements`` reads it
+#: verbatim and ``pg_schema.translate_ddl`` ports it to PostgreSQL, so the
+#: physical schema is identical on both providers (the same contract
+#: ``ai_providers.store._SCHEMA`` uses). It is deliberately a transcription of
+#: what ``AuditRepository._create_factory_tables`` emits — the audit domain is
+#: where these tables were born and what a live PostgreSQL ``nexusdb`` already
+#: holds, so a box switched to PostgreSQL never sees a divergent factory
+#: schema. The ``context_matrices`` column is included because the audit
+#: bootstrap adds it at runtime (``ensure_factory_context_columns``) and the
+#: live schema carries it.
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS factory_generations (
+    generation_id TEXT PRIMARY KEY,
+    number INTEGER NOT NULL,
+    mode TEXT DEFAULT 'MANUAL',
+    parent_generation TEXT DEFAULT '',
+    population_target INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    completed_at TEXT DEFAULT NULL,
+    status TEXT DEFAULT 'PENDING',
+    config TEXT DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS factory_candidates (
+    candidate_id TEXT PRIMARY KEY,
+    definition_hash TEXT NOT NULL,
+    generation_id TEXT NOT NULL,
+    source TEXT DEFAULT 'TEMPLATE',
+    operator TEXT DEFAULT 'NONE',
+    parent_ids TEXT DEFAULT '[]',
+    family TEXT DEFAULT 'HYBRID',
+    population_index INTEGER DEFAULT 0,
+    dsl TEXT DEFAULT '{}',
+    structural TEXT DEFAULT '{}',
+    lifecycle TEXT DEFAULT 'GENERATED',
+    failure_reasons TEXT DEFAULT '[]',
+    llm_response_id TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    context_matrices TEXT DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS factory_failures (
+    failure_id TEXT PRIMARY KEY,
+    candidate_id TEXT NOT NULL,
+    strategy_id TEXT DEFAULT '',
+    generation_id TEXT DEFAULT '',
+    stage TEXT DEFAULT 'DSL_VALIDATION',
+    reason TEXT DEFAULT '',
+    detail TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS factory_events (
+    event_id TEXT PRIMARY KEY,
+    generation_id TEXT DEFAULT '',
+    candidate_id TEXT DEFAULT '',
+    event_type TEXT NOT NULL,
+    message TEXT DEFAULT '',
+    payload TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS factory_runs (
+    run_id TEXT PRIMARY KEY,
+    generation_id TEXT DEFAULT '',
+    strategy_id TEXT DEFAULT '',
+    experiment_kind TEXT DEFAULT 'GENERATE',
+    executed_at TEXT NOT NULL,
+    config TEXT DEFAULT '{}',
+    result_summary TEXT DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS factory_provider_usage (
+    usage_id TEXT PRIMARY KEY,
+    generation_id TEXT DEFAULT '',
+    requests INTEGER DEFAULT 0,
+    failures INTEGER DEFAULT 0,
+    prompt_tokens INTEGER DEFAULT 0,
+    completion_tokens INTEGER DEFAULT 0,
+    total_tokens INTEGER DEFAULT 0,
+    estimated_cost_usd REAL DEFAULT 0.0,
+    last_latency_ms REAL DEFAULT 0.0,
+    last_error TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS factory_loop_state (
+    scope TEXT PRIMARY KEY,
+    state TEXT DEFAULT 'STOPPED',
+    generation_id TEXT DEFAULT '',
+    checkpoint TEXT DEFAULT '{}',
+    updated_at TEXT DEFAULT '',
+    last_error TEXT DEFAULT '',
+    reason TEXT DEFAULT '',
+    last_cycle_at TEXT DEFAULT '',
+    cycle_count INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_factory_cand_gen ON factory_candidates(generation_id, population_index);
+CREATE INDEX IF NOT EXISTS idx_factory_cand_hash ON factory_candidates(definition_hash);
+CREATE INDEX IF NOT EXISTS idx_factory_fail_gen ON factory_failures(generation_id);
+CREATE INDEX IF NOT EXISTS idx_factory_events_gen ON factory_events(generation_id, created_at);
+"""
+
 
 def ensure_factory_context_columns(conn: sqlite3.Connection) -> None:
     """Idempotent ALTER TABLE for the context-matrices evidence columns.
@@ -105,6 +209,32 @@ def _conn(repo: AuditRepository) -> sqlite3.Connection | None:
         return None
 
 
+def _pg_query(
+    repo: Any,
+    sql: str,
+    args: tuple[Any, ...] = (),
+) -> list[dict[str, Any]]:
+    """Run a read against the strategy_factory domain's pooled read backend.
+
+    Never raises: a read that cannot reach its pool returns ``[]`` / ``None``
+    at the caller (the documented degradation for every reader here) instead
+    of taking the factory UI or the autonomous loop down with it.
+    """
+    backend = _pg_read_backend(repo)
+    if backend is None:
+        return []
+    try:
+        return [dict(r) for r in backend.query(sql, args)]
+    except Exception as exc:
+        logger.warning("[STRATEGY_FACTORY] PG read failed: %s", exc)
+        return []
+
+
+def _pg_query_one(repo: Any, sql: str, args: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+    rows = _pg_query(repo, sql, args)
+    return rows[0] if rows else None
+
+
 def _resolve_backend(repo_or_store: Any) -> str:
     """Return the write/read backend for a call.
 
@@ -120,6 +250,85 @@ def _is_store_backend(repo_or_store: Any) -> bool:
     return _resolve_backend(repo_or_store) == "store"
 
 
+def _is_pg_audit_backend(repo: Any) -> bool:
+    """An AuditRepository bound to PostgreSQL (the legacy path, rerouted).
+
+    ``AuditRepository._is_sqlite`` is False on a box switched to PostgreSQL,
+    and the isolated :class:`StrategyResearchStore` is not injected in every
+    construction (the web routes and the repair path reach for the audit repo
+    directly). Before this predicate existed, that combination hit the bare
+    ``if not repo._is_sqlite: return False`` gate on every write and every
+    read, so the factory's seven operational tables silently went NOWHERE on a
+    PostgreSQL box while the rest of the engine used the pool.
+    """
+    if repo is None or repo._is_sqlite or hasattr(repo, "driver"):
+        return False
+    return _pg_write_backend(repo) is not None
+
+
+def _pg_write_backend(repo: Any) -> Any:
+    """The fabric's pooled write backend for the strategy_factory domain.
+
+    Returns ``None`` when the domain is not provisioned in this process. Never
+    raises and never provisions: the audit domain's write plane provisions the
+    fabric, and a second provisioning here could close a pool it does not own.
+    """
+    try:
+        from nexus_scalp.database.fabric import get_domain_backend
+
+        return get_domain_backend(FACTORY_DOMAIN, readonly=False)
+    except Exception as exc:  # pragma: no cover - fabric import failure
+        logger.warning("[STRATEGY_FACTORY] write backend resolve failed: %s", exc)
+        return None
+
+
+def _pg_read_backend(repo: Any) -> Any:
+    """The fabric's pooled READ backend for the strategy_factory domain.
+
+    Reads go through the domain's own read-only pool, never the write plane
+    (``PgWritePlane`` has no query surface, and a read must never consume a
+    writer connection). ``None`` when only the write side is provisioned.
+    """
+    try:
+        from nexus_scalp.database.fabric import get_domain_backend
+
+        return get_domain_backend(FACTORY_DOMAIN, readonly=True)
+    except Exception as exc:  # pragma: no cover - fabric import failure
+        logger.warning("[STRATEGY_FACTORY] read backend resolve failed: %s", exc)
+        return None
+
+
+def _pg_write(repo: Any, sql: str, row: tuple[Any, ...]) -> bool:
+    """Run one write on the fabric's pooled write plane.
+
+    ``row`` is the SAME positional tuple the SQLite queue path enqueues —
+    built once per write in the SQL column order — so the two providers always
+    send identical arguments for the same statement. Values are already
+    provider-neutral (JSON text, ints, floats): the encoding happens at tuple
+    construction, never at the pool boundary.
+
+    ``PgWritePlane.execute_one`` translates the ``?`` placeholders itself and
+    commits atomically, so a factory row never lands on a connection we would
+    have to commit ourselves.
+
+    Never raises: a persistence fault logs and returns False so the factory's
+    caller keeps working (the store is an observer of research memory, never a
+    participant in trading).
+    """
+    backend = _pg_write_backend(repo)
+    if backend is None:
+        logger.warning(
+            "[STRATEGY_FACTORY] PG write backend unavailable (domain %s)", FACTORY_DOMAIN
+        )
+        return False
+    try:
+        backend.execute_one(sql, tuple(row))
+        return True
+    except Exception as exc:
+        logger.warning("[STRATEGY_FACTORY] PG write failed: %s", exc)
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Writes (through the audit background queue — never blocks the live path)
 # ---------------------------------------------------------------------------
@@ -129,7 +338,7 @@ def upsert_generation(repo: Any, generation: dict[str, Any]) -> bool:
     """Upsert a generation row — audit queue (legacy) or isolated store."""
     if _is_store_backend(repo):
         return repo.upsert_generation(generation)
-    if not repo._is_sqlite:
+    if not repo._is_sqlite and not _is_pg_audit_backend(repo):
         return False
     sql = """
         INSERT INTO factory_generations (
@@ -140,23 +349,21 @@ def upsert_generation(repo: Any, generation: dict[str, Any]) -> bool:
             status=excluded.status, completed_at=excluded.completed_at,
             config=excluded.config;
     """
+    row = (
+        generation.get("generation_id", ""),
+        int(generation.get("number", 0)),
+        generation.get("mode", "MANUAL"),
+        generation.get("parent_generation", ""),
+        int(generation.get("population_target", 0)),
+        generation.get("created_at", _now()),
+        generation.get("completed_at"),
+        generation.get("status", "PENDING"),
+        _json(generation.get("config")),
+    )
+    if _is_pg_audit_backend(repo):
+        return _pg_write(repo, sql, row)
     try:
-        repo._queue.put_nowait(
-            (
-                sql,
-                (
-                    generation.get("generation_id", ""),
-                    int(generation.get("number", 0)),
-                    generation.get("mode", "MANUAL"),
-                    generation.get("parent_generation", ""),
-                    int(generation.get("population_target", 0)),
-                    generation.get("created_at", _now()),
-                    generation.get("completed_at"),
-                    generation.get("status", "PENDING"),
-                    _json(generation.get("config")),
-                ),
-            )
-        )
+        repo._queue.put_nowait((sql, row))
         return True
     except Exception as e:
         logger.error("[STRATEGY_FACTORY] upsert_generation failed", error=str(e))
@@ -167,7 +374,7 @@ def upsert_candidate(repo: Any, candidate: dict[str, Any]) -> bool:
     """Upsert a candidate row — audit queue (legacy) or isolated store."""
     if _is_store_backend(repo):
         return repo.upsert_candidate(candidate)
-    if not repo._is_sqlite:
+    if not repo._is_sqlite and not _is_pg_audit_backend(repo):
         return False
     sql = """
         INSERT INTO factory_candidates (
@@ -181,29 +388,27 @@ def upsert_candidate(repo: Any, candidate: dict[str, Any]) -> bool:
             failure_reasons=excluded.failure_reasons,
             context_matrices=excluded.context_matrices;
     """
+    row = (
+        candidate.get("candidate_id", ""),
+        candidate.get("definition_hash", ""),
+        candidate.get("generation_id", ""),
+        candidate.get("source", "TEMPLATE"),
+        candidate.get("operator", "NONE"),
+        _json(candidate.get("parent_ids")),
+        candidate.get("family", "HYBRID"),
+        int(candidate.get("population_index", 0)),
+        _json(candidate.get("dsl")),
+        _json(candidate.get("structural")),
+        candidate.get("lifecycle", "GENERATED"),
+        _json(candidate.get("failure_reasons")),
+        candidate.get("llm_response_id", ""),
+        candidate.get("created_at", _now()),
+        _json(candidate.get("context_matrices")),
+    )
+    if _is_pg_audit_backend(repo):
+        return _pg_write(repo, sql, row)
     try:
-        repo._queue.put_nowait(
-            (
-                sql,
-                (
-                    candidate.get("candidate_id", ""),
-                    candidate.get("definition_hash", ""),
-                    candidate.get("generation_id", ""),
-                    candidate.get("source", "TEMPLATE"),
-                    candidate.get("operator", "NONE"),
-                    _json(candidate.get("parent_ids")),
-                    candidate.get("family", "HYBRID"),
-                    int(candidate.get("population_index", 0)),
-                    _json(candidate.get("dsl")),
-                    _json(candidate.get("structural")),
-                    candidate.get("lifecycle", "GENERATED"),
-                    _json(candidate.get("failure_reasons")),
-                    candidate.get("llm_response_id", ""),
-                    candidate.get("created_at", _now()),
-                    _json(candidate.get("context_matrices")),
-                ),
-            )
-        )
+        repo._queue.put_nowait((sql, row))
         return True
     except Exception as e:
         logger.error("[STRATEGY_FACTORY] upsert_candidate failed", error=str(e))
@@ -214,7 +419,7 @@ def record_failure(repo: Any, failure: dict[str, Any]) -> bool:
     """Record a factory failure — audit queue (legacy) or isolated store."""
     if _is_store_backend(repo):
         return repo.record_failure(failure)
-    if not repo._is_sqlite:
+    if not repo._is_sqlite and not _is_pg_audit_backend(repo):
         return False
     sql = """
         INSERT INTO factory_failures (
@@ -223,22 +428,20 @@ def record_failure(repo: Any, failure: dict[str, Any]) -> bool:
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(failure_id) DO NOTHING;
     """
+    row = (
+        failure.get("failure_id", ""),
+        failure.get("candidate_id", ""),
+        failure.get("strategy_id", ""),
+        failure.get("generation_id", ""),
+        failure.get("stage", "DSL_VALIDATION"),
+        failure.get("reason", ""),
+        _json(failure.get("detail")),
+        failure.get("created_at", _now()),
+    )
+    if _is_pg_audit_backend(repo):
+        return _pg_write(repo, sql, row)
     try:
-        repo._queue.put_nowait(
-            (
-                sql,
-                (
-                    failure.get("failure_id", ""),
-                    failure.get("candidate_id", ""),
-                    failure.get("strategy_id", ""),
-                    failure.get("generation_id", ""),
-                    failure.get("stage", "DSL_VALIDATION"),
-                    failure.get("reason", ""),
-                    _json(failure.get("detail")),
-                    failure.get("created_at", _now()),
-                ),
-            )
-        )
+        repo._queue.put_nowait((sql, row))
         return True
     except Exception as e:
         logger.error("[STRATEGY_FACTORY] record_failure failed", error=str(e))
@@ -249,7 +452,7 @@ def emit_event(repo: Any, event: dict[str, Any]) -> bool:
     """Emit a factory event — audit queue (legacy) or isolated store."""
     if _is_store_backend(repo):
         return repo.emit_event(event)
-    if not repo._is_sqlite:
+    if not repo._is_sqlite and not _is_pg_audit_backend(repo):
         return False
     sql = """
         INSERT INTO factory_events (
@@ -258,21 +461,19 @@ def emit_event(repo: Any, event: dict[str, Any]) -> bool:
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(event_id) DO NOTHING;
     """
+    row = (
+        event.get("event_id", ""),
+        event.get("generation_id", ""),
+        event.get("candidate_id", ""),
+        event.get("event_type", "GENERIC"),
+        event.get("message", ""),
+        _json(event.get("payload")),
+        event.get("created_at", _now()),
+    )
+    if _is_pg_audit_backend(repo):
+        return _pg_write(repo, sql, row)
     try:
-        repo._queue.put_nowait(
-            (
-                sql,
-                (
-                    event.get("event_id", ""),
-                    event.get("generation_id", ""),
-                    event.get("candidate_id", ""),
-                    event.get("event_type", "GENERIC"),
-                    event.get("message", ""),
-                    _json(event.get("payload")),
-                    event.get("created_at", _now()),
-                ),
-            )
-        )
+        repo._queue.put_nowait((sql, row))
         return True
     except Exception as e:
         logger.error("[STRATEGY_FACTORY] emit_event failed", error=str(e))
@@ -289,7 +490,7 @@ def record_run(repo: Any, run: dict[str, Any]) -> bool:
     """
     if _is_store_backend(repo):
         return repo.record_run(run)
-    if not repo._is_sqlite:
+    if not repo._is_sqlite and not _is_pg_audit_backend(repo):
         return False
     # Merge benchmark into result_summary (AI-facing backtest payload)
     result_summary: Any = run.get("result_summary")
@@ -310,21 +511,19 @@ def record_run(repo: Any, run: dict[str, Any]) -> bool:
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id) DO NOTHING;
     """
+    row = (
+        run.get("run_id", ""),
+        run.get("generation_id", ""),
+        run.get("strategy_id", ""),
+        run.get("experiment_kind", "GENERATE"),
+        run.get("executed_at", _now()),
+        _json(run.get("config")),
+        _json(result_summary),
+    )
+    if _is_pg_audit_backend(repo):
+        return _pg_write(repo, sql, row)
     try:
-        repo._queue.put_nowait(
-            (
-                sql,
-                (
-                    run.get("run_id", ""),
-                    run.get("generation_id", ""),
-                    run.get("strategy_id", ""),
-                    run.get("experiment_kind", "GENERATE"),
-                    run.get("executed_at", _now()),
-                    _json(run.get("config")),
-                    _json(result_summary),
-                ),
-            )
-        )
+        repo._queue.put_nowait((sql, row))
         return True
     except Exception as e:
         logger.error("[STRATEGY_FACTORY] record_run failed", error=str(e))
@@ -335,7 +534,7 @@ def record_provider_usage(repo: Any, usage: dict[str, Any]) -> bool:
     """Record LLM provider usage — audit queue (legacy) or isolated store."""
     if _is_store_backend(repo):
         return repo.record_provider_usage(usage)
-    if not repo._is_sqlite:
+    if not repo._is_sqlite and not _is_pg_audit_backend(repo):
         return False
     sql = """
         INSERT INTO factory_provider_usage (
@@ -345,25 +544,23 @@ def record_provider_usage(repo: Any, usage: dict[str, Any]) -> bool:
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(usage_id) DO NOTHING;
     """
+    row = (
+        usage.get("usage_id", ""),
+        usage.get("generation_id", ""),
+        int(usage.get("requests", 0)),
+        int(usage.get("failures", 0)),
+        int(usage.get("prompt_tokens", 0)),
+        int(usage.get("completion_tokens", 0)),
+        int(usage.get("total_tokens", 0)),
+        float(usage.get("estimated_cost_usd", 0.0)),
+        float(usage.get("last_latency_ms", 0.0)),
+        usage.get("last_error", ""),
+        usage.get("created_at", _now()),
+    )
+    if _is_pg_audit_backend(repo):
+        return _pg_write(repo, sql, row)
     try:
-        repo._queue.put_nowait(
-            (
-                sql,
-                (
-                    usage.get("usage_id", ""),
-                    usage.get("generation_id", ""),
-                    int(usage.get("requests", 0)),
-                    int(usage.get("failures", 0)),
-                    int(usage.get("prompt_tokens", 0)),
-                    int(usage.get("completion_tokens", 0)),
-                    int(usage.get("total_tokens", 0)),
-                    float(usage.get("estimated_cost_usd", 0.0)),
-                    float(usage.get("last_latency_ms", 0.0)),
-                    usage.get("last_error", ""),
-                    usage.get("created_at", _now()),
-                ),
-            )
-        )
+        repo._queue.put_nowait((sql, row))
         return True
     except Exception as e:
         logger.error("[STRATEGY_FACTORY] record_provider_usage failed", error=str(e))
@@ -374,7 +571,7 @@ def set_loop_state(repo: Any, loop: dict[str, Any]) -> bool:
     """Persist loop control state — audit queue (legacy) or isolated store."""
     if _is_store_backend(repo):
         return repo.set_loop_state(loop)
-    if not repo._is_sqlite:
+    if not repo._is_sqlite and not _is_pg_audit_backend(repo):
         return False
     sql = """
         INSERT INTO factory_loop_state (
@@ -387,19 +584,19 @@ def set_loop_state(repo: Any, loop: dict[str, Any]) -> bool:
             updated_at=excluded.updated_at,
             last_error=excluded.last_error;
     """
+    # 'autonomous' is a SQL literal (the scope is fixed for this control row),
+    # so the row carries the five remaining placeholders only.
+    row = (
+        loop.get("state", "STOPPED"),
+        loop.get("generation_id", ""),
+        _json(loop.get("checkpoint")),
+        loop.get("updated_at", _now()),
+        loop.get("last_error", ""),
+    )
+    if _is_pg_audit_backend(repo):
+        return _pg_write(repo, sql, row)
     try:
-        repo._queue.put_nowait(
-            (
-                sql,
-                (
-                    loop.get("state", "STOPPED"),
-                    loop.get("generation_id", ""),
-                    _json(loop.get("checkpoint")),
-                    loop.get("updated_at", _now()),
-                    loop.get("last_error", ""),
-                ),
-            )
-        )
+        repo._queue.put_nowait((sql, row))
         return True
     except Exception as e:
         logger.error("[STRATEGY_FACTORY] set_loop_state failed", error=str(e))
@@ -415,6 +612,10 @@ def get_generation(repo: Any, generation_id: str) -> dict[str, Any] | None:
     """Read one generation — audit DB (legacy) or isolated store."""
     if _is_store_backend(repo):
         return repo.get_generation(generation_id)
+    if _is_pg_audit_backend(repo):
+        return _pg_query_one(
+            repo, "SELECT * FROM factory_generations WHERE generation_id=?;", (generation_id,)
+        )
     conn = _conn(repo)
     if conn is None:
         return None
@@ -434,8 +635,17 @@ def list_generations(repo: Any, limit: int = 50) -> list[dict[str, Any]]:
     """List generations — audit DB (legacy) or isolated store."""
     if _is_store_backend(repo):
         return repo.list_generations(limit=limit)
+    if _is_pg_audit_backend(repo):
+        return [
+            _row_safe(r)
+            for r in _pg_query(
+                repo,
+                "SELECT * FROM factory_generations ORDER BY number DESC LIMIT ?;",
+                (max(1, min(int(limit), MAX_READ_LIMIT)),),
+            )
+        ]
     conn = _conn(repo)
-    if conn is None:
+    if conn is None and not _is_pg_audit_backend(repo):
         return []
     bounded = max(1, min(int(limit), MAX_READ_LIMIT))
     try:
@@ -459,8 +669,15 @@ def get_loop_states(repo: Any, limit: int = 50) -> list[dict[str, Any]]:
     """List loop control states — audit DB (legacy) or isolated store."""
     if _is_store_backend(repo):
         return repo.get_loop_states(limit=limit) if hasattr(repo, "get_loop_states") else []
+    if _is_pg_audit_backend(repo):
+        return [
+            _row_safe(r)
+            for r in _pg_query(
+                repo, "SELECT * FROM factory_loop_state ORDER BY updated_at DESC LIMIT ?;", (limit,)
+            )
+        ]
     conn = _conn(repo)
-    if conn is None:
+    if conn is None and not _is_pg_audit_backend(repo):
         return []
     try:
         rows = conn.execute(
@@ -700,7 +917,7 @@ def list_candidates(
     if _is_store_backend(repo):
         return repo.list_candidates(generation_id=generation_id, lifecycle=lifecycle, limit=limit)
     conn = _conn(repo)
-    if conn is None:
+    if conn is None and not _is_pg_audit_backend(repo):
         return []
     bounded = max(1, min(int(limit), MAX_READ_LIMIT))
     sql = "SELECT * FROM factory_candidates"
@@ -716,6 +933,8 @@ def list_candidates(
         sql += " WHERE " + " AND ".join(clauses)
     sql += " ORDER BY population_index ASC LIMIT ?;"
     args.append(bounded)
+    if _is_pg_audit_backend(repo):
+        return [_row_safe(r) for r in _pg_query(repo, sql, tuple(args))]
     try:
         rows = conn.execute(sql, args).fetchall()
         return [_row_safe(dict(r)) for r in rows]
@@ -735,7 +954,7 @@ def list_failures(
     if _is_store_backend(repo):
         return repo.list_failures(candidate_id=generation_id, limit=limit)
     conn = _conn(repo)
-    if conn is None:
+    if conn is None and not _is_pg_audit_backend(repo):
         return []
     bounded = max(1, min(int(limit), MAX_READ_LIMIT))
     sql = "SELECT * FROM factory_failures"
@@ -745,6 +964,8 @@ def list_failures(
         args.append(generation_id)
     sql += " ORDER BY created_at DESC LIMIT ?;"
     args.append(bounded)
+    if _is_pg_audit_backend(repo):
+        return [_row_safe(r) for r in _pg_query(repo, sql, tuple(args))]
     try:
         rows = conn.execute(sql, args).fetchall()
         return [_row_safe(dict(r)) for r in rows]
@@ -764,7 +985,7 @@ def list_events(
     if _is_store_backend(repo):
         return repo.list_events(generation_id=generation_id, limit=limit)
     conn = _conn(repo)
-    if conn is None:
+    if conn is None and not _is_pg_audit_backend(repo):
         return []
     bounded = max(1, min(int(limit), MAX_READ_LIMIT))
     sql = "SELECT * FROM factory_events"
@@ -774,6 +995,8 @@ def list_events(
         args.append(generation_id)
     sql += " ORDER BY created_at DESC LIMIT ?;"
     args.append(bounded)
+    if _is_pg_audit_backend(repo):
+        return [_row_safe(r) for r in _pg_query(repo, sql, tuple(args))]
     try:
         rows = conn.execute(sql, args).fetchall()
         return [_row_safe(dict(r)) for r in rows]
@@ -788,8 +1011,17 @@ def list_runs(repo: Any, limit: int = 100) -> list[dict[str, Any]]:
     """List research runs — audit DB (legacy) or isolated store."""
     if _is_store_backend(repo):
         return repo.list_runs(limit=limit)
+    if _is_pg_audit_backend(repo):
+        return [
+            _row_safe(r)
+            for r in _pg_query(
+                repo,
+                "SELECT * FROM factory_runs ORDER BY executed_at DESC LIMIT ?;",
+                (max(1, min(int(limit), 500)),),
+            )
+        ]
     conn = _conn(repo)
-    if conn is None:
+    if conn is None and not _is_pg_audit_backend(repo):
         return []
     bounded = max(1, min(int(limit), 500))
     try:
@@ -815,6 +1047,12 @@ def get_candidate_structural(repo: Any, candidate_id: str) -> dict[str, Any] | N
         return out or None
     import json as _json
 
+    if _is_pg_audit_backend(repo):
+        row = _pg_query_one(
+            repo, "SELECT structural FROM factory_candidates WHERE candidate_id=?;", (candidate_id,)
+        )
+        raw = (row or {}).get("structural")
+        return _decode_structural(raw)
     conn = _conn(repo)
     if conn is None:
         return None
@@ -845,6 +1083,11 @@ def get_loop_state(repo: Any) -> dict[str, Any]:
     """Read loop control state — audit DB (legacy) or isolated store."""
     if _is_store_backend(repo):
         return repo.get_loop_state()
+    if _is_pg_audit_backend(repo):
+        row = _pg_query_one(
+            repo, "SELECT * FROM factory_loop_state WHERE scope='autonomous' LIMIT 1;"
+        )
+        return _row_safe(dict(row)) if row else {"state": "STOPPED"}
     conn = _conn(repo)
     if conn is None:
         return {"state": "STOPPED"}
@@ -880,7 +1123,7 @@ def set_operator_stats(repo: Any, payload: dict[str, Any]) -> bool:
         setter = getattr(repo, "set_operator_stats", None)
         if setter is not None:
             return setter(payload)
-    if not repo._is_sqlite:
+    if not repo._is_sqlite and not _is_pg_audit_backend(repo):
         return False
     sql = """
         INSERT INTO factory_loop_state (
@@ -890,8 +1133,13 @@ def set_operator_stats(repo: Any, payload: dict[str, Any]) -> bool:
             checkpoint=excluded.checkpoint,
             updated_at=excluded.updated_at;
     """
+    # 'ACTIVE' / '' are SQL literals (this is the fixed operator-stats row),
+    # so the row carries the three remaining placeholders only.
+    row = (OPERATOR_STATS_SCOPE, _json(payload), _now())
+    if _is_pg_audit_backend(repo):
+        return _pg_write(repo, sql, row)
     try:
-        repo._queue.put_nowait((sql, (OPERATOR_STATS_SCOPE, _json(payload), _now())))
+        repo._queue.put_nowait((sql, row))
         return True
     except Exception as e:
         logger.error("[STRATEGY_FACTORY] set_operator_stats failed", error=str(e))
@@ -908,6 +1156,13 @@ def get_operator_stats(repo: Any) -> dict[str, Any]:
             except Exception as e:
                 logger.error("[STRATEGY_FACTORY] get_operator_stats failed", error=str(e))
                 return {}
+    if _is_pg_audit_backend(repo):
+        row = _pg_query_one(
+            repo,
+            "SELECT checkpoint FROM factory_loop_state WHERE scope=? LIMIT 1;",
+            (OPERATOR_STATS_SCOPE,),
+        )
+        return _decode_checkpoint((row or {}).get("checkpoint"))
     conn = _conn(repo)
     if conn is None:
         return {}
@@ -935,6 +1190,14 @@ def provider_usage_total(repo: Any) -> dict[str, Any]:
     """Aggregate LLM provider usage — audit DB (legacy) or isolated store."""
     if _is_store_backend(repo):
         return repo.provider_usage_total()
+    if _is_pg_audit_backend(repo):
+        row = _pg_query_one(
+            repo,
+            "SELECT COALESCE(SUM(requests),0) AS req, COALESCE(SUM(failures),0) AS fail, "
+            "COALESCE(SUM(total_tokens),0) AS toks, "
+            "COALESCE(SUM(estimated_cost_usd),0.0) AS cost FROM factory_provider_usage;",
+        )
+        return _usage_from_row(row)
     conn = _conn(repo)
     if conn is None:
         return {"requests": 0, "estimated_cost_usd": 0.0}
@@ -981,6 +1244,51 @@ def _row_safe(row: dict[str, Any]) -> dict[str, Any]:
                 if text == "" or text.lower() == "null":
                     out[col] = "{}"
     return out
+
+
+def _decode_structural(raw: Any) -> dict[str, Any] | None:
+    """Decode a ``structural`` JSON column shared by both read paths.
+
+    Factored out of :func:`get_candidate_structural` so the SQLite and pooled
+    PostgreSQL branches decode byte-identically (immutability of the
+    structural verdict is the invariant that makes lifecycle updates safe).
+    """
+    if not raw:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    text_val = str(raw).strip()
+    if text_val == "" or text_val.lower() in ("null", "none", "{}"):
+        return None
+    try:
+        parsed = json.loads(text_val)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _decode_checkpoint(raw: Any) -> dict[str, Any]:
+    """Decode the ``checkpoint`` JSON column (``{}`` when absent/empty)."""
+    text = str(raw or "").strip()
+    if not text or text.lower() in ("null", "{}"):
+        return {}
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _usage_from_row(row: dict[str, Any] | None) -> dict[str, Any]:
+    """Shape a ``provider_usage_total`` row from either read path."""
+    if not row:
+        return {"requests": 0, "estimated_cost_usd": 0.0}
+    return {
+        "requests": int(row.get("req") or 0),
+        "failures": int(row.get("fail") or 0),
+        "total_tokens": int(row.get("toks") or 0),
+        "estimated_cost_usd": round(float(row.get("cost") or 0.0), 4),
+    }
 
 
 __all__ = [

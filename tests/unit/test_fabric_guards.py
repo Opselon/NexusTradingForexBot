@@ -658,3 +658,81 @@ def test_guard_enqueue_does_not_block_on_saturation(tmp_path: Path) -> None:
     # proves the hot path is not doing synchronous IO.
     assert elapsed < 2.0, f"enqueue too slow: {elapsed:.3f}s for 2000 items"
     fabric.close()
+
+
+# ---------------------------------------------------------------------------
+# PR #470 regression: the operational read seam must yield DICT rows
+# ---------------------------------------------------------------------------
+# provider_store.sqlite_connection() borrows AuditRepository._connect_sqlite,
+# whose row_factory is the sqlite3 default (tuple). The read helpers use
+# dict(row) and promise dict rows to callers, so a tuple connection broke
+# every single-column SELECT with "dictionary update sequence element #0 has
+# length N; 2 is required" — swallowed by the helpers' failure contract as
+# an empty result, and every operational read silently returned []. This
+# guards the contract at the seam itself, not at one caller.
+
+
+def test_provider_store_read_seam_yields_dicts(tmp_path: Path) -> None:
+    """sqlite_connection + query_rows must return dicts, never tuples."""
+    from nexus_scalp.adapters.database.audit_repository import AuditRepository
+    from nexus_scalp.adapters.database.provider_store import (
+        query_one,
+        query_rows,
+        query_scalar,
+        sqlite_connection,
+    )
+
+    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'ops.db'}")
+    repo._setup_storage()
+    try:
+        # the seam itself must hand back a dict-capable connection
+        conn = sqlite_connection(repo, 5.0)
+        try:
+            assert conn.row_factory is sqlite3.Row, (
+                f"row_factory is {conn.row_factory!r}, must be sqlite3.Row so "
+                "dict(row) works — the caller contract is dict rows"
+            )
+        finally:
+            conn.close()
+
+        repo._queue.put_nowait(("CREATE TABLE IF NOT EXISTS ops_probe (k TEXT, n INTEGER)", ()))
+        repo._queue.put_nowait(("INSERT INTO ops_probe VALUES (?, ?)", ("alpha", 1)))
+        repo.flush(5.0)
+
+        rows = query_rows(repo, "SELECT k, n FROM ops_probe ORDER BY k")
+        assert rows == [{"k": "alpha", "n": 1}], f"dict rows expected, got {rows!r}"
+
+        one = query_one(repo, "SELECT k FROM ops_probe LIMIT 1")
+        assert one == {"k": "alpha"}, f"single-column dict row expected, got {one!r}"
+
+        scalar = query_scalar(repo, "SELECT COUNT(*) FROM ops_probe")
+        assert scalar == 1, f"scalar count expected 1, got {scalar!r}"
+    finally:
+        repo.close()
+
+
+def test_provider_store_read_seam_multicolumn_and_positional(tmp_path: Path) -> None:
+    """The seam keeps positional access working too (scalar path uses row[0])."""
+    from nexus_scalp.adapters.database.audit_repository import AuditRepository
+    from nexus_scalp.adapters.database.provider_store import sqlite_connection
+
+    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'ops2.db'}")
+    repo._setup_storage()
+    try:
+        repo._queue.put_nowait(
+            ("CREATE TABLE IF NOT EXISTS ops_probe2 (a TEXT, b TEXT, c INTEGER)", ())
+        )
+        repo._queue.put_nowait(("INSERT INTO ops_probe2 VALUES (?, ?, ?)", ("x", "y", 7)))
+        repo.flush(5.0)
+
+        conn = sqlite_connection(repo, 5.0)
+        try:
+            row = conn.execute("SELECT a, b, c FROM ops_probe2 LIMIT 1").fetchone()
+            # dict access (the helpers' contract) AND positional (scalar path)
+            assert dict(row) == {"a": "x", "b": "y", "c": 7}
+            assert row[2] == 7
+            assert list(row.keys()) == ["a", "b", "c"]
+        finally:
+            conn.close()
+    finally:
+        repo.close()

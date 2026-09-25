@@ -26,6 +26,13 @@ from datetime import datetime
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.adapters.database.provider_store import (
+    OPS_SHADOW_DOMAIN,
+    ops_ensure_schema,
+    ops_query_rows,
+    ops_query_scalar,
+    ops_queue_write,
+)
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.shadow.models import (
     PromotionEvaluation,
@@ -147,126 +154,134 @@ class ShadowStore:
         """
         if self._schema_ensured and self._additive_ensured:
             return
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
+        if self.audit_repo._is_sqlite:
             try:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS shadow_runs (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        run_id TEXT UNIQUE NOT NULL,
-                        champion_model_id TEXT NOT NULL,
-                        champion_version TEXT NOT NULL,
-                        challenger_model_id TEXT NOT NULL,
-                        challenger_version TEXT NOT NULL,
-                        status TEXT NOT NULL,
-                        started_at TEXT NOT NULL,
-                        finished_at TEXT DEFAULT '',
-                        decision_count INTEGER DEFAULT 0,
-                        error TEXT DEFAULT ''
-                    );
-                    """
-                )
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS shadow_decisions (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        shadow_decision_id TEXT UNIQUE NOT NULL,
-                        run_id TEXT NOT NULL,
-                        decision_id TEXT DEFAULT '',
-                        timestamp TEXT NOT NULL,
-                        symbol TEXT NOT NULL,
-                        timeframe TEXT DEFAULT '',
-                        champion_model_id TEXT NOT NULL,
-                        champion_version TEXT NOT NULL,
-                        challenger_model_id TEXT NOT NULL,
-                        challenger_version TEXT NOT NULL,
-                        feature_schema_id TEXT DEFAULT 'scalp_v1',
-                        feature_dimension INTEGER DEFAULT 50,
-                        feature_hash TEXT DEFAULT '',
-                        regime TEXT DEFAULT '',
-                        session TEXT DEFAULT '',
-                        champion_action TEXT DEFAULT '',
-                        champion_confidence REAL DEFAULT 0.0,
-                        challenger_action TEXT DEFAULT '',
-                        challenger_confidence REAL DEFAULT 0.0,
-                        action_agreement INTEGER DEFAULT 0,
-                        valid_comparison INTEGER DEFAULT 1,
-                        invalid_reason TEXT DEFAULT '',
-                        hypothetical_pnl_usd REAL DEFAULT 0.0,
-                        hypothetical_r REAL DEFAULT 0.0,
-                        mfe_r REAL DEFAULT 0.0,
-                        mae_r REAL DEFAULT 0.0,
-                        holding_duration_sec REAL DEFAULT 0.0,
-                        exit_reason TEXT DEFAULT '',
-                        simulated INTEGER DEFAULT 1,
-                        payload TEXT DEFAULT '{}'
-                    );
-                    """
-                )
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS shadow_comparisons (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        run_id TEXT UNIQUE NOT NULL,
-                        champion_model_id TEXT NOT NULL,
-                        champion_version TEXT NOT NULL,
-                        challenger_model_id TEXT NOT NULL,
-                        challenger_version TEXT NOT NULL,
-                        sample_count INTEGER DEFAULT 0,
-                        valid_comparisons INTEGER DEFAULT 0,
-                        invalid_comparisons INTEGER DEFAULT 0,
-                        action_agreement_rate REAL DEFAULT 0.0,
-                        champion_expectancy_r REAL DEFAULT 0.0,
-                        challenger_expectancy_r REAL DEFAULT 0.0,
-                        champion_drawdown_r REAL DEFAULT 0.0,
-                        challenger_drawdown_r REAL DEFAULT 0.0,
-                        evidence_status TEXT DEFAULT 'INSUFFICIENT_EVIDENCE',
-                        samples_required INTEGER DEFAULT 30,
-                        samples_observed INTEGER DEFAULT 0,
-                        by_regime TEXT DEFAULT '{}',
-                        by_strategy TEXT DEFAULT '{}',
-                        best_regimes TEXT DEFAULT '[]',
-                        worst_regimes TEXT DEFAULT '[]',
-                        degraded_regimes TEXT DEFAULT '[]',
-                        degraded_strategies TEXT DEFAULT '[]',
-                        evaluated_at TEXT NOT NULL,
-                        payload TEXT DEFAULT '{}'
-                    );
-                    """
-                )
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS shadow_promotions (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        run_id TEXT UNIQUE NOT NULL,
-                        candidate_model_id TEXT NOT NULL,
-                        candidate_version TEXT NOT NULL,
-                        champion_model_id TEXT NOT NULL,
-                        champion_version TEXT NOT NULL,
-                        final_score REAL DEFAULT 0.0,
-                        eligible INTEGER DEFAULT 0,
-                        vetoes TEXT DEFAULT '[]',
-                        reasons TEXT DEFAULT '[]',
-                        evaluated_at TEXT NOT NULL,
-                        payload TEXT DEFAULT '{}'
-                    );
-                    """
-                )
-                for idx in (
-                    "CREATE INDEX IF NOT EXISTS idx_shadow_decisions_run ON shadow_decisions(run_id, timestamp);",
-                    "CREATE INDEX IF NOT EXISTS idx_shadow_decisions_symbol ON shadow_decisions(symbol, timestamp);",
-                    "CREATE INDEX IF NOT EXISTS idx_shadow_runs_status ON shadow_runs(status);",
-                ):
-                    conn.execute(idx)
-                conn.commit()
-                self._schema_ensured = True
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[SHADOW] schema init failed", error=str(e))
+                conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
+                try:
+                    conn.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS shadow_runs (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            run_id TEXT UNIQUE NOT NULL,
+                            champion_model_id TEXT NOT NULL,
+                            champion_version TEXT NOT NULL,
+                            challenger_model_id TEXT NOT NULL,
+                            challenger_version TEXT NOT NULL,
+                            status TEXT NOT NULL,
+                            started_at TEXT NOT NULL,
+                            finished_at TEXT DEFAULT '',
+                            decision_count INTEGER DEFAULT 0,
+                            error TEXT DEFAULT ''
+                        );
+                        """
+                    )
+                    conn.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS shadow_decisions (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            shadow_decision_id TEXT UNIQUE NOT NULL,
+                            run_id TEXT NOT NULL,
+                            decision_id TEXT DEFAULT '',
+                            timestamp TEXT NOT NULL,
+                            symbol TEXT NOT NULL,
+                            timeframe TEXT DEFAULT '',
+                            champion_model_id TEXT NOT NULL,
+                            champion_version TEXT NOT NULL,
+                            challenger_model_id TEXT NOT NULL,
+                            challenger_version TEXT NOT NULL,
+                            feature_schema_id TEXT DEFAULT 'scalp_v1',
+                            feature_dimension INTEGER DEFAULT 50,
+                            feature_hash TEXT DEFAULT '',
+                            regime TEXT DEFAULT '',
+                            session TEXT DEFAULT '',
+                            champion_action TEXT DEFAULT '',
+                            champion_confidence REAL DEFAULT 0.0,
+                            challenger_action TEXT DEFAULT '',
+                            challenger_confidence REAL DEFAULT 0.0,
+                            action_agreement INTEGER DEFAULT 0,
+                            valid_comparison INTEGER DEFAULT 1,
+                            invalid_reason TEXT DEFAULT '',
+                            hypothetical_pnl_usd REAL DEFAULT 0.0,
+                            hypothetical_r REAL DEFAULT 0.0,
+                            mfe_r REAL DEFAULT 0.0,
+                            mae_r REAL DEFAULT 0.0,
+                            holding_duration_sec REAL DEFAULT 0.0,
+                            exit_reason TEXT DEFAULT '',
+                            simulated INTEGER DEFAULT 1,
+                            payload TEXT DEFAULT '{}'
+                        );
+                        """
+                    )
+                    conn.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS shadow_comparisons (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            run_id TEXT UNIQUE NOT NULL,
+                            champion_model_id TEXT NOT NULL,
+                            champion_version TEXT NOT NULL,
+                            challenger_model_id TEXT NOT NULL,
+                            challenger_version TEXT NOT NULL,
+                            sample_count INTEGER DEFAULT 0,
+                            valid_comparisons INTEGER DEFAULT 0,
+                            invalid_comparisons INTEGER DEFAULT 0,
+                            action_agreement_rate REAL DEFAULT 0.0,
+                            champion_expectancy_r REAL DEFAULT 0.0,
+                            challenger_expectancy_r REAL DEFAULT 0.0,
+                            champion_drawdown_r REAL DEFAULT 0.0,
+                            challenger_drawdown_r REAL DEFAULT 0.0,
+                            evidence_status TEXT DEFAULT 'INSUFFICIENT_EVIDENCE',
+                            samples_required INTEGER DEFAULT 30,
+                            samples_observed INTEGER DEFAULT 0,
+                            by_regime TEXT DEFAULT '{}',
+                            by_strategy TEXT DEFAULT '{}',
+                            best_regimes TEXT DEFAULT '[]',
+                            worst_regimes TEXT DEFAULT '[]',
+                            degraded_regimes TEXT DEFAULT '[]',
+                            degraded_strategies TEXT DEFAULT '[]',
+                            evaluated_at TEXT NOT NULL,
+                            payload TEXT DEFAULT '{}'
+                        );
+                        """
+                    )
+                    conn.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS shadow_promotions (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            run_id TEXT UNIQUE NOT NULL,
+                            candidate_model_id TEXT NOT NULL,
+                            candidate_version TEXT NOT NULL,
+                            champion_model_id TEXT NOT NULL,
+                            champion_version TEXT NOT NULL,
+                            final_score REAL DEFAULT 0.0,
+                            eligible INTEGER DEFAULT 0,
+                            vetoes TEXT DEFAULT '[]',
+                            reasons TEXT DEFAULT '[]',
+                            evaluated_at TEXT NOT NULL,
+                            payload TEXT DEFAULT '{}'
+                        );
+                        """
+                    )
+                    for idx in (
+                        "CREATE INDEX IF NOT EXISTS idx_shadow_decisions_run ON shadow_decisions(run_id, timestamp);",
+                        "CREATE INDEX IF NOT EXISTS idx_shadow_decisions_symbol ON shadow_decisions(symbol, timestamp);",
+                        "CREATE INDEX IF NOT EXISTS idx_shadow_runs_status ON shadow_runs(status);",
+                    ):
+                        conn.execute(idx)
+                    conn.commit()
+                    self._schema_ensured = True
+                finally:
+                    conn.close()
+            except Exception as e:
+                logger.error("[SHADOW] schema init failed", error=str(e))
+        else:
+            # PostgreSQL: the ops_shadow domain's pooled backend provisions the
+            # translated schema (see nexus_scalp.shadow.schema); the fabric
+            # runs the CREATE IF NOT EXISTS statements idempotently.
+            self._schema_ensured = ops_ensure_schema(
+                self.audit_repo, OPS_SHADOW_DOMAIN, operation="shadow.ensure_schema"
+            )
         # Additive SHADOW_EVIDENCE v2 columns — AFTER base tables exist.
         self._ensure_additive_columns()
 
@@ -277,48 +292,55 @@ class ShadowStore:
         run-freeze columns to shadow_runs when absent. Deterministic,
         non-destructive: existing rows read back as NULL (NOT_RECORDED).
         """
-        if self._additive_ensured or not self.audit_repo or not self.audit_repo._is_sqlite:
+        if self._additive_ensured or not self.audit_repo:
             return
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
+        if self.audit_repo._is_sqlite:
             try:
-                self._add_missing_columns(
-                    conn,
-                    "shadow_decisions",
-                    [
-                        ("champion_entry", "REAL DEFAULT 0.0"),
-                        ("champion_sl", "REAL DEFAULT 0.0"),
-                        ("champion_tp", "REAL DEFAULT 0.0"),
-                        ("shadow_entry", "REAL DEFAULT 0.0"),
-                        ("shadow_sl", "REAL DEFAULT 0.0"),
-                        ("shadow_tp", "REAL DEFAULT 0.0"),
-                        ("spread_usd", "REAL DEFAULT 0.0"),
-                        ("shadow_r", "REAL"),
-                        ("shadow_mfe_r", "REAL"),
-                        ("shadow_mae_r", "REAL"),
-                        ("shadow_pnl_usd", "REAL"),
-                        ("shadow_holding_sec", "REAL"),
-                        ("shadow_exit_reason", "TEXT DEFAULT ''"),
-                        ("delta_r", "REAL"),
-                        ("outcome_status", "TEXT DEFAULT 'NOT_RECORDED'"),
-                    ],
-                )
-                self._add_missing_columns(
-                    conn,
-                    "shadow_runs",
-                    [
-                        ("git_revision", "TEXT DEFAULT ''"),
-                        ("configuration_version", "TEXT DEFAULT ''"),
-                        ("challenger_artifact_hash", "TEXT DEFAULT ''"),
-                        ("champion_artifact_hash", "TEXT DEFAULT ''"),
-                    ],
-                )
-                conn.commit()
-                self._additive_ensured = True
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[SHADOW] additive migration failed (isolated)", error=str(e))
+                conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
+                try:
+                    self._add_missing_columns(
+                        conn,
+                        "shadow_decisions",
+                        [
+                            ("champion_entry", "REAL DEFAULT 0.0"),
+                            ("champion_sl", "REAL DEFAULT 0.0"),
+                            ("champion_tp", "REAL DEFAULT 0.0"),
+                            ("shadow_entry", "REAL DEFAULT 0.0"),
+                            ("shadow_sl", "REAL DEFAULT 0.0"),
+                            ("shadow_tp", "REAL DEFAULT 0.0"),
+                            ("spread_usd", "REAL DEFAULT 0.0"),
+                            ("shadow_r", "REAL"),
+                            ("shadow_mfe_r", "REAL"),
+                            ("shadow_mae_r", "REAL"),
+                            ("shadow_pnl_usd", "REAL"),
+                            ("shadow_holding_sec", "REAL"),
+                            ("shadow_exit_reason", "TEXT DEFAULT ''"),
+                            ("delta_r", "REAL"),
+                            ("outcome_status", "TEXT DEFAULT 'NOT_RECORDED'"),
+                        ],
+                    )
+                    self._add_missing_columns(
+                        conn,
+                        "shadow_runs",
+                        [
+                            ("git_revision", "TEXT DEFAULT ''"),
+                            ("configuration_version", "TEXT DEFAULT ''"),
+                            ("challenger_artifact_hash", "TEXT DEFAULT ''"),
+                            ("champion_artifact_hash", "TEXT DEFAULT ''"),
+                        ],
+                    )
+                    conn.commit()
+                    self._additive_ensured = True
+                finally:
+                    conn.close()
+            except Exception as e:
+                logger.error("[SHADOW] additive migration failed (isolated)", error=str(e))
+            return
+        # PostgreSQL: the additive columns are part of the ops_shadow domain's
+        # translated schema (see nexus_scalp.shadow.schema), so provisioning
+        # the domain already installs them. Nothing to ALTER at runtime — the
+        # domain is the single source of truth for its own column set.
+        self._additive_ensured = True
 
     @staticmethod
     def _add_missing_columns(
@@ -342,7 +364,7 @@ class ShadowStore:
     # ------------------------------------------------------------------
 
     def save_run(self, run: ShadowRun) -> bool:
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return False
         self.ensure_schema()
         args = (
@@ -362,15 +384,16 @@ class ShadowStore:
             run.challenger_artifact_hash,
             run.champion_artifact_hash,
         )
-        try:
-            self.audit_repo._queue.put_nowait((_INSERT_RUN_SQL, args))
-            return True
-        except Exception as e:
-            logger.error("[SHADOW] save_run failed", run=run.run_id, error=str(e))
-            return False
+        return ops_queue_write(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            _INSERT_RUN_SQL,
+            args,
+            operation="shadow.save_run",
+        )
 
     def save_decision(self, decision: ShadowDecisionRecord) -> bool:
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return False
         self.ensure_schema()
         args = (
@@ -421,15 +444,16 @@ class ShadowStore:
             decision.outcome_status,
             json.dumps(decision.model_dump(mode="json"), default=str),
         )
-        try:
-            self.audit_repo._queue.put_nowait((_INSERT_DECISION_SQL, args))
-            return True
-        except Exception as e:
-            logger.error("[SHADOW] save_decision failed", error=str(e))
-            return False
+        return ops_queue_write(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            _INSERT_DECISION_SQL,
+            args,
+            operation="shadow.save_decision",
+        )
 
     def save_comparison(self, comparison: ShadowComparison) -> bool:
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return False
         self.ensure_schema()
         args = (
@@ -458,15 +482,16 @@ class ShadowStore:
             comparison.evaluation_started_at.isoformat(),
             json.dumps(comparison.model_dump(mode="json"), default=str),
         )
-        try:
-            self.audit_repo._queue.put_nowait((_INSERT_COMPARISON_SQL, args))
-            return True
-        except Exception as e:
-            logger.error("[SHADOW] save_comparison failed", error=str(e))
-            return False
+        return ops_queue_write(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            _INSERT_COMPARISON_SQL,
+            args,
+            operation="shadow.save_comparison",
+        )
 
     def save_promotion(self, evaluation: PromotionEvaluation) -> bool:
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return False
         self.ensure_schema()
         args = (
@@ -482,12 +507,13 @@ class ShadowStore:
             evaluation.evaluated_at.isoformat(),
             json.dumps(evaluation.model_dump(mode="json"), default=str),
         )
-        try:
-            self.audit_repo._queue.put_nowait((_INSERT_PROMOTION_SQL, args))
-            return True
-        except Exception as e:
-            logger.error("[SHADOW] save_promotion failed", error=str(e))
-            return False
+        return ops_queue_write(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            _INSERT_PROMOTION_SQL,
+            args,
+            operation="shadow.save_promotion",
+        )
 
     # ------------------------------------------------------------------
     # ML-OBS-001: outcome resolution (bar-close cadence, never per-tick)
@@ -511,7 +537,7 @@ class ShadowStore:
         a run with millions of decisions never materializes an unbounded row
         set on a bar-close path.
         """
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return []
         bounded = max(1, min(int(limit), MAX_READ_LIMIT))
         sql = (
@@ -533,19 +559,13 @@ class ShadowStore:
         if clauses:
             sql += " AND " + " AND ".join(clauses)
         sql += " ORDER BY timestamp ASC LIMIT ?;"
-        out: list[dict[str, Any]] = []
-        try:
-            conn = self.audit_repo._connect_sqlite(timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                rows = conn.execute(sql, (*args, bounded)).fetchall()
-            finally:
-                conn.close()
-            for r in rows:
-                out.append(dict(r))
-        except Exception as e:
-            logger.error("[SHADOW] list_pending_decisions failed", error=str(e))
-        return out
+        return ops_query_rows(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            sql,
+            (*args, bounded),
+            operation="shadow.list_pending_decisions",
+        )
 
     def apply_resolved_outcome(self, decision_id: str, fields: dict[str, Any]) -> bool:
         """Updates ONE shadow_decisions row with its resolved outcome.
@@ -559,7 +579,7 @@ class ShadowStore:
         SQLite commits (INV-001: the resolution hook is off the per-tick path
         and the write itself never blocks the caller).
         """
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return False
         self.ensure_schema()
         args = (
@@ -579,16 +599,13 @@ class ShadowStore:
             str(fields.get("outcome_status", STATUS_RESOLVED) or STATUS_RESOLVED),
             str(decision_id),
         )
-        try:
-            self.audit_repo._queue.put_nowait((_UPDATE_OUTCOME_SQL, args))
-            return True
-        except Exception as e:
-            logger.error(
-                "[SHADOW] apply_resolved_outcome failed",
-                decision_id=str(decision_id),
-                error=str(e),
-            )
-            return False
+        return ops_queue_write(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            _UPDATE_OUTCOME_SQL,
+            args,
+            operation="shadow.apply_resolved_outcome",
+        )
 
     def count_outcome_status(self, run_id: str | None = None) -> dict[str, int]:
         """Outcome-status histogram for a run (observability / tests).
@@ -598,7 +615,7 @@ class ShadowStore:
         in which case every row reads as NOT_RECORDED (the honest default).
         """
         out: dict[str, int] = {}
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return out
         self.ensure_schema()
         where = "WHERE run_id = ?" if run_id else ""
@@ -628,42 +645,28 @@ class ShadowStore:
         return out
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return None
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                row = conn.execute(
-                    "SELECT * FROM shadow_runs WHERE run_id=?;", (run_id,)
-                ).fetchone()
-                return dict(row) if row else None
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[SHADOW] get_run failed", error=str(e))
-            return None
+        rows = ops_query_rows(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            "SELECT * FROM shadow_runs WHERE run_id=?;",
+            (run_id,),
+            operation="shadow.get_run",
+        )
+        return rows[0] if rows else None
 
     def list_runs(self, limit: int = 50) -> list[dict[str, Any]]:
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return []
         bounded = max(1, min(int(limit), 500))
-        out: list[dict[str, Any]] = []
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                rows = conn.execute(
-                    "SELECT * FROM shadow_runs ORDER BY started_at DESC LIMIT ?;",
-                    (bounded,),
-                ).fetchall()
-            finally:
-                conn.close()
-            for r in rows:
-                out.append(dict(r))
-        except Exception as e:
-            logger.error("[SHADOW] list_runs failed", error=str(e))
-        return out
+        return ops_query_rows(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            "SELECT * FROM shadow_runs ORDER BY started_at DESC LIMIT ?;",
+            (bounded,),
+            operation="shadow.list_runs",
+        )
 
     def list_decisions(
         self,
@@ -671,7 +674,7 @@ class ShadowStore:
         symbol: str | None = None,
         limit: int = 200,
     ) -> list[dict[str, Any]]:
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return []
         bounded = max(1, min(int(limit), MAX_READ_LIMIT))
         sql = "SELECT * FROM shadow_decisions"
@@ -686,74 +689,49 @@ class ShadowStore:
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY timestamp DESC LIMIT ?;"
-        out: list[dict[str, Any]] = []
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                rows = conn.execute(sql, (*args, bounded)).fetchall()
-            finally:
-                conn.close()
-            for r in rows:
-                out.append(dict(r))
-        except Exception as e:
-            logger.error("[SHADOW] list_decisions failed", error=str(e))
-        return out
+        return ops_query_rows(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            sql,
+            (*args, bounded),
+            operation="shadow.list_decisions",
+        )
 
     def get_comparison(self, run_id: str) -> dict[str, Any] | None:
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return None
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                row = conn.execute(
-                    "SELECT * FROM shadow_comparisons WHERE run_id=?;", (run_id,)
-                ).fetchone()
-                return dict(row) if row else None
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[SHADOW] get_comparison failed", error=str(e))
-            return None
+        rows = ops_query_rows(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            "SELECT * FROM shadow_comparisons WHERE run_id=?;",
+            (run_id,),
+            operation="shadow.get_comparison",
+        )
+        return rows[0] if rows else None
 
     def get_promotion(self, run_id: str) -> dict[str, Any] | None:
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return None
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                row = conn.execute(
-                    "SELECT * FROM shadow_promotions WHERE run_id=?;", (run_id,)
-                ).fetchone()
-                return dict(row) if row else None
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[SHADOW] get_promotion failed", error=str(e))
-            return None
+        rows = ops_query_rows(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            "SELECT * FROM shadow_promotions WHERE run_id=?;",
+            (run_id,),
+            operation="shadow.get_promotion",
+        )
+        return rows[0] if rows else None
 
     def list_promotions(self, limit: int = 50) -> list[dict[str, Any]]:
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return []
         bounded = max(1, min(int(limit), 500))
-        out: list[dict[str, Any]] = []
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                rows = conn.execute(
-                    "SELECT * FROM shadow_promotions ORDER BY evaluated_at DESC LIMIT ?;",
-                    (bounded,),
-                ).fetchall()
-            finally:
-                conn.close()
-            for r in rows:
-                out.append(dict(r))
-        except Exception as e:
-            logger.error("[SHADOW] list_promotions failed", error=str(e))
-        return out
+        return ops_query_rows(
+            self.audit_repo,
+            OPS_SHADOW_DOMAIN,
+            "SELECT * FROM shadow_promotions ORDER BY evaluated_at DESC LIMIT ?;",
+            (bounded,),
+            operation="shadow.list_promotions",
+        )
 
     def summary(self) -> dict[str, Any]:
         """Shadow dashboard summary.
@@ -766,23 +744,59 @@ class ShadowStore:
         ensure_schema() is idempotent + flag-guarded (no hot-path cost).
         """
         out: dict[str, Any] = {"available": False, "runs": {}, "decisions": 0, "promotions": 0}
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return out
         self.ensure_schema()
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
+        if self.audit_repo._is_sqlite:
             try:
-                for r in conn.execute(
-                    "SELECT status, COUNT(*) AS c FROM shadow_runs GROUP BY status;"
-                ).fetchall():
-                    out["runs"][str(r[0])] = int(r[1])
-                row = conn.execute("SELECT COUNT(*) FROM shadow_decisions;").fetchone()
-                out["decisions"] = int(row[0]) if row else 0
-                row = conn.execute("SELECT COUNT(*) FROM shadow_promotions;").fetchone()
-                out["promotions"] = int(row[0]) if row else 0
-                out["available"] = True
-            finally:
-                conn.close()
+                conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
+                try:
+                    for r in conn.execute(
+                        "SELECT status, COUNT(*) AS c FROM shadow_runs GROUP BY status;"
+                    ).fetchall():
+                        out["runs"][str(r[0])] = int(r[1])
+                    row = conn.execute("SELECT COUNT(*) FROM shadow_decisions;").fetchone()
+                    out["decisions"] = int(row[0]) if row else 0
+                    row = conn.execute("SELECT COUNT(*) FROM shadow_promotions;").fetchone()
+                    out["promotions"] = int(row[0]) if row else 0
+                    out["available"] = True
+                finally:
+                    conn.close()
+            except Exception as e:
+                logger.error("[SHADOW] summary failed", error=str(e))
+            return out
+        # PostgreSQL: the ops domain's pooled read backend (schema is ensured
+        # above, so absence here means an empty store, not a missing table).
+        try:
+            for r in ops_query_rows(
+                self.audit_repo,
+                OPS_SHADOW_DOMAIN,
+                "SELECT status, COUNT(*) AS c FROM shadow_runs GROUP BY status;",
+                (),
+                operation="shadow.summary.runs",
+            ):
+                out["runs"][str(r["status"])] = int(r["c"])
+            out["decisions"] = int(
+                ops_query_scalar(
+                    self.audit_repo,
+                    OPS_SHADOW_DOMAIN,
+                    "SELECT COUNT(*) FROM shadow_decisions;",
+                    (),
+                    operation="shadow.summary.decisions",
+                )
+                or 0
+            )
+            out["promotions"] = int(
+                ops_query_scalar(
+                    self.audit_repo,
+                    OPS_SHADOW_DOMAIN,
+                    "SELECT COUNT(*) FROM shadow_promotions;",
+                    (),
+                    operation="shadow.summary.promotions",
+                )
+                or 0
+            )
+            out["available"] = True
         except Exception as e:
             logger.error("[SHADOW] summary failed", error=str(e))
         return out

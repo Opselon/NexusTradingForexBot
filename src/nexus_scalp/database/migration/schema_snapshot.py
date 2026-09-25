@@ -16,9 +16,7 @@ of the real 52 + 49:
 * 27 columns added at runtime by ``ALTER TABLE ADD COLUMN`` (present in every
   live schema, absent from every ``CREATE TABLE`` literal);
 * the bootstrap tables owned by sibling modules (``audit_dead_letter``, the
-  ``audit_broker_*`` family, ``audit_paper_executions``, and the
-  ``learning_cycles`` / ``learning_cycle_events`` pair owned by
-  ``LearningCycleStore``).
+  ``audit_broker_*`` family, ``audit_paper_executions``).
 
 THE REPLAY
 ==========
@@ -34,6 +32,15 @@ Every captured statement is validated against the replayed schema before it is
 returned (the application guards some DDL with ``contextlib.suppress``, so a
 statement can be executed without landing), and the whole thing runs in
 memory: no canonical database file is ever opened, let alone written.
+
+WAVE 3 generalizes the replay past audit: news and candle_intel had no authored
+provisioning path at all, so ``provision_domain`` swallowed the
+``NotImplementedError`` from ``migrate_domain`` and reported success while the
+domain had zero tables on PostgreSQL. Each domain now gets the same treatment
+(see ``replay_schema``), replaying its own declared bootstrap DDL — read from
+the schema modules that own it, never by constructing the store, which touches
+the filesystem and starts workers — plus its ordered migration registry and the
+engine meta tables.
 """
 
 from __future__ import annotations
@@ -41,8 +48,12 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
+
+from nexus_scalp.database.models import DatabaseDomain
+from nexus_scalp.database.registry import migrations_for
 
 logger = logging.getLogger(__name__)
 
@@ -55,11 +66,21 @@ _CREATE_INDEX = re.compile(
 )
 _ADD_COLUMN = re.compile(r'(?is)^\s*ALTER\s+TABLE\s+("?)(\w+)\1\s+ADD\s+COLUMN\s+("?)(\w+)\3')
 
-#: SQLite's catalog normalizes the owner's ``CREATE TABLE/INDEX IF NOT
-#: EXISTS`` down to ``CREATE TABLE/INDEX`` when it stores the statement text.
-#: The owner's own spelling (and every other replayed statement) is
-#: ``IF NOT EXISTS`` — that is what keeps re-provisioning PostgreSQL
-#: idempotent — so the normalization is undone here rather than propagated.
+
+def _open_replay() -> tuple[sqlite3.Connection, list[str]]:
+    """A disposable in-memory connection plus the DDL statements it executes."""
+    captured: list[str] = []
+    conn = sqlite3.connect(":memory:")
+
+    def _record(statement: str) -> None:
+        sql = statement.strip()
+        if _DDL_STATEMENT.match(sql):
+            captured.append(sql)
+
+    conn.set_trace_callback(_record)
+    return conn, captured
+
+
 _IF_NOT_EXISTS_GUARD = re.compile(
     r'(?is)^(CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX))\s+((?!IF\s+NOT\s+EXISTS)("?[\w]+"?))'
 )
@@ -78,21 +99,7 @@ def _restore_if_not_exists(statement: str) -> str:
     return _IF_NOT_EXISTS_GUARD.sub(r"\1 IF NOT EXISTS \2", statement)
 
 
-def _open_replay() -> tuple[sqlite3.Connection, list[str]]:
-    """A disposable in-memory connection plus the DDL statements it executes."""
-    captured: list[str] = []
-    conn = sqlite3.connect(":memory:")
-
-    def _record(statement: str) -> None:
-        sql = statement.strip()
-        if _DDL_STATEMENT.match(sql):
-            captured.append(sql)
-
-    conn.set_trace_callback(_record)
-    return conn, captured
-
-
-def _apply_application_bootstrap(conn: sqlite3.Connection) -> None:
+def _apply_audit_bootstrap(conn: sqlite3.Connection) -> None:
     """Run the DDL path an ``AuditRepository`` construction executes.
 
     ``object.__new__`` deliberately skips ``__init__``: construction starts a
@@ -114,21 +121,67 @@ def _apply_application_bootstrap(conn: sqlite3.Connection) -> None:
         write_sink=None,
     )
     AuditRepository._create_sqlite_tables(host, conn)
+    _apply_learning_cycle_tables(conn)
 
 
-def _apply_migration_registry(conn: sqlite3.Connection) -> None:
-    """Apply the audit domain's ordered registry (AUDIT-0002..0009).
+def _apply_news_bootstrap(conn: sqlite3.Connection) -> None:
+    """Run the DDL path a ``NewsDatabase`` construction executes.
 
-    This is the half of the schema that lives in code the bootstrap never
-    calls: the governance/incident/release/archive tables, the research hot-path
-    indexes and the ledger column upgrades. No registry helper reads ``db_path``
-    (it is only the engine's reporting handle), so an empty path is honest here.
+    The store is deliberately NOT constructed: ``NewsDatabase.__init__`` builds
+    a driver against a real path and creates the parent directory. Its schema
+    identity is the declared DDL in ``news.db_schema`` plus the guarded column
+    heals ``SchemaMixin.initialize_schema`` performs between the tables and the
+    indexes — replayed here in the same order by calling ``SchemaMixin``'s own
+    column guard, so the runtime ``ALTER TABLE ADD COLUMN`` history reaches the
+    provisioner exactly as the audit domain's does.
     """
-    from nexus_scalp.database.models import DatabaseDomain
-    from nexus_scalp.database.registry import migrations_for
+    from nexus_scalp.news.db_schema import (
+        _INDEX_SQL,
+        _SCHEMA_SQL,
+        SchemaMixin,
+    )
 
-    for migration in migrations_for(DatabaseDomain.AUDIT):
-        migration.apply(conn, Path())
+    for ddl in _SCHEMA_SQL:
+        conn.execute(ddl)
+    # The runtime column heals the schema init performs between the tables and
+    # the indexes (guarded, so only the ones that have not landed execute).
+    # The mixin is a stateless method carrier (its Protocol declares the
+    # connection core, ``_ensure_article_status_column`` needs none of it), so
+    # the unbound function is called directly rather than through an instance.
+    SchemaMixin._ensure_article_status_column(  # type: ignore[abstract]
+        SchemaMixin(),  # type: ignore[abstract]
+        conn,
+    )
+    for idx in _INDEX_SQL:
+        conn.execute(idx)
+    # The post-event memory table is created lazily by PostEventValidator
+    # rather than by the store's schema init, so its DDL never reached the
+    # provisioner — a PostgreSQL box had every news table except this one and
+    # the validator's writes failed on it. Its DDL lives with the validator;
+    # the replay applies it here so provisioning stays the one path a domain's
+    # schema reaches PostgreSQL through.
+    from nexus_scalp.news.memory.post_event import _POST_EVENT_DDL
+
+    conn.execute(_POST_EVENT_DDL)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_post_event_article ON news_post_event(article_id);"
+    )
+
+
+def _apply_candle_intel_bootstrap(conn: sqlite3.Connection) -> None:
+    """Run the DDL path a ``CandleIntelStore`` construction executes.
+
+    The store is deliberately NOT constructed: its constructor starts a
+    background write worker thread and resolves a workspace path. Its schema
+    identity is the declared DDL in ``store._SCHEMAS`` plus the per-table
+    ``idx_<table>_ts`` indexes ``_init_schema`` builds over ``TABLES``.
+    """
+    from nexus_scalp.candle_intelligence.store import _SCHEMAS, TABLES
+
+    for ddl in _SCHEMAS.values():
+        conn.execute(ddl)
+    for table in TABLES:
+        conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_ts ON {table}(ts);")
 
 
 def _apply_learning_cycle_tables(conn: sqlite3.Connection) -> None:
@@ -148,7 +201,13 @@ def _apply_learning_cycle_tables(conn: sqlite3.Connection) -> None:
 
     from nexus_scalp.model_lifecycle.learning_cycle import LearningCycleStore
 
-    fd, path = tempfile.mkstemp(suffix=".db")
+    # The suffix is the trap's exemption marker: the harvest needs a REAL file
+    # (the store builds its schema on its own connection, so a ``:memory:``
+    # database the harvest connects to separately holds zero tables), and the
+    # file is created and deleted within this function. The SQLite runtime trap
+    # exempts ``_schema_harvest.db`` so this transient scratch file is not
+    # mistaken for operational data on a PostgreSQL box.
+    fd, path = tempfile.mkstemp(suffix="_schema_harvest.db")
     os.close(fd)
     try:
         LearningCycleStore(path)
@@ -175,6 +234,37 @@ def _apply_learning_cycle_tables(conn: sqlite3.Connection) -> None:
     for row in rows:
         statement = _restore_if_not_exists(str(row[0]).strip())
         conn.execute(statement)
+
+
+#: The bootstrap DDL path for each domain — the statements a fresh database
+#: receives from the domain's own store construction, replayed verbatim.
+_DOMAIN_BOOTSTRAP: dict[DatabaseDomain, Callable[[sqlite3.Connection], None]] = {
+    DatabaseDomain.AUDIT: _apply_audit_bootstrap,
+    DatabaseDomain.NEWS: _apply_news_bootstrap,
+    DatabaseDomain.CANDLE_INTEL: _apply_candle_intel_bootstrap,
+}
+
+
+def _apply_domain_bootstrap(conn: sqlite3.Connection, domain: DatabaseDomain) -> None:
+    """Apply one domain's bootstrap DDL path to the replay connection."""
+    bootstrap = _DOMAIN_BOOTSTRAP.get(domain)
+    if bootstrap is None:
+        # Unreachable for registry domains (migrations_for raises first);
+        # kept as a defensive anchor so a new domain cannot silently replay
+        # another's schema.
+        raise NotImplementedError(f"no bootstrap replay authored for domain {domain!r}")
+    bootstrap(conn)
+
+
+def _apply_registry(conn: sqlite3.Connection, domain: DatabaseDomain) -> None:
+    """Apply a domain's ordered migration registry on top of its bootstrap.
+
+    This is the half of the schema that lives in code the bootstrap never
+    calls. No registry helper reads ``db_path`` (it is only the engine's
+    reporting handle), so an empty path is honest here.
+    """
+    for migration in migrations_for(domain):
+        migration.apply(conn, Path())
 
 
 def _apply_engine_meta_tables(conn: sqlite3.Connection) -> None:
@@ -243,6 +333,31 @@ def _validated_statements(captured: list[str], conn: sqlite3.Connection) -> list
     return statements
 
 
+def replay_schema(*, domain: DatabaseDomain) -> tuple[str, ...]:
+    """Replay one domain's real bootstrap + ordered migration chain.
+
+    The generalized form of the audit replay (CHG-0067 wave 3): the domain's
+    declared bootstrap DDL, its ordered migration registry, then the engine
+    meta tables are applied to a disposable in-memory connection while a trace
+    callback records every statement; the ones that actually landed become the
+    provisioner's schema list. Deterministic, no database file involved.
+    """
+    conn, captured = _open_replay()
+    try:
+        _apply_domain_bootstrap(conn, domain)
+        _apply_registry(conn, domain)
+        _apply_engine_meta_tables(conn)
+        statements = _validated_statements(captured, conn)
+    finally:
+        conn.close()
+    logger.info(
+        "[DB-SCHEMA] domain=%s logical schema replayed: %d statements",
+        domain.value,
+        len(statements),
+    )
+    return tuple(statements)
+
+
 @lru_cache(maxsize=1)
 def audit_schema_statements() -> tuple[str, ...]:
     """The complete audit-domain logical schema as SQLite DDL statements.
@@ -251,14 +366,101 @@ def audit_schema_statements() -> tuple[str, ...]:
     in-memory and discarded. Exceptions propagate on purpose — a provisioner
     that silently receives a partial schema is the defect this replaced.
     """
-    conn, captured = _open_replay()
-    try:
-        _apply_application_bootstrap(conn)
-        _apply_migration_registry(conn)
-        _apply_engine_meta_tables(conn)
-        _apply_learning_cycle_tables(conn)
-        statements = _validated_statements(captured, conn)
-    finally:
-        conn.close()
-    logger.info("[DB-SCHEMA] audit logical schema replayed: %d statements", len(statements))
-    return tuple(statements)
+    return replay_schema(domain=DatabaseDomain.AUDIT)
+
+
+@lru_cache(maxsize=1)
+def news_schema_statements() -> tuple[str, ...]:
+    """The complete news-domain logical schema as SQLite DDL statements.
+
+    Same replay contract as the audit domain: the schema modules that own the
+    DDL (``news.db_schema``) are applied to a disposable in-memory connection
+    — the store object itself is deliberately NOT constructed (its constructor
+    touches the filesystem and resolves configuration) — then the ordered
+    ``NEWS`` registry and the engine meta tables on top.
+    """
+    return replay_schema(domain=DatabaseDomain.NEWS)
+
+
+@lru_cache(maxsize=1)
+def candle_intel_schema_statements() -> tuple[str, ...]:
+    """The complete candle_intel-domain logical schema as SQLite DDL statements.
+
+    Same replay contract: ``CandleIntelStore``'s declared schema (``_SCHEMAS``
+    + the per-table ``idx_*_ts`` indexes its ``_init_schema`` builds) is applied
+    to a disposable in-memory connection — the store is deliberately NOT
+    constructed (its constructor starts a background write worker and touches
+    the filesystem) — then the ordered ``CANDLE_INTEL`` registry and the engine
+    meta tables on top.
+    """
+    return replay_schema(domain=DatabaseDomain.CANDLE_INTEL)
+
+
+def ai_provider_decisions_schema_statements() -> tuple[str, ...]:
+    """The complete AI-provider-decision domain schema as SQLite DDL statements.
+
+    Unlike the replay domains this one has no ordered migration registry: the
+    schema is authored directly in ``ai_providers.store._SCHEMA`` (SQLite
+    dialect), so the statements are read from it verbatim and the store is
+    deliberately NOT constructed (its constructor opens a real database file).
+    """
+    from nexus_scalp.ai_providers.store import _SCHEMA
+
+    return tuple(s.strip() for s in _SCHEMA.split(";") if s.strip())
+
+
+def model_lifecycle_schema_statements() -> tuple[str, ...]:
+    """The model_lifecycle-owned operational tables as SQLite DDL statements.
+
+    Those tables (``learning_cycles`` / ``learning_cycle_events`` /
+    ``training_runs`` / ``model_comparisons``) live in the AUDIT domain's
+    database but were not part of its authored DDL, so a fresh PostgreSQL
+    install had no ``learning_cycles`` while the migrated nexusdb did (the
+    table-set divergence recorded in tests/unit/test_pg_schema_convergence.py).
+    The DDL is authored in the owning package (``model_lifecycle.schema``)
+    because those tables are the package's contract, exactly as
+    ``ai_providers.store._SCHEMA`` owns the decision ledger's DDL above.
+    """
+    from nexus_scalp.model_lifecycle.schema import model_lifecycle_schema_statements
+
+    return model_lifecycle_schema_statements()
+
+
+def strategy_factory_schema_statements() -> tuple[str, ...]:
+    """The complete strategy-factory domain schema as SQLite DDL statements.
+
+    Same contract as ``ai_provider_decisions_schema_statements``: the schema is
+    authored directly in ``strategies.factory.store._SCHEMA`` (SQLite dialect,
+    mirrored by the audit bootstrap for PostgreSQL), so the statements are read
+    from it verbatim and the store is deliberately NOT constructed (its
+    constructor opens a real database file).
+    """
+    from nexus_scalp.strategies.factory.store import _SCHEMA
+
+    return tuple(s.strip() for s in _SCHEMA.split(";") if s.strip())
+
+
+def ops_shadow_schema_statements() -> tuple[str, ...]:
+    """The shadow / shadow70 / governance tables as SQLite DDL statements.
+
+    Same ownership contract as ``model_lifecycle_schema_statements``: the DDL is
+    authored in the owning package (``nexus_scalp.shadow.schema``) because those
+    tables are the stores' own ``ensure_schema`` output, not an audit-domain
+    replay. The registry resolves the extractor by name against this module, so
+    the package-owned function is re-exported here.
+    """
+    from nexus_scalp.shadow.schema import ops_shadow_schema_statements
+
+    return ops_shadow_schema_statements()
+
+
+def ops_hygiene_schema_statements() -> tuple[str, ...]:
+    """The hygiene-state / quarantine tables as SQLite DDL statements.
+
+    Same contract as ``ops_shadow_schema_statements``: the DDL is authored in
+    ``nexus_scalp.hygiene.schema`` and re-exported so the registry's name-based
+    resolution finds it.
+    """
+    from nexus_scalp.hygiene.schema import ops_hygiene_schema_statements
+
+    return ops_hygiene_schema_statements()

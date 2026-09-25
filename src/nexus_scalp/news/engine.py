@@ -49,9 +49,20 @@ class NewsEngine:
     def __init__(self, config: NewsConfig | None = None, db: NewsDatabase | None = None) -> None:
         self.config = config or NewsConfig()
 
-        repo_root = Path.cwd()
-        db_path = self.config.resolve_db_path(repo_root)
-        self.db = db or NewsDatabase(db_path)
+        # The store follows the ACTIVE provider (``load_database_config("news")``):
+        # on a PostgreSQL-configured box the news domain's tables live on
+        # PostgreSQL, so the engine must not hand the store a SQLite path it
+        # would then obediently use. A SQLite path is only resolved when the
+        # active provider IS SQLite (the default — unchanged behaviour).
+        from nexus_scalp.database.config import load_database_config
+
+        active = load_database_config("news")
+        if active.is_postgresql:
+            self.db = db or NewsDatabase()
+        else:
+            repo_root = Path.cwd()
+            db_path = self.config.resolve_db_path(repo_root)
+            self.db = db or NewsDatabase(db_path)
         self.seed_result = seed_news_database(self.db)
 
         self.scheduler = NewsScheduler()

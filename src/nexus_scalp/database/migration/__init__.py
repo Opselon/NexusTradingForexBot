@@ -34,6 +34,28 @@ _DOMAIN_STATEMENTS: dict[str, str] = {
     # enum member — it is owned by the ai_providers package, and its DDL is
     # authored there rather than replayed from a migration registry.
     "ai_provider_decisions": "ai_provider_decisions_schema_statements",
+    # The operational tables model_lifecycle owns (learning_cycles /
+    # learning_cycle_events / training_runs / model_comparisons). They live
+    # in the AUDIT domain's database, so they are provisioned WITH it: a
+    # fresh PostgreSQL install otherwise had no learning_cycles while the
+    # migrated nexusdb did (the table-set divergence recorded in
+    # tests/unit/test_pg_schema_convergence.py). Kept in its own module for
+    # the same ownership reason as the decision ledger above.
+    "model_lifecycle": "model_lifecycle_schema_statements",
+    # The strategy factory's seven operational tables (generations, candidates,
+    # failures, events, runs, provider_usage, loop_state). Owned by the
+    # strategies package; its DDL is authored there (see the extractor below).
+    "strategy_factory": "strategy_factory_schema_statements",
+    # The operational tables the shadow / shadow70 / governance stores own
+    # (DB-FABRIC-002). Not DatabaseDomain members: the DDL is authored in the
+    # owning package (shadow.schema) because those tables are the stores'
+    # own ensure_schema output, not an audit-domain replay. They live in the
+    # ops_shadow domain's database and the live nexusdb audit schema
+    # genuinely does NOT hold them, so a new domain registers for them.
+    "ops_shadow": "ops_shadow_schema_statements",
+    # The operational tables the hygiene state + quarantine stores own
+    # (DB-FABRIC-002), same ownership contract as ops_shadow.
+    "ops_hygiene": "ops_hygiene_schema_statements",
 }
 
 

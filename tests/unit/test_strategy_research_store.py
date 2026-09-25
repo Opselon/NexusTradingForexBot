@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -406,21 +407,53 @@ class TestDdlPorting:
 @needs_pg
 class TestPostgresIntegration:
     def _pg_store(self) -> StrategyResearchStore:
+        # Honor NSE_PG_TEST_URL (the gate this class is skipif'd on) instead of
+        # hardcoding nse_user/nse_audit. The env var may arrive as EITHER a
+        # postgresql:// URL or a libpq keyword/value DSN ("host=... port=...
+        # dbname=..."); urlparse silently swallows the whole keyword string as
+        # the "path", which then became the database name and made psycopg try
+        # to connect to a database literally named "host=localhost port=...".
+        # conninfo_to_dict reads both shapes.
+        from psycopg.conninfo import conninfo_to_dict
 
-        # NSE_PG_TEST_URL like postgresql://nse_user:***@localhost:5432/nse_audit
+        url = PG_URL or ""
+        host, port, database, username = "localhost", 5432, "nse_audit", "nse_user"
+        if url:
+            try:
+                parts = conninfo_to_dict(url)
+                host = str(parts.get("host") or host)
+                port = int(parts.get("port") or port)
+                database = str(parts.get("dbname") or database)
+                username = str(parts.get("user") or username)
+            except Exception:
+                from urllib.parse import urlparse
+
+                parsed = urlparse(url)
+                host = parsed.hostname or host
+                port = parsed.port or port
+                database = (parsed.path or "/nse_audit").lstrip("/") or database
+                username = parsed.username or username
         cfg = DatabaseConfig.for_postgres(
             domain="strategies",
-            host="localhost",
-            port=5432,
-            database="nse_audit",
-            username="nse_user",
+            host=host,
+            port=port,
+            database=database,
+            username=username,
             ssl_mode="",
         )
         from nexus_scalp.settings.secret_store import SecureSecretStore
 
+        # The session-scoped autouse secret-store isolation fixture points
+        # SecureSecretStore at an empty temp root, so the operator's real PG
+        # credential is deliberately NOT visible here. Use a dedicated test
+        # role (its own username AND its own secret key) instead of trying to
+        # authenticate as the env URL's inline user with a throwaway password —
+        # that mismatches role and credential and fails at authentication.
+        test_role = "nse_pg_test_url"
+        test_key = "db.postgresql.nse_pg_test_url.password"
         store = SecureSecretStore()
-        if not store.has_secret("db.postgresql.password"):
-            store.set_secret("db.postgresql.password", "nse_password_dev")
+        store.set_secret(test_key, "nse_password_dev")
+        cfg = replace(cfg, username=test_role, password_secret=test_key)
         return StrategyResearchStore(cfg)
 
     def test_pg_schema_and_meta(self):
