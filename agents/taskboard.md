@@ -556,3 +556,13 @@ behind full-green required checks (this row written pre-merge; merge state = PR 
 | Scope | tests/unit/test_bug275_hygiene_cadence_clock.py, tests/unit/test_ml_qa_015_hygiene_cadence_clock_determinism.py, tests/critical_suite.txt, docs/ml-system/tasks/ML-QA-015.md |
 | Verification | 26 passed (12 module + 15 battery); negative control 9 fail / 6 pass; ruff/format/mypy clean; manifest 252; markers/dupes/drift OK |
 | Locks taken | none (no production path) |
+
+## ML-QA-016 — Hot-Reload Suite Process-Identity Determinism (2026-09-25)
+
+| Field | Value |
+| --- | --- |
+| Status | DONE (PR pending) |
+| Role | AGENT-QA |
+| Scope | tests/unit/test_runtime_config_hot_reload.py, tests/unit/test_ml_qa_016_hot_reload_identity_determinism.py, tests/critical_suite.txt, docs/ml-system/tasks/ML-QA-016.md |
+| Verification | 27 passed (15 module + 12 battery); negative control 7 fail / 5 pass; ruff/format/mypy clean; manifest 253; markers/dupes/drift/docs OK |
+| Locks taken | none (no production path) |

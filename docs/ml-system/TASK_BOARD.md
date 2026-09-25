@@ -100,3 +100,4 @@ The following tasks are strictly frozen from implementation until the human oper
 
 - [ML-QA-014](tasks/ML-QA-014.md) — Push-Gate CPU-Time Determinism: Causal-TCN Latency Suite (roster candidate #4, `budget_cpu_ms` CPU-time budgets, unconditional ratio bound) `[P2 | DONE (PR pending) | AGENT-QA]`
 - [ML-QA-015](tasks/ML-QA-015.md) — Hygiene-Cadence Suite Wall-Clock Determinism (roster candidate #5, injected wall clock, both edges of the inclusive `>=` cadence boundary) `[P2 | DONE (PR pending) | AGENT-QA]`
+- [ML-QA-016](tasks/ML-QA-016.md) — Hot-Reload Suite Process-Identity Determinism (roster candidate, `os.getpid()` literals replaced by object identity + injected `_pid` supplier, `mkdtemp` -> `tmp_path`) `[P2 | DONE (PR pending) | AGENT-QA]`
