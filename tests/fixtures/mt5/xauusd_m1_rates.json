@@ -1,0 +1,65 @@
+{
+  "operation": "copy_rates_from_pos",
+  "symbol": "XAUUSD",
+  "timeframe": "M1",
+  "count_requested": 5,
+  "count_returned": 5,
+  "captured_at": "2026-08-17T05:41:13.436980+00:00",
+  "objects": [
+    {
+      "time": 1786955820,
+      "open": 4393.03,
+      "high": 4395.58,
+      "low": 4392.59,
+      "close": 4394.96,
+      "tick_volume": 372,
+      "spread": 11,
+      "real_volume": 0,
+      "time_utc": "2026-08-17T08:37:00+00:00"
+    },
+    {
+      "time": 1786955880,
+      "open": 4394.93,
+      "high": 4396.36,
+      "low": 4394.54,
+      "close": 4395.44,
+      "tick_volume": 316,
+      "spread": 12,
+      "real_volume": 0,
+      "time_utc": "2026-08-17T08:38:00+00:00"
+    },
+    {
+      "time": 1786955940,
+      "open": 4395.44,
+      "high": 4396.42,
+      "low": 4393.52,
+      "close": 4395.29,
+      "tick_volume": 302,
+      "spread": 11,
+      "real_volume": 0,
+      "time_utc": "2026-08-17T08:39:00+00:00"
+    },
+    {
+      "time": 1786956000,
+      "open": 4395.29,
+      "high": 4395.32,
+      "low": 4393.72,
+      "close": 4394.79,
+      "tick_volume": 353,
+      "spread": 17,
+      "real_volume": 0,
+      "time_utc": "2026-08-17T08:40:00+00:00"
+    },
+    {
+      "time": 1786956060,
+      "open": 4394.82,
+      "high": 4395.32,
+      "low": 4394.69,
+      "close": 4394.91,
+      "tick_volume": 91,
+      "spread": 20,
+      "real_volume": 0,
+      "time_utc": "2026-08-17T08:41:00+00:00"
+    }
+  ]
+}

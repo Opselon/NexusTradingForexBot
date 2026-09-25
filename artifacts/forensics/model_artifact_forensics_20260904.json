@@ -1,0 +1,800 @@
+{
+  "generated_at": "2026-09-04T15:35+03:30",
+  "canonical_contract": {
+    "arch": "ScalpNet v3 (SCALPNET_V3_2D/LEGACY_SCALPNET_V1)",
+    "input_dim": 70,
+    "seq_len": 32,
+    "n_classes": 3,
+    "dataset_id": "ds_70d_clean_m1_20260904",
+    "feature_schema_id": "scalp_v3",
+    "feature_schema_hash": "235b8fccc96b7e0e",
+    "label_schema": "triple_barrier_3class_v1"
+  },
+  "artifacts": [
+    {
+      "relative_path": "model_generation/models/bench_a_v1/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\bench_a_v1\\model.pt",
+      "size_bytes": 1326059,
+      "sha256": "a04b26b2e937d496fea7b8e0c6f3a3e1bec585ba682f24db65275c56e899718b",
+      "param_count": 328932,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 50,
+      "meta_fields": {
+        "dataset_id": "ds_fe27908a6a66ee8f",
+        "feature_schema_id": "scalp_v1",
+        "feature_dimension": 50,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "architecture_id": "LEGACY_SCALPNET_V1",
+        "build_input_dim": 50
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/bench_b_v1/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\bench_b_v1\\model.pt",
+      "size_bytes": 1332203,
+      "sha256": "dc98bb59e37ac272f378284eabd46bb95e51572319d697d2b217b5651c982d13",
+      "param_count": 330468,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 62,
+      "meta_fields": {
+        "dataset_id": "ds_fe27908a6a66ee8f",
+        "feature_schema_id": "scalp_v1",
+        "feature_dimension": 50,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "architecture_id": "LEGACY_SCALPNET_V1",
+        "build_input_dim": 62
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/bench_c_v1/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\bench_c_v1\\model.pt",
+      "size_bytes": 1331179,
+      "sha256": "0776dfa1535641c4556831ef5719c829bcbf4d57c05854039e5520786543997f",
+      "param_count": 330212,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 60,
+      "meta_fields": {
+        "dataset_id": "ds_9704ec379e18a08b",
+        "feature_schema_id": "scalp_v2",
+        "feature_dimension": 60,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "architecture_id": "LEGACY_SCALPNET_V1",
+        "build_input_dim": 60
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/bench_d_v1/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\bench_d_v1\\model.pt",
+      "size_bytes": 1337323,
+      "sha256": "367c2ec0805535123366c5a0c0057bacc8d4c8cdaa909b059ecb4ae7a1f2590b",
+      "param_count": 331748,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 72,
+      "meta_fields": {
+        "dataset_id": "ds_9704ec379e18a08b",
+        "feature_schema_id": "scalp_v2",
+        "feature_dimension": 60,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "architecture_id": "LEGACY_SCALPNET_V1",
+        "build_input_dim": 72
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/bench_e_v1/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\bench_e_v1\\model.pt",
+      "size_bytes": 962803,
+      "sha256": "9e657adae7245137f3ace437a3f6d618d10be5cbeb490ec78d77bf3caf4ebb5e",
+      "param_count": 238339,
+      "num_tensors": 27,
+      "head_key": "head.3.weight",
+      "head_shape": [
+        3,
+        64
+      ],
+      "head_classes": 3,
+      "input_dim_tensor": 50,
+      "meta_fields": {
+        "dataset_id": "ds_fe27908a6a66ee8f",
+        "feature_schema_id": "scalp_v1",
+        "feature_dimension": 50,
+        "feature_schema_hash": "",
+        "architecture_id": "TCN_ATTENTION_V1",
+        "build_input_dim": 50
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/bench_f_v1/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\bench_f_v1\\model.pt",
+      "size_bytes": 968947,
+      "sha256": "dbc8516659bd14244eea7d89d2a08010b0e436a8656219b4fa47ddaa30c4d758",
+      "param_count": 239875,
+      "num_tensors": 27,
+      "head_key": "head.3.weight",
+      "head_shape": [
+        3,
+        64
+      ],
+      "head_classes": 3,
+      "input_dim_tensor": 62,
+      "meta_fields": {
+        "dataset_id": "ds_fe27908a6a66ee8f",
+        "feature_schema_id": "scalp_v1",
+        "feature_dimension": 50,
+        "feature_schema_hash": "",
+        "architecture_id": "TCN_ATTENTION_V1",
+        "build_input_dim": 62
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/bench_g_v1/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\bench_g_v1\\model.pt",
+      "size_bytes": 967923,
+      "sha256": "35d62c2f32673aa6cbef021a182108a23aaf18a1694e193d3263c337f8abe168",
+      "param_count": 239619,
+      "num_tensors": 27,
+      "head_key": "head.3.weight",
+      "head_shape": [
+        3,
+        64
+      ],
+      "head_classes": 3,
+      "input_dim_tensor": 60,
+      "meta_fields": {
+        "dataset_id": "ds_9704ec379e18a08b",
+        "feature_schema_id": "scalp_v2",
+        "feature_dimension": 60,
+        "feature_schema_hash": "",
+        "architecture_id": "TCN_ATTENTION_V1",
+        "build_input_dim": 60
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/bench_h_v1/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\bench_h_v1\\model.pt",
+      "size_bytes": 974067,
+      "sha256": "cdbdc212be500439fdf25d50aa1e826fa176ef4ffb87219cea8b4065baf26474",
+      "param_count": 241155,
+      "num_tensors": 27,
+      "head_key": "head.3.weight",
+      "head_shape": [
+        3,
+        64
+      ],
+      "head_classes": 3,
+      "input_dim_tensor": 72,
+      "meta_fields": {
+        "dataset_id": "ds_9704ec379e18a08b",
+        "feature_schema_id": "scalp_v2",
+        "feature_dimension": 60,
+        "feature_schema_hash": "",
+        "architecture_id": "TCN_ATTENTION_V1",
+        "build_input_dim": 72
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/cand_05d5e65879bc5748/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\cand_05d5e65879bc5748\\model.pt",
+      "size_bytes": 1326059,
+      "sha256": "a04b26b2e937d496fea7b8e0c6f3a3e1bec585ba682f24db65275c56e899718b",
+      "param_count": 328932,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 50,
+      "meta_fields": {
+        "dataset_id": "ds_fe27908a6a66ee8f",
+        "feature_schema_id": "scalp_v1",
+        "feature_dimension": 50,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "architecture_id": "LEGACY_SCALPNET_V1",
+        "build_input_dim": 50
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/cand_241f9cf5ac52575f/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\cand_241f9cf5ac52575f\\model.pt",
+      "size_bytes": 1303531,
+      "sha256": "dd7a97a105fa46841a79de61dee4e5f879e121f93a8946021cf0b2e0ae51eb58",
+      "param_count": 323300,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 6,
+      "meta_fields": {
+        "dataset_id": "ds_test",
+        "feature_schema_id": "scalp_v1",
+        "feature_dimension": 6,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "architecture_id": "LEGACY_SCALPNET_V1",
+        "build_input_dim": 6
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/cand_298a28df308874db/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\cand_298a28df308874db\\model.pt",
+      "size_bytes": 1337323,
+      "sha256": "ad96a1f627fcc8e6c42771d1251df31b3358080a2f53f03cc5b7dbc8000c2665",
+      "param_count": 331748,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 72,
+      "meta_fields": {
+        "dataset_id": "ds_test",
+        "feature_schema_id": "scalp_v2",
+        "feature_dimension": 60,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "architecture_id": "LEGACY_SCALPNET_V1",
+        "build_input_dim": 72
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/cand_6f4090b06d2975d3/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\cand_6f4090b06d2975d3\\model.pt",
+      "size_bytes": 1303531,
+      "sha256": "507ee080cf8c1a28b03bb583047fd7393237b627076a83714ae41f812fb4a4d5",
+      "param_count": 323300,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 6,
+      "meta_fields": {
+        "dataset_id": "ds_test",
+        "feature_schema_id": "scalp_v1",
+        "feature_dimension": 6,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "architecture_id": "LEGACY_SCALPNET_V1",
+        "build_input_dim": 6
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/cand_8ed8b7985a7d0231/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\cand_8ed8b7985a7d0231\\model.pt",
+      "size_bytes": 163419,
+      "sha256": "e6ce609bd7e1325e8d0d8002e0eaaeebf03ed41fa836faba9022e44cdf7ae8dd",
+      "param_count": 39939,
+      "num_tensors": 8,
+      "head_key": "net.9.weight",
+      "head_shape": [
+        3,
+        128
+      ],
+      "head_classes": 3,
+      "input_dim_tensor": 50,
+      "meta_fields": {
+        "dataset_id": "ds_fe27908a6a66ee8f",
+        "feature_schema_id": "scalp_v1",
+        "feature_dimension": 50,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "architecture_id": "MLP_V2",
+        "build_input_dim": 50
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/cand_aaae456347026f59/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\cand_aaae456347026f59\\model.pt",
+      "size_bytes": 163419,
+      "sha256": "8b71508abaa7c9b62aaba11436a2d3f0ff5f04363596d2589522e21409e48846",
+      "param_count": 39939,
+      "num_tensors": 8,
+      "head_key": "net.9.weight",
+      "head_shape": [
+        3,
+        128
+      ],
+      "head_classes": 3,
+      "input_dim_tensor": 50,
+      "meta_fields": {
+        "dataset_id": "ds_fe27908a6a66ee8f",
+        "feature_schema_id": "scalp_v1",
+        "feature_dimension": 50,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "architecture_id": "MLP_V2",
+        "build_input_dim": 50
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/cand_d77b130ea1e1473b/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\cand_d77b130ea1e1473b\\model.pt",
+      "size_bytes": 163419,
+      "sha256": "e6ce609bd7e1325e8d0d8002e0eaaeebf03ed41fa836faba9022e44cdf7ae8dd",
+      "param_count": 39939,
+      "num_tensors": 8,
+      "head_key": "net.9.weight",
+      "head_shape": [
+        3,
+        128
+      ],
+      "head_classes": 3,
+      "input_dim_tensor": 50,
+      "meta_fields": {
+        "dataset_id": "ds_fe27908a6a66ee8f",
+        "feature_schema_id": "scalp_v1",
+        "feature_dimension": 50,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "architecture_id": "MLP_V2",
+        "build_input_dim": 50
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/candidate_exp_seqb2_ae3f1d_203828/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\candidate_exp_seqb2_ae3f1d_203828\\model.pt",
+      "size_bytes": 962803,
+      "sha256": "4baad7b7a0cd378c2d4e078854fbde9bb0728a1e342acdcb2c796880c02b0eff",
+      "param_count": 238339,
+      "num_tensors": 27,
+      "head_key": "head.3.weight",
+      "head_shape": [
+        3,
+        64
+      ],
+      "head_classes": 3,
+      "input_dim_tensor": 50,
+      "meta_fields": {
+        "dataset_id": "ds_fe27908a6a66ee8f",
+        "feature_schema_id": "scalp_v1",
+        "feature_dimension": 50,
+        "feature_schema_hash": "",
+        "architecture_id": "TCN_ATTENTION_V1",
+        "build_input_dim": 50
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/candidate_exp_seqbudget_9d4da9_203705/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\candidate_exp_seqbudget_9d4da9_203705\\model.pt",
+      "size_bytes": 962803,
+      "sha256": "14fb106757dbfbb89e58d151eee62e70792aa1aa31f7276672e105b31edde0aa",
+      "param_count": 238339,
+      "num_tensors": 27,
+      "head_key": "head.3.weight",
+      "head_shape": [
+        3,
+        64
+      ],
+      "head_classes": 3,
+      "input_dim_tensor": 50,
+      "meta_fields": {
+        "dataset_id": "ds_fe27908a6a66ee8f",
+        "feature_schema_id": "scalp_v1",
+        "feature_dimension": 50,
+        "feature_schema_hash": "",
+        "architecture_id": "TCN_ATTENTION_V1",
+        "build_input_dim": 50
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/liq70_proof/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\liq70_proof\\model.pt",
+      "size_bytes": 1336299,
+      "sha256": "2569c67e353307f1b4fefc302dc0881b590d44b7d857f153b9e2cf6f5ad85bf5",
+      "param_count": 331492,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 70,
+      "meta_fields": {
+        "dataset_id": "ds_proof",
+        "feature_schema_id": "scalp_v3",
+        "feature_dimension": 70,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "architecture_id": "LEGACY_SCALPNET_V1",
+        "build_input_dim": 70
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/t70d_2d_baseline_same_windows/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\t70d_2d_baseline_same_windows\\model.pt",
+      "size_bytes": 1334268,
+      "sha256": "d6d7094239ae2fc12168cc0241218ef7c20f76ab7d8d027b50c3a46574186488",
+      "param_count": 331492,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 70,
+      "meta_fields": {
+        "seq_len": 1,
+        "dataset_id": "t70d_f1_full_m1",
+        "feature_schema_id": "scalp_v3",
+        "feature_dimension": 70,
+        "num_classes": 3
+      },
+      "verdict": "P0_INCOHERENCE"
+    },
+    {
+      "relative_path": "model_generation/models/t70d_full_retrain/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\t70d_full_retrain\\model.pt",
+      "size_bytes": 1334268,
+      "sha256": "c8c0b5b06d4c094dc04c9e8ff45cbfffc6f3fb396d42e3df46449068b1dbfd2b",
+      "param_count": 331492,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 70,
+      "meta_fields": {
+        "seq_len": 1,
+        "dataset_id": "t70d_f1_full_m1",
+        "feature_schema_id": "scalp_v3",
+        "feature_dimension": 70,
+        "num_classes": 3
+      },
+      "verdict": "P0_INCOHERENCE"
+    },
+    {
+      "relative_path": "model_generation/models/t70d_seq_v1/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\t70d_seq_v1\\model.pt",
+      "size_bytes": 954896,
+      "sha256": "9d6296909ef8dbc3390e98a2f72ae0ac9192a230b11a5bef597b1d4fdfe27b08",
+      "param_count": 236803,
+      "num_tensors": 27,
+      "head_key": "head.3.weight",
+      "head_shape": [
+        3,
+        64
+      ],
+      "head_classes": 3,
+      "input_dim_tensor": 70,
+      "meta_fields": {
+        "seq_len": 32,
+        "dataset_id": "t70d_f1_full_m1",
+        "feature_schema_id": "scalp_v3",
+        "feature_dimension": 70,
+        "num_classes": 3
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/t70d_seq_v2_tuned/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\t70d_seq_v2_tuned\\model.pt",
+      "size_bytes": 954896,
+      "sha256": "7ff2c4daa5a9d103255df639f4392f3f2ed8cb06ce664acf65cd34a19a07fe26",
+      "param_count": 236803,
+      "num_tensors": 27,
+      "head_key": "head.3.weight",
+      "head_shape": [
+        3,
+        64
+      ],
+      "head_classes": 3,
+      "input_dim_tensor": 70,
+      "meta_fields": {
+        "seq_len": 32,
+        "dataset_id": "t70d_f1_full_m1",
+        "feature_schema_id": "scalp_v3",
+        "feature_dimension": 70,
+        "num_classes": 3
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "model_generation/models/wf_candidate/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\model_generation\\models\\wf_candidate\\model.pt",
+      "size_bytes": 1335403,
+      "sha256": "ec84ed21e0bb33ce75c2801adfc8596937d10bb7be93e0cf4ec3243d179cbe94",
+      "param_count": 331459,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        3,
+        32
+      ],
+      "head_classes": 3,
+      "input_dim_tensor": 70,
+      "meta_fields": {
+        "seq_len": 32,
+        "feature_schema_id": "scalp_v4",
+        "num_features": 70,
+        "num_classes": 3,
+        "model_head_classes": 3,
+        "feature_schema_hash": null,
+        "feature_schema_dimension": 70
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "models/scalp/EURUSD/v1.0.0/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\models\\scalp\\EURUSD\\v1.0.0\\model.pt",
+      "size_bytes": 1325291,
+      "sha256": "0872ae0b85b3c74b3c2b98b802403571faa293afd7f47c802b4887bd3ece9127",
+      "param_count": 328932,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 50,
+      "meta_fields": {},
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "models/scalp/XAUUSD/50d_main/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\models\\scalp\\XAUUSD\\50d_main\\model.pt",
+      "size_bytes": 1325291,
+      "sha256": "342901681f89a0128ea5d8a815cb1316c3792daddbc02c25cb55c5e48b23ed84",
+      "param_count": 328932,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 50,
+      "meta_fields": {
+        "feature_schema_id": "scalp_v1",
+        "num_features": 50,
+        "num_classes": 3,
+        "model_head_classes": 4,
+        "feature_schema_dimension": 50
+      },
+      "verdict": "ok_or_legacy"
+    },
+    {
+      "relative_path": "models/scalp/XAUUSD/70d_liquidity/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\models\\scalp\\XAUUSD\\70d_liquidity\\model.pt",
+      "size_bytes": 1334268,
+      "sha256": "c8c0b5b06d4c094dc04c9e8ff45cbfffc6f3fb396d42e3df46449068b1dbfd2b",
+      "param_count": 331492,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 70,
+      "meta_fields": {
+        "seq_len": 32,
+        "feature_schema_id": "scalp_v3",
+        "num_features": 70,
+        "num_classes": 3,
+        "model_head_classes": 3,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "feature_schema_dimension": 70
+      },
+      "verdict": "P0_INCOHERENCE"
+    },
+    {
+      "relative_path": "models/scalp/XAUUSD/70d_liquidity/model.pt.bak2_1788498273",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\models\\scalp\\XAUUSD\\70d_liquidity\\model.pt.bak2_1788498273",
+      "size_bytes": 1335531,
+      "sha256": "763a25f61fe6b7d35da79fc3d2432b5fce59fdd2fc9237e816de20ec79e88d98",
+      "param_count": 331492,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 70,
+      "meta_fields": {
+        "seq_len": 32,
+        "feature_schema_id": "scalp_v3",
+        "num_features": 70,
+        "num_classes": 3,
+        "model_head_classes": 3,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "feature_schema_dimension": 70
+      },
+      "verdict": "P0_INCOHERENCE"
+    },
+    {
+      "relative_path": "models/scalp/XAUUSD/70d_liquidity/model.pt.bak2_1788498799",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\models\\scalp\\XAUUSD\\70d_liquidity\\model.pt.bak2_1788498799",
+      "size_bytes": 1334268,
+      "sha256": "c8c0b5b06d4c094dc04c9e8ff45cbfffc6f3fb396d42e3df46449068b1dbfd2b",
+      "param_count": 331492,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 70,
+      "meta_fields": {
+        "seq_len": 32,
+        "feature_schema_id": "scalp_v3",
+        "num_features": 70,
+        "num_classes": 3,
+        "model_head_classes": 3,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "feature_schema_dimension": 70
+      },
+      "verdict": "P0_INCOHERENCE"
+    },
+    {
+      "relative_path": "models/scalp/XAUUSD/70d_liquidity/model.pt.bak2_1788498909",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\models\\scalp\\XAUUSD\\70d_liquidity\\model.pt.bak2_1788498909",
+      "size_bytes": 1334268,
+      "sha256": "c8c0b5b06d4c094dc04c9e8ff45cbfffc6f3fb396d42e3df46449068b1dbfd2b",
+      "param_count": 331492,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 70,
+      "meta_fields": {
+        "seq_len": 32,
+        "feature_schema_id": "scalp_v3",
+        "num_features": 70,
+        "num_classes": 3,
+        "model_head_classes": 3,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "feature_schema_dimension": 70
+      },
+      "verdict": "P0_INCOHERENCE"
+    },
+    {
+      "relative_path": "models/scalp/XAUUSD/70d_liquidity/model.pt.bak_20260904",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\models\\scalp\\XAUUSD\\70d_liquidity\\model.pt.bak_20260904",
+      "size_bytes": 1335531,
+      "sha256": "763a25f61fe6b7d35da79fc3d2432b5fce59fdd2fc9237e816de20ec79e88d98",
+      "param_count": 331492,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 70,
+      "meta_fields": {
+        "seq_len": 32,
+        "feature_schema_id": "scalp_v3",
+        "num_features": 70,
+        "num_classes": 3,
+        "model_head_classes": 3,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "feature_schema_dimension": 70
+      },
+      "verdict": "P0_INCOHERENCE"
+    },
+    {
+      "relative_path": "models/scalp/XAUUSD/70d_liquidity/model.pt.pre_direct_bak",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\models\\scalp\\XAUUSD\\70d_liquidity\\model.pt.pre_direct_bak",
+      "size_bytes": 1334268,
+      "sha256": "c8c0b5b06d4c094dc04c9e8ff45cbfffc6f3fb396d42e3df46449068b1dbfd2b",
+      "param_count": 331492,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 70,
+      "meta_fields": {
+        "seq_len": 32,
+        "feature_schema_id": "scalp_v3",
+        "num_features": 70,
+        "num_classes": 3,
+        "model_head_classes": 3,
+        "feature_schema_hash": "235b8fccc96b7e0e",
+        "feature_schema_dimension": 70
+      },
+      "verdict": "P0_INCOHERENCE"
+    },
+    {
+      "relative_path": "models/scalp/XAUUSD/70d_news/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\models\\scalp\\XAUUSD\\70d_news\\model.pt",
+      "size_bytes": 1335531,
+      "sha256": "2b98f333cf1e3f77c485f6e1d0dacde71058cf103d21d3ac0f69fa36130ee0a5",
+      "param_count": 331492,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 70,
+      "meta_fields": {
+        "feature_schema_id": "scalp_v3",
+        "num_features": 70,
+        "num_classes": 3,
+        "model_head_classes": 4,
+        "feature_schema_dimension": 70
+      },
+      "verdict": "P0_INCOHERENCE"
+    },
+    {
+      "relative_path": "models/scalp/XAUUSD/v1.0.0/model.pt",
+      "absolute_path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\models\\scalp\\XAUUSD\\v1.0.0\\model.pt",
+      "size_bytes": 1325291,
+      "sha256": "0872ae0b85b3c74b3c2b98b802403571faa293afd7f47c802b4887bd3ece9127",
+      "param_count": 328932,
+      "num_tensors": 31,
+      "head_key": "classifier.weight",
+      "head_shape": [
+        4,
+        32
+      ],
+      "head_classes": 4,
+      "input_dim_tensor": 50,
+      "meta_fields": {},
+      "verdict": "ok_or_legacy"
+    }
+  ],
+  "summary": {
+    "total_pt": 33,
+    "p0_incoherent": 9,
+    "head_3": 12,
+    "head_4": 21
+  }
+}

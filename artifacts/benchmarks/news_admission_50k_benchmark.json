@@ -1,0 +1,72 @@
+{
+  "benchmark": "news_admission_gateway_50k",
+  "timestamp": "2026-09-23T16:49:10.840983+00:00",
+  "workload_size": 5000,
+  "runs": {
+    "with_gateway": {
+      "name": "with_gateway",
+      "items_processed": 5000,
+      "elapsed_seconds": 299.75,
+      "throughput_items_per_sec": 16.7,
+      "latency_ms": {
+        "mean": 59.95,
+        "p50": 67.712,
+        "p90": 101.246,
+        "p95": 101.246,
+        "p99": 101.246
+      },
+      "stats": {
+        "new_persisted": 62,
+        "duplicate_collapsed": 2248,
+        "admitted": 61,
+        "quarantined": 1,
+        "rejected_before_db": 2150,
+        "db_writes_avoided": 4938,
+        "write_avoidance_pct": 98.76
+      },
+      "db_size_mb": 0.97,
+      "rss_memory_delta_mb": 0.0,
+      "gateway_metrics": {
+        "articles_seen": 2212,
+        "rejected_before_scoring": 150,
+        "rejected_after_scoring": 2000,
+        "duplicates_detected": 0,
+        "quarantined": 1,
+        "admitted": 61,
+        "db_writes_avoided": 2151,
+        "admission_rate": 0.0276,
+        "avg_latency_ms": 3.464
+      }
+    },
+    "baseline_no_gateway": {
+      "name": "baseline_no_gateway",
+      "items_processed": 5000,
+      "elapsed_seconds": 143.39,
+      "throughput_items_per_sec": 34.9,
+      "latency_ms": {
+        "mean": 28.679,
+        "p50": 30.0,
+        "p90": 39.17,
+        "p95": 39.17,
+        "p99": 39.17
+      },
+      "stats": {
+        "new_persisted": 202,
+        "duplicate_collapsed": 2248,
+        "admitted": 0,
+        "quarantined": 0,
+        "rejected_before_db": 0,
+        "db_writes_avoided": 4798,
+        "write_avoidance_pct": 95.96
+      },
+      "db_size_mb": 0.27,
+      "rss_memory_delta_mb": 0.0,
+      "gateway_metrics": null
+    }
+  },
+  "comparison": {
+    "db_writes_avoided_count": 140,
+    "db_size_reduction_pct": -259.26,
+    "throughput_ratio": 0.48
+  }
+}

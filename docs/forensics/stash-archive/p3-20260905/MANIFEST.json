@@ -1,0 +1,42 @@
+[
+  {
+    "stash_idx": 16,
+    "stash_obj": "e986b0f6",
+    "p3": "e83f06580d034ce8c4ed7507c0015f16e8dd2755",
+    "file_count": 26,
+    "dest": "docs/forensics/stash-archive/p3-20260905/stash16-e986b0f6-p3-e83f0658",
+    "archive_tar": "docs/forensics/stash-archive/p3-20260905/stash16-e986b0f6-p3-e83f0658/p3.tar"
+  },
+  {
+    "stash_idx": 34,
+    "stash_obj": "82eda312",
+    "p3": "8f1ab3f0020724c17f5caaafe9159906a3ddf054",
+    "file_count": 28,
+    "dest": "docs/forensics/stash-archive/p3-20260905/stash34-82eda312-p3-8f1ab3f0",
+    "archive_tar": "docs/forensics/stash-archive/p3-20260905/stash34-82eda312-p3-8f1ab3f0/p3.tar"
+  },
+  {
+    "stash_idx": 37,
+    "stash_obj": "b3b6afcc",
+    "p3": "3e2cc791c163821d151beca7daea00a6558c8425",
+    "file_count": 30,
+    "dest": "docs/forensics/stash-archive/p3-20260905/stash37-b3b6afcc-p3-3e2cc791",
+    "archive_tar": "docs/forensics/stash-archive/p3-20260905/stash37-b3b6afcc-p3-3e2cc791/p3.tar"
+  },
+  {
+    "stash_idx": 40,
+    "stash_obj": "fd781de4",
+    "p3": "583b56b393958a52ac72ca9617daa188c86980fd",
+    "file_count": 3,
+    "dest": "docs/forensics/stash-archive/p3-20260905/stash40-fd781de4-p3-583b56b3",
+    "archive_tar": "docs/forensics/stash-archive/p3-20260905/stash40-fd781de4-p3-583b56b3/p3.tar"
+  },
+  {
+    "stash_idx": 54,
+    "stash_obj": "864434f5",
+    "p3": "ce34eab04329242198b0e10556a030bf871de06b",
+    "file_count": 28,
+    "dest": "docs/forensics/stash-archive/p3-20260905/stash54-864434f5-p3-ce34eab0",
+    "archive_tar": "docs/forensics/stash-archive/p3-20260905/stash54-864434f5-p3-ce34eab0/p3.tar"
+  }
+]

@@ -1,0 +1,1059 @@
+"""
+CLI DB Commands (TASK-10 §24/§25/§53/§54)
+========================================
+`nexus db status|plan|migrate|verify|migrations|history|repair` — all backed
+by the SAME canonical migration engine as startup (no separate CLI
+implementation, §25).
+
+All commands support --json for machine-readable output (no ANSI, §54).
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+import typer
+
+from nexus_scalp.database.engine import DatabaseMigrationEngine, db_path_for_domain
+from nexus_scalp.database.models import DatabaseDomain
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.cli.db")
+
+_ALL_DOMAINS = ("audit", "news", "candle_intel")
+
+
+def _domain(value: str) -> DatabaseDomain:
+    try:
+        return DatabaseDomain(value.lower())
+    except ValueError:
+        raise typer.BadParameter(
+            f"unknown database '{value}' — expected one of: {', '.join(_ALL_DOMAINS)}"
+        ) from None
+
+
+def _engine(
+    database: str | None,
+    workspace: Path | None,
+    *,
+    app_version: str = "",
+    git_commit: str = "",
+) -> dict[str, DatabaseMigrationEngine]:
+    """Builds engines for the requested domain(s) — one per domain (§2)."""
+    if database:
+        dom = _domain(database)
+        return {
+            dom.value: DatabaseMigrationEngine(
+                db_path=db_path_for_domain(dom.value, workspace),
+                domain=dom,
+                application_version=app_version,
+                git_commit=git_commit,
+            )
+        }
+    return {
+        d: DatabaseMigrationEngine(
+            db_path=db_path_for_domain(d, workspace),
+            domain=DatabaseDomain(d),
+            application_version=app_version,
+            git_commit=git_commit,
+        )
+        for d in _ALL_DOMAINS
+    }
+
+
+def _emit(payload: dict[str, Any], json_mode: bool, *, plain_title: str = "") -> None:
+    if json_mode:
+        # Pure machine-readable stdout: silence structlog (stderr) noise so
+        # `--json` output is parseable with zero post-processing (§54).
+        # BUG-307C: ``logging.disable()`` is PROCESS-GLOBAL and was never
+        # restored, so one ``--json`` invocation permanently silenced every
+        # logger in the process. Under ``pytest -n auto --dist loadgroup``
+        # that leak crossed test boundaries: a co-scheduled CLI test left the
+        # worker's logging disabled and later logging-capture tests in the
+        # same worker saw ``len([])`` where they expected records (this made
+        # main itself red: test_mt5_diag_throttle + test_update_cli_contract
+        # failed 2/2964 on an otherwise-healthy commit). Scope the silence to
+        # this call only via a restore in a finally block.
+        import logging as _logging
+
+        prior = _logging.root.manager.disable
+        try:
+            _logging.disable(_logging.CRITICAL)
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        finally:
+            _logging.disable(prior)
+        return
+    print(plain_title or "")
+    for db, data in payload.items():
+        if isinstance(data, dict) and "current_version" in data:
+            print(
+                f"  {db:14} schema {data['current_version']} / expected "
+                f"{data['expected_version']}  [{data.get('migration_state', data.get('state', ''))}]"
+            )
+
+
+def _print_error(message: str) -> None:
+    print(f"ERROR: {message}", file=sys.stderr)
+    raise typer.Exit(1)
+
+
+def _parse_connection_string(raw: str) -> dict[str, Any]:
+    """Delegate to the canonical connection_url contract (Phase 5 conflict resolution).
+
+    This function exists only to maintain the CLI's spec-evasive export surface.
+    All decision work is handled by nexus_scalp.database.connection_url.parse_pg_url.
+    """
+    from nexus_scalp.database.connection_url import is_parse_failure, parse_pg_url
+
+    parsed = parse_pg_url(raw)
+    if is_parse_failure(parsed):
+        _print_error(str(parsed["reason"]))
+    return dict(parsed)
+
+
+def _build_dsn(fields: dict[str, Any], secret_store: Any) -> str:
+    """Assemble a psycopg DSN (with the secret) from parsed fields.
+
+    The password is injected from the OS-backed store — never from the
+    persisted settings, where it must never live.
+    """
+    parts = [
+        f"host={fields['host']}",
+        f"port={fields.get('port', 5432)}",
+        f"dbname={fields.get('database') or ''}",
+        f"user={fields.get('username') or fields.get('user') or ''}",
+    ]
+    from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
+
+    pw = secret_store.get_secret(PG_PASSWORD_SECRET_KEY)
+    if pw:
+        parts.append("password=" + pw)
+    return " ".join(parts)
+
+
+def make_portability_app() -> typer.Typer:
+    """`nexus db-portability` — DATABASE PORTABILITY workflow (SQLite <-> PostgreSQL)."""
+    app = typer.Typer(help="DATABASE PORTABILITY: provider status, config, migration.")
+
+    @app.command("status")
+    def portability_status(
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
+    ):
+        """Active provider + per-domain health snapshot."""
+        from nexus_scalp.database.health import health_snapshot, load_ui_config
+
+        health = health_snapshot()
+        ui = load_ui_config()
+        payload = {
+            "provider": ui["provider"],
+            "supported_providers": health["supported_providers"],
+            "overall": health["overall"],
+            "domains": health["domains"],
+        }
+        _emit(payload, json_mode, plain_title="DATABASE PORTABILITY STATUS")
+
+    @app.command("config")
+    def portability_config(
+        host: str = typer.Option("localhost", "--host", help="PostgreSQL host."),
+        port: int = typer.Option(5432, "--port", help="PostgreSQL port."),
+        database: str = typer.Option("nse_audit", "--database", help="PostgreSQL database name."),
+        username: str = typer.Option("nse_user", "--username", help="PostgreSQL role."),
+        ssl_mode: str = typer.Option("", "--ssl-mode", help="PostgreSQL SSL mode."),
+        password: str = typer.Option(
+            "", "--password", help="PostgreSQL password (stored in the OS secret store)."
+        ),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
+    ) -> None:
+        """Save the PostgreSQL connection configuration + password (secret store)."""
+        from nexus_scalp.settings.service import load_settings_service
+
+        svc = load_settings_service()
+        cfg = {
+            "host": host,
+            "port": port,
+            "database": database,
+            "username": username,
+            "ssl_mode": ssl_mode,
+        }
+        if password:
+            cfg["password"] = password
+        svc.set_postgres_config(cfg)
+        payload = {
+            "success": True,
+            "provider": "postgresql",
+            "configured": True,
+            "password_set": svc.postgres_password_set(),
+        }
+        _emit(payload, json_mode, plain_title="POSTGRESQL CONFIG SAVED")
+
+    @app.command("connect")
+    def portability_connect(
+        connection_string: str = typer.Argument(
+            ...,
+            help=(
+                "PostgreSQL connection string. Either a URL "
+                "(postgresql://user:password@host:port/database) or a libpq "
+                "key=value DSN (host=... port=... dbname=... user=... "
+                "password=...). The password is stored in the OS secret store "
+                "and NEVER written to the settings database."
+            ),
+        ),
+        json_mode: bool = typer.Option(False, "--json"),
+    ) -> None:
+        """Bind NSE to a PostgreSQL database via a connection string.
+
+        Parses the string, persists the (password-free) connection details,
+        stores the credential in the OS-backed secret store, provisions the
+        domain's schema on the target, and marks PostgreSQL the active
+        provider — so the NEXT startup runs on PostgreSQL. Idempotent: a
+        re-run re-provisions (IF NOT EXISTS) and never drops data.
+        """
+        import json as _json
+
+        from nexus_scalp.database.config import (
+            PG_CONFIG_SETTING_KEY,
+            PG_PASSWORD_SECRET_KEY,
+        )
+        from nexus_scalp.database.provider import DatabaseProvider
+        from nexus_scalp.settings.secret_store import SecureSecretStore
+        from nexus_scalp.settings.service import load_settings_service
+
+        parsed = _parse_connection_string(connection_string)
+        store = SecureSecretStore()
+        # parse_pg_url never returns a password, so capture it from the raw
+        # string only to route the credential into the OS-backed secret store.
+        from urllib.parse import urlparse
+
+        _url_pw = urlparse(connection_string).password if "://" in connection_string else ""
+        if _url_pw:
+            store.set_secret(PG_PASSWORD_SECRET_KEY, _url_pw)
+
+        svc = load_settings_service()
+        svc.set_database_provider(DatabaseProvider.POSTGRESQL.value)
+        svc.db.set(
+            PG_CONFIG_SETTING_KEY,
+            _json.dumps(parsed),
+            value_type="json",
+            source="USER_SETTINGS",
+            actor="db-connect",
+        )
+
+        # Provision the schema on the target so the next boot finds tables
+        # waiting (non-destructive: CREATE ... IF NOT EXISTS).
+        provision_summary: dict[str, object] = {}
+        try:
+            from nexus_scalp.database.fabric import provision_domain
+
+            dsn = _build_dsn(parsed, store)
+            backend = provision_domain("audit", dsn, min_size=1, max_size=4)
+            provision_summary = {
+                "backend": type(backend).__name__,
+                "schema": "provisioned",
+            }
+        except Exception as exc:
+            provision_summary = {"schema": f"FAILED: {type(exc).__name__}: {exc}"}
+
+        payload = {
+            "success": True,
+            "provider": DatabaseProvider.POSTGRESQL.value,
+            "host": parsed.get("host", ""),
+            "port": parsed.get("port", 5432),
+            "database": parsed.get("database", ""),
+            "user": parsed.get("username", ""),
+            "password_stored": store.has_secret(PG_PASSWORD_SECRET_KEY),
+            "provision": provision_summary,
+            "restart_required": True,
+        }
+        _emit(
+            payload,
+            json_mode,
+            plain_title=f"CONNECTED TO POSTGRESQL {payload['host']}:{payload['port']}/{payload['database']}",
+        )
+
+    @app.command("switch")
+    def portability_switch(
+        provider: str = typer.Argument(..., help="sqlite | postgresql"),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
+    ) -> None:
+        """Switch the ACTIVE provider (takes effect on next start)."""
+        from nexus_scalp.database.provider import DatabaseProvider
+        from nexus_scalp.settings.service import load_settings_service
+
+        parsed = DatabaseProvider.parse(provider)
+        svc = load_settings_service()
+        svc.set_database_provider(parsed.value)
+        payload = {"success": True, "provider": parsed.value, "restart_required": True}
+        _emit(payload, json_mode, plain_title=f"PROVIDER SWITCHED TO {parsed.value.upper()}")
+
+    @app.command("test-connection")
+    def portability_test(
+        host: str = typer.Option("localhost", "--host"),
+        port: int = typer.Option(5432, "--port"),
+        database: str = typer.Option("nse_audit", "--database"),
+        username: str = typer.Option("nse_user", "--username"),
+        password: str = typer.Option("", "--password"),
+        ssl_mode: str = typer.Option("", "--ssl-mode"),
+        json_mode: bool = typer.Option(False, "--json"),
+    ) -> None:
+        """Test the PostgreSQL connection."""
+        from nexus_scalp.database.config import DatabaseConfig
+        from nexus_scalp.database.drivers import get_driver
+        from nexus_scalp.settings.secret_store import SecureSecretStore
+
+        if password:
+            from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
+
+            SecureSecretStore().set_secret(PG_PASSWORD_SECRET_KEY, password)
+        cfg = DatabaseConfig.for_postgres(
+            domain="audit",
+            host=host,
+            port=port,
+            database=database,
+            username=username,
+            ssl_mode=ssl_mode,
+        )
+        driver = get_driver(cfg)
+        try:
+            ok = driver.ping()
+            payload = {
+                "success": ok,
+                "connected": ok,
+                "database_version": driver.database_version() if ok else "",
+            }
+        finally:
+            driver.close()
+        _emit(payload, json_mode, plain_title="POSTGRESQL CONNECTION TEST")
+
+    @app.command("preview")
+    def portability_preview(json_mode: bool = typer.Option(False, "--json")):
+        """Dry-run preview of the SQLite->PostgreSQL migration."""
+        mig = _portability_migrator({})
+        payload = mig.preview()
+        _emit(payload, json_mode, plain_title="MIGRATION PREVIEW (DRY RUN)")
+
+    @app.command("migrate")
+    def portability_migrate(
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview only, no writes."),
+        confirm: bool = typer.Option(False, "--confirm", help="Confirm the real migration."),
+        batch_size: int = typer.Option(2000, "--batch-size", help="Rows per batch."),
+        resume: bool = typer.Option(True, "--resume/--restart", help="Resume from checkpoint."),
+        json_mode: bool = typer.Option(False, "--json"),
+    ) -> None:
+        """Run the SQLite->PostgreSQL migration (streamed, resumable)."""
+        payload = {
+            "dry_run": dry_run,
+            "confirm": confirm,
+            "batch_size": batch_size,
+            "resume": resume,
+        }
+        mig = _portability_migrator(payload)
+        report = mig.run()
+        _emit(report.to_dict(), json_mode, plain_title="MIGRATION RESULT")
+
+    @app.command("validate")
+    def portability_validate(json_mode: bool = typer.Option(False, "--json")):
+        """Validate the last migration (row counts, identities, financials)."""
+        mig = _portability_migrator({})
+        result = mig.validate()
+        _emit({"validation": result}, json_mode, plain_title="MIGRATION VALIDATION")
+
+    @app.command("backup")
+    def portability_backup(json_mode: bool = typer.Option(False, "--json")):
+        """WAL-consistent backup of the SQLite audit database."""
+        import time
+
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        import os
+
+        os.makedirs("artifacts/backups", exist_ok=True)
+        import sqlite3
+
+        backup_path = f"artifacts/backups/audit_backup_{ts}.db"
+        src = sqlite3.connect("artifacts/audit.db", timeout=30.0)
+        try:
+            dst = sqlite3.connect(backup_path)
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+        finally:
+            src.close()
+        payload = {"success": True, "backup_path": backup_path}
+        _emit(payload, json_mode, plain_title="SQLITE BACKUP CREATED")
+
+    return app
+
+
+def make_portability_migrator(payload: dict[str, Any]) -> Any:
+    """Build the SQLite->PostgreSQL migrator from CLI/`--json` payload (portability)."""
+    from nexus_scalp.database.config import DatabaseConfig
+    from nexus_scalp.database.migrate_engine import (
+        MigrationOptions,
+        SqliteToPostgresMigrator,
+    )
+
+    src = DatabaseConfig.for_sqlite("audit", path=str(payload.get("sqlite_path") or "") or None)
+    dst = DatabaseConfig.for_postgres(
+        domain="audit",
+        host=str(payload.get("host") or "localhost"),
+        port=int(payload.get("port") or 5432),
+        database=str(payload.get("database") or "nse_audit"),
+        username=str(payload.get("username") or "nse_user"),
+        ssl_mode=str(payload.get("ssl_mode") or ""),
+    )
+    options = MigrationOptions(
+        dry_run=bool(payload.get("dry_run")),
+        confirm=bool(payload.get("confirm")),
+        resume=bool(payload.get("resume", True)),
+        batch_size=int(payload.get("batch_size") or 2000),
+        validate_checksums=bool(payload.get("validate_checksums", True)),
+    )
+    return SqliteToPostgresMigrator(src, dst, options)
+
+
+def _portability_migrator(payload: dict[str, Any]) -> Any:
+    return make_portability_migrator(payload)
+
+
+def make_db_app(
+    workspace: Path | None = None,
+    *,
+    app_version: str = "",
+    git_commit: str = "",
+) -> typer.Typer:
+    """Builds the `nexus db` sub-command group (canonical engine)."""
+    app = typer.Typer(help="Database schema migration and management.")
+
+    @app.command("status")
+    def db_status(
+        database: str = typer.Option(None, "--database", "-d", help="audit|news|candle_intel"),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+    ) -> None:
+        """Current schema version + migration state per domain."""
+        engines = _engine(database, workspace, app_version=app_version, git_commit=git_commit)
+        payload: dict[str, Any] = {}
+        for name, eng in engines.items():
+            st = eng.status()
+            payload[name] = {
+                "database": name,
+                "current_version": st["current_version"],
+                "expected_version": st["expected_version"],
+                "pending_count": st["pending_count"],
+                "migration_state": st["migration_state"],
+                "last_migration": st.get("last_migration", {}),
+                "integrity": st.get("integrity", ""),
+                "tamper_detected": st.get("tamper_detected", False),
+                "drift": st.get("drift", []),
+                "error_code": st.get("error", ""),
+            }
+        _emit(payload, json_mode, plain_title="DATABASE STATUS")
+
+    @app.command("plan")
+    def db_plan(
+        database: str = typer.Option(None, "--database", "-d", help="audit|news|candle_intel"),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+    ) -> None:
+        """Dry-run: shows the migration plan WITHOUT applying it (§25)."""
+        engines = _engine(database, workspace, app_version=app_version, git_commit=git_commit)
+        payload: dict[str, Any] = {}
+        for name, eng in engines.items():
+            plan = eng.plan()
+            payload[name] = {
+                "database": name,
+                "current_version": plan["current_version"],
+                "expected_version": plan["expected_version"],
+                "pending_count": plan["pending_count"],
+                "migration_state": plan["migration_state"],
+                "pending": plan["pending"],
+            }
+        _emit(payload, json_mode, plain_title="MIGRATION PLAN (dry-run — no changes made)")
+
+    @app.command("migrate")
+    def db_migrate(
+        database: str = typer.Option(None, "--database", "-d", help="audit|news|candle_intel"),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+        force: bool = typer.Option(False, "--force", help="Bypass the migration lock."),
+    ) -> None:
+        """Applies pending safe migrations (§26)."""
+        engines = _engine(database, workspace, app_version=app_version, git_commit=git_commit)
+        payload: dict[str, Any] = {}
+        failed = False
+        for name, eng in engines.items():
+            result = eng.migrate(force=force)
+            payload[name] = result
+            if result["state"] in (
+                "DB_MIGRATION_FAILED",
+                "DB_BLOCKED",
+                "DB_DOWNGRADE_BLOCKED",
+            ):
+                failed = True
+        _emit(payload, json_mode, plain_title="DATABASE MIGRATION")
+        if failed:
+            raise typer.Exit(1)
+
+    @app.command("verify")
+    def db_verify(
+        database: str = typer.Option(None, "--database", "-d", help="audit|news|candle_intel"),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+    ) -> None:
+        """Post-migration verification: version + integrity + drift (§32)."""
+        engines = _engine(database, workspace, app_version=app_version, git_commit=git_commit)
+        payload: dict[str, Any] = {}
+        ok = True
+        for name, eng in engines.items():
+            v = eng.verify()
+            payload[name] = v
+            ok = ok and bool(v["verified"])
+        _emit(payload, json_mode, plain_title="DATABASE VERIFICATION")
+        if not ok:
+            raise typer.Exit(1)
+
+    @app.command("migrations")
+    def db_migrations(
+        database: str = typer.Option(None, "--database", "-d", help="audit|news|candle_intel"),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+    ) -> None:
+        """Pending + applied migration catalogue (§53)."""
+        engines = _engine(database, workspace, app_version=app_version, git_commit=git_commit)
+        payload: dict[str, Any] = {}
+        for name, eng in engines.items():
+            plan = eng.plan()
+            payload[name] = {
+                "database": name,
+                "current_version": plan["current_version"],
+                "expected_version": plan["expected_version"],
+                "pending": plan["pending"],
+            }
+        _emit(payload, json_mode, plain_title="MIGRATION CATALOGUE")
+
+    @app.command("history")
+    def db_history(
+        database: str = typer.Option(None, "--database", "-d", help="audit|news|candle_intel"),
+        limit: int = typer.Option(20, "--limit", help="Max history rows per domain."),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+    ) -> None:
+        """Applied migration history (§53)."""
+        engines = _engine(database, workspace, app_version=app_version, git_commit=git_commit)
+        payload: dict[str, Any] = {}
+        for name, eng in engines.items():
+            payload[name] = {
+                "database": name,
+                "history": eng.history(limit=limit),
+            }
+        _emit(payload, json_mode, plain_title="MIGRATION HISTORY")
+
+    @app.command("repair")
+    def db_repair(
+        database: str = typer.Option(None, "--database", "-d", help="audit|news|candle_intel"),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+    ) -> None:
+        """Safe automatic repair: re-run the idempotent additive engine (§40)."""
+        engines = _engine(database, workspace, app_version=app_version, git_commit=git_commit)
+        payload: dict[str, Any] = {}
+        failed = False
+        for name, eng in engines.items():
+            result = eng.repair()
+            payload[name] = result
+            if result["state"] in (
+                "DB_MIGRATION_FAILED",
+                "DB_BLOCKED",
+                "DB_DOWNGRADE_BLOCKED",
+            ):
+                failed = True
+        _emit(payload, json_mode, plain_title="DATABASE REPAIR")
+        if failed:
+            raise typer.Exit(1)
+
+    @app.command("doctor")
+    def db_doctor(
+        database: str = typer.Option(None, "--database", "-d", help="audit|news|candle_intel"),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+    ) -> None:
+        """READ-ONLY database health diagnostics (never writes).
+
+        Aggregates per-domain schema version, migration state, integrity,
+        tamper detection and drift into a READY/DEGRADED/BLOCKED verdict.
+        For repair use `nse db repair` (explicit action).
+        """
+        import sqlite3
+
+        from nexus_scalp.release.paths import get_runtime_workspace
+
+        ws = workspace or get_runtime_workspace()
+        engines = _engine(database, workspace, app_version=app_version, git_commit=git_commit)
+        payload: dict[str, Any] = {}
+        overall = "READY"
+        for name, eng in engines.items():
+            st = eng.status()
+            verdict = st.get("migration_state") or "READY"
+            if verdict in (
+                "DB_READY",
+                "READY",
+                "DB_MIGRATION_NOT_REQUIRED",
+                "DB_MIGRATION_SUCCEEDED",
+                "DB_UP_TO_DATE",
+            ):
+                verdict_txt = "READY"
+            elif verdict in ("DB_BLOCKED", "BLOCKED", "DB_DOWNGRADE_BLOCKED"):
+                verdict_txt = "BLOCKED"
+            else:
+                verdict_txt = "DEGRADED"
+            entry: dict[str, Any] = {
+                "database": name,
+                "verdict": verdict_txt,
+                "current_version": st.get("current_version"),
+                "expected_version": st.get("expected_version"),
+                "pending_count": st.get("pending_count"),
+                "migration_state": st.get("migration_state"),
+                "tamper_detected": st.get("tamper_detected", False),
+                "drift": st.get("drift", []),
+            }
+            db_file = ws / "artifacts" / f"{name}.db"
+            if not db_file.exists():
+                db_file = ws / "artifacts" / "audit.db"
+            try:
+                con = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True, timeout=2)
+                try:
+                    integ = con.execute("PRAGMA integrity_check").fetchone()
+                    entry["integrity"] = integ[0] if integ else "unknown"
+                    dv = con.execute("PRAGMA data_version").fetchone()
+                    entry["data_version"] = dv[0] if dv else None
+                finally:
+                    con.close()
+            except sqlite3.Error as e:
+                entry["integrity"] = f"error: {e}"
+                if verdict_txt == "READY":
+                    verdict_txt = "DEGRADED"
+                    entry["verdict"] = verdict_txt
+            payload[name] = entry
+            if verdict_txt == "BLOCKED":
+                overall = "BLOCKED"
+            elif verdict_txt == "DEGRADED" and overall != "BLOCKED":
+                overall = "DEGRADED"
+        payload["_overall"] = overall
+        _emit(payload, json_mode, plain_title="DATABASE DOCTOR")
+        if overall == "BLOCKED":
+            raise typer.Exit(1)
+
+    @app.command("create-migration")
+    def db_create_migration(
+        database: str = typer.Option(..., "--database", "-d", help="audit|news|candle_intel"),
+        name: str = typer.Option(..., "--name", help="snake_case migration name"),
+    ) -> None:
+        """Generates a migration TEMPLATE (never executes it) (§52)."""
+        dom = _domain(database)
+        template = _migration_template(dom.value, name)
+        out = Path("scratch") / f"migration_{dom.value}_{name}.py"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(template, encoding="utf-8")
+        print(f"Migration template written: {out}")
+        print("Review, register in nexus_scalp/database/registry.py, then test.")
+
+    return app
+
+
+# ---------------------------------------------------------------------------
+# First-run migration seam (NSE-HEALTHFIX-001, contract §6 / lane D)
+# ---------------------------------------------------------------------------
+#
+# The probe's DATABASE WARNING was a healthy audit.db parked at schema 7 while
+# the registry expects 9: `nexus db migrate` applies the pending pair, but
+# nothing on the first-run path (`nexus setup` -> RepairEngine.run(),
+# `nexus repair`, `doctor --fix`) ever calls it, so the gap never closes
+# automatically. This is that step, exposed as a stable seam RepairEngine can
+# call once the integrator wires the two lanes together.
+#
+# Contract invariants (binding):
+#   * NEVER raises — every failure path returns (status, detail).
+#   * Non-blocking: a migration that cannot apply reports SKIPPED/FAILED with
+#     an honest reason; it never aborts setup (the same optional-tier honesty
+#     as RepairEngine._ensure_strategies_database's ImportError -> SKIPPED).
+#   * Integrity gate: read-only `PRAGMA integrity_check` BEFORE and AFTER. A
+#     failed check aborts the step — a corrupt DB is never migrated onward.
+#   * Live-DB safety: every probe uses a read-only URI connect
+#     (`file:<db>?mode=ro`, uri=True) — never a plain read-write connect
+#     against a DB a live engine may hold. A DB we cannot take the write lock
+#     on reports SKIPPED rather than racing the engine.
+#   * DatabaseMigrationEngine remains the migration authority: this function
+#     only decides WHETHER it is safe to let it run.
+
+_MIGRATION_STATUSES = ("OK", "SKIPPED", "FAILED", "NOT_INITIALIZED")
+
+
+def _read_only_integrity(db_path: Path) -> tuple[bool, str]:
+    """Read-only integrity probe — the same check ``_db_health`` runs.
+
+    Returns (ok, detail). Never raises; an unopenable database is reported as
+    a failure with the sqlite error rather than propagated.
+    """
+    import sqlite3
+
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2)
+    except sqlite3.Error as e:
+        return False, f"cannot open read-only: {e}"
+    try:
+        row = con.execute("PRAGMA integrity_check").fetchone()
+    except sqlite3.Error as e:
+        return False, f"integrity_check failed: {e}"
+    finally:
+        con.close()
+    verdict = str(row[0]) if row else "unknown"
+    return verdict == "ok", f"integrity_check -> {verdict}"
+
+
+def _write_lock_acquireable(db_path: Path) -> tuple[bool, str]:
+    """Is the DB writable right now, i.e. no live engine holds it?
+
+    SQLite has no reader-visible "in use" flag, so this is a lock probe: a
+    `BEGIN IMMEDIATE` either takes the write lock (quiescent DB) or fails with
+    SQLITE_BUSY/locked while an engine holds a write transaction or an
+    uncheckpointed WAL. Rolling back immediately leaves zero footprint. The
+    read-only connect above already proved the file readable; this proves the
+    stronger property the migration needs.
+    """
+    import sqlite3
+
+    try:
+        con = sqlite3.connect(str(db_path), timeout=2)
+    except sqlite3.Error as e:
+        return False, f"cannot connect: {e}"
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        con.rollback()
+    except sqlite3.Error as e:
+        return False, f"database is locked by a live process: {e}"
+    finally:
+        con.close()
+    return True, "write lock acquireable"
+
+
+def apply_pending_audit_migrations(db_path: Path) -> tuple[str, str]:
+    """Apply pending audit.schema migrations on the first-run/repair path.
+
+    Idempotent, failure-isolated, non-blocking. Returns ``(status, detail)``:
+
+    * ``OK``             — migrations applied (or none were needed) and the DB
+                           is now at the expected schema version;
+    * ``SKIPPED``        — nothing to do, or the DB is in use by a live engine
+                           and must not be raced;
+    * ``FAILED``         — the DB is corrupt, or a migration attempted and did
+                           not reach the expected version;
+    * ``NOT_INITIALIZED`` — the database file does not exist yet (lazy
+                           first-use; the engine creates it on first start).
+
+    Never raises. Integrity is probed read-only before AND after; a failed
+    check aborts the step before any migration runs. ``DatabaseMigrationEngine``
+    is the migration authority — this function decides only whether it is safe
+    to let it apply.
+    """
+    try:
+        from nexus_scalp.database.engine import DatabaseMigrationEngine
+        from nexus_scalp.database.models import DatabaseDomain
+    except ImportError as e:
+        # Optional tier unavailable in this bundle (the frozen CLI excludes
+        # the DB stack): skip honestly, never fail setup for it.
+        return "SKIPPED", f"migration engine unavailable in this bundle: {e}"
+
+    try:
+        db_path = Path(db_path)
+        if not db_path.exists():
+            # Lazy first-use, not corruption (CHG-0043 truthfulness): the
+            # engine boots and creates the DB, so there is nothing to migrate.
+            return "NOT_INITIALIZED", f"database not initialized yet (no file: {db_path.name})"
+
+        engine = DatabaseMigrationEngine(db_path=db_path, domain=DatabaseDomain.AUDIT)
+
+        # Pre-flight integrity gate FIRST: a corrupt DB may still be openable
+        # enough to read a version, and current_version() swallows sqlite
+        # errors (returning 0), so it cannot distinguish "no metadata" from
+        # "unreadable". A corrupt database is never migrated onward.
+        ok, detail = _read_only_integrity(db_path)
+        if not ok:
+            return "FAILED", f"pre-migration integrity gate failed: {detail}"
+
+        current = engine.current_version()
+        expected = engine.expected_version()
+
+        if current >= expected:
+            return "SKIPPED", f"schema {current}/{expected} — no pending migrations"
+
+        if current == 0:
+            # No schema_meta at all. A legacy DB with real tables is baselined
+            # by the engine itself; a file with no metadata and no tables is
+            # not a DB we should create schema on — the engine owns first
+            # creation. Report honestly either way instead of guessing.
+            return (
+                "SKIPPED",
+                "database has no schema metadata yet — the engine boot creates it",
+            )
+
+        # Live-DB safety: never race an engine holding the write lock.
+        writable, lock_detail = _write_lock_acquireable(db_path)
+        if not writable:
+            return "SKIPPED", f"migrations deferred — {lock_detail}"
+
+        # The engine takes its own cross-process lock, backs up, applies and
+        # verifies. It is the authority; we do not reimplement application.
+        result = engine.migrate()
+
+        state = str(result.get("state", ""))
+        applied = result.get("applied") or []
+        after = engine.current_version()
+
+        # Post-flight integrity gate (read-only): even a "successful" apply
+        # that leaves a corrupt file is a failure, never an OK.
+        ok, post_detail = _read_only_integrity(db_path)
+        if not ok:
+            return (
+                "FAILED",
+                f"post-migration integrity gate failed ({post_detail}) after "
+                f"{len(applied)} migration(s), state={state}",
+            )
+
+        if state in (
+            "DB_MIGRATION_FAILED",
+            "DB_BLOCKED",
+            "DB_DOWNGRADE_BLOCKED",
+        ):
+            return (
+                "FAILED",
+                f"migration engine reported {state}: {result.get('error', '')}",
+            )
+
+        if after < expected:
+            return (
+                "FAILED",
+                f"schema reached {after}, expected {expected} "
+                f"(state={state}, applied={len(applied)})",
+            )
+
+        applied_txt = ", ".join(str(a) for a in applied) if applied else "none"
+        return (
+            "OK",
+            f"schema {after}/{expected} — applied {len(applied)} migration(s): {applied_txt}",
+        )
+    except Exception as e:
+        # Contract: never raise to a caller. An unexpected error is reported
+        # as FAILED with the honest reason so the operator can act on it.
+        return "FAILED", f"{type(e).__name__}: {e}"
+
+
+def _migration_template(domain: str, name: str) -> str:
+    safe = "".join(c if c.isalnum() or c == "_" else "_" for c in name)
+    return (
+        f'"""\nMigration template: {domain}-{safe}\n'
+        f"Generated by `nexus db create-migration` (TASK-10 §52) — review before use.\n"
+        f'"""\n\n'
+        f"from pathlib import Path\n"
+        f"import sqlite3\n\n\n"
+        f"def apply(conn: sqlite3.Connection, db_path: Path) -> None:\n"
+        f'    """Apply the schema change (idempotent)."""\n'
+        f"    raise NotImplementedError\n\n\n"
+        f"def verify(conn: sqlite3.Connection, db_path: Path) -> bool:\n"
+        f'    """Return True when the change is present."""\n'
+        f"    return True\n\n\n"
+        f"def rollback(conn: sqlite3.Connection, db_path: Path) -> None:\n"
+        f'    """Compensation strategy (required for destructive changes)."""\n'
+        f"    pass\n"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Database Hygiene (TASK-11): nexus db hygiene status|plan|run|pause|resume|history
+# ---------------------------------------------------------------------------
+
+
+def _repo_root() -> Path:
+    """Locates the repo root from the working directory (artifacts/ sibling)."""
+    cwd = Path.cwd()
+    for candidate in (cwd, cwd.parent, cwd.parent.parent):
+        if (candidate / "artifacts").exists():
+            return candidate
+    return cwd
+
+
+def _hygiene_worker(mode: str, apply_deletes: bool) -> Any:
+    from nexus_scalp.hygiene import WorkerMode
+    from nexus_scalp.hygiene.worker_runner import DatabaseHygieneWorker
+
+    try:
+        wmode = WorkerMode(mode)
+    except ValueError:
+        wmode = WorkerMode.AUDIT_ONLY
+    return DatabaseHygieneWorker(repo_root=_repo_root(), mode=wmode, apply_deletes=apply_deletes)
+
+
+def _hygiene_emit(payload: dict[str, Any], json_mode: bool, title: str = "") -> None:
+    if json_mode:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+        return
+    print(title)
+    if isinstance(payload, dict):
+        for k, v in payload.items():
+            if isinstance(v, dict):
+                print(f"  {k}:")
+                for k2, v2 in v.items():
+                    print(f"    {k2}: {v2}")
+            else:
+                print(f"  {k}: {v}")
+
+
+def make_hygiene_app() -> typer.Typer:
+    app = typer.Typer(help="Database hygiene worker (TASK-11) — non-destructive defaults.")
+
+    @app.command("status")
+    def hygiene_status(
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
+    ) -> None:
+        """Show worker state + DB sizes + last run info (spec §42)."""
+        w = _hygiene_worker("AUDIT_ONLY", False)
+        _hygiene_emit(w.status(), json_mode, "DATABASE HYGIENE STATUS")
+
+    @app.command("plan")
+    def hygiene_plan(
+        database: str = typer.Option(
+            "", "--database", "-d", help="audit|news|candle_intel (default: all)"
+        ),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
+    ) -> None:
+        """Build the cleanup PLAN (ZERO mutation — spec §40)."""
+        w = _hygiene_worker("AUDIT_ONLY", False)
+        targets = [database] if database else ["audit", "news", "candle_intel"]
+        out: dict[str, Any] = {}
+        for db in targets:
+            out[db] = w.plan_database(db)
+        _hygiene_emit(out, json_mode, "DATABASE HYGIENE PLAN (read-only, no mutation)")
+
+    @app.command("run")
+    def hygiene_run(
+        mode: str = typer.Option(
+            "AUDIT_ONLY", "--mode", help="AUDIT_ONLY|DRY_RUN|SAFE_CLEAN|AGGRESSIVE_CLEAN"
+        ),
+        database: str = typer.Option(
+            "", "--database", "-d", help="audit|news|candle_intel (default: all)"
+        ),
+        apply: bool = typer.Option(False, "--apply", help="Actually apply SAFE_CLEAN deletes."),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
+    ) -> None:
+        """Run one hygiene cycle (spec §41/§42).
+
+        --mode SAFE_CLEAN --apply is required for any destructive action.
+        AUDIT_ONLY/DRY_RUN never modify data.
+        """
+        w = _hygiene_worker(mode, apply)
+        targets = [database] if database else None
+        res = w.run_cycle(targets)
+        _hygiene_emit(res, json_mode, "DATABASE HYGIENE RUN")
+
+    @app.command("health")
+    def hygiene_health(
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
+    ) -> None:
+        """Database Health Panel (TASK-22): runtime scheduler status + quarantine
+        + last cycle telemetry. Read-only.
+        """
+        from nexus_scalp.hygiene.hygiene_runtime import (
+            RuntimeCleanupScheduler,
+        )
+
+        s = RuntimeCleanupScheduler(repo_root=_repo_root())
+        payload: dict[str, Any] = {"scheduler": s.status()}
+        run_rows = s.state_store.list_runs(limit=5)
+        payload["recent_runs"] = run_rows
+        payload["quarantine"] = s.quarantine.stats()
+        _hygiene_emit(payload, json_mode, "DATABASE HEALTH PANEL (TASK-22)")
+
+    @app.command("cleanup")
+    def hygiene_cleanup(
+        dry_run: bool = typer.Option(True, "--dry-run", help="No changes applied."),
+        deep: bool = typer.Option(False, "--deep", help="Deep maintenance cycle."),
+        apply: bool = typer.Option(False, "--apply", help="Apply SAFE_CLEAN deletes."),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
+    ) -> None:
+        """One runtime cleanup cycle (TASK-22). Safe defaults: dry-run only."""
+        from nexus_scalp.hygiene.hygiene_runtime import (
+            RuntimeCleanupScheduler,
+            RuntimeHygieneSettings,
+        )
+
+        settings = RuntimeHygieneSettings(
+            dry_run=dry_run or not apply,
+            apply_deletes=apply and not dry_run,
+        )
+        s = RuntimeCleanupScheduler(repo_root=_repo_root(), settings=settings)
+        res = s.run_cycle(deep=deep)
+        _hygiene_emit(
+            {"cycle": res["cycle"], "telemetry": res["telemetry"], "result": res["result"]},
+            json_mode,
+            "DATABASE CLEANUP CYCLE (TASK-22)",
+        )
+
+    @app.command("quarantine")
+    def hygiene_quarantine(
+        status: str = typer.Option(
+            "", "--status", help="QUARANTINED|RESTORED|RESOLVED_DELETED|EXTERMINATED (default: all)"
+        ),
+        limit: int = typer.Option(50, "--limit", help="Rows to show."),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
+    ) -> None:
+        """List quarantined records (TASK-22 spec §9)."""
+        from nexus_scalp.hygiene.quarantine import QuarantineStore
+
+        q = QuarantineStore(_repo_root())
+        items = q.list(status=status or None, limit=limit)
+        if json_mode:
+            print(json.dumps(items, ensure_ascii=False, indent=2, default=str))
+            return
+        print("DATA QUARANTINE (TASK-22)")
+        for it in items:
+            print(
+                f"  {it.get('quarantine_id', '')} {it.get('database', '')}.{it.get('table', '')} "
+                f"row_id={it.get('row_id', '')} status={it.get('status', '')} "
+                f"reason={it.get('reason', '')[:60]}"
+            )
+
+    @app.command("pause")
+    def hygiene_pause(json_mode: bool = typer.Option(False, "--json")) -> None:
+        w = _hygiene_worker("AUDIT_ONLY", False)
+        _hygiene_emit(w.pause(), json_mode, "DATABASE HYGIENE PAUSED")
+
+    @app.command("resume")
+    def hygiene_resume(json_mode: bool = typer.Option(False, "--json")) -> None:
+        w = _hygiene_worker("AUDIT_ONLY", False)
+        _hygiene_emit(w.resume(), json_mode, "DATABASE HYGIENE RESUMED")
+
+    @app.command("history")
+    def hygiene_history(
+        limit: int = typer.Option(50, "--limit", help="Rows to show."),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
+    ) -> None:
+        w = _hygiene_worker("AUDIT_ONLY", False)
+        runs = w.history(limit=limit)
+        if json_mode:
+            print(json.dumps(runs, ensure_ascii=False, indent=2, default=str))
+            return
+        print("DATABASE HYGIENE HISTORY")
+        for r in runs:
+            print(
+                f"  {r.get('run_id', '')} {r.get('database', '')} "
+                f"mode={r.get('mode', '')} verification={r.get('verification_status', '')} "
+                f"deleted={r.get('deleted', 0)}"
+            )
+
+    return app
+
+
+hygiene_app = make_hygiene_app()
+
+# Convenience: expose a ready-to-register typer app for cli/main.py.
+db_app = make_db_app()
+# TASK-11: `nexus db hygiene *` — registered as a SUBCOMMAND of the `db` typer.
+db_app.add_typer(
+    hygiene_app,
+    name="hygiene",
+    help="Database hygiene worker (TASK-11) — non-destructive defaults.",
+)

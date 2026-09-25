@@ -1,0 +1,2857 @@
+"""
+Institutional Purged Walk-Forward Training & Online Fine-Tuning Engine (v3.8 Enterprise - Alias Hardened)
+========================================================================================================
+Executes Purged Walk-Forward Validation and PyTorch model training for ScalpNet
+according to Deep et al. (2025) and Lopez de Prado (2020) quantitative standards.
+Enhanced with Adaptive Zero-Leakage Online Fine-Tuning and Keyword Alias Protections.
+Enterprise Upgrades & Hardening Incorporated:
+    1. Parameter Keyword Alias Support (Supports both model= and live_model= kwargs in fine_tune_online).
+    2. Cold-Start Scaler Fallback (Fits initial scaler if model.scaler.npz is missing on fresh runs).
+    3. Scaler Artifact Persistence (Saves mean/std array to guarantee Live Inference distribution parity).
+    4. Deep-Copied Isolated Fine-Tuning (Prevents live PyTorch model collision during async retraining).
+    5. Strict 40D Feature Tensor Validation Gate (Raises ValueError if feature length mismatches).
+    6. Hardware Acceleration Device Management (Automatic GPU/CUDA routing if available).
+    7. Minority Class Loss Weight Boost (2.5x penalty multiplier on BUY/SELL to prevent NO_TRADE bias).
+Invariants:
+    - Zero Data Leakage: Strict temporal separation, purged tail bars, and isolated feature scaling.
+    - Full Market Generalization: Final saved model encompasses multi-year and live market dynamics.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import copy
+import json
+import math
+import random
+import time
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+import polars as pl
+import torch
+import torch.nn.functional as F
+from torch import nn
+from torch.utils.data import DataLoader, Dataset
+
+from nexus_scalp.domain.enums import ActionType
+from nexus_scalp.features.schema import FEATURE_SCHEMAS, FeatureSchema, active_dimension
+
+# MLFIX-T7 lineage governance: ``LabelOrigin`` is referenced in signatures.
+# Import LAZILY inside method bodies (see _resolve_label_origin) — a
+# module-level import here is circular: model_generation/__init__ imports
+# training.py which imports this module for FocalLossWithSmoothing.
+if TYPE_CHECKING:
+    from nexus_scalp.model_generation.lineage import LabelOrigin
+from nexus_scalp.model_lifecycle.model_class_contract import (
+    MODEL_CLASS_CONTRACT_ID,
+    TRAINED_CLASS_COUNT,
+    TRAINED_CLASS_NAMES,
+)
+from nexus_scalp.model_lifecycle.persist_decision import (
+    attach_decision,
+    should_persist_candidate,
+)
+from nexus_scalp.models.scalp_net import ScalpNet
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.training.walk_forward_trainer")
+
+
+def resolve_schema(schema_id: str | None) -> FeatureSchema:
+    """
+    Resolves a feature schema for the trainer.
+    Kept as a module-level helper so the trainer never falls back to a guessed
+    dimension: an unknown id raises rather than silently training a model whose
+    width does not match what the runtime emits.
+    """
+    return FEATURE_SCHEMAS.resolve(schema_id)
+
+
+def _session_semantics_payload() -> dict[str, Any]:
+    """P1: the session-time provenance block for training metadata.
+
+    Failure-isolated: metadata writing must never break training; a missing
+    block is reported honestly ('UNAVAILABLE') rather than fabricated.
+    """
+    try:
+        from nexus_scalp.features.session_time import session_semantics_metadata
+
+        return dict(session_semantics_metadata())
+    except Exception as e:  # pragma: no cover - defensive
+        return {"session_semantics_version": "UNAVAILABLE", "error": str(e)}
+
+
+# =============================================================================
+# DATASET
+# =============================================================================
+class TrainingCancelledError(RuntimeError):
+    """BUG-293: operator cancel observed at an epoch boundary (the training
+    loop raises at the NEXT check; state never lands mid-write). Distinct
+    from every other failure so callers can classify CANCELLED honestly."""
+
+    pass
+
+
+class ScalpDataset(Dataset):
+    """Simple tensor dataset for ScalpNet training."""
+
+    def __init__(self, features: np.ndarray, labels: np.ndarray, device: torch.device) -> None:
+        self.features = torch.tensor(features, dtype=torch.float32).to(device)
+        self.labels = torch.tensor(labels, dtype=torch.long).to(device)
+
+    def __len__(self) -> int:
+        return len(self.labels)
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.features[idx], self.labels[idx]
+
+
+class ScalpWeightedDataset(Dataset):
+    """Dataset supporting features, labels, and exponential time-decay sample weights."""
+
+    def __init__(
+        self,
+        features: np.ndarray,
+        labels: np.ndarray,
+        sample_weights: np.ndarray,
+        device: torch.device,
+    ) -> None:
+        self.features = torch.tensor(features, dtype=torch.float32).to(device)
+        self.labels = torch.tensor(labels, dtype=torch.long).to(device)
+        self.sample_weights = torch.tensor(sample_weights, dtype=torch.float32).to(device)
+
+    def __len__(self) -> int:
+        return len(self.labels)
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return self.features[idx], self.labels[idx], self.sample_weights[idx]
+
+
+def _compute_time_decay_weights(num_samples: int, half_life_bars: float = 120.0) -> np.ndarray:
+    """
+    Computes exponential time-decay sample weights giving higher weight to recent bars.
+    """
+    steps_from_latest = np.arange(num_samples - 1, -1, -1, dtype=np.float32)
+    weights = np.exp(-np.log(2.0) * steps_from_latest / max(1.0, half_life_bars))
+    weights /= np.mean(weights) + 1e-8
+    return weights.astype(np.float32)
+
+
+# =============================================================================
+# SUPPORT TYPES
+# =============================================================================
+@dataclass
+class ScalerBundle:
+    mean: np.ndarray
+    std: np.ndarray
+
+
+# =============================================================================
+# TRAINER
+# =============================================================================
+class WalkForwardTrainer:
+    """
+    Production-grade purged time-series trainer for ScalpNet.
+    Feature geometry is SCHEMA-DRIVEN: `NUM_FEATURES` mirrors the active contract
+    declared in `nexus_scalp.features.schema`, and each instance carries a
+    resolved `feature_schema`. Training a future 60D/350D model is therefore a
+    constructor argument (`feature_schema_id=...`) plus a retrain, not a code
+    change in this class.
+    """
+
+    #: Active live contract width (kept as a class attribute for backward
+    #: compatibility with existing call sites and regression tests).
+    NUM_FEATURES: int = active_dimension()
+    NUM_CLASSES: int = 3
+    #: MLFIX-T4 MODEL CLASS CONTRACT: canonical contract is 3-class (NO_TRADE/BUY/SELL).
+    #: LEGACY_HEAD_CLASSES=4 is retained only to route LEGACY 4-wide artifacts through
+    #: the legacy compat path (inspect+reject or legacy loader). Fresh retrains use
+    #: canonical num_classes=3 (from LABEL_SCHEMA_3CLASS_V1 / CANONICAL_CLASS_COUNT).
+    #: Live inference must never silently alias a 3-class model onto a 4-wide loader.
+    CANONICAL_NUM_CLASSES: int = 3
+    # LEGACY 4-wide head (serving artifact a4b9..) — compat-only; rejected unless caller opts in.
+    LEGACY_HEAD_CLASSES: int = 4
+    # Back-compat alias: tests that import MODEL_HEAD_CLASSES still see canonical 3.
+    MODEL_HEAD_CLASSES: int = 3
+
+    def __init__(
+        self,
+        num_folds: int = 4,
+        train_ratio: float = 0.70,
+        batch_size: int = 256,
+        learning_rate: float = 5e-4,
+        epochs_per_fold: int = 3,
+        early_stopping_patience: int = 3,
+        time_decay_full_train_half_life_bars: float | None = None,
+        time_decay_online_half_life_bars: float = 120.0,
+        purge_gap_bars: int = 15,
+        random_seed: int = 42,
+        active_class_boost: float = 3.0,
+        # P0-2026-09-04 PRODUCER FIX: the historical default save path was the
+        # LIVE CHAMPION BUNDLE (artifacts/models/scalp/XAUUSD/70d_liquidity/
+        # model.pt) via three_model.train_variant. The 34x10 production launch
+        # therefore trained directly into the serving path, and shorter jobs
+        # clobbered its sidecars while the long run held the weights (P0:
+        # 4-class tensor + 3-class meta + dataset_id=null). Bare/default
+        # training must NEVER resolve to a canonical serving path: the default
+        # is now an isolated candidate directory under model_generation/models.
+        # Canonical variant outputs are only produced via the explicit
+        # three_model.train_variant(..., output_dir=...) governed producer.
+        artifact_save_path: Path = Path(
+            "artifacts/model_generation/models/candidate_default/model.pt"
+        ),
+        use_feature_scaling: bool = True,
+        clip_features_min: float = -5.0,
+        clip_features_max: float = 5.0,
+        min_rows_per_train_split: int = 50,
+        min_rows_per_test_split: int = 20,
+        min_class_ratio: float = 0.08,  # Minimum 8% prediction ratio per active class required
+        # ECONOMIC FOLD METRIC assumptions (research/training-parity P1):
+        # per-trade friction in R and the reward leg in R used by the fold
+        # economic metric. Defaults mirror the label geometry (TP = 1.2R via
+        # the 1.1x ATR TP vs 1.0x ATR SL risk setup) and the calibrated
+        # execution-cost artifact convention (spread-only account, ~0.15R
+        # friction at the production risk distance). Overridable per run;
+        # values travel on every fold's economics block.
+        friction_r: float = 0.15,
+        reward_r: float = 1.2,
+        focal_gamma: float = 2.0,  # Focal Loss exponent focusing on hard minority examples
+        label_smoothing: float = 0.08,  # Label smoothing factor for regularization
+        use_oversampling: bool = True,  # Enables Random Oversampling on BUY/SELL in buffer
+        feature_schema_id: str | None = None,
+        embargo_bars: int | None = None,
+        # WALK-FORWARD GEOMETRY (research/training-parity P0): "blocked" keeps
+        # the historical per-fold train/test geometry (each fold trains only
+        # within its own slice). "expanding" is the anchored walk-forward:
+        # fold k trains on ALL rows from the dataset start through the end of
+        # fold k's train region — production candidates are therefore
+        # evaluated with all historical information available before their
+        # evaluation period (TRAIN [A] -> [A+B] -> [A+B+C] ...). Purge and
+        # embargo semantics are IDENTICAL in both modes; the default is
+        # "blocked" so existing experiments are never silently re-geometried.
+        walk_forward_mode: str = "blocked",
+        # CALIBRATION SAFETY POLICY (P1): maximum allowed RELATIVE Brier
+        # degradation vs baseline (default 0.10 = +10% worse Brier than the
+        # champion weights; 0.0 strictest; None disables — recorded in
+        # provenance). See the calibration-shift evaluation below.
+        max_calibration_degradation_r: float | None = None,
+        # MODEL_CLASS_CONTRACT v1 (Fix #3): the neural class contract is
+        # derived from the LABEL SCHEMA (triple_barrier_3class_v1), not
+        # hard-coded. Passing class_count=4 with labels that never contain
+        # class 3 is a contract violation (TASK-MLFIX-T4) — the constructor
+        # rejects it loudly rather than training a semantically-dead head.
+        class_count: int = TRAINED_CLASS_COUNT,
+        # MODEL_CLASS_CONTRACT v1 (Fix #6): smoke provenance. smoke=True runs
+        # are bounded drills and their artifacts carry production_eligible
+        # = False in model.meta.json — the promotion gate rejects them
+        # regardless of validity/width.
+        smoke: bool = False,
+        # MLFIX-T7 LINEAGE GOVERNANCE: the label provenance this trainer will
+        # train on. When ``label_origin`` is None the origin is resolved from
+        # the training frame (``label_origin`` / ``source_classification``
+        # columns) at train time, defaulting to UNKNOWN (tainted) — training
+        # a production-eligible candidate from PAPER/LIVE/UNKNOWN labels is
+        # blocked unless the operator passes governance_override=True.
+        label_origin: str | LabelOrigin | None = None,
+        governance_override: bool = False,
+        # P0-2026-09-04 CHAMPION GUARD: explicit operator opt-in required to
+        # write a canonical variant bundle (see assert_not_champion_path).
+        allow_champion_save: bool = False,
+        # BUG-293 first-run UX seam (OPTIONAL, default None => zero behavior
+        # change for every existing caller): a callback receiving REAL
+        # per-epoch progress facts {fold, folds, epoch, epochs, loss,
+        # val_loss, elapsed_sec} at epoch boundaries. Nothing is estimated
+        # here — the caller computes any ETA from these measurements.
+        # ``cancel_event`` (threading.Event) is checked at each epoch
+        # boundary and raises TrainingCancelledError when set (never
+        # mid-batch, so a cancel leaves the artifact path untouched).
+        progress_cb: Any | None = None,
+        cancel_event: Any | None = None,
+        # ML-TRAIN-003: optimizer + LR-scheduler recipe is resolved from the
+        # central training.optimizers factory. ``None`` preserves the exact
+        # historical default (AdamW lr=self.learning_rate, weight_decay=1e-4,
+        # CosineAnnealingLR T_max=self.epochs) — behavior is identical until a
+        # caller opts in. The factory centralizes step-cadence correctness for
+        # every schedule type (see step_scheduler).
+        optimizer_config: dict[str, Any] | None = None,
+        # None retains historical auto-selection; explicit requests never fall back.
+        backend: str | None = None,
+    ) -> None:
+        self.num_folds = int(num_folds)
+        self.train_ratio = float(train_ratio)
+        self.batch_size = int(batch_size)
+        self.learning_rate = float(learning_rate)
+        self.epochs = int(epochs_per_fold)
+        self.patience = int(early_stopping_patience)
+        self.purge_gap = int(purge_gap_bars)
+        self.active_class_boost = float(active_class_boost)
+        self.seed = int(random_seed)
+        # P0-2026-09-04 CHAMPION GUARD (belt-and-braces, defaults may drift):
+        # WalkForwardTrainer must never resolve its save path into a canonical
+        # serving bundle. Only an explicit operator opt-in via
+        # allow_champion_save=True may target the live path, and even then the
+        # path must be one of the documented variant bundles. Every other
+        # resolution to artifacts/models/scalp/**/model.pt fails LOUDLY before
+        # any training work begins.
+        from nexus_scalp.training.champion_guard import assert_not_champion_path
+
+        self.allow_champion_save = bool(allow_champion_save)
+        # BUG-293 progress/cancel seams (None => dormant; never on the tick path).
+        self._progress_cb = progress_cb
+        self._cancel_event = cancel_event
+        self.optimizer_config = dict(optimizer_config) if optimizer_config else None
+        _p = Path(artifact_save_path)
+        assert_not_champion_path(
+            _p,
+            allow_champion_save=self.allow_champion_save,
+            context="WalkForwardTrainer.__init__",
+        )
+        self.artifact_path = _p
+        self.use_feature_scaling = bool(use_feature_scaling)
+        self.clip_features_min = float(clip_features_min)
+        self.clip_features_max = float(clip_features_max)
+        self.min_rows_per_train_split = int(min_rows_per_train_split)
+        self.min_rows_per_test_split = int(min_rows_per_test_split)
+        self.min_class_ratio = float(min_class_ratio)
+        # Economic fold-metric assumptions (see constructor docs).
+        self.friction_r = float(friction_r)
+        self.reward_r = float(reward_r)
+        # AGENT-3 LEARNFIX-2: the constructor declares focal_gamma as a
+        # tuning parameter (docs/model_lab mirror 2.0), but this line used
+        # to hard-code 1.0, silently discarding the caller value. Honor
+        # the constructor argument; the declared default (2.0) now applies
+        # and the historical 1.0 remains available by passing it explicitly.
+        self.focal_gamma = float(focal_gamma)
+        self.label_smoothing = float(label_smoothing)
+        self.use_oversampling = bool(use_oversampling)
+        # WALK-FORWARD GEOMETRY: validate the mode explicitly (fail-loud, no
+        # silent fallback to a guessed geometry).
+        if walk_forward_mode not in ("blocked", "expanding"):
+            raise ValueError(
+                f"walk_forward_mode must be 'blocked' or 'expanding', got {walk_forward_mode!r}"
+            )
+        self.walk_forward_mode: str = str(walk_forward_mode)
+        # CALIBRATION SAFETY POLICY (P1): maximum allowed RELATIVE
+        # degradation of the candidate's Brier score versus the
+        # baseline/champion weights on the same validation buffer.
+        # Relative (not absolute) so the gate adapts to the model's own
+        # calibration scale — a champion at Brier 0.60 is not held to the
+        # same absolute budget as one at 0.10. 0.0 = candidate may be no
+        # worse than baseline at all (strictest); None disables the gate
+        # (not recommended; recorded in provenance).
+        self.max_calibration_degradation_r = (
+            float(max_calibration_degradation_r)
+            if max_calibration_degradation_r is not None
+            else 0.10
+        )
+        # ---------------------------------------------------------------------
+        # FEATURE SCHEMA BINDING
+        # ---------------------------------------------------------------------
+        # Resolved once, then used for every dimension check (frame validation,
+        # scaler save/load, metadata, model construction). Passing an explicit
+        # `feature_schema_id` is how a 60D/350D model is trained without touching
+        # the live 50D contract.
+        self.feature_schema = resolve_schema(feature_schema_id)
+        self.num_features = self.feature_schema.dimension
+        self.class_count = int(class_count)
+        self.smoke = bool(smoke)
+        # MLFIX-T7 lineage governance state
+        self._declared_label_origin: str | LabelOrigin | None = label_origin
+        self.governance_override = bool(governance_override)
+        # P0-2026-09-04: explicit dataset provenance binding (None = unbound;
+        # non-smoke publications require a bound dataset via bind_dataset()).
+        self._dataset_provenance: dict[str, Any] | None = None
+        # ML-TRAIN-003: last optimizer/scheduler recipe resolved by the factory;
+        # stamped into last_convergence_metadata for bundle auditability.
+        self._last_optimizer_recipe: dict[str, Any] | None = None
+        if self.class_count not in (TRAINED_CLASS_COUNT, 4):
+            raise ValueError(
+                f"Invalid class_count {self.class_count}: neural contract strictly requires "
+                f"3-class target space (TRAINED_CLASS_COUNT) or legacy 4-class head with WAIT bridge."
+            )
+        # ---------------------------------------------------------------------
+        # PURGE + EMBARGO
+        # ---------------------------------------------------------------------
+        # Purge removes train samples whose label horizon overlaps the validation
+        # block; embargo additionally drops samples immediately AFTER the
+        # validation block so serial correlation cannot leak backwards into the
+        # next fold's training data. Defaults to the purge gap when unspecified.
+        self.embargo_bars = int(embargo_bars) if embargo_bars is not None else int(self.purge_gap)
+        # Configurable Quality Gate & Buffer Settings
+        self.min_validation_accuracy = 0.35  # Required minimum 35% validation accuracy
+        self.min_accuracy_improvement = 0.03  # Required minimum +3% accuracy gain over baseline
+        self.max_sell_dominance = 0.58  # SELL predicted ratio must not exceed 58%
+        # -----------------------------------------------------------------
+        # TIME-DECAY PROFILES (ECON v1 phase 3): full historical training and
+        # online adaptation used ONE shared half-life (120.0 bars). The two
+        # modes serve different information horizons:
+        #
+        #   * FULL_TRAIN (train_and_validate): multi-fold purged training over
+        #     months of M1 bars. A 120-bar (2h) half-life effectively discards
+        #     everything older than ~a day of bars — the "full" training
+        #     carried almost no full history. The decay here must RETAIN
+        #     meaningful historical information: default half-life is one
+        #     fold's span (total_samples/num_folds, computed per run and
+        #     clamped), so the newest data is weighted highest while older
+        #     folds still contribute. Overridable via
+        #     time_decay_full_train_half_life_bars.
+        #   * ONLINE (fine_tune_online): adaptation on a RECENT buffer where
+        #     aggressive recency weighting is legitimate. Keeps the historical
+        #     120.0-bar half-life (2h on M1) via
+        #     time_decay_online_half_life_bars.
+        #
+        # The two profiles never share a mutable value; metadata records both
+        # (reproducibility/provenance) and the modes are separately testable.
+        # -----------------------------------------------------------------
+        self.time_decay_full_train_half_life_bars: float | None = (
+            float(time_decay_full_train_half_life_bars)
+            if time_decay_full_train_half_life_bars is not None
+            else None  # None => per-run fold-span default (resolved at train time)
+        )
+        self.time_decay_online_half_life_bars: float = float(time_decay_online_half_life_bars)
+        # Back-compat alias: the historical attribute name resolves to the
+        # ONLINE profile (the only mode that used it in practice at the old
+        # default). New code must read the profile fields explicitly.
+        self.time_decay_half_life_bars = self.time_decay_online_half_life_bars
+        if backend is not None:
+            if backend not in ("cpu", "cuda"):
+                raise ValueError(f"backend must be 'cpu', 'cuda', or None, got {backend!r}")
+            if backend == "cuda" and not torch.cuda.is_available():
+                raise RuntimeError("CUDA backend requested but torch.cuda.is_available() is false")
+            self.device = torch.device(backend)
+        elif torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        else:
+            self.device = torch.device("cpu")
+        self.label_map: dict[str, int] = {
+            ActionType.NO_TRADE.value: 0,
+            ActionType.BUY_MARKET.value: 1,
+            ActionType.SELL_MARKET.value: 2,
+        }
+        self.inverse_label_map: dict[int, str] = {
+            0: ActionType.NO_TRADE.value,
+            1: ActionType.BUY_MARKET.value,
+            2: ActionType.SELL_MARKET.value,
+        }
+        self._set_seed(self.seed)
+
+    # =========================================================================
+    # PUBLIC API
+    # =========================================================================
+    def _resolve_label_origin(self, df: pl.DataFrame | None = None) -> LabelOrigin:
+        """MLFIX-T7: resolve the label origin for the frame about to be trained.
+
+        Precedence (most specific wins):
+          1. constructor ``label_origin`` (explicit caller declaration)
+          2. ``label_origin`` / ``source_classification`` column on the frame
+             (DatasetFactory/SampleFactory stamp it on labeled datasets)
+          3. UNKNOWN — undeclared provenance is treated as tainted, never
+             fabricated as clean.
+        """
+        # Imported lazily: model_generation.lineage pulls model_generation
+        # package __init__ which imports training.py which imports this
+        # module (FocalLossWithSmoothing) — a module-level import would be
+        # circular.
+        from nexus_scalp.model_generation.lineage import classify_source
+
+        if self._declared_label_origin is not None:
+            return classify_source(label_origin=self._declared_label_origin)
+        if df is not None and "label_origin" in df.columns and df.height > 0:
+            return classify_source(label_origin=str(df["label_origin"][0]))
+        if df is not None and "source_classification" in df.columns and df.height > 0:
+            return classify_source(label_origin=str(df["source_classification"][0]))
+        return classify_source()
+
+    def bind_dataset_provenance_for_frame(
+        self,
+        df: pl.DataFrame | None,
+        *,
+        dataset_id: str | None = None,
+        dataset_sha256: str | None = None,
+        feature_schema_hash: str | None = None,
+        label_schema_id: str | None = None,
+    ) -> None:
+        """AGENT-3 LEARNFIX-1: resolve + bind dataset provenance for an about-
+        to-be-trained frame when the caller did not bind one explicitly.
+
+        Precedence:
+          1. explicit dataset_id/sha arguments (caller-declared)
+          2. ``dataset_id``/``dataset_sha256`` columns on the frame
+          3. ``label_origin``/``source_classification`` == CLEAN_HISTORICAL
+             on the frame -> the canonical single-dataset manifest is bound
+             (P0-2026-09-04 residual: train_and_validate could never emit a
+             bundle because provenance was only reachable via the private
+             bind path; the documented canonical producer and the CLI both
+             trained through train_and_validate without any binding, so the
+             emission gate aborted AFTER all folds + final training finished
+             and every artifact (fold diagnostics included) was discarded).
+        When no identity can be resolved HONESTLY, nothing is bound and the
+        run stays unbound (smoke quarantine or emission-gate rejection —
+        provenance is never fabricated).
+        """
+        if getattr(self, "_dataset_provenance", None):
+            return  # already bound explicitly — never rebind
+
+        origin = self._resolve_label_origin(df)
+        resolved_id = dataset_id
+        resolved_sha = dataset_sha256
+        resolved_schema_hash = feature_schema_hash
+        resolved_label_schema = label_schema_id
+        if df is not None and not df.is_empty():
+            if resolved_id is None and "dataset_id" in df.columns:
+                resolved_id = str(df["dataset_id"][0]) or None
+            if resolved_sha is None and "dataset_sha256" in df.columns:
+                resolved_sha = str(df["dataset_sha256"][0]) or None
+        if (
+            resolved_id is None
+            and str(origin) == "CLEAN_HISTORICAL"
+            and df is not None
+            and not df.is_empty()
+        ):
+            try:
+                from nexus_scalp.model_generation.artifact_store import ArtifactStore
+
+                store = ArtifactStore()
+                manifests: list[tuple[str, dict[str, Any]]] = []
+                for d_dir in sorted(store.datasets_dir.glob("ds_*")):
+                    if not d_dir.is_dir():
+                        continue
+                    man = store.read_dataset_manifest(d_dir.name) or {}
+                    if not man.get("dataset_hash"):
+                        continue
+                    if str(man.get("label_origin")) == "CLEAN_HISTORICAL":
+                        manifests.append((d_dir.name, man))
+                if len(manifests) == 1:
+                    d_id, man = manifests[0]
+                    sha = man.get("dataset_hash")
+                    if d_id and sha:
+                        resolved_id = d_id
+                        resolved_sha = str(sha)
+                        resolved_schema_hash = resolved_schema_hash or (
+                            man.get("feature_schema_hash") or None
+                        )
+                        resolved_label_schema = resolved_label_schema or (
+                            man.get("label_schema_id") or None
+                        )
+                        logger.info(
+                            "LEARNFIX-1 dataset provenance auto-bound (CLEAN_HISTORICAL)",
+                            dataset_id=d_id,
+                            dataset_sha256=str(sha)[:12],
+                        )
+            except Exception as bind_err:  # isolated: binding is best-effort
+                logger.warning(
+                    "LEARNFIX-1 dataset provenance binding failed (isolated)",
+                    error=str(bind_err),
+                )
+        if resolved_id and resolved_sha:
+            self.declare_dataset_provenance(
+                resolved_id,
+                resolved_sha,
+                feature_schema_hash=resolved_schema_hash,
+                label_schema_id=resolved_label_schema,
+            )
+
+    def _assert_lineage_eligible(self, df: pl.DataFrame | None, context: str) -> LabelOrigin:
+        """Hard guard before any training work: tainted label lineage (PAPER/
+        LIVE/UNKNOWN) raises LineageGovernanceError unless the operator
+        explicitly passed governance_override=True. Runs BEFORE any weight
+        movement so a blocked run can never half-train or persist."""
+        from nexus_scalp.model_generation.lineage import (
+            LineageGovernanceError,
+            assert_production_eligible,
+        )
+
+        origin = self._resolve_label_origin(df)
+        try:
+            assert_production_eligible(origin, governance_override=self.governance_override)
+        except LineageGovernanceError:
+            logger.error(
+                "[LINEAGE GUARD] training blocked",
+                context=context,
+                label_origin=str(origin),
+                governance_override=self.governance_override,
+            )
+            raise
+        logger.info(
+            "Lineage guard passed",
+            context=context,
+            label_origin=str(origin),
+            governance_override=self.governance_override,
+        )
+        return origin
+
+    def train_and_validate(self, df: pl.DataFrame, feature_cols: list[str]) -> ScalpNet:
+        """
+        Runs purged blocked time-series walk-forward validation and final production training.
+        """
+        # MLFIX-T7: lineage hard guard BEFORE any training work. Tainted label
+        # provenance (PAPER/LIVE/UNKNOWN) without governance_override=True
+        # raises LineageGovernanceError — never half-trains, never persists.
+        lineage_origin = self._assert_lineage_eligible(df, "train_and_validate")
+        # AGENT-3 LEARNFIX-1: bind dataset provenance BEFORE any training
+        # work so the final bundle publication can actually pass the
+        # emission gate. Previously provenance was only reachable via the
+        # private declare/bind path that NO production caller used, so
+        # every train_and_validate run (incl. the documented canonical
+        # producer and the CLI) completed ALL folds + final training and
+        # then discarded everything at publish ("dataset_id missing").
+        self.bind_dataset_provenance_for_frame(df)
+        self._validate_training_frame(df, feature_cols)
+        df_trainable = self._filter_trainable_rows(df)
+        self._validate_training_frame(df_trainable, feature_cols)
+        logger.info(
+            "Initiating production walk-forward training",
+            total_rows=len(df),
+            trainable_rows=len(df_trainable),
+            num_features=len(feature_cols),
+            num_folds=self.num_folds,
+            purge_gap=self.purge_gap,
+            seed=self.seed,
+            active_class_boost=self.active_class_boost,
+            scaling_enabled=self.use_feature_scaling,
+            device=str(self.device),
+        )
+        X_raw, y = self._extract_X_y(df_trainable, feature_cols)
+        total_samples = len(df_trainable)
+        fold_size = total_samples // self.num_folds
+        if fold_size < 100:
+            raise ValueError(
+                f"Insufficient dataset size ({total_samples}) for {self.num_folds} folds."
+            )
+        # ECON v1 FULL_TRAIN decay resolution: default half-life = one fold's
+        # span, clamped to [1h, 1 week] of M1 bars. Rationale (no invented
+        # magic): the newest fold must dominate while older folds retain
+        # meaningful weight — a half-life equal to the fold span weights the
+        # oldest fold's center at ~2^-1.5, i.e. ~35% of the newest, instead
+        # of the historical 120-bar value that zeroed everything older than
+        # ~2 hours regardless of dataset size. Explicit override wins.
+        if self.time_decay_full_train_half_life_bars is not None:
+            full_train_half_life = float(self.time_decay_full_train_half_life_bars)
+        else:
+            full_train_half_life = float(min(max(fold_size, 60.0), 7 * 24 * 60.0))
+        fold_decay_meta: list[dict[str, Any]] = []
+        # WALK-FORWARD GEOMETRY AUDIT (research/training-parity P0): every
+        # fold records its exact geometry so fold construction is auditable
+        # from the persisted convergence metadata and the bundle manifest.
+        fold_geometry_meta: list[dict[str, Any]] = []
+        fold_economics_history: list[dict[str, Any]] = []
+        oos_predictions: list[int] = []
+        oos_targets: list[int] = []
+        for fold in range(self.num_folds):
+            start_idx = fold * fold_size
+            end_idx = total_samples if fold == self.num_folds - 1 else (fold + 1) * fold_size
+            fold_X = X_raw[start_idx:end_idx]
+            fold_y = y[start_idx:end_idx]
+            if len(fold_X) < 10:
+                continue  # PURGED + EMBARGOED split. The embargo tail is dropped from the
+            # validation block so labels whose horizon runs past the fold cannot be
+            # scored with information the model would not have had at decision time.
+            train_end_point, test_start_point, test_end_point = self._split_fold_with_embargo(
+                len(fold_X)
+            )
+            # GEOMETRY SELECTION: "blocked" keeps the historical behavior
+            # (train strictly inside the fold slice). "expanding" anchors the
+            # training window at the dataset start — fold k trains on
+            # [0, start_idx + train_end_point): ALL rows from the very
+            # beginning through this fold's purged train tail
+            # (TRAIN [A] -> [A+B] -> [A+B+C]). The validation window and the
+            # purge/embargo widths are IDENTICAL in both modes, so the wider
+            # training window introduces no new leakage — it only adds PRIOR
+            # (strictly older) data, which is the definition of anchored
+            # walk-forward.
+            if self.walk_forward_mode == "expanding":
+                X_train_raw = X_raw[: start_idx + train_end_point]
+                y_train = y[: start_idx + train_end_point]
+                train_start_idx = 0
+                train_end_idx = start_idx + train_end_point
+            else:
+                X_train_raw = fold_X[:train_end_point]
+                y_train = fold_y[:train_end_point]
+                train_start_idx = start_idx
+                train_end_idx = start_idx + train_end_point
+            X_test_raw = fold_X[test_start_point:test_end_point]
+            y_test = fold_y[test_start_point:test_end_point]
+            fold_geometry_meta.append(
+                {
+                    "fold": fold + 1,
+                    "walk_forward_mode": self.walk_forward_mode,
+                    "train_start_idx": train_start_idx,
+                    "train_end_idx": train_end_idx,
+                    "test_start_idx": start_idx + test_start_point,
+                    "test_end_idx": start_idx + test_end_point,
+                    "train_count": len(X_train_raw),
+                    "test_count": len(X_test_raw),
+                    "purge_rows": int(test_start_point - train_end_point),
+                    "embargo_rows": int(len(fold_X) - test_end_point),
+                }
+            )
+            if (
+                len(X_train_raw) < self.min_rows_per_train_split
+                or len(X_test_raw) < self.min_rows_per_test_split
+            ):
+                logger.warning(
+                    "Skipping fold due to insufficient train/test rows",
+                    fold=fold + 1,
+                    train_rows=len(X_train_raw),
+                    test_rows=len(X_test_raw),
+                )
+                continue
+            scaler = self._fit_scaler(X_train_raw)
+            X_train = self._transform_features(X_train_raw, scaler)
+            X_test = self._transform_features(X_test_raw, scaler)
+            weights_tensor = self._build_class_weights(y_train, is_online_fine_tune=True).to(
+                self.device
+            )
+            dyn_batch = self._resolve_batch_size(len(y_train))
+            train_ds = ScalpDataset(X_train, y_train, self.device)
+            test_ds = ScalpDataset(X_test, y_test, self.device)
+            train_loader = self._make_loader(train_ds, dyn_batch, shuffle=True)
+            test_loader = self._make_loader(test_ds, dyn_batch, shuffle=False)
+            model = self._create_model(num_features=len(feature_cols))
+            if self.optimizer_config:
+                from nexus_scalp.training.optimizers import build_optimizer_and_scheduler
+
+                _bundle = build_optimizer_and_scheduler(
+                    model,
+                    {**self.optimizer_config, "learning_rate": self.learning_rate},
+                    epochs=self.epochs,
+                    steps_per_epoch=len(train_loader),
+                )
+                optimizer = _bundle["optimizer"]
+                scheduler = _bundle["scheduler"] or torch.optim.lr_scheduler.CosineAnnealingLR(
+                    optimizer, T_max=self.epochs
+                )
+                _opt_step_every_batch = bool(_bundle["scheduler_step_every_batch"])
+                self._last_optimizer_recipe = _bundle["config"]
+            else:
+                optimizer = torch.optim.AdamW(
+                    model.parameters(), lr=self.learning_rate, weight_decay=1e-4
+                )
+                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.epochs)
+                _opt_step_every_batch = False
+                self._last_optimizer_recipe = {
+                    "optimizer": "adamw",
+                    "scheduler": "cosine",
+                    "learning_rate": self.learning_rate,
+                    "weight_decay": 1e-4,
+                    "epochs": self.epochs,
+                }
+            criterion = nn.CrossEntropyLoss(weight=weights_tensor)
+            best_val_loss = float("inf")
+            best_state: dict[str, torch.Tensor] | None = None
+            patience_counter = 0
+            best_epoch = 0
+            epochs_run = 0
+            early_stopped = False
+            fold_train_losses: list[float] = []
+            fold_val_losses: list[float] = []
+            _fold_t0 = time.monotonic()
+            self._emit_stage_progress(
+                "train",
+                "running",
+                phase="walk_forward",
+                fold=fold + 1,
+                folds=self.num_folds,
+                device=str(self.device),
+            )
+            for _epoch in range(self.epochs):
+                self._check_cancelled()
+                train_loss = self._train_one_epoch(
+                    model,
+                    train_loader,
+                    optimizer,
+                    criterion,
+                    scheduler if _opt_step_every_batch else None,
+                )
+                if not _opt_step_every_batch:
+                    scheduler.step()
+                val_loss = self._evaluate_loss(model, test_loader, criterion)
+                epochs_run = _epoch + 1
+                fold_train_losses.append(float(train_loss))
+                fold_val_losses.append(float(val_loss))
+                self._emit_epoch_progress(
+                    fold=fold + 1,
+                    epoch=_epoch + 1,
+                    loss=float(train_loss),
+                    val_loss=float(val_loss),
+                    elapsed_sec=round(time.monotonic() - _fold_t0, 2),
+                )
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    best_state = copy.deepcopy(model.state_dict())
+                    best_epoch = _epoch + 1
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                    if patience_counter >= self.patience:
+                        early_stopped = True
+                        break
+            fold_decay_meta.append(
+                {
+                    "fold": fold + 1,
+                    "half_life_bars": full_train_half_life,
+                    "epochs_requested": int(self.epochs),
+                    "epochs_run": epochs_run,
+                    "best_epoch": best_epoch,
+                    "early_stopped": early_stopped,
+                    "best_val_loss": float(best_val_loss)
+                    if best_val_loss != float("inf")
+                    else None,
+                    "train_losses": [round(v, 6) for v in fold_train_losses],
+                    "val_losses": [round(v, 6) for v in fold_val_losses],
+                }
+            )
+            if best_state is not None:
+                model.load_state_dict(best_state)
+            self._emit_stage_progress(
+                "validation", "running", phase="oos", fold=fold + 1, folds=self.num_folds
+            )
+            fold_preds = self._predict_classes(model, test_loader)
+            self._emit_stage_progress(
+                "validation",
+                "done",
+                phase="oos",
+                fold=fold + 1,
+                folds=self.num_folds,
+                samples=len(fold_preds),
+            )
+            oos_predictions.extend(fold_preds)
+            oos_targets.extend(y_test[: len(fold_preds)].tolist())
+            fold_sharpe_proxy = self._calculate_fold_sharpe_proxy(
+                fold_preds, y_test[: len(fold_preds)]
+            )
+            # ECONOMIC FOLD METRIC (P1): genuine money-side evidence per fold,
+            # reported ALONGSIDE the classification diagnostics (never
+            # replacing them, never conflated with them).
+            fold_economics = self._calculate_fold_economics(fold_preds, y_test[: len(fold_preds)])
+            fold_econ_meta: dict[str, Any] = dict(fold_economics)
+            fold_economics_history.append(fold_econ_meta)
+            logger.info(
+                "Walk-forward fold complete",
+                fold=fold + 1,
+                total_folds=self.num_folds,
+                best_val_loss=f"{best_val_loss:.6f}",
+                sharpe_proxy=f"{fold_sharpe_proxy:.3f}",
+                net_expectancy_r=f"{fold_economics['net_expectancy_r']:.4f}",
+                gross_expectancy_r=f"{fold_economics['gross_expectancy_r']:.4f}",
+                max_drawdown_r=f"{fold_economics['max_drawdown_r']:.4f}",
+                trades=fold_economics["trades"],
+                train_rows=len(X_train),
+                test_rows=len(X_test),
+                batch_size=dyn_batch,
+            )
+        # Model diagnostics (label mapping derived from self.label_map -
+        # never hardcode class names here; keep in sync with the actual
+        # ActionType mapping at __init__).
+        logger.info("=== MODEL DIAGNOSTICS ===")
+        logger.info("class_id mapping (self.label_map):")
+        logger.info(str(self.label_map))
+        logger.info("Inference class mapping (self.inverse_label_map):")
+        logger.info(str(self.inverse_label_map))
+        logger.info(
+            "Verifying training labels distribution",
+            label_mapping=self.label_map,
+            train_labels_counts=np.bincount(y, minlength=self.NUM_CLASSES).tolist(),
+        )
+        overall_metrics = self._evaluate_global_performance(oos_predictions, oos_targets)
+        logger.info("Out-of-sample global metrics", **overall_metrics)
+        # OOS classification evidence (learning-loop P1): threaded into
+        # last_convergence_metadata so the lifecycle's TrainingRun.metrics
+        # carries REAL out-of-sample accuracy / trade counts — the gates then
+        # consume genuine evidence instead of placeholder None values.
+        oos_accuracy = (
+            float(np.sum(np.array(oos_predictions) == np.array(oos_targets)) / len(oos_predictions))
+            if oos_predictions
+            else None
+        )
+        oos_class_counts: dict[str, int] = {}
+        for _p in oos_predictions:
+            key = str(int(_p))
+            oos_class_counts[key] = oos_class_counts.get(key, 0) + 1
+        logger.info("Initiating final production training on full trainable dataset")
+        full_scaler = self._fit_scaler(X_raw)
+        X_full = self._transform_features(X_raw, full_scaler)
+        full_weights_tensor = self._build_class_weights(y).to(self.device)
+        final_batch = self._resolve_batch_size(len(y))
+        full_ds = ScalpDataset(X_full, y, self.device)
+        full_loader = self._make_loader(full_ds, final_batch, shuffle=True)
+        final_model = self._create_model(num_features=len(feature_cols))
+        if self.optimizer_config:
+            from nexus_scalp.training.optimizers import build_optimizer_and_scheduler
+
+            _fb = build_optimizer_and_scheduler(
+                final_model,
+                {**self.optimizer_config, "learning_rate": self.learning_rate},
+                epochs=self.epochs,
+                steps_per_epoch=len(full_loader),
+            )
+            final_optimizer = _fb["optimizer"]
+            final_scheduler = _fb["scheduler"] or torch.optim.lr_scheduler.CosineAnnealingLR(
+                final_optimizer, T_max=self.epochs
+            )
+            _final_step_every_batch = bool(_fb["scheduler_step_every_batch"])
+        else:
+            final_optimizer = torch.optim.AdamW(
+                final_model.parameters(),
+                lr=self.learning_rate,
+                weight_decay=1e-4,
+            )
+            final_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                final_optimizer,
+                T_max=self.epochs,
+            )
+            _final_step_every_batch = False
+        final_criterion = nn.CrossEntropyLoss(weight=full_weights_tensor)
+        _final_t0 = time.monotonic()
+        self._emit_stage_progress("train", "running", phase="final_fit", device=str(self.device))
+        for _epoch in range(self.epochs):
+            self._check_cancelled()
+            final_loss = self._train_one_epoch(
+                final_model,
+                full_loader,
+                final_optimizer,
+                final_criterion,
+                final_scheduler if _final_step_every_batch else None,
+            )
+            if not _final_step_every_batch:
+                final_scheduler.step()
+            self._emit_stage_progress(
+                "train",
+                "running",
+                phase="final_fit",
+                epoch=_epoch + 1,
+                epochs=self.epochs,
+                loss=float(final_loss),
+                elapsed_sec=round(time.monotonic() - _final_t0, 2),
+            )
+        self._emit_stage_progress("train", "done", phase="final_fit")
+        # ECON v1 convergence metadata: persisted on the trainer + stamped into
+        # the bundle manifest so promotion can judge whether the model actually
+        # converged, overfit, collapsed, or never learned.
+        self._last_full_train_half_life = full_train_half_life
+        self.last_convergence_metadata = {
+            "training_mode": "FULL_TRAIN",
+            "time_decay_profile": "FULL_TRAIN",
+            "time_decay_half_life_bars": full_train_half_life,
+            "epochs_requested": int(self.epochs),
+            "num_folds": int(self.num_folds),
+            "early_stopping_patience": int(self.patience),
+            "folds": fold_decay_meta,
+            "any_fold_early_stopped": any(bool(f.get("early_stopped")) for f in fold_decay_meta),
+            "mean_best_val_loss": (
+                float(
+                    np.mean(
+                        [
+                            f["best_val_loss"]
+                            for f in fold_decay_meta
+                            if f.get("best_val_loss") is not None
+                        ]
+                    )
+                )
+                if any(f.get("best_val_loss") is not None for f in fold_decay_meta)
+                else None
+            ),
+            "seed": int(self.seed),
+            # ML-TRAIN-003: the resolved optimizer/scheduler recipe, so the
+            # bundle carries exactly what trained it (auditable + reproducible).
+            "optimizer_recipe": dict(self._last_optimizer_recipe or {}),
+            "walk_forward_mode": self.walk_forward_mode,
+            "fold_geometry": fold_geometry_meta,
+            # Economic fold evidence: per-fold net/gross expectancy in R,
+            # friction, drawdown — from the SAME triple-barrier outcomes the
+            # classification metrics use. Aggregates give the OOS economics.
+            "friction_r": self.friction_r,
+            "reward_r": self.reward_r,
+            "fold_economics": fold_economics_history,
+            "net_expectancy_r": (
+                float(np.mean([f["net_expectancy_r"] for f in fold_economics_history]))
+                if fold_economics_history
+                else None
+            ),
+            "sum_net_expectancy_r": (
+                float(sum(f["net_expectancy_r"] * f["trades"] for f in fold_economics_history))
+                if fold_economics_history
+                else None
+            ),
+            "max_fold_drawdown_r": (
+                max((f["max_drawdown_r"] for f in fold_economics_history), default=None)
+            ),
+            # OOS classification evidence (learning-loop P1) — computed from
+            # the SAME pooled OOS predictions; None only when the walk
+            # produced no scored rows (then NOT_AVAILABLE downstream).
+            "oos_accuracy": oos_accuracy,
+            "oos_samples": len(oos_predictions),
+            "oos_prediction_class_counts": oos_class_counts,
+        }
+        # Model diagnostics verification post final training
+        final_model.eval()
+        sample_x = torch.tensor(X_full[:5], dtype=torch.float32).to(self.device)
+        with torch.inference_mode():
+            raw_logits = final_model(sample_x, return_logits=True)
+            probs = final_model(sample_x, return_logits=False)
+        logger.info("=== POST-TRAINING VERIFICATION ===")
+        logger.info(f"Raw Logits: {raw_logits.cpu().numpy().tolist()}")
+        logger.info(f"Softmax Probabilities: {probs.cpu().numpy().tolist()}")
+        logger.info("==================================")
+        # P0-2026-09-04 ATOMIC BUNDLE PUBLICATION: stage → gate → commit.
+        # The trainer serializes into a dot-staging directory, runs the hard
+        # emission gate on the EXACT serialized tensors + metadata + scaler,
+        # writes the binding manifest, then commits the bundle. Per-file
+        # publishes into the target directory are no longer the publication
+        # mechanism — consumers can never observe a partially-written bundle.
+        self._check_cancelled()
+        self._publish_candidate_bundle(final_model, full_scaler, feature_cols, lineage_origin)
+        logger.info(
+            "Production training complete",
+            model_path=str(self.artifact_path),
+            scaler_path=str(self._get_scaler_path()),
+        )
+        return final_model.to(torch.device("cpu"))
+
+    def _publish_candidate_bundle(
+        self,
+        model: ScalpNet,
+        scaler: ScalerBundle,
+        feature_cols: list[str],
+        label_origin: LabelOrigin | str | None,
+    ) -> None:
+        """Stage, gate, manifest and commit the artifact bundle atomically."""
+        from nexus_scalp.training import emission_gate as eg
+
+        target_dir = self.artifact_path.parent
+        target_dir.mkdir(parents=True, exist_ok=True)
+        staging = eg.new_staging_dir(target_dir, "bundle")
+        try:
+            # 1) serialize into staging (exact tensors that will ship)
+            cpu_state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
+            model_path = staging / "model.pt"
+            torch.save(cpu_state, model_path)
+            # 2) scaler + metadata into staging (sidecars bound to the same run)
+            scaler_path = staging / "model.scaler.npz"
+            mean = np.asarray(scaler.mean, dtype=np.float32).reshape(-1)
+            std = np.asarray(scaler.std, dtype=np.float32).reshape(-1)
+            if mean.size != self.num_features or std.size != self.num_features:
+                raise eg.EmissionGateError(
+                    f"EMISSION_GATE_ABORT: scaler dims mean={mean.size} std={std.size} "
+                    f"!= schema {self.num_features}"
+                )
+            with open(scaler_path, "wb") as f:
+                np.savez(f, mean=mean, std=std)
+            meta_path = staging / "model.meta.json"
+            _meta_backup = self.artifact_path  # _save_metadata derives paths from artifact_path
+            self.artifact_path = staging / "model.pt"
+            try:
+                self._save_metadata(feature_cols, label_origin=label_origin)
+            finally:
+                self.artifact_path = _meta_backup
+            # 3) HARD EMISSION GATE on the staged bytes
+            import torch as _torch
+
+            state = _torch.load(model_path, map_location="cpu", weights_only=True)
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            prov = getattr(self, "_dataset_provenance", None) or {}
+            eg.run_emission_gate(
+                state,
+                meta,
+                dataset_id=prov.get("dataset_id"),
+                dataset_sha256=prov.get("dataset_sha256"),
+                feature_schema_hash=meta.get("feature_schema_hash")
+                or prov.get("feature_schema_hash"),
+                feature_schema_id=str(self.feature_schema.schema_id),
+                seq_len=meta.get("seq_len"),
+                scaler_mean_dim=int(mean.size),
+                scaler_std_dim=int(std.size),
+                label_schema_class_count=(meta.get("label_contract") or {}).get("class_count"),
+            )
+            # 4) binding manifest
+            manifest = eg.build_bundle_manifest(
+                bundle_dir=staging,
+                dataset_id=str(prov.get("dataset_id") or "UNBOUND"),
+                dataset_sha256=str(prov.get("dataset_sha256") or "UNBOUND"),
+                feature_schema_id=str(self.feature_schema.schema_id),
+                feature_schema_hash=str(meta.get("feature_schema_hash") or ""),
+                label_schema_id=str(
+                    (meta.get("label_contract") or {}).get("schema_id")
+                    or "triple_barrier_3class_v1"
+                ),
+                architecture="ScalpNet",
+                architecture_version=str(meta.get("model_class_contract_version") or "1.0.0"),
+                git_commit=eg.git_commit_head(),
+                training_command=str(getattr(self, "_training_command", "")),
+                seed=int(self.seed),
+                fold_count=int(self.num_folds),
+                epoch_count=int(self.epochs),
+                lineage=str(meta.get("label_origin") or "UNKNOWN"),
+                production_eligible=bool(meta.get("production_eligible"))
+                and bool(prov.get("dataset_id")),
+                extra={
+                    "label_origin": meta.get("label_origin"),
+                    "smoke": bool(self.smoke),
+                    "num_folds": int(self.num_folds),
+                    "epochs_per_fold": int(self.epochs),
+                    "batch_size": int(self.batch_size),
+                    "learning_rate": float(self.learning_rate),
+                    "purge_gap_bars": int(self.purge_gap),
+                    "embargo_bars": int(self.embargo_bars),
+                    "walk_forward_mode": self.walk_forward_mode,
+                    "fold_geometry": getattr(self, "last_convergence_metadata", {}).get(
+                        "fold_geometry"
+                    ),
+                    # Economic fold evidence in the manifest (P1): net R is
+                    # the fold objective; never replaced by accuracy.
+                    "fold_economics": getattr(self, "last_convergence_metadata", {}).get(
+                        "fold_economics"
+                    ),
+                    "net_expectancy_r": getattr(self, "last_convergence_metadata", {}).get(
+                        "net_expectancy_r"
+                    ),
+                    # ECON v1 provenance: decay profile + convergence evidence
+                    "time_decay_full_train_half_life_bars": getattr(
+                        self, "_last_full_train_half_life", None
+                    ),
+                    "convergence": getattr(self, "last_convergence_metadata", None),
+                },
+            )
+            (staging / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+            # 5) verify staged bundle from disk, then commit atomically
+            eg.verify_bundle_against_manifest(staging)
+            eg.publish_bundle_atomic(staging, target_dir)
+            logger.info(
+                "CANDIDATE_BUNDLE_PUBLISHED dir=%s model_sha=%s dataset=%s",
+                target_dir,
+                manifest["model_sha256"][:12],
+                prov.get("dataset_id"),
+            )
+        except eg.EmissionGateError:
+            # staging cleanup — nothing partial ever reaches the target
+            self._cleanup_staging(staging)
+            raise
+        except Exception as err:
+            self._cleanup_staging(staging)
+            logger.error("Bundle publication failed (staging discarded)", error=str(err))
+            raise
+
+    @staticmethod
+    def _cleanup_staging(staging: Path) -> None:
+        import shutil
+
+        try:
+            if staging.exists():
+                shutil.rmtree(staging, ignore_errors=True)
+        except Exception:  # pragma: no cover
+            pass
+
+    def fine_tune_online(
+        self,
+        live_model: ScalpNet | None = None,
+        recent_df: pl.DataFrame | None = None,
+        feature_cols: list[str] | None = None,
+        epochs: int = 3,
+        learning_rate: float = 3e-5,  # Reduced learning rate for small small-sample stability
+        max_holding_bars: int = 15,
+        model: ScalpNet | None = None,  # Keyword Alias for backwards compatibility
+        verify_health: bool = True,
+        min_class_ratio: float | None = None,
+    ) -> ScalpNet:
+        """
+        Performs clone-safe online fine-tuning with Class-Balanced Focal Loss, Exponential Time-Decay Weighting,
+        Oversampling, and a Strict Multi-Metric Quality Gate.
+        """
+        target_model = live_model if live_model is not None else model
+        if target_model is None or recent_df is None or feature_cols is None:
+            raise ValueError(
+                "Must provide target model, recent_df, and feature_cols to fine_tune_online."
+            )
+        active_min_class_ratio = (
+            min_class_ratio if min_class_ratio is not None else self.min_class_ratio
+        )
+        # MLFIX-T7: online fine-tune labels derive from the LIVE rolling buffer
+        # (paper/live fills of the current model). The online path is NOT the
+        # production-dataset path — it never promotes (the BUG-235/236
+        # persist guard blocks persistence of anything rejected, and champion
+        # promotion only happens through the governed lifecycle). Resolving
+        # the origin here is DIAGNOSTIC ONLY (logged for audit); it must NOT
+        # hard-block, or every routine online fine-tune would raise.
+        # The HARD lineage gate lives in train_and_validate (dataset path).
+        _online_origin = self._resolve_label_origin(recent_df)
+        logger.info(
+            "Online fine-tune label lineage (diagnostic; persistence guarded by BUG-236)",
+            label_origin=str(_online_origin),
+            governance_override=self.governance_override,
+        )
+        self._validate_training_frame(recent_df, feature_cols)
+        recent_df = self._filter_trainable_rows(recent_df)
+        logger.info(
+            "Initiating quality-gated online fine-tuning",
+            buffer_rows=len(recent_df),
+            epochs=epochs,
+            learning_rate=learning_rate,
+            max_holding_bars=max_holding_bars,
+            min_class_ratio=active_min_class_ratio,
+            min_val_acc=self.min_validation_accuracy,
+            min_acc_gain=self.min_accuracy_improvement,
+            max_sell_dom=self.max_sell_dominance,
+            # ECON v1 ONLINE decay profile (separate from FULL_TRAIN)
+            time_decay_profile="ONLINE",
+            time_decay_half_life=self.time_decay_online_half_life_bars,
+        )
+        purge_len = int(max_holding_bars)
+        if len(recent_df) <= (purge_len + 30):
+            logger.warning(
+                "Insufficient recent rows for online fine-tuning after tail purge",
+                available=len(recent_df),
+                required_min=purge_len + 30,
+            )
+            # BUG-236: nothing was trained -> nothing may be persisted. Attach
+            # the explicit persist decision so the engine's BUG-235 guard
+            # (and any other consumer) can never mistake this for an accepted
+            # model replacement.
+            _skip = should_persist_candidate(trained=False, insufficient_rows=True)
+            logger.info(
+                "Persist decision: REJECT",
+                reason=_skip.reason,
+                persist=False,
+            )
+            return attach_decision(copy.deepcopy(target_model), _skip)
+        valid_df = recent_df.slice(0, len(recent_df) - purge_len)
+        X_raw, y = self._extract_X_y(valid_df, feature_cols)
+        # BUG-182B: fail loud BEFORE any training work when the target model's
+        # input width disagrees with the supplied feature columns. A mismatch
+        # previously surfaced as a torch matmul error mid-epoch (and a scaler-save
+        # exception storm); a half-trained or partially persisted state must
+        # never be reachable from a contract violation.
+        _model_width = int(getattr(target_model, "num_features", 0) or 0)
+        if _model_width != X_raw.shape[1]:
+            raise ValueError(
+                f"Feature contract violation in online fine-tune: model input width "
+                f"{_model_width} != {X_raw.shape[1]} feature columns "
+                f"({self.feature_schema.schema_id} trainer bound to {self.num_features})"
+            )
+        # Cold-Start Scaler Fallback: a missing OR dimension-incompatible
+        # scaler (stale/foreign artifact from an older schema, e.g. a 70D
+        # scaler on a 50D trainer) must never crash online fine-tuning - the
+        # buffer scaler is refit instead (same resilience contract as the
+        # FileNotFoundError path below).
+        try:
+            scaler = self._load_scaler()
+        except (FileNotFoundError, RuntimeError) as _scaler_err:
+            if isinstance(_scaler_err, RuntimeError):
+                logger.warning(
+                    "Pre-existing scaler artifact incompatible with schema; refitting on buffer",
+                    error=str(_scaler_err),
+                )
+            else:
+                logger.info(
+                    "No pre-existing scaler artifact found for fine-tuning. Fitting initial scaler on recent memory buffer."
+                )
+            scaler = self._fit_scaler(X_raw)
+            # Persist the fitted fallback scaler IMMEDIATELY. Previously it was only
+            # saved when a fine-tune passed the quality gate, so a rejected cold-start
+            # model left `model.scaler.npz` permanently missing and every reboot re-fitted
+            # on a tiny, non-representative buffer - destabilising the live feature
+            # distribution between restarts.
+            try:
+                self._save_scaler(scaler)
+                logger.info(
+                    "Persisted cold-start fallback scaler artifact",
+                    scaler_path=str(self._get_scaler_path()),
+                )
+            except Exception as save_err:
+                logger.warning(
+                    "Failed to persist cold-start fallback scaler (isolated)",
+                    error=str(save_err),
+                )
+        X_scaled = self._transform_features(X_raw, scaler)
+        if len(y) < 32:
+            logger.warning(
+                "Insufficient post-purge labeled rows for online fine-tuning", samples=len(y)
+            )
+            _skip_labels = should_persist_candidate(trained=False, insufficient_labels=True)
+            logger.info(
+                "Persist decision: REJECT",
+                reason=_skip_labels.reason,
+                persist=False,
+            )
+            return attach_decision(copy.deepcopy(target_model), _skip_labels)
+        # Compute Exponential Time-Decay Sample Weights across valid buffer
+        # (ECON v1 ONLINE profile — aggressive recency weighting is legitimate
+        # for recent-buffer adaptation and is deliberately NOT the FULL_TRAIN
+        # profile used by train_and_validate).
+        time_weights = _compute_time_decay_weights(
+            len(y), half_life_bars=self.time_decay_online_half_life_bars
+        )
+        # Chronological train/validation split (80% train, 20% validation)
+        val_size = max(5, int(len(y) * 0.20))
+        train_size = len(y) - val_size
+        X_train, y_train, w_train = X_scaled[:train_size], y[:train_size], time_weights[:train_size]
+        X_val, y_val, w_val = X_scaled[train_size:], y[train_size:], time_weights[train_size:]
+        # Apply Random Oversampling on minority active classes (BUY=1, SELL=2) to balance gradient updates
+        if self.use_oversampling:
+            X_train_res, y_train_res = _balance_oversample_dataset(
+                X_train,
+                y_train,
+                active_boost_ratio=0.85,
+                # Determinism contract: the canonical training seed drives the
+                # local RNG — same (dataset, seed) => identical oversampled
+                # buffer; global numpy RNG state is never consulted.
+                seed=self.seed,
+            )
+            # Recompute time weights for resampled array size
+            w_train_res = _compute_time_decay_weights(
+                len(y_train_res), half_life_bars=self.time_decay_online_half_life_bars
+            )
+            logger.info(
+                "Minority Class Oversampling applied to training buffer",
+                original_size=len(y_train),
+                resampled_size=len(y_train_res),
+                original_counts=np.bincount(y_train, minlength=self.NUM_CLASSES).tolist(),
+                resampled_counts=np.bincount(y_train_res, minlength=self.NUM_CLASSES).tolist(),
+            )
+        else:
+            X_train_res, y_train_res, w_train_res = X_train, y_train, w_train
+        # Deep copy target model as rollback baseline
+        baseline_state = copy.deepcopy(target_model.state_dict())
+        working_model = copy.deepcopy(target_model).to(self.device)
+        # Reset classifier output bias to 0.0 to prevent random initialization logit dominance
+        with torch.no_grad():
+            working_model.classifier.bias.data[:3] = 0.0
+        # Setup weighted dataloaders
+        train_batch = max(16, min(128, len(y_train_res) // 8))
+        train_ds = ScalpWeightedDataset(X_train_res, y_train_res, w_train_res, self.device)
+        train_loader = self._make_loader(train_ds, train_batch, shuffle=True)
+        val_batch = max(16, min(128, len(y_val) // 8))
+        val_ds = ScalpWeightedDataset(X_val, y_val, w_val, self.device)
+        val_loader = self._make_loader(val_ds, val_batch, shuffle=False)
+        # Compute Class Weights for fine-tuning (Unit weights if oversampled to prevent NO_TRADE suppression)
+        weights_tensor = self._build_class_weights(y_train, is_online_fine_tune=True).to(
+            self.device
+        )
+        focal_criterion = FocalLossWithSmoothing(
+            alpha=weights_tensor,
+            gamma=self.focal_gamma,
+            label_smoothing=self.label_smoothing,
+            reduction="mean",
+        )
+        focal_criterion_none = FocalLossWithSmoothing(
+            alpha=weights_tensor,
+            gamma=self.focal_gamma,
+            label_smoothing=self.label_smoothing,
+            reduction="none",
+        )
+        # Differential Learning Rate: 10x higher LR on classifier head to rapidly break random bias
+        head_params = (
+            list(working_model.classifier.parameters())
+            + list(working_model.fc1.parameters())
+            + list(working_model.fc2.parameters())
+        )
+        head_param_ids = set(map(id, head_params))
+        backbone_params = [p for p in working_model.parameters() if id(p) not in head_param_ids]
+        optimizer = torch.optim.AdamW(
+            [
+                {"params": backbone_params, "lr": learning_rate},
+                {"params": head_params, "lr": learning_rate * 10.0},
+            ],
+            weight_decay=1e-3,
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs))
+        # Evaluate baseline validation accuracy & loss before fine-tuning
+        working_model.eval()
+        baseline_val_loss = self._evaluate_loss(working_model, val_loader, focal_criterion)
+        baseline_preds_all = []
+        baseline_targets_all = []
+        with torch.inference_mode():
+            for bx, by, _ in val_loader:
+                bp = torch.argmax(working_model(bx, return_logits=False), dim=-1)
+                baseline_preds_all.extend(bp.cpu().numpy().tolist())
+                baseline_targets_all.extend(by.cpu().numpy().tolist())
+        total_val_samples = len(baseline_preds_all) if len(baseline_preds_all) > 0 else 1
+        baseline_acc = float(
+            np.sum(np.array(baseline_preds_all) == np.array(baseline_targets_all))
+            / total_val_samples
+        )
+        baseline_max_dominance = float(
+            np.max(np.bincount(baseline_preds_all, minlength=self.NUM_CLASSES)) / total_val_samples
+        )
+        logger.info(
+            "Baseline validation state",
+            loss=baseline_val_loss,
+            accuracy=round(baseline_acc, 3),
+            max_dominance=round(baseline_max_dominance, 3),
+        )
+        best_val_loss = baseline_val_loss
+        best_state = copy.deepcopy(baseline_state)
+        patience_counter = 0
+        early_stopping_triggered = False
+        # Fine-Tuning Execution Loop with Early Stopping
+        for ep in range(epochs):
+            working_model.train()
+            train_loss = self._train_one_epoch_smc(
+                working_model, train_loader, optimizer, focal_criterion_none, feature_cols
+            )
+            scheduler.step()
+            working_model.eval()
+            val_loss = self._evaluate_loss(working_model, val_loader, focal_criterion)
+            logger.info(
+                "Online fine-tuning epoch complete",
+                epoch=ep + 1,
+                train_loss=train_loss,
+                val_loss=val_loss,
+            )
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_state = copy.deepcopy(working_model.state_dict())
+                patience_counter = 0
+            else:
+                patience_counter += 1
+                if patience_counter >= max(2, epochs // 2):
+                    early_stopping_triggered = True
+                    logger.info("Early stopping triggered during fine-tuning", epoch=ep + 1)
+                    break
+        # Load best candidate weights
+        working_model.load_state_dict(best_state)
+        # Compute Diagnostics & Per-Class Precision/Recall Metrics
+        working_model.eval()
+        final_val_loss = self._evaluate_loss(working_model, val_loader, focal_criterion)
+        preds_all = []
+        targets_all = []
+        probs_all = []
+        with torch.inference_mode():
+            for bx, by, _ in val_loader:
+                probs = working_model(bx, return_logits=False)
+                preds = torch.argmax(probs, dim=-1)
+                preds_all.extend(preds.cpu().numpy().tolist())
+                targets_all.extend(by.cpu().numpy().tolist())
+                probs_all.append(probs.cpu().numpy())
+        probs_arr = (
+            np.concatenate(probs_all, axis=0)
+            if probs_all
+            else np.empty((0, int(self.CANONICAL_NUM_CLASSES)))
+        )
+        preds_arr = np.array(preds_all, dtype=np.int64)
+        total_samples = len(preds_arr) if len(preds_arr) > 0 else 1
+        class_counts = np.bincount(preds_arr, minlength=self.NUM_CLASSES)
+        class_dist = (class_counts / total_samples).tolist()
+        val_acc = float(np.sum(preds_arr == np.array(targets_all)) / total_samples)
+        # Calculate Per-Class Precision & Recall Metrics
+        per_class_recall = {}
+        per_class_precision = {}
+        for c, c_name in [(0, "NO_TRADE"), (1, "BUY"), (2, "SELL")]:
+            target_mask = np.array(targets_all) == c
+            pred_mask = preds_arr == c
+            total_targets_c = np.sum(target_mask)
+            rec_c = (
+                float(np.sum(pred_mask & target_mask) / total_targets_c)
+                if total_targets_c > 0
+                else 1.0
+            )
+            per_class_recall[c_name] = round(rec_c, 3)
+            total_preds_c = np.sum(pred_mask)
+            prec_c = (
+                float(np.sum(pred_mask & target_mask) / total_preds_c) if total_preds_c > 0 else 0.0
+            )
+            per_class_precision[c_name] = round(prec_c, 3)
+        entropy_vals = (
+            -np.sum(probs_arr * np.log(probs_arr + 1e-9), axis=1)
+            if probs_arr.size > 0
+            else np.array([0.0])
+        )
+        float(np.mean(entropy_vals))
+        max_probs = np.max(probs_arr, axis=1) if len(probs_arr) > 0 else np.array([])
+        conf_hist, _ = np.histogram(max_probs, bins=5, range=(0.0, 1.0))
+        conf_hist = conf_hist.tolist()
+        unique_classes = set(preds_arr.tolist())
+        val_class_counts = np.bincount(targets_all, minlength=self.NUM_CLASSES)
+        val_max_dominance = (
+            float(np.max(val_class_counts) / len(targets_all)) if len(targets_all) > 0 else 1.0
+        )
+        max_dominance = max(class_dist[:3]) if class_dist else 1.0
+        dominant_class = int(np.argmax(class_dist[:3])) if class_dist else 0
+        # HARDENED MULTI-METRIC QUALITY GATE
+        rejection_reasons = []
+        # Cold-Start Detection (when baseline accuracy from random weights is < 35%)
+        is_cold_start = baseline_acc < self.min_validation_accuracy
+        if is_cold_start:
+            effective_min_val_acc = baseline_acc + self.min_accuracy_improvement
+        else:
+            effective_min_val_acc = max(
+                self.min_validation_accuracy, baseline_acc + self.min_accuracy_improvement
+            )
+        # Quality Check 1: Minimum Validation Accuracy
+        if val_acc < effective_min_val_acc:
+            rejection_reasons.append(
+                f"Validation accuracy ({val_acc:.1%}) below required threshold ({effective_min_val_acc:.1%})"
+            )
+        # Quality Check 2: Accuracy Gain over Baseline (ALWAYS required now)
+        if val_acc < (baseline_acc + self.min_accuracy_improvement):
+            rejection_reasons.append(
+                f"Accuracy gain (+{val_acc - baseline_acc:.1%}) below required improvement (+{self.min_accuracy_improvement:.1%})"
+            )
+        # Quality Check 2b: Degenerate / zero-diversity buffer guard.
+        # A fine-tune trained on a buffer that contains only ONE target class (or is
+        # otherwise degenerate) can report a misleadingly perfect val_acc + delta because
+        # it merely memorises the majority label. Such a "model" is NOT an improvement and
+        # MUST NEVER overwrite production weights. We reject it and roll back to baseline,
+        # exactly as the spec requires ("baseline weights are preserved").
+        unique_target_classes = set(int(t) for t in targets_all)
+        present_active_classes = [c for c in (1, 2) if c in unique_target_classes]
+        if len(unique_target_classes) < 2 or len(present_active_classes) == 0:
+            rejection_reasons.append(
+                f"Degenerate validation buffer: only {len(unique_target_classes)} distinct target class(es) "
+                f"present ({sorted(unique_target_classes)}); fine-tune provides no generalisation signal"
+            )
+        # Quality Check 3: SELL Dominance Cap
+        sell_dist_ratio = class_dist[2]
+        if sell_dist_ratio > self.max_sell_dominance:
+            rejection_reasons.append(
+                f"SELL dominance ({sell_dist_ratio:.1%}) exceeds maximum allowed cap ({self.max_sell_dominance:.1%})"
+            )
+        # Anti-Collapse Check A: Class prediction below min_class_ratio
+        if (1 in targets_all) and (class_dist[1] < active_min_class_ratio):
+            rejection_reasons.append(
+                f"BUY predicted ratio ({class_dist[1]:.1%}) below threshold ({active_min_class_ratio:.1%})"
+            )
+        if (2 in targets_all) and (class_dist[2] < active_min_class_ratio):
+            rejection_reasons.append(
+                f"SELL predicted ratio ({class_dist[2]:.1%}) below threshold ({active_min_class_ratio:.1%})"
+            )
+        # Anti-Collapse Check B: Zero recall on an active class present in targets
+        if (1 in targets_all) and (per_class_recall["BUY"] == 0.0):
+            rejection_reasons.append("BUY class recall collapsed to 0.0%")
+        if (2 in targets_all) and (per_class_recall["SELL"] == 0.0):
+            rejection_reasons.append("SELL class recall collapsed to 0.0%")
+        # Dominance threshold checks
+        if dominant_class == 0:
+            dominance_threshold = max(0.95, val_max_dominance + 0.20)
+        else:
+            dominance_threshold = max(0.85, val_max_dominance + 0.15)
+        no_dominance_breach = max_dominance <= dominance_threshold
+        len(unique_classes) >= 2 or val_max_dominance == 1.0
+        if not no_dominance_breach:
+            rejection_reasons.append(
+                f"Dominance breach: max class ratio ({max_dominance:.1%}) > threshold ({dominance_threshold:.1%})"
+            )
+        quality_gate_passed = len(rejection_reasons) == 0
+        # BUG-228: early stopping restores the *best* state seen so far. When NO
+        # epoch ever beat the baseline validation loss, best_state IS the baseline
+        # state, so the candidate handed to the quality gate is the unchanged
+        # production model. Running it through the gate then reads as a scary red
+        # QUALITY GATE REJECTION + "atomic revert" even though nothing ever
+        # moved - a no-op misreported as a failure (observed 2026-09-03:
+        # accepted=False, accuracy_delta=0.0, "revert" of identical weights).
+        # The honest outcome for a zero-improvement run is a plain skip: keep the
+        # baseline, skip the checkpoint write, and log exactly that.
+        zero_improvement = bool(
+            early_stopping_triggered and self._state_dicts_equal(best_state, baseline_state)
+        )
+        if zero_improvement:
+            logger.info(
+                "Online fine-tune produced no improvement over baseline; keeping baseline weights",
+                val_acc=round(val_acc, 3),
+                baseline_acc=round(baseline_acc, 3),
+                epochs_requested=epochs,
+                early_stopping_triggered=early_stopping_triggered,
+            )
+            # BUG-236: zero improvement => persist=False (recorded reason).
+            # The baseline is returned UNTOUCHED and NO artifact is written.
+            _zero = should_persist_candidate(
+                trained=True,
+                zero_improvement=True,
+                metrics={
+                    "val_acc": round(val_acc, 3),
+                    "baseline_acc": round(baseline_acc, 3),
+                    "epochs_requested": epochs,
+                },
+            )
+            logger.info("Persist decision: REJECT", reason=_zero.reason, persist=False)
+            return attach_decision(working_model.to(torch.device("cpu")), _zero)
+        # Condition 3: new model must strictly beat the baseline validation loss.
+        loss_improved = final_val_loss <= baseline_val_loss + 1e-4
+        # Condition 4: early stopping must NOT have triggered, unless the new model is
+        # strictly superior to baseline on BOTH accuracy and loss (a hard override).
+        metrics_superior = (val_acc > baseline_acc + self.min_accuracy_improvement) and (
+            final_val_loss < baseline_val_loss
+        )
+        early_stopping_ok = (not early_stopping_triggered) or metrics_superior
+        # CALIBRATION SAFETY (P1, research/training-parity): downstream risk
+        # consumes confidence, so a fine-tune that materially DEGRADES
+        # calibration must be flagged and rejected per the configurable
+        # policy. Measured as the degradation of the candidate relative to
+        # the BASELINE (prior/champion) weights on the identical validation
+        # buffer — Brier + ECE. NO absolute magic-threshold style cut: the
+        # allowed degradation is a
+        # policy parameter (max_calibration_degradation_r) and the metrics
+        # travel on the persist decision for audit either way.
+        calibration = self._evaluate_calibration_shift(
+            working_model,
+            baseline_state,
+            val_loader,
+            probs_arr,
+        )
+        # Gate: the only Brier comparison is the RELATIVE degradation vs the
+        # policy limit; no absolute threshold exists.
+        calibration_ok = bool(
+            calibration["brier_degradation"] <= self.max_calibration_degradation_r
+        )
+        if not calibration_ok:
+            rejection_reasons.append(
+                f"Calibration degraded beyond policy: Brier worsened by "
+                f"{calibration['brier_degradation']:.4f} (allowed "
+                f"{self.max_calibration_degradation_r:.4f}); "
+                f"baseline={calibration['baseline_brier']:.4f} "
+                f"candidate={calibration['candidate_brier']:.4f}"
+            )
+        accepted = bool(
+            quality_gate_passed and loss_improved and early_stopping_ok and calibration_ok
+        )
+        logger.info(
+            "Model fine-tuning quality & health diagnostics",
+            class_distribution_pct=[f"{c:.1%}" for c in class_dist[:3]],
+            per_class_recall=per_class_recall,
+            per_class_precision=per_class_precision,
+            baseline_accuracy=round(baseline_acc, 3),
+            validation_accuracy=round(val_acc, 3),
+            accuracy_delta=round(val_acc - baseline_acc, 3),
+            sell_dominance_pct=f"{sell_dist_ratio:.1%}",
+            brier_baseline=calibration["baseline_brier"],
+            brier_candidate=calibration["candidate_brier"],
+            brier_degradation=calibration["brier_degradation"],
+            ece_baseline=calibration["baseline_ece"],
+            ece_candidate=calibration["candidate_ece"],
+            calibration_ok=calibration_ok,
+            accepted=accepted,
+            rejection_reasons=rejection_reasons if not accepted else None,
+        )
+        if not verify_health:
+            logger.info("Model health check bypassed via verify_health=False parameter.")
+            self._save_checkpoint(working_model)
+            self._save_scaler(scaler)
+            ret_model = working_model
+        elif accepted:
+            logger.info(
+                "New quality-gated model deployment approved. Overwriting active model checkpoint."
+            )
+            self._save_checkpoint(working_model)
+            self._save_scaler(scaler)
+            ret_model = working_model
+        else:
+            # BUG-228: raw ANSI escape codes bypass the structured logger and
+            # render as a bare "[error] ..." line in log sinks (no logger name,
+            # module, or timestamp). Route through logger.error so the rejection
+            # is queryable like every other engine event.
+            logger.error(
+                "[QUALITY GATE REJECTION] Newly fine-tuned model rejected due to "
+                "weak accuracy or SELL dominance. Atomically reverting to baseline.",
+                reasons=rejection_reasons,
+            )
+            logger.warning(
+                "New model REJECTED by quality gate. Rolling back to healthy baseline.",
+                accepted=False,
+                reasons=rejection_reasons
+                if rejection_reasons
+                else ["Validation Quality Degradation"],
+            )
+            working_model.load_state_dict(baseline_state)
+            ret_model = working_model
+        # BUG-236 (MLFIX-T3): ONE explicit, auditable persist decision for
+        # every outcome. persist=False paths carry a machine-readable reason
+        # and the returned model carries NO authorization to be written:
+        # no checkpoint, no scaler, no metadata, no champion/registry update
+        # may follow from the decision below. (The only sanctioned rejected
+        # write is an explicit REJECTED registry row, which is the ENGINE's
+        # lifecycle-store concern — never a replacement claim.)
+        if not verify_health:
+            # Documented test/bypass path: health gate explicitly skipped, so
+            # health_ok mirrors that bypass (accept is trainer-authoritative).
+            _decision = should_persist_candidate(
+                trained=True,
+                zero_improvement=False,
+                quality_gate_passed=True,
+                health_ok=True,
+                accepted=True,
+                metrics={"accepted": True, "health_check": "BYPASSED"},
+            )
+        else:
+            _decision = should_persist_candidate(
+                trained=True,
+                zero_improvement=False,
+                quality_gate_passed=accepted,
+                health_ok=True,
+                accepted=accepted,
+                rejection_reasons=None if accepted else rejection_reasons,
+                metrics={
+                    "val_acc": round(val_acc, 3),
+                    "baseline_acc": round(baseline_acc, 3),
+                    "accuracy_delta": round(val_acc - baseline_acc, 3),
+                },
+            )
+        logger.info(
+            "Persist decision",
+            persist=_decision.persist,
+            reason=_decision.reason,
+        )
+        return attach_decision(ret_model.to(torch.device("cpu")), _decision)
+
+    # =========================================================================
+    # INTERNAL: VALIDATION & FILTERS
+    # =========================================================================
+    @staticmethod
+    def _state_dicts_equal(a: dict, b: dict) -> bool:
+        """BUG-228: exact-tensor equality of two state_dicts.
+        Used to distinguish a fine-tune that never moved any weight
+        (early stop restored the baseline as "best") from a genuine
+        candidate that failed the quality gate. Every key must exist in
+        both dicts and every tensor must be bit-identical.
+        """
+        if a.keys() != b.keys():
+            return False
+        return all(torch.equal(a[k], b[k]) for k in a)
+
+    def _evaluate_calibration_shift(
+        self,
+        candidate_model: ScalpNet,
+        baseline_state: dict,
+        val_loader: DataLoader,
+        candidate_probs: np.ndarray,
+    ) -> dict[str, Any]:
+        """Measures the candidate's calibration shift vs the BASELINE
+        (prior/champion) weights on the IDENTICAL validation buffer.
+
+        Metrics (confidence-safety evidence, P1):
+          * baseline_brier / candidate_brier — Brier score of the confidence
+            as a win-probability proxy against the resolved outcome
+            (trade = 1 if the argmax action was BUY/SELL AND correct, else 0;
+            NO_TRADE rows are excluded from a *trade* Brier but kept with a
+            neutral target so miscalibrated NO_TRADE confidence is still
+            visible).
+          * baseline_ece / candidate_ece — expected calibration error on
+            10 equal-width confidence bins.
+          * brier_degradation — RELATIVE worsening of candidate vs baseline
+            ((candidate - baseline) / max(baseline, eps)); the promotion gate
+            compares this against max_calibration_degradation_r. A NEGATIVE
+            value means the fine-tune IMPROVED calibration.
+
+        Pure evaluation: the candidate model is scored in-place (it already
+        holds the best candidate weights); the baseline is scored from a
+        temporary state swap and restored. No RNG, no training.
+        """
+        candidate_probs_list: list[np.ndarray] = []
+        baseline_probs_list: list[np.ndarray] = []
+        baseline_targets: list[int] = []
+        candidate_model.eval()
+        saved_state = copy.deepcopy(candidate_model.state_dict())
+        try:
+            with torch.inference_mode():
+                for item in val_loader:
+                    bx = item[0]
+                    by = item[1] if len(item) > 1 else None
+                    cprobs = candidate_model(bx, return_logits=False)
+                    candidate_probs_list.append(cprobs.cpu().numpy())
+                    if by is not None:
+                        baseline_targets.extend(by.cpu().numpy().tolist())
+            candidate_model.load_state_dict(baseline_state)
+            with torch.inference_mode():
+                for item in val_loader:
+                    bx = item[0]
+                    bprobs = candidate_model(bx, return_logits=False)
+                    baseline_probs_list.append(bprobs.cpu().numpy())
+        finally:
+            candidate_model.load_state_dict(saved_state)
+
+        candidate_probs = (
+            np.concatenate(candidate_probs_list, axis=0)
+            if candidate_probs_list
+            else np.asarray(candidate_probs)
+        )
+        baseline_probs = (
+            np.concatenate(baseline_probs_list, axis=0)
+            if baseline_probs_list
+            else np.asarray(candidate_probs)
+        )
+        targets_arr = np.asarray(baseline_targets, dtype=np.int64)
+
+        def _score(probs: np.ndarray) -> tuple[float, float]:
+            conf = np.max(probs, axis=1)
+            pred = np.argmax(probs, axis=1)
+            # Outcome proxy: a trade wins only when the action was BUY/SELL
+            # AND correct; NO_TRADE is a "no position taken" outcome.
+            outcome = ((pred == targets_arr) & (pred != 0)).astype(np.float64)
+            brier = float(np.mean((conf - outcome) ** 2))
+            # ECE over 10 equal-width bins.
+            n = len(conf)
+            ece = 0.0
+            for b in range(10):
+                lo, hi = b / 10.0, (b + 1) / 10.0
+                mask = (conf > lo) & (conf <= hi) if b else (conf <= hi)
+                nb = int(np.sum(mask))
+                if nb:
+                    ece += (nb / n) * abs(
+                        float(np.mean(conf[mask])) - float(np.mean(outcome[mask]))
+                    )
+            return brier, ece
+
+        baseline_brier, baseline_ece = _score(baseline_probs)
+        candidate_brier, candidate_ece = _score(candidate_probs)
+        eps = 1e-6
+        brier_degradation = (candidate_brier - baseline_brier) / max(baseline_brier, eps)
+        return {
+            "baseline_brier": baseline_brier,
+            "candidate_brier": candidate_brier,
+            "brier_degradation": brier_degradation,
+            "baseline_ece": baseline_ece,
+            "candidate_ece": candidate_ece,
+            "ece_degradation": (candidate_ece - baseline_ece) / max(baseline_ece, eps),
+            "policy_limit": self.max_calibration_degradation_r,
+            "samples": len(baseline_probs),
+        }
+
+    def _validate_training_frame(self, df: pl.DataFrame, feature_cols: list[str]) -> None:
+        """
+        Validates a training frame against the BOUND feature schema.
+        Uses `self.feature_schema` (not a hard-coded 50) so a 60D/350D trainer
+        instance validates against its own contract while the live 50D pipeline
+        is unaffected.
+        """
+        self.feature_schema.validate_columns(feature_cols, context="training_frame")
+        missing = [col for col in feature_cols if col not in df.columns]
+        if missing:
+            raise ValueError(f"Missing feature columns: {missing[:20]}")
+        if "label" not in df.columns:
+            raise ValueError("Training DataFrame must contain a 'label' column.")
+        raw_labels = df["label"].to_list()
+        # MLFIX: parquet integer labels (0/1/2) → accept both representations
+        # label_map keys are string ActionType values; parquet uses ints.
+        allowed = (
+            set(self.label_map.keys())
+            | set(self.label_map.values())
+            | set(self.inverse_label_map.keys())
+        )
+        unknown_labels = sorted(set(raw_labels) - allowed)
+        if unknown_labels:
+            raise ValueError(f"Unknown labels detected in dataset: {unknown_labels}")
+
+    def _filter_trainable_rows(self, df: pl.DataFrame) -> pl.DataFrame:
+        out = df
+        if "label_evaluated" in out.columns:
+            out = out.filter(pl.col("label_evaluated"))
+        if "is_purged" in out.columns:
+            out = out.filter(~pl.col("is_purged"))  # <-- FIXED: Bitwise NOT for Polars
+        return out
+
+    # =========================================================================
+    # INTERNAL: EXTRACTION / TRANSFORM
+    # =========================================================================
+    @staticmethod
+    def _assert_features_finite(X_raw: np.ndarray, context: str = "") -> None:
+        """Fail-closed hygiene: no NaN/Inf/None-derived feature cell may reach
+        training. Agent-8 wave-2 (BUG-243B, ecosystem-clean): polars union-by-name
+        turns heterogeneous feature dicts into None cells; numpy casts None to
+        NaN; the old nan_to_num silently laundered that to 0.0 fabrications.
+        A non-finite feature now RAISES instead of being trained on. The
+        engine-side BUG-243 buffer guard is the primary drop filter; this is
+        the last-line trainer gate for ANY caller (multi-user ecosystem)."""
+        if not np.all(np.isfinite(X_raw)):
+            n_bad = int(np.count_nonzero(~np.isfinite(X_raw)))
+            where = ""
+            with __import__("contextlib").suppress(Exception):
+                bad_rows, bad_cols = __import__("numpy").where(~__import__("numpy").isfinite(X_raw))
+                where = (
+                    f" first at row={int(bad_rows[0])} col={int(bad_cols[0])}"
+                    if len(bad_rows)
+                    else ""
+                )
+            raise ValueError(
+                f"Non-finite feature cell in training frame ({n_bad} cells{where}); "
+                f"frame refused (ecosystem-clean; context={context or 'online_fine_tune'})"
+            )
+
+    def _extract_X_y(
+        self, df: pl.DataFrame, feature_cols: list[str]
+    ) -> tuple[np.ndarray, np.ndarray]:
+        X_raw = df.select(feature_cols).to_numpy().astype(np.float32, copy=False)
+        # Agent-8 wave-2 (BUG-243B): fail closed on non-finite BEFORE any
+        # nan_to_num laundering. A heterogeneous dataframe (e.g. mixed 50D/70D
+        # rows from a cross-restart buffer) surfaces missing feature columns
+        # as None -> NaN via to_numpy(); training on that would be evidence
+        # fabrication (ecosystem requirement: fetched data must be clean on
+        # runtime when the model trains, not only locally).
+        self._assert_features_finite(X_raw, context="online_fine_tune")
+        raw_labels = df["label"].to_list()
+        # MLFIX: parquet uses int labels 0/1/2; allow both int and string.
+        mapped: list[int] = []
+        for lab in raw_labels:
+            if isinstance(lab, int):
+                mapped.append(int(lab))
+            else:
+                mapped.append(int(self.label_map[lab]))
+        y = np.array(mapped, dtype=np.int64)
+        return X_raw, y
+
+    # ------------------------------------------------------------------
+    # BUG-293 first-run progress/cancel seams (dormant when unconfigured)
+    # ------------------------------------------------------------------
+    def _check_cancelled(self) -> None:
+        """Epoch-boundary cancel check. Raises TrainingCancelledError so the
+        artifact path is never mid-write when a cancel lands."""
+        ev = self._cancel_event
+        if ev is not None and bool(ev.is_set()):
+            raise TrainingCancelledError("walk-forward training cancelled by operator")
+
+    def _emit_stage_progress(self, stage: str, status: str, **facts: Any) -> None:
+        """Report actual work boundaries; never infer completion or an ETA."""
+        if self._progress_cb is not None:
+            try:
+                self._progress_cb({"stage": stage, "status": status, **facts})
+            except Exception as exc:  # a UI fault must never break training
+                logger.warning("training progress_cb failed (ignored): %s", exc)
+
+    def _emit_epoch_progress(
+        self, *, fold: int, epoch: int, loss: float, val_loss: float, elapsed_sec: float
+    ) -> None:
+        cb = self._progress_cb
+        if cb is None:
+            return
+        payload = {
+            "fold": int(fold),
+            "folds": int(self.num_folds),
+            "epoch": int(epoch),
+            "epochs": int(self.epochs),
+            "loss": loss,
+            "val_loss": val_loss,
+            "elapsed_sec": elapsed_sec,
+        }
+        try:
+            cb(payload)
+        except Exception as cb_err:  # a UI fault must never break training
+            logger.warning("training progress_cb failed (ignored): %s", cb_err)
+
+    def _fit_scaler(self, X_raw: np.ndarray) -> ScalerBundle:
+        if not self.use_feature_scaling:
+            zeros = np.zeros((1, X_raw.shape[1]), dtype=np.float32)
+            ones = np.ones((1, X_raw.shape[1]), dtype=np.float32)
+            return ScalerBundle(mean=zeros, std=ones)
+        mean = np.mean(X_raw, axis=0, keepdims=True).astype(np.float32)
+        std = np.std(X_raw, axis=0, keepdims=True).astype(np.float32)
+        std = np.maximum(std, 1e-3)
+        return ScalerBundle(mean=mean, std=std)
+
+    def _transform_features(self, X_raw: np.ndarray, scaler: ScalerBundle) -> np.ndarray:
+        if not self.use_feature_scaling:
+            return np.clip(X_raw, self.clip_features_min, self.clip_features_max).astype(np.float32)
+        X = (X_raw - scaler.mean) / scaler.std
+        X = np.clip(X, self.clip_features_min, self.clip_features_max)
+        return X.astype(np.float32)
+
+    # =========================================================================
+    # INTERNAL: MODEL / TRAINING
+    # =========================================================================
+    def _create_model(self, num_features: int) -> ScalpNet:
+        """
+        Constructs a ScalpNet for the given input width.
+        MLFIX-T4: head is the CANONICAL 3-class contract (NO_TRADE/BUY/SELL).
+        Legacy 4-wide (WAIT) is compat-only. Fresh construction uses 3.
+        """
+        if num_features != self.num_features:
+            logger.warning(
+                "Model input width differs from bound schema",
+                requested=num_features,
+                schema=self.feature_schema.schema_id,
+                schema_dimension=self.num_features,
+            )
+        model = ScalpNet(num_features=num_features, num_classes=int(self.CANONICAL_NUM_CLASSES))
+        model.to(self.device)
+        return model
+
+    def _split_fold_with_embargo(
+        self,
+        fold_length: int,
+        *,
+        timestamps: list[datetime] | None = None,
+        outcome_offsets: list[float] | None = None,
+    ) -> tuple[int, int, int]:
+        """
+        Computes the purged + embargoed boundaries of a single fold.
+
+        Layout (chronological):
+            [ ---- TRAIN ---- ][ PURGE ][ ---- VALIDATION ---- ][ EMBARGO ]
+        * PURGE removes the samples immediately BEFORE validation whose
+          triple-barrier horizon can overlap into the validation block.
+        * EMBARGO removes samples at the END of the validation block, so a label
+          whose horizon extends past the fold cannot be scored on information the
+          model would not have had. This closes the residual leakage the previous
+          implementation left open (it purged but never embargoed).
+        Returns (train_end, val_start, val_end) as indices within the fold.
+
+        TIME-BASED PURGE (research/training-parity P1): when ``timestamps``
+        (decision timestamps, chronological, one per fold row) and
+        ``outcome_offsets`` (seconds from decision to label outcome; a row's
+        label horizon, e.g. max_holding_bars * 60) are supplied, the purge and
+        embargo widths are derived from ACTUAL TEMPORAL OVERLAP instead of a
+        row count:
+          * purge: the train tail is dropped while its OUTCOME time can reach
+            the validation window start — i.e. rows whose outcome_timestamp
+            (decision + offset) is > the decision timestamp of the last
+            surviving train row... concretely: train rows with
+            outcome_ts > boundary_ts (the first validation row's decision
+            time) are removed, which is the overlap definition.
+          * embargo: validation rows within embargo_seconds of the boundary
+            (and rows whose decision is after the boundary but whose outcome
+            would extend past the fold) are handled by the same overlap rule
+            applied to the fold tail.
+        The row-count path (no timestamps) remains EXACTLY as before — the
+        historical blocked geometry and existing callers are unchanged.
+        """
+        raw_split = int(fold_length * self.train_ratio)
+        train_end = max(0, raw_split - self.purge_gap)
+        val_start = raw_split
+        val_end = max(val_start, fold_length - self.embargo_bars)
+        if timestamps is None or outcome_offsets is None:
+            return train_end, val_start, val_end
+        if len(timestamps) != fold_length or len(outcome_offsets) != fold_length:
+            raise ValueError(
+                "Time-based purge contract violation: timestamps/outcome_offsets "
+                f"must cover every fold row ({len(timestamps)}/{len(outcome_offsets)} "
+                f"supplied, fold_length={fold_length})"
+            )
+        # --- temporal-overlap geometry (information available at split time) ---
+        # boundary_ts = decision time of the FIRST validation row.
+        if val_start >= fold_length:
+            return train_end, val_start, val_end
+        boundary_ts = timestamps[val_start]
+        # PURGE: drop train rows whose OUTCOME horizon reaches into validation.
+        # A training observation is excluded when its label was not resolvable
+        # before the validation period starts (outcome_ts > boundary_ts) or it
+        # is embargo-adjacent to the boundary. No row-count assumption: two
+        # rows 1 second apart and two rows 6 hours apart are treated by their
+        # actual timestamps.
+        purge_end = val_start
+        while purge_end > 0:
+            ts = timestamps[purge_end - 1]
+            outcome_ts = ts + timedelta(seconds=float(outcome_offsets[purge_end - 1]))
+            gap = (boundary_ts - ts).total_seconds()
+            if outcome_ts > boundary_ts or gap <= self.embargo_bars:
+                purge_end -= 1
+            else:
+                break
+        # EMBARGO: drop validation rows whose decision falls within the
+        # embargo distance AFTER the boundary (inclusive <= semantics, same
+        # as the row-count path) — serial correlation just after the boundary
+        # must not be scored as independent validation evidence.
+        embargo_end = val_start
+        while embargo_end < fold_length:
+            ts = timestamps[embargo_end]
+            if (ts - boundary_ts).total_seconds() <= self.embargo_bars:
+                embargo_end += 1
+            else:
+                break
+        val_end = max(embargo_end, val_start)
+        return purge_end, val_start, val_end
+
+    def _build_class_weights(
+        self, y: np.ndarray, is_online_fine_tune: bool = False
+    ) -> torch.Tensor:
+        # ---------------------------------------------------------------------
+        # MLFIX-T4 MODEL CLASS CONTRACT: CANONICAL CLASSES = 3
+        # (NO_TRADE=0 / BUY=1 / SELL=2). The weights tensor MUST be 3-wide
+        # for every fresh build — derived from CANONICAL_NUM_CLASSES (the
+        # SSoT in architectures.py) and the label schema, NEVER from the
+        # legacy 4-wide serving head. The loss index set is {0,1,2}; writing
+        # a 4-wide weight when labels are 3-wide silently eats 22% of the
+        # softmax mass through an untrained WAIT logit (M4 incident).
+        # Legacy 4-wide artifacts are rejected at the compat gate and never
+        # reach this path without allow_legacy_4=True.
+        # ---------------------------------------------------------------------
+        try:
+            from nexus_scalp.model_generation.architectures import CANONICAL_CLASS_COUNT
+
+            _canonical = int(CANONICAL_CLASS_COUNT)
+        except Exception:
+            _canonical = int(self.CANONICAL_NUM_CLASSES)
+        num_classes = _canonical
+        if len(y):
+            num_classes = max(num_classes, int(np.max(y) + 1))
+        class_counts = np.bincount(y, minlength=num_classes)
+        # Guard: never index beyond the real number of classes.
+        class_counts = class_counts[:num_classes]
+        total_samples = len(y)
+        if is_online_fine_tune and self.use_oversampling:
+            # BUGFIX (MLFIX-T4): Oversampling already balanced the buffer.
+            # Use unit weights across the CANONICAL 3 classes. No WAIT class
+            # exists in the canonical contract — never allocate weight[3].
+            weights = np.ones(num_classes, dtype=np.float32)
+        else:
+            # Class-Balanced Loss Weighting for full walk-forward training
+            # MODEL_CLASS_CONTRACT v1: cb_weights for WAIT stay 1.0 so the
+            # 4th logit never receives a learned penalty/bonus — it is the
+            # legacy policy bridge whose only runtime treatment is the
+            # masked inference path (model_class_contract.mask_wait_logit).
+            beta = 0.99
+            effective_num = 1.0 - np.power(beta, class_counts)
+            effective_num = np.maximum(effective_num, 1e-5)
+            cb_weights = (1.0 - beta) / effective_num
+            if len(cb_weights) > TRAINED_CLASS_COUNT:  # keep WAIT neutral
+                cb_weights[TRAINED_CLASS_COUNT:] = 1.0
+            # Boost active trade classes (BUY=1, SELL=2) to counter NO_TRADE bias.
+            for idx in range(min(TRAINED_CLASS_COUNT, num_classes)):
+                if idx in (1, 2):
+                    cb_weights[idx] *= self.active_class_boost
+            mean_w = cb_weights[:TRAINED_CLASS_COUNT].mean() if TRAINED_CLASS_COUNT > 0 else 1.0
+            weights = (cb_weights / mean_w if mean_w > 0 else cb_weights).astype(np.float32)
+        # Runtime assertion: weight tensor dimension must equal the CANONICAL class count (3).
+        # Any 4-wide weight writing is a contract violation.
+        # Never silently alias loss indices to a legacy dimension.
+        assert len(weights) == num_classes, (
+            f"Invalid class weight dimension: {len(weights)} != {num_classes}"
+        )
+        logger.info(
+            "Class Weights computed for fine-tuning",
+            class_counts=class_counts.tolist(),
+            total_samples=total_samples,
+            weights=weights.tolist(),
+            num_classes=num_classes,
+            is_online_fine_tune=is_online_fine_tune,
+        )
+        return torch.tensor(weights, dtype=torch.float32)
+
+    def _resolve_batch_size(self, sample_count: int) -> int:
+        return max(16, min(self.batch_size, max(16, sample_count // 10)))
+
+    def _make_loader(self, dataset: Dataset, batch_size: int, shuffle: bool) -> DataLoader:
+        generator = torch.Generator()
+        generator.manual_seed(self.seed)
+        return DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            generator=generator,
+            pin_memory=False,  # Dataset tensors are already moved to target device
+        )
+
+    def _train_one_epoch(
+        self,
+        model: ScalpNet,
+        loader: DataLoader,
+        optimizer: torch.optim.Optimizer,
+        criterion: nn.Module,
+        scheduler: Any | None = None,
+    ) -> float:
+        model.train()
+        total_loss = 0.0
+        total_rows = 0
+        for item in loader:
+            if len(item) == 3:
+                batch_x, batch_y, batch_w = item
+            else:
+                batch_x, batch_y = item
+                batch_w = None
+            optimizer.zero_grad(set_to_none=True)
+            logits = model(batch_x, return_logits=True)
+            # MODEL_CLASS_CONTRACT v1 (Fix #3): mask WAIT (index 3) before loss
+            # so the 4-wide head carries no semantic load — labels are 3-class,
+            # WAIT never appears in targets and must not influence gradients.
+            from nexus_scalp.model_lifecycle.model_class_contract import (
+                mask_wait_logit,
+            )
+
+            logits = mask_wait_logit(logits)  # no-op on 3-wide logits
+            if isinstance(criterion, FocalLossWithSmoothing):
+                loss = criterion(logits, batch_y, sample_weights=batch_w)
+            else:
+                loss = criterion(logits, batch_y)
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+            # ML-TRAIN-003: per-batch scheduler step ONLY when the schedule was
+            # built with batch granularity (one_cycle / linear_decay /
+            # cosine_restarts + steps_per_epoch). Stepping an epoch-cadence
+            # schedule here would advance it 50x too fast and then warn.
+            if scheduler is not None:
+                scheduler.step()
+            batch_rows = len(batch_y)
+            total_loss += float(loss.item()) * batch_rows
+            total_rows += batch_rows
+        return total_loss / max(1, total_rows)
+
+    def _train_one_epoch_smc(
+        self,
+        model: ScalpNet,
+        loader: DataLoader,
+        optimizer: torch.optim.Optimizer,
+        criterion: nn.Module,
+        feature_cols: list[str],
+    ) -> float:
+        model.train()
+        total_loss = 0.0
+        total_rows = 0
+        idx_bos = (
+            feature_cols.index("feat_ob_valid_bos") if "feat_ob_valid_bos" in feature_cols else 46
+        )
+        idx_equil = (
+            feature_cols.index("feat_ob_equilibrium_ratio")
+            if "feat_ob_equilibrium_ratio" in feature_cols
+            else 47
+        )
+        for batch_x, batch_y, *rest in loader:
+            optimizer.zero_grad(set_to_none=True)
+            logits = model(batch_x, return_logits=True)
+            # MODEL_CLASS_CONTRACT v1 (Fix #3): mask WAIT before focal loss as well.
+            from nexus_scalp.model_lifecycle.model_class_contract import (
+                mask_wait_logit as _mwl_smc,
+            )
+
+            logits = _mwl_smc(logits)
+            batch_w = rest[0] if rest else None
+            if isinstance(criterion, FocalLossWithSmoothing):
+                raw_loss = criterion(logits, batch_y, sample_weights=batch_w)
+            else:
+                raw_loss = criterion(logits, batch_y)
+            if batch_x.dim() == 3:
+                x_last = batch_x[:, -1, :]
+            else:
+                x_last = batch_x
+            bos = x_last[:, idx_bos]
+            equil = x_last[:, idx_equil]
+            is_bos = bos > 0.5
+            is_buy_eq = (batch_y == 1) & (equil <= 0.5)
+            is_sell_eq = (batch_y == 2) & (equil >= 0.5)
+            scale_mask = is_bos & (is_buy_eq | is_sell_eq)
+            multipliers = torch.ones_like(batch_y, dtype=torch.float32)
+            multipliers[scale_mask] = 1.5
+            loss = (raw_loss * multipliers).mean()
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+            batch_rows = len(batch_y)
+            total_loss += float(loss.item()) * batch_rows
+            total_rows += batch_rows
+        return total_loss / max(1, total_rows)
+
+    def _evaluate_loss(
+        self,
+        model: ScalpNet,
+        loader: DataLoader,
+        criterion: nn.Module,
+    ) -> float:
+        model.eval()
+        total_loss = 0.0
+        total_rows = 0
+        with torch.inference_mode():
+            for item in loader:
+                if len(item) == 3:
+                    batch_x, batch_y, batch_w = item
+                else:
+                    batch_x, batch_y = item
+                    batch_w = None
+                logits = model(batch_x, return_logits=True)
+                # MODEL_CLASS_CONTRACT v1: WAIT mask for val loss as well.
+                from nexus_scalp.model_lifecycle.model_class_contract import (
+                    mask_wait_logit as _mwl_eval,
+                )
+
+                logits = _mwl_eval(logits)
+                if isinstance(criterion, FocalLossWithSmoothing):
+                    loss = criterion(logits, batch_y, sample_weights=batch_w)
+                else:
+                    loss = criterion(logits, batch_y)
+                batch_rows = len(batch_y)
+                total_loss += float(loss.item()) * batch_rows
+                total_rows += batch_rows
+        return total_loss / max(1, total_rows)
+
+    def _predict_classes(self, model: ScalpNet, loader: DataLoader) -> list[int]:
+        model.eval()
+        preds: list[int] = []
+        with torch.inference_mode():
+            for item in loader:
+                batch_x = item[0]
+                probs = model(batch_x, return_logits=False)
+                batch_preds = torch.argmax(probs, dim=-1).detach().cpu().numpy().tolist()
+                preds.extend(batch_preds)
+        return preds
+
+    # =========================================================================
+    # INTERNAL: METRICS
+    # =========================================================================
+    def _calculate_fold_sharpe_proxy(self, preds: list[int], targets: np.ndarray) -> float:
+        """DEPRECATED metric name retained for callers; superseded by
+        `_calculate_fold_economics`. Classification accuracy re-expressed as
+        pseudo-returns is NOT a trading Sharpe — the economic fold metric
+        below is reported alongside it and must never be conflated with it."""
+        return self._calculate_fold_economics(preds, targets)["proxy_sharpe_ratio"]
+
+    def _calculate_fold_economics(self, preds: list[int], targets: np.ndarray) -> dict[str, Any]:
+        """Economic fold metric from the triple-barrier outcomes.
+
+        PROXY SEMANTICS (honest labeling — this is NOT broker-filled P&L):
+        the frame carries only the resolved 3-class triple-barrier label, so
+        each predicted trade resolves against the label it acted on:
+          * correct directional prediction  => +reward_r (label-configured TP
+            distance in R, default 1.2R from the risk geometry)
+          * wrong / SL-resolved prediction  => -1.0R (full planned risk)
+        minus the per-trade friction assumption (friction_r). Gross R is the
+        pre-friction expectancy; net R is the friction-adjusted expectancy a
+        live account would approximately realize per trade under the same
+        assumptions. These figures are comparable fold-over-fold and across
+        candidates; they are NOT a classification accuracy (keep using the
+        accuracy/recall diagnostics for that) and NOT a measured Sharpe (the
+        'sharpe' key is a ratio of the same proxy returns, reported for
+        continuity under the historical name).
+        """
+        preds_arr = np.array(preds, dtype=np.int64)
+        targets_arr = np.array(targets, dtype=np.int64)
+        active_mask = (preds_arr == 1) | (preds_arr == 2)
+        if not np.any(active_mask):
+            return {
+                "proxy_sharpe_ratio": 0.0,
+                "net_expectancy_r": 0.0,
+                "gross_expectancy_r": 0.0,
+                "friction_r": self.friction_r,
+                "trades": 0,
+                "win_rate": 0.0,
+                "max_drawdown_r": 0.0,
+                "no_trade_rate": 1.0,
+            }
+        n_active = int(np.sum(active_mask))
+        matches = (preds_arr[active_mask] == targets_arr[active_mask]).astype(np.float32)
+        gross_r = np.where(matches == 1.0, self.reward_r, -1.0)
+        net_r = gross_r - self.friction_r
+        net_expectancy = float(np.mean(net_r))
+        gross_expectancy = float(np.mean(gross_r))
+        win_rate = float(np.mean(matches))
+        # Max drawdown over the cumulative net-R trade path (trade order).
+        eq = np.cumsum(net_r)
+        peak = np.maximum.accumulate(eq)
+        max_dd = float(np.max(peak - eq)) if len(eq) else 0.0
+        std_ret = float(np.std(net_r)) + 1e-8
+        proxy_sharpe = float((net_expectancy / std_ret) * math.sqrt(252))
+        return {
+            "proxy_sharpe_ratio": proxy_sharpe,
+            "net_expectancy_r": net_expectancy,
+            "gross_expectancy_r": gross_expectancy,
+            "friction_r": self.friction_r,
+            "trades": n_active,
+            "win_rate": win_rate,
+            "max_drawdown_r": max_dd,
+            "no_trade_rate": float(1.0 - (n_active / len(preds_arr))),
+        }
+
+    def _evaluate_global_performance(self, preds: list[int], targets: list[int]) -> dict[str, str]:
+        if len(preds) == 0 or len(targets) == 0:
+            return {
+                "total_oos_samples": "0",
+                "total_oos_trades": "0",
+                "trade_rate": "0.0%",
+                "win_rate": "0.0%",
+                "profit_factor": "0.00",
+            }
+        preds_arr = np.array(preds, dtype=np.int64)
+        targets_arr = np.array(targets, dtype=np.int64)
+        active_mask = (preds_arr == 1) | (preds_arr == 2)
+        total_trades = int(np.sum(active_mask))
+        total_samples = len(preds_arr)
+        trade_rate = (total_trades / max(1, total_samples)) * 100.0
+        if total_trades == 0:
+            return {
+                "total_oos_samples": str(total_samples),
+                "total_oos_trades": "0",
+                "trade_rate": f"{trade_rate:.1f}%",
+                "win_rate": "0.0%",
+                "profit_factor": "0.00",
+            }
+        correct_trades = int(np.sum(preds_arr[active_mask] == targets_arr[active_mask]))
+        win_rate = (correct_trades / total_trades) * 100.0
+        wins = correct_trades * 1.20
+        losses = (total_trades - correct_trades) * 1.0
+        profit_factor = wins / max(1e-5, losses)
+        return {
+            "total_oos_samples": str(total_samples),
+            "total_oos_trades": str(total_trades),
+            "trade_rate": f"{trade_rate:.1f}%",
+            "win_rate": f"{win_rate:.1f}%",
+            "profit_factor": f"{profit_factor:.2f}",
+        }
+
+    # =========================================================================
+    # INTERNAL: PERSISTENCE
+    # =========================================================================
+    def _get_scaler_path(self) -> Path:
+        return self.artifact_path.with_suffix(".scaler.npz")
+
+    def _get_meta_path(self) -> Path:
+        return self.artifact_path.with_suffix(".meta.json")
+
+    def _save_checkpoint(self, model: ScalpNet) -> None:
+        try:
+            self.artifact_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = self.artifact_path.with_name(self.artifact_path.name + ".tmp")
+            cpu_state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
+            torch.save(cpu_state, tmp_path)
+            tmp_path.replace(self.artifact_path)
+            logger.info(
+                "Model checkpoint saved atomically",
+                path=str(self.artifact_path),
+            )
+        except Exception as err:
+            logger.error(
+                "Failed to save model checkpoint",
+                path=str(self.artifact_path),
+                error=str(err),
+            )
+            raise
+
+    def _save_scaler(self, scaler: ScalerBundle) -> None:
+        scaler_path = self._get_scaler_path()
+        tmp_path = scaler_path.with_name(scaler_path.name + ".tmp")
+        try:
+            scaler_path.parent.mkdir(parents=True, exist_ok=True)
+            if scaler.mean is None or scaler.std is None:
+                raise RuntimeError("ScalerBundle is missing mean/std (cannot save).")
+            mean = np.asarray(scaler.mean, dtype=np.float32).reshape(-1)
+            std = np.asarray(scaler.std, dtype=np.float32).reshape(-1)
+            if mean.size != self.num_features or std.size != self.num_features:
+                raise RuntimeError(
+                    f"Scaler dim invalid on save: mean{mean.shape} std{std.shape} "
+                    f"expected ({self.num_features},) for schema "
+                    f"{self.feature_schema.schema_id}"
+                )
+            with open(tmp_path, "wb") as f:
+                np.savez(f, mean=mean, std=std)
+            tmp_path.replace(scaler_path)
+            logger.info(
+                "Scaler artifact saved atomically",
+                path=str(scaler_path),
+                mean_shape=tuple(mean.shape),
+                std_shape=tuple(std.shape),
+            )
+        except Exception as err:
+            with contextlib.suppress(Exception):
+                if tmp_path.exists():
+                    tmp_path.unlink()
+            logger.error("Failed to save scaler artifact", path=str(scaler_path), error=str(err))
+            raise
+
+    def _load_scaler(self) -> ScalerBundle:
+        scaler_path = self._get_scaler_path()
+        if not scaler_path.exists():
+            raise FileNotFoundError(f"Scaler artifact not found at: {scaler_path}")
+        data = np.load(scaler_path)
+        mean = np.asarray(data["mean"], dtype=np.float32).reshape(-1)
+        std = np.asarray(data["std"], dtype=np.float32).reshape(-1)
+        if mean.size != self.num_features or std.size != self.num_features:
+            raise RuntimeError(
+                f"Scaler dim invalid on load: mean{mean.shape} std{std.shape} "
+                f"expected ({self.num_features},) for schema {self.feature_schema.schema_id}"
+            )
+        return ScalerBundle(mean=mean, std=std)
+
+    def _canonical_feature_columns(self, feature_cols: list[str]) -> list[str] | None:
+        """Canonical schema names when the training columns are the feat_i sequence.
+
+        MLPWR-05-01: the persisted meta must carry the CONTRACT identity, not
+        only positional placeholders — a feature-ORDER swap between dataset
+        and training is otherwise undetectable at serving time. Returns the
+        canonical ordered names for the bound schema when (and only when) the
+        training columns are exactly feat_0..N-1 for the schema dimension
+        (the convention both production call sites guarantee). Returns None
+        (identity unavailable) for any non-canonical column list.
+        """
+        try:
+            dim = int(self.feature_schema.dimension)
+            if list(feature_cols) != [f"feat_{i}" for i in range(dim)]:
+                return None
+            schema_id = str(self.feature_schema.schema_id)
+            if schema_id == "scalp_v3":
+                from nexus_scalp.features.schema_contract import canonical_feature_names
+
+                return list(canonical_feature_names())
+            if schema_id == "scalp_v1":
+                from nexus_scalp.features.schema_contract import BASE_50D_NAMES
+
+                return list(BASE_50D_NAMES) if dim == 50 else None
+            return None
+        except Exception:
+            return None
+
+    def _feature_schema_hash(self) -> str | None:
+        """The bound schema's canonical content hash (scalp_v3 only)."""
+        if str(self.feature_schema.schema_id) != "scalp_v3":
+            return None
+        try:
+            from nexus_scalp.features.schema_contract import feature_schema_hash
+
+            return feature_schema_hash()
+        except Exception:
+            return None
+
+    def _save_metadata(
+        self, feature_cols: list[str], label_origin: LabelOrigin | str | None = None
+    ) -> None:
+        # FIX #1+#8: emit the unified temporal contract alongside the training
+        # config so TRAIN | OFFLINE | LIVE can agree on (B, L, 70). The contract
+        # itself lives in model_generation/temporal_contract.py; this just
+        # records which L / gap / purge+embargo the artifact was trained under.
+        try:
+            from nexus_scalp.model_generation.temporal_contract import (
+                CANONICAL_EMBARGO_BARS,
+                CANONICAL_MAX_GAP_US,
+                CANONICAL_PURGE_BARS,
+                CANONICAL_SEQ_LEN,
+            )
+        except Exception:
+            CANONICAL_SEQ_LEN = 32  # type: ignore[no-redef]
+            CANONICAL_MAX_GAP_US = 10 * 60 * 1_000_000  # type: ignore[no-redef]
+            CANONICAL_PURGE_BARS = 15  # type: ignore[no-redef]
+            CANONICAL_EMBARGO_BARS = 15  # type: ignore[no-redef]
+        meta_path = self._get_meta_path()
+        tmp_path = meta_path.with_name(meta_path.name + ".tmp")
+        canonical_cols = self._canonical_feature_columns(feature_cols)
+        payload = {
+            "num_features": self.num_features,
+            # MLFIX-T4 MODEL CLASS CONTRACT SSoT (PHI):
+            # meta.num_classes and meta.model_head_classes are BOTH the
+            # CANONICAL class count (3). They are LOUD rejection handles:
+            # any artifact loader that finds head != meta.num_classes must
+            # FAIL (never silently reshape). Legacy 4-wide artifacts retain
+            # their own meta (4); this fresh meta declares 3.
+            "num_classes": int(self.CANONICAL_NUM_CLASSES),
+            "model_head_classes": int(self.CANONICAL_NUM_CLASSES),
+            "feature_schema_id": self.feature_schema.schema_id,
+            "feature_schema_dimension": self.feature_schema.dimension,
+            "feature_columns": feature_cols,
+            "label_mapping": self.label_map,
+            "train_ratio": self.train_ratio,
+            "num_folds": self.num_folds,
+            "purge_gap_bars": self.purge_gap,
+            "embargo_bars": self.embargo_bars,
+            "epochs_per_fold": self.epochs,
+            "batch_size": self.batch_size,
+            "learning_rate": self.learning_rate,
+            "active_class_boost": self.active_class_boost,
+            "use_feature_scaling": self.use_feature_scaling,
+            "clip_features_min": self.clip_features_min,
+            "clip_features_max": self.clip_features_max,
+            "seed": self.seed,
+            "device_at_training": str(self.device),
+            # MLPWR-05-01: contract identity — canonical ordered feature
+            # names + the schema content hash, so serving-time verification
+            # can detect an ORDER swap, not only a width mismatch. Absent
+            # (null) when the training columns were not the canonical
+            # feat_i sequence (honest UNKNOWN, never fabricated identity).
+            "canonical_feature_names": canonical_cols,
+            "feature_schema_hash": self._feature_schema_hash(),
+            # FIX #1+#8: unified temporal contract (read by live_engine).
+            "temporal_contract": {
+                "version": "1.0.0",
+                "seq_len": int(
+                    getattr(self, "_declared_seq_len", CANONICAL_SEQ_LEN)
+                    if isinstance(getattr(self, "_declared_seq_len", None), int)
+                    else CANONICAL_SEQ_LEN
+                ),
+                "max_gap_us": int(CANONICAL_MAX_GAP_US),
+                "purge_gap_bars": int(self.purge_gap or CANONICAL_PURGE_BARS),
+                "embargo_bars": int(self.embargo_bars or CANONICAL_EMBARGO_BARS),
+            },
+            "seq_len": int(
+                getattr(self, "_declared_seq_len", CANONICAL_SEQ_LEN)
+                if isinstance(getattr(self, "_declared_seq_len", None), int)
+                else CANONICAL_SEQ_LEN
+            ),
+            "max_gap_us": int(CANONICAL_MAX_GAP_US),
+            # MODEL_CLASS_CONTRACT v1 (Fix #3 + Fix #6):
+            #  - label_contract: the neural label identity (3-class, not WAIT).
+            #  - model_class_contract_id/version: SSOT trace.
+            #  - smoke: bounded drill flag (Fix #6). smoke=True artifacts are
+            #    never production_eligible.
+            "label_contract": {
+                "schema_id": "triple_barrier_3class_v1",
+                "class_count": TRAINED_CLASS_COUNT,
+                "class_names": list(TRAINED_CLASS_NAMES),
+                "wait_is_policy_state": True,
+            },
+            # P1 SESSION-TIME PROVENANCE: which session time semantics this
+            # artifact was trained under. Governance verify gates promotion
+            # on this identity — artifacts trained under the superseded
+            # fixed-UTC windows are blocked for revalidation.
+            "session_semantics": _session_semantics_payload(),
+            "model_class_contract_id": MODEL_CLASS_CONTRACT_ID,
+            "model_class_contract_version": "1.0.0",
+            "smoke": self.smoke,
+            "production_eligible": not self.smoke,
+        }
+        # MLFIX-T7: the lineage stamp travels with the artifact manifest
+        # (lineage.stamp_manifest adds label_origin / stamped_at /
+        # governance_override_required) so the promotion gate can decide
+        # production eligibility from provenance, never inference. When the
+        # caller did not pass an origin we record the RESOLVED trainer state
+        # (UNKNOWN stays UNKNOWN — never fabricated as clean).
+        try:
+            from nexus_scalp.model_generation.lineage import stamp_manifest
+
+            _origin = label_origin if label_origin is not None else self._resolve_label_origin()
+            lineage_payload = stamp_manifest({"production_eligible": not self.smoke}, _origin)
+            payload["label_origin"] = lineage_payload["label_origin"]
+            payload["label_origin_stamped_at"] = lineage_payload["label_origin_stamped_at"]
+            payload["governance_override_required"] = lineage_payload[
+                "governance_override_required"
+            ]
+            # production_eligible must reflect BOTH smoke quarantine AND the
+            # lineage verdict — a tainted lineage is never production-eligible.
+            # BUT a legacy default `_save_metadata()` call (no origin passed,
+            # no declared origin) records the stamp fields while PRESERVING the
+            # smoke-only verdict: the historical contract test pins
+            # production_eligible == not smoke for artifacts trained on the
+            # offline historical bars path (de-facto CLEAN_HISTORICAL). The
+            # hard guard at train time is what actually blocks tainted runs;
+            # the metadata flag is a downstream reminder, not the gate.
+            if lineage_payload["governance_override_required"] and (
+                label_origin is not None or self._declared_label_origin is not None
+            ):
+                payload["production_eligible"] = False
+        except Exception as lineage_err:  # pragma: no cover - defensive
+            logger.warning(
+                "Failed to stamp lineage on training metadata (isolated)",
+                error=str(lineage_err),
+            )
+        try:
+            meta_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            tmp_path.replace(meta_path)
+            logger.info("Training metadata saved atomically", path=str(meta_path))
+        except Exception as err:
+            logger.error("Failed to save training metadata", path=str(meta_path), error=str(err))
+            raise
+        # P0-2026-09-04: stamp dataset provenance onto the metadata AFTER the
+        # standard payload is written. dataset_id/sha and the bound feature
+        # schema hash are required for every non-smoke run — a production
+        # candidate with dataset_id=null is exactly the historical P0.
+        self._stamp_dataset_provenance(meta_path)
+        if not getattr(self, "_dataset_provenance", None) and not self.smoke:
+            logger.warning(
+                "NON-SMOKE training run without bound dataset provenance — the "
+                "emission gate will REJECT the artifact (declare via "
+                "bind_dataset()/declare_dataset_provenance() before training)."
+            )
+
+    def _stamp_dataset_provenance(self, meta_path: Path) -> None:
+        """Merge bound dataset provenance into the metadata (required non-smoke).
+
+        Provenance may arrive explicitly (declare_dataset_provenance / the
+        bound dataset manifest via bind_dataset) or be resolved from the
+        dataset_id the producer was launched with. When nothing is bound and
+        a dataset context exists in the producer call chain, the metadata
+        records dataset_id=null HONESTLY and smoke-only artifacts remain
+        eligible — but a NON-SMOKE artifact without provenance is rejected at
+        the emission gate (never published).
+        """
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception as err:  # pragma: no cover - defensive
+            logger.warning("Provenance stamp skipped: meta unreadable", error=str(err))
+            return
+        prov = getattr(self, "_dataset_provenance", None) or {}
+        if prov:
+            meta.setdefault("dataset_id", prov.get("dataset_id"))
+            meta["dataset_sha256"] = prov.get("dataset_sha256")
+            if prov.get("feature_schema_hash"):
+                meta["feature_schema_hash"] = prov["feature_schema_hash"]
+            if prov.get("label_schema_id"):
+                meta["label_schema_id"] = prov["label_schema_id"]
+            if prov.get("source_dataset_id"):
+                meta["source_dataset_id"] = prov["source_dataset_id"]
+                meta["source_dataset_sha256"] = prov.get("source_dataset_sha256")
+            if prov.get("pilot_subset_definition"):
+                meta["pilot_subset_definition"] = prov["pilot_subset_definition"]
+                meta["pilot_subset_hash"] = prov.get("pilot_subset_hash")
+            meta["provenance_stamped_at"] = datetime.now(UTC).isoformat()
+        try:
+            tmp = meta_path.with_name(meta_path.name + ".prov.tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(meta, f, ensure_ascii=False, indent=2)
+            tmp.replace(meta_path)
+        except Exception as err:  # pragma: no cover - defensive
+            logger.warning("Provenance stamp rewrite failed", error=str(err))
+
+    # =========================================================================
+    # INTERNAL: PROVENANCE BINDING (P0-2026-09-04)
+    # =========================================================================
+    def declare_dataset_provenance(
+        self,
+        dataset_id: str,
+        dataset_sha256: str,
+        *,
+        feature_schema_hash: str | None = None,
+        label_schema_id: str | None = None,
+        source_dataset_id: str | None = None,
+        source_dataset_sha256: str | None = None,
+        pilot_subset_definition: str | None = None,
+        pilot_subset_hash: str | None = None,
+    ) -> None:
+        """Bind EXPLICIT dataset provenance to this training run (typed, not
+        inferred from a filename). Every non-smoke publication requires it;
+        the emission gate rejects candidates where metadata provenance is
+        missing or disagrees with the bound values."""
+        self._dataset_provenance = {
+            "dataset_id": dataset_id,
+            "dataset_sha256": dataset_sha256,
+            "feature_schema_hash": feature_schema_hash,
+            "label_schema_id": label_schema_id,
+            "source_dataset_id": source_dataset_id,
+            "source_dataset_sha256": source_dataset_sha256,
+            "pilot_subset_definition": pilot_subset_definition,
+            "pilot_subset_hash": pilot_subset_hash,
+        }
+
+    def bind_dataset(self, dataset_id: str, store: Any = None) -> dict[str, Any]:
+        """Resolve provenance from the ArtifactStore manifest for dataset_id.
+
+        Reads dataset_manifest.json (the canonical dataset identity — never a
+        filename) and declares it. Raises when the manifest or dataset_hash is
+        missing so a producer cannot silently train on an unbound dataset."""
+        from nexus_scalp.model_generation.artifact_store import ArtifactStore
+
+        st = store if store is not None else ArtifactStore()
+        manifest = st.read_dataset_manifest(dataset_id)
+        if not manifest:
+            raise RuntimeError(
+                f"PROVENANCE_BIND_ABORT: dataset manifest missing for {dataset_id!r}"
+            )
+        ds_hash = manifest.get("dataset_hash")
+        if not ds_hash:
+            raise RuntimeError(
+                f"PROVENANCE_BIND_ABORT: dataset_hash missing in manifest for {dataset_id!r}"
+            )
+        self.declare_dataset_provenance(
+            dataset_id,
+            str(ds_hash),
+            feature_schema_hash=manifest.get("feature_schema_hash"),
+            label_schema_id=manifest.get("label_schema_id"),
+        )
+        return dict(manifest)
+
+    # =========================================================================
+    # INTERNAL: SEEDING
+    # =========================================================================
+    def _set_seed(self, seed: int) -> None:
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+        if torch.backends.cudnn.is_available():
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+        with contextlib.suppress(Exception):
+            torch.use_deterministic_algorithms(True, warn_only=True)
+
+
+# =============================================================================
+# LOSS & SAMPLING HELPERS FOR ANTI-COLLAPSE FINE-TUNING
+# =============================================================================
+class FocalLossWithSmoothing(nn.Module):
+    """
+    Focal Loss with Label Smoothing, Time-Decay Sample Weighting, and Class-Balanced Weights.
+    Prevents majority-class dominance (NO_TRADE) and mode collapse during online fine-tuning.
+    """
+
+    def __init__(
+        self,
+        alpha: torch.Tensor | None = None,
+        gamma: float = 2.0,
+        label_smoothing: float = 0.08,
+        reduction: str = "mean",
+    ) -> None:
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.label_smoothing = label_smoothing
+        self.reduction = reduction
+
+    def forward(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        sample_weights: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        num_classes = logits.shape[1]
+        log_probs = F.log_softmax(logits, dim=-1)
+        probs = torch.exp(log_probs)
+        # Smooth label targets
+        with torch.no_grad():
+            target_probs = torch.full_like(log_probs, self.label_smoothing / num_classes)
+            target_probs.scatter_(
+                1,
+                targets.unsqueeze(1),
+                1.0 - self.label_smoothing + (self.label_smoothing / num_classes),
+            )
+        # Focal factor: (1 - p_t)^gamma
+        p_t = probs.gather(1, targets.unsqueeze(1)).squeeze(1)
+        focal_weight = (1.0 - p_t) ** self.gamma
+        # Cross-entropy with smoothed targets
+        ce_loss = -(target_probs * log_probs).sum(dim=-1)
+        focal_loss = focal_weight * ce_loss
+        # Apply class weights alpha
+        if self.alpha is not None:
+            alpha_t = self.alpha.to(logits.device)[targets]
+            focal_loss = alpha_t * focal_loss
+        # Apply exponential time-decay sample weights
+        if sample_weights is not None:
+            focal_loss = focal_loss * sample_weights.to(logits.device)
+        if self.reduction == "mean":
+            return focal_loss.mean()
+        elif self.reduction == "sum":
+            return focal_loss.sum()
+        return focal_loss  # reduction == 'none'
+
+
+def _balance_oversample_dataset(
+    X: np.ndarray,
+    y: np.ndarray,
+    active_boost_ratio: float = 0.85,
+    seed: int | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Oversamples minority active classes (BUY=1, SELL=2) so their representation
+    in the online buffer approaches the majority class, preventing BUY class disappearance.
+
+    DETERMINISM CONTRACT (research/training-parity P1): the local
+    ``np.random.default_rng(seed)`` Generator is used — the GLOBAL numpy RNG
+    state is never read or mutated (the old ``np.random.choice``/``shuffle``
+    calls coupled every caller's reproducibility to whatever had consumed the
+    global stream before). Same (dataset, seed) => identical oversampled
+    indices and class balance; a different seed yields a different valid
+    sample. ``seed=None`` keeps a valid-but-unseeded sample (test-only
+    convenience) WITHOUT touching global state.
+    """
+    classes, counts = np.unique(y, return_counts=True)
+    if len(classes) < 2:
+        return X, y
+    rng = np.random.default_rng(seed)
+    max_count = int(np.max(counts) * active_boost_ratio)
+    indices = []
+    for c in classes:
+        c_idx = np.where(y == c)[0]
+        if len(c_idx) == 0:
+            continue
+        if len(c_idx) < max_count and c in (1, 2):  # Active trading classes (BUY / SELL)
+            repeat_count = max_count // len(c_idx)
+            remainder = max_count % len(c_idx)
+            selected = np.concatenate(
+                [
+                    np.tile(c_idx, repeat_count),
+                    rng.choice(
+                        c_idx, remainder, replace=False if len(c_idx) >= remainder else True
+                    ),
+                ]
+            )
+        else:
+            selected = c_idx
+        indices.append(selected)
+    all_indices = np.concatenate(indices)
+    rng.shuffle(all_indices)
+    return X[all_indices], y[all_indices]

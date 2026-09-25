@@ -1,0 +1,116 @@
+/* LossDistributionPanel — ranked heat-matrix of loss responsibility.
+   Theme tokens only; logical properties (RTL-safe). */
+
+.ld-root { display: flex; flex-direction: column; gap: 8px; min-inline-size: 0; }
+
+.ld-rows { display: flex; flex-direction: column; gap: 3px; }
+
+.ld-row {
+  display: grid;
+  grid-template-columns: 26px minmax(120px, 1.1fr) minmax(80px, 1.4fr) 58px;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: var(--bg-inset);
+  cursor: default;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+.ld-row:hover {
+  background: var(--bg-panel-2);
+  border-color: var(--border-strong);
+}
+.ld-row[data-tone="bad"] { box-shadow: inset 3px 0 0 var(--red); }
+.ld-row[data-tone="warn"] { box-shadow: inset 3px 0 0 var(--amber); }
+
+.ld-rank {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.ld-id-cell { display: flex; flex-direction: column; gap: 1px; min-inline-size: 0; }
+.ld-id {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ld-sub {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ld-bar {
+  block-size: 16px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  display: flex;
+}
+.ld-heat {
+  block-size: 100%;
+  border-radius: 3px 0 0 3px;
+  transition: inline-size 0.35s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s ease;
+}
+.ld-heat-unknown {
+  inline-size: 100%;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 5px,
+    rgba(255, 255, 255, 0.05) 5px,
+    rgba(255, 255, 255, 0.05) 10px
+  );
+}
+
+.ld-share {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+.ld-share.bad { color: var(--red); }
+.ld-share.warn { color: var(--amber); }
+.ld-share.dim { color: var(--text-faint); }
+
+.ld-more {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  text-align: center;
+  padding: 4px 0;
+  border-top: 1px dashed var(--border);
+}
+
+.ld-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 72px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-family: var(--mono);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+  padding: 0 12px;
+  text-align: center;
+}
+
+/* unscored / DISCOVERED strategies row — informational, not an error */
+.ld-unknown { border: 1px dashed var(--border-strong); opacity: 0.8; }
+.ld-unknown:hover { opacity: 1; }

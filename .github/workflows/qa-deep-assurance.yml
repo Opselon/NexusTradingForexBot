@@ -1,0 +1,112 @@
+name: QA Deep Assurance
+
+# CHG-0045 / TASK-QA-DEEP-ASSURANCE — OSS-grade adversarial QA layer.
+# INDEPENDENT lane: does NOT touch ci.yml, security.yml, or beforePush.
+# fast lane  = --fast  (property + state machines + execution safety)
+# deep lane  = --json full layer + mutation proof (scheduled / dispatch)
+# Weekly mutation baseline: run_mutations.py is the canonical mutation
+# engine; the scheduled Sunday run IS the weekly critical-surface mutation
+# gate (full catalog, pristine-battery-checked, JSON artifact 90 days).
+# A weekly full-repo pytest-mutation sweep is NOT practical (the engine's
+# honest runner takes ~3min for 9 anchor mutations; whole-repo would be
+# hours); the anchor catalog IS the tracked critical production surface.
+#
+# 2026-09-14 test reconstruction: PR/push triggers REMOVED. This lane is not
+# a required check, yet it fired a windows-latest runner with a full torch
+# install on EVERY PR/main push to run an ~8-second fast battery — pure waste
+# (measured in the CI cost report). The weekly schedule + manual dispatch
+# cover it honestly; a cheaper scoped mutation pass (--changed) already runs
+# per-PR via dependency-lock.yml's migration-safety job.
+
+on:
+  schedule:
+    # weekly, Sundays 03:30 UTC (off-peak; Iran local ~07:00)
+    - cron: "30 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      run_mutations:
+        description: "Also run the mutation proof (slower)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qa-deep-assurance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deep-assurance:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web]"
+
+      - name: Deep assurance (fast lane)
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        run: |
+          python scripts/qa/deep_assurance.py --fast --json > qa-deep-fast.json
+          Get-Content qa-deep-fast.json
+
+      - name: Deep assurance (full lane)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          python scripts/qa/deep_assurance.py --json > qa-deep-full.json
+          Get-Content qa-deep-full.json
+
+      - name: Mutation proof (deep lane / dispatch opt-in)
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_mutations)
+        run: |
+          # HONESTY CONTRACT: exit 0 = every verdict KILLED/ACCEPTED;
+          # exit 1 = unaccepted SURVIVED (test blind spot -> file in
+          # agents/bugs.md); exit 2 = INVALID battery/anchor (runner
+          # untrustworthy). Either non-zero exit MUST fail the lane.
+          python scripts/qa/run_mutations.py --out qa-deep-mutations.json
+          Get-Content qa-deep-mutations.json
+
+      - name: Upload deep-assurance results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qa-deep-assurance-${{ github.run_number }}
+          path: |
+            qa-deep-fast.json
+            qa-deep-full.json
+            qa-deep-mutations.json
+          if-no-files-found: ignore
+          retention-days: 90
+
+      - name: Job summary
+        if: always()
+        shell: pwsh
+        run: |
+          $file = if (Test-Path qa-deep-full.json) { "qa-deep-full.json" } else { "qa-deep-fast.json" }
+          if (Test-Path $file) {
+            $j = Get-Content $file -Raw | ConvertFrom-Json
+            Add-Content $env:GITHUB_STEP_SUMMARY "## QA Deep Assurance"
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Status: **$($j.status)**"
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Tests: $($j.tests_run) run, $($j.tests_passed) passed, $($j.tests_xfailed) xfail (owner-routed), $($j.tests_failed) failed"
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Duration: $($j.duration_ms) ms"
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Live trading actions: $($j.live_trading_actions)"
+          }
+          if (Test-Path qa-deep-mutations.json) {
+            $m = Get-Content qa-deep-mutations.json -Raw | ConvertFrom-Json
+            Add-Content $env:GITHUB_STEP_SUMMARY ""
+            Add-Content $env:GITHUB_STEP_SUMMARY "## Mutation baseline (weekly critical surface)"
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Commit: $($m.git_commit) | Score: **$($m.mutation_score)** ($($m.killed)/$($m.mutations_total) killed)"
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Survivors: $($m.survivor_ids -join ', ')"
+            Add-Content $env:GITHUB_STEP_SUMMARY "- Invalid (battery/anchor broken): $($m.invalid_ids -join ', ')"
+          }

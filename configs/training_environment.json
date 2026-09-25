@@ -1,0 +1,49 @@
+{
+  "schema": "nexus_training_env_v1",
+  "note": "Canonical pinned training-environment contract (BUG-301). Single source of truth for OPTIONAL local-training dependencies — discovery never installs; only TrainingEnvironmentManager.install() acts on it, and only after explicit operator opt-in. 'packages' is the pinned torch build (exact +cpu/+cu local tag enforced); 'runtime' lists the application stack the training payload actually imports, pinned to the release's requirements.lock. Versions were validated against the release's tested matrix.",
+  "python": {
+    "min_minor": 11,
+    "max_minor": 13,
+    "guidance": "Install Python 3.11-3.13 (x64) from python.org, check 'Add to PATH', relaunch Nexus, press Re-check."
+  },
+  "venv": {
+    "dir_name": "training-env",
+    "reuse_precedence": ["NEXUS_TRAINING_ENV env var", "active virtual env (.venv)", "create <workspace>/training-env"]
+  },
+  "variants": {
+    "cpu": {
+      "index_url": "https://download.pytorch.org/whl/cpu",
+      "packages": { "torch": "==2.13.0" }
+    },
+    "cuda": {
+      "index_url": "https://download.pytorch.org/whl/cu126",
+      "packages": { "torch": "==2.13.0" },
+      "min_driver_cuda_version": "12.6",
+      "min_driver_version": {"linux": "525.60.13", "win32": "528.33"},
+      "driver_source": "https://docs.nvidia.com/cuda/archive/12.6.0/cuda-toolkit-release-notes/index.html#cuda-major-component-versions__table-cuda-toolkit-driver-versions",
+      "driver_policy": "CUDA 12.x minor-version compatibility floor (Table 2). Passing this floor is necessary, not sufficient: real CUDA allocation/matmul must also pass. PTX/new-feature requirements can require a newer driver.",
+      "requires_nvidia_gpu": true
+    }
+  },
+  "runtime": {
+    "index_url": "https://pypi.org/simple",
+    "packages": [
+      "structlog==26.1.0",
+      "pydantic==2.13.5",
+      "pydantic-core==2.46.5",
+      "pydantic-settings==2.15.0",
+      "PyYAML==6.0.3",
+      "python-dotenv==1.2.3",
+      "annotated-types==0.8.0",
+      "typing-extensions==4.16.0",
+      "numpy==2.4.6 ; python_full_version < '3.12'",
+      "numpy==2.5.3 ; python_full_version >= '3.12'",
+      "polars==1.44.2",
+      "polars-runtime-32==1.44.2"
+    ]
+  },
+  "smoke": {
+    "cpu_tensor": "torch.ones(64,70) @ torch.randn(70,3) must produce finite output",
+    "cuda": "torch.cuda.is_available() AND a real allocation + matmul on 'cuda:0' with device-name readback"
+  }
+}

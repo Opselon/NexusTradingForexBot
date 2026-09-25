@@ -1,0 +1,132 @@
+/* Command Center — spatial 2.5D fleet canvas (Lane P).
+   Scoped to .spatial-*; every color comes from theme.css tokens so the canvas
+   chrome follows the operator theme. The canvas interior paints its own palette
+   (legacy command_center_spatial.js colors) because it is a bitmap surface. */
+
+.spatial-wrap {
+  position: relative;
+  height: min(72vh, 720px);
+  min-height: 420px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0b1220;
+  box-shadow: 0 18px 44px -26px var(--elevate-lo), inset 0 1px 0 var(--elevate-hi);
+}
+
+.spatial-canvas {
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+.spatial-canvas:active { cursor: grabbing; }
+
+/* camera toolbar ------------------------------------------------------- */
+.spatial-tools {
+  position: absolute;
+  inset-block-start: 10px;
+  inset-inline-start: 10px;
+  z-index: var(--z-canvas-tools, 5);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: rgba(10, 15, 22, 0.72);
+  backdrop-filter: blur(7px);
+  box-shadow: var(--elev-2);
+}
+.spatial-filter { width: 148px; }
+
+.spatial-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.spatial-legend i {
+  width: 7px; height: 7px; border-radius: 50%;
+  display: inline-block; margin-inline-start: 7px;
+  box-shadow: 0 0 6px currentColor;
+}
+
+/* selection card ------------------------------------------------------- */
+.spatial-tip {
+  position: absolute;
+  z-index: var(--z-canvas-tip, 6);
+  width: 236px;
+  padding: 9px 11px 10px;
+  border: 1px solid rgba(65, 166, 242, 0.45);
+  border-radius: 9px;
+  background: rgba(13, 19, 27, 0.92);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--elev-3), 0 0 22px rgba(65, 166, 242, 0.16);
+  display: grid;
+  gap: 7px;
+  animation: spatialTipIn 0.16s ease-out;
+  pointer-events: auto;
+}
+@keyframes spatialTipIn {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.spatial-tip .tip-id {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-strong);
+  word-break: break-all;
+}
+.spatial-tip .kv { gap: 2px 10px; font-size: 11px; }
+
+/* honest empty overlay ------------------------------------------------- */
+.spatial-empty {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-canvas-empty, 7);
+  display: grid;
+  place-content: center;
+  gap: 4px;
+  text-align: center;
+  padding: 24px;
+  background: rgba(11, 18, 32, 0.8);
+  backdrop-filter: blur(2px);
+}
+.spatial-empty .sp-empty-title {
+  margin: 0 0 6px;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--red);
+  text-shadow: 0 0 18px rgba(242, 86, 77, 0.35);
+}
+.spatial-empty .sp-empty-line {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* loading / error / unavailable states occupy the viewport ------------- */
+.spatial-state {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-canvas-empty, 7);
+  display: grid;
+  place-content: center;
+  padding: 24px;
+  background: rgba(11, 18, 32, 0.86);
+}
+
+/* legend swatches — values MUST keep matching the 3D scene's data
+   palette (moved here from inline style; colors unchanged) ---------- */
+.spatial-legend i.sl-live      { background: #10b981; }
+.spatial-legend i.sl-shadow    { background: #eab308; }
+.spatial-legend i.sl-validated { background: #84cc16; }
+.spatial-legend i.sl-terminal  { background: #f43f5e; }

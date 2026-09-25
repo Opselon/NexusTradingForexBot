@@ -1,0 +1,266 @@
+"""
+Domain Entities and Value Objects
+=================================
+Contains pure business logic models enforcing structural and domain invariants.
+These models are completely isolated from external frameworks or broker implementations.
+"""
+
+from datetime import UTC, datetime
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from nexus_scalp.domain.enums import ActionType, OrderType
+
+
+class TickData(BaseModel):
+    """
+    Immutable Market Tick Snapshot received from the broker or replay stream.
+
+    Invariants:
+        - Bid price must be strictly less than or equal to Ask price.
+        - Volume must be non-negative.
+        - Timestamps must be UTC timezone-aware.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str = Field(..., description="Financial instrument identifier, e.g., 'EURUSD'")
+    timestamp: datetime = Field(..., description="UTC timestamp of tick generation")
+    # BUG-285 (input-validation lane, wave 2026-09-14): pydantic `gt`/`ge`
+    # ACCEPT infinity, so a malfunctioning terminal's inf quote previously
+    # flowed through (bid=1,ask=inf -> spread inf; inf/inf -> spread NaN) into
+    # the bar aggregator and every downstream price consumer. Corrupted price
+    # is a MUST-FAIL-CLOSED boundary; NaN was rejected only incidentally
+    # (`nan > 0` is False). allow_inf_nan=False makes the contract explicit.
+    bid: float = Field(
+        ..., gt=0.0, allow_inf_nan=False, description="Highest price a buyer is willing to pay"
+    )
+    ask: float = Field(
+        ..., gt=0.0, allow_inf_nan=False, description="Lowest price a seller is willing to accept"
+    )
+    last: float = Field(
+        default=0.0, ge=0.0, allow_inf_nan=False, description="Last traded deal price"
+    )
+    volume: float = Field(
+        default=0.0, ge=0.0, allow_inf_nan=False, description="Tick or real volume"
+    )
+    flags: int = Field(default=0, description="Raw tick flag bitmask provided by MT5")
+
+    @field_validator("timestamp")
+    @classmethod
+    def validate_utc_timestamp(cls, value: datetime) -> datetime:
+        """Enforces that all market tick timestamps must contain UTC timezone information."""
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def validate_spread_invariant(self) -> "TickData":
+        """Verifies that bid price does not exceed ask price (negative spread guard)."""
+        if self.bid > self.ask:
+            raise ValueError(f"Invalid pricing anomaly: Bid ({self.bid}) > Ask ({self.ask})")
+        return self
+
+    @property
+    def spread_points(self) -> float:
+        """Calculates current tick spread in raw price units."""
+        return round(self.ask - self.bid, 6)
+
+
+class SymbolInfo(BaseModel):
+    """
+    Metadata describing broker trading constraints and specifications for an instrument.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str = Field(..., description="Symbol identifier")
+    digits: int = Field(..., ge=0, description="Number of decimal places")
+    point: float = Field(..., gt=0.0, description="Point value in price currency")
+    tick_size: float = Field(..., gt=0.0, description="Minimum price movement step")
+    tick_value: float = Field(..., gt=0.0, description="Calculated tick value per lot")
+    volume_min: float = Field(..., gt=0.0, description="Minimum allowed trade volume in lots")
+    volume_max: float = Field(..., gt=0.0, description="Maximum allowed trade volume in lots")
+    volume_step: float = Field(..., gt=0.0, description="Lot size step increment")
+    stops_level: int = Field(
+        ..., ge=0, description="Minimum stop loss / take profit distance in points"
+    )
+    freeze_level: int = Field(..., ge=0, description="Order modification freeze distance in points")
+    trade_contract_size: float = Field(
+        ..., gt=0.0, description="Trade contract size (e.g. 100,000 for standard forex lot)"
+    )
+
+
+class AccountInfo(BaseModel):
+    """
+    Snapshot of trading account balance, margin state, and equity.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    login: int = Field(..., description="Broker account login identifier")
+    trade_mode: int = Field(..., description="Account trade mode: 0=Demo, 1=Contest, 2=Real")
+    leverage: int = Field(..., gt=0, description="Account leverage ratio")
+    balance: float = Field(..., ge=0.0, description="Current settled account balance")
+    equity: float = Field(..., ge=0.0, description="Current account equity including floating PnL")
+    margin: float = Field(..., ge=0.0, description="Currently utilized margin")
+    margin_free: float = Field(..., description="Unencumbered free margin")
+    currency: str = Field(default="USD", description="Account base currency")
+
+    @property
+    def is_real_account(self) -> bool:
+        """Returns True if the account is a live real-money account."""
+        return self.trade_mode == 2
+
+
+class TradeProposal(BaseModel):
+    """
+    Structured signal generated by PyTorch model inference and Signal Policy.
+
+    This represents an execution intent proposal, which must be passed
+    to the Risk Engine before being sent to the execution adapter.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    request_id: str = Field(..., description="Unique UUID tracing signal lifecycle")
+    execution_id: str | None = Field(
+        default=None,
+        description=(
+            "EXEC trace id (EXEC-YYYYMMDD-HHMMSS-xxxxxx) stamped once per "
+            "evaluation in SignalPolicy.evaluate_probabilities and carried "
+            "through filters, experience gate, risk and dispatch so a single "
+            "audit id follows the whole lifecycle. Observability only (INV-018); "
+            "never used for execution decisions."
+        ),
+    )
+    symbol: str = Field(..., description="Target instrument")
+    generated_at: datetime = Field(..., description="UTC timestamp of signal output")
+    action: ActionType = Field(..., description="Proposed trading action")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Model prediction probability")
+    proposed_entry: float = Field(..., gt=0.0, description="Target execution entry price")
+    stop_loss: float = Field(..., gt=0.0, description="Calculated stop loss price target")
+    take_profit: float = Field(..., gt=0.0, description="Calculated take profit price target")
+    risk_reward_ratio: float = Field(..., gt=0.0, description="Estimated risk to reward ratio")
+    reason_code: str = Field(default="MODEL_SIGNAL", description="Explanatory flag for audit logs")
+    ticket: int = Field(default=0, description="Optional broker position ticket")
+    volume: float | None = Field(
+        default=None, description="Optional custom volume (e.g. for partial close)"
+    )
+
+    # Diagnostic fields
+    model_action: str | None = Field(
+        default=None, description="Original action proposed by model before filter checks"
+    )
+    buy_probability: float | None = Field(default=None, description="Model raw buy probability")
+    risk_checks: dict[str, Any] | None = Field(
+        default=None, description="Detailed risk checks dict"
+    )
+    sell_probability: float | None = Field(default=None, description="Model raw sell probability")
+    no_trade_probability: float | None = Field(
+        default=None, description="Model raw no trade probability"
+    )
+    regime: str | None = Field(default=None, description="Market microstructure regime")
+    regime_confidence: float | None = Field(
+        default=None, description="Regime classification confidence"
+    )
+    risk_allowed: bool | None = Field(
+        default=None, description="True if risk filter allowed the signal"
+    )
+    guardian_status: str | None = Field(
+        default=None, description="Operational status of the regime guardian"
+    )
+    rejection_reason: str | None = Field(
+        default=None, description="Detailed reason for signal rejection"
+    )
+    final_action: str | None = Field(
+        default=None, description="Final action committed to execution"
+    )
+    execution_mode: str | None = Field(
+        default=None,
+        description="Execution path: STANDARD, SMC_GOD_MODE, PREDICTIVE_LIMIT, TICK_SWEEP",
+    )
+    override_reason: str | None = Field(default=None, description="Bypass or override reason")
+    decision_stage: str | None = Field(
+        default=None, description="Stage where decision was made or blocked"
+    )
+    blocked_by: str | None = Field(
+        default=None, description="Filter or rule that blocked the trade"
+    )
+    htf_score: float | None = Field(default=None, description="Higher timeframe alignment score")
+    smc_score: float | None = Field(default=None, description="Smart Money Concepts score")
+    confidence_before_filters: float | None = Field(
+        default=None, description="Confidence before filters applied"
+    )
+    confidence_after_filters: float | None = Field(
+        default=None, description="Confidence after filters applied"
+    )
+
+    reversal_action: ActionType | None = Field(
+        default=None, description="Directional action to dispatch after an AI reversal close"
+    )
+    is_ai_reversal: bool = Field(
+        default=False, description="True when this proposal requests an AI position reversal"
+    )
+
+    @model_validator(mode="after")
+    def validate_action_price_invariants(self) -> "TradeProposal":
+        """Ensures logical price invariants hold based on proposed trade direction."""
+        if self.action in (
+            ActionType.BUY,
+            ActionType.BUY_MARKET,
+            ActionType.BUY_LIMIT,
+            ActionType.BUY_STOP,
+        ):
+            if self.stop_loss >= self.proposed_entry:
+                raise ValueError("Buy proposed stop loss must be strictly below entry price")
+            if self.take_profit <= self.proposed_entry:
+                raise ValueError("Buy proposed take profit must be strictly above entry price")
+        elif self.action in (
+            ActionType.SELL,
+            ActionType.SELL_MARKET,
+            ActionType.SELL_LIMIT,
+            ActionType.SELL_STOP,
+        ):
+            if self.stop_loss <= self.proposed_entry:
+                raise ValueError("Sell proposed stop loss must be strictly above entry price")
+            if self.take_profit >= self.proposed_entry:
+                raise ValueError("Sell proposed take profit must be strictly below entry price")
+        return self
+
+
+class TradeOrder(BaseModel):
+    """
+    Order execution request payload formatted for MT5 execution.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    order_id: str = Field(..., description="Internal tracking ID")
+    symbol: str = Field(..., description="Target symbol")
+    order_type: OrderType = Field(..., description="Specific MT5 order direction")
+    volume: float = Field(..., gt=0.0, description="Position lot volume")
+    price: float = Field(..., gt=0.0, description="Requested entry price")
+    stop_loss: float = Field(..., gt=0.0, description="Requested Stop Loss price")
+    take_profit: float = Field(..., gt=0.0, description="Requested Take Profit price")
+    magic_number: int = Field(..., description="EA identity tag for MT5 filtering")
+    comment: str = Field(default="NSE_ORDER", max_length=31, description="MT5 broker comment")
+
+
+class Position(BaseModel):
+    """
+    Representation of an open position retrieved from MetaTrader 5.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    ticket: int = Field(..., description="Unique broker ticket identifier")
+    symbol: str = Field(..., description="Position symbol")
+    type: OrderType = Field(..., description="Position direction (BUY/SELL)")
+    volume: float = Field(..., gt=0.0, description="Open lot volume")
+    price_open: float = Field(..., gt=0.0, description="Actual execution entry price")
+    sl: float = Field(..., ge=0.0, description="Current active Stop Loss")
+    tp: float = Field(..., ge=0.0, description="Current active Take Profit")
+    profit: float = Field(..., description="Current unrealized floating profit in account currency")
+    magic: int = Field(..., description="Associated magic number tag")

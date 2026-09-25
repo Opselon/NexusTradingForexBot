@@ -1,0 +1,189 @@
+<!-- Nexus Technicals — professional terminal card (TV-REDESIGN-1, Hermes-Main/Hermes-UI-01).
+     UI-only redesign. Data contract unchanged: /api/v1/indicators?timeframe=TF&limit=2000
+     Renders: Market Context strip → timeframe toolbar → signal bar (hero + 2 cards,
+     count-proportional distribution bars) → indicator tables → pivot matrix. -->
+<link rel="stylesheet" href="tv_widget_styles.css">
+<script src="ux_i18n.js"></script>
+<div id="tv-indicator-widget" class="tv-scope">
+  <!-- 1) MARKET CONTEXT -->
+  <div class="tv-context">
+    <div class="tv-idbox">
+      <span class="tv-flag" aria-hidden="true">XAU</span>
+      <span class="tv-currency" id="tv-symbol">XAUUSD</span>
+      <span class="tv-tfchip" id="tv-timeframe-label">M1</span>
+      <span class="tv-curfullname">Gold Spot / U.S. Dollar</span>
+      <span id="tv-live-badge" class="tv-live hidden">—</span>
+    </div>
+    <div class="tv-pricewrap">
+      <span class="tv-plabel">Last close</span>
+      <span class="tv-price" id="tv-price">—</span>
+      <span class="tv-updated" id="tv-updated"></span>
+    </div>
+  </div>
+
+  <!-- error / stale banner (real states only) -->
+  <div id="tv-error" class="tv-error hidden">
+    <span class="tv-error-ico" aria-hidden="true" id="tv-error-ico">●</span>
+    <span id="tv-error-text">—</span>
+    <button type="button" id="tv-retry" class="tv-retry">Retry</button>
+  </div>
+
+  <!-- 2) TIMEFRAME SELECTOR -->
+  <div class="tv-tfbar">
+    <div id="tv-timeframes" class="tv-tfs" role="group" aria-label="Timeframe selection">
+      <button type="button" data-tf="M1" class="tv-tf active" aria-pressed="true">1m</button>
+      <button type="button" data-tf="M5" class="tv-tf" aria-pressed="false">5m</button>
+      <button type="button" data-tf="M15" class="tv-tf" aria-pressed="false">15m</button>
+      <button type="button" data-tf="M30" class="tv-tf" aria-pressed="false">30m</button>
+      <button type="button" data-tf="H1" class="tv-tf" aria-pressed="false">1h</button>
+      <button type="button" data-tf="H2" class="tv-tf" aria-pressed="false">2h</button>
+      <button type="button" data-tf="H4" class="tv-tf" aria-pressed="false">4h</button>
+      <button type="button" data-tf="D1" class="tv-tf" aria-pressed="false">1D</button>
+      <button type="button" data-tf="W1" class="tv-tf" aria-pressed="false">1W</button>
+      <button type="button" data-tf="MN1" class="tv-tf" aria-pressed="false">1M</button>
+    </div>
+  </div>
+
+  <div class="tv-toast" id="tv-toast" role="status"></div>
+
+  <!-- 3) CYCLES — TradingView-style gauges in dark theme (additive: keeps distribution bars below) -->
+  <div class="tv-cycles" role="group" aria-label="Technical summary gauges">
+    <section class="tv-cycle" aria-label="Oscillators gauge">
+      <div class="tv-cycle-name">Oscillators</div>
+      <div class="tv-cycle-gauge"><svg id="tv-cycle-osc" viewBox="0 0 200 115" class="tv-cycle-svg" aria-hidden="true"></svg></div>
+      <div class="tv-cycle-verdict is-neutral" id="tv-cycle-osc-label">—</div>
+      <div class="tv-cycle-counts">
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Sell</span><span class="tv-cycle-v" id="tv-cycle-osc-sell">—</span></div>
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Neutral</span><span class="tv-cycle-v" id="tv-cycle-osc-neu">—</span></div>
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Buy</span><span class="tv-cycle-v" id="tv-cycle-osc-buy">—</span></div>
+      </div>
+    </section>
+    <section class="tv-cycle tv-cycle--hero" aria-label="Overall summary gauge">
+      <div class="tv-cycle-name">Summary</div>
+      <div class="tv-cycle-gauge"><svg id="tv-cycle-sum" viewBox="0 0 200 115" class="tv-cycle-svg" aria-hidden="true"></svg></div>
+      <div class="tv-cycle-verdict is-neutral" id="tv-cycle-sum-label">—</div>
+      <div class="tv-cycle-counts">
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Sell</span><span class="tv-cycle-v" id="tv-cycle-sum-sell">—</span></div>
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Neutral</span><span class="tv-cycle-v" id="tv-cycle-sum-neu">—</span></div>
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Buy</span><span class="tv-cycle-v" id="tv-cycle-sum-buy">—</span></div>
+      </div>
+    </section>
+    <section class="tv-cycle" aria-label="Moving averages gauge">
+      <div class="tv-cycle-name">Moving Averages</div>
+      <div class="tv-cycle-gauge"><svg id="tv-cycle-ma" viewBox="0 0 200 115" class="tv-cycle-svg" aria-hidden="true"></svg></div>
+      <div class="tv-cycle-verdict is-neutral" id="tv-cycle-ma-label">—</div>
+      <div class="tv-cycle-counts">
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Sell</span><span class="tv-cycle-v" id="tv-cycle-ma-sell">—</span></div>
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Neutral</span><span class="tv-cycle-v" id="tv-cycle-ma-neu">—</span></div>
+        <div class="tv-cycle-count"><span class="tv-cycle-k">Buy</span><span class="tv-cycle-v" id="tv-cycle-ma-buy">—</span></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 4) PRIMARY ANALYSIS SUMMARY — distribution bars (kept) -->
+  <div class="tv-signal-bar">
+    <section class="tv-signal-hero" aria-label="Overall technical summary">
+      <div class="tv-signal-name">Overall Technical Summary</div>
+      <div class="tv-hero-main">
+        <span class="tv-verdict is-neutral" id="tv-sum-label">—</span>
+        <span class="tv-signal-meta" id="tv-sum-meta">—</span>
+      </div>
+      <div class="tv-gauge-wrap" id="tv-gauge-sum">
+        <div class="tv-gauge" aria-hidden="true">
+          <div class="tv-gseg is-sell" id="tv-sum-seg-sell"></div>
+          <div class="tv-gseg is-neutral" id="tv-sum-seg-neu"></div>
+          <div class="tv-gseg is-buy" id="tv-sum-seg-buy"></div>
+        </div>
+      </div>
+      <div class="tv-counts">
+        <div class="tv-count is-sell"><span class="tv-count-k">Sell</span><span class="tv-count-v" id="tv-sum-sell">—</span></div>
+        <div class="tv-count is-neutral"><span class="tv-count-k">Neutral</span><span class="tv-count-v" id="tv-sum-neu">—</span></div>
+        <div class="tv-count is-buy"><span class="tv-count-k">Buy</span><span class="tv-count-v" id="tv-sum-buy">—</span></div>
+      </div>
+    </section>
+    <div class="tv-signal-sub">
+      <section class="tv-signal-card" aria-label="Oscillators signal">
+        <div class="tv-signal-name">Oscillators</div>
+        <div class="tv-hero-main">
+          <span class="tv-verdict is-neutral" id="tv-osc-label">—</span>
+          <span class="tv-signal-meta" id="tv-osc-meta">—</span>
+        </div>
+        <div class="tv-gauge-wrap" id="tv-gauge-osc">
+          <div class="tv-gauge" aria-hidden="true">
+            <div class="tv-gseg is-sell" id="tv-osc-seg-sell"></div>
+            <div class="tv-gseg is-neutral" id="tv-osc-seg-neu"></div>
+            <div class="tv-gseg is-buy" id="tv-osc-seg-buy"></div>
+          </div>
+        </div>
+        <div class="tv-counts">
+          <div class="tv-count is-sell"><span class="tv-count-k">Sell</span><span class="tv-count-v" id="tv-osc-sell">—</span></div>
+          <div class="tv-count is-neutral"><span class="tv-count-k">Neutral</span><span class="tv-count-v" id="tv-osc-neu">—</span></div>
+          <div class="tv-count is-buy"><span class="tv-count-k">Buy</span><span class="tv-count-v" id="tv-osc-buy">—</span></div>
+        </div>
+      </section>
+      <section class="tv-signal-card" aria-label="Moving averages signal">
+        <div class="tv-signal-name">Moving Averages</div>
+        <div class="tv-hero-main">
+          <span class="tv-verdict is-neutral" id="tv-ma-label">—</span>
+          <span class="tv-signal-meta" id="tv-ma-meta">—</span>
+        </div>
+        <div class="tv-gauge-wrap" id="tv-gauge-ma">
+          <div class="tv-gauge" aria-hidden="true">
+            <div class="tv-gseg is-sell" id="tv-ma-seg-sell"></div>
+            <div class="tv-gseg is-neutral" id="tv-ma-seg-neu"></div>
+            <div class="tv-gseg is-buy" id="tv-ma-seg-buy"></div>
+          </div>
+        </div>
+        <div class="tv-counts">
+          <div class="tv-count is-sell"><span class="tv-count-k">Sell</span><span class="tv-count-v" id="tv-ma-sell">—</span></div>
+          <div class="tv-count is-neutral"><span class="tv-count-k">Neutral</span><span class="tv-count-v" id="tv-ma-neu">—</span></div>
+          <div class="tv-count is-buy"><span class="tv-count-k">Buy</span><span class="tv-count-v" id="tv-ma-buy">—</span></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- 5) DETAILED INDICATOR ANALYSIS -->
+  <div class="tv-tables">
+    <section class="tv-panel" aria-label="Oscillators detail">
+      <div class="tv-panel-h">
+        <h3 class="tv-panel-t">Oscillators</h3>
+        <span class="tv-panel-sub">momentum &amp; strength</span>
+        <span class="tv-chip is-neutral" id="tv-osc-chip">—</span>
+      </div>
+      <div class="tv-scroll">
+        <table class="tv-table">
+          <thead><tr><th scope="col">Indicator</th><th scope="col" class="ta-r">Value</th><th scope="col" class="ta-r">Action</th></tr></thead>
+          <tbody id="tv-osc-body" class="tv-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="tv-panel" aria-label="Moving averages detail">
+      <div class="tv-panel-h">
+        <h3 class="tv-panel-t">Moving Averages</h3>
+        <span class="tv-panel-sub">trend &amp; crossover</span>
+        <span class="tv-chip is-neutral" id="tv-ma-chip">—</span>
+      </div>
+      <div class="tv-scroll">
+        <table class="tv-table">
+          <thead><tr><th scope="col">Indicator</th><th scope="col" class="ta-r">Value</th><th scope="col" class="ta-r">Action</th></tr></thead>
+          <tbody id="tv-ma-body" class="tv-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- 6) PIVOT MATRIX -->
+  <section class="tv-panel tv-pivots" aria-label="Pivot levels">
+    <div class="tv-panel-h">
+      <h3 class="tv-panel-t">Pivot Levels</h3>
+      <span class="tv-panel-sub">classic · fibonacci · camarilla · woodie · demark</span>
+    </div>
+    <div class="tv-scroll">
+      <table class="tv-table tv-pivot-table">
+        <thead><tr><th scope="col">Pivot</th><th scope="col" class="ta-r">Classic</th><th scope="col" class="ta-r">Fibonacci</th><th scope="col" class="ta-r">Camarilla</th><th scope="col" class="ta-r">Woodie</th><th scope="col" class="ta-r">DM</th></tr></thead>
+        <tbody id="tv-pivot-body" class="tv-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+</div>

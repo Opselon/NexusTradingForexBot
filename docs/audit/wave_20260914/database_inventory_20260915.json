@@ -1,0 +1,275 @@
+{
+  "generated_at": "2026-09-15T17:28:50.917741+00:00",
+  "report_date": "2026-09-15",
+  "databases": {
+    "audit": {
+      "exists": true,
+      "file_bytes": 132112384,
+      "wal_bytes": 0,
+      "top_tables_by_bytes": [
+        {
+          "table": "research_gates",
+          "rows": 25986,
+          "bytes_pages": 24633344
+        },
+        {
+          "table": "strategy_registry",
+          "rows": 4082,
+          "bytes_pages": 22573056
+        },
+        {
+          "table": "research_evidence",
+          "rows": 18228,
+          "bytes_pages": 21536768
+        },
+        {
+          "table": "research_events",
+          "rows": 82289,
+          "bytes_pages": 12709888
+        },
+        {
+          "table": "audit_experiences",
+          "rows": 1373,
+          "bytes_pages": 5640192
+        },
+        {
+          "table": "position_lifecycle_events",
+          "rows": 2397,
+          "bytes_pages": 3796992
+        },
+        {
+          "table": "research_runs",
+          "rows": 4330,
+          "bytes_pages": 2920448
+        },
+        {
+          "table": "audit_experience_outcomes",
+          "rows": 1118,
+          "bytes_pages": 2560000
+        },
+        {
+          "table": "research_run_snapshots",
+          "rows": 4330,
+          "bytes_pages": 2232320
+        },
+        {
+          "table": "audit_orders",
+          "rows": 8600,
+          "bytes_pages": 1867776
+        },
+        {
+          "table": "audit_signals",
+          "rows": 1469,
+          "bytes_pages": 1241088
+        },
+        {
+          "table": "audit_broker_orders",
+          "rows": 10496,
+          "bytes_pages": 1220608
+        }
+      ],
+      "table_count": 70,
+      "recency_probes": {
+        "research_events.occurred_at_max": "2026-08-27T19:12:38.142748+00:00",
+        "audit_signals.generated_at_max": "2026-09-11T19:59:59+00:00",
+        "position_lifecycle_events.event_timestamp_max": "2026-09-08T19:26:04+00:00",
+        "factory_events.occurred_at_max": "occurred_at"
+      }
+    },
+    "news": {
+      "exists": true,
+      "file_bytes": 233205760,
+      "wal_bytes": 0,
+      "top_tables_by_bytes": [
+        {
+          "table": "news_articles",
+          "rows": 28446,
+          "bytes_pages": 117379072
+        },
+        {
+          "table": "news_analysis",
+          "rows": 25070,
+          "bytes_pages": 68005888
+        },
+        {
+          "table": "news_ai_analysis",
+          "rows": 3654,
+          "bytes_pages": 8167424
+        },
+        {
+          "table": "news_analyzed_hashes",
+          "rows": 22280,
+          "bytes_pages": 4657152
+        },
+        {
+          "table": "news_impacts",
+          "rows": 22795,
+          "bytes_pages": 3330048
+        },
+        {
+          "table": "news_analysis_runs",
+          "rows": 26160,
+          "bytes_pages": 3317760
+        },
+        {
+          "table": "news_entities",
+          "rows": 58599,
+          "bytes_pages": 3047424
+        },
+        {
+          "table": "news_junk_hashes",
+          "rows": 8535,
+          "bytes_pages": 1961984
+        },
+        {
+          "table": "news_topics",
+          "rows": 44689,
+          "bytes_pages": 1716224
+        },
+        {
+          "table": "news_prune_audit",
+          "rows": 8745,
+          "bytes_pages": 1495040
+        },
+        {
+          "table": "calendar_events",
+          "rows": 190,
+          "bytes_pages": 57344
+        },
+        {
+          "table": "calendar_worker_state",
+          "rows": 1,
+          "bytes_pages": 4096
+        }
+      ],
+      "table_count": 22,
+      "recency_probes": {
+        "news_articles.created_at_max": "2026-09-13T20:36:31.368185+00:00",
+        "news_analysis_runs.started_at_max": "2026-09-13T20:36:47.774366+00:00"
+      }
+    },
+    "candle_intel": {
+      "exists": true,
+      "file_bytes": 10969088,
+      "wal_bytes": 0,
+      "top_tables_by_bytes": [
+        {
+          "table": "trade_decisions",
+          "rows": 4505,
+          "bytes_pages": 2826240
+        },
+        {
+          "table": "candle_patterns",
+          "rows": 10758,
+          "bytes_pages": 2121728
+        },
+        {
+          "table": "candle_closures",
+          "rows": 3988,
+          "bytes_pages": 1478656
+        },
+        {
+          "table": "market_regimes",
+          "rows": 4510,
+          "bytes_pages": 864256
+        },
+        {
+          "table": "candles",
+          "rows": 3988,
+          "bytes_pages": 696320
+        },
+        {
+          "table": "risk_evaluations",
+          "rows": 4505,
+          "bytes_pages": 446464
+        },
+        {
+          "table": "rule_vetoes",
+          "rows": 1295,
+          "bytes_pages": 376832
+        },
+        {
+          "table": "audit_log",
+          "rows": 0,
+          "bytes_pages": 4096
+        },
+        {
+          "table": "exit_signals",
+          "rows": 0,
+          "bytes_pages": 4096
+        },
+        {
+          "table": "feature_vectors",
+          "rows": 0,
+          "bytes_pages": 4096
+        },
+        {
+          "table": "open_positions",
+          "rows": 0,
+          "bytes_pages": 4096
+        },
+        {
+          "table": "schema_meta",
+          "rows": 1,
+          "bytes_pages": 4096
+        }
+      ],
+      "table_count": 14,
+      "recency_probes": {
+        "candles.ts_max": "2026-09-07T00:58:16.882596+00:00"
+      }
+    },
+    "strategies": {
+      "exists": true,
+      "file_bytes": 27848704,
+      "wal_bytes": 0,
+      "top_tables_by_bytes": [
+        {
+          "table": "factory_events",
+          "rows": 4412,
+          "bytes_pages": 16109568
+        },
+        {
+          "table": "factory_candidates",
+          "rows": 4081,
+          "bytes_pages": 8060928
+        },
+        {
+          "table": "factory_failures",
+          "rows": 8849,
+          "bytes_pages": 2052096
+        },
+        {
+          "table": "factory_runs",
+          "rows": 3899,
+          "bytes_pages": 360448
+        },
+        {
+          "table": "factory_loop_state",
+          "rows": 2,
+          "bytes_pages": 36864
+        },
+        {
+          "table": "factory_generations",
+          "rows": 27,
+          "bytes_pages": 20480
+        },
+        {
+          "table": "factory_provider_usage",
+          "rows": 25,
+          "bytes_pages": 4096
+        },
+        {
+          "table": "strategy_research_meta",
+          "rows": 2,
+          "bytes_pages": 4096
+        }
+      ],
+      "table_count": 8,
+      "recency_probes": {
+        "factory_events.occurred_at_max": "occurred_at"
+      }
+    }
+  },
+  "totals_bytes": 404135936
+}

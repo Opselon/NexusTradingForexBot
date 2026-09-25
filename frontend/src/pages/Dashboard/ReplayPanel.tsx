@@ -1,0 +1,516 @@
+/**
+ * ReplayPanel — React port of Web/replay_panel.js (CHG-0043, REPLAY_API v1).
+ *
+ * Behavior parity with the legacy panel, at the page quality bar:
+ *  - session creation via POST /api/replay/session (dataset contract + window
+ *    + regime flag); the replay_id/identity come back from the reply only
+ *  - transport: step / play / pause / reset / seek / checkpoint via POST
+ *    /api/replay/control — every button guarded on an active session id and
+ *    on in-flight commands; reset is confirm-gated; END_OF_DATA stops play
+ *  - cursor strip from GET /api/replay/state (engine truth up to the cursor):
+ *    clock, phase, counts, KNOWN vs UNKNOWN events, equity, price, open
+ *    position, regime. Future events exist as a COUNT only — never payloads.
+ *  - decision drill-down via GET /api/replay/decision?seq= (engine trace)
+ *  - operator report via GET /api/replay/report
+ *  - onCursorMove hands the cursor time to the Dashboard chart so the
+ *    KNOWN/UNKNOWN dimming (drawKnownBoundary port) renders live
+ *
+ * The command result is ALWAYS the backend's own words (message/detail);
+ * nothing is assumed locally. A small self-contained runner is used instead
+ * of useMutationFeedback because replies here carry payloads (replay_id,
+ * result.status) beyond the {success,message} shape.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { replayApi } from "@/pages/_shared/edgeApi";
+import type { ReplayDecision, ReplayReport, ReplayState } from "@/pages/_shared/contracts";
+import { ConfirmModal, Panel } from "@/components/primitives";
+import { ApiError } from "@/types/api";
+import { formatMoney, formatNumber, formatPct } from "@/lib/format";
+import { useUiStore } from "@/stores/uiStore";
+import { useI18n } from "@/stores/i18nStore";
+import "@/pages/_shared/pages.css";
+import "./market-console.css";
+
+/** Naive local ISO for <input type=datetime-local> (legacy panel parity). */
+function localIso(d: Date): string {
+  const off = d.getTimezoneOffset() * 60_000;
+  return new Date(d.getTime() - off).toISOString().slice(0, 16);
+}
+
+function defaultWindow(): { start: string; end: string } {
+  const now = new Date();
+  return { start: localIso(new Date(now.getTime() - 8 * 3_600_000)), end: localIso(now) };
+}
+
+function describeError(e: unknown, t: (key: string, fb: string, vars?: Record<string, string | number>) => string): string {
+  if (e instanceof ApiError) return e.localized(t);
+  if (e instanceof Error) return e.message;
+  return t("dash.replay.unknown_error", "unknown error");
+}
+
+const PHASE_TONE: Record<string, string> = {
+  RUNNING: "good",
+  PAUSED: "warn",
+  PLAYING: "good",
+  FINISHED: "",
+  END_OF_DATA: "warn",
+};
+
+interface RunState {
+  running: boolean;
+  message: string | null;
+  ok: boolean | null;
+}
+
+export function ReplayPanel({ onCursorMove }: { onCursorMove?: (iso: string | null) => void }) {
+  const t = useI18n((s) => s.t);
+  const pushToast = useUiStore((s) => s.pushToast);
+  const [{ start, end }, setWin] = useState(defaultWindow);
+  const [regimeEnabled, setRegimeEnabled] = useState(false);
+  const [replayId, setReplayId] = useState<string | null>(null);
+  const [sessionChip, setSessionChip] = useState<string | null>(null);
+  const [st, setSt] = useState<ReplayState | null>(null);
+  const [report, setReport] = useState<ReplayReport | null>(null);
+  const [decision, setDecision] = useState<{ seq: number; row: ReplayDecision } | null>(null);
+  const [seqInput, setSeqInput] = useState("0");
+  const [seekTime, setSeekTime] = useState("");
+  const [speed, setSpeed] = useState(2);
+  const [playing, setPlaying] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [run, setRun] = useState<RunState>({ running: false, message: null, ok: null });
+  const stepTimer = useRef<number | null>(null);
+  const playRef = useRef(false);
+
+  useEffect(() => {
+    playRef.current = playing;
+  }, [playing]);
+
+  // Cursor → chart boundary (KNOWN/UNKNOWN) — same contract as legacy panel.
+  useEffect(() => {
+    onCursorMove?.(st?.clock ?? null);
+  }, [st?.clock, onCursorMove]);
+
+  const stopPlay = useCallback(() => {
+    setPlaying(false);
+    if (stepTimer.current !== null) {
+      window.clearInterval(stepTimer.current);
+      stepTimer.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => stopPlay(), [stopPlay]);
+
+  const refreshState = useCallback(async (): Promise<void> => {
+    try {
+      setSt(await replayApi.state());
+    } catch {
+      /* session expired server-side: keep the last cursor, the next command
+         surfaces the backend's own 404 wording — no silent clear, no fake */
+    }
+  }, []);
+
+  // Poll cursor state while a session exists (cheap, cursor-bounded payload).
+  // perf: the 2s cursor poll is a network read — pause it while the tab is
+  // hidden; on return the interval restarts AND one refresh runs immediately,
+  // so the cursor strip is never staler than one tick on resume.
+  useEffect(() => {
+    if (!replayId) return;
+    void refreshState();
+    let t: number | null =
+      document.visibilityState === "hidden" ? null : window.setInterval(() => void refreshState(), 2_000);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        if (t !== null) {
+          window.clearInterval(t);
+          t = null;
+        }
+      } else if (t === null) {
+        t = window.setInterval(() => void refreshState(), 2_000);
+        void refreshState();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (t !== null) window.clearInterval(t);
+    };
+  }, [replayId, refreshState]);
+
+  /** One command runner: reply decides the wording, payloads handled inline. */
+  const runCmd = useCallback(
+    async <T,>(label: string, fn: () => Promise<T & { ok?: boolean; success?: boolean; message?: string; detail?: unknown }>): Promise<T | null> => {
+      setRun({ running: true, message: null, ok: null });
+      try {
+        const res = await fn();
+        const accepted = res.ok !== false && res.success !== false;
+        const fallbackMsg =
+          res.message ??
+          (typeof res.detail === "string" ? res.detail : null) ??
+          (accepted
+            ? t("dash.replay.accepted", "{l}: accepted by backend.", { l: label })
+            : t("dash.replay.refused", "{l}: refused by backend.", { l: label }));
+        setRun({ running: false, message: fallbackMsg, ok: accepted });
+        pushToast(accepted ? "ok" : "fail", `${label}: ${fallbackMsg}`);
+        return accepted ? res : null;
+      } catch (e) {
+        const err = describeError(e, t);
+        setRun({ running: false, message: t("dash.replay.cmd_failed", "{l} failed: {m}", { l: label, m: err }), ok: false });
+        pushToast("fail", `${label}: ${err}`);
+        return null;
+      }
+    },
+    [pushToast],
+  );
+
+  const createSession = async (): Promise<void> => {
+    if (!start || !end) {
+      setRun({ running: false, message: t("dash.replay.time_required", "Start/end time required."), ok: false });
+      return;
+    }
+    const res = await runCmd("replay session", () =>
+      replayApi.createSession({
+        dataset_id: `UI-M1-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`,
+        dataset_fingerprint: `uipick-${start}-${end}`,
+        symbol: "XAUUSD",
+        replay_mode: "BAR_REPLAY",
+        start_time: new Date(start).toISOString(),
+        end_time: new Date(end).toISOString(),
+        git_commit: "",
+        regime_enabled: regimeEnabled,
+      }),
+    );
+    if (res?.replay_id) {
+      setReplayId(res.replay_id);
+      const ident = res.identity as { model_artifact_path?: string } | undefined;
+      setSessionChip(
+        ident?.model_artifact_path
+          ? t("dash.replay.bound_70d", "70D bound: {p}", { p: String(ident.model_artifact_path).split("/").slice(-1)[0] ?? "" })
+          : null,
+      );
+      setSt(null);
+      setReport(null);
+      setDecision(null);
+    }
+  };
+
+  const control = useCallback(
+    async (action: "step_tick" | "step_bar" | "play" | "pause" | "reset" | "seek" | "checkpoint", extra?: { n?: number; seek_time?: string }): Promise<void> => {
+      if (!replayId) {
+        setRun({ running: false, message: t("dash.replay.need_session", "Create a session first — transport is inert without a replay id."), ok: false });
+        return;
+      }
+      const res = await runCmd(action, () => replayApi.control({ action, replay_id: replayId, ...extra }));
+      if (res && (res.result as { status?: string } | undefined)?.status === "END_OF_DATA") {
+        stopPlay();
+        setRun({ running: false, message: t("dash.replay.end_of_data", "END_OF_DATA reached — playback stopped on the backend's signal."), ok: true });
+      }
+      if (res) await refreshState();
+    },
+    [replayId, runCmd, refreshState, stopPlay],
+  );
+
+  /** Playback = client-paced step_bar loop (identical to the legacy panel). */
+  const startPlay = (): void => {
+    if (!replayId || stepTimer.current !== null) return;
+    setPlaying(true);
+    const intervalMs = Math.max(60, 800 / Math.max(1, speed));
+    stepTimer.current = window.setInterval(() => {
+      void (async () => {
+        if (!replayId) return;
+        try {
+          const res = await replayApi.control({ action: "step_bar", n: 1, replay_id: replayId });
+          if ((res.result as { status?: string } | undefined)?.status === "END_OF_DATA") {
+            stopPlay();
+            setRun({ running: false, message: t("dash.replay.end_of_data", "END_OF_DATA reached — playback stopped on the backend's signal."), ok: true });
+          }
+          setSt(await replayApi.state(replayId).catch(() => null));
+        } catch (e) {
+          stopPlay();
+          setRun({ running: false, message: `${t("dash.replay.play_step_failed", "play step failed")}: ${describeError(e, t)}`, ok: false });
+        }
+      })();
+    }, intervalMs);
+  };
+
+  const togglePlay = (): void => {
+    if (playing) {
+      stopPlay();
+      void control("pause");
+    } else {
+      void startPlay();
+    }
+  };
+
+  const showReport = async (): Promise<void> => {
+    const res = await runCmd("replay report", () => replayApi.report(replayId));
+    if (res) setReport(res.report ?? null);
+  };
+
+  const showDecision = async (): Promise<void> => {
+    const seq = Number.parseInt(seqInput, 10);
+    if (!Number.isFinite(seq)) {
+      setRun({ running: false, message: t("dash.replay.seq_nan", "Decision sequence must be a number."), ok: false });
+      return;
+    }
+    const res = await runCmd(`decision ${seq}`, () => replayApi.decision(seq, replayId));
+    if (res?.decision) {
+      setDecision({ seq, row: res.decision });
+    } else {
+      setDecision(null);
+    }
+  };
+
+  const counts = st?.counts ?? {};
+  const phase = (st?.phase ?? (replayId ? "READY" : "NO SESSION")).toUpperCase();
+  const price = st?.last_price?.close ?? st?.last_price?.bid ?? null;
+  const regimeNow = st?.regime?.regime ?? (st?.regime_enabled ? "WARMUP" : replayId ? "—" : "DISABLED");
+  const knownFrac = useMemo(() => {
+    const k = st?.known_events ?? 0;
+    const u = st?.unknown_events ?? 0;
+    return k + u > 0 ? k / (k + u) : null;
+  }, [st?.known_events, st?.unknown_events]);
+
+  /** Decision drill-down strings — derived once per inspected decision
+   *  instead of on every transport/state render (the 2s replay clock makes
+   *  those frequent while a decision stays open). Same expressions, same
+   *  output; deps read only `decision`. */
+  const decisionText = useMemo(() => {
+    if (!decision) return null;
+    const row = decision.row;
+    return {
+      prices: [row.entry, row.stop_loss, row.take_profit].map((v) => (typeof v === "number" ? v.toFixed(2) : "—")).join(" / "),
+      probs: row.probs?.map((p) => p.toFixed(3)).join(" | ") ?? "—",
+    };
+  }, [decision]);
+
+  return (
+    <Panel
+      title={t("dash.replay.title", "Historical replay (REPLAY_API v1)")}
+      accent
+      right={
+        <>
+          {sessionChip && <span className="l4-chip">{sessionChip}</span>}
+          <span className={`l4-chip ${PHASE_TONE[phase] ?? ""}`}>{phase}</span>
+          {playing && (
+            <span className="l4-chip good">{t("dash.replay.stepping", "STEPPING ×{s}", { s: speed })}</span>
+          )}
+        </>
+      }
+    >
+      <div className="l4-replay mc-replay">
+        {/* Session contract row */}
+        <div className="l4-replay__grid">
+          <div className="l4-replay__field">
+            <label htmlFor="rp-start">{t("dash.replay.window_start", "window start (local)")}</label>
+            <input id="rp-start" className="input" type="datetime-local" value={start} onChange={(e) => setWin((w) => ({ ...w, start: e.target.value }))} />
+          </div>
+          <div className="l4-replay__field">
+            <label htmlFor="rp-end">{t("dash.replay.window_end", "window end (local)")}</label>
+            <input id="rp-end" className="input" type="datetime-local" value={end} onChange={(e) => setWin((w) => ({ ...w, end: e.target.value }))} />
+          </div>
+          <div className="l4-replay__field">
+            <label htmlFor="rp-regime">{t("dash.replay.regime_classifier", "regime classifier")}</label>
+            <span className="l4-note" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input id="rp-regime" type="checkbox" checked={regimeEnabled} onChange={(e) => setRegimeEnabled(e.target.checked)} style={{ accentColor: "var(--accent)" }} />
+              {t("dash.replay.detect_regime", "detect regime during replay")}
+            </span>
+          </div>
+          <div className="l4-replay__field">
+            <label htmlFor="rp-create">{t("dash.replay.session_label", "session")}</label>
+            <div className="l4-transport">
+              <button id="rp-create" className="btn primary" disabled={run.running} onClick={() => void createSession()}>
+                {run.running ? t("dash.replay.working", "working…") : t("dash.replay.create_session", "⚗ Create replay session")}
+              </button>
+              {replayId && (
+                <span className="l4-chip accent" title={replayId}>
+                  id {replayId.slice(0, 14)}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Transport row — every control guarded on session id / in-flight */}
+        <div className="l4-transport">
+          <button className="btn" disabled={!replayId || run.running} onClick={() => void control("step_bar", { n: 1 })} title={t("dash.replay.title_step", "advance one bar")}>
+            {t("dash.replay.step", "⏭ step")}
+          </button>
+          <button className={`btn ${playing ? "" : "primary"}`} disabled={!replayId} onClick={togglePlay} title={t("dash.replay.title_play", "client-paced step_bar playback")}>
+            {playing ? t("dash.replay.pause", "⏸ pause") : t("dash.replay.play", "▶ play")}
+          </button>
+          <button className="btn" disabled={!replayId || run.running} onClick={() => void control("checkpoint")} title={t("dash.replay.title_checkpoint", "snapshot session state")}>
+            {t("dash.replay.checkpoint", "⚑ checkpoint")}
+          </button>
+          <button className="btn danger" disabled={!replayId || run.running} onClick={() => setConfirmReset(true)} title={t("dash.replay.reset_title", "rewind cursor to window start")}>
+            {t("dash.replay.reset", "⟲ reset")}
+          </button>
+          <label className="l4-note" htmlFor="rp-speed">
+            {t("dash.replay.speed_label", "speed")}
+          </label>
+          <input
+            id="rp-speed"
+            className="input"
+            style={{ inlineSize: 56 }}
+            type="number"
+            min={1}
+            max={20}
+            value={speed}
+            onChange={(e) => setSpeed(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
+          />
+          <input className="input" type="datetime-local" value={seekTime} onChange={(e) => setSeekTime(e.target.value)} aria-label={t("dash.replay.seek_aria", "seek time")} />
+          <button
+            className="btn"
+            disabled={!replayId || !seekTime || run.running}
+            onClick={() => {
+              stopPlay();
+              void control("seek", { seek_time: new Date(seekTime).toISOString() });
+            }}
+          >
+            {t("dash.replay.seek", "⤳ seek")}
+          </button>
+          <button className="btn ghost" disabled={!replayId || run.running} onClick={() => void showReport()}>
+            {t("dash.replay.report_btn", "☰ report")}
+          </button>
+        </div>
+
+        {run.message && (
+          <div className={`cmd-result ${run.ok ? "ok" : run.ok === false ? "fail" : ""}`}>
+            {run.ok ? "✓" : run.ok === false ? "✕" : "ℹ"} {run.message}
+          </div>
+        )}
+
+        {/* Cursor strip — bounded engine truth only */}
+        <div className="grid cols-4">
+          <div className="metric">
+            <div className="k">{t("dash.replay.k_cursor_clock", "cursor clock")}</div>
+            <div className="v" style={{ fontSize: 14 }}>{st?.clock ? st.clock.replace("T", " ").slice(0, 19) : "—"}</div>
+            <div className="s">
+              {st?.status
+                ? t("dash.replay.status_of", "status {s}", { s: st.status })
+                : replayId
+                  ? t("dash.replay.awaiting_state", "awaiting first state read…")
+                  : t("dash.replay.no_session", "no session")}
+            </div>
+          </div>
+          <div className="metric">
+            <div className="k">{t("dash.replay.k_known_unknown", "known / unknown events")}</div>
+            <div className="v" style={{ fontSize: 14 }}>{st ? `${st.known_events ?? "—"} / ${st.unknown_events ?? "—"}` : "—"}</div>
+            <div className="l4-known" role="img" aria-label={t("dash.replay.known_ratio_aria", "known vs unknown event ratio")}>
+              <i className="l4-known__known" style={{ inlineSize: knownFrac !== null ? `${knownFrac * 100}%` : "0%" }} />
+              <i className="l4-known__unknown" style={{ flexGrow: 1 }} />
+            </div>
+          </div>
+          <div className="metric">
+            <div className="k">{t("dash.replay.k_counts", "bars · decisions · trades")}</div>
+            <div className="v" style={{ fontSize: 14 }}>
+              {counts.bars ?? "—"} · {counts.decisions ?? "—"} · {counts.trades ?? "—"}
+            </div>
+            <div className="s">
+              equity {typeof st?.equity === "number" ? formatMoney(st.equity) : "—"} · price{" "}
+              {typeof price === "number" ? formatNumber(price, 2) : "—"}
+            </div>
+          </div>
+          <div className="metric">
+            <div className="k">{t("dash.replay.k_position_regime", "position / regime")}</div>
+            <div className="v" style={{ fontSize: 14 }}>
+              {st?.open_position
+                ? `${st.open_position.direction ?? "?"} @ ${formatNumber(st.open_position.entry_price ?? null)}`
+                : st
+                  ? t("dash.replay.flat", "FLAT")
+                  : "—"}
+            </div>
+            <div className="s">
+              regime {regimeNow}
+              {typeof st?.regime?.probability === "number" ? ` (${formatPct(st.regime.probability * 100, 0)})` : ""}
+            </div>
+          </div>
+        </div>
+
+        {/* NO_TRADE / decision drill-down */}
+        <div className="l4-transport">
+          <input className="input" style={{ inlineSize: 90 }} aria-label={t("dash.replay.decision_seq_aria", "decision sequence")} value={seqInput} onChange={(e) => setSeqInput(e.target.value)} />
+          <button className="btn small" disabled={!replayId || run.running} onClick={() => void showDecision()}>
+            {t("dash.replay.inspect", "⌕ inspect decision seq")}
+          </button>
+          {decision && (
+            <span className="l4-note">
+              {t("dash.replay.engine_trace", "engine trace seq {n}", { n: decision.seq })}
+            </span>
+          )}
+        </div>
+        {decision && (
+          <dl className="kv">
+            <dt>{t("dash.replay.dt_ts_action", "ts / action")}</dt>
+            <dd>{decision.row.ts ?? "—"} · {decision.row.action ?? "—"}</dd>
+            <dt>{t("dash.replay.dt_confidence", "confidence")}</dt>
+            <dd>{typeof decision.row.confidence === "number" ? decision.row.confidence.toFixed(4) : "—"}</dd>
+            <dt>{t("dash.replay.dt_reason", "reason / blocked by")}</dt>
+            <dd>{decision.row.reason_code ?? "—"}{decision.row.blocked_by ? ` ← ${decision.row.blocked_by}` : ""}</dd>
+            <dt>{t("dash.replay.dt_stage", "stage / regime")}</dt>
+            <dd>{decision.row.decision_stage ?? "—"} · {decision.row.regime ?? "—"}</dd>
+            <dt>{t("dash.replay.dt_entry", "entry / SL / TP")}</dt>
+            <dd>{decisionText?.prices}</dd>
+            <dt>{t("dash.replay.dt_risk", "risk accepted")}</dt>
+            <dd>{decision.row.risk_accepted === null || decision.row.risk_accepted === undefined ? "—" : String(decision.row.risk_accepted)}</dd>
+            <dt>{t("dash.replay.dt_probs", "probs (N/B/S/W)")}</dt>
+            <dd>{decisionText?.probs}</dd>
+          </dl>
+        )}
+        {report && (
+          <dl className="kv">
+            <dt>{t("dash.replay.dt_report", "report · decisions / trades")}</dt>
+            <dd>{String(report.decisions ?? "—")} / {String(report.trades ?? "—")}</dd>
+            <dt>{t("dash.replay.dt_wins", "wins / losses")}</dt>
+            <dd>{String(report.wins ?? "—")} / {String(report.losses ?? "—")}</dd>
+            <dt>{t("dash.replay.dt_pnl", "pnl usd")}</dt>
+            <dd className={typeof report.pnl_usd === "number" && report.pnl_usd >= 0 ? "pnl-pos" : "pnl-neg"}>
+              {typeof report.pnl_usd === "number" ? formatMoney(report.pnl_usd) : "—"}
+            </dd>
+            <dt>{t("dash.replay.dt_equity_end", "equity end")}</dt>
+            <dd>{typeof report.equity_end === "number" ? formatMoney(report.equity_end) : "—"}</dd>
+            {Object.entries(report.gate_distribution ?? {}).slice(0, 8).map(([k, v]) => (
+              <div key={k} style={{ display: "contents" }}>
+                <dt>{t("dash.replay.dt_gate", "gate · {g}", { g: k })}</dt>
+                <dd>{v}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+
+        <div className="l4-note">
+          {t(
+            "dash.replay.no_future",
+            "No-future-data rule: every value above is engine truth up to the cursor — future events exist as a count, never as a payload the chart or strategy can read.",
+          )}
+          {t(
+            "dash.replay.note_c",
+            " Replay is a research surface: the backend refuses it while execution_mode=LIVE and restores the pre-replay mode on exit.",
+          )}
+        </div>
+      </div>
+
+      {confirmReset && (
+        <ConfirmModal
+          title={t("dash.replay.reset_title", "Reset replay cursor")}
+          danger={false}
+          confirmLabel={t("dash.replay.reset_label", "⟲ Reset cursor")}
+          busy={run.running}
+          onCancel={() => setConfirmReset(false)}
+          onConfirm={() => {
+            setConfirmReset(false);
+            stopPlay();
+            void control("reset");
+          }}
+        >
+          <div>
+            {t(
+              "dash.replay.reset_body",
+              "Rewinds the session cursor to the window start and clears the report view. Local research state only — no broker call, no ledger row, no engine side effect.",
+            )}
+          </div>
+        </ConfirmModal>
+      )}
+    </Panel>
+  );
+}

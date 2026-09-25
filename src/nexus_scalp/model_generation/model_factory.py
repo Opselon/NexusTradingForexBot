@@ -1,0 +1,142 @@
+"""Model Factory (PHASE 13, spec 19 / 20 / 21 / 22).
+
+Architecture registry — configuration-driven model construction.
+
+The FIRST benchmark MUST include LEGACY_SCALPNET_V1 through the NEW
+artifact/dataset pipeline. Architecture novelty is NOT evidence of
+superiority; the baseline is the control group.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import torch
+from torch import nn
+
+from nexus_scalp.features.schema import FEATURE_SCHEMAS
+from nexus_scalp.model_generation.models import ModelArchitecture
+from nexus_scalp.models.scalp_net import ScalpNet
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.model_generation.model_factory")
+
+#: MLFIX-T4 MODEL CLASS CONTRACT SSoT.
+#: Canonical contract is 3-class (NO_TRADE / BUY / SELL). LEGACY_HEAD_CLASSES=4
+#: (WAIT policy bridge) is a LEGACY serving compat — fresh builds derive head
+#: width from the declared manifest/label schema (3) via CANONICAL_CLASS_COUNT.
+#: Any caller passing an undeclared 4-head without allow_legacy must FAIL loudly.
+LEGACY_HEAD_CLASSES = 4
+CONTRACT_3CLASS = 3
+CANONICAL_CLASS_COUNT = 3
+
+
+class SimpleMLP(nn.Module):
+    """Minimal MLP baseline for comparison experiments (MLP_V2)."""
+
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dim: int = 128,
+        layers: int = 3,
+        dropout: float = 0.15,
+        num_classes: int = 3,
+    ) -> None:
+        super().__init__()
+        mods: list[nn.Module] = []
+        dims = [input_dim] + [hidden_dim] * layers
+        for i in range(len(dims) - 1):
+            mods.append(nn.Linear(dims[i], dims[i + 1]))
+            mods.append(nn.GELU())
+            mods.append(nn.Dropout(dropout))
+        mods.append(nn.Linear(hidden_dim, num_classes))
+        self.net = nn.Sequential(*mods)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
+class ModelFactory:
+    """Builds models from a declared architecture id + parameters.
+
+    ``num_classes`` is derived from the label schema contract (3 by default);
+    the legacy ScalpNet accepts 4 outputs only for the LEGACY baseline path,
+    where the 4th output is a policy WAIT bridge with an explicit contract
+    note.
+    """
+
+    def __init__(self, feature_schema_id: str = "scalp_v1") -> None:
+        self.feature_schema = FEATURE_SCHEMAS.resolve(feature_schema_id)
+
+    def build(
+        self,
+        architecture: str,
+        num_classes: int = CONTRACT_3CLASS,
+        parameters: dict[str, Any] | None = None,
+    ) -> nn.Module:
+        params = parameters or {}
+        input_dim = int(params.get("input_dim", self.feature_schema.dimension))
+
+        if architecture == ModelArchitecture.LEGACY_SCALPNET_V1.value:
+            # MODEL CLASS CONTRACT (P0 phase 2): the legacy ScalpNet baseline is
+            # now built with the CALLER-DECLARED head width (the label-schema
+            # contract, 3 by default). The old forced 4-wide WAIT head minted a
+            # dead logit into every fresh baseline model. A 4-wide legacy
+            # geometry remains available by explicitly passing
+            # parameters={"num_classes": 4} (legacy-artifact compat only).
+            head = int(params.get("num_classes", num_classes))
+            return ScalpNet(
+                num_features=input_dim,
+                num_classes=head,
+                hidden_dim=int(params.get("hidden_dim", 128)),
+                num_heads=int(params.get("num_heads", 4)),
+                dropout_rate=float(params.get("dropout_rate", 0.25)),
+            )
+
+        if architecture == ModelArchitecture.MLP_V2.value:
+            return SimpleMLP(
+                input_dim=input_dim,
+                hidden_dim=int(params.get("hidden_dim", 128)),
+                layers=int(params.get("layers", 3)),
+                dropout=float(params.get("dropout", 0.15)),
+                num_classes=num_classes,
+            )
+
+        if architecture == ModelArchitecture.TCN_ATTENTION_V1.value:
+            # FIRST new-architecture benchmark candidate (Phase 13B): a
+            # dedicated causal TCN + attention model with a strict 3-logit
+            # head. Trained + validated through the SAME artifact pipeline
+            # as LEGACY_SCALPNET_V1 (fair benchmark).
+            from nexus_scalp.model_generation.architectures import (
+                build_tcn_attention_v1,
+            )
+
+            return build_tcn_attention_v1(input_dim, num_classes, params)
+
+        if architecture in (
+            ModelArchitecture.TCN_V2.value,
+            ModelArchitecture.TRANSFORMER_V1.value,
+        ):
+            # Registered future architectures: construction is supported via
+            # the same config-driven pattern. Only architectures proven by
+            # benchmark evidence earn Challenger status.
+            raise NotImplementedError(
+                f"Architecture {architecture} registered but not yet implemented — "
+                "benchmark LEGACY_SCALPNET_V1 first (spec 19/20)."
+            )
+
+        raise ValueError(f"Unknown architecture: {architecture}")
+
+    def build_from_experiment(self, experiment: dict[str, Any]) -> nn.Module:
+        """Builds the model for an experiment config dict."""
+        return self.build(
+            architecture=str(
+                experiment.get("architecture", ModelArchitecture.LEGACY_SCALPNET_V1.value)
+            ),
+            num_classes=int(experiment.get("class_count", CONTRACT_3CLASS)),
+            parameters=experiment.get("architecture_parameters", {}),
+        )
+
+
+def infer_feature_dim(parameters: dict[str, Any], schema_id: str = "scalp_v1") -> int:
+    return int(parameters.get("input_dim") or FEATURE_SCHEMAS.resolve(schema_id).dimension)

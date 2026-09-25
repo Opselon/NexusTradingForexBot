@@ -1,0 +1,52 @@
+---
+title: Release Process
+description: How a release happens — versioning, artifacts, verification, and the tag rules.
+lang: en
+---
+
+# Release Process
+
+## Versioning
+
+Semver, single canonical source: `pyproject.toml` (`version = "…"`) stamped
+into every build artifact. **Never copy the version literal into this file or
+any other document** — read it with `nexus version`, or from `pyproject.toml`
+directly. The README never hard-codes a conflicting version — it defers to
+`nexus version` / the release metadata. Where a historical re-cut is cited
+below, keep the version out of the prose and cite the taskboard row instead.
+(Corrected 2026-09-22: this page previously hard-coded `9.0.6` while
+`pyproject.toml` had already moved past it.)
+
+## Pipeline (`.github/workflows/release.yml`)
+
+Tag-triggered **only** (`v*`). Stages:
+
+1. Validate tag vs version metadata
+2. Run the critical test suite (a release run that fails the suite does not
+   publish — see the v9.0.6 re-cut history in `agents/taskboard.md`, BUG-152
+   re-cut row)
+3. Build Windows x64 artifacts: `NexusScalpEngine-<version>-win-x64-setup.exe`
+   + portable `.zip` (PyInstaller)
+4. Generate SHA-256 digests, release manifest, SBOM; embed manifest in the
+   portable bundle
+5. Publish GitHub Release
+6. **Post-publish verification** (`release/verify.py`): checksums, manifest
+   paths, embedded layout (BUG-160 lineage)
+
+## Tag discipline (BUG-152)
+
+A tag pointing at a commit whose release run failed is **re-cut**, not
+explained away: stale tag deleted (remote via REST), re-annotated on the
+verified commit.
+
+## Update/rollback (client side)
+
+`nexus update check|latest|download|install|verify|status|history|rollback` —
+release-identity lock, draft/revoked filtering, resumable downloads with
+checksum verification, `minimum_model_version` matrix, honest
+`RELEASE_NOT_FOUND` / `NO_UPDATE` states, update blocked while LIVE,
+rollback ends FAILED_SAFE with exit 1 on failure (BUG-173).
+
+Full reference: [`docs/RELEASE.md`](https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/RELEASE.md).
+The end-to-end process (branches → PR gates → release cut → hotfix) is
+described in [Test, Build & Release Workflow](workflow-test-build-release.md).

@@ -1,0 +1,5 @@
+stash_idx=37
+stash_msg=stash@{37}: On agent/nexus-main/agent10-model-pipeline: nexus-strong-qa/wave2-foreign-hold-20260905 — stash before wave2 probe (do NOT discard; owner: many agents in flight)
+stash_obj=b3b6afcc
+p3=3e2cc791c163821d151beca7daea00a6558c8425
+parents=be5eb847788a2dc9320cce31366c6700a5b688a6 8c53c2e1128d6315e7ce7f12c308aa9949f5b92b 3e2cc791c163821d151beca7daea00a6558c8425

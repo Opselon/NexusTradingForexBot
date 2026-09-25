@@ -1,0 +1,134 @@
+"""News Intelligence configuration (PHASE 12).
+
+Follows the repository's Pydantic settings pattern (``configuration/config.py``).
+The News subsystem is independently disable-able and defaults to LOCAL_ONLY /
+HYBRID analysis with no mandatory external API key.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from pydantic import BaseModel, Field
+
+from nexus_scalp.news.models import NewsState
+
+
+class NewsPollingConfig(BaseModel):
+    """Per-source-class polling intervals (seconds)."""
+
+    fast_interval_sec: int = Field(default=300, ge=60)  # breaking feeds (bandwidth-conscious)
+    medium_interval_sec: int = Field(default=900, ge=120)  # official releases
+    slow_interval_sec: int = Field(default=3600, ge=300)  # calendars / COT
+
+
+class NewsAnalysisConfig(BaseModel):
+    """Analysis routing: LOCAL_ONLY / API_ONLY / HYBRID (default)."""
+
+    mode: str = "HYBRID"  # LOCAL_ONLY | API_ONLY | HYBRID
+    provider: str = ""  # openai-compatible / gemini / anthropic / openrouter
+    api_base_url: str = ""
+    model: str = ""
+    max_api_per_cycle: int = Field(default=5, ge=0)
+    api_importance_floor: float = Field(default=0.55, ge=0.0, le=1.0)
+    request_timeout_sec: float = Field(default=20.0, ge=1.0)
+    enabled: bool = True
+
+
+class NewsDecayConfig(BaseModel):
+    """Time-decay parameters per horizon class (configurable, testable)."""
+
+    breaking_half_life_min: float = Field(default=15.0, gt=0.0)
+    macro_half_life_hours: float = Field(default=4.0, gt=0.0)
+    policy_half_life_hours: float = Field(default=24.0, gt=0.0)
+    structural_half_life_days: float = Field(default=5.0, gt=0.0)
+    stale_after_sec: float = Field(default=3600.0, gt=0.0)
+
+
+class NewsImpactBounds(BaseModel):
+    """Bounded news influence on trading decisions.
+
+    Hard invariant: news can NEVER override risk/exposure/safety. It is a
+    contextual multiplier with explicit caps.
+    """
+
+    max_confidence_boost: float = Field(default=0.05, ge=0.0, le=0.20)
+    max_confidence_penalty: float = Field(default=0.10, ge=0.0, le=0.30)
+    min_alignment_to_boost: float = Field(default=0.40, ge=0.0, le=1.0)
+    conflict_caution_threshold: float = Field(default=0.55, ge=0.0, le=1.0)
+    max_news_adjustment: float = Field(default=0.05, ge=0.0, le=0.20)
+    blocked_states: list[NewsState] = Field(
+        default_factory=lambda: [NewsState.BREAKING, NewsState.HIGH_IMPACT]
+    )
+    caution_states: list[NewsState] = Field(
+        default_factory=lambda: [NewsState.CONFLICTED, NewsState.ELEVATED]
+    )
+
+
+class NewsBudgetConfig(BaseModel):
+    """Scoped daily budget for the news-LLM path (market-context P0 Phase 5).
+
+    Limits are REQUESTS and TOKENS per UTC day on the news path only — the
+    factory's own budget stays untouched (no second provider abstraction).
+    Exhaustion falls back to deterministic/local analysis, never a crash.
+    """
+
+    daily_request_limit: int = Field(default=120, ge=0)
+    daily_token_limit: int = Field(default=1_500_000, ge=0)
+
+
+class NewsAdmissionThresholds(BaseModel):
+    """Pre-DB admission gateway thresholds (news-admission-gate, §20).
+
+    One place to tune the admission funnel. Defaults are aligned with the
+    existing post-hoc auto-prune thresholds (importance 0.30 / xauusd
+    relevance 0.25) so the pre-DB gate and the prune never disagree about
+    what "low value" means.
+    """
+
+    admit_score: float = Field(default=0.35, ge=0.0, le=1.0)
+    review_score: float = Field(default=0.18, ge=0.0, le=1.0)
+    relevance_floor: float = Field(default=0.10, ge=0.0, le=1.0)
+    importance_floor: float = Field(default=0.10, ge=0.0, le=1.0)
+    source_quality_floor: float = Field(default=0.0, ge=0.0, le=1.0)  # low quality != reject
+    max_age_hours: float = Field(default=72.0, gt=0.0)
+    w_relevance: float = Field(default=0.45, ge=0.0, le=1.0)
+    w_impact: float = Field(default=0.30, ge=0.0, le=1.0)
+    w_source: float = Field(default=0.25, ge=0.0, le=1.0)
+    deterministic_admit_score: float = Field(default=0.60, ge=0.0, le=1.0)
+    enabled: bool = True
+
+
+class NewsConfig(BaseModel):
+    """Complete News subsystem configuration."""
+
+    enabled: bool = True
+    auto_analysis_enabled: bool = False  # local deterministic analysis; no API key needed
+    db_path: str = "artifacts/news.db"
+    max_articles_per_fetch: int = Field(default=200, ge=1, le=2000)
+    max_queue_size: int = Field(default=1000, ge=10, le=10000)
+    worker_interval_sec: int = Field(default=60, ge=10)
+    context_ttl_sec: float = Field(default=60.0, gt=0.0)
+    polling: NewsPollingConfig = Field(default_factory=NewsPollingConfig)
+    analysis: NewsAnalysisConfig = Field(default_factory=NewsAnalysisConfig)
+    decay: NewsDecayConfig = Field(default_factory=NewsDecayConfig)
+    bounds: NewsImpactBounds = Field(default_factory=NewsImpactBounds)
+    budget: NewsBudgetConfig = Field(default_factory=NewsBudgetConfig)
+    admission: NewsAdmissionThresholds = Field(default_factory=NewsAdmissionThresholds)
+
+    def resolve_db_path(self, repo_root: Path | None = None) -> Path:
+        """Resolves the news DB path relative to the repository root.
+
+        Follows the repository convention of ``artifacts/`` for databases.
+        BUG-149: with no explicit repo_root the base anchors to the canonical
+        runtime workspace (exe bundle when frozen, repo root in dev) instead
+        of the raw process CWD.
+        """
+        p = Path(self.db_path)
+        if p.is_absolute():
+            return p
+        if repo_root is None:
+            from nexus_scalp.release.paths import get_runtime_workspace
+
+            repo_root = get_runtime_workspace()
+        return repo_root / p

@@ -1,0 +1,174 @@
+[build-system]
+requires = ["setuptools>=68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nexus-scalp-engine"
+version = "9.0.14"
+description = "Production-grade, high-frequency, multi-timeframe scalp trading engine using PyTorch and MetaTrader 5"
+authors = [
+    { name = "Nexus Quantitative Engineering Team", email = "quant@nexus-trading.internal" }
+]
+license = { text = "Proprietary" }
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6.0,<3.0.0",
+    "pydantic-settings>=2.1.0,<3.0.0",
+    "pyyaml>=6.0.1,<7.0.0",
+    "structlog>=24.1.0,<27.0.0",
+    "typer>=0.9.0,<1.0.0",
+    "rich>=13.7.0,<16.0.0",
+    "polars>=0.20.0,<2.0.0",
+    "networkx>=3.0,<4.0",
+    "pyarrow>=15.0.0,<26.0.0",
+    "numpy>=1.26.0,<3.0.0",
+    "torch>=2.2.0,<3.0.0",
+    "fastapi>=0.110.0,<1.0.0",
+    "uvicorn>=0.27.0,<1.0.0",
+    "httpx>=0.26.0,<1.0.0",
+    "MetaTrader5>=5.0.45; platform_system == 'Windows'",
+    "feedparser>=6.0.0,<7.0.0; python_version >= '3.11'",
+    "tzdata>=2024.1",
+    "Pygments>=2.20.0",
+    "PyNaCl>=1.5.0,<2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "pytest-xdist>=3.5.0",
+
+    "ruff==0.16.8",
+    "mypy>=1.8.0",
+    "types-pyyaml>=6.0.12",
+    "types-requests>=2.31.0",
+    "types-setuptools>=68.0.0",
+]
+web = [
+    "fastapi>=0.110.0,<1.0.0",
+    "uvicorn>=0.27.0,<1.0.0",
+    "httpx>=0.26.0,<1.0.0",
+]
+# Client E2E golden journeys (tests/e2e_client, nightly-e2e.yml) drive a real
+# Chromium via Playwright. Kept as a dedicated extra so the base runtime wheel
+# and the docker image stay free of the browser toolchain; CI installs
+# `.[e2e]` before `python -m playwright install chromium`.
+e2e = [
+    "playwright>=1.40.0",
+]
+release = [
+    "pyinstaller>=6.0.0",
+    "feedparser>=6.0.0,<7.0.0",
+]
+postgres = [
+    "psycopg[binary]>=3.1,<4.0",
+    # Connection pool imported by src/nexus_scalp/database/fabric/pg_planes.py.
+    # Version range mirrors psycopg's own <4.0 ceiling; 3.3.3 is the
+    # installed/tested line.
+    "psycopg-pool>=3.1,<4.0",
+]
+
+[project.scripts]
+nexus = "nexus_scalp.release.cli_shim:app"
+nse = "nexus_scalp.cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# scratch/ holds one-off diagnostic probes from parallel agents (their
+# WIP is intentionally not lint-clean and is NOT part of the shipped
+# package or CI surface). Excluded from lint/format so transient probe
+# edits cannot break CI; src/, tests/, scripts/ and repo-root modules
+# remain fully covered.
+exclude = ["scratch", ".venv", "release", "artifacts", "_cleanup_hold_20260819"]
+
+[tool.ruff.format]
+# Byte-exact external spec fixtures: their content is pinned by an md5 issued
+# with the security task (tests must not be "reformatted", or the pinned spec
+# file and the committed file diverge and the pin can no longer be verified).
+# Formatting is the ONLY thing exempted — the assertions themselves are the
+# spec of BUG-263 and are never edited.
+exclude = ["tests/unit/test_agent9_rollback_integrity.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "I", "N", "UP", "PL", "RUF"]
+ignore = [
+    "E501",    # Line too long (handled via formatter)
+    "E741",    # Ambiguous variable name (e.g., 'l' for Low price)
+    "N802",    # Function name should be lowercase (e.g., _extract_X_y)
+    "N803",    # Argument name should be lowercase (e.g., X matrix)
+    "N806",    # Variable in function should be lowercase (e.g., X_train, UNSAFE_REGIMES)
+    "N812",    # Lowercase functional imported as non-lowercase F
+    "N813",    # Camelcase MetaTrader5 imported as lowercase mt5
+    "B008",    # Do not perform function call in argument defaults
+    "PLR0913", # Too many arguments
+    "PLR0917", # Too many positional arguments
+    "PLR0915", # Too many statements
+    "PLR0912", # Too many branches
+    "PLR0911", # Too many return statements
+    "PLR2004", # Magic value in comparison
+    "PLC0415", # Top-level imports (allow dynamic / conditional imports)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"NexusTradingForexBot.py" = ["E402"]
+"main.py" = ["E402"]
+"src/nexus_scalp/web/server.py" = ["RUF006", "E402"]
+"src/nexus_scalp/gateway/server.py" = ["PLW0603"]
+"tests/unit/test_accounting_pnl_regression.py" = ["N801"]
+"tests/*" = [
+    "PLR2004",
+    "PLC0415",
+    "RUF059",
+    "F401",
+    "E501",
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+disallow_untyped_decorators = false
+no_implicit_optional = true
+strict_optional = false
+ignore_missing_imports = true
+
+
+[[tool.mypy.overrides]]
+module = "scripts.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "MetaTrader5.*",
+    "fastapi.*",
+    "starlette.*",
+    "structlog.*",
+    "torch.*",
+    "numpy.*",
+    "polars.*",
+    "pyarrow.*"
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra -q --strict-markers"
+testpaths = ["tests"]
+markers = [
+    "slow: mark test as slow (nightly/pre-release; skipped by default in fast gate)",
+]
+asyncio_mode = "auto"
+# Ensure the repo root is importable so `from tests.helpers.mt5_fixtures
+# import ...` resolves identically on CI (GitHub Actions) and locally,
+# independent of pytest's rootdir detection / pip install mode.
+pythonpath = ["."]

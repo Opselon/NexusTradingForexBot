@@ -1,0 +1,188 @@
+# Nexus CLI Reference (`nexus`)
+
+The `nexus` command is the **application/user-facing CLI**. The PowerShell
+installer (`installer/install.ps1`) owns installation lifecycle; the CLI owns
+operating Nexus: diagnostics, engine lifecycle, configuration, research, and
+release management. Those boundaries never mix.
+
+- Canonical entrypoints (`pyproject.toml` `project.scripts`):
+  - `nexus` → `nexus_scalp.release.cli_shim:app` (packaged/installed command)
+  - `nse` → `nexus_scalp.cli.main:app` (developer alias, identical surface)
+- One authoritative help surface: `nexus --help` and `nexus help` are the
+  same output; `nexus help <command>` shows that command's detail.
+
+## Quick Start
+
+```powershell
+1. iex (irm https://raw.githubusercontent.com/Opselon/NexusTradingForexBot/main/installer/install.ps1)
+2. Open a NEW PowerShell (PATH refresh)
+3. nexus help            # discover the command surface
+4. nexus --version       # one-line build identity (same as `nexus version --plain`)
+5. nexus version         # full build identity (+ --json for tooling)
+6. nexus doctor          # full system diagnostics (read-only)
+7. nexus status          # health + environment + version + running state
+8. nexus dashboard       # open the web dashboard (or report why it is down)
+9. nexus config          # inspect the active configuration
+10. nexus start           # PAPER mode by default, never LIVE silently
+```
+
+## First-setup model and local training
+
+See [Training Setup](TRAINING_SETUP.md) for supported data formats, consent,
+CPU/CUDA checks, cancellation, and the official-model publication blocker.
+
+| Command | Purpose / authorization |
+|---|---|
+| `nexus model-setup` | Interactive official-vs-local choice; `--json` is discovery only |
+| `nexus model-provision --status` | Serving-slot origin/integrity; no installation |
+| `nexus model-official` | Explicit signed official download, mandatory verification; requires a published trusted source |
+| `nexus model-train-env --backend cpu` | Read-only environment checks; never installs |
+| `nexus model-train-env --install --backend cpu` | Explicitly prepare exact pinned packages |
+| `nexus model-train-local --input bars.csv --backend cpu --prepare-environment` | Prepare if needed, validate real data, train in the READY interpreter |
+| `nexus model-train-local --source broker --candles 50000 --prepare-environment` | Explicit local MT5 history acquisition, then the same training path |
+
+`--json` never prompts; unattended package preparation requires
+`--prepare-environment`. `--no-install` retains the verified candidate.
+Training never promotes or overwrites a governed champion. Use
+`nexus model-train-local --help` for every option and examples.
+
+## Exit-code contract (stable, Typer/Click-consistent)
+
+| Code | Meaning |
+|---|---|
+| 0 | success |
+| 1 | runtime / validation failure (honest, actionable) |
+| 2 | usage error (unknown command/option, missing argument) |
+| 3 | environment-blocked (safety policy refusal) |
+| 4 | release verification failure |
+| 5 | update not-applicable / failed (e.g. already-current reported honestly) |
+
+`--json` modes emit **valid JSON only on stdout**; human diagnostics go to
+stderr. Unknown commands/options print a readable panel + usage hint and exit
+2 - never a traceback wall.
+
+## Command reference
+
+Verified against the real Typer app (`tests/cli/test_cli_subprocess.py`
+asserts the golden list; run `nexus help` on your install for the live list).
+
+### Core / lifecycle
+
+| Command | Purpose | Side effects | JSON | Notes |
+|---|---|---|---|---|
+| `nexus help [cmd]` | Show the command reference (same as `--help`) | none | n/a | RC 0; unknown topic RC 2 |
+| `nexus --version` | One-line build identity (short convention) | none | n/a | RC 0; mirrors `nexus version --plain` byte-for-byte |
+| `nexus version` | Canonical version + build identity | none | `--json`, `--plain` | fast, no model/MT5/DB work |
+| `nexus doctor` | Full system doctor (SYSTEM..ACCOUNTING) | none by default | `--json` | `--fix` mutates derived state only |
+| `nexus health` | Quick READY / DEGRADED / NOT READY summary | none | `--json` | |
+| `nexus status` | Health + environment + version + **running product state** (application / engine / mode / trading) | none | `--json` | read-only |
+| `nexus dashboard` | Open / report the web dashboard ("where is my program?") | opens a browser when interactive | `--json` | `--no-open`; exits non-zero + next action when not running |
+| `nexus start` | Start the engine (**paper default**) | starts engine process | — | `--mode live` requires explicit confirmation |
+| `nexus stop` | Stop the background engine (pidfile-based) | stops engine | — | never kills arbitrary processes |
+| `nexus restart` | stop + start | engine | — | explicit only |
+| `nexus run` | Start with explicit config (legacy) | engine | — | |
+| `nexus update` | Check/download/verify/install newest release | code + deps (bounded, verified) | `--json` | `check` is discovery-only; `--dry-run` plans; honest `NO_UPDATE` |
+| `nexus repair` | Repair non-destructive derived state | derived state only | `--json` | NEVER deletes user data |
+| `nexus setup` / `nexus install` | First-run wizard (compat → mode → health) | writes user config choices | — | default: PAPER |
+| `nexus uninstall` | Uninstall helper; **keep-data default** | removes install (data kept unless explicit) | — | explicit intent required |
+| `nexus release` | Installed release metadata | none | `--json` | |
+| `nexus verify-release` | Verify a release tree (EXE/checksums/secrets) | none | — | |
+
+### Configuration & diagnostics
+
+| Command | Purpose | Side effects | JSON |
+|---|---|---|---|
+| `nexus config` | Inspect/validate active config | none | `--json`, `--show`, `--validate <path>` |
+| `nexus config-validate` | Syntax/schema/migration/secret-masking validation | none | — |
+| `nexus settings` | User-settings store (secrets masked) | none | `--json` |
+| `nexus logs` | Tail/filter/export engine logs (reports the tree the engine actually writes) | read-only | `--json` |
+| `nexus diagnostics` / `nexus export-diagnostics` | Sanitized diagnostics archive (no secrets) | writes archive | — |
+| `nexus forensic` | Forensic health matrix + deploy gate | read-only | `--json` |
+| `nexus incidents` | Incident response diagnostics | read-only by default | — |
+| `nexus test` | Run test suites (never live broker tests) | runs tests | — |
+| `nexus analyze` | Static code diagnostics (dev tool) | none | — |
+
+### Model factory (artifact-first; never touches the Champion automatically)
+
+`model-setup` · `model-official` · `model-train-local` · `model-train-env` ·
+`model-provision` ·
+`train-once` (deprecated alias) ·
+`model-dataset-build` · `model-experiment-create` · `model-train` ·
+`model-train-3` · `model-validate` · `model-inspect` · `model-replay` ·
+`model-doctor` — deterministic, artifact-first flows. Training candidates
+never auto-promote; the 70D `scalp_v3` canonical contract is respected.
+
+**Optional Training Setup (BUG-301):** training is gated on a typed
+environment lifecycle, never implicit. `nexus model-train-env` DISCOVERS
+(python → environment → pip → backend → pytorch → version → smoke) without
+changing the machine; `nexus model-train-env --install [--backend cpu|cuda]`
+is the ONLY way the training stack is provisioned — the canonical pinned
+contract `configs/training_environment.json` (one version source; CPU and
+CUDA are two real paths, each ending in a REAL tensor / CUDA-allocation
+smoke test before READY). `model-train-local --backend cpu|cuda` and the web
+wizard expose the same manager; training is BLOCKED (typed reason + remedy)
+until the environment is READY in-process. PyTorch is NEVER installed at
+application startup — PAPER inference and PATH A need no training stack.
+
+**First run (BUG-293):** a clean install acquires its serving model through
+one of two explicit paths (same domain service behind CLI and the
+`/first_setup.html` wizard):
+
+- **PATH A — official model:** `nexus model-official` downloads the signed
+  Nexus bundle and verifies SHA256 per file, the Ed25519 signature (the
+  updater trust root), schema/dimension/architecture bindings and artifact
+  integrity BEFORE install; an unverified bundle is never installed. No
+  local PyTorch training needed. Hosting is operator-configured via
+  `NEXUS_OFFICIAL_MODEL_BASE_URL` (HTTPS directory or `drive:<fileid>`);
+  publish with `scripts/release/build_official_bundle.py`.
+- **PATH B — train your own:** `nexus model-train-local --input <broker
+  export.csv|.parquet>` imports the user's own data, reports real
+  diagnostics (duplicates / invalid rows / gaps / chronological-tail
+  selection), runs the canonical purged walk-forward trainer (time splits
+  only, real per-epoch loss/val-loss progress, cancel at epoch boundary),
+  verifies the candidate, and installs it ONLY over an empty/dev-starter
+  serving slot. Market data never leaves the machine (no upload, no cloud,
+  no data-bearing telemetry).
+- `nexus start` (PAPER) auto-selects: keep a verified bundle → download the
+  official bundle when configured → else mint the **DEV STARTER** (labeled,
+  offline/CI/emergency fallback — never presented as production; `nexus
+  model-setup` always recommends replacing it). SHADOW/LIVE never
+  auto-provision: they refuse until a real verified bundle is installed.
+- `nexus model-provision [--status|--starter]` shows the honest slot
+  classification (origin OFFICIAL / USER_TRAINED / GOVERNED / DEV_STARTER /
+  UNKNOWN + lifecycle state) and mints the labeled starter on demand.
+
+### Data / infrastructure
+
+`db` (schema migration & management) · `db-portability` (SQLite ↔ PostgreSQL)
+· `dependency` (dependency intelligence) · `audit-purge` (retention-bounded
+telemetry purge).
+
+## Safety invariants (verified by tests)
+
+- No CLI diagnostic command sends MT5 orders or touches broker state.
+- No CLI command silently replaces the champion model or downgrades the 70D
+  `scalp_v3` contract.
+- Destructive behavior (`uninstall`) requires explicit intent; keep-data is
+  the default.
+- Secrets are never echoed in `config`, `settings`, JSON, or logs.
+- `nexus update` never silently downgrades and protects a dirty checkout
+  (the installer's stash/restore semantics are authoritative).
+
+## Configuration discovery
+
+The CLI reads config via the application's `AppConfig` layer; discovery is
+deterministic and independent of the caller's CWD (`nexus version/doctor`
+behave identically from `C:\`, `%TEMP%`, an unrelated repo, or the Nexus
+checkout).
+
+## Troubleshooting
+
+| Symptom | Action |
+|---|---|
+| `nexus` not found | Open a new terminal (PATH refresh); `Get-Command nexus` / `where.exe nexus`; re-run the installer `-Stage path -Json` |
+| venv unhealthy / import errors | `nexus repair` (or `installer/install.ps1 -Repair`) |
+| doctor reports DEGRADED | Read the failing category lines; `nexus doctor --json` for tooling |
+| update fails | `nexus update check --json` for the honest state; check network/proxy |
+| permission error | Install is user-scoped; ensure `%LOCALAPPDATA%\Nexus` is writable |
+| MT5 unavailable | Start the MT5 terminal; diagnostics degrade gracefully and stay honest |

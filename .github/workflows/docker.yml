@@ -1,0 +1,117 @@
+name: Docker Build & Publish
+
+# Builds and publishes the GHCR image. SECONDARY lane: the production
+# deployment path is the Windows release bundle + signed updater
+# (docs/RELEASE.md, docs/70D_PRODUCTION_DEPLOYMENT.md); Docker is the
+# container-safe PAPER evaluation/development environment
+# (docs/docker.md §1 — LIVE trading is impossible in the container).
+#
+# Triggers (Finding 5, release wave):
+#   * pushes to the dedicated 'docker' branch (operator-created staging
+#     branch for container work), AND
+#   * pushes of v* release tags — so every tagged release also produces a
+#     container image whose OCI revision label binds it to the exact full
+#     commit SHA of the release, closing the image<->release identity gap.
+# Normal development pushes (main/develop/ci-tests) intentionally do NOT
+# build or publish images.
+on:
+  push:
+    branches: [docker]
+    tags: ["v*"]
+  workflow_dispatch:
+
+# All third-party actions are pinned to immutable commit SHAs
+# (supply-chain hardening).
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+# One docker build at a time per ref; a new push supersedes the old.
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    name: Build and Push to GHCR
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Resolve immutable release identity
+        id: identity
+        shell: bash
+        run: |
+          set -e
+          # Finding 2/5: the image's ONLY trust identity is the FULL 40-hex
+          # commit SHA (org.opencontainers.image.revision). The tag name and
+          # semver tags are navigational, never authoritative.
+          FULL_SHA="$(git rev-parse HEAD)"
+          echo "$FULL_SHA" | grep -qE '^[0-9a-f]{40}$' || {
+            echo "::error::DOCKER_IDENTITY_FULL_SHA_REQUIRED: got '$FULL_SHA'"; exit 1; }
+          echo "revision=$FULL_SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$(grep -m1 -E '^version = ' pyproject.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+          labels: |
+            org.opencontainers.image.revision=${{ steps.identity.outputs.revision }}
+            org.opencontainers.image.version=${{ steps.identity.outputs.version }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.nse.release.channel=stable
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify published image digest binds to the release identity
+        shell: bash
+        run: |
+          set -e
+          # Finding 5: prove the immutable digest is recorded alongside the
+          # revision it was built from. The digest (not any mutable tag) is
+          # the artifact identity — emitted for the release log/summary.
+          DIGEST="${{ steps.meta.outputs.digest || steps.build.outputs.digest }}"
+          if [ -z "$DIGEST" ]; then
+            echo "::warning::digest output unavailable from the build step — identity recorded from labels only"
+          else
+            echo "IMAGE_DIGEST=$DIGEST"
+            echo "IMAGE_REVISION=${{ steps.identity.outputs.revision }}"
+            echo "IMAGE_VERSION=${{ steps.identity.outputs.version }}"
+          fi

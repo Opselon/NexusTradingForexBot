@@ -1,0 +1,5 @@
+stash_idx=54
+stash_msg=stash@{54}: On main: agent10-foreign-untracked
+stash_obj=864434f5
+p3=ce34eab04329242198b0e10556a030bf871de06b
+parents=1cb1c7cecac976e55f8dfd40df505e8682746064 16a64d637c10e35497ff0d4bd4c7bbda1ae09066 ce34eab04329242198b0e10556a030bf871de06b

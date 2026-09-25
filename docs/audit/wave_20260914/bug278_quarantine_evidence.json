@@ -1,0 +1,30 @@
+{
+ "bug": "BUG-278",
+ "applied": true,
+ "run_at": "2026-09-14T14:31:22.207072+00:00",
+ "context": {
+  "serving_path_normalized": "c:/users/capsizer/source/repos/nexustradingforexbot/artifacts/models/scalp/xauusd/70d_liquidity/model.pt",
+  "serving_current_fingerprint": "c9982ddde1755591",
+  "champion_rows_scanned": 12,
+  "window_start": "2026-09-14T00:00:00+00:00"
+ },
+ "quarantined": [
+  {
+   "id": 4073,
+   "model_id": "primary_scalp_scalp_v1_50d",
+   "artifact_path": "C:\\Users\\Capsizer\\AppData\\Local\\Temp\\pytest-of-Capsizer\\pytest-6778\\test_live_tick_present0\\model.pt",
+   "fingerprint": "03157501848ac5b4",
+   "registered_at": "2026-09-14T03:50:15.914345+00:00",
+   "reason": "BUG-276 R1: CHAMPION row bound to a test-harness artifact path"
+  },
+  {
+   "id": 4080,
+   "model_id": "primary_scalp_scalp_v1_50d",
+   "artifact_path": "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt",
+   "fingerprint": "bb1f0afe30f746da",
+   "registered_at": "2026-09-14T03:14:02.088276+00:00",
+   "reason": "BUG-276 R2: row governed bytes that were clobbered by test-harness minting; the governed artifact now on disk is a different fingerprint"
+  }
+ ],
+ "id_collision_note": "Executed 2026-09-14 under pre-collision id BUG-276; renumbered to BUG-278 after PR #196 landed BUG-276 (unique-constraint shadow) on main mid-wave. Live registry rows 4073/4080 carry the original 'BUG-276 R1/R2' promotion_reason strings (immutable evidence)."
+}

@@ -1,0 +1,11 @@
+{
+  "bars": 100000,
+  "htf_forming_exclusion": "25/25",
+  "sweep_future_invariant": "25/25",
+  "historical_invariance": "25/25",
+  "latency_ms": {
+    "p50": 39.61,
+    "p95": 49.71,
+    "max": 54.39
+  }
+}

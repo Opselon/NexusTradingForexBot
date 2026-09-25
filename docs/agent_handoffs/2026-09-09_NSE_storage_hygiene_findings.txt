@@ -1,0 +1,153 @@
+NSE STORAGE / DISK / LOG HYGIENE AUDIT — Disk, Log & Runtime Hygiene Lead
+2026-09-09 · audited at HEAD 5f804488 (main) · mission: customer clients growing to 10GB
+
+SCOPE: full client lifecycle audit (startup -> runtime -> errors -> updates -> shutdown ->
+restart -> uninstall) for logs, caches, artifacts, temp files, crash dumps, DB growth,
+duplicated data. Every claim cites file:line at HEAD. Labels: [FIXED-VERIFIED] fixed in this
+pass with fresh proof / [PARTIAL] / [OPEN] / [ACCEPTED-RISK] / [OK] audited, sound.
+
+================================================================================
+A. LOGGING SUBSYSTEM (src/nexus_scalp/observability/logging.py)
+================================================================================
+A1 [OK] Severity-split daily tree logs/<sev>/YYYY/MM/*.log, 10MB size split into
+   .part-NNN (logging.py:78, 397-409, 479-508). Multi-process append-safe (_WRITE_LOCK
+   logging.py:232). Redaction centralized (BUG-121/126). Good bones.
+A2 [FIXED-VERIFIED] RETENTION ONLY ENFORCED AT BOOT. _prune_old_logs has exactly ONE
+   caller: configure_logging (logging.py:671). The "at most hourly" throttle
+   (logging.py:528-530, _PRUNE_INTERVAL_SEC=3600) is dead in practice — nothing re-arms
+   it while the engine runs, and clients run the engine for WEEKS. Every severity file
+   created after boot lives until next restart. An exception storm writing 10MB parts
+   (each capped by MAX_BYTES_PER_FILE) grows logs/ unboundedly between restarts. THIS IS
+   A PRIMARY 10GB DRIVER. Fix: emit-path hook re-checks the hourly throttle; prune runs
+   inside the process that writes logs. Proof: grep '_prune_old_logs' -> 1 caller.
+A3 [FIXED-VERIFIED] NO PER-DIRECTORY BYTE BUDGET. Retention is age-only (30/30/90/365
+   days, logging.py:81-86). 90 days of error parts at storm rate (100 parts/day) is
+   90GB theoretical. Fix: max_total_mb per severity dir, oldest-first deletion after
+   age+compression passes.
+A4 [FIXED-VERIFIED] NO COMPRESSION of archived logs — 3-8x disk waste on text logs.
+   Fix: compress files older than compress_after_days to .log.gz (gzip, verify size,
+   then unlink original; atomic per file).
+A5 [PARTIAL] ROOT PATH DIVERGENCE: launcher writes CWD logs/ (NexusTradingForexBot.py:580-585),
+   `nexus start` daemon writes CWD logs/ (cli/engine_boot.py:517-522 — NO log_file_path
+   passed), LiveEngine.start() again CWD logs/ (application/live_engine.py:1713-1717),
+   packaged policy says %LOCALAPPDATA%/NexusScalpEngine/logs (release/paths.py:72-73,
+   logging.py:588). A source/portable run started from an unexpected CWD scatters a
+   second log tree where retention pruners may never look (prune only sees the dir it
+   was configured with). Doc'd as P2; production packaged flow passes the right path.
+A6 [OK] Duplicate-handler guard on reconfigure keeps pytest caplog alive and clears
+   stale root handlers (logging.py:647-654). No console duplication found in the
+   launcher->daemon path (separate processes).
+
+================================================================================
+B. DATABASE GROWTH (SQLite)
+================================================================================
+B1 [OK] audit purge (BUG-054): bounded batched deletes, audit_signals 7d / POSITION_MOVING
+   3d / guard_telemetry 13d; accounting truth NEVER touched
+   (adapters/database/audit_repository.py:3255-3340, application/live/maintenance.py:56-66).
+B2 [OK] Shadow tables retention: 30d roll-off on per-tick telemetry, drift/PHASE-11
+   decision rows durable-never-delete (commit e5ee4fe9, hygiene/retention.py:74+).
+B3 [FIXED-VERIFIED] NO WAL CHECKPOINT / VACUUM ANYWHERE IN MAINTENANCE. base.yaml:99-110
+   comment promises "WAL/VACUUM-in-maint-window" but grep VACUUM|wal_checkpoint over
+   hygiene/worker.py + worker_runner.py returns NOTHING. Purged rows leave free pages;
+   the .db file never shrinks and WAL can stay large after heavy write storms until
+   process close. Fix: StorageGuard cycle runs PRAGMA wal_checkpoint(TRUNCATE) on the
+   managed DBs (safe, brief); full VACUUM stays a manual `nexus db` op (documented) —
+   auto-VACUUM mid-market would rewrite GBs and is refused by design.
+B4 [OPEN P2] hygiene MANAGED_DATABASES covers audit/news/candle_intel only
+   (hygiene/worker_runner.py:43-47). marketplace.db (NX-MKT) and settings DB are outside
+   retention governance. Marketplace DBs are append-capped by design (score snapshots);
+   flagged for the hygiene owner, not changed here.
+B5 [OK] WAL sidecars on this checkout are 0-32KB (measured 2026-09-09). sqlite_driver
+   sets WAL + synchronous=NORMAL + temp_store=MEMORY (drivers/sqlite_driver.py:120-127).
+
+================================================================================
+C. TEMP / UPDATER / CRASH / UNINSTALL
+================================================================================
+C1 [OK] smoke runner mkdtemp+rmtree in finally (smoke/runner.py:234, 250-257).
+C2 [FIXED-VERIFIED] UPDATE CACHE NEVER PRUNED: update_home/cache keeps every downloaded
+   artifact forever (orchestrator.py:118, SafeDownloader writes cache_dir/<name>,
+   downloader.py:63-131). ~100-200MB per release x monthly releases x retry attempts =
+   multi-GB over a year on client machines. Fix: keep_versions policy + age prune in the
+   update flow; .part residue (>1h old) swept.
+C3 [FIXED-VERIFIED] FULL-APP BACKUPS ACCUMULATE: each update leaves a full .previous-<ts>
+   tree (backup_migrate.py:276) and _record_backup_pointer_cleanup is an explicit NO-OP
+   placeholder (orchestrator.py:910-912). Rollback needs ONE prior tree; N updates = N
+   full app copies (hundreds of MB each). Fix: prune .previous-* keep newest 1 (strict
+   name regex, pointer dir protected).
+C4 [FIXED-VERIFIED] NO CRASH-LEFTOVER SWEEP: .update-stage-*/.preserve-* dirs are cleaned
+   on caught exceptions (backup_migrate.py:292-303) but a hard crash/power loss leaves
+   them forever; .part files idem. Fix: startup sweep in engine boot + update-run finally.
+C5 [PARTIAL] Diagnostics ZIPs accumulate one per export (release/diagnostics.py:113-115),
+   no cap. User-triggered and small; sweep hook added, no auto-run.
+C6 [OPEN P3] forensics history.jsonl appends with "rolling history (bounded)" comment but
+   NO trim code (forensics/engine.py:319-329). ~35MB/yr at default cadence when
+   forensic_report enabled (default off). Owner-routed, not changed.
+C7 [OK] Dataset locks are O_EXCL + stale-age reclaim (research/mt5_tick_dataset.py:160-198).
+C8 [OK] Uninstall keeps user data by default with explicit confirm before deletion
+   (cli/wizard.py:298-341) — data-safety contract respected.
+C9 [FIXED-VERIFIED] NO RUNTIME QUOTA/AWARENESS: disk-space is checked only before an
+   update download (orchestrator.py:246). Nothing anywhere watches logs//update/backups
+   total size. Fix: measure_usage + enforce_quota in the StorageGuard cycle with
+   Telegram/report alert surface (returned dict; caller decides delivery).
+
+================================================================================
+D. LOG SPAM (fix causes, not symptoms)
+================================================================================
+D1 [FIXED-VERIFIED] MT5 DIAGNOSTIC STORM: every failed MT5 call emits an identical
+   WARNING line, unthrottled (adapters/mt5/diagnostics.py:196-202 _emit). During a
+   degraded connection with 100ms retry loops this floods logs/error + console
+   (real production evidence: 2026-09-01 "scaler storm"/WinError5 crash-loop classes in
+   taskboard BUG-169). Fix: signature-keyed (op,status,error_code) suppression window
+   with an honest SUPPRESSED_N summary after the window — first failure always logs,
+   recovery always logs, nothing hidden.
+D2 [OK] Per-bar [ONLINE_TRAIN] RECORD_SKIPPED / FEATURE_CONTRACT_MISMATCH lines are
+   bar-close cadence (bounded ~1/min), and the contract-mismatch line is the honest
+   refusal path (live_engine.py:370-392). Left alone deliberately.
+D3 [OK] EventBatchAggregator already collapses dataset/news/evaluator floods
+   (observability/event_aggregator.py, regression suite test_operational_log_hygiene.py).
+D4 [OK] Quiet-list for stdlib noise (urllib3/asyncio/polars/torch/uvicorn, logging.py:98).
+
+================================================================================
+E. PROTECTED DATA (verified untouched by the new cleanup)
+================================================================================
+The storage policy is ALLOWLIST-based: it only ever touches (1) its own log severity
+tree, (2) update_home/cache + .update-stage-*/.preserve-* + .previous-* (keep 1), (3)
+diagnostics zips (keep N), (4) *.tmp/*.part residue older than 1h under the data root,
+(5) WAL checkpoint PRAGMAs. NEVER: audit_ledger/experience/autopsies/strategy lineage
+DBs, marketplace.db, models/, configs/, data/, quarantine, artifacts/archive, release
+records, user config. Test-pinned (test_storage_policy.py::protected-data class).
+
+================================================================================
+F. MEASUREMENT (mechanism level; client trees vary)
+================================================================================
+Repo checkout today (dev, not representative of a client): logs/ 76KB, artifacts 14MB,
+.wal all 0-32KB. The 10GB client profile decomposes as: logs/ unbounded between
+restarts (A2/A3: dominant), update cache + .previous trees (C2/C3: 0.5-1.5GB over
+months), WAL/uncheckpointed pages (B3), diagnostics/zip + stage residue (C4/C5).
+Post-fix worst-case steady state (defaults): logs/ = max_total_mb (500MB per severity,
+compressed) + update cache = keep_versions x artifact (~200MB) + 1 backup tree +
+DBs (purge + checkpoint governed) + diagnostics (10 zips). Failure mode (storm) clamps
+at the same caps instead of growing without bound. Tests assert bytes-before/after.
+
+================================================================================
+G. FIX DELIVERED IN THIS PASS (commit scope)
+================================================================================
+- src/nexus_scalp/storage/policy.py  — pure sweep/plan/measure/quota functions
+- src/nexus_scalp/storage/runtime.py — StorageGuard (startup sweep + throttled cycle)
+- observability/logging.py           — hourly re-prune via emit hook, per-severity byte
+                                        cap, gzip compression of aged logs (opt-out)
+- application/live/maintenance.py    — StorageGuard stage (throttled, to_thread, isolated)
+- cli/engine_boot.py                 — startup sweep after logging configure
+- release/update_engine/orchestrator — cache prune before download + stage/backup sweep
+                                        in finally
+- adapters/mt5/diagnostics.py        — failure-storm throttle (D1)
+- configuration/config.py + base.yaml— `storage:` section (all knobs, safe defaults)
+- cli/storage_commands.py            — `nexus storage status|sweep` (dry-run default)
+- tests/unit/test_storage_policy.py + tests/unit/test_mt5_diag_throttle.py +
+  tests/unit/test_logging_retention_runtime.py, wired into tests/critical_suite.txt
+
+PRIORITY ORDER: A2 (boot-only retention) > D1 (storm) > C2/C3 (updater) > A3/A4 (caps +
+compression) > B3 (checkpoint) > C4/C9 (sweep + quota) > A5/C5/C6 (P2/P3 owners noted).
+No trading logic touched: live_engine.py, order_manager.py, policy.py, mt5_adapter.py
+untouched (diagnostics.py is the wrapper module outside IMT5Port contract surface —
+logging-only change, no adapter method modified).

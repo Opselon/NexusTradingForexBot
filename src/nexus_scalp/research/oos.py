@@ -1,0 +1,250 @@
+"""
+Hard Out-of-Sample Gate
+=======================
+PHASE 09B (spec 15 / 34 / 38).
+
+A candidate can NOT become VALIDATED merely because in-sample performance is
+excellent; it MUST survive the out-of-sample gate. A strategy whose OOS is
+negative is REJECTED even if win rate is high (spec 34).
+"""
+
+from __future__ import annotations
+
+from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.research.metrics import compute_backtest, compute_relative_degradation
+from nexus_scalp.research.models import (
+    ExecutionAssumptions,
+    OOSResult,
+    ResearchDataset,
+    default_research_assumptions,
+    ensure_not_zero_friction,
+)
+from nexus_scalp.research.splitting import (
+    DEFAULT_EMBARGO_SECONDS,
+    DEFAULT_PURGE_SECONDS,
+    split_temporal,
+)
+
+logger = get_logger("nexus_scalp.research.oos")
+
+#: LEGACY floor (PHASE 09B, doc-pinned in SEARCH_LEARNING_BOUNDARIES.md):
+#: the gate historically required only a non-negative OOS expectancy. Kept as
+#: a public constant for backward-compatible imports; the GATE DEFAULT is now
+#: the economic floor below (edge round-2, 2026-09-09).
+MIN_OOS_EXPECTANCY_R: float = 0.0
+#: ECONOMIC FLOOR (edge round-2): the minimum OOS expectancy that survives the
+#: friction model's own noise. The canonical spread+slippage sensitivity of a
+#: scalp is ~0.01-0.02R per trade, so an edge below 0.02R is statistically
+#: indistinguishable from execution-cost noise — not a tradable economic
+#: edge. Raising (never lowering) this constant is the documented tightening
+#: direction; explicit constructors may still pass 0.0 for legacy semantics.
+MIN_ECONOMIC_OOS_EXPECTANCY_R: float = 0.02
+#: Maximum acceptable relative degradation from in-sample to OOS.
+MAX_OOS_DEGRADATION: float = 1.0  # 100% relative drop is the hard ceiling
+
+
+class OOSGate:
+    """Enforces the hard out-of-sample gate."""
+
+    def __init__(
+        self,
+        min_oos_expectancy_r: float | None = None,
+        max_degradation: float = MAX_OOS_DEGRADATION,
+        assumptions: ExecutionAssumptions | None = None,
+    ) -> None:
+        # min_oos_expectancy_r=None -> the ECONOMIC floor (new default).
+        # Passing 0.0 EXPLICITLY restores the legacy non-negative contract.
+        if min_oos_expectancy_r is None:
+            min_oos_expectancy_r = MIN_ECONOMIC_OOS_EXPECTANCY_R
+        self.min_oos_expectancy_r = float(min_oos_expectancy_r)
+        self.max_degradation = float(max_degradation)
+        # E1/E2: canonical-cost default (see walkforward for the contract).
+        if assumptions is not None:
+            self.assumptions = assumptions
+            self.assumptions_provenance = "EXPLICIT"
+        else:
+            self.assumptions, self.assumptions_provenance = default_research_assumptions()
+
+    def evaluate(
+        self,
+        dataset: ResearchDataset,
+        strategy_id: str,
+        strategy_version: str,
+        val_frac: float = 0.2,
+        oos_frac: float = 0.2,
+        purge_seconds: float = DEFAULT_PURGE_SECONDS,
+        embargo_seconds: float = DEFAULT_EMBARGO_SECONDS,
+        context_contract: dict | None = None,
+        allow_zero_friction: bool = False,
+        n_trials: int | None = None,
+        family_r_lists: list[list[float]] | None = None,
+    ) -> OOSResult:
+        # E1 loud guard: refuse a zero-cost run unless explicitly allowed.
+        ensure_not_zero_friction(
+            self.assumptions,
+            allow=allow_zero_friction,
+            context="OOSGate.evaluate",
+        )
+        # PHASE 26 (strategy-aware validation): scope the evaluation
+        # population to the strategy's declared market conditions when a
+        # contract is supplied. Thresholds are untouched; only the sample
+        # population changes, and the diagnostics travel on the result.
+        dataset_for_eval = dataset
+        context_diag: dict = {}
+        if context_contract:
+            from nexus_scalp.research.context_contract import (
+                filter_samples_by_contract,
+                has_active_contract,
+            )
+
+            if has_active_contract(context_contract):
+                filtered, context_diag = filter_samples_by_contract(
+                    list(dataset.samples), context_contract
+                )
+                if filtered:
+                    dataset_for_eval = dataset.model_copy(update={"samples": filtered})
+                else:
+                    # AGENT 17 (CHG-0063) hard-gate: a declared context
+                    # contract that matches ZERO samples must FAIL the
+                    # gate — never silently fall back to the global
+                    # population. The pipeline path already raises
+                    # CONTEXT_CONTRACT_EMPTY_POPULATION before reaching
+                    # this gate; this closes the same hole for DIRECT
+                    # OOSGate.evaluate callers, where the old fallback
+                    # evaluated (and could PASS) on a population the
+                    # strategy never declared (false-PASS repro: 100
+                    # London-negative + 20 Asian-positive tail + typo
+                    # session contract -> PASS 0.73R wrong population).
+                    context_diag["sufficient_evidence"] = False
+                    logger.error(
+                        "[OOS] event=CONTEXT_CONTRACT_EMPTY_POPULATION",
+                        strategy_id=strategy_id,
+                        total_samples=len(dataset.samples),
+                    )
+                    return OOSResult(
+                        strategy_id=strategy_id,
+                        strategy_version=strategy_version,
+                        dataset_id=dataset.dataset_id,
+                        in_sample_expectancy_r=0.0,
+                        oos_expectancy_r=0.0,
+                        oos_samples=0,
+                        oos_win_rate=0.0,
+                        status="FAIL",
+                        reason=(
+                            "CONTEXT_CONTRACT_EMPTY_POPULATION: declared "
+                            "context matched 0 samples; global population "
+                            "refused (no silent widening)"
+                        ),
+                        context_diagnostics=context_diag,
+                    )
+
+        split = split_temporal(
+            dataset_for_eval,
+            val_frac=val_frac,
+            oos_frac=oos_frac,
+            embargo_seconds=embargo_seconds,
+            purge_seconds=purge_seconds,
+        )
+        in_sample = split.train + split.validation
+        in_bt = compute_backtest(
+            in_sample,
+            strategy_id=strategy_id,
+            strategy_version=strategy_version,
+            dataset_id=dataset.dataset_id,
+            assumptions=self.assumptions,
+        )
+        oos_bt = compute_backtest(
+            split.oos,
+            strategy_id=strategy_id,
+            strategy_version=strategy_version,
+            dataset_id=dataset.dataset_id,
+            assumptions=self.assumptions,
+        )
+
+        in_exp = in_bt.expectancy_r
+        oos_exp = oos_bt.expectancy_r
+        degradation = compute_relative_degradation(in_exp, oos_exp)
+
+        # EDGE HARDENING (2026-09-09): bootstrap significance for the OOS mean.
+        # Per-trade adjusted R is recovered exactly from the equity curve the
+        # backtest itself produced (first differences of the cumulative R path)
+        # — no re-simulation, no duplicated friction logic.
+        oos_sig: dict = {}
+        dsr: dict | None = None
+        spa: dict | None = None
+        curve = oos_bt.equity_curve_r
+        if curve:
+            prev = 0.0
+            oos_r_list: list[float] = []
+            for point in curve:
+                oos_r_list.append(float(point) - prev)
+                prev = float(point)
+            from nexus_scalp.research.metrics import (
+                deflated_sharpe_ratio,
+                oos_significance,
+                spa_family_pvalue,
+            )
+
+            oos_sig = oos_significance(oos_r_list)
+            # EDGE ROUND-2: selection-bias control when the strategy was mined
+            # from a family search. n_trials = mined-trial count; family_r_lists
+            # = per-trade R lists of ALL mined candidates (Reality Check set).
+            # Both optional: absent -> fields stay None (legacy producers).
+            if n_trials is not None and n_trials > 1:
+                dsr = deflated_sharpe_ratio(oos_r_list, int(n_trials))
+            if family_r_lists:
+                spa = spa_family_pvalue(family_r_lists)
+
+        oos_samples = len(split.oos)
+        # BUG-244 (Agent 13): an OOS window with rows but ZERO finite real
+        # evidence previously PASSED on fabricated 0.0 expectancy.
+        oos_had_finite = oos_bt.total_trades > 0
+        reasons: list[str] = []
+        passed = oos_exp >= self.min_oos_expectancy_r
+        if oos_had_finite:
+            pass
+        elif oos_samples > 0:
+            passed = False
+            reasons.append(
+                "No OOS evidence: OOS holds samples but zero finite R rows (non-finite evidence)"
+            )
+        if not passed:
+            reasons.append(
+                f"OOS expectancy {oos_exp:.4f}R below minimum {self.min_oos_expectancy_r}R"
+            )
+        if oos_samples == 0:
+            passed = False
+            reasons.append("No out-of-sample samples available")
+        if in_exp > 0.0 and degradation > self.max_degradation:
+            passed = False
+            reasons.append(
+                f"OOS degradation {degradation:.2f} exceeds max {self.max_degradation:.2f}"
+            )
+        if in_exp <= 0.0 and oos_exp <= 0.0:
+            if oos_samples:
+                reasons.append("In-sample and OOS both non-positive")
+
+        status = "PASS" if passed else "FAIL"
+        reason = "; ".join(reasons) or "OOS evidence confirms positive edge"
+
+        logger.info(
+            "[OOS] event=RESULT",
+            strategy_id=strategy_id,
+            oos_expectancy_r=round(oos_exp, 6),
+            status=status,
+        )
+        return OOSResult(
+            strategy_id=strategy_id,
+            strategy_version=strategy_version,
+            dataset_id=dataset.dataset_id,
+            in_sample_expectancy_r=round(in_exp, 6),
+            oos_expectancy_r=round(oos_exp, 6),
+            oos_samples=oos_samples,
+            oos_win_rate=round(oos_bt.win_rate, 6),
+            status=status,
+            reason=reason,
+            context_diagnostics=(context_diag or None),
+            oos_significance=(oos_sig or None),
+            deflated_sharpe=dsr,
+            spa=spa,
+        )

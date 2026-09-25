@@ -1,0 +1,509 @@
+/**
+ * App shell: routing, providers, top status bar, banners, navigation.
+ *
+ * Server state baseline comes from TanStack Query (`/api/status` snapshot);
+ * the realtime layer (core/realtime SSE) merges live updates on top. LIVE/PAPER
+ * and every authoritative value render from backend data only.
+ *
+ * Pro UX layer (presentation only): persistent sidebar/topbar, density mode,
+ * freshness meters, keyboard navigation (Alt+1..9, Alt+B), dismissible stale
+ * banners, and the command-result toast host. No state decisions live here.
+ *
+ * Auth banner is driven by core/auth (getAuthState + auth:expired events) —
+ * never by ad-hoc token probing.
+ */
+
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+// Wave 6 (perf): the seven legacy routes are code-split like the feature
+// registry — the entry chunk no longer carries every page up front. Same
+// modules, same default exports, same props/URLs; React.lazy defers only the
+// fetch. The Suspense+ErrorBoundary wrapper below mirrors the per-feature
+// route contract (legacy routes previously had neither — a render error was
+// uncaught).
+const DashboardPage = lazy(() => import("@/pages/Dashboard/DashboardPage"));
+const TradingPage = lazy(() => import("@/pages/Trading/TradingPage"));
+const PositionsPage = lazy(() => import("@/pages/Positions/PositionsPage"));
+const RiskPage = lazy(() => import("@/pages/Risk/RiskPage"));
+const MLPage = lazy(() => import("@/pages/ML/MLPage"));
+const IntelligencePage = lazy(() => import("@/pages/Intelligence/IntelligencePage"));
+const AuditPage = lazy(() => import("@/pages/Audit/AuditPage"));
+import type { EngineSnapshot } from "@/types/domain";
+import { engineApi } from "@/api/engineApi";
+import { useRealtimeSnapshot } from "@/hooks/useRealtimeSnapshot";
+import { ConnectionIndicator, FreshnessMeter } from "@/components/ConnectionIndicator";
+import { ModeIndicator } from "@/components/ModeIndicator";
+import { AttentionStrip } from "@/components/AttentionStrip";
+import { CommandPalette } from "@/components/CommandPalette";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ConfirmModal, ToastHost, ErrorState, LoadingState, StatusBadge } from "@/components/primitives";
+import { useUiStore } from "@/stores/uiStore";
+import { useI18n } from "@/stores/i18nStore";
+import { LANGUAGES } from "@/lib/i18n";
+import { ApiError } from "@/types/api";
+import {
+  FEATURE_SECTIONS,
+  featureLabelKey,
+  type FeatureSectionName,
+} from "@/app/featureRegistry";
+import { getAuthState, hasAccessToken } from "@/core/auth";
+import { onCore } from "@/core/events";
+
+/** Max Alt+<n> digit (spec: 1..9 capped). */
+const MAX_ALT_ROUTES = 9;
+
+const NAV_SECTIONS: Array<{ section: string; sectionKey: string; items: Array<{ to: string; icon: string; label: string; labelKey: string }> }> = [
+  {
+    section: "Operations",
+    sectionKey: "ux.sidebar.operate",
+    items: [
+      { to: "/", icon: "◈", label: "Dashboard", labelKey: "nav.page.dashboard" },
+      { to: "/trading", icon: "⇅", label: "Trading", labelKey: "nav.page.trading" },
+      { to: "/positions", icon: "▤", label: "Positions", labelKey: "nav.page.positions" },
+    ],
+  },
+  {
+    section: "Safety & Intelligence",
+    sectionKey: "ux.sidebar.analyze",
+    items: [
+      { to: "/risk", icon: "⛨", label: "Risk", labelKey: "nav.page.risk" },
+      { to: "/ml", icon: "Σ", label: "ML / 70D", labelKey: "nav.page.ml" },
+      { to: "/intelligence", icon: "≈", label: "Intelligence", labelKey: "nav.page.intelligence" },
+      { to: "/audit", icon: "☰", label: "Audit", labelKey: "nav.page.audit" },
+    ],
+  },
+];
+
+/** Section -> i18n key for the registry groups (4 groups, featureRegistry order). */
+const SECTION_KEYS: Record<FeatureSectionName, string> = {
+  OPERATIONS: "ux.sidebar.features.operations",
+  "MARKET & RESEARCH": "ux.sidebar.features.market",
+  "SAFETY & GOVERNANCE": "ux.sidebar.features.safety",
+  PLATFORM: "ux.sidebar.features.platform",
+};
+
+/** Registry-driven sections (lazy features) mapped into the sidebar shape. */
+const FEATURE_NAV = FEATURE_SECTIONS.map((sec) => ({
+  section: sec.section,
+  sectionKey: SECTION_KEYS[sec.section],
+  items: sec.items.map((f) => ({ to: f.route, icon: f.icon, label: f.label, labelKey: featureLabelKey(f.route) })),
+}));
+
+/** Full nav = legacy pages first (stable Alt+1..7), then feature registry. */
+const ALL_NAV_SECTIONS = [...NAV_SECTIONS, ...FEATURE_NAV];
+
+/** Flat route list for Alt+<n> keyboard navigation (visual shortcut only). */
+const NAV_ROUTES = ALL_NAV_SECTIONS.flatMap((s) => s.items).map((i) => i.to);
+
+/** Backend age (seconds) -> ms for the freshness meter; null stays null. */
+function ageSecToMs(sec: number | null | undefined): number | null {
+  return sec === null || sec === undefined || !Number.isFinite(sec) ? null : sec * 1000;
+}
+
+/** Language picker (sidebar foot) — UI preference shared with the legacy
+ *  dashboard (localStorage['nexus.ui.lang']). Never a system setting. */
+function LangRow() {
+  const lang = useI18n((s) => s.lang);
+  const setLang = useI18n((s) => s.setLang);
+  const t = useI18n((s) => s.t);
+  return (
+    <div className="side-row">
+      <span>{t("ux.lang.label", "LANGUAGE")}</span>
+      <select
+        className="select lang-select"
+        value={lang}
+        onChange={(e) => setLang(e.target.value as (typeof LANGUAGES)[number]["id"])}
+        aria-label={t("shell.lang.aria", "Language")}
+      >
+        {LANGUAGES.map((l) => (
+          <option key={l.id} value={l.id}>
+            {l.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+export function AppShell() {
+  const collapsed = useUiStore((s) => s.sidebarCollapsed);
+  const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+  const dense = useUiStore((s) => s.dense);
+  const toggleDense = useUiStore((s) => s.toggleDense);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const t = useI18n((s) => s.t);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  // Route path drives the ErrorBoundary reset key: navigating away from (or
+  // back to) a crashed page re-arms the boundary instead of wedging the tree.
+  const routePathname = useLocation().pathname;
+  // Active-route label (render-time): drives the tab title AND the single
+    // visually-hidden <h1> per route, so every page announces exactly one h1.
+    const navHit = NAV_SECTIONS.flatMap((s) => s.items).find((i) => i.to === routePathname);
+    const featHit = FEATURE_SECTIONS.flatMap((s) => s.items).find((f) => f.route === routePathname);
+    const routeLabel = navHit
+      ? t(navHit.labelKey, navHit.label)
+      : featHit
+        ? t(featureLabelKey(featHit.route), featHit.label)
+        : null;
+
+  // Auth state (core/auth is the source of truth; bus keeps the banner live).
+  const [authExpiredAt, setAuthExpiredAt] = useState<number | null>(() => getAuthState().lastUnauthorizedAt);
+  useEffect(() => onCore("auth:expired", ({ at }) => setAuthExpiredAt(at)), []);
+  useEffect(() => onCore("auth:changed", () => setAuthExpiredAt(getAuthState().lastUnauthorizedAt)), []);
+
+  // Density class on <body> — CSS custom properties cascade from there.
+  useEffect(() => {
+    document.body.classList.toggle("dense", dense);
+  }, [dense]);
+
+  // Browser-tab title follows the active route (presentation only).
+  useEffect(() => {
+    document.title = routeLabel ? `${routeLabel} · NSE Console` : "NSE Console";
+  }, [routeLabel]);
+
+  // Locale-aware document metadata: index.html keeps the static English tags
+  // (crawlers and social scrapers read raw HTML — never break SEO), while the
+  // live <head> follows the active language for the user's own browser and
+  // extensions. Re-runs when `t` identity changes with the language.
+  useEffect(() => {
+    const setMeta = (selector: string, content: string) => {
+      const el = document.head.querySelector(selector);
+      if (el) el.setAttribute("content", content);
+    };
+    setMeta(
+      'meta[name="description"]',
+      t(
+        "meta.description",
+        "NSE Alternative Console — trading rule matrix, risk gates and execution controls. Backend-authoritative operator UI.",
+      ),
+    );
+    setMeta('meta[property="og:title"]', t("meta.og_title", "NSE — Alternative Console"));
+    setMeta(
+      'meta[property="og:description"]',
+      t("meta.og_description", "Trading rule matrix — enablement + thresholds, backend-authoritative."),
+    );
+    setMeta('meta[name="twitter:title"]', t("meta.og_title", "NSE — Alternative Console"));
+  }, [t]);
+
+  // SPA navigation: return the scroll container to the top and move focus to
+  // <main> so keyboard/SR users land on the new page, not the old scroll
+  // position. Skipped on first mount — the landing page keeps its place.
+  const bootedRef = useRef(false);
+  useEffect(() => {
+    if (!bootedRef.current) {
+      bootedRef.current = true;
+      return;
+    }
+    const main = document.getElementById("main-content");
+    main?.scrollTo(0, 0);
+    window.scrollTo(0, 0);
+    main?.focus({ preventScroll: true });
+  }, [routePathname]);
+
+  // Alt+1..9 route jump, Alt+B sidebar, R = refresh (skipped while typing).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
+      if (e.ctrlKey || e.metaKey) return;
+      if (!e.altKey) {
+        if ((e.key === "r" || e.key === "R") && queryClient.getQueryData(["engine-snapshot"]) !== undefined) {
+          e.preventDefault();
+          void queryClient.invalidateQueries({ queryKey: ["engine-snapshot"] });
+        }
+        return;
+      }
+      const digit = Number(e.key);
+      if (Number.isInteger(digit) && digit >= 1 && digit <= Math.min(MAX_ALT_ROUTES, NAV_ROUTES.length)) {
+        e.preventDefault();
+        const route = NAV_ROUTES[digit - 1];
+        if (route) navigate(route);
+      } else if (e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [navigate, toggleSidebar]);
+
+  const snapshotQuery = useQuery({
+    queryKey: ["engine-snapshot"],
+    queryFn: ({ signal }) => engineApi.snapshot(signal),
+    refetchInterval: (query) => (query.state.data ? false : 5000),
+    refetchOnWindowFocus: true,
+    retry: 1,
+  });
+
+  const { snapshot, realtimeStatus } = useRealtimeSnapshot(snapshotQuery.data);
+
+  // 1s ticker for data-age display (visual only).
+  // perf: pause while the tab is hidden — nowMs is Date.now()-derived (nothing
+  // accumulates, so pausing cannot corrupt it); on return run one immediate
+  // tick so no displayed age is ever stale by a whole interval. Visible
+  // cadence unchanged (OUTPUT-IDENTICAL: same values, same freshness timing).
+  useEffect(() => {
+    if (document.visibilityState === "hidden") return;
+    let alive = true;
+    let timer: number | null = window.setInterval(tickNow, 1000);
+    function tickNow(): void {
+      if (alive) setNowMs(Date.now());
+    }
+    const onVisibility = (): void => {
+      if (document.visibilityState === "hidden") {
+        if (timer !== null) {
+          window.clearInterval(timer);
+          timer = null;
+        }
+        return;
+      }
+      if (timer === null && alive) {
+        tickNow();
+        timer = window.setInterval(tickNow, 1000);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      alive = false;
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (timer !== null) window.clearInterval(timer);
+    };
+  }, []);
+
+  const authError =
+    snapshotQuery.error instanceof ApiError && snapshotQuery.error.isAuthError
+      ? (snapshotQuery.error as ApiError)
+      : null;
+  const showAuthBanner = authError !== null || authExpiredAt !== null;
+  const lf = snapshot?.live_freshness ?? null;
+
+  /**
+   * Perf wave 7 (route memoization): the feature `<Route>` elements used to be
+   * built inline in JSX, so EVERY render allocated 20 fresh `element` objects.
+   * React Router reconciles `<Route>` by `element` identity: a new object for
+   * the ACTIVE route makes it REMOUNT the whole page — unmounting the live
+   * page, destroying its DOM + internal state, and re-running its effects
+   * (queries re-mount, charts re-initialize) on every single tick. At the
+   * backend's 5 Hz telemetry cadence that is 5 full page teardown+rebuild
+   * cycles per second, sustained 24/7 — the single biggest runtime cost on the
+   * console and the direct cause of the "the page flashes/redraws constantly"
+   * symptom under load.
+   *
+   * `useMemo` keyed on `[snapshot, nowMs, routePathname]` keeps each route's
+   * element identity stable across renders that only change unrelated state
+   * (palette/help/density toggles), so React Router reuses the existing tree.
+   * The snapshot+nowMs deps are intentional: when the live data changes, the
+   * page must re-render with it — but re-render ≠ remount, which is the whole
+   * distinction this preserves.
+   */
+  const featureRoutes = useMemo(
+    () =>
+      FEATURE_SECTIONS.flatMap((sec) => sec.items).map((f) => (
+        <Route
+          key={f.route}
+          path={f.route}
+          element={
+            <ErrorBoundary label={f.label} resetKey={routePathname}>
+              <Suspense fallback={<LoadingState label={t("shell.loading_feature", "Loading {name}…", { name: f.label })} />}>
+                <f.lazy snapshot={snapshot} nowMs={nowMs} />
+              </Suspense>
+            </ErrorBoundary>
+          }
+        />
+      )),
+    [snapshot, nowMs, routePathname],
+  );
+
+
+
+  return (
+    <div className="app-shell">
+      <a className="skip-link" href="#main-content">{t("shell.skip_content", "Skip to content")}</a>
+      <aside aria-label={t("shell.sidebar.landmark", "Sidebar")} className={`sidebar ${collapsed ? "collapsed" : ""}`}>
+        <div className="brand">
+          <div className="brand-logo">NSE</div>
+          <div className="brand-text">
+            NEXUS SCALP ENGINE
+            <span className="sub">PRO CONSOLE</span>
+          </div>
+        </div>
+        <nav className="nav" aria-label={t("shell.nav.primary", "Primary")}>
+          {ALL_NAV_SECTIONS.map((sec) => (
+            <div key={sec.section}>
+              <div className="nav-section">{t(sec.sectionKey, sec.section)}</div>
+              {sec.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === "/"}
+                  className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
+                  title={t(item.labelKey, item.label)}
+                >
+                  <span className="icon">{item.icon}</span>
+                  <span className="nav-label">{t(item.labelKey, item.label)}</span>
+                </NavLink>
+              ))}
+            </div>
+          ))}
+        </nav>
+        <div className="sidebar-foot">
+          <div className="side-row">
+            <span>{t("ux.density.label", "DENSITY")}</span>
+            <button
+              className={`switch ${dense ? "on" : ""}`}
+              role="switch"
+              aria-checked={dense}
+              aria-label={t("shell.dense.toggle", "Toggle dense layout")}
+              title={t("shell.dense.title", "Dense layout (visual only)")}
+              onClick={toggleDense}
+            />
+          </div>
+          <LangRow />
+          <div className="side-row" title={t("ux.shortcut.help", "Keyboard shortcuts")}>
+            <span><kbd>alt</kbd> 1–9 · <kbd>ctrl</kbd>K</span>
+          </div>
+          <button className="sidebar-toggle" onClick={toggleSidebar} title={t("shell.sidebar.toggle", "Toggle sidebar (Alt+B)")} aria-label={t("shell.sidebar.toggle_aria", "Toggle sidebar")} aria-expanded={!collapsed}>
+            {collapsed ? "»" : "«"}
+          </button>
+        </div>
+      </aside>
+
+      <div className="main-col">
+        <header aria-label={t("shell.topbar.aria", "Top bar")} className="topbar">
+            <ModeIndicator snapshot={snapshot} />
+            <span className="conn-chip" title={t("shell.engine.title", "Engine loop state (backend-authoritative)")}>
+              <span className={`conn-dot ${snapshot?.engine_running ? "connected" : snapshot ? "disconnected" : "reconnecting"}`} />
+              <span>{t("shell.engine.label", "ENGINE")} {snapshot ? (snapshot.engine_running ? t("shell.engine.running", "RUNNING") : t("shell.engine.stopped", "STOPPED")) : "—"}</span>
+            </span>
+            <span className="conn-chip" title={t("shell.health.title", "Backend health.overall from /api/status")}>
+              {snapshot ? <StatusBadge status={snapshot.health.overall} /> : <span className="badge unknown">{t("shell.health.label", "HEALTH —")}</span>}
+            </span>
+            {snapshot && (
+              <span className="conn-chip freshness-chip" title={t("shell.fresh.title", "Pipeline freshness stages (backend live_freshness)")}>
+              <FreshnessMeter label="MKT" state={lf?.market?.state} ageMs={lf?.market?.age_ms ?? ageSecToMs(snapshot.diagnostics.tick_age_sec)} />
+              <FreshnessMeter label="FEAT" state={lf?.features?.state} ageMs={lf?.features?.age_ms ?? ageSecToMs(snapshot.diagnostics.features_age_sec)} />
+              <FreshnessMeter label="INFR" state={lf?.inference?.state} ageMs={lf?.inference?.age_ms ?? ageSecToMs(snapshot.diagnostics.inference_age_sec)} />
+              <FreshnessMeter label="DEC" state={lf?.decision?.state} ageMs={lf?.decision?.age_ms ?? ageSecToMs(snapshot.diagnostics.proposal_age_sec)} />
+            </span>
+          )}
+          {snapshot?.symbol && <span className="inline-mono small muted">{snapshot.symbol} M1</span>}
+          <span className="spacer" />
+          <span className="timestamp-note" title={t("shell.clock.title", "Local wall clock (visual aid)")}>
+            {new Date(nowMs).toLocaleTimeString("en-GB", { hour12: false })} · v{snapshot?.state_version ?? "—"}
+          </span>
+          <ConnectionIndicator
+            status={realtimeStatus}
+            nowMs={nowMs}
+            onRetry={() => {
+              queryClient.invalidateQueries({ queryKey: ["engine-snapshot"] });
+            }}
+          />
+        </header>
+
+        {!showAuthBanner && <AttentionStrip snapshot={snapshot} feed={realtimeStatus} nowMs={nowMs} />}
+        {showAuthBanner && (
+          <div className="banner auth" role="alert">
+            <span>
+              {t("ux.auth.banner", "⛔ Backend rejected the web-auth credential (WEB-AUTH-P0). The console self-bootstraps via the first-party cookie (BUG-267) — if this persists, reload once, or open as")}{" "}
+              <span className="inline-mono">…/?token=&lt;NSE_WEB_AUTH_TOKEN&gt;</span>
+              {t("ux.auth.banner.suffix", "(token kept in sessionStorage only).")}
+              {!hasAccessToken() && (
+                <span className="muted start-8">
+                  {t("ux.auth.mode.cookie", "Mode: cookie-only (no bearer token).")}
+                </span>
+              )}
+            </span>
+          </div>
+        )}
+
+        <main className="page" id="main-content" tabIndex={-1}>
+          <h1 className="sr-only">{routeLabel ?? "NSE Console"}</h1>
+          {snapshotQuery.isPending ? (
+            <LoadingState label={t("shell.loading", "Connecting to NSE backend…")} />
+          ) : snapshotQuery.isError && !snapshot ? (
+            <ErrorState
+              message={snapshotQuery.error instanceof Error ? snapshotQuery.error.message : t("shell.unreachable", "Backend unreachable")}
+              requestId={snapshotQuery.error instanceof ApiError ? snapshotQuery.error.requestId : null}
+              onRetry={() => snapshotQuery.refetch()}
+            />
+          ) : (
+            <ErrorBoundary label={routeLabel ?? t("shell.route_label.fallback", "Console")} resetKey={routePathname}>
+              <Suspense fallback={<LoadingState label={t("shell.loading_page", "Loading page…")} />}>
+                <Routes>
+                  <Route path="/" element={<DashboardRoute snapshot={snapshot} nowMs={nowMs} />} />
+              <Route path="/trading" element={<TradingRoute snapshot={snapshot} nowMs={nowMs} />} />
+              <Route path="/positions" element={<PositionsRoute snapshot={snapshot} />} />
+              <Route path="/risk" element={<RiskRoute snapshot={snapshot} />} />
+              <Route path="/ml" element={<MlRoute snapshot={snapshot} />} />
+              <Route path="/intelligence" element={<IntelRoute snapshot={snapshot} />} />
+              <Route path="/audit" element={<AuditRoute />} />
+              {/* CONTRACT #3 aliases: the two renamed feature routes keep
+                  their old deep links working. Paths are basename-relative,
+                  so this works whether the console is served at `/` or at
+                  `/alt` (the same dist, dual-served). The backend keeps the
+                  REAL root `/health` and `/dependency` — these routes only
+                  ever run inside the SPA shell. */}
+              <Route path="/health" element={<Navigate to="/system-health" replace />} />
+              <Route path="/dependency" element={<Navigate to="/dependencies" replace />} />
+              {featureRoutes}
+                  <Route path="*" element={<ErrorState message={t("shell.unknown_route", "Unknown route")} />} />
+                </Routes>
+              </Suspense>
+            </ErrorBoundary>
+          )}
+        </main>
+      </div>
+      <ToastHost />
+      <CommandPalette onOpenHelp={() => setHelpOpen(true)} />
+      {helpOpen && (
+        <ConfirmModal
+          title={t("ux.shortcut.help", "Keyboard shortcuts")}
+          danger={false}
+          confirmLabel={t("ux.confirm.ok", "OK")}
+          onCancel={() => setHelpOpen(false)}
+          onConfirm={() => setHelpOpen(false)}
+        >
+          <div className="kv left">
+            <dt>Ctrl / Cmd + K</dt><dd>{t("ux.shortcut.palette", "Command palette")}</dd>
+            <dt>Alt + 1–9</dt><dd>{t("ux.shortcut.jump", "Jump to page")}</dd>
+            <dt>Alt + B</dt><dd>{t("ux.shortcut.sidebar", "Toggle sidebar")}</dd>
+            <dt>R</dt><dd>{t("ux.shortcut.refresh", "Refresh data (not while typing)")}</dd>
+            <dt>Esc</dt><dd>{t("ux.shortcut.esc", "Close dialogs")}</dd>
+          </div>
+        </ConfirmModal>
+      )}
+    </div>
+  );
+}
+
+/* Legacy page routes are statically imported (parity guarantee — they must
+ * keep working while feature pages lazy-load). Wrappers keep the JSX terse. */
+function DashboardRoute({ snapshot, nowMs }: { snapshot: EngineSnapshot | undefined; nowMs: number }) {
+  return <DashboardPage snapshot={snapshot} nowMs={nowMs} />;
+}
+function TradingRoute({ snapshot, nowMs }: { snapshot: EngineSnapshot | undefined; nowMs: number }) {
+  return <TradingPage snapshot={snapshot} nowMs={nowMs} />;
+}
+function PositionsRoute({ snapshot }: { snapshot: EngineSnapshot | undefined }) {
+  return <PositionsPage snapshot={snapshot} />;
+}
+function RiskRoute({ snapshot }: { snapshot: EngineSnapshot | undefined }) {
+  return <RiskPage snapshot={snapshot} />;
+}
+function MlRoute({ snapshot }: { snapshot: EngineSnapshot | undefined }) {
+  return <MLPage snapshot={snapshot} />;
+}
+function IntelRoute({ snapshot }: { snapshot: EngineSnapshot | undefined }) {
+  return <IntelligencePage snapshot={snapshot} />;
+}
+function AuditRoute() {
+  return <AuditPage />;
+}
+
+/** Back-compat helper (other lanes import it from AppShell). */
+export function authConfigured(): boolean {
+  return hasAccessToken();
+}

@@ -1,0 +1,1478 @@
+"""Engine lifecycle commands — start / stop / restart / run.
+
+WHERE/WHY: ``nexus start`` (PAPER default, LIVE needs explicit confirmation —
+safety contract sections 17/31/59), the BUG-170 atomic-pidfile daemon spawn
+(O_EXCL claim + loser grace window, BUG-179), the migration-gated engine
+construction (_run_engine: DB gate -> adapter selection -> LiveEngine), the
+uvicorn co-boot (_start_web_and_engine, BUG-147 port probe) and the pidfile-based
+stop/restart/run legacy-parity commands. Extracted verbatim from cli/main.py
+(CHG-0032 Step 1).
+
+BOUNDARY: engine PROCESS lifecycle only. No update logic, no wizard, no diagnostic
+commands. Heavy imports stay function-local (slim onefile CLI must not pay for
+torch/polars/MT5 unless actually starting).
+
+USED BY: cli.main facade (registers start/stop/restart/run), tests
+(test_cli_end_to_end start/stop guards monkeypatch ``_run_engine``/``_spawn_daemon``
+through the facade; test_user_hunt_bug170_171 drives the daemon race directly).
+
+DO-NOT-PUT-HERE: model commands, update commands, setup wizard.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import typer
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
+
+from nexus_scalp.cli import browser_launch
+from nexus_scalp.cli.app_factory import _resolve_facade_seam, app
+from nexus_scalp.cli.styling import (
+    MODE_ALIASES,
+    _emit,
+    _error_panel,
+    _success_panel,
+    _welcome_panel,
+    console,
+)
+
+# NOTE (EU-03): the heavy domain imports (wizard / AppConfig / ExecutionMode)
+# are DELIBERATELY deferred into the functions that use them (see the shims
+# below). They pull torch + polars + networkx (~6s cold on the first
+# `nexus help`), and Typer builds the whole command tree at import time — so a
+# top-level import here is paid by every help listing on the planet.
+from nexus_scalp.domain.enums import ExecutionMode
+from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.release import exit_codes as xc
+from nexus_scalp.release import paths as rpaths
+from nexus_scalp.release.metadata import get_version_info
+
+if TYPE_CHECKING:
+    # Annotation-only: never imported at runtime (see the NOTE below).
+    from nexus_scalp.configuration.config import AppConfig
+
+logger = get_logger("nexus_scalp.cli.engine_boot")
+
+
+def _heavy_wizard_endpoints(port: int) -> list[str]:
+    from nexus_scalp.cli.wizard import _get_network_endpoints
+
+    return _get_network_endpoints(port=port)
+
+
+def _heavy_first_run_database_choice() -> None:
+    # TASK-EUR-001 (dual-entry law): `nexus start` offers the same
+    # PostgreSQL/SQLite question as `nexus setup` and the double-click launcher
+    # when no database.provider row exists yet. Deferred for the same latency
+    # reason as the other shims.
+    from nexus_scalp.cli.wizard import run_first_run_database_choice
+
+    run_first_run_database_choice()
+
+
+def _heavy_app_config(path: Path) -> AppConfig:
+    from nexus_scalp.configuration.config import AppConfig
+
+    return AppConfig.load_from_yaml(path)
+
+
+def _heavy_app_config_default() -> AppConfig:
+    from nexus_scalp.configuration.config import AppConfig
+
+    return AppConfig()
+
+
+def _heavy_write_effective_config(path: Path, cfg: AppConfig) -> None:
+    # EUR first-run persistence (see the bootstrap branch below): writes the
+    # bootstrapped default so the CONFIGURATION health gate can PASS on the
+    # first launch. Deferred for the same EU-03 latency reason as the shims
+    # above.
+    from nexus_scalp.cli.wizard import _write_effective_config
+
+    _write_effective_config(path, cfg)
+
+
+def _pidfile() -> Path:
+    return rpaths.get_data_root() / "nexus.pid"
+
+
+# ---------------------------------------------------------------------------
+# ENDUSER-OPERABILITY (EU-03/EU-04): the dashboard is the product's real UI,
+# yet nothing in the whole repository ever opened it or told a user where it
+# is. These helpers give `nexus start` and the new `nexus dashboard` one
+# shared, honest answer to "where is my program?".
+# ---------------------------------------------------------------------------
+
+
+def _dashboard_host(bind_host: str | None = None) -> str:
+    """Host a HUMAN should type in a browser.
+
+    A bound wildcard address (0.0.0.0 / ::) is not a browsable URL, so the
+    loopback name is substituted; anything else is reported verbatim.
+    """
+    host = (bind_host or "127.0.0.1").strip() or "127.0.0.1"
+    return "127.0.0.1" if host in {"0.0.0.0", "::", "[::]"} else host
+
+
+def _dashboard_url(bind_host: str | None = None, port: int | None = None) -> str:
+    if port is None:
+        # Same precedence the rest of the tooling uses (BUG-267): the port the
+        # server ACTUALLY bound after auto-increment beats the configured one.
+        from nexus_scalp.web.auth_boot import resolved_web_port
+
+        port = resolved_web_port()
+    return f"http://{_dashboard_host(bind_host)}:{int(port)}"
+
+
+def _probe_dashboard(url: str, timeout: float = 2.0) -> dict[str, Any]:
+    """Is the dashboard answering? Pure observation — never raises.
+
+    ANY HTTP response (200/401/403/404) proves the product is up and serving:
+    an auth wall is a running application, not a broken one. Only transport
+    failure means "not running", which is a different user action.
+    """
+    import urllib.error
+    import urllib.request
+
+    probe: dict[str, Any] = {"url": url, "reachable": False, "http_status": None}
+    try:
+        with urllib.request.urlopen(f"{url.rstrip('/')}/api/status", timeout=timeout) as resp:
+            probe["http_status"] = int(getattr(resp, "status", 200) or 200)
+            body = resp.read(64 * 1024).decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:  # server answered with a status
+        probe["http_status"] = int(exc.code)
+        body = ""
+        try:
+            body = exc.read(64 * 1024).decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+    except (urllib.error.URLError, OSError, TimeoutError):
+        return probe
+
+    probe["reachable"] = True
+    if body:
+        import json
+
+        with contextlib.suppress(Exception):
+            parsed = json.loads(body)
+            if isinstance(parsed, dict):
+                probe["status"] = parsed
+    return probe
+
+
+def _browser_allowed() -> bool:
+    """Auto-opening a browser is a courtesy, never a side effect in automation.
+
+    Requires an interactive console (stdout is a TTY) AND a non-CI
+    environment AND no explicit opt-out — so `nexus start > log`, CI smoke
+    runs and service launches never spawn a browser.
+    """
+    if os.getenv("NSE_NO_BROWSER", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return False
+    if os.getenv("CI"):
+        return False
+    with contextlib.suppress(Exception):
+        return bool(sys.stdout.isatty())
+    return False
+
+
+def _open_dashboard(url: str) -> bool:
+    """Open the dashboard in the user's default browser. Never raises."""
+    import webbrowser
+
+    with contextlib.suppress(Exception):
+        return bool(webbrowser.open(url))
+    return False
+
+
+@app.command("dashboard")
+def dashboard_cmd(
+    url: str = typer.Option(
+        "", "--url", help="Dashboard URL (default: the engine's recorded address)."
+    ),
+    open_browser: bool = typer.Option(
+        True, "--open/--no-open", help="Open the dashboard in your browser when it is running."
+    ),
+    json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+) -> None:
+    """Open / report the web dashboard — 'where is my program?' in one command.
+
+    Exit codes follow the release contract: 0 the product answered, 1 it is
+    not running (with the exact next action), 2 bad usage.
+    """
+    from nexus_scalp.release.product_state import derive_product_state
+
+    target = (url or _dashboard_url()).strip()
+    if not target.startswith(("http://", "https://")):
+        console.print(
+            _error_panel(
+                "Invalid dashboard URL",
+                f"--url must start with http:// or https:// (got {target!r})",
+                exit_code=xc.EXIT_USAGE,
+            )
+        )
+        raise typer.Exit(xc.EXIT_USAGE) from None
+
+    probe = _probe_dashboard(target)
+    state = derive_product_state(probe.get("status"), reachable=probe["reachable"])
+
+    # EU-03: the installer writes <app data root>/dashboard.url.txt as a
+    # "where is my program?" pointer; refresh it with the address that just
+    # answered so support and the user always read the live one.
+    if probe["reachable"]:
+        with contextlib.suppress(Exception):
+            (rpaths.app_data_root() / "dashboard.url.txt").write_text(
+                target.rstrip("/") + "\n", encoding="utf-8"
+            )
+
+    opened = False
+    if probe["reachable"] and open_browser and not json_mode:
+        opened = _open_dashboard(target)
+
+    payload = {
+        "url": target,
+        "reachable": probe["reachable"],
+        "http_status": probe["http_status"],
+        "product_state": state,
+        "opened": opened,
+        "next_action": (
+            "none — the dashboard is open in your browser"
+            if opened
+            else "none — the dashboard answered"
+            if probe["reachable"]
+            else "start the engine first: NexusScalpEngine.exe start  (or just run the app)"
+        ),
+    }
+
+    if json_mode:
+        _emit(payload, True)
+        raise typer.Exit(0 if probe["reachable"] else xc.EXIT_RUNTIME) from None
+
+    if not probe["reachable"]:
+        console.print(
+            _error_panel(
+                "Dashboard not running",
+                f"Nothing is answering at {target}. The product is installed but not started.",
+                hint=(
+                    "Start it: run NexusScalpEngine.exe from the Start Menu, or "
+                    "`nexus start`. Then run `nexus dashboard` again."
+                ),
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
+
+    lines = [
+        f"[bold]Address[/bold]   {target}",
+        f"[bold]Product[/bold]    {state['summary']}",
+        f"[bold]Note[/bold]      {state['reasons']['application']}",
+    ]
+    console.print(Panel("\n".join(lines), title="Dashboard", border_style="green"))
+    if not opened:
+        console.print(f"[dim]Open it in a browser: {target}[/dim]")
+
+
+@app.command("start")
+def start_cmd(
+    mode: str = typer.Option(
+        "paper", "--mode", "-m", help="paper | shadow | live (default: paper - NEVER live)"
+    ),
+    config: Path | None = typer.Option(
+        None, "--config", "-c", help="Config path (default: user config)."
+    ),
+    gateway: bool = typer.Option(False, "--gateway", "-g", help="Force remote gateway adapter."),
+    daemon: bool = typer.Option(False, "--daemon", help="Run as background process."),
+    port: int = typer.Option(8080, "--port", help="Web dashboard port."),
+    no_browser: bool = typer.Option(
+        False,
+        "--no-browser",
+        help="Do NOT auto-open the Control Center in the browser once the server is ready.",
+    ),
+    animate: bool = typer.Option(True, "--animate/--no-animate", help="Animated startup banner."),
+    json_mode: bool = typer.Option(
+        False, "--json", help="Machine-readable JSON output (no animation)."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Explicit confirmation (REQUIRED for LIVE + --json)."
+    ),
+) -> None:
+    """Start the engine (default: paper/XAUUSD, safe).
+
+    Modes: paper (simulation, default) | shadow (mirror live) | live
+    (real orders -- shows red warning + requires confirmation). Web dashboard
+    at http://localhost:8080 when running. Symbol comes from config (setup
+    default XAUUSD).
+
+    Once the server is READY the Control Center auto-opens in your default
+    browser at the ACTUAL bound port; pass --no-browser (or set
+    NSE_NO_BROWSER=1) to keep it closed. A browser problem never fails the
+    start, and closing the browser never stops the engine.
+    """
+    # CONTRACT #6/#10: --no-browser switches the auto-open off for THIS
+    # process. It is recorded in the seam module rather than passed down the
+    # _run_engine facade (that signature is pinned by
+    # tests/unit/test_cli_end_to_end.py) and it is NOT a config key.
+    if no_browser:
+        browser_launch.request_no_browser()
+    mode_key = mode.strip().lower()
+    if mode_key not in MODE_ALIASES:
+        msg = f"mode must be paper|shadow|live (got '{mode}')"
+        if json_mode:
+            _emit({"error": msg, "exit_code": xc.EXIT_USAGE}, True)
+        else:
+            console.print(
+                _error_panel("Invalid mode", msg, hint="Use --mode paper", exit_code=xc.EXIT_USAGE)
+            )
+        raise typer.Exit(xc.EXIT_USAGE) from None
+    chosen = MODE_ALIASES[mode_key]
+
+    # Download-ready: live.yaml is NEVER required. The operator can run a
+    # fresh download with just `nexus start` — if no config file exists we
+    # bootstrap from AppConfig defaults (PAPER, safe) and the persisted
+    # settings DB (if any) will layer over it at engine boot. This also
+    # means a deleted/corrupt live.yaml no longer blocks trading.
+    # Explicit --config that points nowhere must still error (contract for
+    # test_e2e_23); the bootstrap path is ONLY for the implicit case.
+    cfg: AppConfig | None = None
+    config_path: Path | None
+    if config is not None:
+        # Explicit path from CLI — must exist or we fail loudly.
+        config_path = Path(config)
+        if not config_path.exists():
+            msg = f"Config missing: {config_path}"
+            if json_mode:
+                _emit(
+                    {"error": msg, "hint": "Run nexus setup first", "exit_code": xc.EXIT_RUNTIME},
+                    True,
+                )
+            else:
+                console.print(
+                    _error_panel(
+                        "Config missing",
+                        msg,
+                        hint="Run nexus setup first",
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+        try:
+            cfg = _heavy_app_config(config_path)
+        except Exception as e:
+            if json_mode:
+                _emit(
+                    {
+                        "error": f"config invalid: {e}",
+                        "path": str(config_path),
+                        "exit_code": xc.EXIT_RUNTIME,
+                    },
+                    True,
+                )
+            else:
+                console.print(
+                    _error_panel(
+                        "Config invalid",
+                        str(e),
+                        hint=f"Run nexus repair --recreate-config or fix {config_path}",
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+    else:
+        # Implicit: try user config -> live.yaml -> base.yaml; else bootstrap.
+        for cand in (
+            rpaths.get_user_config_path(),
+            Path("configs/live.yaml"),
+            Path("configs/base.yaml"),
+        ):
+            if cand.exists():
+                config_path = cand
+                break
+        else:
+            config_path = None
+        if config_path is not None:
+            try:
+                cfg = _heavy_app_config(config_path)
+            except Exception as e:
+                if json_mode:
+                    _emit(
+                        {
+                            "error": f"config invalid: {e}",
+                            "path": str(config_path),
+                            "exit_code": xc.EXIT_RUNTIME,
+                        },
+                        True,
+                    )
+                else:
+                    console.print(
+                        _error_panel(
+                            "Config invalid",
+                            str(e),
+                            hint=f"Run nexus repair --recreate-config or fix {config_path}",
+                            exit_code=xc.EXIT_RUNTIME,
+                        )
+                    )
+                raise typer.Exit(xc.EXIT_RUNTIME) from None
+        else:
+            # No file -> bootstrap from hard defaults (same values as base.yaml).
+            # This is the user story "downloaded release from GitHub, double-
+            # clicked the exe, it just works in PAPER".
+            cfg = _heavy_app_config_default()
+            config_path = None  # type: ignore[assignment]
+            # EUR contract #10 / one-click law: persist the bootstrapped default
+            # so the CONFIGURATION health gate (release/health.py, a
+            # CRITICAL_CATEGORIES entry) can PASS on the FIRST launch instead
+            # of reporting "config missing (first run / not set up yet)".
+            # Without this /health stays 503, the browser-readiness gate
+            # (_open_control_center_when_ready) times out, and the Control
+            # Center never auto-opens on the very first double-click.
+            # Idempotent: this branch only runs when NO config file exists.
+            user_cfg_path = rpaths.get_user_config_path()
+            try:
+                _heavy_write_effective_config(user_cfg_path, cfg)
+                config_path = user_cfg_path
+            except Exception:
+                # A config we cannot persist must never block the engine: the
+                # in-memory default still boots PAPER mode (§27 isolation).
+                config_path = None  # type: ignore[assignment]
+
+    # FIRST-RUN DATABASE CHOICE (dual-entry law, TASK-EUR-001): `nexus start`
+    # offers the same PostgreSQL/SQLite question as `nexus setup` (wizard.py)
+    # and the double-click launcher (NexusTradingForexBot.py) when no
+    # database.provider row exists yet — the missing prompt that let a
+    # silently-persisted database.provider=postgresql point the runtime at a
+    # dead server. Gated inside: a configured install prompts ZERO times;
+    # --json and non-TTY sessions are never blocked (reason=non_interactive).
+    if not json_mode:
+        _heavy_first_run_database_choice()
+
+    if chosen == ExecutionMode.LIVE:
+        panel = Panel(
+            "[bold red]WARNING: this starts REAL execution.[/bold red]\n\n"
+            f"Account   : {cfg.mt5.account or 'configured'}\n"
+            f"Broker    : {cfg.mt5.server or 'configured'}\n"
+            f"Symbol    : {cfg.execution.symbol}\n"
+            f"Mode      : LIVE\n"
+            f"Risk      : {cfg.risk.risk_per_trade_pct}% / trade, "
+            f"{cfg.risk.max_account_drawdown_pct}% max drawdown, "
+            f"{cfg.risk.max_allowed_lots} max lots\n"
+            f"Kill switch: manual close via dashboard / stop command",
+            border_style="red",
+            title="LIVE TRADING",
+        )
+        if not json_mode:
+            console.print(panel)
+        if not json_mode and not typer.confirm(
+            "I confirm I want to start REAL LIVE trading.", default=False
+        ):
+            console.print(
+                Panel("[yellow]Live start aborted (not confirmed).[/yellow]", border_style="yellow")
+            )
+            raise typer.Exit(xc.EXIT_OK) from None
+        elif json_mode and not yes:
+            # JSON/automated LIVE start MUST be explicit — never silent.
+            _emit(
+                {
+                    "error": "LIVE mode via --json requires explicit --yes confirmation",
+                    "exit_code": xc.EXIT_USAGE,
+                },
+                True,
+            )
+            raise typer.Exit(xc.EXIT_USAGE) from None
+
+    # Daemonize before welcome (welcome is the foreground ceremony)
+    if daemon:
+        cmd = [
+            sys.executable,
+            "-m",
+            "nexus_scalp.cli.main",
+            "start",
+            "--mode",
+            mode_key,
+        ]
+        if config_path is not None:
+            cmd += ["--config", str(config_path)]
+        if gateway:
+            cmd.append("--gateway")
+        if no_browser:
+            # The daemon child re-enters `start` in ITS OWN process, where this
+            # process's seam state no longer exists - propagate the flag.
+            cmd.append("--no-browser")
+        # daemon is silent + no animate + no welcome
+        if json_mode:
+            _emit(
+                {
+                    "status": "starting_daemon",
+                    "mode": chosen.value,
+                    "config": str(config_path) if config_path else "defaults",
+                },
+                True,
+            )
+        _resolve_facade_seam("_spawn_daemon", _spawn_daemon)(cmd)
+        return
+
+    cfg.execution.mode = chosen
+    # BUG-148: record the operator's EXPLICIT start mode so a persisted
+    # settings-DB value can never silently flip it at boot.
+    try:
+        from nexus_scalp.settings.service import SettingsService
+
+        svc = SettingsService()
+        svc.set("execution.mode", chosen.value, actor="cli:start")  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+    endpoints = _heavy_wizard_endpoints(port)
+
+    if json_mode:
+        _emit(
+            {
+                "status": "starting",
+                "mode": chosen.value,
+                "symbol": cfg.execution.symbol,
+                "port": port,
+                "endpoints": endpoints,
+                "animate": False,
+            },
+            True,
+        )
+    else:
+        _welcome_panel(
+            mode_value=chosen.value,
+            symbol=cfg.execution.symbol,
+            risk_drawdown=cfg.risk.max_account_drawdown_pct,
+            endpoints=endpoints,
+            animate=animate,
+        )
+    _resolve_facade_seam("_run_engine", _run_engine)(
+        cfg, gateway=gateway, port=port, mode_override=chosen
+    )
+
+
+def _spawn_daemon(cmd: list[str]) -> None:
+    data_root = rpaths.get_data_root()
+    data_root.mkdir(parents=True, exist_ok=True)
+    pidfile = _pidfile()
+    # BUG-170: atomic claim. The old check-then-write let two concurrent
+    # `nexus start` invocations both pass the liveness check and both
+    # spawn an engine (web-bind crash / duplicate sessions). os.open with
+    # O_CREAT|O_EXCL makes exactly ONE racer own the pidfile; losers then
+    # re-read it and report the winner as the running engine.
+    claimed = False
+    fd: int | None = None
+    try:
+        fd = os.open(str(pidfile), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        claimed = True
+    except FileExistsError:
+        claimed = False
+    except OSError:
+        # Fall back to legacy behavior only when O_EXCL itself is
+        # unsupported (never on CPython/Windows or POSIX) — keep failing
+        # loudly rather than silently spawning twice.
+        raise
+
+    if not claimed:
+        # Someone else owns the pidfile: liveness-check THEIR pid.
+        # BUG-170-hardening: between O_EXCL creation and the pid write the
+        # file is briefly EMPTY. Reading it then yields ValueError -> the
+        # old code treated a live claim as stale, unlinked the winner's
+        # pidfile, re-claimed and spawned a SECOND engine (CI flake,
+        # run 33433361894). Give the winner a short grace window to write
+        # the pid before declaring the file stale.
+        pid_text: str | None = None
+        for _ in range(25):  # ~0.5s total
+            try:
+                pid_text = pidfile.read_text().strip()
+            except OSError:
+                pid_text = None
+            if pid_text:
+                break
+            time.sleep(0.02)
+        try:
+            old = int(pid_text or "")
+            os.kill(old, 0)
+            console.print(
+                Panel(
+                    f"[yellow]Engine already running (pid {old}). Use nexus stop first.[/yellow]",
+                    border_style="yellow",
+                )
+            )
+            return
+        except (OSError, ValueError):
+            # Dead pid (OSError) or stale empty file after the grace window
+            # (ValueError): remove it and retry the atomic claim ONCE. A
+            # pid we just read is re-checked with kill() above, so this
+            # path can no longer race a live claim's write.
+            pidfile.unlink(missing_ok=True)
+            try:
+                fd = os.open(str(pidfile), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                claimed = True
+            except FileExistsError:
+                console.print(
+                    Panel(
+                        "[yellow]Another nexus start is spawning right now. Use nexus stop first.[/yellow]",
+                        border_style="yellow",
+                    )
+                )
+                return
+    if claimed:
+        assert fd is not None
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+    # Reparent via the same interpreter; the child runs foreground logic.
+    if sys.platform == "win32":
+        subprocess.Popen(
+            cmd,
+            shell=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=0x00000008,
+        )
+    else:
+        subprocess.Popen(
+            cmd,
+            shell=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    console.print(
+        _success_panel(
+            "Engine starting in background",
+            f"Mode via {cmd[5]}  ·  pid tracked in {pidfile}\nUse nexus stop to halt",
+            border="green",
+        )
+    )
+
+
+def _run_engine(
+    cfg: AppConfig, *, gateway: bool, port: int, mode_override: ExecutionMode | None = None
+) -> None:
+    """Locked startup: recovery BEFORE PID publication; installs excluded until shutdown."""
+    from nexus_scalp.model_provisioning import official_install
+
+    with official_install.model_slot_lock(official_install.serving_model_path(cfg)):
+        official_install.recover_official_install(official_install.serving_model_path(cfg))
+        _write_pid(_pidfile())
+        try:
+            _run_engine_locked(cfg, gateway=gateway, port=port, mode_override=mode_override)
+        finally:
+            _pidfile().unlink(missing_ok=True)
+
+
+def _write_pid(pidfile: Path) -> None:
+    pidfile.parent.mkdir(parents=True, exist_ok=True)
+    pidfile.write_text(str(os.getpid()), encoding="utf-8")
+
+
+def _run_engine_locked(
+    cfg: AppConfig, *, gateway: bool, port: int, mode_override: ExecutionMode | None = None
+) -> None:
+    # WINDOWS-UX-001: establish the Windows taskbar identity for THIS process
+    # before the console window is shown and the engine banner renders. On the
+    # packaged EXE the AppUserModelID is already pinned at packaged_main
+    # import; this covers the `nexus start` console-script + daemon path too,
+    # and keeps the taskbar entry under one stable identity (no ghost
+    # "python" group on restart). Non-Windows: no-op. Failure-isolated.
+    try:
+        from nexus_scalp.platform.windows_identity import apply_windows_identity
+
+        apply_windows_identity()
+    except Exception as identity_err:  # pragma: no cover - defensive
+        console.print(
+            Panel(
+                f"[yellow]Windows taskbar identity skipped[/yellow]\n[dim]{identity_err}[/dim]",
+                border_style="yellow",
+            )
+        )
+    # BUG-293: packaged launches must first anchor the runtime workspace
+    # (double-click CWD is arbitrary) and mirror bundled configs into
+    # <root>/configs so canonical consumers (execution_assumptions.json)
+    # resolve. Source runs: both are no-ops. Failure-isolated — an anchoring
+    # fault must never block the migration gate below (it surfaces honestly
+    # via health instead).
+    try:
+        from nexus_scalp.release import bootstrap as rboot
+
+        rboot.anchor_workspace()
+        rboot.ensure_packaged_config_dir()
+    except Exception as anchor_err:  # pragma: no cover - defensive
+        console.print(
+            Panel(
+                f"[yellow]Workspace anchoring skipped[/yellow]\n[dim]{anchor_err}[/dim]",
+                border_style="yellow",
+            )
+        )
+    # TASK-10 startup migration gate: apply safe pending schema migrations
+    # BEFORE the engine enters READY (§6/§7). Same canonical engine as `nexus db`.
+    try:
+        from nexus_scalp.database.gate import run_startup_migration_gate
+
+        gate = run_startup_migration_gate(
+            workspace=Path.cwd(),
+            application_version=str(
+                _resolve_facade_seam("get_version_info", get_version_info)().get("version", "")
+            ),
+        )
+        if not gate.get("ready", False):
+            console.print(
+                _error_panel(
+                    "Database migration blocked",
+                    "Engine cannot start — migration gate blocked.",
+                    hint="Run nexus db status and nexus db migrate, see logs",
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+        if gate.get("state") == "DB_MIGRATION_SUCCEEDED":
+            console.print(
+                _success_panel(
+                    "Migrations applied", "Database schemas are now current", border="green"
+                )
+            )
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(
+            _error_panel(
+                "Migration gate error",
+                str(e),
+                hint="Run nexus doctor --verbose",
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
+    # BUG-293 FIRST-RUN MODEL GATE (redesign, operator directive 2026-09-16):
+    # a clean install acquires a serving model through the provisioning
+    # service — PAPER prefers the signed OFFICIAL bundle (PATH A) when the
+    # operator hosts one, falls back to the explicitly-labeled DEV STARTER
+    # for offline boots (never presented as production), and SHADOW/LIVE are
+    # REFUSED without a real verified bundle (starter or silent mint never
+    # serves live-money paths). Serving gates are never relaxed.
+    _eff_mode = mode_override if mode_override is not None else cfg.execution.mode
+    if _eff_mode in (ExecutionMode.PAPER, ExecutionMode.SHADOW):
+        try:
+            from nexus_scalp.model_provisioning import FirstRunCoordinator
+
+            coordinator = FirstRunCoordinator()
+            outcome = coordinator.ensure_serving_model(_eff_mode.value.lower())
+            action = outcome.get("action", "")
+            if action == "refuse":
+                console.print(
+                    _error_panel(
+                        "No verified serving model",
+                        f"{outcome.get('reason', '')} — slot: {outcome.get('state', '')} "
+                        f"{outcome.get('detail', '')}",
+                        hint="Run: NexusScalpEngine.exe setup (download official model "
+                        "or train your own), then retry",
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
+                )
+                raise typer.Exit(xc.EXIT_RUNTIME) from None
+            if action == "official":
+                console.print(
+                    _success_panel(
+                        "Official Nexus model installed",
+                        f"bundle {outcome.get('bundle_id', '')} — signature + SHA256 + "
+                        "schema + integrity verified",
+                    )
+                )
+            elif action == "starter":
+                if outcome.get("provisioned"):
+                    console.print(
+                        Panel(
+                            "[bold yellow]OFFLINE DEV STARTER installed[/bold yellow]\n"
+                            "This is a deterministic trained starter for FIRST-RUN SIMULATION "
+                            "ONLY - explicitly NOT your production model.\n"
+                            "Replace it with [bold]Setup / Download Official Nexus Model[/bold] "
+                            "or [bold]Setup / Train My Own[/bold] (nexus setup).",
+                            border_style="yellow",
+                        )
+                    )
+        except typer.Exit:
+            raise
+        except Exception as prov_err:
+            console.print(
+                _error_panel(
+                    "Serving model unavailable",
+                    str(prov_err),
+                    hint="Run `nexus model-provision --status` for details, or `nexus setup`",
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+    # Heavy engine imports are local so the slim onefile CLI (which excludes
+    # torch/polars/MetaTrader5) never pays for them unless actually starting.
+    try:
+        from nexus_scalp.adapters.mt5.mt5_adapter import HAS_NATIVE_MT5, DirectMT5Adapter
+        from nexus_scalp.adapters.mt5.remote_gateway import RemoteMT5GatewayAdapter
+        from nexus_scalp.application.live_engine import LiveEngine
+        from nexus_scalp.ports.mt5_port import IMT5Port
+    except Exception as e:
+        console.print(
+            _error_panel(
+                "Could not load engine",
+                str(e),
+                hint="Run nexus doctor, check Python 3.11 + deps",
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
+
+    adapter: IMT5Port
+    # BUG-148: adapter boundary must match the operator-selected mode. PAPER
+    # starts use the simulation adapter so a double-click/bare `start` can
+    # NEVER touch the real broker even when MT5 credentials are configured.
+    if mode_override == ExecutionMode.PAPER and not gateway:
+        # BUG-266 (audit K2): PAPER boots route through the paper-data
+        # factory so the configured market-data substrate (SYNTHETIC default,
+        # REPLAY over real recorded data) is actually honored. Fail-closed:
+        # an operator who asked for REPLAY with no available data is refused
+        # loudly, never served a synthetic walk that masquerades as evidence.
+        from nexus_scalp.adapters.paper.paper_data import build_paper_adapter
+        from nexus_scalp.adapters.paper.replay_source import ReplayDataUnavailableError
+
+        try:
+            adapter = build_paper_adapter(
+                symbol=cfg.execution.symbol,
+                paper_data=getattr(cfg, "paper_data", None),
+            )
+        except ReplayDataUnavailableError as replay_err:
+            msg = f"PAPER REPLAY requested but no historical data is available: {replay_err}"
+            console.print(
+                _error_panel(
+                    "Paper REPLAY data missing",
+                    msg,
+                    hint=(
+                        "acquire a dataset first (research MT5TickDataset), export "
+                        "data/raw M1 bars, or set paper_data.mode: SYNTHETIC"
+                    ),
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+        console.print(
+            Panel(
+                "[green]PAPER mode — simulation adapter (no broker connection) "
+                f"[{getattr(adapter, 'market_data_mode', 'SYNTHETIC')}][/green]",
+                border_style="green",
+            )
+        )
+    elif gateway or sys.platform != "win32" or not HAS_NATIVE_MT5:
+        console.print(
+            Panel("[yellow]Using Remote MT5 Gateway Adapter[/yellow]", border_style="yellow")
+        )
+        # MT5-PARITY T4 (H-02 class): the client must NOT fall back to
+        # publicly-known default gateway credentials. Resolution order is
+        # explicit args -> env (NSE_GATEWAY_*) -> DPAPI SecureSecretStore,
+        # and the adapter now raises when none are available unless
+        # NSE_GATEWAY_ALLOW_DEFAULTS=1 (local dev only).
+        adapter = RemoteMT5GatewayAdapter()
+    else:
+        console.print(
+            Panel(
+                "[green]Using Direct Native MT5 Adapter (Win32 IPC)[/green]", border_style="green"
+            )
+        )
+        adapter = DirectMT5Adapter(
+            account=cfg.mt5.account,
+            password=cfg.mt5.password,
+            server=cfg.mt5.server,
+            timeout=cfg.mt5.timeout_ms,
+            retries=cfg.mt5.retries,
+        )
+    engine = None
+    # BUG-296 (Z-B1 iii): a fresh clone without a model artifact crashed here
+    # with a raw ArtifactIntegrityError traceback (lane-05 E1) BEFORE the web
+    # server bound. The gate stays fail-closed (weights are never silently
+    # minted/served); only the SURFACE changes to an operator panel that
+    # names the exact remedy.
+    from nexus_scalp.model_lifecycle.load_integrity import (
+        ArtifactIntegrityError as _ArtifactIntegrityError,
+    )
+
+    try:
+        engine = LiveEngine(
+            config=cfg,
+            adapter=adapter,
+            # BUG-148: the operator's explicit --mode is authoritative for this
+            # process — a persisted settings-DB value cannot override it at boot.
+            mode_override=mode_override,
+        )
+    except _ArtifactIntegrityError as integrity_err:
+        console.print(
+            _error_panel(
+                "Model load rejected (fail closed)",
+                str(integrity_err),
+                hint=(
+                    "Provision a PAPER starter bundle with `nexus repair --model` "
+                    "(safe on a fresh clone; governed champions are never overwritten)"
+                ),
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
+    _start_web_and_engine(engine, cfg, port)
+
+
+def _install_supervisor_handlers(supervisor: Any) -> None:
+    """Register warm-shutdown signal/console handlers (fail-isolated)."""
+    try:
+        supervisor.install_signal_handlers()
+    except Exception as handler_err:  # pragma: no cover - never block a boot
+        logger.warning("[SHUTDOWN] signal handlers not installed (isolated): %s", handler_err)
+
+
+def _finalize_interrupted_shutdown(supervisor: Any, engine: Any) -> None:
+    """KeyboardInterrupt cancelled the gather; still run the warm teardown.
+
+    A fresh loop is required: asyncio.run already closed the one the engine
+    ran on. The engine's _shutdown_async is composed unchanged.
+    """
+    import asyncio
+
+    try:
+        supervisor.request_shutdown("keyboard_interrupt")
+    except Exception:
+        pass
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(supervisor.wait_for_shutdown())
+        finally:
+            with contextlib.suppress(Exception):
+                loop.close()
+    except Exception as drain_err:  # pragma: no cover - best effort
+        logger.error("[SHUTDOWN] interrupted-drain failed: %s", drain_err)
+
+
+def _print_shutdown_summary(supervisor: Any) -> None:
+    """Honest post-teardown report. Never claim success without evidence."""
+    try:
+        status = supervisor.status()
+    except Exception:
+        return
+    outcome = str(status.get("outcome") or "")
+    phase = str(status.get("phase") or "")
+    if phase != "CLOSED" or outcome in ("", "TIMEOUT"):
+        # A teardown that never ran or blew its budget is reported as such.
+        console.print(
+            _error_panel(
+                "Shutdown incomplete",
+                f"phase={phase} outcome={outcome or 'NOT_RUN'} "
+                f"reason={status.get('reason') or '-'}",
+                hint="Audit DB / broker session may be open — check tasklist and nexus doctor",
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        return
+    style = "green" if outcome == "OK" else "yellow"
+    console.print(
+        Panel(
+            f"[bold {style}]Warm shutdown complete[/bold {style}]  "
+            f"[dim]outcome={outcome} duration={status.get('duration_sec')}s "
+            f"reason={status.get('reason') or '-'}[/dim]",
+            border_style=style,
+        )
+    )
+
+
+def _browser_host(bind_host: str) -> str:
+    """Host to probe and to open: loopback for a wildcard bind (the norm).
+
+    CONTRACT #10: the operator-facing URL is the ACTUAL bound port (BUG-147),
+    never a hardcoded 8080/8081. A wildcard bind (0.0.0.0/::) is opened on
+    loopback; an explicit interface bind is opened where it really listens.
+    """
+    if bind_host.strip() in ("", "localhost", "0.0.0.0", "::", "[::]"):
+        return "127.0.0.1"
+    return bind_host
+
+
+def _verdict_of(resp: Any) -> str:
+    """Best-effort ``verdict`` read from a /health body (never raises).
+
+    The HealthEngine contract (``nexus_scalp.release.health``) defines the
+    Read the WHOLE body (any fixed cap re-creates a truncation bug when a
+    health check adds a reason) and degrade to UNKNOWN on a malformed body
+    instead of raising, so the caller simply retries.
+    """
+    try:
+        import json as _json
+
+        # Read the WHOLE body: the checks array grows whenever a layer adds a
+        # reason, so any fixed cap re-creates the truncation bug it replaces.
+        raw = resp.read()
+        payload = _json.loads(raw)
+        # Two shapes reach this probe:
+        #  * the v1 success envelope: {"data": {"verdict": ...}, "meta": {...}}
+        #  * a FastAPI error detail (503): {"detail": {"verdict": ...}}
+        for key in ("data", "detail"):
+            node = payload.get(key) if isinstance(payload, dict) else None
+            if isinstance(node, dict) and "verdict" in node:
+                return str(node["verdict"])
+        value = payload.get("verdict") if isinstance(payload, dict) else None
+        return str(value) if value is not None else "UNKNOWN"
+    except Exception:
+        return "UNKNOWN"
+
+
+def _probe_control_center(host: str, port: int) -> tuple[bool, bool, str]:
+    """Blocking readiness probe -> (health_ok, index_ok, phase).
+
+    health_ok: GET /health answered 200 with a verdict that means the app is
+    serving: READY or DEGRADED (the HealthEngine contract maps UNHEALTHY /
+    NOT_READY / 503 to failure). ``index_ok``: GET / answered 200 with a
+    text/html body, i.e. the Control Center index is actually being served
+    (CONTRACT #4/#6) - process spawn is NOT readiness. ``phase`` is a short,
+    credential-free diagnostic word that the caller prints when the gate has
+    not passed.
+    """
+    base = f"http://{host}:{port}"
+    # Loopback self-probe: never detour through an ambient HTTP proxy.
+    import urllib.error
+    import urllib.request
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(f"{base}/health", timeout=2) as resp:
+            status = getattr(resp, "status", 200)
+            verdict = _verdict_of(resp)
+            # The route maps verdicts to statuses: READY/DEGRADED are 200 or
+            # 503 (DEGRADED answers 503 when an optional subsystem is WARNING
+            # - the app is still serving the Control Center), NOT_READY /
+            # UNHEALTHY are 503 too. The VERDICT is authoritative: only
+            # READY / DEGRADED mean "serving". A 4xx means a routing or auth
+            # problem, which is not readiness.
+            if status >= 500 and verdict not in ("READY", "DEGRADED"):
+                return False, False, f"health HTTP {status} verdict {verdict}"
+            if 400 <= status < 500:
+                return False, False, f"health HTTP {status}"
+            if verdict not in ("READY", "DEGRADED"):
+                return False, False, f"health verdict {verdict}"
+    except urllib.error.HTTPError as http_err:
+        # urllib raises HTTPError for 503 (and all non-2xx). The verdict in the
+        # body is still authoritative: a DEGRADED 503 means the Control Center
+        # IS being served and the gate may pass; NOT_READY / UNHEALTHY or an
+        # unreadable body must keep it closed (never a false green).
+        verdict = _verdict_of(http_err)
+        if verdict in ("READY", "DEGRADED"):
+            pass
+        else:
+            return False, False, f"health HTTP {http_err.code} verdict {verdict}"
+    except Exception as exc:
+        return False, False, f"health {type(exc).__name__}"
+    try:
+        with opener.open(f"{base}/", timeout=2) as resp:
+            status = getattr(resp, "status", 200)
+            ctype = (resp.headers.get("Content-Type") or "").lower()
+            if status == 200 and "text/html" in ctype:
+                return True, True, "ready"
+            if status != 200:
+                return True, False, f"index HTTP {status}"
+            return True, False, "index not html"
+    except urllib.error.HTTPError as http_err:
+        return True, False, f"index HTTP {http_err.code}"
+    except Exception as exc:
+        return True, False, f"index {type(exc).__name__}"
+
+
+async def _open_control_center_when_ready(
+    host: str, port: int, *, timeout: float = 30.0, poll_interval: float = 0.25
+) -> dict[str, Any]:
+    """CONTRACT #10 launch sequence: wait for the gate, then open ONE window.
+
+    Gate (retry budget ``timeout``): GET /health 200 AND GET / 200 text/html.
+    Browser/engine isolation (sections 27/56/57): this NEVER raises, a browser
+    problem never fails the engine start, a backend that never reached the gate
+    never opens a browser, and closing the browser never affects the engine.
+    """
+    url = f"http://{host}:{port}/"
+    outcome: dict[str, Any] = {
+        "url": url,
+        "ready": False,
+        "opened": False,
+        "phase": "starting",
+    }
+    try:
+        deadline = time.monotonic() + timeout
+        ready = False
+        phase = "starting"
+        while True:
+            try:
+                health_ok, index_ok, phase = await asyncio.to_thread(
+                    _probe_control_center, host, port
+                )
+            except Exception as probe_err:  # pragma: no cover - probe is guarded
+                health_ok, index_ok, phase = False, False, f"probe {type(probe_err).__name__}"
+            if health_ok and index_ok:
+                ready = True
+                break
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(poll_interval)
+        outcome["ready"] = ready
+        if not ready:
+            # No evidence the server is serving: NEVER open a browser (section
+            # 57) and never claim a readiness we do not have.
+            outcome["phase"] = f"timeout after {timeout:g}s ({phase})"
+            console.print(
+                Panel(
+                    f"[bold yellow]SERVER NOT READY[/bold yellow]  {url}\n"
+                    f"[dim]phase: {outcome['phase']} - Control Center not opened[/dim]",
+                    border_style="yellow",
+                )
+            )
+            return outcome
+        outcome["phase"] = phase
+        # The gate passed: exactly one window, subject to the --no-browser /
+        # NSE_NO_BROWSER / isatty precedence. Failure is logged as a safe
+        # reason inside the seam and must not disturb the running engine.
+        # The handoff runs off-loop: webbrowser can block for a beat and the
+        # engine tick must never wait on a browser. Readiness is a SERVER fact
+        # (sections 27/56): an exception here must not flip it back to False.
+        open_err = ""
+        try:
+            outcome["opened"] = bool(
+                await asyncio.to_thread(browser_launch.maybe_open_browser, url)
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as open_fault:  # pragma: no cover - seam never raises
+            open_err = type(open_fault).__name__
+            logger.warning("[CONTROL-CENTER] browser auto-open isolated: %s", open_err)
+        state = browser_launch.auto_open_state()
+        if outcome["opened"]:
+            detail = "opened in your browser"
+        elif open_err:
+            detail = f"auto-open failed ({open_err}, safe reason in the log)"
+        elif not state["enabled"]:
+            detail = f"disabled ({state['reason']})"
+        else:
+            detail = "not opened (safe reason in the log)"
+        console.print(
+            Panel(
+                f"[bold green]SERVER READY[/bold green]  {url}\n"
+                f"[dim]phase: {phase} - auto-open: {detail}[/dim]",
+                border_style="green",
+            )
+        )
+        return outcome
+    except asyncio.CancelledError:
+        raise
+    except Exception as gate_err:  # the gate must never fail the engine start
+        outcome["ready"] = False
+        outcome["opened"] = False
+        outcome["phase"] = f"error {type(gate_err).__name__}"
+        logger.warning("[CONTROL-CENTER] readiness gate isolated: %s", type(gate_err).__name__)
+        return outcome
+
+
+def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
+    import asyncio
+
+    # BUG-147: friendly port-in-use failure. A bare bind error looked like a
+    # crash ("Process completed with exit code 1"); now the operator gets the
+    # actual cause + the exact remediation (busy PID or --port override).
+    import socket as _socket
+
+    import uvicorn
+
+    from nexus_scalp.web.server import create_app
+
+    probe = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    try:
+        if probe.connect_ex(("127.0.0.1", port)) == 0:
+            console.print(
+                _error_panel(
+                    "Web port already in use",
+                    f"127.0.0.1:{port} is occupied by another process.",
+                    hint=(
+                        "Another engine instance may be running — use `nexus stop`, "
+                        f"kill that PID, or start with `--port {port + 1}`."
+                    ),
+                    exit_code=xc.EXIT_RUNTIME,
+                )
+            )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+    finally:
+        probe.close()
+
+    # DOCKER-REPAIR: NSE_LOG_LEVEL (DEBUG|INFO|WARNING|ERROR) drives the
+    # structlog config used by `nexus start` (default INFO when unset).
+    nse_log_level = os.getenv("NSE_LOG_LEVEL", "INFO").strip().upper()
+    from nexus_scalp.observability.logging import configure_logging
+
+    configure_logging(
+        log_level=nse_log_level,
+        json_format=False,
+        log_to_file=True,
+    )
+    # 2026-09-09 storage-hygiene pass: sweep crash leftovers + stale residue
+    # BEFORE the engine writes anything new (update staging, .part residue,
+    # .previous-* keep-1). Failure-isolated: a sweep fault must never block
+    # a boot. Heavy imports stay function-local (slim CLI contract).
+    try:
+        from nexus_scalp.storage.runtime import StorageGuard, StorageGuardSettings
+
+        _cfg_storage = getattr(cfg, "storage", None)
+        _storage_map = (
+            _cfg_storage.model_dump()
+            if hasattr(_cfg_storage, "model_dump")
+            else dict(_cfg_storage or {})
+        )
+        guard = StorageGuard(
+            workspace=Path.cwd(),
+            user_root=Path.cwd(),
+            settings=StorageGuardSettings.from_mapping(_storage_map),
+        )
+        _sweep = guard.startup_sweep()
+        _freed = int(_sweep.get("crash_leftovers", {}).get("bytes_freed", 0)) + int(
+            _sweep.get("residue", {}).get("bytes_freed", 0)
+        )
+        if _freed > 0:
+            console.print(
+                Panel(
+                    f"[green]Startup cleanup[/green] reclaimed ~{_freed / (1024 * 1024):.1f} MB",
+                    border_style="green",
+                )
+            )
+    except Exception as sweep_err:
+        console.print(
+            Panel(
+                f"[yellow]Startup cleanup skipped[/yellow]\n[dim]{sweep_err}[/dim]",
+                border_style="yellow",
+            )
+        )
+    # Small beat so the welcome animation lands before the server log burst
+
+    with Progress(
+        SpinnerColumn(style="cyan"),
+        TextColumn("[cyan]Starting services…[/cyan]"),
+        transient=True,
+        console=console,
+    ) as progress:
+        progress.add_task("boot", total=None)
+        time.sleep(0.35)
+
+    console.print(
+        Panel(
+            f"[bold cyan]Starting {cfg.execution.mode.value} mode — {cfg.execution.symbol}[/bold cyan]  ·  port {port}",
+            border_style="cyan",
+        )
+    )
+    try:
+        engine._preflight_or_raise()
+    except Exception as e:
+        console.print(
+            _error_panel(
+                "Pre-flight failed",
+                str(e),
+                hint="Run nexus doctor --fix or nexus repair --recreate-config",
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
+    app_obj = create_app(engine_ref=engine)
+    engine.server_state = app_obj.state.server_state
+    # DOCKER-REPAIR (2026-08-20): container bind is driven by env
+    # (NSE_WEB_HOST / NSE_WEB_PORT); bare `run` keeps localhost-only.
+    bind_host = os.getenv("NSE_WEB_HOST", "127.0.0.1")
+    uvicorn_config = uvicorn.Config(
+        app=app_obj,
+        host=bind_host,
+        port=port,
+        log_level="warning",
+        ws_max_size=16 * 1024 * 1024,
+        ws="none",
+    )
+    server = uvicorn.Server(uvicorn_config)
+
+    # BUG-304: warm, bounded, signal-safe shutdown. The old
+    # ``asyncio.run(gather(server.serve(), engine.run_loop()))`` let
+    # asyncio's Runner swallow Ctrl+C as a task cancellation and exit
+    # WITHOUT ever calling engine._shutdown_async — the process died with
+    # the broker session, the SQLite WAL and pending audit rows still open
+    # ("not completely closed"). ShutdownSupervisor installs the signal +
+    # Windows console-close handlers, flips the engine flag (the loop then
+    # falls through to its own _shutdown_async) and drains once, bounded.
+    from nexus_scalp.application.shutdown import ShutdownSupervisor
+
+    supervisor = ShutdownSupervisor(engine=engine, server=server)
+
+    async def run_concurrently() -> None:
+        # The supervisor's request side is signal-safe; the drain runs here,
+        # on the loop, when the engine's own loop has exited.
+        # CONTRACT #6/#10: probe the readiness gate in the background on this
+        # loop and open the Control Center at the ACTUAL bound port once
+        # /health and / (HTML) are live. ``uvicorn_config.port`` (not the
+        # remembered 8080/8081 default) is the port uvicorn really binds.
+        launch_task = asyncio.create_task(
+            _open_control_center_when_ready(_browser_host(bind_host), int(uvicorn_config.port))
+        )
+        try:
+            await asyncio.gather(server.serve(), engine.run_loop(), return_exceptions=False)
+        finally:
+            # A bind/startup failure lands here BEFORE the gate ever saw a
+            # 200, so cancelling guarantees a backend failure never opens a
+            # browser (section 57). Await the cancellation so the task can
+            # never outlive the loop it was created on.
+            launch_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await launch_task
+            # RuntimeLoop calls _shutdown_async on its way out; the
+            # supervisor is the bounded fallback if it did not.
+            await supervisor.wait_for_shutdown()
+
+    try:
+        # Install handlers while the loop exists but BEFORE it runs, so the
+        # first Ctrl+C / window-close lands in our handler, not the Runner's
+        # task-cancelling default. (Runner only installs its own SIGINT
+        # handler when the current one is the default.)
+        _install_supervisor_handlers(supervisor)
+        # EU-03: the user is now looking at a console, not a browser. Tell
+        # them exactly where the product's real UI lives, and open it when
+        # the launch is interactive. A daemonized/silent run never opens
+        # anything (_browser_allowed gates it), so automation is unaffected.
+        dash = _dashboard_url(bind_host, port)
+        console.print(
+            Panel(
+                f"[bold green]Web dashboard:[/bold green] [bold]{dash}[/bold]\n"
+                f"[dim]Open it any time with:  nexus dashboard[/dim]",
+                title="Ready",
+                border_style="green",
+            )
+        )
+        if _browser_allowed():
+            _open_dashboard(dash)
+        asyncio.run(run_concurrently())
+    except KeyboardInterrupt:
+        console.print(
+            Panel(
+                "\n[yellow]Shutdown requested (Ctrl+C) — draining…[/yellow]",
+                border_style="yellow",
+            )
+        )
+        # The gather was cancelled mid-flight: the teardown the operator
+        # expects still has to run. Run it bounded instead of exiting.
+        _finalize_interrupted_shutdown(supervisor, engine)
+    except Exception as e:
+        console.print(
+            _error_panel(
+                "Engine stopped unexpectedly",
+                str(e),
+                hint="Check nexus logs --errors and run nexus doctor",
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
+    finally:
+        _print_shutdown_summary(supervisor)
+
+
+@app.command("stop")
+def stop_cmd() -> None:
+    """Stop a background engine (pidfile-based)."""
+    pidfile = _pidfile()
+    if not pidfile.exists():
+        console.print(
+            Panel(
+                "[yellow]No pidfile — engine not running as background process.[/yellow]",
+                border_style="yellow",
+            )
+        )
+        return
+    try:
+        pid = int(pidfile.read_text().strip())
+    except ValueError:
+        console.print(_error_panel("Bad pidfile", str(pidfile), hint="Removing stale pidfile"))
+        pidfile.unlink(missing_ok=True)
+        return
+    stopped = False
+    already_gone = False
+    error_text = ""
+    try:
+        if sys.platform == "win32":
+            # BUG-172: the taskkill result was discarded, so a DEAD pid
+            # (rc=128 process-not-found) printed a green success panel and
+            # a PID-reuse kill of the WRONG process went unreported.
+            kill = subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False
+            )
+            out = ((kill.stdout or b"") + (kill.stderr or b"")).decode(errors="replace")
+            if kill.returncode == 0:
+                stopped = True
+            elif kill.returncode == 128 or "not found" in out.lower():
+                already_gone = True
+            else:
+                error_text = out.strip()[:200] or f"taskkill rc={kill.returncode}"
+        else:
+            os.kill(pid, 15)
+            stopped = True
+    except ProcessLookupError:  # POSIX: pid already gone
+        already_gone = True
+    except OSError as e:
+        error_text = str(e)
+    pidfile.unlink(missing_ok=True)
+    if stopped:
+        console.print(_success_panel("Engine stopped", f"pid {pid}", border="green"))
+    elif already_gone:
+        console.print(
+            Panel(
+                f"[yellow]Engine already stopped (stale pidfile, pid {pid}).[/yellow]",
+                border_style="yellow",
+            )
+        )
+    else:
+        console.print(
+            _error_panel(
+                "Could not stop",
+                error_text or f"unknown failure stopping pid {pid}",
+                hint=f'Verify the process manually: tasklist /FI "PID eq {pid}"',
+                exit_code=xc.EXIT_RUNTIME,
+            )
+        )
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
+
+
+@app.command("restart")
+def restart_cmd(
+    mode: str = typer.Option("paper", "--mode", "-m"),
+    gateway: bool = typer.Option(False, "--gateway", "-g"),
+) -> None:
+    """Restart the background engine (stop + start)."""
+    stop_cmd()
+    start_cmd(mode=mode, gateway=gateway, daemon=True)
+
+
+# ---------------------------------------------------------------------------
+# run (legacy parity — same engine, same safety)
+# ---------------------------------------------------------------------------
+@app.command("run")
+def run_cmd(
+    config_path: Path = typer.Option(
+        Path("configs/live.yaml"), "--config", "-c", help="Path to execution YAML."
+    ),
+    gateway: bool = typer.Option(
+        False, "--gateway", "-g", help="Force remote gateway client mode."
+    ),
+) -> None:
+    """Start the engine with an explicit config (legacy compatibility)."""
+    if not config_path.exists():
+        console.print(_error_panel("Config not found", str(config_path), hint="Run nexus setup"))
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
+    try:
+        cfg = _heavy_app_config(config_path)
+    except Exception as e:
+        console.print(_error_panel("Config invalid", str(e), exit_code=xc.EXIT_RUNTIME))
+        raise typer.Exit(xc.EXIT_RUNTIME) from None
+    _resolve_facade_seam("_run_engine", _run_engine)(cfg, gateway=gateway, port=8080)

@@ -1,0 +1,469 @@
+/* ==========================================================================
+ * features/incidents/ui/incidents-command.css
+ * Companion sheet to incidents.css — wave-6 lane presentation (timeline rail,
+ * status/filter chips, incident cards, dossier drawer sections). Split from
+ * the merged sheet at integration to honor the 500-line file cap; selector
+ * sets are disjoint (verified zero overlap at merge time).
+ * ========================================================================== */
+
+/**
+ * PURPOSE:  Incident-command skin for the incidents feature — severity heat
+ *           timeline rail, state status chips, filter chips, incident cards
+ *           and the evidence-dossier drawer sections.
+ * OWNER:    uiux-w6-incidents  (future edits belong to this lane)
+ * CONSUMES: tokens from styles/theme.css only (--red/--amber/--accent/--green,
+ *           --bg/--border/--text/--mono/--sans, spacing/type tokens). The only
+ *           hardcoded channels are documented rgba() mirrors of --red and
+ *           --accent, mirroring theme.css's own .mode-badge/.banner tints.
+ * PROVIDES: .inc-* classes consumed by features/incidents/ui/*.tsx (and scoped
+ *           overrides for the kit Drawer/Panel chrome inside the dossier).
+ * INVARIANTS: additive + namespaced under .inc-root / .inc-* — no other
+ *             feature's markup is affected; severity/status colours only ever
+ *             restate a word the backend already sent (never a fabricated
+ *             verdict); every motion block is wrapped in
+ *             prefers-reduced-motion: no-preference; logical properties only
+ *             (RTL-safe).
+ * EXTEND:   keep every new class under the inc- prefix, scope generic element
+ *           selectors (.inc-root button …) under .inc-root, consume theme
+ *           tokens, and mirror the rgba() channels from the token values.
+ */
+
+/* Documented alpha tints (the only hardcoded channels in this file):
+   rgba(242, 86, 77, a)  = --red at a     — severity heat (critical / high)
+   rgba(65, 166, 242, a) = --accent at a  — active/open glow + focus rings */
+
+/* ------------------------------------------------------------------ *
+ * Severity heat ramp — one place, one legend (critical > high > info).
+ * CRITICAL solid --red, HIGH --red softened, MEDIUM --amber, LOW --accent
+ * (info), anything else --text-faint. These custom properties are declared
+ * on .inc-sev-* wrappers and consumed by dot/border/rail selectors below.
+ * ------------------------------------------------------------------ */
+.inc-sev-critical {
+  --inc-heat: var(--red);
+  --inc-heat-soft: rgba(242, 86, 77, 0.55);
+}
+.inc-sev-high {
+  --inc-heat: rgba(242, 86, 77, 0.72);
+  --inc-heat-soft: rgba(242, 86, 77, 0.3);
+}
+.inc-sev-medium {
+  --inc-heat: var(--amber);
+  --inc-heat-soft: var(--amber-dim);
+}
+.inc-sev-low {
+  --inc-heat: var(--accent);
+  --inc-heat-soft: rgba(65, 166, 242, 0.16);
+}
+.inc-sev-unknown {
+  --inc-heat: var(--text-faint);
+  --inc-heat-soft: transparent;
+}
+
+.inc-root { display: grid; gap: var(--panel-gap); }
+
+/* Page-head freshness caption pins itself to the end of the head row. */
+.inc-root .page-head .timestamp-note { margin-inline-start: auto; }
+
+/* ------------------------------------------------------------------ *
+ * Command strip — quick jumps from the health strip to the record list
+ * (scroll only; the loaded rows, filters and backend data are untouched).
+ * ------------------------------------------------------------------ */
+.inc-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-inset);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.inc-jump:hover { color: var(--text); border-color: var(--accent); }
+
+/* ------------------------------------------------------------------ *
+ * Severity heat timeline — vertical rail, time-ordered, newest first.
+ * ------------------------------------------------------------------ */
+.inc-rail {
+  list-style: none;
+  margin: 0;
+  padding: 4px 6px 6px;
+  max-height: min(52vh, 480px);
+  overflow-y: auto;
+}
+.inc-rail-item { position: relative; }
+.inc-rail-item + .inc-rail-item { margin-block-start: 2px; }
+/* rail connector: continuous line through every entry */
+.inc-rail-item::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 15px;
+  inset-block: 0;
+  width: 1px;
+  background: var(--border);
+}
+.inc-rail-item:first-child::before { inset-block-start: 14px; }
+.inc-rail-item:last-child::before { inset-block-end: calc(100% - 14px); }
+
+.inc-rail-btn {
+  position: relative;
+  display: grid;
+  grid-template-columns: 26px 106px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text);
+  text-align: start;
+  cursor: pointer;
+  font-family: var(--sans);
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+.inc-rail-btn:hover { background: var(--bg-panel-2); border-color: var(--border); }
+.inc-rail-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.inc-rail-dot {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+}
+.inc-rail-dot i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--inc-heat);
+  border: 1px solid var(--bg);
+  box-shadow: 0 0 7px var(--inc-heat-soft);
+}
+.inc-rail-time {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.inc-rail-body { display: grid; gap: 1px; min-width: 0; }
+.inc-rail-id {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inc-rail-meta {
+  font-size: 10px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inc-rail-side { display: inline-flex; align-items: center; gap: 6px; }
+.inc-rail-x {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--amber);
+  border: 1px solid var(--amber-dim);
+  background: var(--amber-dim);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+/* newest entry: emphasis is decorative-only (guarded below) */
+@media (prefers-reduced-motion: no-preference) {
+  .inc-rail-item:first-child .inc-rail-btn {
+    animation: incRailIn 0.3s ease-out both;
+    background: rgba(65, 166, 242, 0.05);
+    border-color: var(--border-strong);
+  }
+}
+.inc-rail-item:first-child .inc-rail-btn { border-color: var(--border-strong); }
+.inc-rail-item:first-child .inc-rail-id { font-weight: 700; }
+.inc-rail-item:first-child .inc-rail-dot i { width: 12px; height: 12px; }
+@keyframes incRailIn {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
+.inc-rail-empty {
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-faint);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* ------------------------------------------------------------------ *
+ * Filter chips — options derived from the LOADED rows only.
+ * ------------------------------------------------------------------ */
+.inc-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 9px 12px;
+  border-block-end: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 60%), var(--bg-inset);
+}
+.inc-filters__lab {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.inc-filters__group { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.inc-filters__spacer { flex: 1 1 auto; }
+/* result-count caption — a display-state count of the loaded rows */
+.inc-count {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.inc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: color 0.1s ease, border-color 0.1s ease, background 0.1s ease;
+}
+.inc-chip:hover { color: var(--text); border-color: var(--accent); }
+.inc-chip[aria-pressed="true"] {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(65, 166, 242, 0.14);
+  box-shadow: 0 0 10px rgba(65, 166, 242, 0.18);
+}
+.inc-chip__n { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.inc-chip[aria-pressed="true"] .inc-chip__n { color: var(--accent-strong); }
+.inc-chip--sev[aria-pressed="true"] { border-color: var(--inc-heat); }
+.inc-chip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--inc-heat);
+  box-shadow: 0 0 5px var(--inc-heat-soft);
+}
+
+/* ------------------------------------------------------------------ *
+ * Status chips — state pills; the open/active state glows + pulses
+ * (pulse guarded by no-preference; theme.css also kills it on reduce).
+ * ------------------------------------------------------------------ */
+.inc-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.inc-status--open {
+  color: var(--accent-strong);
+  border-color: rgba(65, 166, 242, 0.5);
+  background: rgba(65, 166, 242, 0.1);
+  box-shadow: 0 0 9px rgba(65, 166, 242, 0.22);
+}
+.inc-status--resolved {
+  color: var(--green);
+  border-color: rgba(62, 207, 142, 0.4);
+  background: var(--green-dim);
+}
+.inc-status--muted { color: var(--text-faint); }
+.inc-status__glyph { font-size: 9px; }
+@media (prefers-reduced-motion: no-preference) {
+  .inc-status--open { animation: incOpenPulse 2.6s ease-in-out infinite; }
+}
+@keyframes incOpenPulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(65, 166, 242, 0.18); }
+  50% { box-shadow: 0 0 15px rgba(65, 166, 242, 0.4); }
+}
+
+/* ------------------------------------------------------------------ *
+ * Incident cards — the record list as command cards.
+ * ------------------------------------------------------------------ */
+.inc-cards {
+  list-style: none;
+  margin: 0;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 10px;
+}
+.inc-card {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  padding: 11px 12px 10px;
+  border: 1px solid var(--border);
+  border-inline-start: 3px solid var(--inc-heat);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 45%), var(--bg-panel);
+  min-width: 0;
+  transition: border-color 0.1s ease, background 0.1s ease, box-shadow 0.1s ease;
+}
+.inc-card:hover {
+  background: var(--bg-panel-2);
+  border-block-color: var(--border-strong);
+  box-shadow: var(--elev-1);
+}
+/* focus ring follows the card's own "open" button (keyboard parity) */
+.inc-card:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.inc-card__top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.inc-card__id {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+.inc-card__x {
+  margin-inline-start: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--amber);
+  border: 1px solid rgba(235, 161, 63, 0.4);
+  background: var(--amber-dim);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.inc-card__times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.inc-card__times b { color: var(--text-dim); font-weight: 400; }
+.inc-card__meta { font-size: 11px; color: var(--text-dim); }
+.inc-card__meta .inc-mono { font-family: var(--mono); color: var(--text); }
+.inc-card__line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.inc-card__k {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.inc-card__v { color: var(--text); overflow-wrap: anywhere; }
+.inc-card__v.dim { color: var(--text-dim); }
+.inc-card__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-block-start: 2px;
+  border-block-start: 1px solid var(--border);
+}
+.inc-card__tags {
+  display: inline-flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+.inc-card__tag {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 5px;
+  background: var(--bg-inset);
+}
+.inc-card__foot .btn { margin-inline-start: auto; }
+
+/* ------------------------------------------------------------------ *
+ * Drawer — evidence dossier restyle (scoped to this drawer instance).
+ * ------------------------------------------------------------------ */
+.inc-dossier { display: grid; gap: 12px; }
+.inc-dossier .panel { margin-bottom: 0; }
+.inc-dossier__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-block-end: 10px;
+  border-block-end: 1px solid var(--border);
+}
+.inc-dossier__id {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.inc-dossier__chips { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.inc-dossier__actions { margin-inline-start: auto; display: inline-flex; gap: 6px; flex-wrap: wrap; }
+/* tab row keeps the kit buttons, gets a command-bar rhythm */
+.inc-dossier__tabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.inc-dossier__tabs .btn[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: rgba(65, 166, 242, 0.12);
+  box-shadow: 0 0 8px rgba(65, 166, 242, 0.18);
+}
+/* numbered dossier section headers (panel chrome unchanged otherwise) */
+.inc-dossier .panel-header { letter-spacing: 0.12em; }
+.inc-dossier .kv { font-size: 11.5px; }
+.inc-dossier .kv dd { color: var(--text); }
+/* evidence rows: rail-tinted disclosure items instead of plain boxes */
+.inc-dossier details {
+  border: 1px solid var(--border);
+  border-inline-start: 2px solid var(--accent);
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: var(--bg-inset);
+}
+.inc-dossier details[open] { border-inline-start-color: var(--amber); }
+.inc-dossier summary { cursor: pointer; color: var(--text-dim); }
+.inc-dossier summary:hover { color: var(--text); }
+
+/* ------------------------------------------------------------------ *
+ * Responsive — timeline meta column and card grid tighten on narrow rails.
+ * ------------------------------------------------------------------ */
+@media (max-width: 720px) {
+  .inc-rail-btn { grid-template-columns: 26px minmax(0, 1fr); }
+  .inc-rail-time { grid-column: 2; }
+  .inc-rail-body, .inc-rail-side { grid-column: 2; }
+  .inc-cards { grid-template-columns: 1fr; }
+}

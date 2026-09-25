@@ -1,0 +1,4966 @@
+{
+ "generated_by": "scripts/testing/build_protection_ledger.py",
+ "counts": {
+  "PROTECTED": 64,
+  "REVIEWED": 351,
+  "UNREVIEWED": 121
+ },
+ "files": {
+  ".github/workflows/ci.yml": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  ".github/workflows/dependency-lock.yml": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  ".github/workflows/docker.yml": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  ".github/workflows/docs.yml": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  ".github/workflows/drift-debug.yml": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  ".github/workflows/js-tests.yml": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  ".github/workflows/lockfile-diff.yml": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  ".github/workflows/nightly-e2e.yml": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  ".github/workflows/nightly-qa.yml": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  ".github/workflows/osv-scanner.yml": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  ".github/workflows/qa-deep-assurance.yml": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  ".github/workflows/release.yml": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  ".github/workflows/security.yml": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  ".github/workflows/tests-os.yml": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/\n\nC:UsersCapsizersource\repos\nse_test_recon_w2>\nC:UsersCapsizersource\repos\nse_test_recon_w2>nit/test_liquidity_optimization_phase19.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.4,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/acceptance/test_lifecycle_chaos.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-036"
+   ],
+   "verdict": "DELETE-CHECK",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-036). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/ci/test_check_workflows.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/ci/test_classify_changes.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/ci/test_critical_manifest_gate.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/ci/test_gate_scope_integrity.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-028"
+   ],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-028). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/ci/test_mutation_runner_smoke.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/cli/conftest.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/cli/test_cli_subprocess.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/cli/test_docs_consistency.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "CONVERT-RUNTIME",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed CONVERT-RUNTIME: follow the verdict's `reason` before acting."
+  },
+  "tests/e2e/test_download_ready_hotswitch_hotreload.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/e2e/test_smoke_chain.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/e2e_client/j2_mode_switch.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/e2e_client/j3_signal_decisions.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/e2e_client/j4_resilience.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/e2e_client/j6_responsive_a11y.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/e2e_client/j7_localization.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/e2e_client/probe_cc_blank.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DELETE-CHECK",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Flagged delete candidate BUT replacement coverage is MISSING \u2014 resolve the gap first."
+  },
+  "tests/e2e_client/test_client_journeys.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/installer/test_download_integrity.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T3",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/installer/test_installer_protocol.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T3",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/installer/test_lifecycle.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T3",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/installer/test_rc_regressions.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "T3",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/installer/test_venv_transaction.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T3",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/integration/test_accounting_api.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T4",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/integration/test_api_v1_platform.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/integration/test_bug193_bug196_remediation.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/integration/test_database_execution_audit.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "REWRITE",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed REWRITE: follow the verdict's `reason` before acting."
+  },
+  "tests/integration/test_end_to_end_closed_loop_bug140.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/integration/test_engine_runtime_launch.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DELETE-CHECK",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Flagged delete candidate BUT replacement coverage is MISSING \u2014 resolve the gap first."
+  },
+  "tests/integration/test_experience_execution_boundary.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-025"
+   ],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-025). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/integration/test_intelligence_api.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/integration/test_liquidity_api.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/integration/test_live_freshness_g29.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-023"
+   ],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-023). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/integration/test_model_generation.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/integration/test_model_lifecycle_api.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "REWRITE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed REWRITE: follow the verdict's `reason` before acting."
+  },
+  "tests/integration/test_mslie_api.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/integration/test_mt5_accounting_api_contract.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-032"
+   ],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-032). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/integration/test_mt5_api_probes.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/integration/test_news_api.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "REWRITE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed REWRITE: follow the verdict's `reason` before acting."
+  },
+  "tests/integration/test_playwright_e2e.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/integration/test_replay_certification_e2e.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/integration/test_replay_e2e_reconciliation.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/integration/test_research_api.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/integration/test_research_execution_stack.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/integration/test_runtime_70d_contract_probe.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "REWRITE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed REWRITE: follow the verdict's `reason` before acting."
+  },
+  "tests/integration/test_runtime_70d_contract_probe.py / _warmup / test_runtime_gate_e2e.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/integration/test_runtime_70d_warmup.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/integration/test_runtime_config_api.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/integration/test_runtime_gate_e2e.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/integration/test_signal_pipeline_health.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "REWRITE",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed REWRITE: follow the verdict's `reason` before acting."
+  },
+  "tests/integration/test_system_integration_boundaries.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-013"
+   ],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-013). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/js/cc_design.test.js": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/js/cc_state.test.js": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/js/command_center_console.test.js": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/js/command_center_spatial.test.js": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/js/command_center_timemachine.test.js": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/js/command_center_ui.test.js": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/js/forensic_console.test.js": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/js/forensic_incidents_dom.test.js": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/js/pro_risk_viz.test.mjs": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/js/test_market_radar_ui.test.js": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/js/tv_widget_redesign.test.js": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/js/xauusd_indicator_math.test.js": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/manual/test_playwright_e2e.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/release/test_release_hardening.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/slow/test_70d_incremental.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T4",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/news/ingest/test_bug282_rfc822_and_identity.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 1.5,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/news/ingest/test_deduplicator.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": "duplicate",
+   "tier": "none",
+   "cost_s": 0.1,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/news/test_news_source_factory.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_70d_bug106_incremental_phase19.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "T1",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_70d_contract_parity_task3.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T1",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_70d_dataset_parity_task3.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "T1",
+   "cost_s": 20.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_70d_feature_contract.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": "duplicate",
+   "tier": "none",
+   "cost_s": 12.2,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_70d_inference_validator_task3.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-017"
+   ],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T0",
+   "cost_s": 0.3,
+   "rule": "Named in critical_regressions.md (CR-017). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_70d_model_validation_task4.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T4",
+   "cost_s": 88.4,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_70d_parity_task3.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 21.3,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_70d_replay_parity_task3.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-022"
+   ],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "T1",
+   "cost_s": 3.6,
+   "rule": "Named in critical_regressions.md (CR-022). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_70d_runtime_hook_task3.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_a2_data_lineage_bounded.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-017"
+   ],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "T1",
+   "cost_s": 0.0,
+   "rule": "Named in critical_regressions.md (CR-017). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_accounting_advanced_metrics.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_accounting_core.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T4",
+   "cost_s": 24.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_accounting_deduplication.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-031"
+   ],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T0",
+   "cost_s": 4.3,
+   "rule": "Named in critical_regressions.md (CR-031). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_accounting_hedging.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T4",
+   "cost_s": 18.6,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_accounting_normalize.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": "implementation-detail",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_accounting_pnl_regression.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T0",
+   "cost_s": 9.3,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_accounting_retention.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_accounting_timezone.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 3.6,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_adaptive_position_management.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent10_model_pipeline_red.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "none",
+   "cost_s": 2.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent11_execution_risk_forensic.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-002",
+    "CR-009",
+    "CR-011",
+    "CR-012"
+   ],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 3.2,
+   "rule": "Named in critical_regressions.md (CR-002, CR-009, CR-011, CR-012). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_agent11_scenario_coverage_contract.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DELETE-CHECK",
+   "category": "implementation-detail",
+   "tier": "none",
+   "cost_s": 0.3,
+   "rule": "Flagged delete candidate BUT replacement coverage is MISSING \u2014 resolve the gap first."
+  },
+  "tests/unit/test_agent12_bug247_hardening.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "none",
+   "cost_s": 0.4,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent12_bug250_exit_classification.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent12_execution_forensic.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 5.6,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent13_methodology_integrity.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.4,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent14_dataset_integrity.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 1.4,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent14_qa_wave2_dataset_identity.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 1.4,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent15_bug244_bar_sell_tp_containment.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent16_hotpath_perf.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.4,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent16_w2_bars_hygiene.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 2.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent16_walkforward_purge_embargo_leakage.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-021"
+   ],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 0.3,
+   "rule": "Named in critical_regressions.md (CR-021). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_agent17_oos_hard_gate.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 0.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent18_replay_forensics.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent3_champion_registry_sync.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 2.6,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent3_champion_registry_sync.py + tests/unit/test_bug271_champion_retrain_fingerprint.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_agent5_bug249_251_252.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-026"
+   ],
+   "verdict": "KEEP-PROMOTE",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 0.1,
+   "rule": "Named in critical_regressions.md (CR-026). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_agent5_replay_gap_parity.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent6_execution_contract.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T0",
+   "cost_s": 0.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent8_retrain_buffer_width_guard.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_agent8_w2_trainer_hygiene.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "REWRITE",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 11.7,
+   "rule": "Reviewed REWRITE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_agent9_rollback_integrity.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_agent9_update_pidfile_liveness.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "REWRITE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed REWRITE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_ai_attribution.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_alt_ui_runtime_contract.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_alt_ui_standalone_server.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_api_v1_contracts.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_audit_db_default_isolation_bug223.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_audit_db_growth_bug054.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_audit_flush_contract.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-005"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T0",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-005). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_audit_ledger_export_w3.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_audit_repository_memory_uri_bug156.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_auth_boot_bug267.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "REWRITE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed REWRITE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_auth_session_isolation.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_behavior_anomaly_intelligence_phase16.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_behavioral_model_health_gate_chg0057.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_broker_history_sync_watermark_bug133.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_broker_offset_config.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_bug106_phase2_optimization.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_bug125_70d_live_tensor.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_bug162_forensic_cli_gate.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_bug175_model_validate_probs.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_bug176_schema_flag.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_bug182b_online_train_width_contract.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_bug185_record_contract_align\n\nC:UsersCapsizersource\repos\nse_test_recon>\nC:UsersCapsizersource\repos\nse_test_recon>ent.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_bug185_record_contract_alignment.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug185_terminal_state_resolver.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_bug197_news_count_bounds.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_bug217_news_state_bounds.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-034"
+   ],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-034). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_bug222_esc_sinks.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DELETE-CHECK",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Flagged delete candidate BUT replacement coverage is MISSING \u2014 resolve the gap first."
+  },
+  "tests/unit/test_bug225_untrained_champion_canary.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-019"
+   ],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T0",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-019). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_bug226_paper_provenance.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-016"
+   ],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-016). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_bug232_launcher_mode_persistence.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "T3",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_bug232_mode_boundary.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-013"
+   ],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "T0",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-013). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_bug234_htf_window_parity.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_bug235_retrain_persist_guard.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_bug237_update_setup_payload.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_bug243_bundle_class_head_mint.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_bug245_policy_candidate_measure.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_bug254_executions_idempote\n\nC:UsersCapsizersource\repos\nse_test_recon>\nC:UsersCapsizersource\repos\nse_test_recon>cy_migration.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_bug254_executions_idempotency_migration.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-004"
+   ],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-004). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_bug256_dispatch_halt_wiring.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_bug257_champion_drift_sentinel.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-018"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-018). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_bug258_reversal_risk_bypass.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-008"
+   ],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-008). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_bug259_breaker_anchor_restart.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-010"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-010). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_bug259_hold_score_hold_clock.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug260_margin_usage_enforcement.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug260_tick_domain_hold_age.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug261_terminal_outcome_tick_domain.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug262_close_time_evidence.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug263_snapshot_integrity_gate.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-030"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-030). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_bug264_maintenance_pin_collision.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-027"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-027). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_bug266_paper_data_wiring.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug268_min_loss_grace_clock.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug269_docker_starter_servable.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug271_champion_retrain_fingerprint.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-018"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-018). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_bug274_wrapper_state_leak.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug275_hygiene_cadence_clock.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug276... (cross-domain note: experience registry artifact_fingerprint column)": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_bug276_unique_constraint_shadow.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-007"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T2",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-007). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_bug277_doctor_warning_vocabulary.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug278_test_harness_artifact_isolation.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-036"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-036). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_bug279_feed_stall_fail_loud.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug280_frequency_throttle_unification.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug281_chop_boundary_recalibration.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug283_hunter_regime_adapter.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_bug284_suitability_micro_sample_floor.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_c3_spread_session_wiring.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_c4_symbol_magic_unlock.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_calendar_maintenance_wiring.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_calibration_collection.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_calibration_degradation_gate.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_calibration_identity.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_calibration_monitor.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_capital_protection_a15.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-001"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T0",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-001). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_challenger_statistical_gate.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_champion_bundle_recovery_contract.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_champion_writer_governance.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_chart_resync_phase15b.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_check_local_gate.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": 363.7,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_ci_final_gate_fail_closed.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-028"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-028). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_ci_ruff_repair_and_blocked_taxonomy.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_cli_end_to_end.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T4",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_cli_onboarding_ux.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_cli_pro_ux.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_code_analyzer.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_command_center_adversarial.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_command_center_api.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_command_center_eval_projection.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_concurrency_policy.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_confidence_calibration.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_confidence_semantics_repair.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_config_contract_agent18.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_counterfactual_engine.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_critical_suite.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_database_hygiene_task11.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_database_migrations_phase18.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_database_platform_task_db.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": 138.4,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_database_portability.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_database_portability.py; tests/integration/test_database_execution_audit.py; tests/integration/test_end_to_end_closed_loop_bug140.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_dataset_split_purge_bug244.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-021"
+   ],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 0.7,
+   "rule": "Named in critical_regressions.md (CR-021). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_dead_letter_retention_cap.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "contract",
+   "tier": "T2",
+   "cost_s": 27.7,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_dead_letter_store_split.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DELETE",
+   "category": "implementation-detail",
+   "tier": "none",
+   "cost_s": 10.1,
+   "rule": "Forensically deleted with replacement recorded; re-adding requires new evidence."
+  },
+  "tests/unit/test_debug_intelligence.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_debug_snapshot_phase20.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "mock-choreography",
+   "tier": "none",
+   "cost_s": 6.4,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_decision_evidence_completeness.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 2.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_decision_id_integrity.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "structural",
+   "tier": "none",
+   "cost_s": 1.1,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_dependency_cache.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DELETE",
+   "category": "scaffolding",
+   "tier": "none",
+   "cost_s": 115.0,
+   "rule": "Forensically deleted with replacement recorded; re-adding requires new evidence."
+  },
+  "tests/unit/test_dependency_drift_resolver.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "scaffolding",
+   "tier": "none",
+   "cost_s": 1.5,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_dependency_intelligence.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "scaffolding",
+   "tier": "none",
+   "cost_s": 8.9,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_directional_lab.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 8.4,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_directional_sensitivity.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_disk_safety_guards.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 3.5,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_docker_release_lane.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "structural",
+   "tier": "none",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_docker_startup_phase21.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 2.3,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_domain_models.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "implementation-detail",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_drift_breaker.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "runtime-critical",
+   "tier": "none",
+   "cost_s": 0.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_economic_assumptions.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T0",
+   "cost_s": 0.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_economic_parity_harness.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T0",
+   "cost_s": 1.4,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_evidence_semantics_bug140.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T1",
+   "cost_s": 1.4,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_execution_architecture.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 0.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_execution_costs_canonical.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_execution_quality_contract.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_exit_replay_harness.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 8.8,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_exit_separation_w3.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "runtime-critical",
+   "tier": "none",
+   "cost_s": 0.6,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_experience_intelligence.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "T4",
+   "cost_s": 45.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_experience_provenance_contract.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 8.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_factory_llm_save_bug131.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "implementation-detail",
+   "tier": "none",
+   "cost_s": 2.6,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_factory_loop_sandbox_e2e.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 7.6,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_factory_score_parse_bug130.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "implementation-detail",
+   "tier": "none",
+   "cost_s": 0.1,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_fault_injection_observability.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 16.5,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_feature_drift_monitor.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_fidelity_data_to_decision.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.4,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_final_replicas.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 18.8,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_forensic_incident_center_task.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DELETE",
+   "category": "duplicate",
+   "tier": "none",
+   "cost_s": 7.3,
+   "rule": "Forensically deleted with replacement recorded; re-adding requires new evidence."
+  },
+  "tests/unit/test_forensic_monitoring_task11.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DELETE",
+   "category": "duplicate",
+   "tier": "none",
+   "cost_s": 30.7,
+   "rule": "Forensically deleted with replacement recorded; re-adding requires new evidence."
+  },
+  "tests/unit/test_forensic_repair_account_and_audit.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 2.9,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_forensics.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "invariant",
+   "tier": "T2",
+   "cost_s": 237.3,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_forward_test_freeze.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 3.7,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_frontend_assets_phase14.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "structural",
+   "tier": "none",
+   "cost_s": 52.7,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_gap_safe_sequences.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-022"
+   ],
+   "verdict": "KEEP-PROMOTE",
+   "category": "runtime-critical",
+   "tier": "T0",
+   "cost_s": 0.1,
+   "rule": "Named in critical_regressions.md (CR-022). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_gate_bypass_detection.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 5213.3,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_gate_convergence_evidence.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-025"
+   ],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T1",
+   "cost_s": 0.3,
+   "rule": "Named in critical_regressions.md (CR-025). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_gateway_e2e.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 225.2,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_gateway_secrets_contract.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_h5_candle_intel_gate.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_hardened_protocol.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 7.9,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_hardening_p1_p2.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 39.6,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_hold_duration_clock.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_hold_time_fallback_g3.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "implementation-detail",
+   "tier": "none",
+   "cost_s": 6.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_hot_swap_governance.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 2.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_htf_train_live_parity.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 16.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_htf_warmup_gate.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "mock-choreography",
+   "tier": "none",
+   "cost_s": 86.0,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_hunter_metadata_persistence.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T1",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_hunter_min_quality_pins_bug227.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T1",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_hunter_sample_strategy_coverage.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T1",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_incident_response_task12.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DELETE",
+   "category": "duplicate",
+   "tier": "none",
+   "cost_s": 36.6,
+   "rule": "Forensically deleted with replacement recorded; re-adding requires new evidence."
+  },
+  "tests/unit/test_incident_runtime_task13.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DELETE",
+   "category": "duplicate",
+   "tier": "none",
+   "cost_s": 20.8,
+   "rule": "Forensically deleted with replacement recorded; re-adding requires new evidence."
+  },
+  "tests/unit/test_incidents.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "invariant",
+   "tier": "T2",
+   "cost_s": 59.9,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_intelligence_phase09.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 30.7,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_label_integrity.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T1",
+   "cost_s": 0.4,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_latency_regression_observability.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 1.6,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_launcher_paper_boundary_bug212.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "runtime-critical",
+   "tier": "none",
+   "cost_s": 101.7,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_learnfix1_provenance_binding.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 14.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_learning_live_handoff.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 2.7,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_learning_loop_closure.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 1.9,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_learning_restart_recovery.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 2.4,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_lifecycle_bug140.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 31.9,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_lifecycle_chaos.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-036"
+   ],
+   "verdict": "KEEP",
+   "category": "structural",
+   "tier": "none",
+   "cost_s": 223.6,
+   "rule": "Named in critical_regressions.md (CR-036). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_lifecycle_e2e_v3.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "invariant",
+   "tier": "T2",
+   "cost_s": 26.4,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_lifecycle_event_projection.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "T1",
+   "cost_s": 0.7,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_lifecycle_verdict_mapping.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T1",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_linux_mt5_platform.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T3",
+   "cost_s": 2.3,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_liquidity_engine_causality.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 0.8,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_liquidity_engine_contract.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T1",
+   "cost_s": 0.6,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_liquidity_engine_features.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "invariant",
+   "tier": "T2",
+   "cost_s": 4.4,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_liquidity_optimization_phase19.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_liquidity_runtime_integration_phase18.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "T4",
+   "cost_s": 1.8,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_liquidity_task02_integration.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 3.3,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_live_engine_regime_state_freshness.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_live_freshness_characterization.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-023"
+   ],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 0.3,
+   "rule": "Named in critical_regressions.md (CR-023). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_live_reactivity_bug169.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_live_sequence_characterization.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_live_state_contract.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 539.4,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_live_workers_characterization.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_liveengine_init_order_bug130.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 1.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_log_autopsy_fixes.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.4,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_logging.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "implementation-detail",
+   "tier": "none",
+   "cost_s": 1.3,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_logging_correlation_ids.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T1",
+   "cost_s": 0.9,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_logging_redaction.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T1",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_logging_retention_runtime.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "contract",
+   "tier": "T2",
+   "cost_s": 0.5,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_maintenance_dispatch_guard.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-027"
+   ],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-027). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_maintenance_swap_policy.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_market_calendar_bug134.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_market_context_calendar_drift.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_market_data_integrity_ag13.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-024"
+   ],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-024). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_market_entry_gate.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_market_radar_integration.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_marketplace_backend.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_missing_outcome_backfill_bug174.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_mlfix_data_audit_lineage.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_model_artifact_contract_bug141.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_model_benchmark_phase13b.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "T4",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_model_class_contract.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_model_class_contract.py + test_model_contract_migration.py + tests/unit/test_70d_model_validation_task4.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_model_cli_ghost_inputs_bug164.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_model_contract_migration.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_model_generation_phase13.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T4",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_model_governance_phase16.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T4",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_model_health.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_model_lab.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_model_lifecycle_phase10.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T4",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_model_lifecycle_phase10.py + test_champion_bundle_recovery_contract.py + test_bug269_docker_starter_servable.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_model_load_integrity.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_mslie_phase22.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_mslie_sweep_window_pins_bug227.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_mt5_accounting_from_history.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_mt5_diag_throttle.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_mt5_history_reconstruction.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_mt5_providers_phase14.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_mt5_providers_phase14.py:284-307": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_mt5_status_endpoint.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_mt5_tick_boundary_bug188.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_mutation_contract_guard.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_news_bridge_contract_phase13b.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_news_bridge_finalize_phase13b.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_news_bridge_phase13b.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_news_budget.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_news_db_truncation_honesty.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-034"
+   ],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T2",
+   "cost_s": 427.6,
+   "rule": "Named in critical_regressions.md (CR-034). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_news_keywords_dataset.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "framework",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_news_phase12.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_news_pro_auto_console.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "implementation-detail",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_no_future_leakage.py + test_70d_replay_parity_task3.py:106/:122 + test_70d_parity_task3.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_no_trade_default_reason_codes.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_node_runtime_role.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "structural",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_nse_lifecycle_regression_matrix.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 30.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_obs_trace_chain.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_obs_trace_chain2.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_observability_contract_freeze.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "contract",
+   "tier": "T2",
+   "cost_s": 0.2,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_observability_guardrails.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "invariant",
+   "tier": "T2",
+   "cost_s": 4.8,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_operational_log_hygiene.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_operator_routes.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_order_lifecycle.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 1.9,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_order_manager_exit_bugs.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T0",
+   "cost_s": 1.5,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_order_write_uncertainty.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-003"
+   ],
+   "verdict": null,
+   "category": "runtime-critical",
+   "tier": "T0",
+   "cost_s": 0.0,
+   "rule": "Named in critical_regressions.md (CR-003). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_outcome_flush_race_bug140.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 4.9,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_outcome_recovery_sweep_bug140.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "invariant",
+   "tier": "T2",
+   "cost_s": 14.2,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_oversample_determinism.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_p0_producer_regression.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-035"
+   ],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T0",
+   "cost_s": 0.0,
+   "rule": "Named in critical_regressions.md (CR-035). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_p2b_console_ring.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_packaged_db_and_mode_bug146_149.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-013"
+   ],
+   "verdict": "KEEP-PROMOTE",
+   "category": "runtime-critical",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Named in critical_regressions.md (CR-013). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_paper_live_training_lineage.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-016"
+   ],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 30.0,
+   "rule": "Named in critical_regressions.md (CR-016). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_paper_parity.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_paper_persistence.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "T1",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_paper_replay_mode.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_pending_recovery_cause_aware.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_perf01_chart_snapshot_cache.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "implementation-detail",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_perf02_account_refresh_throttle.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "implementation-detail",
+   "tier": "none",
+   "cost_s": 0.0,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_perf_deadletter_skeleton_repro.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-007"
+   ],
+   "verdict": "CONVERT-RUNTIME",
+   "category": "runtime-critical",
+   "tier": "T2",
+   "cost_s": 730.3,
+   "rule": "Named in critical_regressions.md (CR-007). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_perf_exec_trace_throttle.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "DEMOTE",
+   "category": "contract",
+   "tier": "T2",
+   "cost_s": 0.1,
+   "rule": "Reviewed DEMOTE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_perf_health_probe_cache.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_perf_safety_contract_pins.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_performance_metric_truth.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-032"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-032). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_performance_report_intelligence.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T4",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_persistence_boot_trust.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_persistence_durability_guarantees.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_phase27_consistency.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_policy.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_policy_flip_protection_pins_bug227.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_policy_threshold_ownership.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_policy_throttle_pins_bug227.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_policy_warmup_range_seam_bug230.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_post70d_monitoring_activation.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_predictive_limit_explainability_bug226.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_promotion_economic_integrity.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-020"
+   ],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 0.5,
+   "rule": "Named in critical_regressions.md (CR-020). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_promotion_rejects_degenerate_model.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-019"
+   ],
+   "verdict": "KEEP-PROMOTE",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 0.5,
+   "rule": "Named in critical_regressions.md (CR-019). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_protection_ledger_invariants.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "T1",
+   "cost_s": 0.1,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_provider_gate_hardening.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 3.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_provider_lifecycle_hardening.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.5,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_qa_deep_70d_contract_properties.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 0.5,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_qa_deep_bug194_zero_trained_mass.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "none",
+   "cost_s": 0.5,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_qa_deep_confidence_adversarial.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.5,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_qa_deep_db_migration_adversarial.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 3.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_qa_deep_execution_safety.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP-PROMOTE",
+   "category": "invariant",
+   "tier": "T1",
+   "cost_s": 3.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_qa_deep_metamorphic_replay.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-022"
+   ],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.5,
+   "rule": "Named in critical_regressions.md (CR-022). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_qa_deep_observability_evidence.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_qa_deep_provider_gate_chaos.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 9.4,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_qa_deep_security_surfaces.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 3.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_qa_deep_state_machines.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "T0",
+   "cost_s": 0.2,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_quality_tier_pins_bug227.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "T1",
+   "cost_s": 0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_recon_batch_atomicity_real_failure.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-005"
+   ],
+   "verdict": "KEEP-PROMOTE",
+   "category": "runtime-critical",
+   "tier": "T0",
+   "cost_s": 3.0,
+   "rule": "Named in critical_regressions.md (CR-005). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_recon_duplicate_deal_across_restart.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-004"
+   ],
+   "verdict": "KEEP-PROMOTE",
+   "category": "runtime-critical",
+   "tier": "T0",
+   "cost_s": 3.0,
+   "rule": "Named in critical_regressions.md (CR-004). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_recon_requote_and_reconcile.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-033"
+   ],
+   "verdict": "KEEP-PROMOTE",
+   "category": "runtime-critical",
+   "tier": "T0",
+   "cost_s": 0.5,
+   "rule": "Named in critical_regressions.md (CR-033). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_recon_risk_boundary_battery.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-009"
+   ],
+   "verdict": "KEEP-PROMOTE",
+   "category": "runtime-critical",
+   "tier": "T0",
+   "cost_s": 0.5,
+   "rule": "Named in critical_regressions.md (CR-009). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_recon_wal_crash_durability.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-006"
+   ],
+   "verdict": "KEEP-PROMOTE",
+   "category": "runtime-critical",
+   "tier": "T1",
+   "cost_s": 10.0,
+   "rule": "Named in critical_regressions.md (CR-006). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_regime_calibration_bug132.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "T1",
+   "cost_s": 0.6,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_regime_hysteresis_pins_bug227.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "invariant",
+   "tier": "none",
+   "cost_s": 0.5,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_rejected_candidate_not_persisted.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-035"
+   ],
+   "verdict": "KEEP-PROMOTE",
+   "category": "runtime-critical",
+   "tier": "none",
+   "cost_s": 3.0,
+   "rule": "Named in critical_regressions.md (CR-035). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_release_artifacts_contract.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 1.0,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_release_auth_gate.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-029"
+   ],
+   "verdict": "KEEP",
+   "category": "contract",
+   "tier": "none",
+   "cost_s": 10.0,
+   "rule": "Named in critical_regressions.md (CR-029). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_release_full_sha_identity.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T3",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_release_system.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_release_update_phase17.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-030"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": 59.9,
+   "rule": "Named in critical_regressions.md (CR-030). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_remote_gateway.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_replay_api_routes.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_replay_candidate_benchmark.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_replay_session_controller.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_replay_toggle_guard.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-014"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T0",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-014). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_research_archive_round3.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_research_edge_hardening_20260909.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_research_gate_shortcircuit_bug233.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_research_history_surface.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_research_loop_smoke.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_research_observability_phase21.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_research_phase09b.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T4",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_research_provenance_immutable.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_research_purge_defaults_bug183.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-020",
+    "CR-021"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-020, CR-021). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_research_regime_report.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_research_registry_null_score_bug075.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_research_selection_bias_20260909.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_research_task4_dataset.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_research_task4_validation.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_research_walkforward_gate_agent5.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_research_worker_multiplicity.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_risk_circuit_breakers.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-010"
+   ],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "T0",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-010). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_risk_engine.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "T0",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_rule_matrix.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_runtime_70d_observability.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_runtime_70d_p2_observability.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_runtime_bars_normalize.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_runtime_config_hot_reload.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_runtime_engine_hot_reload.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_runtime_failure_injection.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_runtime_gate.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_runtime_safety_mission.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_runtime_truth_hardening.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_s2_state_machine_golden.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_s3_recovery_budget_golden.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_s4_position_intelligence_golden.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_s6_dead_ticket_trace_golden.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_s6_dispatch_parity_golden.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_s6_hold_score_ownership_golden.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_s6_telemetry_throttle_golden.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_s6_tickets_cache_golden.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_s6_tracker_ownership_golden.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_scalp_features_forensic_bug082.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "T0",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_schema_70d_reconciliation.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-017"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-017). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_security_remediations_phase22.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_session_semantics_revalidation.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_session_time_dst.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_settings_api_bug072.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_settings_subsystem_bug072.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_shadow70_health_drift.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_shadow70_news_family.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_shadow70_runtime.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T4",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_shadow70_safety.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-015"
+   ],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-015). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_shadow_hardening_chg0046.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_shadow_phase11.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-015"
+   ],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "T4",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-015). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_shadow_replay_evidence_chg0047.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_signed_manifest_fetch_s1.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_signed_update_manifest.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-030"
+   ],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-030). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_sizing_policy_failclosed.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "T0",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_smoke_self.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_spatial_layout.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "KEEP",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_spread_gates_c3.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "PROMOTE-GATE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
+  },
+  "tests/unit/test_state_contradiction_forensics.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": "MERGE",
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "Reviewed MERGE: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_state_truth_matrix.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_state_truth_parity.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_statistical_gate_policy_pins.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_storage_lifecycle_wiring.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_storage_policy.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_strategies_ichimili_phase15c.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_strategies_seeder_phase15c.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_strategy_factory_ai_phase22.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_strategy_factory_discovery_phase25.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_strategy_factory_g28_clone_and_stats.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_strategy_factory_phase22.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_strategy_factory_registry_invariant.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_strategy_lifecycle_snapshot.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_strategy_research_store.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_survival_drawdown_runtime_bug132.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-026"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-026). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_symbol_whitelist_w3.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_telegram_control_surface.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_telegram_notifier.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_temporal_liquidity_phase20.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_temporal_sequence_contract.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T0",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_three_model_pipeline.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_three_model_resume.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_time_machine.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_trade_lifecycle_task3.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-031"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T4",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-031). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  },
+  "tests/unit/test_train_model_cli.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_training_dataset_replay.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_training_decay_separation.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_training_seed_reproducibility.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_ui_deploy_drift_forensics.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_update_cli_contract.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_update_lifecycle_logging.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_update_lifecycle_scenarios.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_user_hunt_bug170_171.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_walk_forward_trainer.py": {
+   "protection": "REVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T2",
+   "cost_s": 140.2,
+   "rule": "Reviewed ?: follow the verdict's `reason` before acting."
+  },
+  "tests/unit/test_web_auth.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_web_auth_bootstrap_bug267.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_web_marketplace_contract.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_web_security.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_web_ux_safety.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_wf_oos_context_aware_phase26.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_wft_expanding_mode.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_wft_fold_economics.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_wft_time_based_purge.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_winner_protection_geometry_sprint.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_wsl2_platform_registry.py": {
+   "protection": "UNREVIEWED",
+   "cr": [],
+   "verdict": null,
+   "category": null,
+   "tier": "none",
+   "cost_s": null,
+   "rule": "No CR row and no forensic verdict: may be deleted ONLY with new evidence recorded in test_value_matrix.md (what real defect it could not catch). Prefer demote-to-T3/T4 over delete."
+  },
+  "tests/unit/test_zero_friction_guard_e1.py": {
+   "protection": "PROTECTED",
+   "cr": [
+    "CR-020"
+   ],
+   "verdict": null,
+   "category": null,
+   "tier": "T1",
+   "cost_s": null,
+   "rule": "Named in critical_regressions.md (CR-020). NEVER delete. Tier may change only by editing the CR row in the same commit (movement must preserve execution: T2+ lanes run on every main push)."
+  }
+ }
+}

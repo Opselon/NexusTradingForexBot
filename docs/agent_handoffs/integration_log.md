@@ -1,0 +1,1 @@
+| 2026-09-11 | hermes(claude) | PR #133 integration note — taskboard row TASK-AUDREV-C3-SPREAD-GATES CLOSED-VERIFIED (fa126e46) + DEC-0006 branch-protection/docs-context record ride on chore/c3-taskboard-close; this docs-path touch produces the required 'Validate documentation' context on the PR head (no content change).

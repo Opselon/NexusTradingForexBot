@@ -1,0 +1,24 @@
+# WINDOWS-SKEW PR LANE (tests-os.yml, Tier 3 fast path).
+# The Windows-specific defect classes that a Linux green cannot see:
+# packaged-mode DB/mode anchoring, launcher flag precedence, installer
+# protocol (real PowerShell), update identity/PIDFILE races, CRLF/eol
+# hygiene, disk-guard semantics on NTFS. Full critical_suite.txt runs on
+# Windows only on main push / dispatch full_suite (Tier 3 complete).
+# Deterministic + bounded: total measured < 60 worker-seconds.
+# (test_packaged_db_and_mode_bug146_149.py EXCLUDED — measured order-dependent:
+#  green in the xdist full-unit run, RED standalone against the machine's
+#  LEGACY_UNVERIFIED artifact; rewrite onto a provisioned bundle first. See
+#  scripts/testing/classification_overrides.json rewrite_required.)
+tests/unit/test_bug232_launcher_mode_persistence.py
+tests/unit/test_bug232_mode_boundary.py
+tests/unit/test_release_full_sha_identity.py
+tests/unit/test_bug237_update_setup_payload.py
+tests/unit/test_user_hunt_bug170_171.py
+tests/unit/test_linux_mt5_platform.py
+tests/unit/test_storage_policy.py
+tests/unit/test_disk_safety_guards.py
+tests/installer/test_download_integrity.py
+tests/installer/test_installer_protocol.py
+tests/installer/test_lifecycle.py
+tests/installer/test_venv_transaction.py
+tests/installer/test_rc_regressions.py

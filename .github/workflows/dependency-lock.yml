@@ -1,0 +1,107 @@
+name: Dependency Lock & Migration Safety
+
+# Dependency SSOT + migration-safety drift gates (task: DEPENDENCY /
+# DATABASE-MIGRATION hardening). Both checks are deterministic, offline
+# and self-contained; they FAIL (non-zero) on drift or a violation, so a
+# hand-edited generated artifact or a silent migration swallow turns CI red.
+#
+#   check_dependency_drift.py : requirements.lock / requirements.txt must
+#     match a fresh `uv pip compile pyproject.toml --all-extras` resolution.
+#     The repo venv builds through the lock (see ci.yml "Install via lock").
+#   check_migration_safety.py : migration registry chain valid, no silent
+#     except-swallow in the migration apply path, every domain reaches
+#     expected_version + verify() on disposable DBs.
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deplock-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-drift:
+    name: Dependency drift (lock vs pyproject)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11 (lowest supported — resolver needs it)
+        # Universal resolution PRUNES marker arms below the lowest interpreter
+        # uv can see. ubuntu-24.04 ships no 3.11, so without this step uv
+        # pruned the `python_full_version < '3.12'` arms (numpy 2.4.6, tomli
+        # <=3.11) and the fresh lock drifted from the committed one even with
+        # the pinned uv version. The project floor is requires-python >=3.11,
+        # so the resolver MUST see a 3.11 interpreter.
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          enable-cache: false
+          # PIN: the lock artifact must be byte-reproducible across local and
+          # CI. Newer uv releases changed universal-resolution output in the
+          # past (numpy arm merging), which would flag a committed lock as
+          # stale. Bump BOTH sides (this pin + local uv) together.
+          # Input-name history (THREE directions have now bitten us):
+          # setup-uv@v5 used `version` (writing `uv-version` silently ignored
+          # -> CI drifted to 0.12.11); setup-uv@v7/v8 accepted BOTH;
+          # setup-uv@v10 (#164 bump) REMOVED the `uv-version` alias -> with
+          # `uv-version:` here the pin is SILENTLY IGNORED and CI runs the
+          # action default (0.12.13), proven by the "Unexpected input(s)
+          # 'uv-version'" warning annotation on every Dependency-drift run
+          # since 059cb23a. v10's valid input is `version` again.
+          version: "0.12.10"
+
+      - name: Drift check (regenerates nothing; fails on stale artifacts)
+        run: |
+          python scripts/ci/check_dependency_drift.py
+
+  migration-safety:
+    name: Migration safety (fail-loud + version postconditions)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install minimal check deps
+        run: python -m pip install --upgrade pip structlog
+
+      - name: Migration safety check (disposable DBs only)
+        run: |
+          python scripts/ci/check_migration_safety.py
+
+      - name: Mutation fast scope (changed targets only)
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        run: |
+          # PR-fast mutation path: only mutations whose target file appears
+          # in the current git diff. Exit 1 = surviving mutant (test blind
+          # spot), exit 2 = broken battery/anchor (runner untrustworthy).
+          python scripts/qa/run_mutations.py --changed --out mutation-scope.json
+          cat mutation-scope.json
+
+      - name: Upload mutation scope report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutation-scope-${{ github.run_number }}-${{ github.sha }}
+          path: mutation-scope.json
+          if-no-files-found: ignore
+          retention-days: 90

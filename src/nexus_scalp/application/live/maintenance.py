@@ -1,0 +1,540 @@
+"""MaintenanceCycle — periodic non-trading housekeeping of the live loop.
+
+P1 seam L3 (god-file decomposition, extraction 3 of the live-engine wave):
+the time-throttled maintenance cycle leaves ``application/live_engine.py``
+verbatim (behavior-preserving extraction). Contains: audit retention purge
+(BUG-054), database-hygiene cycle (TASK-11/22 + Telegram report), incident
+response cycle (TASK-13, INV-019), daily Telegram performance summary
+(BUG-057), background worker kicks, and the governance health snapshot (TASK-6).
+
+Both call sites (run_loop's per-iteration block and the duplicate-tick
+heartbeat path) delegate here — the duplicate implementations collapse into
+ONE owner.
+
+State ownership: throttles and worker handles stay at the composition root
+(LiveEngine), reached through ``self.om``; this module owns the CYCLE LOGIC.
+Every stage is failure-isolated: a maintenance fault never disturbs ticks.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import time
+from pathlib import Path
+from typing import Any
+
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.application.live.maintenance")
+
+#: BUG-292 (perf-wave R6): how often the C3 spread-percentile sketch is
+#: refreshed from the durable copy. The audit asked for "<= 60 s"; the read
+#: surface (policy) is pure RAM in between.
+SPREAD_SKETCH_REFRESH_INTERVAL_SEC: float = 60.0
+
+
+def _split_telegram_report(text: str, max_len: int = 3500) -> list[str]:
+    """Lazily resolve the live-engine helper (keeps this module import-light)."""
+    from nexus_scalp.application.live_engine import _split_telegram_report as _fn
+
+    return _fn(text, max_len)
+
+
+class MaintenanceCycle:
+    """Time-throttled housekeeping cycle of the live loop (composition root)."""
+
+    def __init__(self, om: Any) -> None:
+        self.om = om
+        #: Daily operational digest cadence (mission 5) — state lives on the
+        #: composition root so both maintenance call sites share one throttle.
+        self._operational_digest_interval_sec: float = 24 * 3600.0
+        self._last_operational_digest_time: float = 0.0
+        # Parity snapshot state lives on the CYCLE (read via self._last_*):
+        # keep instance defaults so a duck-typed composition root without
+        # these attributes still runs (test stand-ins).
+        self._parity_export_interval_sec: float = getattr(
+            om, "_parity_export_interval_sec", 6 * 3600.0
+        )
+        self._parity_snapshot_interval_sec: float = getattr(
+            om, "_parity_snapshot_interval_sec", 7 * 86400.0
+        )
+        self._last_parity_export_time: float = getattr(om, "_last_parity_export_time", 0.0)
+        self._last_parity_snapshot_time: float = getattr(om, "_last_parity_snapshot_time", 0.0)
+        # BUG-257 (remainder): out-of-process champion-drift sentinel. Throttle
+        # state lives on the CYCLE (like the parity stamps); the None
+        # "never ran" sentinel means the FIRST check is always due — a
+        # 0.0-vs-monotonic comparison silently skips the first pass on any
+        # host with uptime < interval.
+        self._champion_sentinel_interval_sec: float = 900.0
+        self._last_champion_sentinel_time: float | None = None
+        self._champion_sentinel_failures: int = 0
+        # BUG-292 (perf-wave R6): C3 spread-percentile sketch refresh cadence.
+        # None = "never ran" first-due sentinel (the 0.0-vs-monotonic shape
+        # silently skips the first pass on a young host — BUG-273 class).
+        self._last_spread_sketch_refresh_time: float | None = None
+        self._spread_sketch_interval_sec: float = SPREAD_SKETCH_REFRESH_INTERVAL_SEC
+
+    async def _refresh_spread_sketch(self, *, now_t: float) -> None:
+        """BUG-292: drive the C3 spread-sketch refresh (bounded, off-loop).
+
+        The refresh is the sketch's ONLY I/O. It runs on a worker thread
+        (``asyncio.to_thread``) at most once per ``_spread_sketch_interval_sec``
+        and is failure-isolated: a spread-gate maintenance fault must never
+        disturb ticks. A persistently dead refresh degrades the GATE itself to
+        its honest no-op inside the sketch (staleness guard), so this stage
+        never needs to escalate.
+        """
+        refresh = getattr(self.om, "refresh_spread_session_sketch", None)
+        if not callable(refresh):
+            return
+        if (
+            self._last_spread_sketch_refresh_time is not None
+            and now_t - self._last_spread_sketch_refresh_time < self._spread_sketch_interval_sec
+        ):
+            return
+        self._last_spread_sketch_refresh_time = now_t
+        try:
+            report = await asyncio.to_thread(refresh)
+            if isinstance(report, dict) and not report.get("refreshed"):
+                logger.debug(
+                    "[SPREAD_GATE] event=SKETCH_REFRESH_SKIPPED reason=%s",
+                    report.get("reason") or "no-report",
+                )
+        except Exception as sketch_err:
+            logger.warning(
+                "[SPREAD_GATE] event=SKETCH_REFRESH_FAILED (isolated) error=%s", sketch_err
+            )
+
+    async def run_cycle(self, *, now_t: float) -> None:
+        """Runs one maintenance pass (all stages internally throttled)."""
+
+        # BUG-054: audit retention purge (throttled ~6h, bounded batched
+        # deletes, NEVER on the tick path). Failure is isolated: a purge
+        # error must never disturb trading.
+        now_t = time.time()
+        if now_t - self.om._last_audit_purge_time >= self.om._audit_purge_interval_sec:
+            self.om._last_audit_purge_time = now_t
+            try:
+                await asyncio.to_thread(self.om.audit.purge_old_audit_data)
+            except Exception:
+                logger.error("Audit retention purge failed (isolated)")
+
+        # PAPER→DEMO parity evidence (mission P0-1, observational only):
+        # (a) export the paper adapter's execution ledger into the durable
+        #     audit_paper_executions copy (insert-or-ignore, bounded); (b)
+        #     once a week, build the versioned parity snapshot from the same
+        #     canonical store. Both stages fail-isolated and off the tick path.
+        adapter = getattr(self.om, "adapter", None)
+        is_paper = bool(
+            getattr(self.om, "audit", None)
+            and str(getattr(adapter, "current_account_source", "") or "").upper() == "PAPER"
+        )
+        if is_paper and now_t - self._last_parity_export_time >= self._parity_export_interval_sec:
+            self._last_parity_export_time = now_t
+            try:
+                from nexus_scalp.risk.paper_parity import export_paper_ledger
+
+                export = await asyncio.to_thread(
+                    export_paper_ledger, adapter=adapter, audit=self.om.audit
+                )
+                if export.get("exported"):
+                    logger.info(
+                        "[PARITY] event=PAPER_LEDGER_EXPORT_OK exported=%s",
+                        export.get("exported"),
+                    )
+            except Exception as parity_err:
+                logger.warning("[PARITY] event=EXPORT_FAILED (isolated)", error=str(parity_err))
+        if now_t - self._last_parity_snapshot_time >= self._parity_snapshot_interval_sec:
+            self._last_parity_snapshot_time = now_t
+            try:
+                from nexus_scalp.risk.paper_parity import build_parity_snapshot
+
+                snapshot = await asyncio.to_thread(
+                    build_parity_snapshot, audit=self.om.audit, lookback_days=7
+                )
+                logger.info(
+                    "[PARITY] event=SNAPSHOT_BUILT status=%s paper=%s demo=%s",
+                    snapshot.get("status"),
+                    (snapshot.get("paper") or {}).get("fills"),
+                    (snapshot.get("demo") or {}).get("trades"),
+                )
+            except Exception as snap_err:
+                logger.warning("[PARITY] event=SNAPSHOT_FAILED (isolated)", error=str(snap_err))
+
+        # BUG-257 (remainder): champion-drift SENTINEL (ALERT-ONLY, off the
+        # tick path). The P0-2 boot trust anchor compares serving bytes vs the
+        # governed CHAMPION fingerprint at BOOT only; a foreign process that
+        # re-lands drifted weights while the engine runs (the exact 09-11
+        # bb1f0afe re-publication shape) would otherwise serve poisoned bytes
+        # until the next refusal. This stage detects it between boots:
+        #   * two consecutive DRIFT sightings before one alarm (absorbs the
+        #     governed-writer window: the supersession lands on the FIFO audit
+        #     worker after the file write — one sighting may be mid-flight);
+        #   * CRITICAL structured log + Telegram on confirmation, then a
+        #     RE-ALARM every 4th cycle while the drift persists, and a
+        #     resolution notice when the bytes (or the registry) come back
+        #     into agreement;
+        #   * can NEVER mutate, halt, or block trading — pure observer
+        #     (INV-015 enforcement stays the boot anchor).
+        _sentinel_due = (
+            self._last_champion_sentinel_time is None
+            or now_t - self._last_champion_sentinel_time >= self._champion_sentinel_interval_sec
+        )
+        if _sentinel_due:
+            self._last_champion_sentinel_time = now_t
+            try:
+                from nexus_scalp.model_lifecycle.champion_sentinel import (
+                    STATUS_DRIFT,
+                    STATUS_MATCH,
+                    probe_champion_drift,
+                )
+
+                verdict = await asyncio.to_thread(probe_champion_drift, self.om)
+                status = str(verdict.get("status", ""))
+                if status == STATUS_DRIFT:
+                    self._champion_sentinel_failures += 1
+                    if self._champion_sentinel_failures == 2 or (
+                        self._champion_sentinel_failures > 2
+                        and (self._champion_sentinel_failures - 2) % 4 == 0
+                    ):
+                        logger.critical(
+                            "[CHAMPION_SENTINEL] event=CHAMPION_DRIFT_CONFIRMED "
+                            "serving_sha16=%s governed_sha16=%s champion_row=%s "
+                            "path=%s sightings=%d "
+                            "(out-of-process rewrite suspected: the boot trust "
+                            "anchor would REFUSE this artifact right now)",
+                            verdict.get("serving_sha16"),
+                            verdict.get("governed_sha16"),
+                            verdict.get("champion_row_model_id"),
+                            verdict.get("serving_path"),
+                            self._champion_sentinel_failures,
+                        )
+                        with contextlib.suppress(Exception):
+                            if getattr(self.om, "notifier", None) is not None and getattr(
+                                self.om.notifier, "enabled", False
+                            ):
+                                self.om.notifier.send(
+                                    "🚨 [CHAMPION SENTINEL] serving model.pt drifted from the "
+                                    f"governed CHAMPION: on-disk {verdict.get('serving_sha16')} "
+                                    f"!= governed {verdict.get('governed_sha16')} "
+                                    f"(row {verdict.get('champion_row_model_id')}). Trading "
+                                    "continues, but the NEXT boot will refuse this artifact. "
+                                    "Investigate the writer (see agents/bugs.md BUG-257/271).",
+                                    severity="CRITICAL",
+                                    event_type="CHAMPION_DRIFT_CONFIRMED",
+                                )
+                elif status == STATUS_MATCH:
+                    if self._champion_sentinel_failures >= 2:
+                        logger.warning(
+                            "[CHAMPION_SENTINEL] event=CHAMPION_DRIFT_CLEARED "
+                            "sighting=%s governed_sha16=%s (after %d confirmed cycles)",
+                            verdict.get("serving_sha16"),
+                            verdict.get("governed_sha16"),
+                            self._champion_sentinel_failures,
+                        )
+                    self._champion_sentinel_failures = 0
+                # INERT (cold start / no champion row / unreadable registry)
+                # resets the streak WITHOUT alarming — a normal posture.
+                elif status != STATUS_DRIFT:
+                    self._champion_sentinel_failures = 0
+            except Exception as sent_err:
+                logger.warning(
+                    "[CHAMPION_SENTINEL] event=CYCLE_FAILED (isolated)", error=str(sent_err)
+                )
+
+        # BUG-292 (perf-wave R6): C3 spread-percentile SKETCH refresh. The
+        # policy's session-percentile provider used to open a SQLite
+        # connection and run a same-day SELECT inside EVERY spread-positive
+        # candidate evaluation — loop-thread I/O on the tick path. The
+        # provider now reads an in-process sketch; THIS stage is the sketch's
+        # only I/O, on the cadence the audit asked for (<= 60 s), off the tick
+        # path and failure-isolated.
+        await self._refresh_spread_sketch(now_t=now_t)
+
+        # MISSION 5: compact OPERATIONAL digest (one message — mode,
+        # protections, drift, parity, rollbacks) alongside the existing deep
+        # performance report. Throttled to once per day, failure-isolated.
+        if (
+            now_t - self.om._last_operational_digest_time
+            >= self.om._operational_digest_interval_sec
+        ):
+            self.om._last_operational_digest_time = now_t
+            try:
+                from nexus_scalp.reporting.operational_digest import (
+                    build_operational_digest,
+                )
+
+                digest = await asyncio.to_thread(build_operational_digest, self.om)
+                if self.om.notifier.enabled:
+                    self.om.notifier.send(digest, severity="INFO", event_type="OPERATIONAL_DIGEST")
+                logger.info("[DIGEST] event=OPERATIONAL_DIGEST_BUILT")
+            except Exception as dig_err:
+                logger.warning("[DIGEST] event=BUILD_FAILED (isolated)", error=str(dig_err))
+
+        # TASK-11 + TASK-22: database hygiene cycle (config-driven
+        # cadence; AUDIT_ONLY first run, off the tick path via
+        # asyncio.to_thread; never deletes unless the operator enabled
+        # apply_deletes and execution mode is not LIVE).
+        if self.om._hygiene_scheduler is None and now_t - self.om._last_hygiene_time > 0:
+            try:
+                from nexus_scalp.hygiene.hygiene_runtime import (
+                    RuntimeCleanupScheduler,
+                    RuntimeHygieneSettings,
+                )
+
+                hyg_cfg = getattr(self.om.config, "database_hygiene", None) or {}
+                hygs = RuntimeHygieneSettings.from_mapping(
+                    hyg_cfg.model_dump() if hasattr(hyg_cfg, "model_dump") else dict(hyg_cfg)
+                )
+                base_dir = getattr(self.om.config, "base_dir", None) or Path.cwd()
+                self.om._hygiene_scheduler = RuntimeCleanupScheduler(
+                    repo_root=base_dir,
+                    settings=hygs,
+                    execution_mode=self.om._runtime_mode
+                    or str(getattr(self.om.config, "execution_mode", "PAPER") or "PAPER").upper(),
+                )
+            except Exception as hyg_init_err:
+                logger.warning(
+                    "[DB_HYGIENE] event=INIT_FAILED (isolated)",
+                    error=str(hyg_init_err),
+                )
+        if (
+            self.om._hygiene_scheduler is not None
+            and self.om._hygiene_scheduler.settings.enabled
+            and now_t - self.om._last_hygiene_time >= self.om._hygiene_scheduler.light_interval_sec
+        ):
+            self.om._last_hygiene_time = now_t
+            try:
+                deep = self.om._hygiene_scheduler.is_deep_due(now_t)
+                # Run the scheduler cycle on a thread; it owns the
+                # worker + quarantine + consistency + reports.
+                cyc = await asyncio.to_thread(self.om._hygiene_scheduler.run_cycle, deep=deep)
+                # Bounded Telegram REPORT (cooldown-gated, never spam).
+                if self.om._hygiene_scheduler.settings.telegram_report and (
+                    self.om.notifier is not None and self.om.notifier.enabled
+                ):
+                    tel = cyc.get("telemetry", {})
+                    if (
+                        not self.om._hygiene_scheduler._audit_done
+                        or self.om._hygiene_scheduler.is_telegram_due(now_t)
+                    ):
+                        from nexus_scalp.hygiene.report import (
+                            build_telegram_report_text,
+                        )
+
+                        text = build_telegram_report_text(
+                            tel, self.om._hygiene_scheduler._cycle_number
+                        )
+                        self.om.notifier.send(text, severity="INFO")
+                        self.om._hygiene_scheduler.mark_telegram_sent(now_t)
+            except Exception as hyg_err:
+                logger.warning(
+                    "[DB_HYGIENE] event=CYCLE_FAILED (isolated)",
+                    error=str(hyg_err),
+                )
+
+        # TASK-13: incident response cycle (throttled ~60s, off the
+        # tick path via to_thread; observability-only, INV-019). The
+        # worker correlates structured telemetry into incidents and
+        # persists them; it can never block or alter trading.
+        if now_t - self.om._last_incident_time >= self.om._incident_interval_sec:
+            self.om._last_incident_time = now_t
+            try:
+                if self.om._incident_worker is None:
+                    self.om._ensure_incident_worker()
+                if self.om._incident_worker is not None:
+                    await asyncio.to_thread(self.om._incident_worker.tick)
+            except Exception as inc_err:
+                logger.warning(
+                    "[INCIDENT_WORKER] event=CYCLE_FAILED (isolated)",
+                    error=str(inc_err),
+                )
+
+        # TASK-STORAGE-HYGIENE: throttled StorageGuard cycle (log compression
+        # + per-severity byte budget + WAL checkpoint(TRUNCATE) on managed
+        # DBs + updater cache/backup/diagnostics sweeps). Composed lazily from
+        # cfg.storage (enabled by default), runs OFF the tick path via
+        # asyncio.to_thread, fully failure-isolated — a storage fault must
+        # never disturb trading.
+        if self.om._storage_guard is None:
+            try:
+                from nexus_scalp.storage.runtime import (
+                    StorageGuard,
+                    StorageGuardSettings,
+                )
+
+                _cfg_storage = getattr(self.om.config, "storage", None)
+                if hasattr(_cfg_storage, "model_dump"):
+                    _storage_map = dict(_cfg_storage.model_dump())
+                elif isinstance(_cfg_storage, dict):
+                    _storage_map = dict(_cfg_storage)
+                else:
+                    _storage_map = {}
+                _base_dir = getattr(self.om.config, "base_dir", None) or None
+                _ws = Path(_base_dir) if _base_dir else Path.cwd()
+                self.om._storage_guard = StorageGuard(
+                    workspace=_ws,
+                    user_root=_ws,
+                    settings=StorageGuardSettings.from_mapping(_storage_map),
+                )
+            except Exception as storage_init_err:
+                logger.warning(
+                    "[STORAGE_GUARD] event=INIT_FAILED (isolated)",
+                    error=str(storage_init_err),
+                )
+        if (
+            self.om._storage_guard is not None
+            and now_t - self.om._last_storage_cycle_time >= self.om._storage_cycle_interval_sec
+        ):
+            self.om._last_storage_cycle_time = now_t
+            try:
+                cyc = await asyncio.to_thread(self.om._storage_guard.cycle)
+                freed = int(cyc.get("logs", {}).get("bytes_saved", 0)) + int(
+                    cyc.get("update_cache", {}).get("bytes_freed", 0)
+                )
+                if freed > 0:
+                    logger.info("[STORAGE] event=CYCLE_OK freed_bytes=%d", freed)
+            except Exception as storage_err:
+                logger.warning(
+                    "[STORAGE_GUARD] event=CYCLE_FAILED (isolated)",
+                    error=str(storage_err),
+                )
+
+        # Daily Telegram performance summary (BUG-057): throttled to
+        # once per 24h; built from the canonical accounting core (never
+        # synthetic numbers). Failure is isolated.
+        if now_t - self.om._last_daily_summary_time >= self.om._daily_summary_interval_sec:
+            self.om._last_daily_summary_time = now_t
+            try:
+                # Performance Intelligence upgrade: deterministic
+                # multi-stage report generator (reporting package)
+                # consumes the canonical AccountingCore read-only and
+                # produces the structured JSON contract + Telegram text.
+                from nexus_scalp.accounting import PeriodKind
+                from nexus_scalp.reporting import (
+                    PerformanceReportEngine,
+                    format_deep_report,
+                    format_telegram_daily,
+                )
+
+                engine = PerformanceReportEngine(core=self.om.accounting_core, kind=PeriodKind.DAY)
+                container = engine.generate()
+                compact = format_telegram_daily(container)
+                deep = format_deep_report(container)
+                try:
+                    if self.om.notifier.enabled:
+                        # MESSAGE 1 = compact summary; MESSAGE 2/3 =
+                        # deep intelligence (deterministic split when
+                        # the deep text exceeds one message).
+                        self.om.notifier.send(compact, severity="INFO")
+                        if len(deep) > 3500:
+                            for chunk in _split_telegram_report(deep):
+                                self.om.notifier.send(chunk, severity="INFO")
+                        else:
+                            self.om.notifier.send(deep, severity="INFO")
+                except Exception:
+                    pass  # Telegram failure is isolated
+            except Exception as summary_err:
+                logger.error(
+                    "[TELEGRAM_REPORT] event=FAILURE error_type=GENERATION error=%s",
+                    summary_err,
+                )
+
+        # ACCOUNT HISTORY: bounded background broker-history sync
+        # (watermark + overlap, idempotent). Never on the tick path.
+        if self.om._history_sync_started:
+            try:
+                self.om._kick_worker("HISTORY_SYNC", self.om.history_sync_worker.tick)
+            except Exception as wkr_err:
+                logger.warning("[HISTORY_SYNC_WORKER] event=KICK_FAILED error=%s", wkr_err)
+
+        # PHASE 09: intelligence worker kick (throttled internally). It
+        # runs in a worker thread and is fully failure-isolated; a
+        # failure can never disturb the tick loop.
+        if self.om._intelligence_worker_started:
+            try:
+                self.om._kick_worker("INTELLIGENCE", self.om.intelligence_worker.tick)
+            except Exception as wkr_err:
+                logger.warning("[INTELLIGENCE_WORKER] event=KICK_FAILED error=%s", wkr_err)
+
+        # PHASE 09B: research worker kick (throttled internally, runs in
+        # a worker thread). Research NEVER runs inside the tick
+        # pipeline; a failure here can never disturb trading.
+        if self.om._research_worker_started:
+            try:
+                self.om._kick_worker("RESEARCH", self.om.research_worker.tick)
+            except Exception as wkr_err:
+                logger.warning("[RESEARCH_WORKER] event=KICK_FAILED error=%s", wkr_err)
+
+        # Strategy-factory autonomous loop pump (factory-loop audit fix):
+        # tick() drives generate->validate->evaluate->complete through the
+        # SAME real research pipeline — but only when the operator explicitly
+        # started the autonomous loop (/api/factory/loop/start primes the
+        # worker pump). Bounded, thread-isolated, never touches execution.
+        if (
+            getattr(self.om, "_factory_worker_started", False)
+            and getattr(self.om, "strategy_factory_worker", None) is not None
+            and self.om.strategy_factory_worker.running
+        ):
+            try:
+                self.om._kick_worker("FACTORY", self.om.strategy_factory_worker.tick)
+            except Exception as wkr_err:
+                logger.warning("[FACTORY_WORKER] event=KICK_FAILED error=%s", wkr_err)
+
+        # PHASE 10: controlled training worker kick (heavy CPU work is
+        # bounded to worker threads; training can NEVER block ticks).
+        if self.om._training_worker_started:
+            try:
+                self.om._kick_worker("TRAINING", self.om.training_worker.tick)
+            except Exception as wkr_err:
+                logger.warning("[TRAINING_WORKER] event=KICK_FAILED error=%s", wkr_err)
+
+        # PHASE 11: shadow-aggregation worker kick (bounded, isolated).
+        if self.om._shadow_worker_started:
+            try:
+                self.om._kick_worker("SHADOW", self.om.shadow_worker.tick)
+            except Exception as wkr_err:
+                logger.warning("[SHADOW_WORKER] event=KICK_FAILED error=%s", wkr_err)
+
+        # PHASE 12: news intelligence worker kick (bounded, isolated).
+        if self.om._news_enabled and self.om._news_worker_started:
+            try:
+                self.om._kick_worker("NEWS", self.om.news_worker.tick)
+            except Exception as wkr_err:
+                logger.warning("[NEWS_WORKER] event=KICK_FAILED error=%s", wkr_err)
+
+        # MARKET-CONTEXT P0: forward economic-calendar worker (lazy compose +
+        # kick). The worker composes ON TOP of the news engine's dedicated DB
+        # (news.db) so no new connection surface exists. Lifecycle: news
+        # enabled only (same operator toggle), throttled internally at its
+        # refresh interval; failure-isolated exactly like the news kick. The
+        # tick path reads ONLY the in-memory envelope via the /api/news/health
+        # observability leg and the event-gate policy consumer (INV-001).
+        if self.om._news_enabled and self.om._news_worker_started:
+            cal = getattr(self.om, "calendar_worker", None)
+            if cal is None:
+                try:
+                    from nexus_scalp.calendar.worker import CalendarWorker
+
+                    cal = CalendarWorker(
+                        self.om.news_engine.db,
+                        refresh_interval_sec=900.0,
+                    )
+                    self.om.calendar_worker = cal
+                    logger.info("[CALENDAR] event=COMPOSED (lazy, off tick path)")
+                except Exception as cal_err:
+                    logger.warning("[CALENDAR] event=COMPOSE_FAILED (isolated) error=%s", cal_err)
+                    cal = None
+            if cal is not None:
+                try:
+                    self.om._kick_worker("CALENDAR", cal.tick)
+                except Exception as wkr_err:
+                    logger.warning("[CALENDAR] event=KICK_FAILED error=%s", wkr_err)
+
+        # TASK-6: bounded governance health snapshot (~5 min cadence,
+        # queued write, failure-isolated — never blocks ticks).
+        try:
+            self.om._save_governance_health_periodic()
+        except Exception as gov_err:
+            logger.debug("[MODEL_GOVERNANCE] periodic health skipped", error=str(gov_err))

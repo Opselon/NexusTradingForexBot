@@ -1,0 +1,283 @@
+/**
+ * Liquidity feature styles — modern operator UI for the liquidity page.
+ *
+ * PURPOSE   presentation-only polish for the Liquidity Intelligence + MSLIE
+ *           page: operator hero, section labels, state cards, feature table
+ *           and sweep / liquidity-map heat styling. Structure only — no
+ *           behavior, query, polling, toggle gate or rendered value changes
+ *           (see LiquidityPage.tsx; the page logic is untouched by this file).
+ * OWNER     lane-3 · branch ui/lane3-hero-liquidity (wave nse-uiux-w8)
+ * CONSUMES  theme.css :root tokens ONLY (no rogue hex); the shared primitives
+ *           (@/components/primitives: Panel, MetricCard, DataTable,
+ *           StatusBadge, EmptyState, ErrorState, Skeleton) and the lane5Kit
+ *           helpers (FreshnessCaption / InfoRow / JsonBlock / StatusPill /
+ *           CommandResultLine) — imported, never forked or redefined here.
+ * PROVIDES  .liq-* namespaced classes: .liq-page, .liq-hero (+ -main/-kicker/
+ *           -title/-desc/-side, state + endpoint pills), .liq-sec-label,
+ *           .liq-heat heat cells + bars, .liq-sweep split.
+ * INVARIANTS namespaced only (nothing global, no overrides of shared classes);
+ *           logical properties throughout so the RTL console (fa/ar) mirrors;
+ *           every color is a theme token or an rgba()/color-mix() of one;
+ *           heat scale bounds come from the backend payload (zone
+ *           probability_as_target 0..1) and the raw value is always rendered
+ *           beside the visual; missing/null stays an em-dash, never zero-filled;
+ *           the heat cell adds the `dim` modifier only when probability is null
+ *           (the em-dash case), so the bar never implies a magnitude that the
+ *           backend did not report.
+ * EXTEND    additive only — primitives keep their own classes; a later wave
+ *           may add sections here without touching LiquidityPage logic.
+ */
+
+.liq-page {
+  display: grid;
+  gap: var(--panel-gap);
+}
+
+/* ------------------------------ Hero ------------------------------ */
+.liq-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(460px 190px at 6% -40%, rgba(65, 166, 242, 0.17), transparent 70%),
+    radial-gradient(380px 170px at 94% -30%, rgba(157, 123, 240, 0.14), transparent 70%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 45%),
+    var(--bg-panel);
+  box-shadow: var(--elev-1);
+}
+.liq-hero::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(65, 166, 242, 0.55), rgba(157, 123, 240, 0.45), transparent);
+}
+.liq-hero-main { min-width: 0; }
+.liq-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.liq-kicker .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(65, 166, 242, 0.85);
+  animation: liqPing 2.6s ease-in-out infinite;
+}
+@keyframes liqPing {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(65, 166, 242, 0.35); }
+  50% { box-shadow: 0 0 0 5px rgba(65, 166, 242, 0); }
+}
+.liq-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 8px 0 5px;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.liq-title .word { color: var(--text); }
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .liq-title .word {
+    background: linear-gradient(115deg, var(--text) 35%, var(--accent-strong));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+.liq-desc { margin: 0; font-size: 12px; color: var(--text-dim); max-width: 78ch; }
+
+/* provenance / status side — restates backend state the page already fetches */
+.liq-hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.liq-side-pills {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.liq-state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 4px 11px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  background: var(--bg-inset);
+}
+.liq-state-pill .d {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.liq-state-pill.on {
+  color: var(--green);
+  border-color: rgba(62, 207, 142, 0.45);
+  background: rgba(62, 207, 142, 0.08);
+}
+.liq-state-pill.on .d { background: var(--green); box-shadow: 0 0 6px rgba(62, 207, 142, 0.85); }
+.liq-state-pill.off {
+  color: var(--amber);
+  border-color: rgba(235, 161, 63, 0.45);
+  background: rgba(235, 161, 63, 0.08);
+}
+.liq-state-pill.off .d { background: var(--amber); box-shadow: 0 0 6px rgba(235, 161, 63, 0.7); }
+.liq-side-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.liq-ep-chips {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-inline-size: 52ch;
+}
+.liq-ep {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.liq-ep.warn {
+  color: var(--amber);
+  border-color: rgba(235, 161, 63, 0.4);
+  background: rgba(235, 161, 63, 0.07);
+}
+.liq-hero-side .timestamp-note { font-size: 10px; }
+
+/* ------------------------------ Section labels ------------------------------ */
+.liq-sec-label {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding-block-end: 2px;
+}
+.liq-sec-label .liq-sec-i {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--accent-strong);
+  border: 1px solid rgba(65, 166, 242, 0.4);
+  border-radius: 4px;
+  padding: 1px 5px;
+  background: rgba(65, 166, 242, 0.08);
+}
+.liq-sec-label .liq-sec-note {
+  margin-inline-start: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--text-faint);
+}
+
+/* ------------------------------ Governor state cards ------------------------------ */
+.liq-state-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 1100px) {
+  .liq-state-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .liq-state-grid { grid-template-columns: 1fr; }
+}
+
+/* ------------------------------ Sweep heat list ------------------------------ */
+/* heat scale bounds come from the payload (probability_as_target 0..1); the
+   raw percentage is always rendered beside the visual, never replaced. */
+.liq-heat {
+  position: relative;
+  min-width: 78px;
+  font-variant-numeric: tabular-nums;
+}
+.liq-heat .liq-heat-v { display: block; }
+.liq-heat-bar {
+  display: block;
+  height: 3px;
+  margin-block-start: 3px;
+  border-radius: 2px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.liq-heat-bar i {
+  display: block;
+  block-size: 100%;
+  background: color-mix(in srgb, var(--accent) 72%, var(--violet));
+}
+.liq-heat.dim .liq-heat-bar { opacity: 0.35; }
+
+/* last-sweep key/value detail gets a framed surface so the two halves of the
+   split read as one "sweep event" block */
+.liq-sweep-dl {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 45%), var(--bg-inset);
+}
+.liq-sweep-dl + .section-title { margin-block-start: 12px; }
+
+/* ------------------------------ Responsive ------------------------------ */
+@media (max-width: 900px) {
+  .liq-title { font-size: 20px; }
+  .liq-hero { padding: 15px 16px 14px; }
+  .liq-hero-side { align-items: flex-start; }
+  .liq-side-pills,
+  .liq-ep-chips { justify-content: flex-start; }
+}
+@media (max-width: 720px) {
+  .liq-hero-side { inline-size: 100%; align-items: flex-start; }
+  .liq-sec-label .liq-sec-note { margin-inline-start: 0; }
+}
+
+/* decorative motion only — data keeps updating (freshness is text, not motion) */
+@media (prefers-reduced-motion: reduce) {
+  .liq-kicker .dot { animation: none; }
+}

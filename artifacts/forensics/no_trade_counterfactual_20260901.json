@@ -1,0 +1,431 @@
+{
+  "engine": "TICK_COUNTERFACTUAL v1 (CHG-0041)",
+  "classification_rules": {
+    "R >= +0.5": "FALSE_REJECTION (rejected candidate reached half its recorded risk as profit)",
+    "R <= -0.5": "CORRECT_REJECTION (rejected candidate lost half its recorded risk)",
+    "no geometry": "excursion dominance at 1.8x (production RiskEngine min_rr) -> FALSE/CORRECT; else RR_NOT_RECORDED",
+    "coverage < 50% horizon or no ticks or unresolved direction": "INCONCLUSIVE",
+    "cost": "entry already pays the spread (BUY@ASK/SELL@BID); walk measures the exit side"
+  },
+  "generated_at": "2026-09-01T22:11:49.858055+00:00",
+  "results_fingerprint": "7a68c2dabc95fe43d68df6e8295d0991",
+  "decisions_total": 2095,
+  "decisions_all_time_no_trade": 2095,
+  "decisions_direction_resolved": 673,
+  "direction_unresolved_note": "GUARDIAN_GATE/STANDARD_EVAL rows record model_action=NO_TRADE (the model itself abstained) - unresolvable to a direction without fabricating one; classified INCONCLUSIVE/UNRESOLVED and counted",
+  "walk_seconds": 191.9,
+  "tick_store_days": {
+    "2026-08-25": {
+      "records": 523866,
+      "fingerprint": "2708091b1dc52250036913189868e0ad",
+      "meta_version": 2,
+      "git_commit": "264d4b9",
+      "source": "DirectMT5Adapter.get_tick_history (copy_ticks_range COPY_TICKS_ALL, probed contr",
+      "start": "2026-08-25T00:00:00+00:00",
+      "end": "2026-08-26T00:00:00+00:00"
+    },
+    "2026-08-26": {
+      "records": 449323,
+      "fingerprint": "a726fb080d24797f3465ee694a52b1a2",
+      "meta_version": 2,
+      "git_commit": "264d4b9",
+      "source": "DirectMT5Adapter.get_tick_history (copy_ticks_range COPY_TICKS_ALL, probed contr",
+      "start": "2026-08-26T00:00:00+00:00",
+      "end": "2026-08-27T00:00:00+00:00"
+    },
+    "2026-09-01": {
+      "records": 567911,
+      "fingerprint": "ac5d09d7591957b2b856243fee7d7ace",
+      "meta_version": 2,
+      "git_commit": "264d4b9",
+      "source": "DirectMT5Adapter.get_tick_history (copy_ticks_range COPY_TICKS_ALL, probed contr",
+      "start": "2026-09-01T00:00:00+00:00",
+      "end": "2026-09-02T00:00:00+00:00"
+    },
+    "2026-08-30": {
+      "records": 21674,
+      "fingerprint": "ef6f9f839a7274e380d44445f8b48362",
+      "meta_version": 2,
+      "git_commit": "264d4b9",
+      "source": "DirectMT5Adapter.get_tick_history (copy_ticks_range COPY_TICKS_ALL, probed contr",
+      "start": "2026-08-30T00:00:00+00:00",
+      "end": "2026-08-31T00:00:00+00:00"
+    },
+    "2026-08-27": {
+      "records": 518931,
+      "fingerprint": "ffeccfd93bd8b27cb7a734f0c2d2360c",
+      "meta_version": 2,
+      "git_commit": "264d4b9",
+      "source": "DirectMT5Adapter.get_tick_history (copy_ticks_range COPY_TICKS_ALL, probed contr",
+      "start": "2026-08-27T00:00:00+00:00",
+      "end": "2026-08-28T00:00:00+00:00"
+    },
+    "2026-08-31": {
+      "records": 503504,
+      "fingerprint": "1cacfee4d3f06b1b193e0a33297cf084",
+      "meta_version": 2,
+      "git_commit": "264d4b9",
+      "source": "DirectMT5Adapter.get_tick_history (copy_ticks_range COPY_TICKS_ALL, probed contr",
+      "start": "2026-08-31T00:00:00+00:00",
+      "end": "2026-09-01T00:00:00+00:00"
+    },
+    "2026-08-24": {
+      "records": 556696,
+      "fingerprint": "9bf41eb8290b785a5b38277231ff2a4c",
+      "meta_version": 2,
+      "git_commit": "264d4b9",
+      "source": "DirectMT5Adapter.get_tick_history (copy_ticks_range COPY_TICKS_ALL, probed contr",
+      "start": "2026-08-24T00:00:00+00:00",
+      "end": "2026-08-25T00:00:00+00:00"
+    },
+    "2026-08-28": {
+      "records": 531773,
+      "fingerprint": "10dd152ddbfc7c92fb0eb02de4a88523",
+      "meta_version": 2,
+      "git_commit": "264d4b9",
+      "source": "DirectMT5Adapter.get_tick_history (copy_ticks_range COPY_TICKS_ALL, probed contr",
+      "start": "2026-08-28T00:00:00+00:00",
+      "end": "2026-08-29T00:00:00+00:00"
+    },
+    "2026-08-29": {
+      "records": 0,
+      "fingerprint": "f707cf1c4cda30ff91920b0cc915ff42",
+      "meta_version": 2,
+      "git_commit": "264d4b9",
+      "source": "DirectMT5Adapter.get_tick_history (copy_ticks_range COPY_TICKS_ALL, probed contr",
+      "start": "2026-08-29T00:00:00+00:00",
+      "end": "2026-08-30T00:00:00+00:00"
+    }
+  },
+  "summary": {
+    "overall": {
+      "n": 2095,
+      "covered": 476,
+      "false_rejection_pct": 43.7,
+      "correct_rejection_pct": 56.3,
+      "inconclusive_pct": 77.3,
+      "mean_r": -0.54,
+      "mfe_mean_usd": 1249.2,
+      "mae_mean_usd": -1538.2,
+      "conf_mean": 0.093
+    },
+    "by_gate": {
+      "GUARDIAN_GATE|REGIME_GUARDIAN": {
+        "n": 890,
+        "covered": 0,
+        "false_rejection_pct": 0.0,
+        "correct_rejection_pct": 0.0,
+        "inconclusive_pct": 100.0,
+        "mean_r": null,
+        "mfe_mean_usd": null,
+        "mae_mean_usd": null,
+        "conf_mean": 0.0
+      },
+      "CONFIDENCE_GATE|CONFIDENCE_FAIL": {
+        "n": 552,
+        "covered": 393,
+        "false_rejection_pct": 45.0,
+        "correct_rejection_pct": 55.0,
+        "inconclusive_pct": 28.8,
+        "mean_r": -0.506,
+        "mfe_mean_usd": 1324.2,
+        "mae_mean_usd": -1527.3,
+        "conf_mean": 0.289
+      },
+      "STANDARD_EVAL|": {
+        "n": 408,
+        "covered": 0,
+        "false_rejection_pct": 0.0,
+        "correct_rejection_pct": 0.0,
+        "inconclusive_pct": 100.0,
+        "mean_r": null,
+        "mfe_mean_usd": null,
+        "mae_mean_usd": null,
+        "conf_mean": 0.0
+      },
+      "SR_MARGIN_FILTER|SR_RESISTANCE_MARGIN_FAIL": {
+        "n": 58,
+        "covered": 34,
+        "false_rejection_pct": 35.3,
+        "correct_rejection_pct": 64.7,
+        "inconclusive_pct": 41.4,
+        "mean_r": -0.478,
+        "mfe_mean_usd": 742.8,
+        "mae_mean_usd": -1599.9,
+        "conf_mean": 0.299
+      },
+      "EXPERIENCE_INTELLIGENCE_GATE|EXPERIENCE_DEGRADED": {
+        "n": 53,
+        "covered": 3,
+        "false_rejection_pct": 0.0,
+        "correct_rejection_pct": 100.0,
+        "inconclusive_pct": 94.3,
+        "mean_r": -6.848,
+        "mfe_mean_usd": 135.3,
+        "mae_mean_usd": -2543.7,
+        "conf_mean": 0.0
+      },
+      "TRADE_INTELLIGENCE_GATE|SUITABILITY_GATE": {
+        "n": 48,
+        "covered": 3,
+        "false_rejection_pct": 0.0,
+        "correct_rejection_pct": 100.0,
+        "inconclusive_pct": 93.8,
+        "mean_r": -6.182,
+        "mfe_mean_usd": 116.7,
+        "mae_mean_usd": -2586.7,
+        "conf_mean": 0.0
+      },
+      "HTF_TREND_FILTER|HTF_TREND_CONFL_FAIL": {
+        "n": 33,
+        "covered": 19,
+        "false_rejection_pct": 26.3,
+        "correct_rejection_pct": 73.7,
+        "inconclusive_pct": 42.4,
+        "mean_r": -1.269,
+        "mfe_mean_usd": 571.8,
+        "mae_mean_usd": -1845.0,
+        "conf_mean": 0.301
+      },
+      "SR_MARGIN_FILTER|SR_SUPPORT_MARGIN_FAIL": {
+        "n": 22,
+        "covered": 20,
+        "false_rejection_pct": 60.0,
+        "correct_rejection_pct": 40.0,
+        "inconclusive_pct": 9.1,
+        "mean_r": 1.352,
+        "mfe_mean_usd": 1570.3,
+        "mae_mean_usd": -904.3,
+        "conf_mean": 0.277
+      },
+      "EXPOSURE_GATE|EXECUTION_STATE_BLOCK": {
+        "n": 12,
+        "covered": 0,
+        "false_rejection_pct": 0.0,
+        "correct_rejection_pct": 0.0,
+        "inconclusive_pct": 100.0,
+        "mean_r": null,
+        "mfe_mean_usd": null,
+        "mae_mean_usd": null,
+        "conf_mean": 0.0
+      },
+      "STANDARD_EVAL|RANGE_FILTER": {
+        "n": 7,
+        "covered": 0,
+        "false_rejection_pct": 0.0,
+        "correct_rejection_pct": 0.0,
+        "inconclusive_pct": 100.0,
+        "mean_r": null,
+        "mfe_mean_usd": null,
+        "mae_mean_usd": null,
+        "conf_mean": 0.0
+      },
+      "NO_TRADE_BUILDER|": {
+        "n": 6,
+        "covered": 0,
+        "false_rejection_pct": 0.0,
+        "correct_rejection_pct": 0.0,
+        "inconclusive_pct": 100.0,
+        "mean_r": null,
+        "mfe_mean_usd": null,
+        "mae_mean_usd": null,
+        "conf_mean": 0.0
+      },
+      "STANDARD_EVAL|ASYMMETRIC_RR_LIMIT": {
+        "n": 4,
+        "covered": 4,
+        "false_rejection_pct": 50.0,
+        "correct_rejection_pct": 50.0,
+        "inconclusive_pct": 0.0,
+        "mean_r": -1.391,
+        "mfe_mean_usd": 3501.0,
+        "mae_mean_usd": -1582.8,
+        "conf_mean": 0.685
+      },
+      "EXPERIENCE_INTELLIGENCE_GATE|EXPERIENCE_RETIRED": {
+        "n": 2,
+        "covered": 0,
+        "false_rejection_pct": 0.0,
+        "correct_rejection_pct": 0.0,
+        "inconclusive_pct": 100.0,
+        "mean_r": null,
+        "mfe_mean_usd": null,
+        "mae_mean_usd": null,
+        "conf_mean": 0.0
+      }
+    },
+    "by_regime": {
+      "RANGING_MEAN_REVERSION": {
+        "n": 929,
+        "covered": 352,
+        "false_rejection_pct": 46.3,
+        "correct_rejection_pct": 53.7,
+        "inconclusive_pct": 62.1,
+        "mean_r": -0.325,
+        "mfe_mean_usd": 1186.7,
+        "mae_mean_usd": -1381.2,
+        "conf_mean": 0.157
+      },
+      "HIGH_SPREAD_CHOP": {
+        "n": 890,
+        "covered": 0,
+        "false_rejection_pct": 0.0,
+        "correct_rejection_pct": 0.0,
+        "inconclusive_pct": 100.0,
+        "mean_r": null,
+        "mfe_mean_usd": null,
+        "mae_mean_usd": null,
+        "conf_mean": 0.0
+      },
+      "TRENDING_MOMENTUM": {
+        "n": 217,
+        "covered": 99,
+        "false_rejection_pct": 37.4,
+        "correct_rejection_pct": 62.6,
+        "inconclusive_pct": 54.4,
+        "mean_r": -1.264,
+        "mfe_mean_usd": 1528.6,
+        "mae_mean_usd": -2043.7,
+        "conf_mean": 0.188
+      },
+      "VOLATILITY_EXPANSION": {
+        "n": 59,
+        "covered": 25,
+        "false_rejection_pct": 32.0,
+        "correct_rejection_pct": 68.0,
+        "inconclusive_pct": 57.6,
+        "mean_r": -0.61,
+        "mfe_mean_usd": 951.6,
+        "mae_mean_usd": -1705.5,
+        "conf_mean": 0.153
+      }
+    },
+    "by_confidence_band": {
+      "0.20-0.30": {
+        "n": 1812,
+        "covered": 283,
+        "false_rejection_pct": 41.0,
+        "correct_rejection_pct": 59.0,
+        "inconclusive_pct": 84.4,
+        "mean_r": -0.863,
+        "mfe_mean_usd": 1301.9,
+        "mae_mean_usd": -1658.5,
+        "conf_mean": 0.057
+      },
+      "0.30-0.40": {
+        "n": 279,
+        "covered": 189,
+        "false_rejection_pct": 47.6,
+        "correct_rejection_pct": 52.4,
+        "inconclusive_pct": 32.3,
+        "mean_r": -0.077,
+        "mfe_mean_usd": 1143.4,
+        "mae_mean_usd": -1369.7,
+        "conf_mean": 0.32
+      },
+      "0.40+": {
+        "n": 4,
+        "covered": 4,
+        "false_rejection_pct": 50.0,
+        "correct_rejection_pct": 50.0,
+        "inconclusive_pct": 0.0,
+        "mean_r": -1.391,
+        "mfe_mean_usd": 3501.0,
+        "mae_mean_usd": -1582.8,
+        "conf_mean": 0.685
+      }
+    },
+    "by_direction": {
+      "BUY": {
+        "n": 384,
+        "covered": 263,
+        "false_rejection_pct": 32.7,
+        "correct_rejection_pct": 67.3,
+        "inconclusive_pct": 31.5,
+        "mean_r": -1.25,
+        "mfe_mean_usd": 749.3,
+        "mae_mean_usd": -1935.6,
+        "conf_mean": 0.303
+      },
+      "SELL": {
+        "n": 289,
+        "covered": 213,
+        "false_rejection_pct": 57.3,
+        "correct_rejection_pct": 42.7,
+        "inconclusive_pct": 26.3,
+        "mean_r": 0.402,
+        "mfe_mean_usd": 1911.5,
+        "mae_mean_usd": -1011.4,
+        "conf_mean": 0.276
+      },
+      "UNRESOLVED": {
+        "n": 1422,
+        "covered": 0,
+        "false_rejection_pct": 0.0,
+        "correct_rejection_pct": 0.0,
+        "inconclusive_pct": 100.0,
+        "mean_r": null,
+        "mfe_mean_usd": null,
+        "mae_mean_usd": null,
+        "conf_mean": 0.0
+      }
+    },
+    "by_session": {
+      "ASIA": {
+        "n": 458,
+        "covered": 100,
+        "false_rejection_pct": 39.0,
+        "correct_rejection_pct": 61.0,
+        "inconclusive_pct": 78.2,
+        "mean_r": -0.625,
+        "mfe_mean_usd": 1203.7,
+        "mae_mean_usd": -1720.2,
+        "conf_mean": 0.063
+      },
+      "LATE_NY": {
+        "n": 11,
+        "covered": 0,
+        "false_rejection_pct": 0.0,
+        "correct_rejection_pct": 0.0,
+        "inconclusive_pct": 100.0,
+        "mean_r": null,
+        "mfe_mean_usd": null,
+        "mae_mean_usd": null,
+        "conf_mean": 0.026
+      },
+      "LONDON": {
+        "n": 465,
+        "covered": 124,
+        "false_rejection_pct": 41.9,
+        "correct_rejection_pct": 58.1,
+        "inconclusive_pct": 73.3,
+        "mean_r": -1.409,
+        "mfe_mean_usd": 1907.4,
+        "mae_mean_usd": -2696.6,
+        "conf_mean": 0.083
+      },
+      "LONDON_NY_OVERLAP": {
+        "n": 488,
+        "covered": 94,
+        "false_rejection_pct": 48.9,
+        "correct_rejection_pct": 51.1,
+        "inconclusive_pct": 80.7,
+        "mean_r": 0.125,
+        "mfe_mean_usd": 1587.7,
+        "mae_mean_usd": -1364.6,
+        "conf_mean": 0.091
+      },
+      "NY": {
+        "n": 673,
+        "covered": 158,
+        "false_rejection_pct": 44.9,
+        "correct_rejection_pct": 55.1,
+        "inconclusive_pct": 76.5,
+        "mean_r": -0.423,
+        "mfe_mean_usd": 770.0,
+        "mae_mean_usd": -996.0,
+        "conf_mean": 0.125
+      }
+    }
+  }
+}

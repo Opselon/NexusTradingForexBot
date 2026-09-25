@@ -1,0 +1,716 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (must match pyproject.toml)"
+        required: false
+        default: ""
+
+# All third-party actions are pinned to immutable commit SHAs
+# (supply-chain hardening). contents: write is required here ONLY
+# to publish the release (tag push); no other permission is granted.
+permissions:
+  contents: write
+
+# Two releases must never race: a tag push cancels any in-flight release
+# of the SAME tag (replace) but NOT a different tag (two versions in
+# flight are allowed and must not cancel each other).
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.11"
+  # Telegram release observability — values from secrets; NEVER printed.
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  USER_ID: ${{ secrets.USER_ID }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # A0. RELEASE AUTHORIZATION — main-CI evidence for the EXACT same SHA
+  # (Finding 3, release wave). NO MAIN-CI EVIDENCE == NO RELEASE.
+  # Every downstream job depends on this gate, so publication can never
+  # bypass the required main-CI checks of the release commit — including on
+  # workflow_dispatch: the gate queries the Checks API for GITHUB_SHA and
+  # fails closed on missing/failed/pending/ambiguous evidence.
+  # ---------------------------------------------------------------------------
+  release-auth:
+    name: Release authorization (main-CI evidence for same SHA)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Require main-CI evidence for this exact SHA
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          # Identity sanity: the full 40-hex SHA is the ONLY accepted identity.
+          RELEASE_SHA="$(git rev-parse HEAD)"
+          echo "RELEASE_SHA=$RELEASE_SHA"
+          python scripts/release/release_auth_gate.py --repo "${{ github.repository }}" --sha "$RELEASE_SHA"
+
+  # ---------------------------------------------------------------------------
+  # A. VALIDATE — tag/version consistency + secrets + clean tree
+  # ---------------------------------------------------------------------------
+  validate:
+    name: Validate tag & version
+    runs-on: ubuntu-latest
+    needs: release-auth
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Verify tag matches pyproject version
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PYPROJ_VERSION="$(grep -E '^version = ' pyproject.toml | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+          echo "tag=$TAG pyproject=$PYPROJ_VERSION"
+          if [ "$TAG" != "$PYPROJ_VERSION" ]; then
+            echo "::error::Tag v$TAG does not match pyproject version $PYPROJ_VERSION — releasegate blocks."
+            exit 1
+          fi
+      - name: Telegram - release started
+        continue-on-error: true
+        run: |
+          python scripts/ci/telegram_notify.py release-started --tag "${{ github.ref_name }}" || true
+
+      - name: Scan for secrets in source
+        shell: bash
+        run: python scripts/ci/scan_secrets.py
+
+      - name: Ensure no user/dev artifacts are staged
+        shell: bash
+        run: |
+          if git ls-files | grep -E 'artifacts/audit\.db|\.env$|credentials|private_key' ; then
+            echo "::error::Developer/user artifact tracked in git."
+            exit 1
+          fi
+          echo "No dev artifacts tracked."
+
+  # ---------------------------------------------------------------------------
+  # B. GATES — release-only additions on the proven SHA (Tier-2 extended +
+  # integration smoke). Main-CI already proved ruff/mypy/critical on this SHA
+  # (release-auth evidence gate, fail-closed); nothing is duplicated here.
+  # ---------------------------------------------------------------------------
+  gates:
+    name: Quality gates (extended Tier 2 + release smoke)
+    runs-on: ubuntu-latest
+    needs: validate
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+      # Resolve the canonical version ONCE (from pyproject.toml, already
+      # proven consistent with the tag by the validate job) and publish it as
+      # a job output so the build job never re-derives it with ad-hoc grep.
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          V="$(grep -E '^version = ' pyproject.toml | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+          if [ -z "$V" ]; then echo "::error::Could not resolve version from pyproject.toml"; exit 1; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Resolved release version: $V"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          # pytest-cov ships in the [dev] extra installed above.
+          pip install -e ".[dev,web]"
+      # 2026-09-14 test reconstruction (CI cost report P5): release-auth has
+      # ALREADY proven every required main-CI context — ruff, ruff format, mypy
+      # and the full critical suite (Code Quality & Tests) plus both OS legs —
+      # green on THIS EXACT 40-hex SHA. Re-running the identical gates here was
+      # ~8-10 min of pure duplication (and had its own timeout history, run
+      # 33688059329). What the release cut adds instead: the TIER-2 EXTENDED
+      # suite (tests/extended_suite.txt — the measured-cost DB boot-heal
+      # batteries), which no required PR check executes, and the fast
+      # integration smoke below. A red extended lane therefore blocks the tag.
+      - name: Extended validation (Tier 2 — first execution on the release SHA)
+        shell: bash
+        run: |
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/extended_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short']).returncode)"
+      # Full integration coverage remains enforced by CI tiers on the same SHA;
+      # duplicating the 27-file integration stage in every release cut doubled
+      # gate runtime for no additional release-blocking signal. This smoke is
+      # the release-lane-only slice (installer protocol + hardening; MT5 probes
+      # skip cleanly without a terminal).
+      - name: Integration smoke (fast subset, no MT5, no browser)
+        run: pytest tests/release/test_release_hardening.py tests/release/test_release_start_smoke_contract.py tests/installer/test_installer_protocol.py tests/integration/test_mt5_api_probes.py -q --tb=short
+
+      - name: Telegram - release gates complete
+        continue-on-error: true
+        run: |
+          python scripts/ci/telegram_notify.py test-summary || true
+
+  # ---------------------------------------------------------------------------
+  # C. BUILD — windows-x64 (the only supported architecture)
+  # ---------------------------------------------------------------------------
+  build-windows-x64:
+    name: Build windows-x64 (onedir + onefile + installer)
+    runs-on: windows-latest
+    needs: gates
+    timeout-minutes: 60
+    env:
+      # Single source of truth for the staged release tree + artifact names.
+      # Every later step derives paths from THIS output; no ad-hoc re-derivation.
+      NSE_VERSION: ${{ needs.gates.outputs.version }}
+      NSE_PLATFORM: windows
+      NSE_ARCH: x64
+      NSE_OUT: release/v${{ needs.gates.outputs.version }}/windows/x64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+      - name: Install deps
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          # pytest-cov ships in the [dev] extra installed above.
+          python -m pip install -e ".[dev,web,release]"
+          Write-Host "torch/pyinstaller ready"
+      # EUR-WAVE (contract #11): the release artifact MUST contain the
+      # production React Control Center. Node exists ONLY at build time —
+      # the shipped EXE serves the static dist, the end user never runs npm.
+      - name: Set up Node.js (frontend build toolchain)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Frontend production build (React Control Center)
+        shell: pwsh
+        run: |
+          Push-Location frontend
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw "frontend npm ci failed" }
+          npx tsc -b
+          if ($LASTEXITCODE -ne 0) { throw "frontend typecheck failed" }
+          npx vite build
+          if ($LASTEXITCODE -ne 0) { throw "frontend production build failed" }
+          Pop-Location
+      - name: Validate frontend bundle (fail-loud asset contract)
+        shell: pwsh
+        run: |
+          python scripts/build/validate_frontend_dist.py frontend/dist
+          if ($LASTEXITCODE -ne 0) { throw "frontend dist validation failed - release blocked" }
+      - name: Write build-info.json
+        shell: pwsh
+        run: |
+          $V = $env:NSE_VERSION
+          $stamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
+          # Release-wave Finding 2: identity must bind to the FULL immutable
+          # 40-hex commit SHA (short SHAs are presentation-only).
+          $commit = (git rev-parse HEAD).Trim()
+          if ($commit -notmatch '^[0-9a-fA-F]{40}$') { throw "RELEASE_IDENTITY_FULL_SHA_REQUIRED: got '$commit'" }
+          $dirty = if ((git status --porcelain | Measure-Object).Count -gt 0) { $true } else { $false }
+          $info = @{
+            product = "NexusScalpEngine"
+            version = $V; git_commit = $commit; dirty_tree = $dirty
+            build_timestamp = $stamp; platform = "windows"; architecture = "x64"
+            python = $env:PYTHON_VERSION; channel = "stable"; build_mode = "Release"
+            feature_schema = "scalp_v1"; installer_version = "1.0.0"
+          } | ConvertTo-Json
+          [System.IO.File]::WriteAllText((Join-Path $PWD "build-info.json"), $info, (New-Object System.Text.UTF8Encoding($false)))
+      - name: Generate application icon
+        shell: pwsh
+        run: |
+          # EU-RELEASE-001: canonical branded icon from frontend/public/icon-512.png.
+          # Both PyInstaller steps below and the Inno Setup installer consume it;
+          # without it every shipped EXE + Start Menu entry carries PyInstaller's
+          # generic placeholder.
+          python scripts/build/generate_app_icon.py
+          if ($LASTEXITCODE -ne 0) { throw "application icon generation failed" }
+          if (-not (Test-Path "installer\NexusScalpEngine.ico")) { throw "installer\NexusScalpEngine.ico missing after generation" }
+      - name: Generate PE version-info resource
+        shell: pwsh
+        run: |
+          # WINDOWS-UX-001: PyInstaller otherwise embeds the default Python
+          # version-info resource, so Explorer / Task Manager / the taskbar
+          # brand the process image as Python. ProductName + FileDescription
+          # are what the shell surfaces for the executable itself.
+          python scripts/build/generate_version_info.py $env:NSE_VERSION
+          if ($LASTEXITCODE -ne 0) { throw "version-info generation failed" }
+          if (-not (Test-Path "installer\version_info.txt")) { throw "installer\version_info.txt missing after generation" }
+      - name: PyInstaller onedir
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --name NexusScalpEngine `
+            --icon "installer\NexusScalpEngine.ico" `
+            --version-file "installer\version_info.txt" `
+            --add-data "$PWD\Web;Web" --add-data "$PWD\configs;configs" `
+            --add-data "$PWD\docs;docs" --add-data "$PWD\build-info.json;." `
+            --add-data "$PWD\frontend\dist;frontend/dist" `
+            --collect-submodules "uvicorn" --collect-submodules "fastapi" `
+            --collect-submodules "feedparser" `
+            --hidden-import "MetaTrader5" --hidden-import "torch" --hidden-import "polars" `
+            --distpath "release\build\windows-x64\onedir" `
+            --workpath "release\build\windows-x64\work" `
+            --specpath "release\build\windows-x64" `
+            src/nexus_scalp/release/packaged_main.py
+      - name: PyInstaller onefile CLI
+        shell: pwsh
+        run: |
+          # BUG-147: the CLI is now the FULL engine-capable binary (no heavy
+          # excludes) - `nexus start` must load the real engine (numpy/
+          # polars/torch) exactly like the onedir EXE. build-info.json is
+          # stamped so version identity is truthful in the frozen binary.
+          python -m PyInstaller --noconfirm --clean --onefile --name NexusScalpEngine-CLI `
+            --icon "installer\NexusScalpEngine.ico" `
+            --version-file "installer\version_info.txt" `
+            --add-data "$PWD\build-info.json;." `
+            --collect-submodules "uvicorn" --collect-submodules "fastapi" `
+            --hidden-import "MetaTrader5" --hidden-import "torch" --hidden-import "polars" `
+            --distpath "release\build\windows-x64\onefile" `
+            --workpath "release\build\windows-x64\work-cli" `
+            --specpath "release\build\windows-x64" `
+            src\nexus_scalp\release\cli_shim.py
+      - name: EXE smoke tests
+        shell: pwsh
+        run: |
+          & "release\build\windows-x64\onedir\NexusScalpEngine\NexusScalpEngine.exe" version --plain
+          if ($LASTEXITCODE -ne 0) { throw "onedir version failed" }
+          $h = & "release\build\windows-x64\onedir\NexusScalpEngine\NexusScalpEngine.exe" health --json | Out-String
+          if ($h -notmatch '"overall"') { throw "health JSON missing" }
+          # BUG-174 tripwire (Part 8/12): the onefile CLI must report STAMPED
+          # identity, not Commit None + a runtime-generated timestamp. The
+          # build-info.json payload (--add-data) unpacks into sys._MEIPASS and
+          # get_build_info_file() must find it; if it cannot, the CLI falls
+          # back to now() and its timestamp changes between runs - exactly
+          # the v9.0.5 defect this catches at build time.
+          $cli = "release\build\windows-x64\onefile\NexusScalpEngine-CLI.exe"
+          $v1 = & $cli version --json | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "onefile CLI version --json failed" }
+          $vi1 = $v1 | ConvertFrom-Json
+          $v2 = & $cli version --json | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "onefile CLI version --json (2nd) failed" }
+          $vi2 = $v2 | ConvertFrom-Json
+          $bi = Get-Content "$PWD\build-info.json" -Raw | ConvertFrom-Json
+          if (-not $vi1.commit) { throw "CLI_EXE_IDENTITY_UNSTAMPED: commit is None (BUG-174 regression)" }
+          if ($vi1.build_timestamp -ne $vi2.build_timestamp) { throw "CLI_EXE_IDENTITY_RUNTIME_TIMESTAMP: build_timestamp changed between invocations ($($vi1.build_timestamp) -> $($vi2.build_timestamp))" }
+          if ($vi1.commit -ne $bi.git_commit) { throw "CLI_EXE_IDENTITY_MISMATCH: CLI commit $($vi1.commit) != build-info commit $($bi.git_commit)" }
+          if ($vi1.build_timestamp -ne $bi.build_timestamp) { throw "CLI_EXE_TIMESTAMP_MISMATCH: identity diverges from stamped build-info" }
+          Write-Host "CLI identity stamped: commit $($vi1.commit) timestamp $($vi1.build_timestamp)"
+      # BUG-293 FRESH-INSTALL START SMOKE: `version` + `health` never
+      # construct the LiveEngine, so the v9.0.12 first-start crash
+      # (ArtifactIntegrityError: LOAD_REJECTED model.pt -> PYI abort) shipped
+      # green. This launches the actual built EXE bare (= user double-click,
+      # PAPER default) from a clean workspace and fails the release unless it
+      # runs clean for the window. A red here blocks the `release` job (it
+      # needs build-windows-x64), so a broken first-start can never publish.
+      - name: Fresh-install START smoke (packaged EXE, blocking)
+        shell: pwsh
+        run: |
+          .\scripts\build\start_smoke.ps1 -ExePath "release\build\windows-x64\onedir\NexusScalpEngine\NexusScalpEngine.exe" -DurationSec 90
+          if ($LASTEXITCODE -ne 0) { throw "BUG293_START_SMOKE_FAILED: packaged first-start crashed — release blocked" }
+
+        # EU-01 (P0): the START smoke just ran the packaged EXE, and the onedir
+        # build anchors its runtime artifacts (audit.db / news.db /
+        # paper_state.json / archive/ / logs/) INSIDE its own bundle dir. Without
+        # this gate those build-machine databases ship inside the installer and
+        # the portable zip — v9.0.14 shipped audit.db with 52 tables and 23
+        # foreign user signals plus 405 news rows from this box. clean_payload
+        # deletes them and then hard-fails if any survive, so a dirty payload
+        # can never reach the stage step below.
+      - name: Payload hygiene gate (EU-01)
+        shell: pwsh
+        run: |
+          .\scripts\build\clean_payload.ps1 -BundleDir "release\build\windows-x64\onedir\NexusScalpEngine"
+          if ($LASTEXITCODE -ne 0) { throw "EU01_PAYLOAD_DIRTY: build-machine runtime state survived the hygiene gate — release blocked" }
+
+      - name: Stage release tree
+        shell: pwsh
+        run: |
+          $V = $env:NSE_VERSION
+          $Out = $env:NSE_OUT
+          New-Item -ItemType Directory -Force -Path "$Out\portable" | Out-Null
+          Copy-Item "release\build\windows-x64\onedir\NexusScalpEngine\*" "$Out\portable" -Recurse -Force
+          New-Item -ItemType Directory -Force -Path "$Out\portable\docs" | Out-Null
+          Copy-Item "docs\*" "$Out\portable\docs" -Recurse -Force
+          New-Item -ItemType Directory -Force -Path "$Out\portable\licenses" | Out-Null
+          if (Test-Path LICENSE) { Copy-Item LICENSE "$Out\portable\licenses" -Force }
+          # BUG-239: updater requires build-info.json at payload root — PyInstaller _internal layout means it is not at the portable root unless we stage it explicitly (build_release.ps1 already does; CI stage must mirror it).
+          if (-not (Test-Path "$PWD\build-info.json")) { throw "build-info.json missing at repo root after Write build-info.json step — cannot stage payload" }
+          Copy-Item "$PWD\build-info.json" "$Out\portable\build-info.json" -Force
+          if (Test-Path "$Out\portable\_internal") { Copy-Item "$PWD\build-info.json" "$Out\portable\_internal\build-info.json" -Force -ErrorAction SilentlyContinue }
+          Set-Content "$Out\portable\README.txt" "Nexus Scalp Engine portable - v$V"
+          New-Item -ItemType Directory -Force -Path "$Out\cli" | Out-Null
+          Copy-Item "release\build\windows-x64\onefile\NexusScalpEngine-CLI.exe" "$Out\cli" -Force
+          # Canonical artifact naming (single source of truth):
+          #   portable zip: NexusScalpEngine-<version>-win-x64.zip
+          #   installer:    NexusScalpEngine-<version>-win-x64-setup.exe
+          $zip = "$Out\NexusScalpEngine-$V-win-x64.zip"
+          Compress-Archive -Path "$Out\portable\*" -DestinationPath $zip
+          # EUR-WAVE: the portable/installed tree must carry the production
+          # UI - the runtime serves it from _internal/frontend/dist.
+          if (-not (Test-Path "$Out\portable\_internal\frontend\dist\index.html")) {
+            throw "EUR_FRONTEND_MISSING: staged portable tree has no _internal/frontend/dist/index.html"
+          }
+          Write-Host "staged: $Out"
+      # BUG-166 pre-stage: the installer EMBEDS the verification contract
+      # (SHA256SUMS.txt + release-manifest.json) into the installed tree so
+      # post-install `verify-release` self-verifies (BUG-160). The FULL
+      # contract files cannot exist yet (they hash the installer itself),
+      # so pre-stage a SUBSET over the already-staged portable + CLI + zip
+      # payloads. Portable hashes are byte-identical in the final generation,
+      # so post-install verification of those entries stays semantically
+      # valid; the Checksums step below still regenerates the complete
+      # release SHA256SUMS.txt (incl. setup.exe, BUG-143 pre-flight intact).
+      - name: Pre-stage verification contract for installer (BUG-166)
+        shell: pwsh
+        run: |
+          $V = $env:NSE_VERSION
+          $Out = $env:NSE_OUT
+          New-Item -ItemType Directory -Force -Path "$Out\checksums" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$Out\manifests" | Out-Null
+          $Subset = @(
+            "$Out\portable\NexusScalpEngine.exe",
+            "$Out\cli\NexusScalpEngine-CLI.exe",
+            "$Out\NexusScalpEngine-$V-win-x64.zip"
+          )
+          foreach ($a in $Subset) {
+            if (-not (Test-Path $a)) { throw "BUG166_MISSING_PRESTAGE_ARTIFACT: '$a'" }
+          }
+          $lines = foreach ($a in $Subset) {
+            $h = (Get-FileHash -Algorithm SHA256 -Path $a).Hash.ToLower()
+            $rel = [System.IO.Path]::GetRelativePath("$PWD\$Out", $a)
+            "$h  $rel"
+          }
+          Set-Content "$Out\checksums\SHA256SUMS.txt" $lines -Encoding ascii
+          python -c "import sys; sys.path.insert(0,'src'); from pathlib import Path; from nexus_scalp.release import packaging as p; root=Path(r'$Out'); arts=list(root.glob('portable/*.exe'))+list(root.glob('cli/*.exe'))+list(root.glob('*.zip')); p.generate_manifest(arts, root/'manifests'/'release-manifest.json', channel='stable', base_dir=root); print('pre-stage contract ok')"
+          # BUG-166 defense-in-depth: the Inno `skipifsourcedoesntexist` flag is
+          # resilience, NOT protection. If either contract file failed to be
+          # written, the installer would silently embed nothing and post-install
+          # verify-release would report "build without verification" AFTER the
+          # release was already published. Fail the build HERE instead.
+          if (-not (Test-Path "$Out\checksums\SHA256SUMS.txt")) {
+            throw "BUG166_MISSING_PRESTAGE_CONTRACT: checksums/SHA256SUMS.txt missing after pre-stage"
+          }
+          if (-not (Test-Path "$Out\manifests\release-manifest.json")) {
+            throw "BUG166_MISSING_PRESTAGE_CONTRACT: manifests/release-manifest.json missing after pre-stage"
+          }
+          $sumsLen = (Get-Item "$Out\checksums\SHA256SUMS.txt").Length
+          $manLen = (Get-Item "$Out\manifests\release-manifest.json").Length
+          if ($sumsLen -lt 50 -or $manLen -lt 50) {
+            throw "BUG166_MISSING_PRESTAGE_CONTRACT: contract file suspiciously small (sums=$sumsLen bytes, manifest=$manLen bytes)"
+          }
+          Write-Host "BUG166 pre-stage contract verified: SHA256SUMS.txt ($sumsLen bytes) + release-manifest.json ($manLen bytes)"
+      - name: Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $V = $env:NSE_VERSION
+          $Out = $env:NSE_OUT
+          winget install --id JRSoftware.InnoSetup -e --accept-package-agreements --accept-source-agreements --disable-interactivity
+          # Resolve ISCC robustly: winget package installs to Program Files (x86) on windows-latest,
+          # not LOCALAPPDATA; probe all known locations plus PATH / WinGet packages.
+          $candidates = @(
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+            "C:\Program Files\Inno Setup 6\ISCC.exe"
+          )
+          $Iscc = $null
+          foreach ($cand in $candidates) { if (Test-Path $cand) { $Iscc = $cand; break } }
+          if (-not $Iscc) {
+            $cmd = Get-Command ISCC -ErrorAction SilentlyContinue
+            if ($cmd) { $Iscc = $cmd.Source }
+          }
+          if (-not $Iscc) {
+            $hit = (where.exe ISCC 2>$null | Select-Object -First 1)
+            if ($hit -and (Test-Path $hit.Trim())) { $Iscc = $hit.Trim() }
+          }
+          if (-not $Iscc) {
+            $hit = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Filter ISCC.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
+            if ($hit) { $Iscc = $hit }
+          }
+          if (-not $Iscc -or -not (Test-Path $Iscc)) { throw "ISCC not found after winget install; searched: $($candidates -join ', '), PATH, WinGet Packages" }
+          Write-Host "ISCC resolved: $Iscc"
+          & $Iscc "installer\NexusScalpEngine.iss" `
+            "/DNSE_VERSION=$V" "/DNSE_CHANNEL=stable" `
+            "/DNSE_SOURCE_DIR=$PWD\$Out\portable" "/DNSE_OUTPUT_DIR=$PWD\$Out"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+      # BUG-293: the clean-install lifecycle test (silent install into a temp
+      # dir, version+health against the INSTALLED layout, re-install idempotency,
+      # uninstall, user-data preservation) previously ran only from the local
+      # build orchestrator. It is now a required release step: a broken install
+      # payload fails the build job and therefore the release.
+      - name: Clean-install lifecycle test (blocking)
+        shell: pwsh
+        run: |
+          $V = $env:NSE_VERSION
+          $Out = $env:NSE_OUT
+          .\scripts\build\clean_install_test.ps1 -SetupExe "$Out\NexusScalpEngine-$V-win-x64-setup.exe" `
+            -StartSmoke -StartSmokeSec 90
+          if ($LASTEXITCODE -ne 0) { throw "BUG293_CLEAN_INSTALL_FAILED: installed build failed the lifecycle smoke — release blocked" }
+      - name: Checksums + manifest + SBOM
+        shell: pwsh
+        run: |
+          $V = $env:NSE_VERSION
+          $Out = $env:NSE_OUT
+
+          # Pre-flight (BUG-143): every checksummed artifact must exist AND be
+          # non-trivially sized BEFORE Get-FileHash runs, so a silently failed
+          # producer step cannot surface as a bare "Cannot find path" here.
+          New-Item -ItemType Directory -Force -Path "$Out\checksums" | Out-Null
+          $Artifacts = @(
+            "$Out\portable\NexusScalpEngine.exe",
+            "$Out\cli\NexusScalpEngine-CLI.exe",
+            "$Out\NexusScalpEngine-$V-win-x64.zip",
+            "$Out\NexusScalpEngine-$V-win-x64-setup.exe"
+          )
+          foreach ($a in $Artifacts) {
+            if (-not (Test-Path $a)) {
+              $step = if ($a -like '*-setup.exe') { 'Installer (Inno Setup)' }
+                      elseif ($a -like '*.zip') { 'Stage release tree' }
+                      else { 'build step' }
+              throw "BUG143_MISSING_ARTIFACT: '$a' does not exist (expected producer step: '$step')"
+            }
+            $len = (Get-Item $a).Length
+            Write-Host "artifact: $a ($len bytes)"
+            if ($len -lt 100KB) {
+              throw "BUG143_EMPTY_ARTIFACT: '$a' is only $len bytes — producer step likely failed silently"
+            }
+          }
+          $lines = foreach ($a in $Artifacts) {
+                      $h = (Get-FileHash -Algorithm SHA256 -Path $a).Hash.ToLower()
+                      $rel = [System.IO.Path]::GetRelativePath("$PWD\$Out", $a)
+                      "$h  $rel"
+                    }
+                    Set-Content "$Out\checksums\SHA256SUMS.txt" $lines -Encoding ascii
+          python -c "import sys; sys.path.insert(0,'src'); from pathlib import Path; from nexus_scalp.release import packaging as p; root=Path(r'$Out'); arts=list(root.glob('portable/*.exe'))+list(root.glob('cli/*.exe'))+list(root.glob('*.zip'))+list(root.glob('*-setup.exe')); p.generate_manifest(arts, root/'manifests'/'release-manifest.json', channel='stable', base_dir=root); p.generate_sbom(out=root/'sbom'/'sbom.spdx.json'); print('manifest+sbom ok')"
+
+      - name: Embed release manifest in portable bundle
+        shell: pwsh
+        run: |
+          $Out = $env:NSE_OUT
+
+          Copy-Item "$Out\manifests\release-manifest.json" "$Out\portable\release-manifest.json" -Force
+          Write-Host "manifest embedded in portable tree"
+      # P0 TRUST ROOT: sign the release update manifest with the Ed25519
+      # release key (private seed ONLY via the NSE_UPDATE_SIGNING_KEY secret).
+      # docs/ARTIFACT_TRUST_CHAIN.md section 3: a release without a valid
+      # signed update manifest is REJECTED by every client updater
+      # (SECURITY_BLOCKED, fail-closed, no unsigned fallback) — the signing
+      # step is therefore MANDATORY, not optional hardening.
+      - name: Sign update manifest (Ed25519 trust root)
+        shell: bash
+        env:
+          NSE_UPDATE_SIGNING_KEY: ${{ secrets.NSE_UPDATE_SIGNING_KEY }}
+          NSE_VERSION: ${{ needs.gates.outputs.version }}
+          NSE_RELEASE_ID: ${{ github.run_id }}
+        run: |
+          set -e
+          python scripts/release/sign_update_manifest.py "$NSE_OUT" "$NSE_OUT/NexusScalpEngine-$NSE_VERSION-win-x64.zip"
+          python - <<'PY'
+          import json, sys
+          from pathlib import Path
+          sys.path.insert(0, 'src')
+          from nexus_scalp.release.signing import verify_manifest_signature
+          m = json.loads(Path('release').glob('**/manifests/update-manifest.signed.json').__next__().read_text())
+          v = verify_manifest_signature(m)
+          assert v["verified"] and v["covered_digest"] == m["artifact_sha256"]
+          print("client-side signed-manifest verify OK:", v["key_id"], v["covered_digest"][:12])
+          PY
+      - name: verify-release (full self-check incl. secrets)
+        shell: pwsh
+        run: |
+          $Out = $env:NSE_OUT
+
+          python -c "import sys; sys.path.insert(0,'src'); from pathlib import Path; from nexus_scalp.release import verify as v; r=v.verify_release(Path(r'$Out\portable')); print('OVERALL', r['overall']); [print(c['status'], c['check']) for c in r['checks']]; sys.exit(0 if r['valid'] else 1)"
+      # P3 CODE-SIGNING READINESS: when NSE_REQUIRE_CODE_SIGNING=true the
+      # release must PROVE Authenticode signing (signtool verify /pa) on
+      # every production EXE before upload. Default (unset/other) keeps the
+      # documented unsigned status — nothing claims signed that is not
+      # verified. No certificate material ever enters the repository.
+      - name: Code-signing requirement gate (P3)
+        shell: pwsh
+        env:
+          NSE_REQUIRE_CODE_SIGNING: ${{ vars.NSE_REQUIRE_CODE_SIGNING }}
+        run: |
+          if ("$env:NSE_REQUIRE_CODE_SIGNING" -ieq "true") {
+            $Out = $env:NSE_OUT
+            $exes = @("$Out\portable\NexusScalpEngine.exe", "$Out\cli\NexusScalpEngine-CLI.exe", "$Out\NexusScalpEngine-$env:NSE_VERSION-win-x64-setup.exe")
+            foreach ($exe in $exes) {
+              if (-not (Test-Path $exe)) { throw "SIGNING_GATE: missing artifact $exe" }
+              $v = & signtool verify /pa /q $exe 2>&1
+              if ($LASTEXITCODE -ne 0) { throw "SIGNING_GATE: Authenticode verification FAILED for $exe : $v" }
+              Write-Host "Authenticode OK: $exe"
+            }
+          } else {
+            Write-Host "Code-signing not required (NSE_REQUIRE_CODE_SIGNING unset) - binaries remain documented-unsigned (docs/ARTIFACT_TRUST_CHAIN.md section 7)."
+          }
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: nexus-release-windows-x64
+          path: |
+            release/v*/windows/x64/NexusScalpEngine-*.zip
+            release/v*/windows/x64/NexusScalpEngine-*-setup.exe
+            release/v*/windows/x64/cli/NexusScalpEngine-CLI.exe
+            release/v*/windows/x64/checksums/SHA256SUMS.txt
+            release/v*/windows/x64/manifests/release-manifest.json
+            release/v*/windows/x64/manifests/update-manifest.signed.json
+            release/v*/windows/x64/sbom/sbom.spdx.json
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # D. ARM64 — explicitly reported unsupported (never silent)
+  # ---------------------------------------------------------------------------
+  arm64-report:
+    name: ARM64 support report (unsupported — dependency stack)
+    runs-on: ubuntu-latest
+    needs: gates
+    timeout-minutes: 5
+    steps:
+      - name: Report unsupported architecture
+        run: |
+          echo "::warning::Windows ARM64 is UNSUPPORTED by the current dependency stack"
+          echo "(PyTorch/Polars/PyArrow/MetaTrader5 publish no Windows ARM64 wheels)."
+          echo "No ARM64 installer will be produced. This is an explicit, loud non-support."
+          {
+            echo "## ARM64 Support Report"
+            echo ""
+            echo "Windows ARM64 is UNSUPPORTED by the current dependency stack"
+            echo "(PyTorch/Polars/PyArrow/MetaTrader5 publish no Windows ARM64 wheels)."
+            echo "No ARM64 installer is produced. This is an explicit, loud non-support."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # E. RELEASE — publish (only after B + C succeed)
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [validate, gates, build-windows-x64]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: nexus-release-windows-x64
+          path: release-assets
+      - name: Build release notes from commits
+        shell: bash
+        run: |
+          PREV="$(git tag --sort=-v:refname | sed -n '2p')"
+          echo "## What's new in ${{ github.ref_name }}" > notes.md
+          if [ -n "$PREV" ]; then
+            git log --oneline --no-merges "$PREV..HEAD" | sed 's/^/- /' >> notes.md
+          else
+            git log --oneline --no-merges -20 | sed 's/^/- /' >> notes.md
+          fi
+          echo "" >> notes.md
+          echo "## Architecture support" >> notes.md
+          echo "- Windows x64: SUPPORTED (PyTorch/Polars/MetaTrader5 wheels exist)" >> notes.md
+          echo "- Windows ARM64: UNSUPPORTED — no wheels for the dependency stack" >> notes.md
+          echo "" >> notes.md
+          echo "> Tests ran in this workflow (gates job). No claims beyond that." >> notes.md
+      - name: Publish release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
+        with:
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          body_path: notes.md
+          files: |
+            release-assets/**/*.zip
+            release-assets/*-setup.exe
+            release-assets/**/*.exe
+            release-assets/**/*.txt
+            release-assets/**/*.json
+
+      - name: Undraft release (post-publish safety)
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          TAG="${{ github.ref_name }}"
+          # Publish a draft release left behind by a partial upload failure so
+          # the tag is never stranded invisible (publish-verify step needs 200).
+          RESP="$(curl -sS -o /tmp/undraft.json -w "%{http_code}" \
+            -X PATCH \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/${{ github.repository }}/releases/tags/$TAG" \
+            -d '{"draft": false}')" || RESP="000"
+          if [ "$RESP" = "200" ]; then
+            DRAFT=$(python -c "import json;print(json.load(open('/tmp/undraft.json')).get('draft'))")
+            echo "release for $TAG now draft=$DRAFT"
+          else
+            echo "::warning::undraft PATCH returned HTTP $RESP (release may not exist yet)"
+          fi
+
+      - name: Verify published release (post-release check)
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          TAG="${{ github.ref_name }}"
+          # Re-fetch the release via the GitHub API and verify it exists.
+          # Best-effort: authenticated call with the built-in token.
+          RESP="$(curl -sS -o /tmp/release.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/${{ github.repository }}/releases/tags/$TAG")"
+          echo "release fetch http=$RESP"
+          if [ "$RESP" != "200" ]; then
+            echo "::error::Release verification FAILED: HTTP $RESP for tag $TAG"
+            exit 1
+          fi
+          python - <<PY
+          import json, os, sys
+          data = json.load(open("/tmp/release.json"))
+          expect = {"tag_name", "name"}
+          ok = True
+          if data.get("tag_name") != os.environ.get("RELEASE_TAG", ""):
+              print("TAG MISMATCH")
+              ok = False
+          assets = data.get("assets", [])
+          if not assets:
+              print("NO ASSETS UPLOADED")
+              ok = False
+          print(f'verified release: tag={data.get("tag_name")} assets={len(assets)}')
+          for a in assets:
+              print(f'  asset: {a.get("name")} {a.get("size")} bytes')
+          print("VERIFIED" if ok else "VERIFICATION FAILED")
+          sys.exit(0 if ok else 1)
+          PY
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+
+      - name: Telegram - release finished
+        if: always()
+        continue-on-error: true
+        run: |
+          python scripts/ci/telegram_notify.py release-success --tag "${{ github.ref_name }}" || true

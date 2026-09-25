@@ -1,0 +1,5 @@
+stash_idx=34
+stash_msg=stash@{34}: On agent/nexus-main/agent5-decision-risk-forensics: hold-agent5-rr-format-residue
+stash_obj=82eda312
+p3=8f1ab3f0020724c17f5caaafe9159906a3ddf054
+parents=ed551dd1cdd16c62754fbd74502b1ea15e387c52 f811621971e51431cb8c9efb2273cc1401670970 8f1ab3f0020724c17f5caaafe9159906a3ddf054

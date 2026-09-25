@@ -1,0 +1,653 @@
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [  6%]
+........................................................................ [ 13%]
+........................................................................ [ 20%]
+............................s...s....................................... [ 27%]
+........................................................................ [ 33%]
+........................................................................ [ 40%]
+........................................................................ [ 47%]
+.......................F................................................ [ 54%]
+........................................................................ [ 61%]
+.........F......F....................................................... [ 67%]
+...........................................................s............ [ 74%]
+........................................................................ [ 81%]
+........................................................F............... [ 88%]
+........................................................................ [ 94%]
+......................................................                   [100%]
+================================== FAILURES ===================================
+_________________________ test_full_generation_cycle __________________________
+[gw2] win32 -- Python 3.11.16 C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Scripts\python.exe
+
+audit_repo = <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x00000276C1E70350>
+
+    def test_full_generation_cycle(audit_repo):
+        """Spec 77/111: real generate -> validate -> backtest -> WF -> OOS ->
+        robustness -> score -> rank -> summary, all persisted."""
+        seed_experiences(audit_repo, count=40)
+        factory, pipeline = make_factory(audit_repo, size=8)
+    
+        gen = factory.create_generation(size=8)
+        population = factory.generate_population(gen["generation_id"], size=8)
+        assert len(population) >= 8
+    
+        validation = factory.validate_population(population)
+        flush(audit_repo)
+        assert validation["passed"]  # G0 templates all valid now
+        passed_ids = {c.candidate_id for c in validation["passed"]}
+        # Canonical dedup (spec 13): the population may contain definition
+        # duplicates (family-coverage extras); only unique strategies persist.
+        unique_persisted = len(
+            {c["candidate_id"] for c in list_candidates(audit_repo, generation_id=gen["generation_id"])}
+        )
+    
+        dataset = pipeline.dataset_builder.build()
+        assert len(dataset.samples) > 0
+        evaluated = 0
+        for c in validation["passed"]:
+            res = factory.evaluate_candidate(c, dataset)
+            if res is not None:
+                evaluated += 1
+        flush(audit_repo)
+        assert evaluated >= 1  # at least the templates with positive families
+    
+>       completion = factory.complete_generation(gen["generation_id"])
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\unit\test_strategy_factory_phase22.py:436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <nexus_scalp.strategies.factory.orchestrator.StrategyFactory object at 0x00000276C6D3C790>
+generation_id = 'G1'
+
+    def complete_generation(self, generation_id: str) -> dict[str, Any]:
+        """Finalizes a generation: ranking + elite + summary + memory."""
+        import json as _json
+    
+        gen = get_generation(self._research_backend, generation_id) or {}
+        candidates = list_candidates(
+            self._research_backend, generation_id=generation_id, limit=2000
+        )
+        registry_entries = self._registry_rows_for_generation(candidates)
+        summary = build_summary(
+            gen,
+            candidates,
+            registry_entries,
+            operator_stats=self._operator_stats,
+            runtime_ms=0.0,
+        )
+        ranked = rank_strategies(registry_entries, limit=100)
+        elite = [e for e in ranked if _score_dict(e).get("verdict") == "VALIDATED"][
+            : self.config.elite_size
+        ]
+    
+        raw_config = gen.get("config") or {}
+        if isinstance(raw_config, str):
+            try:
+                raw_config = _json.loads(raw_config) if raw_config.strip() else {}
+            except Exception:
+                raw_config = {}
+        upsert_generation(
+            self._research_backend,
+            {
+                **gen,
+                "status": "COMPLETED",
+                "completed_at": _now().isoformat(),
+>               "config": {**raw_config, "summary": summary.model_dump()},
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            },
+        )
+E       TypeError: 'str' object is not a mapping
+
+src\nexus_scalp\strategies\factory\orchestrator.py:1462: TypeError
+---------------------------- Captured stdout setup ----------------------------
+2026-09-07 04:53:59 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-6994\popen-gw2\test_full_generation_cycle0\test_strategy_factory_phase22.db
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_0 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_0 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_1 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_1 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_2 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_2 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_3 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_3 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_4 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_4 realized_r=-0.5
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_5 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_5 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_6 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_6 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_7 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_7 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_8 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_8 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_9 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_9 realized_r=-0.5
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_10 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_10 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_11 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_11 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_12 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_12 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_13 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_13 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_14 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_14 realized_r=-0.5
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_15 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_15 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_16 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_16 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_17 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_17 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_18 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_18 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_19 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_19 realized_r=-0.5
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_20 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_20 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_21 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_21 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_22 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_22 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_23 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_23 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_24 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_24 realized_r=-0.5
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_25 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_25 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_26 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_26 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_27 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_27 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_28 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_28 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_29 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_29 realized_r=-0.5
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_30 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_30 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_31 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_31 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_32 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_32 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_33 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_33 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_34 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_34 realized_r=-0.5
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_35 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_35 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_36 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_36 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_37 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_37 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_38 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_38 realized_r=0.35
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_fx_39 feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_research
+2026-09-07 04:53:59 [debug    ] [EXPERIENCE] OUTCOME RECORDED  flags=[] idempotency_key=fx_39 realized_r=-0.5
+2026-09-07 04:54:01 [info     ] [BACKTEST] event=START         dataset=ds_3ed6e6fbb605dd3f samples=31 strategy_id=SF-BFE51EE976
+2026-09-07 04:54:01 [info     ] [BACKTEST] event=COMPLETE      drawdown_r=0.5 expectancy_r=0.185484 strategy_id=SF-BFE51EE976 trades=31
+2026-09-07 04:54:01 [info     ] [WALK_FORWARD] event=COMPLETE  avg_oos=0.208333 avg_val=0.1375 folds=1 passes=1 status=PASS strategy_id=SF-BFE51EE976 version=
+2026-09-07 04:54:01 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.1375 status=PASS strategy_id=SF-BFE51EE976
+2026-09-07 04:54:01 [info     ] [ROBUSTNESS] event=RESULT      baseline=0.18 max_degradation=0.002 status=PASS strategy_id=SF-BFE51EE976
+2026-09-07 04:54:01 [info     ] [STRATEGY_VALIDATION] event=COMPLETE score=0.677 status=VALIDATED strategy_id=SF-BFE51EE976
+2026-09-07 04:54:01 [info     ] [BACKTEST] event=START         dataset=ds_3ed6e6fbb605dd3f samples=31 strategy_id=SF-6731D2086F
+2026-09-07 04:54:01 [info     ] [BACKTEST] event=COMPLETE      drawdown_r=0.5 expectancy_r=0.185484 strategy_id=SF-6731D2086F trades=31
+2026-09-07 04:54:01 [info     ] [WALK_FORWARD] event=COMPLETE  avg_oos=0.208333 avg_val=0.1375 folds=1 passes=1 status=PASS strategy_id=SF-6731D2086F version=
+2026-09-07 04:54:01 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.1375 status=PASS strategy_id=SF-6731D2086F
+2026-09-07 04:54:01 [info     ] [ROBUSTNESS] event=RESULT      baseline=0.18 max_degradation=0.002 status=PASS strategy_id=SF-6731D2086F
+2026-09-07 04:54:01 [info     ] [STRATEGY_VALIDATION] event=COMPLETE score=0.677 status=VALIDATED strategy_id=SF-6731D2086F
+2026-09-07 04:54:02 [info     ] [BACKTEST] event=START         dataset=ds_3ed6e6fbb605dd3f samples=31 strategy_id=SF-DB0B817C65
+2026-09-07 04:54:02 [info     ] [BACKTEST] event=COMPLETE      drawdown_r=0.5 expectancy_r=0.185484 strategy_id=SF-DB0B817C65 trades=31
+2026-09-07 04:54:02 [info     ] [WALK_FORWARD] event=COMPLETE  avg_oos=0.208333 avg_val=0.1375 folds=1 passes=1 status=PASS strategy_id=SF-DB0B817C65 version=
+2026-09-07 04:54:02 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.1375 status=PASS strategy_id=SF-DB0B817C65
+2026-09-07 04:54:02 [info     ] [ROBUSTNESS] event=RESULT      baseline=0.18 max_degradation=0.002 status=PASS strategy_id=SF-DB0B817C65
+2026-09-07 04:54:02 [info     ] [STRATEGY_VALIDATION] event=COMPLETE score=0.677 status=VALIDATED strategy_id=SF-DB0B817C65
+2026-09-07 04:54:02 [info     ] [BACKTEST] event=START         dataset=ds_3ed6e6fbb605dd3f samples=31 strategy_id=SF-90B276BAEC
+2026-09-07 04:54:02 [info     ] [BACKTEST] event=COMPLETE      drawdown_r=0.5 expectancy_r=0.185484 strategy_id=SF-90B276BAEC trades=31
+2026-09-07 04:54:02 [info     ] [WALK_FORWARD] event=COMPLETE  avg_oos=0.208333 avg_val=0.1375 folds=1 passes=1 status=PASS strategy_id=SF-90B276BAEC version=
+2026-09-07 04:54:02 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.1375 status=PASS strategy_id=SF-90B276BAEC
+2026-09-07 04:54:02 [info     ] [ROBUSTNESS] event=RESULT      baseline=0.18 max_degradation=0.002 status=PASS strategy_id=SF-90B276BAEC
+2026-09-07 04:54:02 [info     ] [STRATEGY_VALIDATION] event=COMPLETE score=0.677 status=VALIDATED strategy_id=SF-90B276BAEC
+2026-09-07 04:54:02 [info     ] [BACKTEST] event=START         dataset=ds_3ed6e6fbb605dd3f samples=31 strategy_id=SF-BA31AD94F8
+2026-09-07 04:54:02 [info     ] [BACKTEST] event=COMPLETE      drawdown_r=0.5 expectancy_r=0.185484 strategy_id=SF-BA31AD94F8 trades=31
+2026-09-07 04:54:02 [info     ] [WALK_FORWARD] event=COMPLETE  avg_oos=0.208333 avg_val=0.1375 folds=1 passes=1 status=PASS strategy_id=SF-BA31AD94F8 version=
+2026-09-07 04:54:02 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.1375 status=PASS strategy_id=SF-BA31AD94F8
+2026-09-07 04:54:02 [info     ] [ROBUSTNESS] event=RESULT      baseline=0.18 max_degradation=0.002 status=PASS strategy_id=SF-BA31AD94F8
+2026-09-07 04:54:02 [info     ] [STRATEGY_VALIDATION] event=COMPLETE score=0.677 status=VALIDATED strategy_id=SF-BA31AD94F8
+2026-09-07 04:54:02 [info     ] [BACKTEST] event=START         dataset=ds_3ed6e6fbb605dd3f samples=31 strategy_id=SF-2B6A84638A
+2026-09-07 04:54:02 [info     ] [BACKTEST] event=COMPLETE      drawdown_r=0.5 expectancy_r=0.185484 strategy_id=SF-2B6A84638A trades=31
+2026-09-07 04:54:02 [info     ] [WALK_FORWARD] event=COMPLETE  avg_oos=0.208333 avg_val=0.1375 folds=1 passes=1 status=PASS strategy_id=SF-2B6A84638A version=
+2026-09-07 04:54:02 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.1375 status=PASS strategy_id=SF-2B6A84638A
+2026-09-07 04:54:02 [info     ] [ROBUSTNESS] event=RESULT      baseline=0.18 max_degradation=0.002 status=PASS strategy_id=SF-2B6A84638A
+2026-09-07 04:54:02 [info     ] [STRATEGY_VALIDATION] event=COMPLETE score=0.677 status=VALIDATED strategy_id=SF-2B6A84638A
+2026-09-07 04:54:02 [info     ] [BACKTEST] event=START         dataset=ds_3ed6e6fbb605dd3f samples=31 strategy_id=SF-681ECE6D72
+2026-09-07 04:54:02 [info     ] [BACKTEST] event=COMPLETE      drawdown_r=0.5 expectancy_r=0.185484 strategy_id=SF-681ECE6D72 trades=31
+2026-09-07 04:54:02 [info     ] [WALK_FORWARD] event=COMPLETE  avg_oos=0.208333 avg_val=0.1375 folds=1 passes=1 status=PASS strategy_id=SF-681ECE6D72 version=
+2026-09-07 04:54:02 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.1375 status=PASS strategy_id=SF-681ECE6D72
+2026-09-07 04:54:02 [info     ] [ROBUSTNESS] event=RESULT      baseline=0.18 max_degradation=0.002 status=PASS strategy_id=SF-681ECE6D72
+2026-09-07 04:54:02 [info     ] [STRATEGY_VALIDATION] event=COMPLETE score=0.677 status=VALIDATED strategy_id=SF-681ECE6D72
+2026-09-07 04:54:02 [info     ] [BACKTEST] event=START         dataset=ds_3ed6e6fbb605dd3f samples=31 strategy_id=SF-986404FF7E
+2026-09-07 04:54:02 [info     ] [BACKTEST] event=COMPLETE      drawdown_r=0.5 expectancy_r=0.185484 strategy_id=SF-986404FF7E trades=31
+2026-09-07 04:54:02 [info     ] [WALK_FORWARD] event=COMPLETE  avg_oos=0.208333 avg_val=0.1375 folds=1 passes=1 status=PASS strategy_id=SF-986404FF7E version=
+2026-09-07 04:54:02 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.1375 status=PASS strategy_id=SF-986404FF7E
+2026-09-07 04:54:02 [info     ] [ROBUSTNESS] event=RESULT      baseline=0.18 max_degradation=0.002 status=PASS strategy_id=SF-986404FF7E
+2026-09-07 04:54:02 [info     ] [STRATEGY_VALIDATION] event=COMPLETE score=0.677 status=VALIDATED strategy_id=SF-986404FF7E
+2026-09-07 04:54:02 [info     ] [BACKTEST] event=START         dataset=ds_3ed6e6fbb605dd3f samples=31 strategy_id=SF-CC37E7BA60
+2026-09-07 04:54:02 [info     ] [BACKTEST] event=COMPLETE      drawdown_r=0.5 expectancy_r=0.185484 strategy_id=SF-CC37E7BA60 trades=31
+2026-09-07 04:54:02 [info     ] [WALK_FORWARD] event=COMPLETE  avg_oos=0.208333 avg_val=0.1375 folds=1 passes=1 status=PASS strategy_id=SF-CC37E7BA60 version=
+2026-09-07 04:54:02 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.1375 status=PASS strategy_id=SF-CC37E7BA60
+2026-09-07 04:54:02 [info     ] [ROBUSTNESS] event=RESULT      baseline=0.18 max_degradation=0.002 status=PASS strategy_id=SF-CC37E7BA60
+2026-09-07 04:54:02 [info     ] [STRATEGY_VALIDATION] event=COMPLETE score=0.677 status=VALIDATED strategy_id=SF-CC37E7BA60
+2026-09-07 04:54:03 [info     ] [BACKTEST] event=START         dataset=ds_3ed6e6fbb605dd3f samples=31 strategy_id=SF-4C4A4C050F
+2026-09-07 04:54:03 [info     ] [BACKTEST] event=COMPLETE      drawdown_r=0.5 expectancy_r=0.185484 strategy_id=SF-4C4A4C050F trades=31
+2026-09-07 04:54:03 [info     ] [WALK_FORWARD] event=COMPLETE  avg_oos=0.208333 avg_val=0.1375 folds=1 passes=1 status=PASS strategy_id=SF-4C4A4C050F version=
+2026-09-07 04:54:03 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.1375 status=PASS strategy_id=SF-4C4A4C050F
+2026-09-07 04:54:03 [info     ] [ROBUSTNESS] event=RESULT      baseline=0.18 max_degradation=0.002 status=PASS strategy_id=SF-4C4A4C050F
+2026-09-07 04:54:03 [info     ] [STRATEGY_VALIDATION] event=COMPLETE score=0.677 status=VALIDATED strategy_id=SF-4C4A4C050F
+2026-09-07 04:54:03 [info     ] [BACKTEST] event=START         dataset=ds_3ed6e6fbb605dd3f samples=31 strategy_id=SF-644E8C9C6B
+2026-09-07 04:54:03 [info     ] [BACKTEST] event=COMPLETE      drawdown_r=0.5 expectancy_r=0.185484 strategy_id=SF-644E8C9C6B trades=31
+2026-09-07 04:54:03 [info     ] [WALK_FORWARD] event=COMPLETE  avg_oos=0.208333 avg_val=0.1375 folds=1 passes=1 status=PASS strategy_id=SF-644E8C9C6B version=
+2026-09-07 04:54:03 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.1375 status=PASS strategy_id=SF-644E8C9C6B
+2026-09-07 04:54:03 [info     ] [ROBUSTNESS] event=RESULT      baseline=0.18 max_degradation=0.002 status=PASS strategy_id=SF-644E8C9C6B
+2026-09-07 04:54:03 [info     ] [STRATEGY_VALIDATION] event=COMPLETE score=0.677 status=VALIDATED strategy_id=SF-644E8C9C6B
+2026-09-07 04:54:03 [info     ] [BACKTEST] event=START         dataset=ds_3ed6e6fbb605dd3f samples=31 strategy_id=SF-3AEAA34FBC
+2026-09-07 04:54:03 [info     ] [BACKTEST] event=COMPLETE      drawdown_r=0.5 expectancy_r=0.185484 strategy_id=SF-3AEAA34FBC trades=31
+2026-09-07 04:54:03 [info     ] [WALK_FORWARD] event=COMPLETE  avg_oos=0.208333 avg_val=0.1375 folds=1 passes=1 status=PASS strategy_id=SF-3AEAA34FBC version=
+2026-09-07 04:54:03 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.1375 status=PASS strategy_id=SF-3AEAA34FBC
+2026-09-07 04:54:03 [info     ] [ROBUSTNESS] event=RESULT      baseline=0.18 max_degradation=0.002 status=PASS strategy_id=SF-3AEAA34FBC
+2026-09-07 04:54:03 [info     ] [STRATEGY_VALIDATION] event=COMPLETE score=0.677 status=VALIDATED strategy_id=SF-3AEAA34FBC
+2026-09-07 04:54:03 [info     ] [BACKTEST] event=START         dataset=ds_3ed6e6fbb605dd3f samples=31 strategy_id=SF-37F1DCE54D
+2026-09-07 04:54:03 [info     ] [BACKTEST] event=COMPLETE      drawdown_r=0.5 expectancy_r=0.185484 strategy_id=SF-37F1DCE54D trades=31
+2026-09-07 04:54:03 [info     ] [WALK_FORWARD] event=COMPLETE  avg_oos=0.208333 avg_val=0.1375 folds=1 passes=1 status=PASS strategy_id=SF-37F1DCE54D version=
+2026-09-07 04:54:03 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.1375 status=PASS strategy_id=SF-37F1DCE54D
+2026-09-07 04:54:03 [info     ] [ROBUSTNESS] event=RESULT      baseline=0.18 max_degradation=0.002 status=PASS strategy_id=SF-37F1DCE54D
+2026-09-07 04:54:03 [info     ] [STRATEGY_VALIDATION] event=COMPLETE score=0.677 status=VALIDATED strategy_id=SF-37F1DCE54D
+2026-09-07 04:54:03 [info     ] [BACKTEST] event=START         dataset=ds_3ed6e6fbb605dd3f samples=31 strategy_id=SF-13265A067A
+2026-09-07 04:54:03 [info     ] [BACKTEST] event=COMPLETE      drawdown_r=0.5 expectancy_r=0.185484 strategy_id=SF-13265A067A trades=31
+2026-09-07 04:54:03 [info     ] [WALK_FORWARD] event=COMPLETE  avg_oos=0.208333 avg_val=0.1375 folds=1 passes=1 status=PASS strategy_id=SF-13265A067A version=
+2026-09-07 04:54:03 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.1375 status=PASS strategy_id=SF-13265A067A
+2026-09-07 04:54:03 [info     ] [ROBUSTNESS] event=RESULT      baseline=0.18 max_degradation=0.002 status=PASS strategy_id=SF-13265A067A
+2026-09-07 04:54:03 [info     ] [STRATEGY_VALIDATION] event=COMPLETE score=0.677 status=VALIDATED strategy_id=SF-13265A067A
+2026-09-07 04:54:04 [info     ] [BACKTEST] event=START         dataset=ds_3ed6e6fbb605dd3f samples=31 strategy_id=SF-9F4E81658D
+2026-09-07 04:54:04 [info     ] [BACKTEST] event=COMPLETE      drawdown_r=0.5 expectancy_r=0.185484 strategy_id=SF-9F4E81658D trades=31
+2026-09-07 04:54:04 [info     ] [WALK_FORWARD] event=COMPLETE  avg_oos=0.208333 avg_val=0.1375 folds=1 passes=1 status=PASS strategy_id=SF-9F4E81658D version=
+2026-09-07 04:54:04 [info     ] [OOS] event=RESULT             oos_expectancy_r=0.1375 status=PASS strategy_id=SF-9F4E81658D
+2026-09-07 04:54:04 [info     ] [ROBUSTNESS] event=RESULT      baseline=0.18 max_degradation=0.002 status=PASS strategy_id=SF-9F4E81658D
+2026-09-07 04:54:04 [info     ] [STRATEGY_VALIDATION] event=COMPLETE score=0.677 status=VALIDATED strategy_id=SF-9F4E81658D
+-------------------------- Captured stdout teardown ---------------------------
+2026-09-07 04:54:06 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues...
+2026-09-07 04:54:06 [info     ] Audit Database safely closed.
+___________ TestOutcomeFlushRace.test_audit_repo_flush_drains_queue ___________
+[gw1] win32 -- Python 3.11.16 C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Scripts\python.exe
+
+self = <tests.unit.test_outcome_flush_race_bug140.TestOutcomeFlushRace object at 0x000002172A358310>
+repo = <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x000002172BF4B290>
+
+    def test_audit_repo_flush_drains_queue(self, repo):
+        ledger = ExperienceLedger(repo)
+        ledger.record_experience(_record("req_flush_a"))
+>       assert ledger.get_experience_by_key("exp_req_flush_a") is None  # still queued
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ExperienceRecord(record_version=2, experience_id='exp_row_req_flush_a', request_id='req_flush_a', execution_id='', dec...ct=<QualityVerdict.UNKNOWN: 'UNKNOWN'>, profitable_for_wrong_reason=False, acceptable_loss=False), behavioral_flags=[]) is None
+E        +  where ExperienceRecord(record_version=2, experience_id='exp_row_req_flush_a', request_id='req_flush_a', execution_id='', dec...ct=<QualityVerdict.UNKNOWN: 'UNKNOWN'>, profitable_for_wrong_reason=False, acceptable_loss=False), behavioral_flags=[]) = get_experience_by_key('exp_req_flush_a')
+E        +    where get_experience_by_key = <nexus_scalp.experience.ledger.ExperienceLedger object at 0x000002172C69E410>.get_experience_by_key
+
+tests\unit\test_outcome_flush_race_bug140.py:73: AssertionError
+---------------------------- Captured stdout setup ----------------------------
+2026-09-07 04:54:15 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-6994\popen-gw1\test_audit_repo_flush_drains_q0\flush.db
+---------------------------- Captured stdout call -----------------------------
+2026-09-07 04:54:15 [debug    ] [EXPERIENCE] RECORDED          experience_id=exp_row_req_flush_a feature_dim=50 feature_schema=scalp_v1 strategy_id=strat_flush_race
+-------------------------- Captured stdout teardown ---------------------------
+2026-09-07 04:54:15 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues...
+2026-09-07 04:54:16 [info     ] Audit Database safely closed.
+_______ TestOutcomeFlushRace.test_flush_is_bounded_when_worker_stalled ________
+[gw0] win32 -- Python 3.11.16 C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Scripts\python.exe
+
+self = <tests.unit.test_outcome_flush_race_bug140.TestOutcomeFlushRace object at 0x000001988ACF95D0>
+repo = <nexus_scalp.adapters.database.audit_repository.AuditRepository object at 0x000001988E889990>
+
+    def test_flush_is_bounded_when_worker_stalled(self, repo):
+        """A stalled worker must not deadlock the live path."""
+        repo._running = False  # simulate a dead worker loop
+        repo._queue.put(("SELECT 1", ()))  # item that will never be task_done'd
+        result = repo.flush(timeout_sec=0.05)
+>       assert result is False  # returned instead of hanging
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       assert True is False
+
+tests\unit\test_outcome_flush_race_bug140.py:135: AssertionError
+---------------------------- Captured stdout setup ----------------------------
+2026-09-07 04:54:16 [info     ] Initialized High-Performance SQLite WAL storage db_path=C:\Users\Capsizer\AppData\Local\Temp\pytest-of-Capsizer\pytest-6994\popen-gw0\test_flush_is_bounded_when_wor0\flush.db
+-------------------------- Captured stdout teardown ---------------------------
+2026-09-07 04:54:16 [info     ] Initiating graceful shutdown of Audit Database. Flushing queues...
+2026-09-07 04:54:16 [info     ] Audit Database safely closed.
+___________________ test_real_champion_artifact_is_trained ____________________
+[gw1] win32 -- Python 3.11.16 C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Scripts\python.exe
+
+    def test_real_champion_artifact_is_trained() -> None:
+        """The runtime-facing invariant: the LIVE champion checkpoint must NEVER be
+        the canonical fresh init. This is the test that would have caught the
+        2026-09-02 permanent-NO_TRADE incident on day one."""
+        from nexus_scalp.release.paths import get_runtime_workspace
+    
+        p = (
+            get_runtime_workspace()
+            / "artifacts"
+            / "models"
+            / "scalp"
+            / "XAUUSD"
+            / "70d_liquidity"
+            / "model.pt"
+        )
+        if not p.exists():
+            pytest.skip("runtime champion artifact not present in this environment")
+        fresh, detail = detect_untrained_fresh_init(p, feature_dimension=70)
+>       assert fresh is False, (
+            "LIVE champion artifact equals the canonical seed-42 fresh init — "
+            f"untrained random weights are serving decisions ({detail})"
+        )
+E       AssertionError: LIVE champion artifact equals the canonical seed-42 fresh init — untrained random weights are serving decisions (BYTE_EQUAL_TO_FRESH_INIT)
+E       assert True is False
+
+tests\unit\test_bug225_untrained_champion_canary.py:124: AssertionError
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+.venv\Lib\site-packages\fastapi\testclient.py:1
+.venv\Lib\site-packages\fastapi\testclient.py:1
+.venv\Lib\site-packages\fastapi\testclient.py:1
+.venv\Lib\site-packages\fastapi\testclient.py:1
+.venv\Lib\site-packages\fastapi\testclient.py:1
+.venv\Lib\site-packages\fastapi\testclient.py:1
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_intelligence_summary_api_intelligence_summary_get for function get_intelligence_summary at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\intelligence_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_position_timeline_api_intelligence_positions__ticket__timeline_get for function get_position_timeline at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\intelligence_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_intelligence_autopsies_api_intelligence_autopsies_get for function get_intelligence_autopsies at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\intelligence_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_intelligence_autopsy_api_intelligence_autopsies__ticket__get for function get_intelligence_autopsy at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\intelligence_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_intelligence_behavior_api_intelligence_behavior_get for function get_intelligence_behavior at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\intelligence_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_intelligence_anomalies_api_intelligence_anomalies_get for function get_intelligence_anomalies at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\intelligence_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_intelligence_evolution_api_intelligence_evolution_get for function get_intelligence_evolution at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\intelligence_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID trigger_evolution_scan_api_intelligence_evolution_scan_post for function trigger_evolution_scan at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\intelligence_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID validate_evolution_candidate_api_intelligence_evolution_validate_post for function validate_evolution_candidate at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\intelligence_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID trigger_intelligence_self_heal_api_intelligence_self_heal_post for function trigger_intelligence_self_heal at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\intelligence_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_models_summary_api_models_summary_get for function get_models_summary at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_models_integrity_api_models_integrity_get for function get_models_integrity at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_models_list_api_models_get for function get_models_list at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_models_champion_api_models_champion_get for function get_models_champion at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_models_challengers_api_models_challengers_get for function get_models_challengers at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_models_runs_api_models_runs_get for function get_models_runs at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_models_run_api_models_runs__run_id__get for function get_models_run at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_models_comparison_api_models_comparison__run_id__get for function get_models_comparison at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID trigger_model_training_api_models_train_post for function trigger_model_training at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID start_training_worker_api_models_worker_start_post for function start_training_worker at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID stop_training_worker_api_models_worker_stop_post for function stop_training_worker at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID cancel_training_worker_api_models_worker_cancel_post for function cancel_training_worker at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_shadow_summary_api_models_shadow_summary_get for function get_shadow_summary at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_shadow70_summary_api_models_shadow70_summary_get for function get_shadow70_summary at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_shadow70_summary_api_models_shadow_runs_get for function get_shadow70_summary at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_shadow70_health_api_models_shadow70_health_get for function get_shadow70_health at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID attach_shadow70_api_models_shadow70_attach_post for function attach_shadow70 at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID start_shadow70_worker_api_models_shadow70_start_post for function start_shadow70_worker at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID stop_shadow70_worker_api_models_shadow70_stop_post for function stop_shadow70_worker at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID detach_shadow70_api_models_shadow70_detach_post for function detach_shadow70 at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_shadow70_disagreements_api_models_shadow70_disagreements_get for function get_shadow70_disagreements at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_shadow_decisions_api_models_shadow_decisions_get for function get_shadow_decisions at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_shadow_compare_api_models_shadow_compare__run_id__get for function get_shadow_compare at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_shadow_promotion_api_models_shadow_promotion__run_id__get for function get_shadow_promotion at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID attach_shadow_challenger_api_models_shadow_attach_post for function attach_shadow_challenger at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID evaluate_shadow_promotion_api_models_shadow_evaluate_promotion_post for function evaluate_shadow_promotion at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID start_shadow_worker_api_models_shadow_worker_start_post for function start_shadow_worker at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID stop_shadow_worker_api_models_shadow_worker_stop_post for function stop_shadow_worker at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_governance_health_api_models_governance_health_get for function get_governance_health at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_governance_registry_api_models_governance_registry_get for function get_governance_registry at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID reconcile_registry_api_models_registry_reconcile_post for function reconcile_registry at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_governance_events_api_models_governance_events_get for function get_governance_events at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_governance_comparisons_api_models_governance_comparisons_get for function get_governance_comparisons at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID link_shadow_outcomes_api_models_shadow_outcomes_post for function link_shadow_outcomes at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_governance_review_api_models_governance_review_get for function get_governance_review at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID approve_promotion_api_models_promotion_approve_post for function approve_promotion at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID rollback_promotion_api_models_promotion_rollback_post for function rollback_promotion at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_governance_status_api_models_governance_status_get for function get_governance_status at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_promotion_preview_api_models_governance_promotion_preview_get for function get_promotion_preview at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID execute_promotion_api_models_promotion_execute_post for function execute_promotion at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_rollback_preview_api_models_governance_rollback_preview_get for function get_rollback_preview at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID freeze_promotions_api_models_governance_emergency_freeze_post for function freeze_promotions at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID unfreeze_promotions_api_models_governance_emergency_unfreeze_post for function unfreeze_promotions at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID disable_candidate_api_models_governance_emergency_disable_post for function disable_candidate at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+tests/unit/test_forensics.py::TestMonitor34Snapshot::test_dashboard_shape
+tests/unit/test_smoke_self.py::TestDurationGuard::test_full_smoke_under_budget
+  C:\Users\Capsizer\source\repos\NexusTradingForexBot\.venv\Lib\site-packages\fastapi\openapi\utils.py:303: UserWarning: Duplicate Operation ID get_governance_audits_api_models_governance_audits_get for function get_governance_audits at C:\Users\Capsizer\source\repos\NexusTradingForexBot\src\nexus_scalp\web\model_governance_routes.py
+    warnings.warn(message, stacklevel=1)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============================== tests coverage ================================
+______________ coverage: platform win32, python 3.11.16-final-0 _______________
+
+Coverage XML written to file cov_critical_baseline.xml
+=========================== short test summary info ===========================
+SKIPPED [1] tests\unit\test_schema_70d_reconciliation.py:174: champion artifact not present in this environment
+SKIPPED [1] tests\unit\test_schema_70d_reconciliation.py:248: real 70D dataset not present
+SKIPPED [1] tests\release\test_release_hardening.py:420: no built release dir on this machine
+FAILED tests/unit/test_strategy_factory_phase22.py::test_full_generation_cycle
+FAILED tests/unit/test_outcome_flush_race_bug140.py::TestOutcomeFlushRace::test_audit_repo_flush_drains_queue
+FAILED tests/unit/test_outcome_flush_race_bug140.py::TestOutcomeFlushRace::test_flush_is_bounded_when_worker_stalled
+FAILED tests/unit/test_bug225_untrained_champion_canary.py::test_real_champion_artifact_is_trained
+RC=1

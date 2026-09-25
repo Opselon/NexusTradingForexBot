@@ -1,0 +1,42 @@
+# FAST (Tier-0 agent loop) — highest-signal, lowest-latency subset.
+# Purpose: the loop every agent runs AFTER EACH EDIT, before anything else.
+# Budget: <=60s wall on a dev machine; measured value in the header of
+# docs/testing/TEST_ARCHITECTURE.md (Tier-0 row) and CI_COST_REPORT.
+# -n 4 measured fastest on the 8-core dev host (-n 8 slower — interpreter-start
+# bound). Wired into scripts/ci/check_local.py stage_fast_tests.
+# CI does NOT run this manifest; it mirrors the local fast stage.
+# Selection rule: one owner per P0 domain, each mutation-proven (registry or
+# mutation_check KILL), every file <= ~5 measured worker-seconds, no heavy
+# DB-boot/subprocess/torch-training files (those are CRITICAL/T2).
+#
+# risk math
+tests/unit/test_risk_engine.py
+tests/unit/test_sizing_policy_failclosed.py
+tests/unit/test_risk_circuit_breakers.py
+tests/unit/test_capital_protection_a15.py
+tests/unit/test_recon_risk_boundary_battery.py
+# execution state machine + duplicate execution + write uncertainty
+tests/unit/test_qa_deep_state_machines.py
+tests/unit/test_order_manager_exit_bugs.py
+tests/unit/test_order_write_uncertainty.py
+tests/unit/test_recon_requote_and_reconcile.py
+tests/unit/test_agent6_execution_contract.py
+# DB economic integrity (cheap pins only; boot batteries are T2)
+tests/unit/test_accounting_deduplication.py
+tests/unit/test_accounting_pnl_regression.py
+tests/unit/test_audit_flush_contract.py
+tests/unit/test_recon_duplicate_deal_across_restart.py
+tests/unit/test_recon_batch_atomicity_real_failure.py
+# PAPER/LIVE isolation
+tests/unit/test_bug232_mode_boundary.py
+tests/unit/test_replay_toggle_guard.py
+# model artifact / feature contract (fast members)
+tests/unit/test_p0_producer_regression.py
+tests/unit/test_bug225_untrained_champion_canary.py
+tests/unit/test_70d_inference_validator_task3.py
+tests/unit/test_scalp_features_forensic_bug082.py
+tests/unit/test_temporal_sequence_contract.py
+tests/unit/test_gap_safe_sequences.py
+# economics honesty
+tests/unit/test_economic_assumptions.py
+tests/unit/test_economic_parity_harness.py

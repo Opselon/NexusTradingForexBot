@@ -1,0 +1,23 @@
+# src/nexus_scalp/accounting/periods.py
+
+- PURPOSE: The ONE definition of DAY / WEEK / MONTH / YEAR accounting-period boundaries for the entire system, so every consumer buckets a trade into the same period and no two reports ever reconcile differently.
+- ARCHITECTURE LAYER: Application (shared time policy used by core, worker, reporting engine, dashboard; pure helpers).
+- RESPONSIBILITY: Resolve deterministic, half-open UTC intervals `[start, end)` with stable string keys ("2026-08-15", "2026-W33", "2026-08", "2026") and tolerant SQLite timestamp parsing. If the dashboard bucketed by local time and the worker by UTC the same trade would appear in two days; every consumer resolves boundaries here and nowhere else.
+- DEPENDENCIES:
+  - `dataclasses.dataclass` → frozen `PeriodBounds` value object.
+  - `datetime.UTC, datetime, timedelta` → aware datetime arithmetic.
+  - `enum.StrEnum` → `PeriodKind` (DAY/WEEK/MONTH/YEAR).
+- CONNECTS TO: `AccountingCore.period_report/_compute_period/period_series`, `AccountingWorker` (refresh cycles), `PerformanceReportEngine.generate` (bounds + prev_bounds), `aggregate_period` (contains()), REST API (period tabs). Key format `SQL_TS_FORMAT` matches the audit schema's `DATETIME('now')` storage convention.
+- KEY CONCEPTS:
+  - `PeriodKind(StrEnum)` (line 43): four granularities; StrEnum so `.value` is a plain string for cache keys and JSON.
+  - `PeriodBounds` frozen dataclass (line 52): carries `kind`, stable `key`, `start` (inclusive), `end` (exclusive). `contains()` (line 69) normalizes any input via `ensure_utc` before the half-open comparison — a trade closing exactly at midnight belongs to the NEW period, never both. `start_sql`/`end_sql` (lines 75-82) format for SQLite text comparison. `label` (line 85) renders human dashboard text ("Week 33, 2026", "August 2026").
+  - `ensure_utc` (line 96): naive datetimes are ASSUMED UTC because the audit schema stores UTC (`DATETIME('now')`); assuming local time would silently shift every historical trade by the host's offset.
+  - `period_bounds(kind, at)` (line 118): `at` defaults to now; WEEK floors to Monday (ISO), MONTH floors to the 1st with December rollover handled explicitly (lines 145-149), YEAR floors to Jan 1. Boundary keys are derived from the floored start so the key always identifies the containing period.
+  - `previous_period` (line 157): `bounds.start - 1 second` re-resolved — a clean way to step one period back without duplicating rollover logic.
+  - `recent_periods(kind, count, at)` (line 162): oldest→newest (chart-friendly), bounded by construction (no unbounded "give me all history" path).
+  - `parse_sql_timestamp` (line 180): tolerates every stored shape — `DATETIME('now')` output, ISO-8601 with/without `T`, fractional seconds, trailing `Z`. Returns None for unparseable values so callers treat the record as "no reliable timestamp" instead of silently bucketing it into today (a mis-timed snapshot would corrupt period boundaries).
+- HOT PATH / PERFORMANCE: Called per-report and per-period in worker cycles; all pure arithmetic, no I/O.
+- EDGE CASES & PITFALLS:
+  - The `T` vs space timestamp format split in `audit_ledger` (see core.py:242-252) lives at the SQL layer, not here — this module parses Python-side; the SQL-side normalization exists in `AccountingCore.load_trades`.
+  - WEEK boundary key uses the ISO year (`iso.year`), which can differ from `start.year` around New Year (e.g. 2026-12-31 belongs to 2026-W53); correct, but consumers must not assume key prefix == calendar year.
+  - `parse_sql_timestamp` returning None for a valid-but-unknown format is deliberate: "no reliable timestamp" must propagate rather than defaulting to now.

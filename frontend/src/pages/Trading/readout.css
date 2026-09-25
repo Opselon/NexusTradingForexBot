@@ -1,0 +1,281 @@
+/* readout.css — lane-owned styles for tr-readout-* (see lane contract). Theme
+   tokens only, logical properties (RTL-safe), namespace tr-readout*, hover
+   lift scoped to rows/tiles, prefers-reduced-motion respected. Shared
+   baseline lives in ./trading.css (read-only). */
+
+.tr-readout { margin-bottom: 16px; }
+.tr-readout-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+
+/* ---------------------------- glass panel skin ---------------------------- */
+/* Scoped under .tr-readout so the shared .panel primitive is untouched. */
+.tr-readout .panel {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012) 40%),
+    color-mix(in srgb, var(--bg-panel) 92%, transparent);
+  backdrop-filter: blur(10px) saturate(1.1);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
+  border-radius: 14px;
+  box-shadow: var(--elev-2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+.tr-readout .panel::before {
+  content: ""; position: absolute; inset: 0 0 auto; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(65, 166, 242, 0.45), rgba(157, 123, 240, 0.3), transparent);
+  pointer-events: none;
+}
+.tr-readout .panel-header { border-bottom-color: color-mix(in srgb, var(--border-strong) 70%, transparent); }
+.tr-readout-count {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em;
+  color: var(--text-dim); background: var(--bg-inset);
+  border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px;
+}
+
+/* -------------------------------- fact tiles ------------------------------- */
+.tr-readout-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.tr-tile {
+  position: relative;
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.006));
+  border: 1px solid var(--border);
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.tr-tile:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: linear-gradient(180deg, rgba(65, 166, 242, 0.07), rgba(255, 255, 255, 0.01));
+}
+.tr-tile::after {
+  content: ""; position: absolute; inset: 0 0 auto; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.09), transparent);
+}
+.tr-tile-k {
+  font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+.tr-tile-v {
+  font-family: var(--mono); font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.tr-tile-v-word { font-family: var(--sans); font-size: 13.5px; font-weight: 600; }
+.tr-tile-s {
+  font-size: 9.5px; color: var(--text-faint); font-family: var(--mono);
+  letter-spacing: 0.02em;
+}
+.tr-tile-sep { color: var(--text-faint); margin-inline: 2px; }
+.tr-tile-wide { grid-column: 1 / -1; }
+.tr-tile-reason { color: var(--text); font-size: 12.5px; }
+.tr-tile-conf { color: var(--text-dim); font-family: var(--mono); font-size: 12px; }
+
+/* hero symbol tile: accent rail + larger treatment */
+.tr-tile-symbol { grid-column: span 2; }
+.tr-tile-symbol .tr-tile-v { font-size: 22px; letter-spacing: 0.02em; }
+.tr-tile-symbol::before {
+  content: ""; position: absolute; inset-inline-start: 0; inset-block: 12px;
+  width: 3px; border-radius: 3px;
+  background: linear-gradient(180deg, var(--accent), var(--violet));
+  box-shadow: var(--glow-blue);
+}
+.tr-tile-bidask { grid-column: span 1; }
+
+/* scaled meters: width is the ONLY derived thing; raw value is printed beside */
+.tr-tile-meter {
+  position: relative; display: block; height: 5px; margin-top: 5px;
+  border-radius: 3px; background: var(--bg-inset);
+  border: 1px solid var(--border); overflow: hidden;
+}
+.tr-tile-meter i {
+  display: block; height: 100%; border-radius: 3px;
+  background: linear-gradient(90deg, rgba(65, 166, 242, 0.55), var(--accent));
+  transition: width 0.5s ease;
+}
+
+/* tone words: restate backend words only (STALE / FRESH) */
+.tr-tone { font-family: var(--mono); font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em; }
+.tr-tone-good { color: var(--green); text-shadow: var(--glow-green); }
+.tr-tone-warn { color: var(--amber); text-shadow: var(--glow-amber); animation: tr-blink 1.6s ease-in-out infinite; }
+@keyframes tr-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+/* --------------------------- pending orders table -------------------------- */
+.tr-orders-scroll {
+  overflow-x: auto; overflow-y: auto;
+  max-height: min(58vh, 460px);
+  scrollbar-width: thin;
+}
+.tr-orders-table {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  font-size: 12px; font-family: var(--mono);
+}
+.tr-orders-table th {
+  position: sticky; top: 0; z-index: 1;
+  text-align: start; padding: 9px 14px;
+  font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--text-faint);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-panel) 96%, transparent), var(--bg-panel));
+  border-bottom: 1px solid var(--border-strong);
+}
+.tr-orders-table td {
+  padding: var(--row-pad) 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+}
+.tr-orders-table tbody tr { transition: background 0.1s ease, transform 0.1s ease; }
+.tr-orders-table tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.018); }
+.tr-orders-table tbody tr:hover td {
+  background: linear-gradient(90deg, rgba(65, 166, 242, 0.08), rgba(65, 166, 242, 0.02));
+}
+.tr-orders-table td.num, .tr-orders-table th.num { text-align: right; }
+.tr-c-ticket { color: var(--accent-strong); }
+.tr-c-setup { color: var(--text-dim); }
+
+.tr-side {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px; letter-spacing: 0.06em;
+  border: 1px solid var(--border-strong); color: var(--text-dim);
+  background: var(--bg-panel-2);
+}
+.tr-side-buy { color: var(--green); border-color: rgba(62, 207, 142, 0.4); background: var(--green-dim); }
+.tr-side-sell { color: #ff8f89; border-color: rgba(242, 86, 77, 0.45); background: var(--red-dim); }
+
+.tr-tone-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px; letter-spacing: 0.08em;
+  border: 1px solid transparent;
+}
+.tr-tone-badge-good { color: var(--green); background: var(--green-dim); border-color: rgba(62, 207, 142, 0.4); }
+.tr-tone-badge-warn { color: var(--amber); background: var(--amber-dim); border-color: rgba(235, 161, 63, 0.4); }
+.tr-tone-badge-neutral { color: var(--text-dim); background: var(--bg-panel-2); border-color: var(--border-strong); }
+
+.tr-orders-loading { padding: 16px 14px; }
+
+/* ----------------------------- SMC / ICT block ----------------------------- */
+.tr-readout-smc {
+  display: grid;
+  grid-template-columns: minmax(190px, 280px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+/* price ladder: vertical, high at top (block-start), low at bottom */
+.tr-ladder { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tr-ladder-scale {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  font-family: var(--mono); font-size: 10.5px;
+}
+.tr-ladder-end { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.tr-ladder-end-cap { color: var(--text-faint); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; }
+.tr-ladder-track {
+  position: relative;
+  block-size: 240px;
+  border-radius: 10px;
+  background:
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 24px),
+    linear-gradient(180deg, rgba(65, 166, 242, 0.05), rgba(0, 0, 0, 0.18));
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.tr-ladder-zone {
+  position: absolute; inset-inline: 10px;
+  border-radius: 5px;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  transition: filter 0.12s ease;
+}
+.tr-ladder-zone:hover { filter: brightness(1.35); }
+.tr-ladder-zone-bull {
+  background: linear-gradient(90deg, rgba(62, 207, 142, 0.12), rgba(62, 207, 142, 0.32));
+  border: 1px solid rgba(62, 207, 142, 0.5);
+  box-shadow: inset 0 0 12px rgba(62, 207, 142, 0.14);
+}
+.tr-ladder-zone-bear {
+  background: linear-gradient(90deg, rgba(242, 86, 77, 0.12), rgba(242, 86, 77, 0.32));
+  border: 1px solid rgba(242, 86, 77, 0.5);
+  box-shadow: inset 0 0 12px rgba(242, 86, 77, 0.14);
+}
+.tr-ladder-zone-mid {
+  background: linear-gradient(90deg, rgba(65, 166, 242, 0.1), rgba(65, 166, 242, 0.26));
+  border: 1px solid rgba(65, 166, 242, 0.45);
+}
+.tr-ladder-zone-lab {
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em;
+  color: var(--text); white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  opacity: 0.92;
+}
+.tr-ladder-mid {
+  position: absolute; inset-inline: 4px; block-size: 2px;
+  background: linear-gradient(90deg, transparent, var(--violet), transparent);
+  box-shadow: 0 0 8px rgba(157, 123, 240, 0.6);
+  border-radius: 2px;
+}
+.tr-ladder-price {
+  position: absolute; inset-inline: 2px; block-size: 0;
+  border-block-start: 2px solid var(--amber);
+  box-shadow: 0 0 10px rgba(235, 161, 63, 0.65);
+}
+.tr-ladder-price-lab {
+  position: absolute; inset-block-end: 3px; inset-inline-end: 2px;
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.08em;
+  color: var(--amber); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+}
+.tr-ladder-empty {
+  display: flex; align-items: center; justify-content: center;
+  block-size: 240px; border: 1px dashed var(--border-strong); border-radius: 10px;
+  color: var(--text-faint); font-size: 11px; text-align: center; padding: 12px;
+}
+
+/* structure chip rows */
+.tr-struct { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.tr-struct-group { display: flex; flex-direction: column; gap: 7px; }
+.tr-struct-k {
+  font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint);
+}
+.tr-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.tr-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.03em;
+  padding: 3px 10px; border-radius: 7px;
+  border: 1px solid var(--border-strong); color: var(--text-dim);
+  background: var(--bg-panel-2);
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+.tr-chip:hover { transform: translateY(-1px); border-color: var(--accent); }
+.tr-chip-good { color: var(--green); border-color: rgba(62, 207, 142, 0.42); background: var(--green-dim); }
+.tr-chip-bad { color: #ff8f89; border-color: rgba(242, 86, 77, 0.45); background: var(--red-dim); }
+.tr-chip-warn { color: var(--amber); border-color: rgba(235, 161, 63, 0.42); background: var(--amber-dim); }
+.tr-chip-mid { color: var(--violet); border-color: rgba(157, 123, 240, 0.42); background: rgba(157, 123, 240, 0.12); }
+.tr-struct-none { color: var(--text-faint); font-family: var(--mono); font-size: 11px; }
+
+/* ------------------------------- responsive -------------------------------- */
+@media (max-width: 1100px) {
+  .tr-readout-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tr-tile-symbol { grid-column: span 2; }
+  .tr-readout-smc { grid-template-columns: minmax(0, 1fr); }
+  .tr-ladder-track, .tr-ladder-empty { block-size: 200px; }
+}
+@media (max-width: 900px) {
+  .tr-readout-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .tr-readout-tiles { grid-template-columns: minmax(0, 1fr); }
+  .tr-tile-symbol, .tr-tile-bidask, .tr-tile-wide { grid-column: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tr-readout .panel,
+  .tr-tile,
+  .tr-orders-table tbody tr,
+  .tr-chip,
+  .tr-ladder-zone,
+  .tr-tile-meter i { transition: none !important; }
+  .tr-tile:hover, .tr-chip:hover { transform: none !important; }
+  .tr-tone-warn { animation: none !important; }
+}
