@@ -172,6 +172,14 @@ class FakeAuditRepo:
         return backend
 
 
+class FakeAuditRepoWithUri(FakeAuditRepo):
+    """The post-PG-READ-PLANE-001 shape: ``_db_path`` holds the provider URI."""
+
+    def __init__(self, backend: Any, read_backend: Any = None) -> None:
+        super().__init__(backend, read_backend)
+        self._db_path = "postgresql://localhost:5432/nexusdb"
+
+
 class FakeAuditRepoNoResolver:
     """A non-SQLite repo exposing neither resolution seam.
 
@@ -629,6 +637,72 @@ def _default_audit_repo_is_sqlite() -> None:  # pragma: no cover - sanity guard
     repo = AuditRepository()
     assert repo._is_sqlite is True
     assert repo._db_path  # non-empty by default
+
+
+# ---------------------------------------------------------------------------
+# PG-DBPATH-BOOT-001: the provider URI must not become the store's sqlite path
+# ---------------------------------------------------------------------------
+
+
+def test_incident_store_ignores_the_provider_uri_as_db_path(tmp_path: Path) -> None:
+    """``AuditRepository._db_path`` is a URI under a non-SQLite provider.
+
+    The incidents API constructs ``IncidentStore(audit_repo=repo)`` with no
+    explicit path; adopting the URI routed the store down the SQLite branch
+    and ``ensure_schema`` died on ``sqlite3.connect``. The URI must be
+    rejected so the provider-aware resolution runs instead.
+    """
+    backend = FakePgBackend(str(tmp_path / "audit.db"))
+    repo = FakeAuditRepoWithUri(backend, FakeReadPlane(backend))
+
+    store = IncidentStore(audit_repo=repo)
+
+    assert store.db_path == ""
+    assert store._write_backend is backend
+    assert store._read_backend is not None
+
+
+def test_provider_uri_as_explicit_db_path_is_treated_as_absent(tmp_path: Path) -> None:
+    """Defense in depth: an explicit URI is not a filesystem location either."""
+    backend = FakePgBackend(str(tmp_path / "audit.db"))
+    repo = FakeAuditRepoWithUri(backend, FakeReadPlane(backend))
+
+    store = IncidentStore(db_path="postgresql://localhost:5432/nexusdb", audit_repo=repo)
+
+    assert store.db_path == ""
+    assert store._write_backend is backend
+
+
+def test_provider_uri_repo_without_backends_still_raises() -> None:
+    """The guard does not mask the hard requirement: no backend, no store."""
+    repo = FakeAuditRepoWithUri(backend=None)
+
+    with pytest.raises(ValueError, match="requires db_path or audit_repo"):
+        IncidentStore(audit_repo=repo)
+
+
+def test_sqlite_repo_db_path_still_wins_over_the_uri(tmp_path: Path) -> None:
+    """An explicit SQLite path is unchanged and beats the repo attribute."""
+    db = tmp_path / "incidents.db"
+    store = IncidentStore(db_path=str(db), audit_repo=FakeAuditRepoWithUri(None))
+    assert store.db_path == str(db)
+
+
+def test_is_usable_sqlite_path_classifies_paths_and_uris() -> None:
+    from nexus_scalp.incidents.store import _is_usable_sqlite_path
+
+    assert _is_usable_sqlite_path("postgresql://localhost:5432/nexusdb") is False
+    assert _is_usable_sqlite_path("postgresql://user:pass@host:5432/nexusdb") is False
+    assert _is_usable_sqlite_path("") is False
+    assert _is_usable_sqlite_path("  ") is False
+    assert _is_usable_sqlite_path(":memory:") is False
+    assert _is_usable_sqlite_path(None) is False
+    assert _is_usable_sqlite_path(7) is False
+
+    assert _is_usable_sqlite_path("/tmp/incidents.db") is True
+    assert _is_usable_sqlite_path("C:/Users/x/incidents.db") is True
+    assert _is_usable_sqlite_path(" incidents.db ") is True
+    assert _is_usable_sqlite_path(Path("incidents.db")) is True
 
 
 if __name__ == "__main__":  # pragma: no cover

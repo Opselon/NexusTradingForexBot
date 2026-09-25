@@ -347,6 +347,28 @@ _INCIDENT_COLUMN_ORDER: tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 
 
+def _is_usable_sqlite_path(raw: object) -> bool:
+    """True only for a value ``sqlite3.connect()`` can treat as a real path.
+
+    ``AuditRepository._db_path`` holds a provider URI
+    (``postgresql://host:port/db``) under a non-SQLite provider since
+    PG-READ-PLANE-001 — that is never a filesystem location, and adopting it
+    routes the store down the SQLite branch where ``ensure_schema`` fails on
+    connect (PG-DBPATH-BOOT-001). Windows drive paths and bare filenames carry
+    no URL scheme, so a scheme separator is the discriminator. ``:memory:`` is
+    excluded too: it is a valid SQLite path but never one to inherit from a
+    repo, because it would silently discard every incident.
+    """
+    if isinstance(raw, Path):
+        return bool(str(raw).strip())
+    if not isinstance(raw, str):
+        return False
+    text = raw.strip()
+    if not text or text.startswith(":memory:"):
+        return False
+    return "://" not in text
+
+
 def _audit_write_plane(audit_repo: Any) -> Any:
     """The audit repo's pooled WRITE plane for a non-SQLite provider.
 
@@ -416,10 +438,16 @@ class IncidentStore:
         db_path: str | Path | None = None,
         audit_repo: Any = None,
     ) -> None:
-        self.db_path = str(db_path) if db_path else ""
-        self.audit_repo = audit_repo
-        if not self.db_path and audit_repo is not None and getattr(audit_repo, "_db_path", None):
+        # ``AuditRepository._db_path`` is a provider URI
+        # (``postgresql://host:port/db``) under a non-SQLite provider since
+        # PG-READ-PLANE-001; adopting it would route the store down the SQLite
+        # branch and crash ``ensure_schema`` on connect. Only a real filesystem
+        # location is a usable SQLite path (PG-DBPATH-BOOT-001), otherwise
+        # ``db_path`` stays empty and the provider-aware resolution below runs.
+        self.db_path = str(db_path) if _is_usable_sqlite_path(db_path) else ""
+        if not self.db_path and _is_usable_sqlite_path(getattr(audit_repo, "_db_path", None)):
             self.db_path = str(audit_repo._db_path)
+        self.audit_repo = audit_repo
         # Provider-aware persistence (PG-READ-PLANE-001/D): under a non-SQLite
         # audit provider ``_db_path`` is the empty string and the SQLite
         # branches below are unreachable. Resolve the audit domain's pooled
