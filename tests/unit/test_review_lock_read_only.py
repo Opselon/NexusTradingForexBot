@@ -138,6 +138,7 @@ def test_review_mode_allows_idempotent_bootstrap(review_mode: str) -> None:
 
 
 def test_prod_mode_writes_pass_through(prod_mode: None, tmp_path: object) -> None:
+
     """Production path is untouched: the guard costs nothing when off."""
     conn = sqlite3.connect(str(tmp_path / "prod.db"))
     try:
