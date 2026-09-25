@@ -104,11 +104,29 @@ def _is_usable_sqlite_path(raw: object) -> bool:
 
 
 def _audit_repo_is_nonsqlite(audit_repo: Any) -> bool:
-    """True when the audit repo is bound to a non-SQLite provider."""
+    """True when the audit repo is bound to a non-SQLite provider.
+
+    ``_is_sqlite`` is authoritative when present (``AuditRepository`` computes
+    it in its constructor via ``_detect_sqlite``). Test doubles and provider
+    stubs that only name the URL would otherwise report the default ``True``
+    and silently fall back to ``:memory:`` — the exact RT-007 defect — so the
+    bound URL is consulted second, using the same scheme rule the constructor
+    uses (``sqlite://`` / ``file://`` / bare path = SQLite; any other scheme or
+    a libpq ``key=value`` DSN = another provider).
+    """
     try:
-        return not bool(getattr(audit_repo, "_is_sqlite", True))
+        is_sqlite = getattr(audit_repo, "_is_sqlite", None)
+        if is_sqlite is not None:
+            return not bool(is_sqlite)
+        db_url = getattr(audit_repo, "_db_url", None)
+        if isinstance(db_url, str) and db_url:
+            if "://" in db_url:
+                return db_url.split("://", 1)[0].lower() not in ("sqlite", "file")
+            # A libpq-style DSN names a driver keyword: SQLite has no such form.
+            return "=" in db_url
     except Exception:
-        return False
+        pass
+    return False
 
 
 def _cycle_store_workspace_path() -> str:
