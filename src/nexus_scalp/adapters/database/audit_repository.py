@@ -3304,7 +3304,9 @@ class AuditRepository:
                 of_err,
             )
 
-    def _drain_financial_overflow_due(self, conn: sqlite3.Connection) -> None:
+    def _drain_financial_overflow_due(
+        self, conn: sqlite3.Connection, now: float | None = None
+    ) -> None:
         """BUG-285: cadence-gated recovery of stranded overflow rows.
 
         The durable overflow file used to be terminal: every producer path
@@ -3332,7 +3334,7 @@ class AuditRepository:
             (durable, bounded retention) and renamed ``.rejected-<name>`` —
             never retried forever, never silently dropped.
         """
-        now = time.monotonic()
+        now = time.monotonic() if now is None else now
         if (
             self._last_overflow_drain is not None
             and now - self._last_overflow_drain < self.OVERFLOW_RECOVERY_INTERVAL_SEC
