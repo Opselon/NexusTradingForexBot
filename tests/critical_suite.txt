@@ -501,3 +501,4 @@ tests/unit/test_fabric_guards.py
 tests/unit/test_ai_provider_registry_driver_migration_chg0067.py
 tests/unit/test_ml_qa_013_overflow_drain_clock_determinism.py
 tests/unit/test_ml_qa_014_causal_conv_cpu_budget.py
+tests/unit/test_ml_qa_015_hygiene_cadence_clock_determinism.py

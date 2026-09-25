@@ -99,3 +99,4 @@ The following tasks are strictly frozen from implementation until the human oper
 5. **[ML-OBS-002](tasks/ML-OBS-002.md)**: Authorize activation of online fine-tuning on live broker demo/paper accounts under quarantined shadow buffers.
 
 - [ML-QA-014](tasks/ML-QA-014.md) — Push-Gate CPU-Time Determinism: Causal-TCN Latency Suite (roster candidate #4, `budget_cpu_ms` CPU-time budgets, unconditional ratio bound) `[P2 | DONE (PR pending) | AGENT-QA]`
+- [ML-QA-015](tasks/ML-QA-015.md) — Hygiene-Cadence Suite Wall-Clock Determinism (roster candidate #5, injected wall clock, both edges of the inclusive `>=` cadence boundary) `[P2 | DONE (PR pending) | AGENT-QA]`
