@@ -392,14 +392,19 @@ def decision_list(
 def _decision_store() -> Any:
     """Durable decision store, or ``None`` when persistence is off.
 
-    Isolated by ``NEXUS_DECISIONS_DB`` for tests, same convention as the
-    settings DB. Never raises: a bad path degrades to in-memory history.
+    Follows the ACTIVE database provider (SQLite beside the settings DB, or
+    PostgreSQL through the DB fabric when the box is switched). Isolated by
+    ``NEXUS_DECISIONS_DB`` for tests, same convention as the settings DB.
+    Never raises: a bad path degrades to in-memory history.
     """
     from nexus_scalp.ai_providers.store import ProviderDecisionStore
-    from nexus_scalp.settings.paths import decisions_db_path
+    from nexus_scalp.settings.paths import resolve_decision_store_target
 
     try:
-        return ProviderDecisionStore(db_path=decisions_db_path())
+        target = resolve_decision_store_target()
+        if isinstance(target, str):
+            return ProviderDecisionStore(dsn=target)
+        return ProviderDecisionStore(db_path=target)
     except Exception as exc:
         typer.echo(f"warning: decision store unavailable: {exc}", err=True)
         return None

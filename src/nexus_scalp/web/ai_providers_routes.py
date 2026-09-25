@@ -80,16 +80,19 @@ def get_ai_provider_orchestrator() -> ProviderOrchestrator:
 def _decision_store() -> Any:
     """The durable decision record (Sections 41, 63).
 
-    SQLite by default (a table next to the provider settings). When the box is
-    configured for PostgreSQL the same store routes through the DB fabric so
-    both providers keep the identical schema. Construction never raises: a
+    Follows the ACTIVE database provider: SQLite beside the settings DB by
+    default, PostgreSQL through the DB fabric when the box is switched
+    (resolve_decision_store_target). Construction never raises: a
     misconfigured box degrades to in-memory recording with a logged warning.
     """
     from nexus_scalp.ai_providers.store import ProviderDecisionStore
-    from nexus_scalp.settings.paths import decisions_db_path
+    from nexus_scalp.settings.paths import resolve_decision_store_target
 
     try:
-        return ProviderDecisionStore(db_path=decisions_db_path())
+        target = resolve_decision_store_target()
+        if isinstance(target, str):
+            return ProviderDecisionStore(dsn=target)
+        return ProviderDecisionStore(db_path=target)
     except Exception as exc:
         logger.warning("[AI-PROV] decision store unavailable: %s", exc)
         return None
