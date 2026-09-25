@@ -133,6 +133,41 @@ def _dashboard_url(bind_host: str | None = None, port: int | None = None) -> str
     return f"http://{_dashboard_host(bind_host)}:{int(port)}"
 
 
+def _boot_go_api_plane(bind_host: str, python_port: int) -> Any:
+    """GO-API-GATE: build + launch the Go API server as a supervised child.
+
+    The user starts the app and the Go plane is simply there — no manual
+    build, no separate command. Python stays the process the operator owns;
+    Go binds the API port and forwards here.
+
+    This call is failure-isolated by contract: any problem (no toolchain,
+    build failure, port taken, readiness timeout) logs a clear warning and
+    returns None, leaving the FastAPI app serving the full API on its own
+    port. The product boots either way.
+    """
+    try:
+        from nexus_scalp.web.go_api_bootstrap import boot_go_api
+
+        # Convention: the API plane sits one port above the Python web port,
+        # so the two never collide and the mapping is predictable in
+        # diagnostics. NSE_GO_ADDR overrides this entirely.
+        return boot_go_api(
+            python_host=bind_host,
+            python_port=python_port,
+            preferred_api_port=python_port + 1,
+        )
+    except Exception as go_err:  # noqa: BLE001 - never block a boot
+        console.print(
+            Panel(
+                "[yellow]Go API plane disabled[/yellow]"
+                f"\n[dim]{go_err}[/dim]\n"
+                "[dim]The Python API continues to serve the full surface.[/dim]",
+                border_style="yellow",
+            )
+        )
+        return None
+
+
 def _probe_dashboard(url: str, timeout: float = 2.0) -> dict[str, Any]:
     """Is the dashboard answering? Pure observation — never raises.
 
@@ -1180,6 +1215,11 @@ async def _open_control_center_when_ready(
 def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
     import asyncio
 
+    # GO-API-GATE: the supervised Go child (built + launched below). Stays
+    # None when the Go plane is unavailable; the finally clause below and the
+    # ShutdownSupervisor path both handle None.
+    go_api_supervisor: Any = None
+
     # BUG-147: friendly port-in-use failure. A bare bind error looked like a
     # crash ("Process completed with exit code 1"); now the operator gets the
     # actual cause + the exact remediation (busy PID or --port override).
@@ -1287,6 +1327,19 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
     # DOCKER-REPAIR (2026-08-20): container bind is driven by env
     # (NSE_WEB_HOST / NSE_WEB_PORT); bare `run` keeps localhost-only.
     bind_host = os.getenv("NSE_WEB_HOST", "127.0.0.1")
+
+    # GO-API-GATE: the Go API server is the product's API entrypoint — every
+    # request reaches Go, which proxies this Python process for facts it does
+    # not own. Build and launch it now, before uvicorn binds, so the Go plane
+    # is answering by the time the dashboard opens. The user does nothing;
+    # `nexus start` does the build itself (see web/go_api_bootstrap.py).
+    #
+    # Failure-isolated by contract: if the Go toolchain is missing or the
+    # build/launch fails, this returns None and the FastAPI app keeps serving
+    # the full API on its own port. Go is an acceleration plane, never a
+    # dependency the product cannot boot without.
+    go_api_supervisor = _boot_go_api_plane(bind_host, port)
+
     uvicorn_config = uvicorn.Config(
         app=app_obj,
         host=bind_host,
@@ -1376,6 +1429,12 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
         )
         raise typer.Exit(xc.EXIT_RUNTIME) from None
     finally:
+        # GO-API-GATE: the Go child is a supervised subprocess of THIS
+        # process. If it is still alive it must be torn down here — a leaked
+        # nexus-api.exe would hold the API port after the engine exits and
+        # the next boot would bind the wrong one.
+        if go_api_supervisor is not None:
+            go_api_supervisor.stop()
         _print_shutdown_summary(supervisor)
 
 
