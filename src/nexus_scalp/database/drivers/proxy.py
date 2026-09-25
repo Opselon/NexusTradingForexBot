@@ -108,6 +108,7 @@ class PortableConnection:
     # -- sqlite3 surface -------------------------------------------------
 
     def execute(self, sql: str, args: Sequence[Any] | None = None) -> Any:
+        _review_read_only_guard(sql)
         if self._pg is None:
             return self._conn.execute(sql, tuple(args) if args is not None else ())
         psql = _translate_placeholders(sql)
@@ -127,6 +128,7 @@ class PortableConnection:
         return PortableCursor(cur)
 
     def executemany(self, sql: str, seq: Iterable[Sequence[Any]]) -> None:
+        _review_read_only_guard(sql)
         if self._pg is None:
             self._conn.executemany(sql, seq)
             return
@@ -201,3 +203,52 @@ class SqliteLikeProxy:
 def connect_proxy(driver: DatabaseDriver) -> PortableConnection:
     """Shortcut used by stores: portable connection for the active driver."""
     return PortableConnection(driver)
+
+
+# ---------------------------------------------------------------------------
+# REVIEW LOCK (agents/REVIEW_LOCK.md, L3)
+# ---------------------------------------------------------------------------
+# When NSE_REVIEW_MODE is set, the review console refuses to run any
+# data-modifying SQL. This is the ONLY enforcement layer that still holds if
+# an agent ignores the docs and the locks file: it lives inside the write
+# path itself, so every store in the product funnels through it.
+#
+# SELECTs are allowed (the console must be able to *show* state); INSERT /
+# UPDATE / DELETE / CREATE / ALTER / DROP / PRAGMA-write are refused.
+#
+# The guard is OFF by default and costs one env lookup + a regex-free prefix
+# scan when off. It can never affect a production run.
+
+_WRITE_PREFIXES = (
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "CREATE",
+    "ALTER",
+    "DROP",
+    "REPLACE",
+    "VACUUM",
+    "ANALYZE",
+)
+
+
+class ReviewWriteBlockedError(RuntimeError):
+    """A write was attempted while NSE_REVIEW_MODE was active."""
+
+    def __init__(self, sql: str) -> None:
+        super().__init__(
+            "REVIEW LOCK: this is the read-only review console "
+            "(NSE_REVIEW_MODE=1, agents/REVIEW_LOCK.md L3). "
+            f"Write refused: {sql.strip()[:80]!r}"
+        )
+
+
+def _review_read_only_guard(sql: str) -> None:
+    """Refuse data-modifying SQL when the review console is running."""
+    import os as _os
+
+    if not _os.environ.get("NSE_REVIEW_MODE"):
+        return
+    head = sql.lstrip()[:16].upper()
+    if any(head.startswith(p) for p in _WRITE_PREFIXES):
+        raise ReviewWriteBlockedError(sql)
