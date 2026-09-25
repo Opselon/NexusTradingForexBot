@@ -27,6 +27,27 @@ from nexus_scalp.experience.models import (
     FeatureSnapshot,
     StrategyContext,
 )
+from tests.e2e.chain_clock import budget_cpu_ms
+
+# ML-QA-012: ONE module-level frozen instant for every timestamp this module
+# stamps. Previously three independent ``datetime.now(UTC)`` calls supplied the
+# decision timestamp (``_record``) and two outcome timestamps. The wall clock
+# contributed nothing to any assert here — no value is compared to ``now()`` —
+# but independent reads made the test's own causality window depend on the OS
+# scheduler: the outcome read could legitimately precede the decision read
+# whenever the two calls straddled a clock tick, and a date-boundary flake
+# could stamp the outcome in a different day from the decision. A single frozen
+# instant makes the three stamps provably consistent (the causality guard in
+# ledger._merge_row / record_terminal_outcome /
+# ExperienceIntelligenceEngine.record_trade_outcome is ``outcome < decision``
+# -> an EQUAL pair is accepted on the write path and merged on the read path;
+# under independent reads that equality was a coin flip across a tick).
+_FIXED_NOW = datetime(2026, 9, 25, 12, 0, 0, tzinfo=UTC)
+
+
+def _now() -> datetime:
+    """The single timestamp supplier for this module (deterministic)."""
+    return _FIXED_NOW
 
 
 @pytest.fixture
@@ -42,7 +63,7 @@ def repo(tmp_path):
 def _record(request_id: str) -> object:
     from nexus_scalp.experience.models import ExperienceRecord
 
-    ts = datetime.now(UTC)
+    ts = _now()
     return ExperienceRecord(
         experience_id=f"exp_row_{request_id}",
         request_id=request_id,
@@ -84,12 +105,24 @@ class TestOutcomeFlushRace:
         # through a SEPARATE WAL connection; poll briefly for the reader to
         # observe the committed tx (CI run #985: single-shot read raced the
         # WAL visibility window on a fresh db file).
-        deadline = time.monotonic() + 5.0
-        row = ledger.get_experience_by_key("exp_req_flush_a")
-        while row is None and time.monotonic() < deadline:
-            time.sleep(0.05)
+        # ML-QA-012: the poll is bounded on CPU time, never the wall clock.
+        # The removed shape (``deadline = time.monotonic() + 5.0`` polled in a
+        # ``time.sleep(0.05)`` loop) measured how long the OS gave this test,
+        # not the code: under xdist saturation on a 2-core runner a scheduler
+        # stall inflates the wait with zero change in the code under test.
+        # ``time.process_time()`` (the CPU clock ``budget_cpu_ms`` wraps, the
+        # helper ML-QA-004/007/008/009/010/011 standardised on) is insensitive
+        # to co-tenant load, and the row lands in a few ms of CPU either way.
+        # The inner CPU bound is also the FAIL-FAST path: it exits the poll so
+        # ``row is not None`` reports the real regression instead of hanging
+        # until the CI-level test timeout.
+        with budget_cpu_ms(5000.0) as sw:
+            cpu_deadline = time.process_time() + 3.0
             row = ledger.get_experience_by_key("exp_req_flush_a")
+            while row is None and time.process_time() < cpu_deadline:
+                row = ledger.get_experience_by_key("exp_req_flush_a")
         assert row is not None
+        assert sw.consumed_ms < 5000.0, "read-after-flush poll must be CPU-bounded"
 
     def test_outcome_immediately_after_pretrade_write_succeeds(self, repo):
         """The exact E2E failure: outcome arrives before any queue.join()."""
@@ -105,7 +138,7 @@ class TestOutcomeFlushRace:
         ok = engine.record_trade_outcome(
             request_id="req_flush_b",
             execution_id="99999999",
-            outcome_timestamp=datetime.now(UTC),
+            outcome_timestamp=_now(),
             is_executed=True,
             is_closed=True,
             exit_reason="TAKE_PROFIT_HIT",
@@ -129,7 +162,7 @@ class TestOutcomeFlushRace:
             ExperienceOutcome(
                 idempotency_key="exp_req_flush_c",
                 execution_id="88888888",
-                outcome_timestamp=datetime.now(UTC),
+                outcome_timestamp=_now(),
                 is_executed=False,
                 is_closed=True,
                 exit_reason="CANCELED_UNFILLED",
@@ -211,13 +244,26 @@ class TestOutcomeFlushRace:
         # the poisoned item within milliseconds (that is what windows-latest
         # did at run 34925973236). Fixed contract: the item stays
         # unconsumed — the worker is bound to the ORIGINAL queue.
-        deadline = time.monotonic() + 1.0
-        while stalled_queue.unfinished_tasks > 0 and time.monotonic() < deadline:
-            time.sleep(0.02)
+        # ML-QA-012: the poll is bounded on CPU time, never the wall clock.
+        # The removed shape (``deadline = time.monotonic() + 1.0`` slept in a
+        # ``time.sleep(0.02)`` loop) measured how long the OS gave this test,
+        # not the contract: under xdist saturation on a 2-core runner a
+        # scheduler stall can stretch any 1 s window with zero change in the
+        # code under test. The invariant under test is
+        # ``unfinished_tasks == 1`` (the item is NEVER consumed); the poll
+        # exists only to give a misbehaving worker a window to reveal itself.
+        # The inner CPU bound is also the FAIL-FAST path: it exits the poll so
+        # the ``== 1`` assert reports the real regression instead of hanging
+        # until the CI-level test timeout.
+        with budget_cpu_ms(2000.0) as sw:
+            cpu_deadline = time.process_time() + 1.0
+            while stalled_queue.unfinished_tasks > 0 and time.process_time() < cpu_deadline:
+                pass
         assert stalled_queue.unfinished_tasks == 1, (
             "BUG-288 adoption window is open again: the writer bound itself "
             "to a queue rebound after construction and consumed its items"
         )
+        assert sw.consumed_ms < 2000.0, "misbehavior poll must be CPU-bounded"
         r._queue = queue.Queue(maxsize=10000)  # restore for teardown/close()
         with contextlib.suppress(Exception):
             r.close()
