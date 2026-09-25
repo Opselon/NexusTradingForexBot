@@ -23,6 +23,7 @@ Champion bundle.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,14 @@ from nexus_scalp.governance.models import (
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.governance.load_gate")
+
+# A scheme-bearing URI (``postgresql://host/db``) is never a filesystem path.
+# ``pathlib`` rewrites the separator when one is wrapped in ``Path``:
+# "postgresql://host" collapses to "postgresql:/host" on POSIX and to
+# "postgresql:\host" on Windows, so the match must accept all three forms.
+# Two leading scheme characters are required so a Windows drive path
+# ("C:\nexus\db") is NOT mistaken for a scheme.
+_SCHEME_URI_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]+:(//|\\|/)")
 
 
 def _registered_schema_ids() -> tuple[str, ...]:
@@ -108,7 +117,18 @@ class ModelLoadGate:
     """Runs the ten gates against a model artifact + manifest + lifecycle."""
 
     def __init__(self, db_path: Path | str | None = None) -> None:
-        self.db_path = Path(db_path) if db_path else None
+        # ``AuditRepository._db_path`` is a provider URI (postgresql://...) under
+        # a non-SQLite provider (PG-READ-PLANE-001); it is never a filesystem
+        # path, so keep the gate inert instead of storing a junk ``Path`` that
+        # would poison any later sqlite use (PG-DBPATH-BOOT-001). The check runs
+        # on the raw string: ``Path`` already normalized the URI by the time it
+        # is stored (``postgresql://host`` -> ``postgresql:/host`` on POSIX,
+        # ``postgresql:\host`` on Windows), so a post-conversion check would
+        # miss it entirely.
+        if db_path and _SCHEME_URI_RE.match(str(db_path)):
+            self.db_path = None
+        else:
+            self.db_path = Path(db_path) if db_path else None
 
     # ------------------------------------------------------------------
 

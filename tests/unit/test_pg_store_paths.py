@@ -41,6 +41,7 @@ from nexus_scalp.incidents.store import (
 from nexus_scalp.model_lifecycle.learning_loop import (
     _audit_repo_is_nonsqlite,
     _cycle_store_workspace_path,
+    _is_usable_sqlite_path,
     _resolve_cycle_store_db_path,
 )
 
@@ -170,6 +171,14 @@ class FakeAuditRepo:
         if backend is None or hasattr(backend, "execute") or not hasattr(backend, "query"):
             return None
         return backend
+
+
+class FakeAuditRepoWithUri(FakeAuditRepo):
+    """The post-PG-READ-PLANE-001 shape: ``_db_path`` holds the provider URI."""
+
+    def __init__(self, backend: Any, read_backend: Any = None) -> None:
+        super().__init__(backend, read_backend)
+        self._db_path = "postgresql://localhost:5432/nexusdb"
 
 
 class FakeAuditRepoNoResolver:
@@ -552,6 +561,68 @@ def test_audit_repo_is_nonsqlite_classification() -> None:
     assert _audit_repo_is_nonsqlite(None) is False
 
 
+def test_is_usable_sqlite_path_rejects_uris_and_non_paths() -> None:
+    """A scheme-bearing URI is never openable by ``sqlite3.connect``."""
+    assert _is_usable_sqlite_path("postgresql://localhost:5432/nexusdb") is False
+    assert _is_usable_sqlite_path("sqlite:///x.db") is False
+    assert _is_usable_sqlite_path("http://x/db") is False
+    assert _is_usable_sqlite_path("") is False
+    assert _is_usable_sqlite_path(None) is False
+    from unittest.mock import MagicMock
+
+    assert _is_usable_sqlite_path(MagicMock()) is False
+
+
+def test_is_usable_sqlite_path_accepts_real_locations() -> None:
+    assert _is_usable_sqlite_path(r"C:\data\audit.db") is True
+    assert _is_usable_sqlite_path("C:/data/audit.db") is True
+    assert _is_usable_sqlite_path("/tmp/x.db") is True
+    assert _is_usable_sqlite_path("learning_cycles.db") is True
+    assert _is_usable_sqlite_path("  /tmp/x.db  ") is True
+
+
+def test_is_usable_sqlite_path_rejects_memory_uri() -> None:
+    assert _is_usable_sqlite_path(":memory:") is False
+
+
+def test_resolve_cycle_store_db_path_rejects_provider_uri_and_falls_back_to_workspace() -> None:
+    """PG-DBPATH-BOOT-001: the provider URI must never reach sqlite3.connect."""
+    repo = FakeAuditRepo.__new__(FakeAuditRepo)
+    repo._is_sqlite = False
+    repo._db_path = "postgresql://localhost:5432/nexusdb"
+
+    path = _resolve_cycle_store_db_path(repo)
+
+    assert path != "postgresql://localhost:5432/nexusdb"
+    assert path != ":memory:"
+    assert path.endswith("learning_cycles.db")
+    assert Path(path).parent.exists()
+
+
+def test_learning_cycle_store_boots_with_provider_uri_db_path(tmp_path: Path) -> None:
+    """The FATAL reproduction: store construction on a PG provider must not raise."""
+    from nexus_scalp.model_lifecycle.learning_cycle import LearningCycleStore
+
+    cwd = Path.cwd()
+    try:
+        import os
+
+        os.chdir(tmp_path)
+        repo = FakeAuditRepo.__new__(FakeAuditRepo)
+        repo._is_sqlite = False
+        repo._db_url = "postgresql://localhost:5432/nexusdb"
+        repo._db_path = "postgresql://localhost:5432/nexusdb"
+
+        store = LearningCycleStore(_resolve_cycle_store_db_path(repo))
+    finally:
+        import os
+
+        os.chdir(cwd)
+
+    assert Path(store.db_path).suffix == ".db"
+    assert "://" not in store.db_path
+
+
 # ---------------------------------------------------------------------------
 # Lane D seams: resolution helpers
 # ---------------------------------------------------------------------------
@@ -629,6 +700,72 @@ def _default_audit_repo_is_sqlite() -> None:  # pragma: no cover - sanity guard
     repo = AuditRepository()
     assert repo._is_sqlite is True
     assert repo._db_path  # non-empty by default
+
+
+# ---------------------------------------------------------------------------
+# PG-DBPATH-BOOT-001: the provider URI must not become the store's sqlite path
+# ---------------------------------------------------------------------------
+
+
+def test_incident_store_ignores_the_provider_uri_as_db_path(tmp_path: Path) -> None:
+    """``AuditRepository._db_path`` is a URI under a non-SQLite provider.
+
+    The incidents API constructs ``IncidentStore(audit_repo=repo)`` with no
+    explicit path; adopting the URI routed the store down the SQLite branch
+    and ``ensure_schema`` died on ``sqlite3.connect``. The URI must be
+    rejected so the provider-aware resolution runs instead.
+    """
+    backend = FakePgBackend(str(tmp_path / "audit.db"))
+    repo = FakeAuditRepoWithUri(backend, FakeReadPlane(backend))
+
+    store = IncidentStore(audit_repo=repo)
+
+    assert store.db_path == ""
+    assert store._write_backend is backend
+    assert store._read_backend is not None
+
+
+def test_provider_uri_as_explicit_db_path_is_treated_as_absent(tmp_path: Path) -> None:
+    """Defense in depth: an explicit URI is not a filesystem location either."""
+    backend = FakePgBackend(str(tmp_path / "audit.db"))
+    repo = FakeAuditRepoWithUri(backend, FakeReadPlane(backend))
+
+    store = IncidentStore(db_path="postgresql://localhost:5432/nexusdb", audit_repo=repo)
+
+    assert store.db_path == ""
+    assert store._write_backend is backend
+
+
+def test_provider_uri_repo_without_backends_still_raises() -> None:
+    """The guard does not mask the hard requirement: no backend, no store."""
+    repo = FakeAuditRepoWithUri(backend=None)
+
+    with pytest.raises(ValueError, match="requires db_path or audit_repo"):
+        IncidentStore(audit_repo=repo)
+
+
+def test_sqlite_repo_db_path_still_wins_over_the_uri(tmp_path: Path) -> None:
+    """An explicit SQLite path is unchanged and beats the repo attribute."""
+    db = tmp_path / "incidents.db"
+    store = IncidentStore(db_path=str(db), audit_repo=FakeAuditRepoWithUri(None))
+    assert store.db_path == str(db)
+
+
+def test_is_usable_sqlite_path_classifies_paths_and_uris() -> None:
+    from nexus_scalp.incidents.store import _is_usable_sqlite_path
+
+    assert _is_usable_sqlite_path("postgresql://localhost:5432/nexusdb") is False
+    assert _is_usable_sqlite_path("postgresql://user:pass@host:5432/nexusdb") is False
+    assert _is_usable_sqlite_path("") is False
+    assert _is_usable_sqlite_path("  ") is False
+    assert _is_usable_sqlite_path(":memory:") is False
+    assert _is_usable_sqlite_path(None) is False
+    assert _is_usable_sqlite_path(7) is False
+
+    assert _is_usable_sqlite_path("/tmp/incidents.db") is True
+    assert _is_usable_sqlite_path("C:/Users/x/incidents.db") is True
+    assert _is_usable_sqlite_path(" incidents.db ") is True
+    assert _is_usable_sqlite_path(Path("incidents.db")) is True
 
 
 if __name__ == "__main__":  # pragma: no cover
