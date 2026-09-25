@@ -227,9 +227,14 @@ class PaperDataConfig(BaseModel):
     #: Preferred REPLAY source: an ``MT5TickDataset`` cache id
     #: (fingerprint-verified ticks/bars with full provenance).
     dataset_id: str = ""
-    #: Allow the committed real M1 bar CSV when no dataset_id is supplied.
+    #: Allow the committed real M1 bar export when no dataset_id is supplied.
     allow_raw_fallback: bool = True
-    raw_bars_path: str = "data/raw/XAUUSD_M1.csv"
+    #: Raw-bars fallback path (parquet preferred, legacy CSV honored). This is
+    #: the file ``nexus data-fetch`` writes, so it is the canonical default:
+    #: ``data/raw/XAUUSD_M1.parquet``. A relative path that is not found
+    #: relative to CWD is retried relative to the repo root; an absolute path
+    #: is always used as given.
+    raw_bars_path: str = "data/raw/XAUUSD_M1.parquet"
 
 
 class AppConfig(BaseSettings):
