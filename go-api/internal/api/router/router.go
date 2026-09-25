@@ -23,7 +23,8 @@ import (
 
 // Mux is a declaration-ordered regex router.
 type Mux struct {
-	entries []entry
+	entries  []entry
+	notFound http.Handler
 }
 
 type entry struct {
@@ -73,6 +74,12 @@ func compile(path string) *regexp.Regexp {
 	return regexp.MustCompile(b.String())
 }
 
+// SetNotFound installs the handler used when no registered pattern matches.
+// routes.Build installs the SPA static layer here so a NON-v1 unmatched path
+// is delegated to it (the root SPA fallback mount's role in server.py). A nil
+// handler restores the canonical 404-only behavior.
+func (m *Mux) SetNotFound(h http.Handler) { m.notFound = h }
+
 // Handle registers a method+path pattern. Registration order is authoritative
 // for matching priority, mirroring Starlette.
 func (m *Mux) Handle(method, path string, h http.Handler) {
@@ -93,7 +100,19 @@ func (m *Mux) HandleFunc(method, path string, f http.HandlerFunc) {
 type fallbacks struct{}
 
 // NotFound emits the canonical v1 404 envelope.
-func NotFound(w http.ResponseWriter, r *http.Request) {
+//
+// next is the next handler in the chain — the SPA static layer, registered
+// AFTER the router (routes.Build). It is optional: pass nil for the legacy
+// 404-only behavior. When provided, a NON-v1 unmatched path is delegated to
+// it so the React shell can answer a client-side route, exactly as the root
+// SPA fallback mount does in server.py (registered LAST, Starlette
+// first-match). A nil next, or a v1 unmatched path, keeps the honest
+// canonical 404 envelope.
+func NotFound(w http.ResponseWriter, r *http.Request, next ...http.Handler) {
+	if len(next) > 0 && next[0] != nil && !respond.IsV1Path(r.URL.Path) {
+		next[0].ServeHTTP(w, r)
+		return
+	}
 	respond.NotFound(w, r)
 }
 
@@ -122,6 +141,12 @@ func (m *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if pathMatches {
 		MethodNotAllowed(w, r)
+		return
+	}
+	if m.notFound != nil {
+		// routes.Build installs the SPA static layer: a non-v1 unmatched
+		// path is delegated to it (the root SPA fallback mount's role).
+		m.notFound.ServeHTTP(w, r)
 		return
 	}
 	NotFound(w, r)

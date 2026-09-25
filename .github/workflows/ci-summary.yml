@@ -30,6 +30,7 @@ on:
       - "Lockfile Diff"
       - "OSV Dependency Scan"
       - "Docker Build & Publish"
+      - "Go API"
       - "Nightly Deep QA"
       - "Nightly Client E2E (Docker)"
       - "Official model publication"

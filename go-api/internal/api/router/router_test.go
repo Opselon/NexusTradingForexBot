@@ -168,3 +168,46 @@ func TestRegexEscaping(t *testing.T) {
 		t.Fatalf("literal-with-metachars: status = %d, want 200", rec.Code)
 	}
 }
+
+// TestSetNotFoundDelegates: the not-found handler receives unmatched paths,
+// which is how routes.Build installs the SPA static layer (the root SPA
+// fallback mount's role in server.py).
+func TestSetNotFoundDelegates(t *testing.T) {
+	m := New()
+	m.HandleFunc("GET", "/api/v1/system/health", recordingHandler("health"))
+	m.SetNotFound(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("spa-fallback"))
+	}))
+
+	// Registered path still wins (the API is never shadowed).
+	rec := httptest.NewRecorder()
+	m.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/system/health", nil))
+	if got := rec.Body.String(); got != "health" {
+		t.Errorf("registered path: winner = %q, want health", got)
+	}
+
+	// Unmatched NON-API path -> the installed handler (SPA fallback).
+	rec = httptest.NewRecorder()
+	m.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/trading", nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != "spa-fallback" {
+		t.Errorf("/trading: status = %d body = %q, want the not-found handler",
+			rec.Code, rec.Body.String())
+	}
+}
+
+// TestSetNotFoundNilIsCanonical404: without an installed handler the router
+// keeps its honest canonical 404 for every unmatched path.
+func TestSetNotFoundNilIsCanonical404(t *testing.T) {
+	m := New()
+	m.HandleFunc("GET", "/api/v1/system/health", recordingHandler("health"))
+
+	for _, path := range []string{"/trading", "/api/v1/system/nope"} {
+		rec := httptest.NewRecorder()
+		m.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("path %q with no not-found handler: status = %d, want 404",
+				path, rec.Code)
+		}
+	}
+}

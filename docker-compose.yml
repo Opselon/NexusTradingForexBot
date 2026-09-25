@@ -24,6 +24,16 @@ services:
   # ------------------------------------------------------------
   # core — the engine + Web UI + REST API (single container)
   # ------------------------------------------------------------
+  # Two API planes run in the same container, one port each:
+  #   8087  the Go control plane — the PUBLISHED API entrypoint. Every
+  #         HTTP request reaches Go, which proxies /api to Python on
+  #         127.0.0.1:9090 for the facts it does not own.
+  #   9090  the Python FastAPI origin — the engine + Web UI. Also the
+  #         container healthcheck target.
+  # The Go plane is FAILURE-ISOLATED: if the binary cannot start, Python
+  # keeps serving the complete API surface on 9090 and the container is
+  # still healthy. NSE_GO_API_DISABLE=1 opts out of the Go plane entirely.
+  # ------------------------------------------------------------
   core:
     build:
       context: .
@@ -48,12 +58,28 @@ services:
       # AUDIT-B1: the control-plane web server requires a bearer token.
       # Operator MUST set NSE_WEB_AUTH_TOKEN in .env (fail-closed: without
       # it the server 500s every protected route instead of running open).
-      # UI/API clients send: Authorization: Bearer <token> (or X-NSE-Token).
+      # UI/API clients send: Authorization: Bearer *** (or X-NSE-Token).
+      # The SAME token gates the Go plane (it shares the auth contract;
+      # a request reaching Go on 8087 is authenticated there, not relayed
+      # unauthenticated to Python).
       NSE_WEB_AUTH_TOKEN: ${NSE_WEB_AUTH_TOKEN:?set NSE_WEB_AUTH_TOKEN in .env}
+      # GO-API-GATE: the Go API server is the published API entrypoint.
+      # It binds 8087 in the container and proxies every /api route to the
+      # Python FastAPI origin on loopback. Both planes run in the SAME
+      # container (one process tree, one volume set, one healthcheck).
+      # NSE_GO_API_DISABLE=1 falls back to Python-only serving on 9090.
+      NSE_GO_ADDR: 0.0.0.0:8087
+      NSE_PYTHON_ORIGIN: http://127.0.0.1:9090
+      NSE_GO_API_PORT: "8087"
+      NSE_GO_API_DISABLE: ${NSE_GO_API_DISABLE:-0}
     volumes:
       - nexus-artifacts:/app/artifacts
       - nexus-data:/app/data
     ports:
+      # 8087 = the Go API control plane (published API entrypoint).
+      # 9090 = the Python engine + Web UI origin (kept published for
+      # diagnostics/`docker exec`; the healthcheck probes it in-container).
+      - "${NSE_GO_API_PORT:-8087}:8087"
       - "${NSE_WEB_PORT:-9090}:9090"
     healthcheck:
       test: ["CMD", "/app/docker/healthcheck.sh"]

@@ -3,6 +3,12 @@
 ###############################################################################
 * text=auto
 
+# Go sources: gofmt requires LF (the Go spec), and a Windows checkout
+# under `* text=auto` emits CRLF, which makes `gofmt -l` flag every file
+# on windows-latest CI even when the committed blobs are LF-clean. Pin LF
+# the same way the bash manifests below are pinned.
+*.go text eol=lf
+
 # Path-list manifests are consumed by readarray/`cat | tr` word-splitting:
 # CRLF conversion embeds \r into every path and breaks collection on Windows
 # working trees. Pin LF so every checkout (CI incl.) is LF.

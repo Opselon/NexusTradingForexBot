@@ -21,6 +21,7 @@ import (
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/infrastructure/python"
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/observability"
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/security/auth"
+	"github.com/Opselon/NexusTradingForexBot/go-api/internal/web"
 )
 
 // Build assembles the full middleware chain + route table and returns the
@@ -96,7 +97,31 @@ func Build(py *python.Client) http.Handler {
 	// ---- fallback: unknown /api/v1 path -> canonical v1 404 envelope ----
 	r.HandleFunc("GET", "/api/v1/", v1Fallback)
 
-	return chain(r)
+	// ---- STATIC FRONTEND (END-USER-RUNTIME-UI-INTEGRATION, frozen #4/#6):
+	// the built React Control Center bundle, served from THIS origin so Go is
+	// the single origin for BOTH the API and the UI in production.
+	//
+	// TWO hooks compose into the Starlette first-match contract:
+	//
+	//  1. The SPA layer wraps the router (web.ServeSPA) as the LAST-resort
+	//     layer: a request the whole API surface rejected reaches it.
+	//  2. r.SetNotFound(spa) teaches the router itself to defer a NON-v1
+	//     unmatched path to the SPA layer — the equivalent of mounting
+	//     app.mount("/", root_spa) as the VERY LAST route in server.py's
+	//     create_app. Without this hook the router's own catch-all 404 would
+	//     fire first and swallow every deep link; with it, /api/v1/* unmatched
+	//     paths still get the canonical v1 404 envelope (never the shell).
+	//
+	// The SPA layer's deny list (web.denyPrefixes/denyPaths, mirroring
+	// ROOT_SPA_DENY_PREFIXES + the Python public-path set) passes /api, /ws,
+	// /web, /health, /healthz, /app.js and /api_client.js through untouched,
+	// so an unmatched API child is an honest 404 — never the index document
+	// (§60: a typo'd API call must never receive HTML the client parses as
+	// data). With no resolvable dist the layer is a no-op and unknown paths
+	// keep the pre-wave honest-404 behavior (contract #4, zero regression). ----
+	spa := web.NewSPAStaticFiles(web.ResolveFrontendDist())
+	r.SetNotFound(spa.Middleware(nil))
+	return chain(web.ServeSPA(r))
 }
 
 // v1Fallback distinguishes "path unknown" (404) from "method wrong" (405)
