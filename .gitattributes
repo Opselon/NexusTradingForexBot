@@ -21,6 +21,12 @@ tests/critical_suite.txt text eol=lf
 # are already LF, so this only affects future checkouts.
 scripts/linux/*.sh text eol=lf
 
+# Container entrypoints and helpers run under /bin/sh (dash) in the image:
+# a Windows working-tree copy checked out as CRLF would bake a trailing
+# carriage return into the shebang line and the script would not execute
+# at all. Same hazard, same pin. The committed blobs are already LF.
+docker/*.sh text eol=lf
+
 ###############################################################################
 # Set default behavior for command prompt diff.
 #
