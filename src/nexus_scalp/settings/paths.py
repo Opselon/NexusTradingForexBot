@@ -61,6 +61,7 @@ def decisions_db_path() -> Path:
     return settings_db_path().parent / "ai_provider_decisions.db"
 
 
+
 def resolve_decision_store_target() -> Path | str:
     """Resolve the AI-provider decision ledger to the ACTIVE provider.
 
@@ -99,47 +100,3 @@ def resolve_decision_store_target() -> Path | str:
     except Exception:  # pragma: no cover - settings DB unavailable / malformed
         pass
     return decisions_db_path()
-
-
-def resolve_registry_target() -> Path | str:
-    """Resolve the AI-provider *configuration* registry to the ACTIVE provider.
-
-    Returns either a SQLite ``Path`` (the ``db_path`` contract) or a
-    PostgreSQL DSN ``str`` (the ``dsn`` contract) — the two shapes
-    ``ProviderRegistryStore`` accepts.
-
-    The provider configuration registry is APPLICATION STATE (which provider is
-    configured and which is active), so it must follow the persisted
-    application database provider, not an unconditional SQLite file. A box
-    switched to PostgreSQL via ``nexus db-portability switch`` previously kept
-    its provider configuration in ``<user-data>/databases/app_settings.db``
-    while the engine used PostgreSQL — the same architecture violation PR #462
-    found for the decision ledger (operational data), proven by the same
-    SQLite runtime trap: with ``database.provider=postgresql`` the registry
-    read and wrote SQLite and PostgreSQL's ``ai_provider_config`` was ignored.
-
-    Resolution order (mirrors ``resolve_decision_store_target``, which mirrors
-    ``resolve_audit_db_url`` — the proven pattern for this domain class):
-      1. the persisted ``database.provider`` + ``database.postgresql_config``
-         settings (the app-level provider switch): PostgreSQL yields a DSN;
-      2. ``NEXUS_SETTINGS_DB`` explicit override — a TEST-ISOLATION SEAM, not
-         a provider choice: when set, the registry is pinned to a SQLite file
-         even on a PostgreSQL-configured box, exactly like
-         ``NEXUS_AUDIT_DB`` (BUG-223) / ``NEXUS_DECISIONS_DB`` pin their
-         domains. A test that points this at a temp file never wants a live
-         PostgreSQL pool.
-    Never raises: a settings DB that cannot be opened falls back to the
-    SQLite path (a fresh install has no settings DB yet).
-    """
-    if override := os.environ.get("NEXUS_SETTINGS_DB", "").strip():
-        return Path(override).expanduser()
-    try:
-        from nexus_scalp.database.config import build_postgres_url, load_database_config
-        from nexus_scalp.settings.secret_store import SecureSecretStore
-
-        cfg = load_database_config("audit")
-        if cfg.is_postgresql:
-            return build_postgres_url(cfg, SecureSecretStore())
-    except Exception:  # pragma: no cover - settings DB unavailable / malformed
-        pass
-    return settings_db_path()
