@@ -546,3 +546,13 @@ behind full-green required checks (this row written pre-merge; merge state = PR 
 | Scope | tests/unit/test_causal_conv_invariants.py, tests/unit/test_ml_qa_014_causal_conv_cpu_budget.py, tests/critical_suite.txt, docs/ml-system/tasks/ML-QA-014.md |
 | Verification | 149 passed (131 module + 18 battery); negative control 7 fail / 11 pass; ruff/format/mypy clean; manifest 251; markers/dupes/drift OK |
 | Locks taken | none (no production path) |
+
+## ML-QA-015 — Hygiene-Cadence Suite Wall-Clock Determinism (2026-09-25)
+
+| Field | Value |
+| --- | --- |
+| Status | DONE (PR pending) |
+| Role | AGENT-QA |
+| Scope | tests/unit/test_bug275_hygiene_cadence_clock.py, tests/unit/test_ml_qa_015_hygiene_cadence_clock_determinism.py, tests/critical_suite.txt, docs/ml-system/tasks/ML-QA-015.md |
+| Verification | 26 passed (12 module + 15 battery); negative control 9 fail / 6 pass; ruff/format/mypy clean; manifest 252; markers/dupes/drift OK |
+| Locks taken | none (no production path) |

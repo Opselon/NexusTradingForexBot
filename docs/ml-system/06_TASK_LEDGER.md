@@ -215,3 +215,4 @@ The following tasks have ZERO upstream dependencies and completely disjoint owne
 9. **GitReleaseGuardian Non-Implementing:** Release and CI bots coordinate branch synchronization and never write feature logic.
 10. **Reversibility:** Every database schema migration or state transition must include a rollback mechanism.
 | `ML-QA-014` | L: CI/CD | P2 | Push-Gate CPU-Time Determinism: Causal-TCN Latency Suite (roster candidate #4, `budget_cpu_ms` CPU-time budgets, unconditional ratio bound) | **DONE** (PR pending) | `AGENT-QA` | NO | `ML-QA-004`, `ML-QA-007`, `ML-QA-008`, `ML-QA-009`, `ML-QA-012` | `PARALLEL_SAFE` |
+| `ML-QA-015` | L: CI/CD | P2 | Hygiene-Cadence Suite Wall-Clock Determinism (roster candidate #5, injected wall clock via `hygiene_clock` fixture, both edges of the inclusive `>=` cadence boundary for light/deep/telegram gates) | **DONE** (PR pending) | `AGENT-QA` | NO | `ML-QA-004`, `ML-QA-003`, `ML-QA-013` | `PARALLEL_SAFE` |
