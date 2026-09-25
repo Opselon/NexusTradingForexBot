@@ -121,6 +121,7 @@ func TestUnmatchedNonAPIPathServesShell(t *testing.T) {
 // TestNoDistKeepsHonest404 proves the zero-regression contract (#4): with no
 // resolvable dist, unknown paths keep the pre-wave honest-404 behavior.
 func TestNoDistKeepsHonest404(t *testing.T) {
+	t.Setenv("NSE_WEB_AUTH_DISABLE", "1")
 	resetDistCache()
 	t.Setenv("NEXUS_ALT_UI_DIR", "/nonexistent/no-such-dist")
 	h := Build(nil)
