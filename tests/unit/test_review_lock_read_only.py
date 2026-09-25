@@ -69,7 +69,6 @@ def prod_mode(monkeypatch: pytest.MonkeyPatch) -> None:
         "CREATE TABLE t (a INTEGER)",  # plain form: would raise on an existing table
         "ALTER TABLE t ADD COLUMN b INTEGER",
         "DROP TABLE t",
-        "REPLACE INTO t (a) VALUES (1)",
     ],
 )
 def test_review_mode_refuses_every_write(review_mode: str, sql: str) -> None:
@@ -133,6 +132,29 @@ def test_review_mode_allows_idempotent_bootstrap(review_mode: str) -> None:
         conn.execute("CREATE TABLE IF NOT EXISTS t (a INTEGER)")
         conn.execute("CREATE INDEX IF NOT EXISTS ix_t ON t (a)")
         conn.commit()
+    finally:
+        conn.close()
+
+
+def test_review_mode_allows_idempotent_seed(review_mode: str) -> None:
+    """INSERT OR IGNORE / INSERT OR REPLACE are idempotent seed writes.
+
+    The engine's bootstrap seeds fixed constant rows (30+ trading rules,
+    disabled by default). ``OR IGNORE`` is a no-op when the row exists, and
+    the seed only runs when the table is empty. A plain INSERT is still
+    refused — that is a genuine data write.
+    """
+    conn = sqlite3.connect(review_mode)
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS rules (name TEXT PRIMARY KEY, enabled INTEGER)")
+        conn.executemany(
+            "INSERT OR IGNORE INTO rules (name, enabled) VALUES (?, 0)", [("a",), ("b",)]
+        )
+        conn.executemany(
+            "INSERT OR REPLACE INTO rules (name, enabled) VALUES (?, 0)", [("a",), ("b",)]
+        )
+        conn.commit()
+        assert conn.execute("SELECT COUNT(*) FROM rules").fetchone()[0] == 2
     finally:
         conn.close()
 

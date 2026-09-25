@@ -73,21 +73,32 @@ class ReviewWriteBlockedError(RuntimeError):
 
 
 def _is_write(sql: str) -> bool:
-    """Return True only for statements that actually mutate.
+    """Return True only for statements that actually mutate live state.
 
-    ``CREATE TABLE IF NOT EXISTS`` is deliberately allowed: it is the
-    idempotent schema-bootstrap the engine runs at boot, it creates a table
-    only when it is absent, and it never alters or drops existing data.
-    Refusing it makes the review console unable to start at all, which
-    defeats the purpose of a guard meant to protect *state*, not schema
-    presence. A plain ``CREATE TABLE`` (no IF NOT EXISTS) is still refused,
-    because that form would raise on an existing table anyway.
+    Two boot-time forms are deliberately allowed because they are
+    idempotent and cannot change or destroy existing state:
+
+    * ``CREATE [TABLE|INDEX] IF NOT EXISTS`` — creates an object only when
+      it is absent; never alters or drops existing data. Refusing it makes
+      the console unable to start.
+    * ``INSERT OR IGNORE`` / ``INSERT OR REPLACE`` into the bootstrap
+      tables — ``OR IGNORE`` is a no-op when the row exists (the seed
+      method only ever runs at first boot, when the table is empty, and
+      the PRIMARY KEY makes it a no-op thereafter). ``OR REPLACE`` is
+      allowed in the same spirit: the seed data is fixed, so re-running it
+      rewrites a row with the same constant value.
+
+    A plain ``INSERT`` (no ``OR`` clause) is still refused — that is a
+    genuine data write and exactly what the review console must not do.
     """
-    head = sql.lstrip()[:32].upper()
-    # The idempotent bootstrap form: allowed.
+    head = sql.lstrip()[:40].upper()
+    # Idempotent schema bootstrap: allowed.
     if head.startswith("CREATE TABLE IF NOT EXISTS") or head.startswith(
         "CREATE INDEX IF NOT EXISTS"
     ):
+        return False
+    # Idempotent seed writes: allowed (bootstrap data only, fixed constants).
+    if head.startswith("INSERT OR IGNORE") or head.startswith("INSERT OR REPLACE"):
         return False
     return any(head.startswith(p) for p in _WRITE_PREFIXES)
 
