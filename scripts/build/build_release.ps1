@@ -8,7 +8,7 @@
 # Pipeline (spec section 57):
 #   validate version -> repo audit / clean-tree check -> quality gates
 #   (ruff/mypy/pytest) -> frontend production build + dist validation
-#   -> detect target -> PyInstaller onedir + onefile
+#   -> Go API plane release build -> PyInstaller onedir + onefile
 #   -> EXE smoke tests -> stage release tree -> Inno Setup installer
 #   -> clean-install test (optional) -> SHA256 + manifest + SBOM + secrets scan
 #   -> verify-release -> release metadata
@@ -48,7 +48,7 @@ if (-not (Test-Path $Py)) { Fail "venv python not found at $Py" }
 # ---------------------------------------------------------------------------
 # 1. Version — single canonical source (pyproject.toml)
 # ---------------------------------------------------------------------------
-Write-Step "1/11 Validate version (canonical source: pyproject.toml)"
+Write-Step "1/12 Validate version (canonical source: pyproject.toml)"
 if (-not $Version) {
     $m = Select-String -Path pyproject.toml -Pattern '^version = "([^"]+)"'
     if (-not $m) { Fail "cannot read version from pyproject.toml" }
@@ -62,7 +62,7 @@ Pass "Canonical version: $Version (channel: $Channel)"
 # ---------------------------------------------------------------------------
 # 2. Git state + secret guard
 # ---------------------------------------------------------------------------
-Write-Step "2/11 Repository audit (git state + secret guard)"
+Write-Step "2/12 Repository audit (git state + secret guard)"
 # Release-wave Finding 2: the build identity binds to the FULL 40-hex commit
 # SHA. Short SHAs are presentation-only (the Pass line below may display it).
 $GitCommitFull = (& git rev-parse HEAD).Trim()
@@ -87,7 +87,7 @@ Pass "secret guard: no real telegram token in configs/live.yaml"
 # ---------------------------------------------------------------------------
 # 3. Quality gates
 # ---------------------------------------------------------------------------
-Write-Step "3/11 Quality gates (ruff / mypy / pytest)"
+Write-Step "3/12 Quality gates (ruff / mypy / pytest)"
 if (-not $SkipGates) {
     & $Py -m ruff check . --fix --unsafe-fixes | Out-Null
     if ($LASTEXITCODE -ne 0) { Fail "ruff lint failed" }
@@ -109,7 +109,7 @@ if (-not $SkipGates) {
 # build` is the single source of truth for how the bundle is produced
 # (frontend/package.json), so a build-script change can never drift from the
 # bytes this release ships.
-Write-Step "4/11 Frontend production build + dist validation"
+Write-Step "4/12 Frontend production build + dist validation"
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     Fail "npm not found on PATH - Node.js is required to BUILD this release (the end user never needs it)"
 }
@@ -146,7 +146,7 @@ Pass "frontend dist validated (validate_frontend_dist.py)"
 # ---------------------------------------------------------------------------
 # 5. Build windows-x64 with PyInstaller (onedir + onefile)
 # ---------------------------------------------------------------------------
-Write-Step "5/11 PyInstaller build (windows-$Arch) — onedir + onefile"
+Write-Step "5/12 Go API plane (nexus-api release build) + PyInstaller build (windows-$Arch) — onedir + onefile"
 
 # EU-RELEASE-001: canonical branded application icon (generated from
 # frontend/public/icon-512.png). Without --icon PyInstaller stamps its
@@ -191,6 +191,37 @@ if (-not (Test-Path $VersionInfoPath)) {
 $PyInstaller = Join-Path $Root ".venv\Scripts\pyinstaller.exe"
 if (-not (Test-Path $PyInstaller)) { Fail "pyinstaller not found — install with: .venv\Scripts\python -m pip install pyinstaller" }
 
+# GO-API-SHIP: the release build compiles the Go API plane ONCE here and bakes
+# it into the onedir. The end user has NO Go toolchain and never installs one,
+# so a release without this binary ships a broken API plane. This is the
+# failure-isolated OPPOSITE of the runtime policy: at runtime a missing Go
+# toolchain degrades to a warning + Python-only serving; at BUILD time it is
+# a hard block. Detect the toolchain exactly the way the Python bootstrap does
+# (nexus_scalp.web.go_api_bootstrap._find_go) so the two never disagree about
+# what "go is available" means on this machine.
+$GoApiBinaryName = "nexus-api.exe"
+$GoApiShipDir = Join-Path $Root "release\build\windows-x64\go-api"
+if (Test-Path $GoApiShipDir) { Remove-Item $GoApiShipDir -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $GoApiShipDir | Out-Null
+
+$GoExe = & $Py -c "from nexus_scalp.web.go_api_bootstrap import _find_go; print(_find_go() or '')"
+if ($LASTEXITCODE -ne 0) {
+    Fail "go toolchain probe failed (nexus_scalp.web.go_api_bootstrap._find_go import error) - cannot build the Go API plane for this release"
+}
+$GoExe = "$GoExe".Trim()
+if (-not $GoExe) {
+    Fail "go toolchain not found on the BUILD machine - a release without the Go API plane is a broken release. Install Go 1.21+ (winget install GoLang.Go) and re-run."
+}
+Write-Host "[RELEASE] go toolchain: $GoExe ($(& $GoExe version))" -ForegroundColor DarkGray
+
+& $GoExe build -o (Join-Path $GoApiShipDir $GoApiBinaryName) "./cmd/nexus-api"
+if ($LASTEXITCODE -ne 0) { Fail "go api build failed (exit $LASTEXITCODE) - the release cannot ship without the API plane binary" }
+$GoApiBinary = Join-Path $GoApiShipDir $GoApiBinaryName
+if (-not (Test-Path $GoApiBinary)) { Fail "go build reported success but $GoApiBinary is missing" }
+if ((Get-Item $GoApiBinary).Length -le 0) { Fail "go api build produced a zero-byte $GoApiBinary" }
+$goApiHash = (Get-FileHash -Algorithm SHA256 $GoApiBinary).Hash.ToLower()
+Pass "go api plane: $GoApiBinary ($goApiHash)"
+
 $stamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
 $webAssetHash = (Get-FileHash -Algorithm SHA256 (Join-Path $Root "Web\app.js")).Hash.ToLower()
 $webIndexHash = (Get-FileHash -Algorithm SHA256 (Join-Path $Root "Web\index.html")).Hash.ToLower()
@@ -224,6 +255,8 @@ $buildInfo = @{
     web_api_client_hash = $webApiClientHash
     web_styles_hash = $webStylesHash
     frontend_index_hash = $frontendIndexHash
+    go_api_binary     = "go-api/$GoApiBinaryName"
+    go_api_sha256     = $goApiHash
     frontend_dist = "frontend/dist"
 } | ConvertTo-Json
 [System.IO.File]::WriteAllText((Join-Path $Root "build-info.json"), $buildInfo, (New-Object System.Text.UTF8Encoding($false)))
@@ -234,6 +267,7 @@ $buildInfo = @{
     --version-file $VersionInfoPath `
     --add-data "$Root\Web;Web" `
     --add-data "$Root\frontend\dist;frontend/dist" `
+    --add-data "$GoApiShipDir;go-api" `
     --add-data "$Root\configs;configs" `
     --add-data "$Root\docs;docs" `
     --add-data "$Root\build-info.json;." `
@@ -289,7 +323,7 @@ Pass "onefile CLI: $BuildDir\onefile\NexusScalpEngine-CLI.exe"
 # ---------------------------------------------------------------------------
 # 6. EXE smoke tests (launch / version / health)
 # ---------------------------------------------------------------------------
-Write-Step "6/11 EXE smoke tests"
+Write-Step "6/12 EXE smoke tests"
 if (-not $SkipSmoke) {
     & (Join-Path $BuildDir "onedir\NexusScalpEngine\NexusScalpEngine.exe") version --plain
     if ($LASTEXITCODE -ne 0) { Fail "packaged EXE version failed" }
@@ -303,7 +337,7 @@ if (-not $SkipSmoke) {
 # ---------------------------------------------------------------------------
 # 7. Stage the release tree
 # ---------------------------------------------------------------------------
-Write-Step "7/11 Stage release tree (portable layout)"
+Write-Step "7/12 Stage release tree (portable layout)"
 $OutDir = Join-Path $Root "release\v$Version\windows\x64"
 if (Test-Path $OutDir) { Remove-Item $OutDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -381,6 +415,21 @@ if ($StagedHash -ne $frontendIndexHash) {
 }
 Pass "packaged frontend dist present: $StagedFrontendIndex"
 
+# GO-API-SHIP: the staged tree MUST carry the release-built nexus-api.exe.
+# PyInstaller 6 onedir places --add-data under _internal\, so the shipped
+# binary the runtime resolver looks for (_internal\go-api\nexus-api.exe) is
+# asserted on the exact tree the installer and zip ship. This is the
+# release-side twin of the runtime resolver in go_api_bootstrap.py.
+$StagedGoApiBinary = Join-Path $Stage "_internal\go-api\$GoApiBinaryName"
+if (-not (Test-Path $StagedGoApiBinary)) {
+    Fail "staged tree missing _internal\go-api\$GoApiBinaryName - PyInstaller --add-data go-api did not land (the end user has no Go toolchain; a release without this binary is broken)"
+}
+$StagedGoApiHash = (Get-FileHash -Algorithm SHA256 $StagedGoApiBinary).Hash.ToLower()
+if ($StagedGoApiHash -ne $goApiHash) {
+    Fail "staged go-api binary hash mismatch: staged=$StagedGoApiHash build-info=$goApiHash"
+}
+Pass "packaged go api plane present: $StagedGoApiBinary"
+
 # Onefile CLI into cli/
 $CliDir = Join-Path $OutDir "cli"
 New-Item -ItemType Directory -Force -Path $CliDir | Out-Null
@@ -389,7 +438,7 @@ Copy-Item (Join-Path $BuildDir "onefile\NexusScalpEngine-CLI.exe") $CliDir -Forc
 # ---------------------------------------------------------------------------
 # 8. Inno Setup installer
 # ---------------------------------------------------------------------------
-Write-Step "8/11 Installer (Inno Setup)"
+Write-Step "8/12 Installer (Inno Setup)"
 if (-not $SkipInstaller) {
     $Iscc = @(
         "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
@@ -410,7 +459,7 @@ if (-not $SkipInstaller) {
 # ---------------------------------------------------------------------------
 # 9. Clean-install test (./scripts/build/clean_install_test.ps1)
 # ---------------------------------------------------------------------------
-Write-Step "9/11 Clean-install test"
+Write-Step "9/12 Clean-install test"
 if (-not $SkipCleanInstallTest) {
     $TestScript = Join-Path $PSScriptRoot "clean_install_test.ps1"
     if (Test-Path $TestScript) {
@@ -426,7 +475,7 @@ if (-not $SkipCleanInstallTest) {
 # ---------------------------------------------------------------------------
 # 10. Checksums + manifest + SBOM + secrets scan
 # ---------------------------------------------------------------------------
-Write-Step "10/11 Checksums / manifest / SBOM / secrets scan"
+Write-Step "10/12 Checksums / manifest / SBOM / secrets scan"
 $ChecksumsDir = Join-Path $OutDir "checksums"
 New-Item -ItemType Directory -Force -Path $ChecksumsDir | Out-Null
 $Artifacts = @()
@@ -482,7 +531,7 @@ Pass "checksums + manifest + SBOM + secrets scan complete"
 # ---------------------------------------------------------------------------
 # 11. verify-release (full tree self-check)
 # ---------------------------------------------------------------------------
-Write-Step "11/11 Release verification"
+Write-Step "11/12 Release verification"
 if (-not $SkipSmoke) {
     & (Join-Path $Root ".venv\Scripts\python.exe") (Join-Path $PSScriptRoot "update_helpers.py") verify $Stage
     if ($LASTEXITCODE -ne 0) { Fail "release verification failed" }
