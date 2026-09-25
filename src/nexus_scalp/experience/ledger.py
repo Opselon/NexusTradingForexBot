@@ -670,16 +670,29 @@ class ExperienceLedger:
         return int(value or 0)
 
     def list_strategy_ids(self, limit: int = 5000) -> list[str]:
-        """Distinct strategy families present in the immutable ledger."""
+        """Distinct strategy families present in the immutable ledger.
+
+        Kept on the ledger's own ``_connect`` seam (BUG-297 INV-001 V1): the
+        rebuild's ``list_strategy_ids`` + DELETE pair is the exact call pair
+        that contract pins, and the seam is where the ``file:``-URI contract
+        lives. ``_connect`` already sets ``row_factory = sqlite3.Row``, so the
+        dict-row promise the portable helpers introduced is preserved here too.
+        """
         if not self.audit_repo._is_sqlite:
             return []
-        rows = query_rows(
-            self.audit_repo,
-            "SELECT DISTINCT strategy_id FROM audit_experiences LIMIT ?;",
-            (max(1, int(limit)),),
-            operation="experience.list_strategy_ids",
-        )
-        return [str(r["strategy_id"]) for r in rows if r["strategy_id"]]
+        try:
+            conn = self._connect(10.0)
+            try:
+                rows = conn.execute(
+                    "SELECT DISTINCT strategy_id FROM audit_experiences LIMIT ?;",
+                    (max(1, int(limit)),),
+                ).fetchall()
+                return [str(r["strategy_id"]) for r in rows if r["strategy_id"]]
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error("[EXPERIENCE] strategy id enumeration failed", error=str(e))
+            return []
 
     def count_experiences(self) -> int:
         """Total immutable decision rows."""
