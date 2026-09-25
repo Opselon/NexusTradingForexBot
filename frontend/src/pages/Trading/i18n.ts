@@ -102,6 +102,7 @@ export const MESSAGES: FeatureMessages = {
   "trading.smc.computed": { fa: "اسنپ‌شات v{v} · محاسبه‌شده توسط موتور، هرگز مرورگر", de: "Snapshot v{v} · von der Engine berechnet, nie vom Browser", es: "instantánea v{v} · calculada por el motor, nunca por el navegador", ar: "لقطة v{v} · يحسبها المحرك لا المتصفح" },
   "trading.smc.equilibrium": { fa: "نقطه تعادل", de: "Gleichgewicht", es: "equilibrio", ar: "الاتزان" },
   "trading.smc.liquidity": { fa: "جاروهای نقدینگی", de: "Liquiditäts-Sweeps", es: "Barridos de liquidez", ar: "اجتياحات السيولة" },
+  "trading.smc.ladder_elided": { fa: "{n} ناحیهٔ دیگر — برچسب‌های {m} ناحیهٔ نازک پنهان شدند، نشانگر را روی نوار ببرید", de: "{n} weitere Zonen — die Labels der {m} dünnsten sind ausgeblendet, Balken für Tooltip überfahren", es: "{n} zonas más — las etiquetas de las {m} más finas están ocultas; pasa el cursor sobre una barra", ar: "{n} مناطق أخرى — أسماء أرفع {m} مناطق مخفية؛ مرّر المؤشر فوق شريط" },
   "trading.smc.structure": { fa: "خطوط ساختار و جاروهای نقدینگی", de: "Strukturlinien & Sweeps", es: "Líneas de estructura y barridos", ar: "خطوط البنية والاجتياحات" },
   "trading.smc.zones": { fa: "ناحیه‌ها (FVG / بلاک‌های سفارش / شکار حد)", de: "Zonen (FVG / Orderblöcke / Stop-Hunts)", es: "Zonas (FVG / bloques de órdenes / caza de stops)", ar: "المناطق (FVG / كتل الأوامر / صيد وقف الخسارة)" },
   "trading.state.broker_only": { fa: "فقط کارگزار (ثبت‌نشده)", de: "NUR BROKER (nicht nachgehalten)", es: "SOLO BRÓKER (sin registro)", ar: "الوسيط فقط (غير مسجَّل)" },
@@ -204,4 +205,6 @@ export const MESSAGES: FeatureMessages = {
   "trading.seg.shadow_desc": { fa: "بدون اجرا — فقط ردپای تصمیمات", de: "Ohne Ausführung — nur Entscheidungs-Spur", es: "sin ejecución — solo traza de decisiones", ar: "بدون تنفيذ — أثر القرارات فقط" },
   "trading.seg.live_desc": { fa: "سرمایهٔ واقعی", de: "echtes Kapital", es: "capital real", ar: "رأس مال حقيقي" },
   "trading.hero.src_ledger": { fa: "دفتر OPEN", de: "Ledger OPEN", es: "Libro OPEN", ar: "الأست OPEN" },
+  "trading.section.evidence.kicker": { fa: "شواهد اجرا", de: "Ausführungs-Evidenz", es: "Evidencia de ejecución", ar: "أدلة التنفيذ" },
+  "trading.section.evidence.note": { fa: "audit_orders · audit_executions · دفتر کارگزار", de: "audit_orders · audit_executions · Broker-Ledger", es: "audit_orders · audit_executions · libro del bróker", ar: "audit_orders · audit_executions · دفتر الوسيط" },
 };
