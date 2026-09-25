@@ -66,7 +66,7 @@ def prod_mode(monkeypatch: pytest.MonkeyPatch) -> None:
         "INSERT INTO t (a) VALUES (1)",
         "  UPDATE t SET a = 1",
         "DELETE FROM t",
-        "CREATE TABLE t (a INTEGER)",
+        "CREATE TABLE t (a INTEGER)",  # plain form: would raise on an existing table
         "ALTER TABLE t ADD COLUMN b INTEGER",
         "DROP TABLE t",
         "REPLACE INTO t (a) VALUES (1)",
@@ -116,6 +116,23 @@ def test_review_mode_refuses_executescript(review_mode: str) -> None:
     try:
         with pytest.raises(ReviewWriteBlockedError):
             conn.executescript("CREATE TABLE t (a INTEGER);")
+    finally:
+        conn.close()
+
+
+def test_review_mode_allows_idempotent_bootstrap(review_mode: str) -> None:
+    """CREATE TABLE IF NOT EXISTS is the boot-time schema bootstrap.
+
+    It is idempotent — it only creates a table that is absent and never
+    alters or drops existing data. Refusing it makes the console unable to
+    start, which defeats the guard's purpose (it protects *state*, not
+    schema presence). A plain CREATE TABLE is still refused.
+    """
+    conn = sqlite3.connect(review_mode)
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS t (a INTEGER)")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_t ON t (a)")
+        conn.commit()
     finally:
         conn.close()
 
