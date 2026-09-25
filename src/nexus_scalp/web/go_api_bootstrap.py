@@ -186,24 +186,23 @@ def _shipped_binary_candidates() -> list[Path]:
     """Where a RELEASE-BUILT Go API binary can live at runtime.
 
     Mirrors the frontend_assets.py resolution style: first the PyInstaller
-    bundle (frozen _MEIPASS, then the onedir layout next to the running
-    EXE), then the repo-relative ship path as a dev/CI convenience.
+    bundle (frozen _MEIPASS, then the onedir layout next to the running EXE),
+    then the repo-relative ship path as a dev/CI convenience.
     """
-    candidates: list[Path] = []
-
+    bases: list[Path] = []
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
-        candidates.append(Path(str(meipass)) / SHIPPED_BINARY_NAME)
-
+        bases.append(Path(str(meipass)))
     with contextlib.suppress(OSError):
         exe_dir = Path(sys.executable).resolve().parent
-        candidates.append(exe_dir / SHIPPED_BINARY_DEST / SHIPPED_BINARY_NAME)
-        candidates.append(exe_dir / SHIPPED_BINARY_NAME)
-        candidates.append(exe_dir / "_internal" / SHIPPED_BINARY_DEST / SHIPPED_BINARY_NAME)
+        bases += [exe_dir, exe_dir / "_internal"]
+    cwd = Path.cwd()
+    bases += [cwd, cwd / "_internal"]
 
-    candidates.append(Path.cwd() / SHIPPED_BINARY_DEST / SHIPPED_BINARY_NAME)
-    candidates.append(Path.cwd() / SHIPPED_BINARY_NAME)
-    candidates.append(Path.cwd() / "_internal" / SHIPPED_BINARY_DEST / SHIPPED_BINARY_NAME)
+    candidates: list[Path] = []
+    for base in bases:
+        candidates.append(base / SHIPPED_BINARY_DEST / SHIPPED_BINARY_NAME)
+        candidates.append(base / SHIPPED_BINARY_NAME)
     return candidates
 
 
@@ -215,8 +214,8 @@ def resolve_go_api_binary() -> Path | None:
     copy is authoritative and is used AS-IS — this function never compiles,
     and never invalidates or rewrites what the release shipped.
 
-    Returns the path when a shipped binary is present, else None (and the
-    caller falls back to a source build, which is the dev-checkout path).
+    Returns the path when present, else None (the caller then falls back to a
+    source build, which is the dev-checkout path).
     """
     for cand in _shipped_binary_candidates():
         try:
@@ -230,14 +229,13 @@ def resolve_go_api_binary() -> Path | None:
 def build_go_api(go_exe: str | None = None, timeout_s: int = 300) -> tuple[bool, str]:
     """Resolve the nexus-api binary. Returns (ok, message).
 
-    SHIPPED FIRST: when this process is running out of a release package,
-    the binary the release compiled is used exactly as shipped — it is never
-    rebuilt (the end user has no compiler and no source tree to build from).
-
-    Otherwise this is a dev/source checkout, so the binary is COMPILED here
-    (toolchain discovered when go_exe is None). Uses the content cache: a hit
-    skips the compile entirely. A build failure returns the tail of the
-    compiler output so the operator sees the real cause, not a bare exit code.
+    SHIPPED FIRST: out of a release package, the binary the release compiled
+    is used exactly as shipped — never rebuilt (the end user has no compiler
+    and no source tree). Otherwise this is a dev/source checkout, so the
+    binary is COMPILED here (toolchain discovered when go_exe is None). Uses
+    the content cache: a hit skips the compile entirely. A build failure
+    returns the tail of the compiler output so the operator sees the real
+    cause, not a bare exit code.
     """
     shipped = resolve_go_api_binary()
     if shipped is not None:
@@ -488,9 +486,9 @@ class GoApiSupervisor:
 
 
 def _binary_workdir(binary: str) -> str:
-    """Cwd for the Go child. Prefers the go-api source dir (its templates /
-    static assets are relative to it); falls back to the binary's own
-    directory so a packaged install (no source tree) still launches."""
+    """Cwd for the Go child. Prefers the go-api source dir (its static assets
+    are relative to it); else the binary's own dir so a packaged install
+    (no source tree) still launches."""
     if GO_API_DIR.is_dir():
         return str(GO_API_DIR)
     with contextlib.suppress(OSError):

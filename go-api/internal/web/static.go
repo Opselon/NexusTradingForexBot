@@ -105,6 +105,11 @@ func resetCache() {
 	distCache.set = false
 }
 
+// ResetDistCache clears the memoized resolution. Exported so the routes
+// integration tests can re-resolve after changing NEXUS_ALT_UI_DIR with
+// t.Setenv (the memo is otherwise process-wide, as in production).
+func ResetDistCache() { resetCache() }
+
 // hasIndex reports whether dir is a directory holding a servable index.html.
 // Mirrors frontend_assets._has_index: OSError-guarded, never raises.
 func hasIndex(dir string) bool {
@@ -272,13 +277,18 @@ func (s *SPAStaticFiles) Middleware(next http.Handler) http.Handler {
 	}
 	terminal := next
 	if terminal == nil {
-		terminal = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusNotFound)
-		})
+		terminal = http.HandlerFunc(notFoundTerminator)
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.serve(w, r, terminal)
 	})
+}
+
+// notFoundTerminator is the nil-next terminator: the layer owns the request
+// outright (the router installed it as the not-found handler), so anything it
+// does not serve gets a plain 404 with no body.
+func notFoundTerminator(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotFound)
 }
 
 // Register mounts the SPA catch-all on mux as the LOWEST-priority route: it

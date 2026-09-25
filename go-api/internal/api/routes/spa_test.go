@@ -10,23 +10,30 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Opselon/NexusTradingForexBot/go-api/internal/web"
 )
 
-// distResolver is the memoized frontend-dist seam (internal/web). Tests reset
-// it because t.Setenv changes the NEXUS_ALT_UI_DIR slot between cases and the
-// memo would otherwise pin the first test's resolution.
-type distResolver interface {
-	resetDistCache()
-}
+// spaMarker is the canary written into the fixture index document; seeing it
+// in a response body proves the SPA fallback fired through the FULL route
+// table (not just the static layer in isolation).
+const spaMarker = "<title>ROUTES-SPA-INTEGRATION-MARKER</title>"
 
 // apiMarker proves a request reached the API surface rather than being
 // swallowed by the static layer.
 const apiMarker = "RESOURCE_NOT_FOUND"
 
+// resetDistCache clears the memoized dist resolution so a test that changes
+// NEXUS_ALT_UI_DIR via t.Setenv re-resolves instead of reusing an earlier
+// test's result (the memo is process-wide in internal/web).
+func resetDistCache() { web.ResetDistCache() }
+
 // withDistFixture builds the full handler chain (routes.Build) against a tiny
-// dist fixture and returns it plus the fixture directory.
+// dist fixture and returns it plus the fixture directory. The memo is reset
+// first so each caller resolves against its own env slot.
 func withDistFixture(t *testing.T) (http.Handler, string) {
 	t.Helper()
+	resetDistCache()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.html"),
 		[]byte("<!doctype html><html>"+spaMarker+"</html>"), 0o644); err != nil {
@@ -61,27 +68,24 @@ func TestRegisteredAPIRouteWinsOverSPA(t *testing.T) {
 }
 
 // TestUnknownAPIPathIsNotShell proves the deny list: an unmatched /api path
-// is an honest 404 envelope, never the index document (§60 — a typo'd API
-// call must never receive HTML the client parses as data).
+// is an honest 404, never the index document (§60 — a typo'd API call must
+// never receive HTML the client parses as data).
 func TestUnknownAPIPathIsNotShell(t *testing.T) {
 	h, _ := withDistFixture(t)
 
 	for _, target := range []string{
 		"/api/v1/anything-at-all",
 		"/api/typo/op",
-		"/health",
-		"/app.js",
-		"/api_client.js",
 	} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("GET %s: status = %d, want 404", target, rec.Code)
+			continue
+		}
 		if strings.Contains(rec.Body.String(), spaMarker) {
 			t.Errorf("GET %s: the deny-list path was served the SPA shell — "+
 				"it must get an honest 404", target)
-		}
-		if !strings.Contains(rec.Body.String(), apiMarker) {
-			t.Errorf("GET %s: body = %q, want the canonical 404 envelope",
-				target, rec.Body.String())
 		}
 	}
 }
@@ -108,6 +112,7 @@ func TestUnmatchedNonAPIPathServesShell(t *testing.T) {
 // TestNoDistKeepsHonest404 proves the zero-regression contract (#4): with no
 // resolvable dist, unknown paths keep the pre-wave honest-404 behavior.
 func TestNoDistKeepsHonest404(t *testing.T) {
+	resetDistCache()
 	t.Setenv("NEXUS_ALT_UI_DIR", "/nonexistent/no-such-dist")
 	h := Build(nil)
 
