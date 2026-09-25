@@ -1,24 +1,21 @@
 """Go API build + boot integration (GO-API-GATE).
 
-The Go API server (go-api/) is the product's API entrypoint: every HTTP
-request reaches Go, which proxies the Python runtime for facts it does not
-own. This module makes that invisible - `nexus start` builds and launches
-the Go server so the user only has to open the app.
+The Go API server (go-api/) is the product's API entrypoint: every request
+reaches Go, which proxies Python for facts it does not own. `nexus start`
+builds and launches it, so the user only has to open the app.
 
 Design contract:
   * Python is the process the user starts; Go is a child it supervises.
-  * Go NEVER mints an auth token and NEVER owns a port the user did not
-    ask for. It binds the API port and forwards to Python's own origin.
+  * Go NEVER mints an auth token and NEVER owns a port the user did not ask
+    for; it binds the API port and forwards to Python's own origin.
   * A missing/broken Go toolchain must never stop the product: the FastAPI
-    app is a complete API surface on its own, a Go failure logs a clear
-    warning, and this is the ONLY fallback path in the whole system.
-  * The build is cached: a content hash of the Go source tree is stamped
-    into the binary directory; an unchanged tree skips the rebuild.
-
-Failure modes (proven by tests): binary absent -> WARN + Python-only, exit 0;
-build fails -> WARN + stderr tail, Python-only; shipped (release) binary
-present -> used AS-IS, never rebuilt; port bound -> next free port, logged;
-never ready -> WARN + kill child, Python-only.
+    app is a complete API surface on its own (the ONLY fallback here).
+  * The build is cached: a content hash of the source tree is stamped into
+    the binary directory; an unchanged tree skips the rebuild.
+Failure modes (proven by tests): binary absent -> WARN + Python-only (exit
+0); build fails -> WARN + stderr tail; a SHIPPED binary present -> used
+AS-IS, never rebuilt; port bound -> next free port; never ready -> WARN +
+kill child, Python-only.
 """
 
 from __future__ import annotations
@@ -35,22 +32,18 @@ import time
 from pathlib import Path
 from typing import Any
 
-# --------------------------------------------------------------------------- #
-# Layout
-# --------------------------------------------------------------------------- #
+# ---- Layout ---------------------------------------------------------- #
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GO_API_DIR = REPO_ROOT / "go-api"
 MAIN_PACKAGE = "./cmd/nexus-api"
 
-#: SHIPPED binary name. MUST stay in lockstep with the release orchestrator
-#: (scripts/build/build_release.ps1 --add-data) and the Inno Setup payload.
-#: A release compiles it once; the user machine has no Go toolchain, so the
-#: packaged copy is authoritative.
+#: SHIPPED binary name - MUST stay in lockstep with the release orchestrator
+#: (build_release.ps1 --add-data) and the Inno Setup payload. A release compiles
+#: it once; the user machine has no Go toolchain, so the packaged copy wins.
 SHIPPED_BINARY_NAME = "nexus-api.exe"
 
-#: Where the shipped binary lands inside the onedir (build_release.ps1
-#: --add-data ";go-api"); the runtime resolver looks here so the ship path
-#: and the runtime lookup cannot drift.
+#: Where that binary lands in the onedir (--add-data ";go-api"); the runtime
+#: resolver looks here so the ship path and the lookup cannot drift.
 SHIPPED_BINARY_DEST = "go-api"
 
 #: Build cache lives OUTSIDE the source tree so a `git clean` of go-api
@@ -73,12 +66,9 @@ def _log(msg: str, *args: Any) -> None:
         print(f"[go-api] {msg}", file=sys.stderr, flush=True)
 
 
-# --------------------------------------------------------------------------- #
-# Toolchain discovery
-# --------------------------------------------------------------------------- #
+# ---- Toolchain discovery --------------------------------------------- #
 def _find_go() -> str | None:
-    """Locate a usable `go` or None: PATH, a side install under the user
-    profile, then common Windows / /usr/local locations."""
+    """Locate a usable `go` or None. Order: PATH, a user-profile side install, then common Windows and /usr/local locations."""
     candidates: list[str] = []
 
     on_path = shutil.which("go") or shutil.which("go.exe")
@@ -106,8 +96,7 @@ def _find_go() -> str | None:
 
 
 def _go_works(exe: str) -> bool:
-    """Usable only if `go version` exits 0 and reports 1.21+ (routes and auth
-    use generics + slog; the build targets go 1.27)."""
+    """Usable only if `go version` exits 0 and reports 1.21+ (routes and auth use generics + slog; build targets go 1.27)."""
     try:
         out = subprocess.run(
             [exe, "version"],
@@ -137,12 +126,9 @@ def _version_ok(version_line: str) -> bool:
     return False
 
 
-# --------------------------------------------------------------------------- #
-# Build (cached)
-# --------------------------------------------------------------------------- #
+# ---- Build (cached) -------------------------------------------------- #
 def _source_hash() -> str:
-    """Content hash of all tracked .go files + go.mod/go.sum - the cache key, so
-    unchanged source means a warm boot pays no compile."""
+    """Content hash of all .go files + go.mod/go.sum - the cache key, so an unchanged tree means a warm boot pays no compile."""
     h = hashlib.sha256()
     h.update(str(GO_API_DIR).encode())
     files: list[Path] = []
@@ -166,8 +152,7 @@ def _binary_path() -> Path:
 
 def _shipped_binary_candidates() -> list[Path]:
     """Where a RELEASE-BUILT Go API binary lives at runtime: the PyInstaller
-    bundle first (frozen _MEIPASS, then the onedir layout beside the
-    running EXE), then repo-relative paths as a dev/CI convenience."""
+    bundle (frozen _MEIPASS, or the onedir beside the EXE), then repo-relative."""
     bases: list[Path] = []
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
@@ -186,13 +171,9 @@ def _shipped_binary_candidates() -> list[Path]:
 
 
 def resolve_go_api_binary() -> Path | None:
-    """The SHIPPED Go API binary, if this process runs from a package.
-
-    A release compiles nexus-api.exe once and bakes it into the onedir; the
-    end user has NO Go toolchain, so it is authoritative and used AS-IS -
-    never compiled or rewritten. Returns None when absent (the caller then
-    falls back to a source build, the dev-checkout path).
-    """
+    """The SHIPPED Go API binary, if this process runs from a package: a
+    release compiles it once and bakes it into the onedir, and the user has NO
+    Go toolchain, so it is used AS-IS. Returns None when absent."""
     for cand in _shipped_binary_candidates():
         try:
             if cand.is_file():
@@ -205,10 +186,9 @@ def resolve_go_api_binary() -> Path | None:
 def build_go_api(go_exe: str | None = None, timeout_s: int = 300) -> tuple[bool, str]:
     """Resolve the nexus-api binary. Returns (ok, message).
 
-    SHIPPED FIRST: out of a release package the release binary is used as
-    shipped - never rebuilt (no compiler on the user machine). Otherwise this
-    is a dev/source checkout: COMPILE here (toolchain found when go_exe is
-    None), content-cached; a build failure returns the compiler-output tail.
+    SHIPPED FIRST: a release binary is used as shipped, never rebuilt. Else a
+    dev/source checkout: COMPILE here (go_exe None -> toolchain discovery),
+    content-cached; a failure returns the compiler-output tail.
     """
     shipped = resolve_go_api_binary()
     if shipped is not None:
@@ -272,9 +252,7 @@ def build_go_api(go_exe: str | None = None, timeout_s: int = 300) -> tuple[bool,
     return True, str(bin_path)
 
 
-# --------------------------------------------------------------------------- #
-# Port resolution
-# --------------------------------------------------------------------------- #
+# ---- Port resolution ------------------------------------------------- #
 def _port_in_use(host: str, port: int) -> bool:
     """True if something is already bound on host:port (IPv4)."""
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -288,8 +266,7 @@ def _port_in_use(host: str, port: int) -> bool:
 
 
 def _free_port_above(host: str, port: int) -> int:
-    """First free port at or above `port`, mirroring the launcher's own
-    port-search so a busy 8087 does not hard-fail a boot."""
+    """First free port at or above `port`; mirrors the launcher's search so a busy 8087 does not hard-fail a boot."""
     for cand in range(port, port + 64):
         if not _port_in_use(host, cand):
             return cand
@@ -298,8 +275,7 @@ def _free_port_above(host: str, port: int) -> int:
 
 def resolve_api_addr(preferred_port: int) -> tuple[str, int]:
     """Resolve the (host, port) the Go API binds. Honours NSE_GO_ADDR when
-    set ('host:port' or ':port'); else one port ABOVE the Python web port by
-    convention so the two never collide. is predictable in diagnostics."""
+    set; else one port ABOVE the Python web port, so the two never collide."""
     host = os.getenv("NSE_WEB_HOST", "127.0.0.1").strip() or "127.0.0.1"
 
     raw = os.getenv(_API_PORT_ENV, "").strip()
@@ -318,13 +294,10 @@ def resolve_api_addr(preferred_port: int) -> tuple[str, int]:
     return host, _free_port_above(host, preferred_port)
 
 
-# --------------------------------------------------------------------------- #
-# Launch + readiness
-# --------------------------------------------------------------------------- #
+# ---- Launch + readiness ---------------------------------------------- #
 class GoApiSupervisor:
-    """Owns the Go API child for one engine run: build, spawn, wait for
-    /health, tear down. Never holds a reference into the engine - Go is an
-    API plane only, never trading state."""
+    """Owns the Go API child for one run: build, spawn, wait for /health,
+    tear down. Never touches engine state - Go is an API plane only."""
 
     def __init__(self, python_origin: str, addr: tuple[str, int], binary: str):
         self.python_origin = python_origin
@@ -338,8 +311,7 @@ class GoApiSupervisor:
 
     def start(self, ready_timeout_s: float = 20.0) -> tuple[bool, str]:
         """Spawn Go and block until /health answers (or the timeout). Returns
-        (ok, message); on failure the child is killed and the caller falls
-        back to Python-only serving."""
+        (ok, message); on failure the child is killed and Python serves alone."""
         env = dict(os.environ)
         # Go must forward to THIS Python process, not to a stale default;
         # Python owns the secret store, Go only reads the resolved token.
@@ -395,10 +367,8 @@ class GoApiSupervisor:
     # -- internals -------------------------------------------------------- #
 
     def _wait_ready(self, timeout_s: float) -> bool:
-        """Poll the Go /health endpoint until 200 or timeout. Uses a raw
-        socket, not urllib: Go may answer 503 while Python is still starting;
-        we only need 'up and routing', not 'engine live'.
-        """
+        """Poll Go /health until 200 or timeout. Uses a raw socket, not urllib:
+        we only need 'up and routing', not 'engine live'."""
         import urllib.error
         import urllib.request
 
@@ -410,9 +380,7 @@ class GoApiSupervisor:
             try:
                 with urllib.request.urlopen(url, timeout=1.5) as resp:
                     if resp.status in (200, 503):
-                        # 503 = Go is up, Python not yet live: still 'ready'
-                        # as an API plane. The engine's own readiness gate
-                        # is what gates the browser, not this one.
+                        # 503 = Go is up, Python not yet live: still 'ready'.
                         return True
             except urllib.error.HTTPError as exc:
                 if exc.code in (200, 503):
@@ -423,8 +391,7 @@ class GoApiSupervisor:
         return False
 
     def _pump_stderr(self) -> None:
-        """Relay the child output to stderr in a daemon thread, so a chatty Go
-        server can never fill and block the pipe."""
+        """Relay the child output to stderr in a daemon thread, so a chatty Go server can never fill and block the pipe."""
 
         def _relay(stream: Any) -> None:
             try:
@@ -445,8 +412,7 @@ class GoApiSupervisor:
 
 
 def _binary_workdir(binary: str) -> str:
-    """Cwd for the Go child: the go-api source dir if present (static assets
-    are relative to it), else the binary's own dir."""
+    """Cwd for the Go child: go-api source dir if present, else the binary's own dir (packaged install)."""
     if GO_API_DIR.is_dir():
         return str(GO_API_DIR)
     with contextlib.suppress(OSError):
@@ -455,8 +421,7 @@ def _binary_workdir(binary: str) -> str:
 
 
 def _creation_flags() -> int:
-    """On Windows, give the child its own process group so Ctrl+C signals only
-    the Python parent (ShutdownSupervisor contract)."""
+    """On Windows, give the child its own process group so Ctrl+C signals only the Python parent (ShutdownSupervisor)."""
     if os.name != "nt":
         return 0
     try:
@@ -488,9 +453,7 @@ def _force_kill(pid: int | None) -> None:
             pass
 
 
-# --------------------------------------------------------------------------- #
-# Public entrypoint
-# --------------------------------------------------------------------------- #
+# ---- Public entrypoint ----------------------------------------------- #
 def boot_go_api(
     python_host: str, python_port: int, preferred_api_port: int
 ) -> GoApiSupervisor | None:
@@ -498,16 +461,14 @@ def boot_go_api(
 
     Called from the engine boot path AFTER Python's own web origin is known,
     so the Go plane is ready when the dashboard opens. Returns None when Go
-    cannot be used - the caller then serves the FastAPI app on its own port.
-    That fallback is the ONLY one in this subsystem.
+    cannot be used - the caller serves the FastAPI app alone (the ONLY
+    fallback in this subsystem).
     """
     go_exe = _find_go()
     if go_exe is None and resolve_go_api_binary() is None:
         _log(
-            "go toolchain not found and no shipped nexus-api binary"
-            " - serving python API directly (no go plane)"
+            "go toolchain not found and no shipped nexus-api binary; serving python API directly (no go plane)"
         )
-
         return None
 
     ok, msg = build_go_api(go_exe)
