@@ -81,6 +81,24 @@ def _open_replay() -> tuple[sqlite3.Connection, list[str]]:
     return conn, captured
 
 
+_IF_NOT_EXISTS_GUARD = re.compile(
+    r'(?is)^(CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX))\s+((?!IF\s+NOT\s+EXISTS)("?[\w]+"?))'
+)
+
+
+def _restore_if_not_exists(statement: str) -> str:
+    """Undo SQLite's catalog normalization of ``CREATE ... IF NOT EXISTS``.
+
+    ``sqlite_master.sql`` drops the ``IF NOT EXISTS`` clause from a statement
+    it stores (the table exists by construction, so the clause is moot to
+    SQLite). The replay hands the provisioner the *original* spelling because
+    that is the idempotent form every other captured statement uses; without
+    the guard, a PostgreSQL re-provisioning run would fail on the tables the
+    previous run already created.
+    """
+    return _IF_NOT_EXISTS_GUARD.sub(r"\1 IF NOT EXISTS \2", statement)
+
+
 def _apply_audit_bootstrap(conn: sqlite3.Connection) -> None:
     """Run the DDL path an ``AuditRepository`` construction executes.
 
@@ -103,6 +121,7 @@ def _apply_audit_bootstrap(conn: sqlite3.Connection) -> None:
         write_sink=None,
     )
     AuditRepository._create_sqlite_tables(host, conn)
+    _apply_learning_cycle_tables(conn)
 
 
 def _apply_news_bootstrap(conn: sqlite3.Connection) -> None:
@@ -163,6 +182,58 @@ def _apply_candle_intel_bootstrap(conn: sqlite3.Connection) -> None:
         conn.execute(ddl)
     for table in TABLES:
         conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_ts ON {table}(ts);")
+
+
+def _apply_learning_cycle_tables(conn: sqlite3.Connection) -> None:
+    """Create ``learning_cycles`` / ``learning_cycle_events`` — the learning loop's tables.
+
+    ``LearningCycleStore`` owns their DDL (it is the only module that reads and
+    writes them), so the statements are imported rather than copied: two
+    spellings of the cycle schema would be a drift waiting to happen. The
+    store's ``ensure_schema`` opens its *own* SQLite connection, so the owner's
+    DDL is harvested from the catalog of the database it just created instead
+    of the replay connection — the catalog holds the exact text the owner
+    issued, in the original ``IF NOT EXISTS`` spelling, and the harvest is
+    therefore idempotent and never invents a third spelling.
+    """
+    import os
+    import tempfile
+
+    from nexus_scalp.model_lifecycle.learning_cycle import LearningCycleStore
+
+    # The suffix is the trap's exemption marker: the harvest needs a REAL file
+    # (the store builds its schema on its own connection, so a ``:memory:``
+    # database the harvest connects to separately holds zero tables), and the
+    # file is created and deleted within this function. The SQLite runtime trap
+    # exempts ``_schema_harvest.db`` so this transient scratch file is not
+    # mistaken for operational data on a PostgreSQL box.
+    fd, path = tempfile.mkstemp(suffix="_schema_harvest.db")
+    os.close(fd)
+    try:
+        LearningCycleStore(path)
+        harvest_conn = sqlite3.connect(path)
+        try:
+            # The objects are matched on the DDL TEXT, not the object name:
+            # the indexes are named ``idx_learning_*`` (they sort *before*
+            # ``learning_*`` alphabetically) while the tables are
+            # ``learning_*``, so a name filter would pick up one and drop the
+            # other. ``sql <> ''`` matters too — SQLite stores the catalog text
+            # of an object it cannot re-create (an implicit index) as an EMPTY
+            # string, not NULL, so ``IS NOT NULL`` would let it through.
+            rows = harvest_conn.execute(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type IN ('table', 'index') AND sql <> '' "
+                "AND sql LIKE '%learning%' "
+                "ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END, name"
+            ).fetchall()
+        finally:
+            harvest_conn.close()
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+    for row in rows:
+        statement = _restore_if_not_exists(str(row[0]).strip())
+        conn.execute(statement)
 
 
 #: The bootstrap DDL path for each domain — the statements a fresh database

@@ -1,8 +1,21 @@
 # ============================================================
 # Nexus Scalp Engine — Multi-stage Docker image
 # ============================================================
-# Stage 1  builder : deps wheel build (cached independently of src/)
-# Stage 2  runtime : minimal image, non-root user, no build toolchain
+# Stage 0  go-builder : compiles the Go API control plane (go-api/)
+# Stage 1  builder    : deps wheel build (cached independently of src/)
+# Stage 2  runtime    : minimal image, non-root user, no build toolchain
+#
+# GO-API-GATE (container wiring):
+#   The Go API server (go-api/cmd/nexus-api) is the product's API
+#   entrypoint: every HTTP request reaches Go, which proxies the Python
+#   runtime on 127.0.0.1:9090 for the facts it does not own. The binary is
+#   compiled in Stage 0 and copied into the runtime stage next to the app;
+#   docker/go-api-bootstrap.sh launches it in the background and then execs
+#   the real entrypoint, so the engine stays PID 1 and owns the container
+#   lifecycle. The Go plane is FAILURE-ISOLATED: if the binary cannot start,
+#   the Python FastAPI app still serves the complete API surface on :9090
+#   (same contract as src/nexus_scalp/web/go_api_bootstrap.py — the ONLY
+#   fallback path in the system).
 #
 # FIXLOG (2026-09-09, docker-repair):
 #   1. Builder previously re-resolved the project via PEP 517 with
@@ -20,6 +33,33 @@
 #      are unaffected: requirements.txt (CUDA build) remains the source of
 #      truth outside Docker.
 # ============================================================
+
+# ============================================================
+# Stage 0: Go API control plane (go-api/cmd/nexus-api)
+# ============================================================
+# Same distro family as the Python stages (debian bookworm) so the cgo-free
+# static binary drops straight into the slim runtime with no libc mismatch.
+#
+# The module has NO third-party dependencies (stdlib + local packages only:
+# internal/api, internal/security/auth, pkg/contracts), so there is nothing
+# to download and no go.sum to vendor — GOPROXY=off makes the layer
+# hermetic and network-independent.
+FROM golang:1.27-bookworm AS go-builder
+
+WORKDIR /build
+
+# CGO_ENABLED=0: the binary is statically linked so the slim runtime (no
+# gcc/libc dev headers) can run it unmodified. GOPROXY=off: the module is
+# stdlib-only (no third-party imports, no go.sum), so the compile needs no
+# network access at all — the layer is hermetic and reproducible.
+ENV CGO_ENABLED=0 \
+    GOPROXY=off
+
+# Copy only the Go module: the whole tree is needed because internal/ and
+# pkg/ are imported by ./cmd/nexus-api.
+COPY go-api/ ./
+
+RUN go build -trimpath -ldflags="-s -w" -o /out/nexus-api ./cmd/nexus-api
 
 # ============================================================
 # Stage 1: build dependencies (cached via pyproject+requirements)
@@ -74,7 +114,9 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH="/app/src:/install/lib/python3.11/site-packages" \
     PATH="/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin:/install/bin" \
     TZ=UTC \
-    NSE_WEB_HOST=0.0.0.0
+    NSE_WEB_HOST=0.0.0.0 \
+    NSE_GO_ADDR=0.0.0.0:8087 \
+    NSE_PYTHON_ORIGIN=http://127.0.0.1:9090
 # NSE_WEB_HOST=0.0.0.0: containers must bind the API on all interfaces or the
 # `docker -p` port mapping reaches nothing (engine default is 127.0.0.1 inside
 # the container -> host curl gets connection reset; docker-repair 2026-09-09).
@@ -93,12 +135,19 @@ RUN groupadd -g 10001 appgroup && \
     useradd -u 10001 -g appgroup -s /bin/sh -m appuser
 
 COPY --from=builder /layerdeps/ /usr/local/lib/python3.11/site-packages/
+# GO-API-GATE: precompiled Go control plane. CGO_ENABLED=0 => static, so the
+# slim runtime needs no libc/gcc runtime. Owned by root, world-executable:
+# the Go plane must start even when a mounted volume has made /app
+# unwritable for non-root (the volumes only mount /app/artifacts and
+# /app/data, but the chmod below stays defensive).
+COPY --from=go-builder /out/nexus-api /app/nexus-api
 COPY configs/ configs/
 COPY docker/ docker/
 COPY src/ src/
 COPY Web/ Web/
 
 RUN chmod +x /app/docker/*.sh \
+    && chmod 0755 /app/nexus-api \
     && mkdir -p /app/artifacts/models /app/artifacts/logs /app/data /app/Web \
     # live.yaml is operator-local (gitignored, never baked): the container CMD
     # and docs/docker.md both reference configs/live.yaml, so ship the example
@@ -111,12 +160,21 @@ RUN chmod +x /app/docker/*.sh \
 
 USER appuser
 
-EXPOSE 9090
+# 9090 = the Python FastAPI origin (engine + Web UI, the healthcheck target).
+# 8087 = the Go API control plane, the published API entrypoint. Go proxies
+# every /api route to 127.0.0.1:9090; both must be reachable in-container.
+EXPOSE 9090 8087
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=6 \
     CMD ["/app/docker/healthcheck.sh"]
 
 # The entrypoint handles env validation, dir bootstrap, migrations and
 # startup summary; the CMD is the default engine command (PAPER mode).
-ENTRYPOINT ["/app/docker/entrypoint.sh"]
+#
+# GO-API-GATE: go-api-bootstrap.sh starts the precompiled /app/nexus-api in
+# the BACKGROUND first (addr 0.0.0.0:8087 -> python 127.0.0.1:9090), then
+# execs docker/entrypoint.sh with the original args. The engine is PID 1 and
+# owns the process tree; the Go plane is a supervised sibling whose failure
+# NEVER blocks the boot (Python keeps serving the full API on :9090).
+ENTRYPOINT ["/app/docker/go-api-bootstrap.sh"]
 CMD ["python", "-m", "nexus_scalp.cli.main", "start", "--mode", "paper", "--config", "configs/live.yaml", "--port", "9090"]

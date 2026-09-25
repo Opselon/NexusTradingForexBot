@@ -90,7 +90,9 @@ Every task from the legacy governance/smoke backlog has been preserved and mappe
 | `ML-QA-007` | L: CI/CD | P2 | Push-Gate Latency Determinism: MT5 Parity Suite (roster #4) | **DONE** (PR pending) | `AGENT-QA` | NO | `ML-QA-004` | `PARALLEL_SAFE` |
 | `ML-QA-008` | L: CI/CD | P2 | Push-Gate Latency Determinism: Experiment-Registry Benchmark (roster #6) | **DONE** (PR pending) | `AGENT-QA` | NO | `ML-QA-004` | `PARALLEL_SAFE` |
 | `ML-QA-009` | L: CI/CD | P2 | Push-Gate Bounded-Wait Determinism: Audit-Flush (roster #7, CPU-time budget) | **DONE** (PR #422 open) | `AGENT-QA` | NO | `ML-QA-004` | `PARALLEL_SAFE` |
-| `ML-QA-010` | L: CI/CD | P2 | Push-Gate Wall-Clock Determinism: BUG-262 Close-Time Evidence (roster recount #1) | **DONE** (PR pending) | `AGENT-QA` | NO | `ML-QA-004` | `PARALLEL_SAFE` |
+| `ML-QA-010` | L: CI/CD | P2 | Push-Gate Wall-Clock Determinism: BUG-262 Close-Time Evidence (roster recount #1) | **DONE** (PR #432, squash 6a7e2e7e) | `AGENT-QA` | NO | `ML-QA-004` | `PARALLEL_SAFE` |
+| `ML-QA-011` | L: CI/CD | P2 | Push-Gate Wall-Clock Determinism: Shadow70 Safety Suite (roster recount #2, one frozen instant, spec 13/14 idempotency provable) | **DONE** (PR #457, squash 33205de2) | `AGENT-QA` | NO | `ML-QA-004`, `ML-QA-010` | `PARALLEL_SAFE` |
+| `ML-QA-012` | L: CI/CD | P2 | Push-Gate Wall-Clock Determinism: BUG-140 Outcome-Flush Race Suite (roster candidate #3, one frozen instant, CPU-time poll bounds) | **DONE** (PR pending) | `AGENT-QA` | NO | `ML-QA-004`, `ML-QA-009`, `ML-QA-011` | `PARALLEL_SAFE` |
 
 ---
 

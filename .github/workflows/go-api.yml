@@ -1,0 +1,124 @@
+name: Go API
+
+# GO-API-GATE — the Go API server (go-api/) is the product's API entrypoint:
+# every HTTP request reaches Go, which proxies the Python runtime for the
+# facts it does not own. This workflow is the merge gate for that plane.
+#
+# Both OS legs are REQUIRED: the product ships on Windows and the router has
+# Windows-specific behaviour (path separators in the generated route table,
+# creationflags on the supervised child), so a Linux-only green run is not
+# evidence the shipped binary builds or passes on the target OS.
+#
+# Scope: this gate fires ONLY when go-api/** changes (plus workflow self-
+# edits), so an unrelated Python/docs push pays no toolchain cost. Note the
+# push trigger still fires on main merges of those paths — that is the
+# post-merge regression signal, and it is the SAME job as the PR check
+# (there is no separate blocking release gate here; branch-protection makes
+# the PR check required).
+#
+# Route parity with Python is NOT this gate. Full route-for-route parity
+# against the live FastAPI dump is the harness in api/migration/, regenerated
+# by the (untracked) scratch_ground_truth.py helper in the repo root. CI
+# deliberately does not depend on that scratch script; the route-drift step
+# below runs a cheap structural invariant test instead.
+
+on:
+  push:
+    branches: [main, develop, ci-tests]
+    tags-ignore: ["v*"]
+    paths:
+      - "go-api/**"
+      - ".github/workflows/go-api.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "go-api/**"
+      - ".github/workflows/go-api.yml"
+  workflow_dispatch:
+
+# One Go run per ref; a new push supersedes the stale one.
+concurrency:
+  group: go-api-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Diff/poll pattern from the requested set uses read-only contents.
+permissions:
+  contents: read
+
+jobs:
+  go-api:
+    name: Go API (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    strategy:
+      # Windows is a hard requirement, not a best-effort leg: a fail-fast
+      # false would let the shipped-OS failure hide behind a Linux pass.
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+        with:
+          # go.mod declares `go 1.27`; the setup-go directive lets the
+          # toolchain resolve a matching release on both runners.
+          go-version: ">=1.23"
+          # go-api has no go.sum (no external module deps yet), so the
+          # cache key falls back to go.mod. Cache is inert without it.
+          cache: true
+          cache-dependency-path: |
+            go-api/go.sum
+            go-api/go.mod
+
+      # The module lives at go-api/, not the repo root: every Go command
+      # below runs from there.
+      - name: Build
+        working-directory: go-api
+        run: go build ./...
+
+      - name: Vet
+        working-directory: go-api
+        run: go vet ./...
+
+      # gofmt -l prints the names of files whose formatting differs from
+      # gofmt's; silence is the pass condition. The guard prints a real diff
+      # on failure instead of a bare nonzero exit, so the fix is visible.
+      - name: Format check
+        working-directory: go-api
+        shell: bash
+        run: |
+          set -e
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then
+            echo "::error::gofmt would reformat:"
+            echo "$out"
+            echo
+            gofmt -d .
+            exit 1
+          fi
+          echo "gofmt: clean"
+
+      - name: Tests
+        working-directory: go-api
+        run: go test ./...
+
+      # Route-drift guard — CHEAP STRUCTURAL INVARIANT ONLY. Asserts the
+      # generated route table has no zero-entry domains and that every entry
+      # has a non-empty method and a path under /api or /health. Full Python
+      # parity is the harness in api/migration/, not this gate.
+      - name: Route table drift guard
+        working-directory: go-api
+        run: go test ./internal/api/routes/ -run "TestRouteTable" -v
+
+      - name: Report status
+        if: always()
+        shell: bash
+        run: |
+          echo "go-api gate finished on ${{ matrix.os }}: \
+            conclusion=${{ job.status }}"
+          exit 0

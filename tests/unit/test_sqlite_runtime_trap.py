@@ -136,7 +136,8 @@ def _seed_secret(password: str) -> None:
     later ``build_postgres_url`` resolves an empty password. Seeding here too
     makes both shapes equivalent for the whole module.
     """
-    if not password:[REDACTED]
+    if not password:
+        return
     try:
         if not SecureSecretStore().has_secret("db.postgresql.password"):
             SecureSecretStore().set_secret("db.postgresql.password", password)
@@ -234,6 +235,12 @@ class SQLiteTrap:
         out: list[str] = []
         for target in self.calls:
             if Path(target).name.lower() == SETTINGS_DB_FILENAME:
+                continue
+            # Schema-replay scratch (``_apply_learning_cycle_tables`` harvests a
+            # store's DDL from a temp file it creates and deletes in the same
+            # call). Not operational data, but it must stay identifiable so the
+            # trap never learns to ignore real files.
+            if Path(target).name.lower().endswith("_schema_harvest.db"):
                 continue
             if target not in out:
                 out.append(target)

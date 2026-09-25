@@ -196,7 +196,16 @@ class SQLiteDriver(DatabaseDriver):
         own = conn is None
         c = conn or (self.connect_shared() if self.is_in_memory else self.connect())
         try:
-            return c.execute(assert_safe_sql(sql), tuple(args))
+            result = c.execute(assert_safe_sql(sql), tuple(args))
+            if own and not self.is_in_memory:
+                # Commit when this method owns the connection. Without this the
+                # caller's writes silently vanish: execute() opened a fresh
+                # connection, ran the statement, and closed without committing,
+                # while the PostgreSQL driver's execute() commits when it owns
+                # the connection — a provider-semantics gap where a write that
+                # works on PG is lost on SQLite.
+                c.commit()
+            return result
         finally:
             if own and not self.is_in_memory:
                 c.close()
@@ -212,6 +221,10 @@ class SQLiteDriver(DatabaseDriver):
         c = conn or (self.connect_shared() if self.is_in_memory else self.connect())
         try:
             c.executemany(assert_safe_sql(sql), seq)
+            if own and not self.is_in_memory:
+                # See execute(): commit when we own the connection, else the
+                # batched writes are silently discarded on close.
+                c.commit()
         finally:
             if own and not self.is_in_memory:
                 c.close()

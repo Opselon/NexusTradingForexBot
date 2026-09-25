@@ -61,15 +61,36 @@ def _resolve_cycle_store_db_path(audit_repo: AuditRepository) -> str:
     whenever the attribute is not a plain string path — the cycle store is
     process-local state, so in-memory stays hermetic and never touches the
     production artifacts/audit.db (BUG-223 rule).
-
-    Under a pooled (PostgreSQL) provider the store does not use a SQLite path
-    at all — it routes through the fabric's audit-domain backends — so the
-    value is inert here; the store detects the pooled backend itself.
     """
     raw = getattr(audit_repo, "_db_path", None)
     if isinstance(raw, str) and raw.strip():
         return raw
+    if _audit_repo_is_nonsqlite(audit_repo):
+        return _cycle_store_workspace_path()
     return ":memory:"
+
+
+def _audit_repo_is_nonsqlite(audit_repo: Any) -> bool:
+    """True when the audit repo is bound to a non-SQLite provider."""
+    try:
+        return not bool(getattr(audit_repo, "_is_sqlite", True))
+    except Exception:
+        return False
+
+
+def _cycle_store_workspace_path() -> str:
+    """A stable REAL file path for the cycle store under a non-SQLite provider.
+
+    Resolved through the release path module so source, installed and
+    packaged layouts all agree (same anchor as every other runtime state
+    file). The parent directory is created eagerly — ``LearningCycleStore``
+    opens the connection immediately in ``__init__``.
+    """
+    from nexus_scalp.release.paths import get_runtime_workspace
+
+    root = get_runtime_workspace() / "artifacts" / "learning"
+    root.mkdir(parents=True, exist_ok=True)
+    return str(root / "learning_cycles.db")
 
 
 class LearningCycleOrchestrator:

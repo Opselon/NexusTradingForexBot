@@ -1,0 +1,3554 @@
+[
+ {
+  "method": "DELETE",
+  "path": "/api/db/console/apikey/{name}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/model-studio/models/{model_id}",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/account/drawdown",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/account/equity-curve",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/account/growth",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/account/performance",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/account/performance/intelligence",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/account/performance/{kind}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/account/performance/{kind}/series",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/account/strategies",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/account/summary",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/account/trades",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/account/trades/{trade_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/ai-providers",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/ai-providers/",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/ai-providers/activation",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/ai-providers/decision/{decision_id}",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/ai-providers/decisions",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/ai-providers/providers",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/ai-providers/providers/{provider_id}/models",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/ai-providers/providers/{provider_id}/status",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/ai-providers/restart-matrix",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/algo/config",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/chart/history",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/command-center/execution-safety/{strategy_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/command-center/fleet",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/command-center/inspector/{strategy_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/command-center/overview",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/command-center/spatial",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/command-center/timeline/{strategy_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/command-center/timemachine/bounds",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/command-center/timemachine/frame",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/config",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/db/console/apikeys",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/db/console/columns",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/db/console/databases",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/db/console/quick",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/db/console/rows",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/db/console/tables",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/db/hygiene",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/db/manage/options",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/db/manage/progress",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/db/manage/report",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/db/manage/status",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/db/manage/validate",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/db/status",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/debug/compare",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/debug/features",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/debug/freshness",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/debug/health",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/debug/ipc-telemetry",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/debug/snapshots",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/debug/snapshots/{snapshot_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/debug/state",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/debug/trace/{execution_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/dependency/cycles",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/dependency/graph",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/dependency/health",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/dependency/impact",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/dependency/metrics",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/dependency/node/{node_id:path}",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/dependency/path",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/dependency/summary",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/dependency/violations",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/diagnostics/forensics",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/diagnostics/health",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/diagnostics/incidents",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/diagnostics/incidents/{incident_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/diagnostics/incidents/{incident_id}/report",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/diagnostics/incidents/{incident_id}/zip",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/diagnostics/lineage",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/diagnostics/search",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/diagnostics/trace",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/experience/decision",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/experience/models",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/experience/strategies",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/experience/summary",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/factory/benchmarks",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/factory/candidates",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/factory/events",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/factory/failures",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/factory/generations",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/factory/generations/{generation_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/factory/llm-config",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/factory/memory",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/factory/provider-health",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/factory/ranking",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/factory/status",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/forensics/deploy-gate",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/forensics/health",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/intelligence/anomalies",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/intelligence/autopsies",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/intelligence/autopsies/{ticket}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/intelligence/behavior",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/intelligence/evolution",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/intelligence/positions/{ticket}/timeline",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/intelligence/summary",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/liquidity/features",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/liquidity/state",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/live/accounting",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/live/state",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/model-studio/artifact-locations",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/model-studio/datasets",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/model-studio/fetch-70d",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/model-studio/models",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/model-studio/models/active",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/model-studio/models/history",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/model-studio/models/{model_id}/scaler",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/model-studio/overview",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/model-studio/train/progress",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/challengers",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/champion",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/comparison/{run_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/governance/audits",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/governance/comparisons",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/governance/events",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/governance/health",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/governance/promotion-preview",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/governance/registry",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/governance/review",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/governance/rollback-preview",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/governance/status",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/integrity",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/runs",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/runs/{run_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/shadow/compare/{run_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/shadow/decisions",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/shadow/promotion/{run_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/shadow/runs",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/shadow/summary",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/shadow70/disagreements",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/shadow70/health",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/shadow70/summary",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/models/summary",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/mslie/features",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/mslie/status",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/mt5/status",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/ai-status",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/analysis/{article_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/auto-analysis",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/health",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/impact",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/keywords",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/latest",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/pro/console",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/pro/latest-answers",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/pro/status",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/sources",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/state",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/timeline",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/toggle-state",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/trades/{trade_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/news/{article_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/observability/stats",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/operator/calibration",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/operator/decisions",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/operator/decisions/{decision_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/operator/funnel",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/operator/no-trade",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/operator/orders",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/operator/summary",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/position-adviser/advisories",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/position-adviser/datasets",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/position-adviser/models",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/position-adviser/status",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/provisioning/datasets",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/provisioning/environment",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/provisioning/status",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/provisioning/train/progress",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/release/status",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/replay/decision",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/replay/report",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/replay/state",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/analytics",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/detail/{strategy_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/diagnostics",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/events",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/evidence",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/gates",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/health",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/history",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/preflight",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/queue",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/registry",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/registry/{strategy_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/runs",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/summary",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/trace",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/research/worker",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/rules",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/runtime-config",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/runtime-config/diagnostics",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/settings",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/settings/telegram/status",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/status",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/trace/bundle/{key}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/trace/decisions",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/trace/events",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/trace/integrity",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/trace/latency",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/trace/observer",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/trace/topology",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/trace/why/{event_id}",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/audit/events",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/config",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/config/schema",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/database/integrity",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/database/status",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/database/tables",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/decisions",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/decisions/latest",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/decisions/no-trade",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/decisions/no-trade/reasons",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/decisions/stats",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/decisions/{decision_id}",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/decisions/{decision_id}/evidence",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/decisions/{decision_id}/explanation",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/decisions/{decision_id}/gates",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/execution/history",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/execution/status",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/features/contract",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/features/current",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/features/groups",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/features/status",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/incidents",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/incidents/stats",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/incidents/{incident_id}",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/incidents/{incident_id}/timeline",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/indicators",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/indicators/gauges",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/indicators/moving-averages",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/indicators/oscillators",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/indicators/pivots",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/indicators/summary",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/market/bars",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/market/quote",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/market/regime",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/market/snapshot",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/market/symbols",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/marketplace/packs",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/marketplace/rankings",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/marketplace/repairs",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/marketplace/runtime-snapshot",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/marketplace/scores/{seed_id}/history",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/marketplace/seeds",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/marketplace/seeds/{seed_id}",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/model/champion",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/model/contracts",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/model/identity",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/model/status",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/observability/events",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/observability/metrics",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/positions",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/positions/history/{ticket}",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/positions/{ticket}",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/shadow/70d",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/shadow/decisions",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/shadow/runs",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/shadow/runs/{run_id}",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/shadow/status",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/signals/history",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/signals/latest",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api_client.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/app.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/backtest_report_ui.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/cc_components.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/cc_state.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/cc_styles.css",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/command_center.html",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/command_center_console.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/command_center_spatial.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/command_center_timemachine.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/command_center_ui.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/control_center.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/dependency",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/dependency.html",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/dependency_api.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/dependency_graph.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/dependency_ui.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/docs",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/docs/oauth2-redirect",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/first_setup.html",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/forensic_console.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/health",
+  "verdict": "PASS",
+  "py_status": 503,
+  "go_status": 503,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/index.html",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/legacy",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/legacy/",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/legacy.html",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/marketplace.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/model_studio_ui.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/news_intelligence.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/openapi.json",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/position_adviser_ui.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/redoc",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/replay_panel.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/responsive.css",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/styles.css",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/tailwind.css",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/tv_widget.html",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/tv_widget.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/tv_widget_styles.css",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/ux.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/ux_attention.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/ux_conn.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/ux_i18n.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/ux_palette.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/ux_signal.js",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/vendor/fontawesome/all.min.css",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "GET",
+  "path": "/vendor/webfonts/{font_name}",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/ai-providers/activate",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/ai-providers/decision/compare",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/ai-providers/decision/evaluate",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/ai-providers/export",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/ai-providers/import",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/ai-providers/providers/{provider_id}/configure",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/ai-providers/providers/{provider_id}/disable",
+  "verdict": "PASS",
+  "py_status": 400,
+  "go_status": 400,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/ai-providers/providers/{provider_id}/enable",
+  "verdict": "PASS",
+  "py_status": 400,
+  "go_status": 400,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/ai-providers/providers/{provider_id}/test",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/ai-providers/reset",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/ai-providers/switch",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/config",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/db/console/apikey",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/db/console/query",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/db/console/refresh",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/db/manage/backup",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/db/manage/config",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/db/manage/migrate",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/db/manage/options",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/db/manage/parse-url",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/db/manage/preview",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/db/manage/provider",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/db/manage/test-connection",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/debug/model-test",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/diagnostics/incidents/reconcile",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/engine/mode",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/engine/toggle",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/experience/self-heal",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/factory/complete/{generation_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/factory/evaluate/{candidate_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/factory/generate",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/factory/llm-config",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/factory/loop/pause",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/factory/loop/resume",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/factory/loop/start",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/factory/loop/stop",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/factory/provider-test",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/factory/provider-toggle",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/intelligence/evolution/scan",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/intelligence/evolution/validate",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/intelligence/self-heal",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/liquidity/toggle",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/benchmark",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/datasets/download",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/datasets/inspect-features",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/models/benchmark-live",
+  "verdict": "PASS",
+  "py_status": 400,
+  "go_status": 400,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/models/canary",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/models/drift-check",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/models/export",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/models/fine-tune",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/models/hot-load",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/models/register",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/models/rollback",
+  "verdict": "PASS",
+  "py_status": 400,
+  "go_status": 400,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/models/tag",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/models/verify",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/position-dataset/generate",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/position-dataset/validate",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/predict",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/stress-test",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/model-studio/train",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/governance/emergency/disable",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/governance/emergency/freeze",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/governance/emergency/unfreeze",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/promotion/approve",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/promotion/execute",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/promotion/rollback",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/registry/reconcile",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/shadow/attach",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/shadow/evaluate-promotion",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/shadow/outcomes",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/shadow/worker/start",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/shadow/worker/stop",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/shadow70/attach",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/shadow70/detach",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/shadow70/start",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/shadow70/stop",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/train",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/worker/cancel",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/worker/start",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/models/worker/stop",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/news/analyze/batch",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/news/analyze/{article_id}",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/news/auto-analysis",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/news/auto-prune",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/news/pro/analyze-all",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/news/pro/purge",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/news/refresh",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/news/self-heal",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/news/toggle",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/news/{article_id}/restore",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/position-adviser/activate",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/position-adviser/auto-tune",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/position-adviser/checks/run",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/position-adviser/config",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/position-adviser/load",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/position-adviser/train",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/position-adviser/unload",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/positions/close",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/positions/modify",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/provisioning/environment/install",
+  "verdict": "FAIL",
+  "py_status": -1,
+  "go_status": 200,
+  "note": "status -1 vs 200; body"
+ },
+ {
+  "method": "POST",
+  "path": "/api/provisioning/official",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/provisioning/train/cancel",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/provisioning/train/start",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/replay/control",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/replay/session",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/replay/toggle",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/research/cancel",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/research/discover",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/research/promote",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/research/recover-missing-outcomes",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/research/repair-outcomes",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/research/retry-gate",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/research/self-heal",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/research/validate",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/rules/toggle",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/runtime-config/apply",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/runtime-config/model-swap",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/settings/telegram",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/settings/validate",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/simulation/tick",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/telegram/test",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/trace/observer/start",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/trace/observer/stop",
+  "verdict": "PASS",
+  "py_status": 200,
+  "go_status": 200,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/v1/config/validate",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/v1/marketplace/packs/{pack_id}/install",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/v1/marketplace/seeds/{seed_id}/disable",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/v1/marketplace/seeds/{seed_id}/enable",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/v1/marketplace/seeds/{seed_id}/repair",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/v1/marketplace/seeds/{seed_id}/run-research",
+  "verdict": "PASS",
+  "py_status": 404,
+  "go_status": 404,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/v1/runtime/mode/preview",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "POST",
+  "path": "/api/v1/runtime/mode/validate",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ },
+ {
+  "method": "PUT",
+  "path": "/api/algo/config",
+  "verdict": "PASS",
+  "py_status": 422,
+  "go_status": 422,
+  "note": ""
+ }
+]

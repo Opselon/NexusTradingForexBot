@@ -78,7 +78,9 @@
 - [ML-QA-007](tasks/ML-QA-007.md) — Push-Gate Latency Determinism: MT5 Parity Suite (roster candidate #4, CPU-time probes + warmup + SLA re-attached) `[P2 | DONE (PR pending) | AGENT-QA]`
 - [ML-QA-008](tasks/ML-QA-008.md) — Push-Gate Latency Determinism: Experiment-Registry Benchmark (roster candidate #6, CPU-time legs + warmup, 50ms query budget kept hard) `[P2 | DONE (PR pending) | AGENT-QA]`
 - [ML-QA-009](tasks/ML-QA-009.md) — Push-Gate Bounded-Wait Determinism: Audit-Flush (roster candidate #7, CPU-time budget, no-deadlock contract kept hard) `[P2 | DONE (PR #422 open) | AGENT-QA]`
-- [ML-QA-010](tasks/ML-QA-010.md) — Push-Gate Wall-Clock Determinism: BUG-262 Close-Time Evidence (roster recount #1, injected fixed clock + tmp_path, 15 sources removed) `[P2 | DONE (PR pending) | AGENT-QA]`
+- [ML-QA-010](tasks/ML-QA-010.md) — Push-Gate Wall-Clock Determinism: BUG-262 Close-Time Evidence (roster recount #1, injected fixed clock + tmp_path, 15 sources removed) `[P2 | DONE (PR #432, squash 6a7e2e7e) | AGENT-QA]`
+- [ML-QA-011](tasks/ML-QA-011.md) — Push-Gate Wall-Clock Determinism: Shadow70 Safety Suite (roster recount #2, one frozen instant + tmp_path + CPU-budget flush wait, spec 13/14 idempotency now provable) `[P2 | DONE (PR #457, squash 33205de2) | AGENT-QA]`
+- [ML-QA-012](tasks/ML-QA-012.md) — Push-Gate Wall-Clock Determinism: BUG-140 Outcome-Flush Race Suite (roster candidate #3, one frozen instant + CPU-time poll bounds, read drift removed) `[P2 | DONE (PR pending) | AGENT-QA]`
 - [ML-UI-001](tasks/ML-UI-001.md) — End-to-End Model UX & CLI Verification (Training, Predict & Confidence Trust) `[P1 | DONE | AGENT-UI]`
 - [ML-UI-002](tasks/ML-UI-002.md) — Model Studio E2E Dataset Ingestion, 50D/70D Normalization & Layer-2 Position Management Generator `[P1 | DONE | AGENT-UI]`
 - [ML-UI-003](tasks/ML-UI-003.md) — AI Hub: Model Registry, SQLite Catalog & Live Runtime Hot-Loader `[P1 | DONE | AGENT-UI]`

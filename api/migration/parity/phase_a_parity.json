@@ -1,0 +1,1676 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/system/health",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "transport_error": "",
+    "py_json": {
+      "data": {
+        "verdict": "DEGRADED",
+        "checks": [
+          {
+            "category": "SYSTEM",
+            "verdict": "PASS",
+            "reason": "Windows 10.0.28000 / x64",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "RUNTIME",
+            "verdict": "PASS",
+            "reason": "version 9.0.14 · stable · Python 3.11.16 · commit 95dbdfa87c4c724204810c4f37a03d83d267b473",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "CONFIGURATION",
+            "verdict": "PASS",
+            "reason": "mode=PAPER symbol=XAUUSD schema=v1.0",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "DATABASE",
+            "verdict": "WARNING",
+            "reason": "audit.db: database not initialized yet (no file: audit.db)",
+            "suggestion": "Created automatically on first engine start.",
+            "state": "NOT_INITIALIZED",
+            "optional": true
+          },
+          {
+            "category": "MODEL",
+            "verdict": "WARNING",
+            "reason": "no model artifact found — external/optional until training runs",
+            "suggestion": "Run `nexus setup`/`nexus repair --model` to provision a PAPER starter bundle (BUG-296).",
+            "state": "NOT_INITIALIZED",
+            "optional": true
+          },
+          {
+            "category": "MODEL_CONTRACT",
+            "verdict": "WARNING",
+            "reason": "no model artifact present — contract not evaluated",
+            "suggestion": "Run `nexus setup`/`nexus repair --model` to initialize a bundle.",
+            "state": "DEGRADED",
+            "optional": false
+          },
+          {
+            "category": "FEATURE_SCHEMA",
+            "verdict": "WARNING",
+            "reason": "no model artifact present — serving contract not yet determined",
+            "suggestion": "Run `nexus setup`/`nexus repair --model` to initialize a bundle.",
+            "state": "UNKNOWN",
+            "optional": true
+          },
+          {
+            "category": "EXECUTION_COSTS",
+            "verdict": "PASS",
+            "reason": "calibration=CAL-2026-09-07-A spread_mean=0.147 friction_usd=0.35",
+            "suggestion": "",
+            "state": "AVAILABLE",
+            "optional": false
+          },
+          {
+            "category": "DATA",
+            "verdict": "FAIL",
+            "reason": "canonical bars file missing: data\\raw\\XAUUSD_M1.parquet (training cannot run)",
+            "suggestion": "Acquire XAUUSD M1 history from the MT5 terminal (copy_rates) or restore a data/raw backup, then re-run doctor.",
+            "state": "NOT_INITIALIZED",
+            "optional": false
+          },
+          {
+            "category": "GPU",
+            "verdict": "PASS",
+            "reason": "no discrete GPU — CPU mode (safe default)",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "MT5",
+            "verdict": "PASS",
+            "reason": "terminal detected",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "NETWORK",
+            "verdict": "PASS",
+            "reason": "outbound HTTPS ok",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "DISK",
+            "verdict": "PASS",
+            "reason": "128832 MB free",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "MEMORY",
+            "verdict": "PASS",
+            "reason": "16125 MB RAM",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "LOGGING",
+            "verdict": "WARNING",
+            "reason": "no log files yet",
+            "suggestion": "Logs appear after the first engine start.",
+            "state": "NOT_INITIALIZED",
+            "optional": true
+          },
+          {
+            "category": "OBSERVABILITY",
+            "verdict": "PASS",
+            "reason": "log contract PASS (8 checks; dropped_events=0)",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "WORKERS",
+            "verdict": "WARNING",
+            "reason": "worker checkpoint tables missing: intelligence_worker_state, research_worker_state",
+            "suggestion": "Created automatically on first engine start.",
+            "state": "NOT_INITIALIZED",
+            "optional": true
+          },
+          {
+            "category": "NEWS",
+            "verdict": "WARNING",
+            "reason": "news.db not initialized yet (no tables created by first news run)",
+            "suggestion": "Run `nexus repair --news` to initialize the news schema.",
+            "state": "NOT_INITIALIZED",
+            "optional": true
+          },
+          {
+            "category": "EXPERIENCE",
+            "verdict": "WARNING",
+            "reason": "Experience tables missing: audit_experience_outcomes, audit_experiences, experience_model_registry",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "state": "DEGRADED",
+            "optional": false
+          },
+          {
+            "category": "RESEARCH",
+            "verdict": "WARNING",
+            "reason": "Research tables missing: research_runs, strategy_registry",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "state": "DEGRADED",
+            "optional": false
+          },
+          {
+            "category": "TRAINING",
+            "verdict": "WARNING",
+            "reason": "Training tables missing: model_comparisons, training_runs",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "state": "DEGRADED",
+            "optional": false
+          },
+          {
+            "category": "SHADOW",
+            "verdict": "WARNING",
+            "reason": "shadow tables not created yet (lazily initialized on first shadow run)",
+            "suggestion": "Created automatically on the first shadow decision.",
+            "state": "NOT_INITIALIZED",
+            "optional": true
+          },
+          {
+            "category": "ACCOUNTING",
+            "verdict": "WARNING",
+            "reason": "Accounting tables missing: audit_account_snapshots, audit_ledger",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "state": "DEGRADED",
+            "optional": false
+          },
+          {
+            "category": "TELEGRAM",
+            "verdict": "PASS",
+            "reason": "configured (source=SECURE_SECRET_STORE, token_len=37, admin_shape_valid=True)",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          }
+        ],
+        "critical_failures": [
+          "DATA"
+        ]
+      },
+      "meta": {
+        "request_id": "req_7532842b90",
+        "generated_at": "2026-09-24T06:37:13.014574+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "verdict": "DEGRADED",
+        "checks": [
+          {
+            "category": "SYSTEM",
+            "optional": false,
+            "reason": "Windows 10.0.28000 / x64",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "RUNTIME",
+            "optional": false,
+            "reason": "version 9.0.14 · stable · Python 3.11.16 · commit 95dbdfa87c4c724204810c4f37a03d83d267b473",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "CONFIGURATION",
+            "optional": false,
+            "reason": "mode=PAPER symbol=XAUUSD schema=v1.0",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "DATABASE",
+            "optional": true,
+            "reason": "audit.db: database not initialized yet (no file: audit.db)",
+            "state": "NOT_INITIALIZED",
+            "suggestion": "Created automatically on first engine start.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "MODEL",
+            "optional": true,
+            "reason": "no model artifact found — external/optional until training runs",
+            "state": "NOT_INITIALIZED",
+            "suggestion": "Run `nexus setup`/`nexus repair --model` to provision a PAPER starter bundle (BUG-296).",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "MODEL_CONTRACT",
+            "optional": false,
+            "reason": "no model artifact present — contract not evaluated",
+            "state": "DEGRADED",
+            "suggestion": "Run `nexus setup`/`nexus repair --model` to initialize a bundle.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "FEATURE_SCHEMA",
+            "optional": true,
+            "reason": "no model artifact present — serving contract not yet determined",
+            "state": "UNKNOWN",
+            "suggestion": "Run `nexus setup`/`nexus repair --model` to initialize a bundle.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "EXECUTION_COSTS",
+            "optional": false,
+            "reason": "calibration=CAL-2026-09-07-A spread_mean=0.147 friction_usd=0.35",
+            "state": "AVAILABLE",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "DATA",
+            "optional": false,
+            "reason": "canonical bars file missing: data\\raw\\XAUUSD_M1.parquet (training cannot run)",
+            "state": "NOT_INITIALIZED",
+            "suggestion": "Acquire XAUUSD M1 history from the MT5 terminal (copy_rates) or restore a data/raw backup, then re-run doctor.",
+            "verdict": "FAIL"
+          },
+          {
+            "category": "GPU",
+            "optional": false,
+            "reason": "no discrete GPU — CPU mode (safe default)",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "MT5",
+            "optional": false,
+            "reason": "terminal detected",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "NETWORK",
+            "optional": false,
+            "reason": "outbound HTTPS ok",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "DISK",
+            "optional": false,
+            "reason": "128832 MB free",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "MEMORY",
+            "optional": false,
+            "reason": "16125 MB RAM",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "LOGGING",
+            "optional": true,
+            "reason": "no log files yet",
+            "state": "NOT_INITIALIZED",
+            "suggestion": "Logs appear after the first engine start.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "OBSERVABILITY",
+            "optional": false,
+            "reason": "log contract PASS (8 checks; dropped_events=0)",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "WORKERS",
+            "optional": true,
+            "reason": "worker checkpoint tables missing: intelligence_worker_state, research_worker_state",
+            "state": "NOT_INITIALIZED",
+            "suggestion": "Created automatically on first engine start.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "NEWS",
+            "optional": true,
+            "reason": "news.db not initialized yet (no tables created by first news run)",
+            "state": "NOT_INITIALIZED",
+            "suggestion": "Run `nexus repair --news` to initialize the news schema.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "EXPERIENCE",
+            "optional": false,
+            "reason": "Experience tables missing: audit_experience_outcomes, audit_experiences, experience_model_registry",
+            "state": "DEGRADED",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "RESEARCH",
+            "optional": false,
+            "reason": "Research tables missing: research_runs, strategy_registry",
+            "state": "DEGRADED",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "TRAINING",
+            "optional": false,
+            "reason": "Training tables missing: model_comparisons, training_runs",
+            "state": "DEGRADED",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "SHADOW",
+            "optional": true,
+            "reason": "shadow tables not created yet (lazily initialized on first shadow run)",
+            "state": "NOT_INITIALIZED",
+            "suggestion": "Created automatically on the first shadow decision.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "ACCOUNTING",
+            "optional": false,
+            "reason": "Accounting tables missing: audit_account_snapshots, audit_ledger",
+            "state": "DEGRADED",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "TELEGRAM",
+            "optional": false,
+            "reason": "configured (source=SECURE_SECRET_STORE, token_len=37, admin_shape_valid=True)",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          }
+        ],
+        "critical_failures": [
+          "DATA"
+        ]
+      },
+      "meta": {
+        "generated_at": "2026-09-24T06:37:13.029596+00:00",
+        "request_id": "req_fa3e8228e6"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_7532842b90\"",
+        "go": "\"req_fa3e8228e6\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:13.014574+00:00\"",
+        "go": "\"2026-09-24T06:37:13.029596+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_7532842b90\"",
+        "go": "\"req_fa3e8228e6\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:13.014574+00:00\"",
+        "go": "\"2026-09-24T06:37:13.029596+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/status",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "transport_error": "",
+    "py_json": {
+      "data": {
+        "health_verdict": "DEGRADED",
+        "critical_failures": [
+          "DATA"
+        ],
+        "version": {
+          "product": "NexusScalpEngine",
+          "version": "9.0.14",
+          "commit": "95dbdfa87c4c724204810c4f37a03d83d267b473",
+          "channel": "stable"
+        },
+        "runtime": {
+          "engine_attached": false,
+          "engine_running": false,
+          "mode": null,
+          "freshness_overall": null
+        },
+        "checks_count": 24
+      },
+      "meta": {
+        "request_id": "req_1095f826d9",
+        "generated_at": "2026-09-24T06:37:13.252742+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "checks_count": 24,
+        "critical_failures": [
+          "DATA"
+        ],
+        "health_verdict": "DEGRADED",
+        "runtime": {
+          "engine_attached": false,
+          "engine_running": false,
+          "freshness_overall": null,
+          "mode": null
+        },
+        "version": {
+          "channel": "stable",
+          "commit": "95dbdfa87c4c724204810c4f37a03d83d267b473",
+          "product": "NexusScalpEngine",
+          "version": "9.0.14"
+        }
+      },
+      "meta": {
+        "generated_at": "2026-09-24T06:37:13.52966+00:00",
+        "request_id": "req_529f308bdb"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_1095f826d9\"",
+        "go": "\"req_529f308bdb\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:13.252742+00:00\"",
+        "go": "\"2026-09-24T06:37:13.52966+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_1095f826d9\"",
+        "go": "\"req_529f308bdb\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:13.252742+00:00\"",
+        "go": "\"2026-09-24T06:37:13.52966+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/readiness",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "transport_error": "",
+    "py_json": {
+      "data": {
+        "ready": true,
+        "verdict": "DEGRADED",
+        "required_layers": [
+          {
+            "category": "SYSTEM",
+            "verdict": "PASS",
+            "reason": "Windows 10.0.28000 / x64",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "RUNTIME",
+            "verdict": "PASS",
+            "reason": "version 9.0.14 · stable · Python 3.11.16 · commit 95dbdfa87c4c724204810c4f37a03d83d267b473",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "CONFIGURATION",
+            "verdict": "PASS",
+            "reason": "mode=PAPER symbol=XAUUSD schema=v1.0",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "DATABASE",
+            "verdict": "WARNING",
+            "reason": "audit.db: database not initialized yet (no file: audit.db)",
+            "suggestion": "Created automatically on first engine start.",
+            "state": "NOT_INITIALIZED",
+            "optional": true
+          },
+          {
+            "category": "MODEL",
+            "verdict": "WARNING",
+            "reason": "no model artifact found — external/optional until training runs",
+            "suggestion": "Run `nexus setup`/`nexus repair --model` to provision a PAPER starter bundle (BUG-296).",
+            "state": "NOT_INITIALIZED",
+            "optional": true
+          },
+          {
+            "category": "FEATURE_SCHEMA",
+            "verdict": "WARNING",
+            "reason": "no model artifact present — serving contract not yet determined",
+            "suggestion": "Run `nexus setup`/`nexus repair --model` to initialize a bundle.",
+            "state": "UNKNOWN",
+            "optional": true
+          }
+        ],
+        "optional_layers": [
+          {
+            "category": "MODEL_CONTRACT",
+            "verdict": "WARNING",
+            "reason": "no model artifact present — contract not evaluated",
+            "suggestion": "Run `nexus setup`/`nexus repair --model` to initialize a bundle.",
+            "state": "DEGRADED",
+            "optional": false
+          },
+          {
+            "category": "EXECUTION_COSTS",
+            "verdict": "PASS",
+            "reason": "calibration=CAL-2026-09-07-A spread_mean=0.147 friction_usd=0.35",
+            "suggestion": "",
+            "state": "AVAILABLE",
+            "optional": false
+          },
+          {
+            "category": "DATA",
+            "verdict": "FAIL",
+            "reason": "canonical bars file missing: data\\raw\\XAUUSD_M1.parquet (training cannot run)",
+            "suggestion": "Acquire XAUUSD M1 history from the MT5 terminal (copy_rates) or restore a data/raw backup, then re-run doctor.",
+            "state": "NOT_INITIALIZED",
+            "optional": false
+          },
+          {
+            "category": "GPU",
+            "verdict": "PASS",
+            "reason": "no discrete GPU — CPU mode (safe default)",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "MT5",
+            "verdict": "PASS",
+            "reason": "terminal detected",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "NETWORK",
+            "verdict": "PASS",
+            "reason": "outbound HTTPS ok",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "DISK",
+            "verdict": "PASS",
+            "reason": "128832 MB free",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "MEMORY",
+            "verdict": "PASS",
+            "reason": "16125 MB RAM",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "LOGGING",
+            "verdict": "WARNING",
+            "reason": "no log files yet",
+            "suggestion": "Logs appear after the first engine start.",
+            "state": "NOT_INITIALIZED",
+            "optional": true
+          },
+          {
+            "category": "OBSERVABILITY",
+            "verdict": "PASS",
+            "reason": "log contract PASS (8 checks; dropped_events=0)",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          },
+          {
+            "category": "WORKERS",
+            "verdict": "WARNING",
+            "reason": "worker checkpoint tables missing: intelligence_worker_state, research_worker_state",
+            "suggestion": "Created automatically on first engine start.",
+            "state": "NOT_INITIALIZED",
+            "optional": true
+          },
+          {
+            "category": "NEWS",
+            "verdict": "WARNING",
+            "reason": "news.db not initialized yet (no tables created by first news run)",
+            "suggestion": "Run `nexus repair --news` to initialize the news schema.",
+            "state": "NOT_INITIALIZED",
+            "optional": true
+          },
+          {
+            "category": "EXPERIENCE",
+            "verdict": "WARNING",
+            "reason": "Experience tables missing: audit_experience_outcomes, audit_experiences, experience_model_registry",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "state": "DEGRADED",
+            "optional": false
+          },
+          {
+            "category": "RESEARCH",
+            "verdict": "WARNING",
+            "reason": "Research tables missing: research_runs, strategy_registry",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "state": "DEGRADED",
+            "optional": false
+          },
+          {
+            "category": "TRAINING",
+            "verdict": "WARNING",
+            "reason": "Training tables missing: model_comparisons, training_runs",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "state": "DEGRADED",
+            "optional": false
+          },
+          {
+            "category": "SHADOW",
+            "verdict": "WARNING",
+            "reason": "shadow tables not created yet (lazily initialized on first shadow run)",
+            "suggestion": "Created automatically on the first shadow decision.",
+            "state": "NOT_INITIALIZED",
+            "optional": true
+          },
+          {
+            "category": "ACCOUNTING",
+            "verdict": "WARNING",
+            "reason": "Accounting tables missing: audit_account_snapshots, audit_ledger",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "state": "DEGRADED",
+            "optional": false
+          },
+          {
+            "category": "TELEGRAM",
+            "verdict": "PASS",
+            "reason": "configured (source=SECURE_SECRET_STORE, token_len=37, admin_shape_valid=True)",
+            "suggestion": "",
+            "state": "HEALTHY",
+            "optional": false
+          }
+        ]
+      },
+      "meta": {
+        "request_id": "req_f05f30a834",
+        "generated_at": "2026-09-24T06:37:13.538178+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "optional_layers": [
+          {
+            "category": "MODEL_CONTRACT",
+            "optional": false,
+            "reason": "no model artifact present — contract not evaluated",
+            "state": "DEGRADED",
+            "suggestion": "Run `nexus setup`/`nexus repair --model` to initialize a bundle.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "EXECUTION_COSTS",
+            "optional": false,
+            "reason": "calibration=CAL-2026-09-07-A spread_mean=0.147 friction_usd=0.35",
+            "state": "AVAILABLE",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "DATA",
+            "optional": false,
+            "reason": "canonical bars file missing: data\\raw\\XAUUSD_M1.parquet (training cannot run)",
+            "state": "NOT_INITIALIZED",
+            "suggestion": "Acquire XAUUSD M1 history from the MT5 terminal (copy_rates) or restore a data/raw backup, then re-run doctor.",
+            "verdict": "FAIL"
+          },
+          {
+            "category": "GPU",
+            "optional": false,
+            "reason": "no discrete GPU — CPU mode (safe default)",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "MT5",
+            "optional": false,
+            "reason": "terminal detected",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "NETWORK",
+            "optional": false,
+            "reason": "outbound HTTPS ok",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "DISK",
+            "optional": false,
+            "reason": "128832 MB free",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "MEMORY",
+            "optional": false,
+            "reason": "16125 MB RAM",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "LOGGING",
+            "optional": true,
+            "reason": "no log files yet",
+            "state": "NOT_INITIALIZED",
+            "suggestion": "Logs appear after the first engine start.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "OBSERVABILITY",
+            "optional": false,
+            "reason": "log contract PASS (8 checks; dropped_events=0)",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "WORKERS",
+            "optional": true,
+            "reason": "worker checkpoint tables missing: intelligence_worker_state, research_worker_state",
+            "state": "NOT_INITIALIZED",
+            "suggestion": "Created automatically on first engine start.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "NEWS",
+            "optional": true,
+            "reason": "news.db not initialized yet (no tables created by first news run)",
+            "state": "NOT_INITIALIZED",
+            "suggestion": "Run `nexus repair --news` to initialize the news schema.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "EXPERIENCE",
+            "optional": false,
+            "reason": "Experience tables missing: audit_experience_outcomes, audit_experiences, experience_model_registry",
+            "state": "DEGRADED",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "RESEARCH",
+            "optional": false,
+            "reason": "Research tables missing: research_runs, strategy_registry",
+            "state": "DEGRADED",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "TRAINING",
+            "optional": false,
+            "reason": "Training tables missing: model_comparisons, training_runs",
+            "state": "DEGRADED",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "SHADOW",
+            "optional": true,
+            "reason": "shadow tables not created yet (lazily initialized on first shadow run)",
+            "state": "NOT_INITIALIZED",
+            "suggestion": "Created automatically on the first shadow decision.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "ACCOUNTING",
+            "optional": false,
+            "reason": "Accounting tables missing: audit_account_snapshots, audit_ledger",
+            "state": "DEGRADED",
+            "suggestion": "Created on first engine start; not a blocker.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "TELEGRAM",
+            "optional": false,
+            "reason": "configured (source=SECURE_SECRET_STORE, token_len=37, admin_shape_valid=True)",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          }
+        ],
+        "ready": true,
+        "required_layers": [
+          {
+            "category": "SYSTEM",
+            "optional": false,
+            "reason": "Windows 10.0.28000 / x64",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "RUNTIME",
+            "optional": false,
+            "reason": "version 9.0.14 · stable · Python 3.11.16 · commit 95dbdfa87c4c724204810c4f37a03d83d267b473",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "CONFIGURATION",
+            "optional": false,
+            "reason": "mode=PAPER symbol=XAUUSD schema=v1.0",
+            "state": "HEALTHY",
+            "suggestion": "",
+            "verdict": "PASS"
+          },
+          {
+            "category": "DATABASE",
+            "optional": true,
+            "reason": "audit.db: database not initialized yet (no file: audit.db)",
+            "state": "NOT_INITIALIZED",
+            "suggestion": "Created automatically on first engine start.",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "MODEL",
+            "optional": true,
+            "reason": "no model artifact found — external/optional until training runs",
+            "state": "NOT_INITIALIZED",
+            "suggestion": "Run `nexus setup`/`nexus repair --model` to provision a PAPER starter bundle (BUG-296).",
+            "verdict": "WARNING"
+          },
+          {
+            "category": "FEATURE_SCHEMA",
+            "optional": true,
+            "reason": "no model artifact present — serving contract not yet determined",
+            "state": "UNKNOWN",
+            "suggestion": "Run `nexus setup`/`nexus repair --model` to initialize a bundle.",
+            "verdict": "WARNING"
+          }
+        ],
+        "verdict": "DEGRADED"
+      },
+      "meta": {
+        "generated_at": "2026-09-24T06:37:13.547203+00:00",
+        "request_id": "req_3d0f8d4e42"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_f05f30a834\"",
+        "go": "\"req_3d0f8d4e42\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:13.538178+00:00\"",
+        "go": "\"2026-09-24T06:37:13.547203+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_f05f30a834\"",
+        "go": "\"req_3d0f8d4e42\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:13.538178+00:00\"",
+        "go": "\"2026-09-24T06:37:13.547203+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/version",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "transport_error": "",
+    "py_json": {
+      "data": {
+        "product": "NexusScalpEngine",
+        "product_display": "Nexus Trading Forex Bot",
+        "version": "9.0.14",
+        "commit": "95dbdfa87c4c724204810c4f37a03d83d267b473",
+        "commit_source": "repository",
+        "commit_status": "RECORDED",
+        "dirty_tree": true,
+        "build_timestamp": "2026-09-24T07:40:01+03:30",
+        "platform": "Windows",
+        "architecture": "AMD64",
+        "python": "3.11.16",
+        "channel": "stable",
+        "build_mode": "Release",
+        "feature_schema": "scalp_v3",
+        "installer_version": "1.0.0"
+      },
+      "meta": {
+        "request_id": "req_9a2b4dbf70",
+        "generated_at": "2026-09-24T06:37:13.830719+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "product": "NexusScalpEngine",
+        "version": "9.0.14",
+        "commit": "95dbdfa87c4c724204810c4f37a03d83d267b473",
+        "channel": "stable"
+      },
+      "meta": {
+        "generated_at": "2026-09-24T06:37:13.842772+00:00",
+        "request_id": "req_9f3791dc99"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_9a2b4dbf70\"",
+        "go": "\"req_9f3791dc99\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:13.830719+00:00\"",
+        "go": "\"2026-09-24T06:37:13.842772+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_9a2b4dbf70\"",
+        "go": "\"req_9f3791dc99\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:13.830719+00:00\"",
+        "go": "\"2026-09-24T06:37:13.842772+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/runtime",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "transport_error": "",
+    "py_json": {
+      "data": {
+        "engine_attached": false,
+        "engine_running": false,
+        "warmup_state": null,
+        "inference_enabled": false,
+        "freshness": null
+      },
+      "meta": {
+        "request_id": "req_83663bd609",
+        "generated_at": "2026-09-24T06:37:13.849290+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "engine_attached": false,
+        "engine_running": false,
+        "freshness": null,
+        "inference_enabled": false,
+        "warmup_state": null
+      },
+      "meta": {
+        "generated_at": "2026-09-24T06:37:13.858804+00:00",
+        "request_id": "req_a6f7581e42"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_83663bd609\"",
+        "go": "\"req_a6f7581e42\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:13.849290+00:00\"",
+        "go": "\"2026-09-24T06:37:13.858804+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_83663bd609\"",
+        "go": "\"req_a6f7581e42\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:13.849290+00:00\"",
+        "go": "\"2026-09-24T06:37:13.858804+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/capabilities",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "transport_error": "",
+    "py_json": {
+      "data": {
+        "api_version": "v1",
+        "spec": "docs/api/API_PLATFORM_V1.md",
+        "read_only": true,
+        "domains": {
+          "audit": 1,
+          "config": 1,
+          "database": 1,
+          "decisions": 1,
+          "execution": 1,
+          "features": 1,
+          "incidents": 1,
+          "indicators": 1,
+          "market": 1,
+          "marketplace": 1,
+          "model": 1,
+          "observability": 1,
+          "positions": 1,
+          "research": 1,
+          "risk": 1,
+          "runtime": 1,
+          "shadow": 1,
+          "signals": 1,
+          "system": 1
+        },
+        "domain_count": 19,
+        "endpoint_count": 87,
+        "pagination": {
+          "model": "page",
+          "page_param": "page",
+          "page_size_param": "page_size",
+          "max_page_size": 200
+        },
+        "generated_at": "2026-09-24T06:37:13.869318+00:00"
+      },
+      "meta": {
+        "request_id": "req_7af14f2977",
+        "generated_at": "2026-09-24T06:37:13.869318+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "api_version": "v1",
+        "domain_count": 19,
+        "domains": {
+          "audit": 1,
+          "config": 1,
+          "database": 1,
+          "decisions": 1,
+          "execution": 1,
+          "features": 1,
+          "incidents": 1,
+          "indicators": 1,
+          "market": 1,
+          "marketplace": 1,
+          "model": 1,
+          "observability": 1,
+          "positions": 1,
+          "research": 1,
+          "risk": 1,
+          "runtime": 1,
+          "shadow": 1,
+          "signals": 1,
+          "system": 1
+        },
+        "endpoint_count": 87,
+        "generated_at": "2026-09-24T06:37:13.878339+00:00",
+        "implementation": "go",
+        "pagination": {
+          "max_page_size": 200,
+          "model": "page",
+          "page_param": "page",
+          "page_size_param": "page_size"
+        },
+        "read_only": true,
+        "spec": "docs/api/API_PLATFORM_V1.md"
+      },
+      "meta": {
+        "generated_at": "2026-09-24T06:37:13.879844+00:00",
+        "request_id": "req_55fbd2edd7"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "data.generated_at",
+        "py": "\"2026-09-24T06:37:13.869318+00:00\"",
+        "go": "\"2026-09-24T06:37:13.878339+00:00\""
+      },
+      {
+        "key": "data.generated_at",
+        "py": "\"2026-09-24T06:37:13.869318+00:00\"",
+        "go": "\"2026-09-24T06:37:13.878339+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_7af14f2977\"",
+        "go": "\"req_55fbd2edd7\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:13.869318+00:00\"",
+        "go": "\"2026-09-24T06:37:13.879844+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_7af14f2977\"",
+        "go": "\"req_55fbd2edd7\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:13.869318+00:00\"",
+        "go": "\"2026-09-24T06:37:13.879844+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/workers",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "transport_error": "",
+    "py_json": {
+      "data": {
+        "workers": [],
+        "engine_attached": false
+      },
+      "meta": {
+        "request_id": "req_3d257b2feb",
+        "generated_at": "2026-09-24T06:37:13.890304+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "engine_attached": false,
+        "workers": []
+      },
+      "meta": {
+        "generated_at": "2026-09-24T06:37:13.904255+00:00",
+        "request_id": "req_0dd57e08a2"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_3d257b2feb\"",
+        "go": "\"req_0dd57e08a2\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:13.890304+00:00\"",
+        "go": "\"2026-09-24T06:37:13.904255+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_3d257b2feb\"",
+        "go": "\"req_0dd57e08a2\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:13.890304+00:00\"",
+        "go": "\"2026-09-24T06:37:13.904255+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/diagnostics",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "transport_error": "",
+    "py_json": {
+      "data": {
+        "mt5": null,
+        "last_selftest": null,
+        "version": {
+          "product": "NexusScalpEngine",
+          "product_display": "Nexus Trading Forex Bot",
+          "version": "9.0.14",
+          "commit": "95dbdfa87c4c724204810c4f37a03d83d267b473",
+          "commit_source": "repository",
+          "commit_status": "RECORDED",
+          "dirty_tree": true,
+          "build_timestamp": "2026-09-24T07:40:01+03:30",
+          "platform": "Windows",
+          "architecture": "AMD64",
+          "python": "3.11.16",
+          "channel": "stable",
+          "build_mode": "Release",
+          "feature_schema": "scalp_v3",
+          "installer_version": "1.0.0"
+        }
+      },
+      "meta": {
+        "request_id": "req_d48a521122",
+        "generated_at": "2026-09-24T06:37:14.140104+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "last_selftest": null,
+        "mt5": null,
+        "version": {
+          "architecture": "AMD64",
+          "build_mode": "Release",
+          "build_timestamp": "2026-09-24T07:40:01+03:30",
+          "channel": "stable",
+          "commit": "95dbdfa87c4c724204810c4f37a03d83d267b473",
+          "commit_source": "repository",
+          "commit_status": "RECORDED",
+          "dirty_tree": true,
+          "feature_schema": "scalp_v3",
+          "installer_version": "1.0.0",
+          "platform": "Windows",
+          "product": "NexusScalpEngine",
+          "product_display": "Nexus Trading Forex Bot",
+          "python": "3.11.16",
+          "version": "9.0.14"
+        }
+      },
+      "meta": {
+        "generated_at": "2026-09-24T06:37:14.454773+00:00",
+        "request_id": "req_1c1016344e"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_d48a521122\"",
+        "go": "\"req_1c1016344e\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:14.140104+00:00\"",
+        "go": "\"2026-09-24T06:37:14.454773+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_d48a521122\"",
+        "go": "\"req_1c1016344e\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:14.140104+00:00\"",
+        "go": "\"2026-09-24T06:37:14.454773+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/system/info",
+    "py_status": 404,
+    "go_status": 404,
+    "request_id_py": "",
+    "request_id_go": "",
+    "transport_error": "",
+    "py_json": {
+      "error": {
+        "code": "RESOURCE_NOT_FOUND",
+        "message": "The requested resource was not found.",
+        "details": {},
+        "request_id": "req_769ff427c0",
+        "retryable": false
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "RESOURCE_NOT_FOUND",
+        "message": "The requested resource was not found.",
+        "details": {},
+        "request_id": "req_43b9fd1235",
+        "retryable": false
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_769ff427c0\"",
+        "go": "\"req_43b9fd1235\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_769ff427c0\"",
+        "go": "\"req_43b9fd1235\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/system/health",
+    "py_status": 405,
+    "go_status": 405,
+    "request_id_py": "",
+    "request_id_go": "",
+    "transport_error": "",
+    "py_json": {
+      "error": {
+        "code": "METHOD_NOT_ALLOWED",
+        "message": "The HTTP method is not allowed for this resource.",
+        "details": {},
+        "request_id": "req_2b0dd2c451",
+        "retryable": false
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "METHOD_NOT_ALLOWED",
+        "message": "The HTTP method is not allowed for this resource.",
+        "details": {},
+        "request_id": "req_ab2b7b3d37",
+        "retryable": false
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_2b0dd2c451\"",
+        "go": "\"req_ab2b7b3d37\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_2b0dd2c451\"",
+        "go": "\"req_ab2b7b3d37\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/nope",
+    "py_status": 404,
+    "go_status": 404,
+    "request_id_py": "",
+    "request_id_go": "",
+    "transport_error": "",
+    "py_json": {
+      "error": {
+        "code": "RESOURCE_NOT_FOUND",
+        "message": "The requested resource was not found.",
+        "details": {},
+        "request_id": "req_fc8ee5f8df",
+        "retryable": false
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "RESOURCE_NOT_FOUND",
+        "message": "The requested resource was not found.",
+        "details": {},
+        "request_id": "req_c608d75e00",
+        "retryable": false
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_fc8ee5f8df\"",
+        "go": "\"req_c608d75e00\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_fc8ee5f8df\"",
+        "go": "\"req_c608d75e00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/system/version",
+    "py_status": 405,
+    "go_status": 405,
+    "request_id_py": "",
+    "request_id_go": "",
+    "transport_error": "",
+    "py_json": {
+      "error": {
+        "code": "METHOD_NOT_ALLOWED",
+        "message": "The HTTP method is not allowed for this resource.",
+        "details": {},
+        "request_id": "req_e067c38771",
+        "retryable": false
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "METHOD_NOT_ALLOWED",
+        "message": "The HTTP method is not allowed for this resource.",
+        "details": {},
+        "request_id": "req_ff4e9362a0",
+        "retryable": false
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_e067c38771\"",
+        "go": "\"req_ff4e9362a0\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_e067c38771\"",
+        "go": "\"req_ff4e9362a0\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/system/refresh",
+    "py_status": 503,
+    "go_status": 503,
+    "request_id_py": "",
+    "request_id_go": "",
+    "transport_error": "",
+    "py_json": {
+      "error": {
+        "code": "ENGINE_UNAVAILABLE",
+        "message": "The trading engine is not attached to the API server.",
+        "details": {},
+        "request_id": "req_3bbf39c68d",
+        "retryable": true
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "ENGINE_UNAVAILABLE",
+        "message": "The trading engine is not attached to the API server.",
+        "details": {},
+        "request_id": "req_4ae12aa8b8",
+        "retryable": true
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_3bbf39c68d\"",
+        "go": "\"req_4ae12aa8b8\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_3bbf39c68d\"",
+        "go": "\"req_4ae12aa8b8\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/system/diagnostics/run",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "transport_error": "",
+    "py_json": {
+      "data": {
+        "overall": "PASS",
+        "checks": {
+          "contract": "PASS",
+          "redaction": "PASS",
+          "aggregation_bound": "PASS",
+          "singleton": "PASS",
+          "recovery": "PASS",
+          "process_scope": "PASS",
+          "evidence_preservation": "PASS",
+          "summary_content": "PASS"
+        },
+        "metrics": {
+          "events_seen": 10,
+          "first_occurrences": 1,
+          "events_aggregated": 10,
+          "summaries_flushed": 1,
+          "dropped_events": 0,
+          "active_signatures": 0
+        },
+        "failures": []
+      },
+      "meta": {
+        "request_id": "req_06c4418229",
+        "generated_at": "2026-09-24T06:37:14.720469+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "checks": {
+          "aggregation_bound": "PASS",
+          "contract": "PASS",
+          "evidence_preservation": "PASS",
+          "process_scope": "PASS",
+          "recovery": "PASS",
+          "redaction": "PASS",
+          "singleton": "PASS",
+          "summary_content": "PASS"
+        },
+        "failures": [],
+        "metrics": {
+          "active_signatures": 0,
+          "dropped_events": 0,
+          "events_aggregated": 10,
+          "events_seen": 10,
+          "first_occurrences": 1,
+          "summaries_flushed": 1
+        },
+        "overall": "PASS"
+      },
+      "meta": {
+        "generated_at": "2026-09-24T06:37:14.778268+00:00",
+        "request_id": "req_f6999ae967"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_06c4418229\"",
+        "go": "\"req_f6999ae967\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:14.720469+00:00\"",
+        "go": "\"2026-09-24T06:37:14.778268+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_06c4418229\"",
+        "go": "\"req_f6999ae967\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T06:37:14.720469+00:00\"",
+        "go": "\"2026-09-24T06:37:14.778268+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  }
+]

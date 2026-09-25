@@ -22,7 +22,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from nexus_scalp.database.migration.pg_schema import translate_ddl
 from nexus_scalp.incidents.models import (
     BlastRadius,
     EventSource,
@@ -304,37 +303,105 @@ def _incident_row_values(inc: Incident) -> dict[str, Any]:
     }
 
 
+#: Column order of the ``incidents`` row projection (see ``INCIDENTS_TABLE_DDL``).
+#: Used only to flatten the named upsert values into the positional argument
+#: sequence the pooled write plane accepts.
+_INCIDENT_COLUMN_ORDER: tuple[str, ...] = (
+    "incident_id",
+    "detected_at",
+    "severity",
+    "category",
+    "status",
+    "first_seen_at",
+    "last_seen_at",
+    "component",
+    "operation",
+    "correlation_id",
+    "root_cause_status",
+    "root_cause",
+    "evidence_json",
+    "impact_json",
+    "affected_records_json",
+    "affected_models_json",
+    "affected_runtime_json",
+    "affected_users_json",
+    "recovery_status",
+    "recommended_action",
+    "fingerprint",
+    "repeated_count",
+    "related_bug_id",
+    "fix_commit",
+    "regression_test",
+    "is_regression",
+    "previous_bug_id",
+    "resolved_without_evidence",
+    "recovery_plan_json",
+    "tags_json",
+    "notes_json",
+    "updated_at",
+)
+
+
 # ---------------------------------------------------------------------------
 # Store
 # ---------------------------------------------------------------------------
 
 
-class _PgCursorShim:
-    """Adapts a psycopg connection to the call sites that use a sqlite3 one.
+def _audit_write_plane(audit_repo: Any) -> Any:
+    """The audit repo's pooled WRITE plane for a non-SQLite provider.
 
-    The store's read path was written against ``sqlite3.Connection``:
-    ``conn.execute(sql, args)`` returning rows, then ``conn.close()``. The two
-    differences on PostgreSQL are the placeholder style (``?`` vs ``%s``) and
-    that psycopg takes a sequence of args positionally rather than variadic.
-    This shim translates those two things so the existing read queries run
-    unchanged, and it owns the connection's lifecycle (``close`` commits first
-    because these are read-only queries, but autocommit is off by default).
+    Composes the repo's own resolution seam (``_build_pooled_write_backend``)
+    so the store never opens a second DSN/pool (contract: no new connection
+    paths). Returns ``None`` when the repo is SQLite-shaped or unresolvable.
     """
+    if audit_repo is None or getattr(audit_repo, "_is_sqlite", True):
+        return None
+    resolver = getattr(audit_repo, "_build_pooled_write_backend", None)
+    if callable(resolver):
+        return resolver()
+    return None
 
-    def __init__(self, conn) -> None:
-        self._conn = conn
 
-    def execute(self, sql: str, args: Any = ()):
-        params = args if isinstance(args, (tuple, list)) else (args,)
-        cur = self._conn.execute(sql.replace("?", "%s"), params)
-        return cur
+def _audit_read_plane(audit_repo: Any) -> Any:
+    """The audit repo's pooled READ plane for a non-SQLite provider.
 
-    def close(self) -> None:
-        try:
-            self._conn.rollback()
-        except Exception:
-            pass
-        self._conn.close()
+    Mirrors ``AuditRepository._registered_audit_read_plane``: the fabric's
+    ``get_domain_backend("audit", readonly=True)`` accessor, refusing a
+    write-shaped backend (one that exposes ``execute`` without ``query``).
+    Returns ``None`` until a sibling lane registers the read plane — callers
+    must tolerate that and fail loudly rather than crash.
+    """
+    if audit_repo is None or getattr(audit_repo, "_is_sqlite", True):
+        return None
+    helper = getattr(audit_repo, "_registered_audit_read_plane", None)
+    if callable(helper):
+        return helper()
+    try:
+        from nexus_scalp.database.fabric import get_domain_backend
+
+        backend = get_domain_backend("audit", readonly=True)
+    except Exception:
+        return None
+    # A READ plane must not be write-shaped: it exposes ``query``/``scalar``
+    # and never ``execute``. A write backend here would let a read silently
+    # share the write path, so it is refused (same rule the audit repo and
+    # ``_registered_audit_read_plane`` already enforce).
+    if backend is None or hasattr(backend, "execute") or not hasattr(backend, "query"):
+        return None
+    return backend
+
+
+def _resolve_audit_backends(audit_repo: Any) -> tuple[Any, Any]:
+    """Resolve (write, read) fabric planes for a non-SQLite audit provider.
+
+    The write plane is the hard requirement — incident response must persist.
+    The read plane may be ``None`` (Lane A registers it separately); reads
+    then degrade observably instead of crashing.
+    """
+    write_plane = _audit_write_plane(audit_repo)
+    if write_plane is None:
+        return None, None
+    return write_plane, _audit_read_plane(audit_repo)
 
 
 class IncidentStore:
@@ -343,6 +410,19 @@ class IncidentStore:
     write mode: queued via AuditRepository when provided (INV-001); direct
     connection when used standalone (CLI/tests/forensic baseline).
     """
+
+    @staticmethod
+    def _looks_like_dsn(value: str) -> bool:
+        """True when ``value`` is a libpq DSN/URL rather than a SQLite path.
+
+        The audit repo's ``_db_path`` is overloaded: a SQLite file path under
+        the SQLite provider, the PostgreSQL DSN string under PostgreSQL. Only
+        the shape distinguishes them, so the check is on the string itself.
+        """
+        if not value:
+            return False
+        text = value.strip().lower()
+        return text.startswith(("postgresql://", "postgres://", "host=", "dbname="))
 
     def __init__(
         self,
@@ -353,20 +433,35 @@ class IncidentStore:
         self.audit_repo = audit_repo
         if not self.db_path and audit_repo is not None and getattr(audit_repo, "_db_path", None):
             self.db_path = str(audit_repo._db_path)
-        # RT-004: a PostgreSQL-configured AuditRepository has no `_db_path`
-        # (only SQLite sets one), so the SQLite fallback above yields "". The
-        # write path already works via the repo's queue, but the store has to
-        # be constructible at all for the incident worker to start. Reads then
-        # go through `_connect`, which follows the repo's provider.
-        if not self.db_path and audit_repo is not None:
-            self.db_url = str(getattr(audit_repo, "_db_url", "") or "")
-            if self.db_url and self.db_url.startswith("sqlite:///"):
-                self.db_path = self.db_url.replace("sqlite:///", "")
-                self.db_url = ""
+        # A PostgreSQL DSN is NOT a SQLite path. Under a non-SQLite provider
+        # ``audit_repo._db_path`` holds the DSN *string* (truthy), so the guard
+        # above used to adopt it and every SQLite branch then called
+        # sqlite3.connect("postgresql://...") -> OperationalError. Detect the
+        # DSN shape and route to the pooled fabric planes instead; only a real
+        # filesystem path keeps the SQLite branch.
+        if self._looks_like_dsn(self.db_path):
+            self.db_url, self.db_path = self.db_path, ""
         else:
             self.db_url = ""
-        if not self.db_path and not self.db_url:
-            raise ValueError("IncidentStore requires db_path or audit_repo")
+        # Provider-aware persistence (PG-READ-PLANE-001/D): under a non-SQLite
+        # audit provider ``_db_path`` is the empty string and the SQLite
+        # branches below are unreachable. Resolve the audit domain's pooled
+        # fabric planes instead so incident response keeps a REAL backend
+        # (D5: ``IncidentStore requires db_path or audit_repo`` every 60s).
+        self._write_backend: Any = None
+        self._read_backend: Any = None
+        if not self.db_path:
+            self._write_backend, self._read_backend = _resolve_audit_backends(audit_repo)
+            if self._write_backend is None and self._read_backend is None:
+                raise ValueError("IncidentStore requires db_path or audit_repo")
+        # Schema must exist after construction: every caller (engine, CLI,
+        # web routes, forensic baseline) constructs the store and immediately
+        # reads/writes, and only some of them call ensure_schema() (none of
+        # the production call sites do). On a standalone SQLite file this
+        # created an empty store that failed with ``no such table: incidents``
+        # on first use; the provider-aware path is the same contract.
+        # Idempotent (CREATE ... IF NOT EXISTS) on both branches.
+        self.ensure_schema()
 
     # -- schema --------------------------------------------------------------
 
@@ -375,17 +470,28 @@ class IncidentStore:
 
         Production DBs get the schema via the governed AUDIT-0005 migration.
         """
-        if self.db_url:
-            import psycopg  # local import: not a hard dep for the SQLite path
+        if self._write_backend is not None:
+            # Non-SQLite provider: translate the SQLite-dialect DDL to
+            # PostgreSQL (the plane only translates placeholders, not DDL, so
+            # ``INTEGER PRIMARY KEY AUTOINCREMENT`` would reach the server
+            # verbatim and fail). The governed migration owns production
+            # schema, so this is a best-effort idempotent heal.
+            from nexus_scalp.database.migration.pg_schema import translate_ddl
 
-            with psycopg.connect(self.db_url, connect_timeout=10) as conn:
-                for ddl in INCIDENT_DDL:
-                    conn.execute(translate_ddl(ddl))
-                conn.commit()
+            for ddl in INCIDENT_DDL:
+                self._write_backend.execute(translate_ddl(ddl))
             return
-        with sqlite3.connect(self.db_path, timeout=10.0) as conn:
+        # NOTE: ``with sqlite3.connect(...)`` only ends a transaction, it does
+        # NOT close the connection. Leaking it keeps the .db/-wal/-shm files
+        # locked on Windows and breaks temp-directory cleanup in tests
+        # (WinError 32 on worker_stall.db), so close explicitly.
+        conn = sqlite3.connect(self.db_path, timeout=10.0)
+        try:
             for ddl in INCIDENT_DDL:
                 conn.execute(ddl)
+            conn.commit()
+        finally:
+            conn.close()
 
     # -- write ---------------------------------------------------------------
 
@@ -400,6 +506,20 @@ class IncidentStore:
         )
         return sql, v
 
+    def _write_backend_run(self, sql: str, args: Any) -> None:
+        """Run one statement on the pooled write plane (non-SQLite provider).
+
+        The plane's ``execute`` takes a flat argument sequence; the store's
+        SQLite statements use ``?`` qmark placeholders, which the driver
+        layer translates at the boundary.
+        """
+        values: tuple[Any, ...]
+        if isinstance(args, dict):
+            values = tuple(args[c] for c in _INCIDENT_COLUMN_ORDER)
+        else:
+            values = tuple(args)
+        self._write_backend.execute(sql, values)
+
     def save(self, incident: Incident) -> str:
         """Persists one incident (upsert by incident_id)."""
         sql, values = self._upsert_incident_sql(incident)
@@ -411,6 +531,53 @@ class IncidentStore:
                     "[INCIDENTS] queued save failed",
                     incident_id=incident.incident_id,
                     error=str(err),
+                )
+            return incident.incident_id
+        if self._write_backend is not None:
+            self._write_backend_run(sql, values)
+            for ev in incident.timeline:
+                self._write_backend_run(
+                    "INSERT INTO incident_events "
+                    "(incident_id, event_timestamp, event_type, source, payload_json, correlation_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        incident.incident_id,
+                        ev.timestamp.isoformat(),
+                        ev.event_type,
+                        ev.source.value,
+                        _json(ev.payload),
+                        ev.correlation_id,
+                    ),
+                )
+            for tr in incident.value_traces:
+                self._write_backend_run(
+                    "INSERT INTO incident_value_traces "
+                    "(incident_id, field, source, source_timestamp, hops_json) VALUES (?, ?, ?, ?, ?)",
+                    (
+                        incident.incident_id,
+                        tr.field,
+                        tr.source,
+                        tr.source_timestamp.isoformat() if tr.source_timestamp else None,
+                        _json(tr.hops()),
+                    ),
+                )
+            for q in incident.quarantine_entries:
+                self._write_backend_run(
+                    "INSERT INTO incident_quarantine "
+                    "(incident_id, target_table, record_key, status, reason, evidence, quarantined_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(incident_id, target_table, record_key) DO UPDATE SET "
+                    "status=excluded.status, reason=excluded.reason, evidence=excluded.evidence, "
+                    "quarantined_at=excluded.quarantined_at",
+                    (
+                        incident.incident_id,
+                        q.target_table,
+                        q.record_key,
+                        q.status,
+                        q.reason,
+                        q.evidence,
+                        q.quarantined_at.isoformat(),
+                    ),
                 )
             return incident.incident_id
         with sqlite3.connect(self.db_path, timeout=10.0) as conn:
@@ -467,6 +634,20 @@ class IncidentStore:
         Never called automatically. Evidence is archived before delete when
         the caller requests it (spec 45).
         """
+        if self._write_backend is not None:
+            # Non-SQLite provider: no rowcount contract on the pooled plane,
+            # so existence is checked explicitly and the delete is loud.
+            existed = self._scalar("SELECT 1 FROM incidents WHERE incident_id = ?", (incident_id,))
+            for table in (
+                "incidents",
+                "incident_events",
+                "incident_value_traces",
+                "incident_quarantine",
+            ):
+                self._write_backend.execute(
+                    f"DELETE FROM {table} WHERE incident_id = ?", (incident_id,)
+                )
+            return existed is not None
         deleted = False
         with sqlite3.connect(self.db_path, timeout=10.0) as conn:
             cur = conn.execute("DELETE FROM incidents WHERE incident_id=?", (incident_id,))
@@ -478,78 +659,83 @@ class IncidentStore:
 
     # -- read ----------------------------------------------------------------
 
-    def _connect(self):
-        """Opens a connection following the configured provider.
-
-        SQLite returns a ``sqlite3.Connection`` as before. PostgreSQL returns a
-        psycopg connection; callers use ``execute``/``fetchall`` and ``close``
-        on both, and the read queries here are already portable dialect.
-        """
-        if self.db_url:
-            import psycopg  # local import: not a hard dep for the SQLite path
-
-            conn = psycopg.connect(self.db_url, connect_timeout=10)
-            conn.row_factory = psycopg.rows.dict_row
-            return _PgCursorShim(conn)
+    def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=10.0)
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _query(self, sql: str, args: Any = ()) -> list[dict[str, Any]]:
+        """Read rows through the resolved backend (dicts, either provider).
+
+        SQLite keeps its own connection so the byte-for-byte contract is
+        untouched; a non-SQLite provider goes through the audit read plane.
+        """
+        if self._read_backend is not None:
+            return list(self._read_backend.query(sql, tuple(args)))
+        conn = self._connect()
+        try:
+            return [dict(r) for r in conn.execute(sql, args).fetchall()]
+        finally:
+            conn.close()
+
+    def _scalar(self, sql: str, args: Any = ()) -> Any:
+        """One column of one row through the resolved backend, else None."""
+        if self._read_backend is not None:
+            return self._read_backend.scalar(sql, tuple(args))
+        conn = self._connect()
+        try:
+            row = conn.execute(sql, args).fetchone()
+            return row[0] if row is not None else None
+        finally:
+            conn.close()
+
     def get(self, incident_id: str) -> Incident | None:
         try:
-            conn = self._connect()
-            try:
-                row = conn.execute(
-                    "SELECT * FROM incidents WHERE incident_id=?", (incident_id,)
-                ).fetchone()
-                if row is None:
-                    return None
-                inc = row_to_incident(row)
-                if inc is None:
-                    return None
-                # events + traces + quarantine
-                for ev in conn.execute(
-                    "SELECT * FROM incident_events WHERE incident_id=? ORDER BY event_timestamp",
-                    (incident_id,),
-                ).fetchall():
-                    inc.timeline.append(
-                        TimelineEvent(
-                            timestamp=_dt(ev["event_timestamp"]) or datetime.now(UTC),
-                            event_type=str(ev["event_type"]),
-                            source=EventSource(str(ev["source"])),
-                            payload=_json_loads(ev["payload_json"], {}),
-                            correlation_id=str(ev["correlation_id"] or ""),
-                        )
+            rows = self._query("SELECT * FROM incidents WHERE incident_id = ?", (incident_id,))
+            if not rows:
+                return None
+            inc = row_to_incident(rows[0])
+            if inc is None:
+                return None
+            # events + traces + quarantine
+            for ev in self._query(
+                "SELECT * FROM incident_events WHERE incident_id = ? ORDER BY event_timestamp",
+                (incident_id,),
+            ):
+                inc.timeline.append(
+                    TimelineEvent(
+                        timestamp=_dt(ev["event_timestamp"]) or datetime.now(UTC),
+                        event_type=str(ev["event_type"]),
+                        source=EventSource(str(ev["source"])),
+                        payload=_json_loads(ev["payload_json"], {}),
+                        correlation_id=str(ev["correlation_id"] or ""),
                     )
-                for tr in conn.execute(
-                    "SELECT * FROM incident_value_traces WHERE incident_id=?",
-                    (incident_id,),
-                ).fetchall():
-                    inc.value_traces.append(
-                        ValueTrace(
-                            field=str(tr["field"]),
-                            source=str(tr["source"]),
-                            source_timestamp=_dt(tr["source_timestamp"]),
-                        )
+                )
+            for tr in self._query(
+                "SELECT * FROM incident_value_traces WHERE incident_id = ?", (incident_id,)
+            ):
+                inc.value_traces.append(
+                    ValueTrace(
+                        field=str(tr["field"]),
+                        source=str(tr["source"]),
+                        source_timestamp=_dt(tr["source_timestamp"]),
                     )
-                for q in conn.execute(
-                    "SELECT * FROM incident_quarantine WHERE incident_id=?",
-                    (incident_id,),
-                ).fetchall():
-                    inc.quarantine_entries.append(
-                        QuarantineEntry(
-                            target_table=str(q["target_table"]),
-                            record_key=str(q["record_key"]),
-                            status=str(q["status"]),
-                            reason=str(q["reason"]),
-                            incident_id=incident_id,
-                            evidence=str(q["evidence"] or ""),
-                            quarantined_at=_dt(q["quarantined_at"]) or datetime.now(UTC),
-                        )
+                )
+            for q in self._query(
+                "SELECT * FROM incident_quarantine WHERE incident_id = ?", (incident_id,)
+            ):
+                inc.quarantine_entries.append(
+                    QuarantineEntry(
+                        target_table=str(q["target_table"]),
+                        record_key=str(q["record_key"]),
+                        status=str(q["status"]),
+                        reason=str(q["reason"]),
+                        incident_id=incident_id,
+                        evidence=str(q["evidence"] or ""),
+                        quarantined_at=_dt(q["quarantined_at"]) or datetime.now(UTC),
                     )
-                return inc
-            finally:
-                conn.close()
+                )
+            return inc
         except sqlite3.Error as err:
             logger.error("[INCIDENTS] get failed", incident_id=incident_id, error=str(err))
             return None
@@ -604,14 +790,10 @@ class IncidentStore:
         args.extend([bounded, max(0, int(offset))])
         out: list[Incident] = []
         try:
-            conn = self._connect()
-            try:
-                for row in conn.execute(sql, args).fetchall():
-                    inc = row_to_incident(row)
-                    if inc is not None:
-                        out.append(inc)
-            finally:
-                conn.close()
+            for row in self._query(sql, args):
+                inc = row_to_incident(row)
+                if inc is not None:
+                    out.append(inc)
         except sqlite3.Error as err:
             logger.error("[INCIDENTS] list failed", error=str(err))
         return out
@@ -630,32 +812,23 @@ class IncidentStore:
             "false_positive": 0,
         }
         try:
-            conn = self._connect()
-            try:
-                counts["total"] = int(
-                    conn.execute("SELECT COUNT(*) AS n FROM incidents").fetchone()["n"]
+            counts["total"] = int(self._scalar("SELECT COUNT(*) FROM incidents") or 0)
+            for r in self._query("SELECT status, COUNT(*) AS n FROM incidents GROUP BY status"):
+                st = str(r["status"])
+                if st in {"CLOSED", "RECOVERED"}:
+                    counts["recovered"] += int(r["n"])
+            for r in self._query("SELECT severity, COUNT(*) AS n FROM incidents GROUP BY severity"):
+                sev = str(r["severity"]).upper()
+                if sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+                    counts[sev.lower()] = int(r["n"])
+            counts["open"] = int(
+                self._scalar(
+                    "SELECT COUNT(*) FROM incidents WHERE status IN "
+                    "('OPEN','INVESTIGATING','ROOT_CAUSE_IDENTIFIED','CONTAINED',"
+                    "'RECOVERY_READY','RECOVERED')"
                 )
-                row = conn.execute(
-                    "SELECT status, COUNT(*) AS n FROM incidents GROUP BY status"
-                ).fetchall()
-                for r in row:
-                    st = str(r["status"])
-                    if st in {"CLOSED", "RECOVERED"}:
-                        counts["recovered"] += int(r["n"])
-                row = conn.execute(
-                    "SELECT severity, COUNT(*) AS n FROM incidents GROUP BY severity"
-                ).fetchall()
-                for r in row:
-                    sev = str(r["severity"]).upper()
-                    if sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
-                        counts[sev.lower()] = int(r["n"])
-                counts["open"] = int(
-                    conn.execute(
-                        "SELECT COUNT(*) AS n FROM incidents WHERE status IN ('OPEN','INVESTIGATING','ROOT_CAUSE_IDENTIFIED','CONTAINED','RECOVERY_READY','RECOVERED')"
-                    ).fetchone()["n"]
-                )
-            finally:
-                conn.close()
+                or 0
+            )
         except sqlite3.Error:
             pass
         return counts
@@ -697,14 +870,10 @@ class IncidentStore:
         if int(args[-1]) <= 0:
             return out[:bounded]
         try:
-            conn = self._connect()
-            try:
-                for row in conn.execute(sql, args).fetchall():
-                    inc = row_to_incident(row)
-                    if inc is not None and inc.incident_id not in {i.incident_id for i in out}:
-                        out.append(inc)
-            finally:
-                conn.close()
+            for row in self._query(sql, args):
+                inc = row_to_incident(row)
+                if inc is not None and inc.incident_id not in {i.incident_id for i in out}:
+                    out.append(inc)
         except sqlite3.Error:
             pass
         return out[:bounded]
@@ -712,37 +881,40 @@ class IncidentStore:
     def stats_by_component(self) -> list[dict[str, Any]]:
         """Incidents grouped by component (spec 51 trend analysis)."""
         try:
-            conn = self._connect()
-            try:
-                rows = conn.execute(
-                    "SELECT component, COUNT(*) AS n, "
-                    "SUM(CASE WHEN severity='CRITICAL' THEN 1 ELSE 0 END) AS critical, "
-                    "SUM(CASE WHEN severity='HIGH' THEN 1 ELSE 0 END) AS high "
-                    "FROM incidents GROUP BY component ORDER BY n DESC LIMIT 50"
-                ).fetchall()
-                return [dict(r) for r in rows]
-            finally:
-                conn.close()
+            return self._query(
+                "SELECT component, COUNT(*) AS n, "
+                "SUM(CASE WHEN severity='CRITICAL' THEN 1 ELSE 0 END) AS critical, "
+                "SUM(CASE WHEN severity='HIGH' THEN 1 ELSE 0 END) AS high "
+                "FROM incidents GROUP BY component ORDER BY n DESC LIMIT 50"
+            )
         except sqlite3.Error:
             return []
 
     def recurring_fingerprints(self, limit: int = 20) -> list[dict[str, Any]]:
         """Recurring root fingerprints (spec 50/52) — regression candidates."""
+        # SQLite spells the string aggregate ``GROUP_CONCAT``; the standard
+        # spelling is ``STRING_AGG``. The SQLite statement is kept verbatim
+        # (byte-for-byte contract); the non-SQLite variant is portable SQL.
+        if self._read_backend is not None:
+            sql = (
+                "SELECT fingerprint, COUNT(*) AS occurrences, "
+                "MAX(detected_at) AS last_seen, "
+                "STRING_AGG(DISTINCT category, ',') AS categories "
+                "FROM incidents WHERE fingerprint != '' "
+                "GROUP BY fingerprint HAVING COUNT(*) > 1 "
+                "ORDER BY occurrences DESC LIMIT ?"
+            )
+        else:
+            sql = (
+                "SELECT fingerprint, COUNT(*) AS occurrences, "
+                "MAX(detected_at) AS last_seen, "
+                "GROUP_CONCAT(DISTINCT category) AS categories "
+                "FROM incidents WHERE fingerprint != '' "
+                "GROUP BY fingerprint HAVING occurrences > 1 "
+                "ORDER BY occurrences DESC LIMIT ?"
+            )
         try:
-            conn = self._connect()
-            try:
-                rows = conn.execute(
-                    "SELECT fingerprint, COUNT(*) AS occurrences, "
-                    "MAX(detected_at) AS last_seen, "
-                    "GROUP_CONCAT(DISTINCT category) AS categories "
-                    "FROM incidents WHERE fingerprint != '' "
-                    "GROUP BY fingerprint HAVING occurrences > 1 "
-                    "ORDER BY occurrences DESC LIMIT ?",
-                    (max(1, min(limit, 100)),),
-                ).fetchall()
-                return [dict(r) for r in rows]
-            finally:
-                conn.close()
+            return self._query(sql, (max(1, min(limit, 100)),))
         except sqlite3.Error:
             return []
 
@@ -757,11 +929,17 @@ class IncidentStore:
         inc = self.get(incident_id)
         if inc is None:
             return None
-        base = (
-            Path(archive_dir)
-            if archive_dir
-            else Path(self.db_path).parent.parent / "artifacts" / "incidents" / "archive"
-        )
+        if archive_dir:
+            base = Path(archive_dir)
+        elif self.db_path:
+            base = Path(self.db_path).parent.parent / "artifacts" / "incidents" / "archive"
+        else:
+            # Non-SQLite provider: no local DB file to anchor the archive tree
+            # against (D9 - an empty ``db_path`` used to build a bogus path).
+            # Fall back to the canonical runtime workspace artifact tree.
+            from nexus_scalp.release.paths import get_artifacts_dir
+
+            base = get_artifacts_dir() / "incidents" / "archive"
         base.mkdir(parents=True, exist_ok=True)
         out = base / f"{incident_id}.json"
         out.write_text(_json(inc.as_dict()), encoding="utf-8")

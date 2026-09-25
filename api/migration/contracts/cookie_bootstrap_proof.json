@@ -1,0 +1,74 @@
+[
+ {
+  "label": "1 no-cookie gated route",
+  "path": "/api/status",
+  "method": "get",
+  "sent_cookie": false,
+  "status": 401,
+  "set_cookie": null,
+  "body": "{\"ok\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"missing or invalid web auth token\"}}"
+ },
+ {
+  "label": "2 public bootstrap document",
+  "path": "/",
+  "method": "get",
+  "sent_cookie": true,
+  "status": 200,
+  "set_cookie": "nse_web_auth=probe-token-123; HttpOnly; Max-Age=43200; Path=/; SameSite=strict",
+  "body": "﻿<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\r\n    <title>N"
+ },
+ {
+  "label": "3 v1 route WITH cookie",
+  "path": "/api/v1/system/health",
+  "method": "get",
+  "sent_cookie": true,
+  "status": 200,
+  "set_cookie": null,
+  "body": "{\"data\":{\"verdict\":\"DEGRADED\",\"checks\":[{\"category\":\"SYSTEM\",\"verdict\":\"PASS\",\"reason\":\"Windows 10.0.28000 / x64\",\"suggestion\":\"\",\"state\":\"HEALTHY\",\"optional\":f"
+ },
+ {
+  "label": "4 v1 route cookie CLEARED",
+  "path": "/api/v1/system/health",
+  "method": "get",
+  "sent_cookie": false,
+  "status": 401,
+  "set_cookie": null,
+  "body": "{\"ok\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"missing or invalid web auth token\"}}"
+ },
+ {
+  "label": "5 mutation route cookie CLEARED",
+  "path": "/api/positions/close",
+  "method": "post",
+  "sent_cookie": false,
+  "status": 401,
+  "set_cookie": null,
+  "body": "{\"ok\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"missing or invalid web auth token\"}}"
+ },
+ {
+  "label": "6 v1 route WITH valid bearer",
+  "path": "/api/v1/system/health",
+  "method": "get",
+  "sent_cookie": false,
+  "status": 401,
+  "set_cookie": null,
+  "body": "{\"ok\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"missing or invalid web auth token\"}}"
+ },
+ {
+  "label": "7 v1 route valid Bearer header",
+  "path": "/api/v1/system/health",
+  "method": "get",
+  "sent_cookie": false,
+  "status": 200,
+  "set_cookie": null,
+  "body": "{\"data\":{\"verdict\":\"DEGRADED\",\"checks\":[{\"category\":\"SYSTEM\",\"verdict\":\"PASS\",\"reason\":\"Windows 10.0.28000 / x64\",\"suggestion\":\"\",\"state\":\"HEALTHY\",\"optional\":f"
+ },
+ {
+  "label": "8 v1 route WRONG Bearer header",
+  "path": "/api/v1/system/health",
+  "method": "get",
+  "sent_cookie": false,
+  "status": 401,
+  "set_cookie": null,
+  "body": "{\"ok\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"missing or invalid web auth token\"}}"
+ }
+]

@@ -65,6 +65,12 @@ Name: "startup"; Description: "Start the engine automatically when I log in"; Gr
 
 [Files]
 Source: "{#NSE_SOURCE_DIR}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+; GO-API-SHIP: the release-baked Go API plane. The wildcard above already
+; carries it (PyInstaller --add-data places it at _internal\go-api\), so this
+; explicit entry is the contract assertion: a build that somehow failed to
+; bake the binary cannot produce an installer at all, instead of shipping a
+; package whose API plane silently falls back to Python-only at runtime.
+Source: "{#NSE_SOURCE_DIR}\_internal\go-api\nexus-api.exe"; DestDir: "{app}\_internal\go-api"; Flags: ignoreversion
 ; Always ship a safe (PAPER) config template that the first-run wizard copies.
 Source: "..\configs\base.yaml"; DestDir: "{localappdata}\NexusScalpEngine\config"; Flags: onlyifdoesntexist uninsneveruninstall
 Source: "..\docs\*"; DestDir: "{app}\docs"; Flags: recursesubdirs createallsubdirs ignoreversion

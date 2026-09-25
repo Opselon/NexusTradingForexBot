@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -71,6 +72,22 @@ from nexus_scalp.database.migration.schema_snapshot import (  # noqa: E402
 from nexus_scalp.model_lifecycle.schema import (  # noqa: E402
     model_lifecycle_schema_statements,
 )
+
+# The table-name regex every domain's authored DDL is parsed with, and the
+# extractor map the provisioner itself consumes (one entry per registered
+# domain). Defined here so ``_tables_in`` / ``_domain_tables`` resolve the
+# same callables the app ships instead of a second spelling of the schema.
+_CREATE_TABLE = r"(?i)^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\"?)(\w+)\1"
+
+_SCHEMA_EXTRACTORS = {
+    "audit": audit_schema_statements,
+    "news": news_schema_statements,
+    "candle_intel": candle_intel_schema_statements,
+    "ai_provider_decisions": ai_provider_decisions_schema_statements,
+    "model_lifecycle": model_lifecycle_schema_statements,
+    "ops_shadow": ops_shadow_schema_statements,
+    "ops_hygiene": ops_hygiene_schema_statements,
+}
 
 PG_URL = os.environ.get("NSE_PG_TEST_URL", "")
 needs_postgres = pytest.mark.skipif(
@@ -298,6 +315,8 @@ LIVE_ONLY_TABLES: frozenset[str] = frozenset(
 #: guards): a table that reverts to model-but-missing fails this test rather
 #: than silently widening the gap again.
 FRESH_ONLY_TABLES: frozenset[str] = frozenset()
+
+
 #: Historical finding — the 48 tables a fresh install once created that the
 #: live migrated nexusdb lacked. Kept verbatim so the finding is not lost
 #: now that the gap has closed (and so a regression can be diffed against
@@ -365,9 +384,12 @@ FRESH_ONLY_TABLES: frozenset[str] = frozenset()
 #:
 #:
 #:     def _tables_in(statements) -> set[str]:
-#:     """Table names a domain's authored DDL creates."""
-#:     import re
+#:         """Table names a domain's authored DDL creates."""
+#:         import re
 #:
+def _tables_in(statements) -> set[str]:
+    """Table names a domain's authored DDL creates."""
+    out: set[str] = set()
     for raw in statements:
         match = re.search(_CREATE_TABLE, raw)
         if match:
@@ -411,7 +433,9 @@ def scratch():
                         with _suppress():
                             close()
             unregister_domain_backend(domain)
-        with psycopg.connect(INSTANCE_DSN + " dbname=nexusdb", connect_timeout=10, autocommit=True) as conn:
+        with psycopg.connect(
+            INSTANCE_DSN + " dbname=nexusdb", connect_timeout=10, autocommit=True
+        ) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "

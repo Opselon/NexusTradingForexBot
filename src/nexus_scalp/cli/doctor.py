@@ -28,7 +28,7 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 from rich import box
@@ -1155,6 +1155,173 @@ def audit_purge_cmd(
 
 
 # ---------------------------------------------------------------------------
+# DATA-RAW-02: offline bars restore helpers (MT5-FREE)
+# ---------------------------------------------------------------------------
+# `nexus data-restore` exists because the ONLY shipped producer of the
+# canonical bars parquet (`nexus data-fetch`) requires a live, logged-in MT5
+# terminal — unavailable on CI/agent machines and fresh installs. These
+# helpers are pure pathlib+polars: no broker import anywhere, so the whole
+# restore path works with no terminal installed.
+_BARS_COLUMNS = (
+    "time",
+    "open",
+    "high",
+    "low",
+    "close",
+    "tick_volume",
+    "spread",
+    "real_volume",
+    "time_utc",
+)
+#: Post-write validation gate: a restored file below this is not usable by
+#: the training pipeline (walk-forward folds need real history), so a tiny
+#: or stub backup is reported as a runtime failure rather than a silent PASS.
+_MIN_BARS_ROWS = 1_000
+_PRICE_COLUMNS = ("open", "high", "low", "close")
+
+
+if TYPE_CHECKING:
+    import polars as pl
+
+
+def _default_data_raw_path(symbol: str, timeframe: str) -> Path:
+    """Canonical bars output path: ``data/raw/<SYM>_<TF>.parquet``.
+
+    Same literal the producer (`data-fetch`) and the consumers
+    (`model-train-3`, REPLAY raw-bars fallback, ``check_data``) use, so a
+    restored file lands exactly where every reader looks. Resolved
+    CWD-relative on purpose to match the producer's own resolution.
+    """
+    return Path(f"data/raw/{symbol.upper()}_{timeframe.upper()}.parquet")
+
+
+def _resolve_data_restore_source(
+    source: Path, symbol: str, timeframe: str
+) -> tuple[Path | None, str | None]:
+    """Resolve ``--source`` (a file or a directory) to ONE bars file.
+
+    Resolution order:
+      1. source IS a file -> use it directly (.parquet or .csv);
+      2. source IS a directory -> prefer ``<SYM>_<TF>.parquet`` inside it,
+         fall back to the ``.csv`` sibling (convert path);
+      3. else the first ``*.parquet`` (then ``*.csv``) directly inside.
+
+    Returns ``(None, reason)`` when nothing usable exists (the caller turns
+    that into a deterministic EXIT_USAGE panel). Never raises: the CLI's job
+    here is an actionable error, not a traceback.
+    """
+    cand = source.resolve() if source.parts else Path("")
+    if cand.is_file():
+        if cand.suffix.lower() in (".parquet", ".csv"):
+            return cand, None
+        return None, (
+            f"unsupported source type: {cand.suffix or 'no extension'} (expected .parquet or .csv)"
+        )
+    if cand.is_dir():
+        stem = f"{symbol.upper()}_{timeframe.upper()}"
+        for ext in (".parquet", ".csv"):
+            hit = cand / f"{stem}{ext}"
+            if hit.is_file():
+                return hit, None
+        for pattern in ("*.parquet", "*.csv"):
+            hits = sorted(cand.glob(pattern))
+            if hits:
+                return hits[0], None
+        return None, f"no .parquet/.csv bars file found in directory: {cand}"
+    return None, (
+        f"bars source does not exist: {source}"
+        if source.parts
+        else "no --source given and no default bars source is available"
+    )
+
+
+def _canonical_bars_frame(df: pl.DataFrame) -> pl.DataFrame:
+    """Re-shape a normalized bars frame to the exact canonical schema.
+
+    ``normalize_bars_frame`` hands back ``time``/``time_utc`` as
+    ``Datetime('us', UTC)``; the canonical bars file (what ``data-fetch``
+    writes and every consumer reads) is ``Int64`` epoch-seconds plus a NAIVE
+    ``Datetime('us')``. Both are re-derived from the already-sorted UTC
+    column so a restored file is schema-identical to a freshly fetched one.
+    Absent integer volume columns are filled with 0 (a bars export that
+    carries no real_volume is still valid history); a missing price column
+    raises and the caller reports a clean runtime error.
+    """
+    import polars as pl
+
+    utc_col = df["time_utc"]
+    if getattr(utc_col.dtype, "time_zone", None):
+        utc_col = utc_col.dt.replace_time_zone(None)
+    out = df.with_columns(utc_col.alias("time_utc"))
+    for col in ("tick_volume", "spread", "real_volume"):
+        if col not in out.columns:
+            out = out.with_columns(pl.lit(0).cast(pl.Int64).alias(col))
+    return out.with_columns(
+        (pl.col("time_utc").cast(pl.Int64) // 1_000_000).cast(pl.Int64).alias("time")
+    ).select(list(_BARS_COLUMNS))
+
+
+def _validate_restored_bars(path: Path) -> dict[str, Any]:
+    """Post-write validation of the canonical bars parquet (read-it-back).
+
+    Consumers (``model-train-3``, the REPLAY fallback, ``check_data``) read
+    this file with no knowledge of how it got there, so the restore path
+    validates it as a CONSUMER would, after the write:
+      * schema: exact 9-column set, in the producer's order;
+      * min rows: a stub/toy file cannot serve the training pipeline;
+      * monotonic time: strictly ascending, no duplicate timestamps;
+      * OHLC sanity: positive finite prices, high >= max(open, close),
+        low <= min(open, close) on every row.
+
+    Never raises: every failure becomes a ``{"valid": False, "error": ...}``
+    record so the caller emits a deterministic EXIT_RUNTIME.
+    """
+    import polars as pl
+
+    checks: dict[str, Any] = {"valid": False, "path": str(path)}
+
+    def _fail(msg: str) -> dict[str, Any]:
+        checks["error"] = msg
+        return checks
+
+    try:
+        frame = pl.read_parquet(path)
+    except Exception as exc:
+        return _fail(f"could not read back {path}: {exc}")
+
+    if list(frame.columns) != list(_BARS_COLUMNS):
+        return _fail(f"column mismatch: got {frame.columns}, expected {list(_BARS_COLUMNS)}")
+    checks["rows"] = frame.height
+    if frame.height < _MIN_BARS_ROWS:
+        return _fail(
+            f"only {frame.height} rows (minimum {_MIN_BARS_ROWS}) — "
+            "the backup is too small for the training pipeline"
+        )
+    if frame["time"].n_unique() != frame.height:
+        return _fail(f"{frame.height - frame['time'].n_unique()} duplicate timestamps")
+    if not frame["time"].is_sorted():
+        return _fail("time column is not sorted (non-monotonic bars)")
+
+    finite_positive = pl.lit(True)
+    for pc in _PRICE_COLUMNS:
+        finite_positive &= pl.col(pc).is_finite() & (pl.col(pc) > 0)
+    if frame.filter(~finite_positive).height:
+        return _fail("non-finite or non-positive OHLC prices")
+    upper = pl.max_horizontal(pl.col("open"), pl.col("close"))
+    lower = pl.min_horizontal(pl.col("open"), pl.col("close"))
+    if frame.filter(pl.col("high") < upper).height:
+        return _fail("high < max(open, close) on some rows (OHLC sanity)")
+    if frame.filter(pl.col("low") > lower).height:
+        return _fail("low > min(open, close) on some rows (OHLC sanity)")
+
+    checks["start"] = str(frame["time_utc"].min())
+    checks["end"] = str(frame["time_utc"].max())
+    checks["valid"] = True
+    checks["error"] = None
+    return checks
+
+
+# ---------------------------------------------------------------------------
 # diagnostics
 # ---------------------------------------------------------------------------
 @app.command("diagnostics")
@@ -1676,6 +1843,10 @@ def _late_block() -> None:
                     _error_panel(
                         "MT5 not available",
                         f"{exc}. Start and log in to the MetaTrader 5 terminal, then retry.",
+                        hint=(
+                            "or run `nexus data-restore --source <file_or_dir>` "
+                            "to restore a backup."
+                        ),
                         exit_code=xc.EXIT_RUNTIME,
                     )
                 )
@@ -1734,6 +1905,276 @@ def _late_block() -> None:
                 )
             )
             _emit(summary, as_json=False, plain=True)
+
+    # DATA-RAW-02 (data-restore): nexus data-restore is registered right after
+    # the MT5-bound producer so `nexus help` lists the two data acquisition
+    # paths next to each other: `data-fetch` (live terminal) and
+    # `data-restore` (offline backup). The whole command is MT5-FREE: nothing
+    # in its body imports the broker adapter, so it runs on a machine with no
+    # terminal installed (the operator's first-run recovery path).
+    @app.command("data-restore")
+    def data_restore(
+        source: Path = typer.Option(
+            Path(""),
+            "--source",
+            "-s",
+            help="Backup bars file (.parquet/.csv) or a directory containing one.",
+        ),
+        symbol: str = typer.Option("XAUUSD", "--symbol", help="Symbol of the bars."),
+        timeframe: str = typer.Option("M1", "--timeframe", help="Bar timeframe."),
+        out: Path = typer.Option(
+            Path(""),
+            "--out",
+            help="Output parquet path (default data/raw/<SYM>_<TF>.parquet).",
+        ),
+        force: bool = typer.Option(
+            False,
+            "--force",
+            help="Overwrite an existing target parquet (default: refuse).",
+        ),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+    ) -> None:
+        """Restore (or convert) a known-good bars backup into data/raw/ WITHOUT MT5.
+
+        Closes first-run GAP 2's offline half: `data-fetch` needs a live,
+        logged-in MT5 terminal, which CI/agent machines and fresh installs do
+        not have. This command copies a known-good parquet backup (or converts
+        a CSV export) into the canonical ``data/raw/<SYM>_<TF>.parquet`` the
+        training commands and the REPLAY raw-bars fallback read, then
+        re-validates the written file: min rows, strictly monotonic time,
+        OHLC sanity. Never clobbers an existing file without ``--force``.
+        """
+        import polars as pl
+
+        from nexus_scalp.model_generation.bars_normalize import normalize_bars_frame
+
+        _polars = pl  # local alias: `pl` is reassigned by the reader below
+        result: dict[str, Any] = {
+            "symbol": symbol.upper(),
+            "timeframe": timeframe.upper(),
+            "source": str(source),
+        }
+
+        # ---- resolve the source file (path or directory) -------------------
+        src_path, why = _resolve_data_restore_source(source, symbol, timeframe)
+        if src_path is None:
+            result["error"] = why or "no bars source found"
+            result["exit_code"] = xc.EXIT_USAGE
+            result["hint"] = (
+                "Pass --source <file_or_dir>: a .parquet/.csv bars backup, or a "
+                "directory containing one (looked for "
+                f"{symbol.upper()}_{timeframe.upper()}.parquet and .csv)."
+            )
+            if json_mode:
+                _emit(result, True)
+            else:
+                console.print(
+                    _error_panel(
+                        "No bars source found",
+                        result["error"],
+                        hint=result["hint"],
+                        exit_code=xc.EXIT_USAGE,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_USAGE) from None
+        src_path = src_path.resolve()
+        result["source"] = str(src_path)
+
+        # ---- resolve the target (default canonical data/raw path) ----------
+        # NOTE: typer turns an empty --out into Path(".") (str(Path("")) is
+        # ".", truthy), so test the PATH, not its string form.
+        out_path = out if out.parts else _default_data_raw_path(symbol, timeframe)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Never silently clobber an existing good file: the operator's current
+        # bars are precious, and "restore" must be an explicit decision.
+        if out_path.exists() and not force:
+            why = (
+                f"target already exists: {out_path} (refusing to overwrite). "
+                "Existing data is never clobbered silently."
+            )
+            result["error"] = why
+            result["exit_code"] = xc.EXIT_USAGE
+            result["hint"] = f"Re-run with --force to overwrite {out_path}."
+            if json_mode:
+                _emit(result, True)
+            else:
+                console.print(
+                    _error_panel(
+                        "Target exists",
+                        why,
+                        hint=result["hint"],
+                        exit_code=xc.EXIT_USAGE,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_USAGE) from None
+
+        # ---- load + normalize the bars frame --------------------------------
+        # The CSV export and the parquet producer carry the SAME column set
+        # (time,open,high,low,close,tick_volume,spread,real_volume,time_utc),
+        # so the reader is extension-driven. normalize_bars_frame resolves any
+        # time representation (epoch s/ms/us, ISO strings, naive/aware), sorts
+        # chronologically and drops duplicate timestamps — honest cleaning, it
+        # never fabricates bars.
+        try:
+            if src_path.suffix.lower() == ".csv":
+                frame_in = _polars.read_csv(src_path, try_parse_dates=True)
+            else:
+                frame_in = _polars.read_parquet(src_path)
+        except Exception as exc:
+            result["error"] = f"could not read bars source {src_path}: {exc}"
+            result["exit_code"] = xc.EXIT_RUNTIME
+            result["hint"] = (
+                "The backup is missing, unreadable or corrupt. Re-copy it from "
+                "the known-good capture, or re-run `nexus data-fetch` on a "
+                "machine with a live MT5 terminal."
+            )
+            if json_mode:
+                _emit(result, True)
+            else:
+                console.print(
+                    _error_panel(
+                        "Unreadable bars source",
+                        result["error"],
+                        hint=result["hint"],
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+
+        if frame_in.is_empty():
+            result["error"] = f"bars source {src_path} contains zero rows"
+            result["exit_code"] = xc.EXIT_RUNTIME
+            result["hint"] = "The backup is empty. Restore from a known-good capture."
+            if json_mode:
+                _emit(result, True)
+            else:
+                console.print(
+                    _error_panel(
+                        "Empty bars source",
+                        result["error"],
+                        hint=result["hint"],
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+
+        try:
+            norm, _stats = normalize_bars_frame(frame_in)
+        except ValueError as exc:
+            result["error"] = f"bars source {src_path} has no usable bars: {exc}"
+            result["exit_code"] = xc.EXIT_RUNTIME
+            result["hint"] = "Check the backup's time column format — every row failed to parse."
+            if json_mode:
+                _emit(result, True)
+            else:
+                console.print(
+                    _error_panel(
+                        "No usable bars",
+                        result["error"],
+                        hint=result["hint"],
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+
+        # normalize_bars_frame returns time/time_utc as Datetime('us', UTC); the
+        # canonical schema is Int64 epoch-seconds + a NAIVE us datetime
+        # (identical to what data-fetch writes). Re-derive both from the sorted
+        # UTC column so a restored file is byte-compatible with a fetched one.
+        frame = _canonical_bars_frame(norm)
+
+        # ---- write + post-write validation (validate BEFORE publishing) ----
+        # The frame is written to a temp file and validated there; only a
+        # validated frame is atomically moved into place. A consumer reading
+        # the canonical path must never see a file that failed validation.
+        tmp_out = out_path.with_name(out_path.name + ".tmp-restore")
+        try:
+            frame.write_parquet(tmp_out)
+        except Exception as exc:
+            with contextlib.suppress(OSError):
+                tmp_out.unlink(missing_ok=True)
+            result["error"] = f"could not write {out_path}: {exc}"
+            result["exit_code"] = xc.EXIT_RUNTIME
+            result["hint"] = "Check the output path is writable and retry."
+            if json_mode:
+                _emit(result, True)
+            else:
+                console.print(
+                    _error_panel(
+                        "Write failed",
+                        result["error"],
+                        hint=result["hint"],
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+
+        # Post-write validation reads the file back as a CONSUMER would:
+        # exact schema, min rows, strictly monotonic time, OHLC sanity.
+        checks = _validate_restored_bars(tmp_out)
+        if not checks.get("valid", False):
+            with contextlib.suppress(OSError):
+                tmp_out.unlink(missing_ok=True)
+            result.update(checks)
+            result["exit_code"] = xc.EXIT_RUNTIME
+            result["hint"] = (
+                "The restored file failed post-write validation and was not "
+                "published; restore from a known-good backup."
+            )
+            if json_mode:
+                _emit(result, True)
+            else:
+                console.print(
+                    _error_panel(
+                        "Restored file failed validation",
+                        result["error"] or "validation failed",
+                        hint=result["hint"],
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+
+        try:
+            os.replace(tmp_out, out_path)
+        except OSError as exc:
+            with contextlib.suppress(OSError):
+                tmp_out.unlink(missing_ok=True)
+            result["error"] = f"could not publish {out_path}: {exc}"
+            result["exit_code"] = xc.EXIT_RUNTIME
+            result["hint"] = "Check the output path is writable and retry."
+            if json_mode:
+                _emit(result, True)
+            else:
+                console.print(
+                    _error_panel(
+                        "Publish failed",
+                        result["error"],
+                        hint=result["hint"],
+                        exit_code=xc.EXIT_RUNTIME,
+                    )
+                )
+            raise typer.Exit(xc.EXIT_RUNTIME) from None
+
+        result.update(checks)
+        # `checks["path"]` names the temp file; report the PUBLISHED path.
+        result["path"] = str(out_path)
+
+        result["exit_code"] = xc.EXIT_OK
+        result["output"] = str(out_path)
+        if json_mode:
+            _emit(result, True)
+        else:
+            console.print(
+                _success_panel(
+                    "Historical data restored",
+                    f"{result['rows']} bars -> {out_path} "
+                    f"(span {result['start']} .. {result['end']})",
+                    border="green",
+                )
+            )
+            _emit(result, as_json=False, plain=True)
+        raise typer.Exit(xc.EXIT_OK) from None
 
     @app.command("model-experiment-create")
     def model_experiment_create(
