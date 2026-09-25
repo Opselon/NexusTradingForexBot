@@ -215,7 +215,7 @@ def isolated_build(monkeypatch: pytest.MonkeyPatch, tmp_path):
     return cache
 
 
-def _run_capture(cmd, **kw):  # noqa: ANN202 - test stand-in
+def _run_capture(cmd, **kw):
     """Default replacement: must never run, it records the invocation."""
     raise AssertionError(f"subprocess.run should not be called, got: {cmd}")
 
@@ -238,7 +238,7 @@ def test_build_returns_false_when_go_build_fails(
     src.mkdir()
     monkeypatch.setattr(gab, "GO_API_DIR", src)
 
-    def fake_run(cmd, **kw):  # noqa: ANN202
+    def fake_run(cmd, **kw):
         return _FakeProc(returncode=1, stdout="", stderr="main.go:10: undefined: x")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -257,7 +257,7 @@ def test_build_success_writes_stamp_and_binary(
     src.mkdir()
     monkeypatch.setattr(gab, "GO_API_DIR", src)
 
-    def fake_run(cmd, **kw):  # noqa: ANN202
+    def fake_run(cmd, **kw):
         # Emulate the compiler producing the artifact.
         gab._binary_path().parent.mkdir(parents=True, exist_ok=True)
         gab._binary_path().write_bytes(b"FAKE BINARY")
@@ -286,9 +286,7 @@ def test_build_cache_hit_skips_the_compile(
     # the cached artifact is at the exact path build_go_api looks for.
     bin_path = gab._binary_path()
     bin_path.write_bytes(b"CACHED BINARY")
-    (isolated_build / "source.sha256").write_text(
-        gab._source_hash(), encoding="utf-8"
-    )
+    (isolated_build / "source.sha256").write_text(gab._source_hash(), encoding="utf-8")
 
     monkeypatch.setattr(subprocess, "run", _run_capture)  # would explode if run
     ok, msg = gab.build_go_api("/usr/bin/go")
@@ -309,7 +307,7 @@ def test_build_stale_stamp_triggers_rebuild(
     gab._binary_path().write_bytes(b"STALE")
     (isolated_build / "source.sha256").write_text("0" * 64, encoding="utf-8")
 
-    def fake_run(cmd, **kw):  # noqa: ANN202
+    def fake_run(cmd, **kw):
         gab._binary_path().write_bytes(b"FRESH")
         return _FakeProc(returncode=0, stdout="", stderr="")
 
@@ -441,7 +439,7 @@ def test_boot_returns_none_without_a_toolchain(
     monkeypatch.setattr(gab, "resolve_go_api_binary", lambda: None)
     monkeypatch.delenv("NSE_GO_API_ORIGIN", raising=False)
 
-    def boom(*a, **k):  # noqa: ANN202
+    def boom(*a, **k):
         raise AssertionError("build_go_api must not run without a toolchain")
 
     monkeypatch.setattr(gab, "build_go_api", boom)

@@ -262,13 +262,22 @@ func ServeSPA(next http.Handler) http.Handler {
 }
 
 // Middleware installs the SPA layer under next. Exported for tests that need
-// to build the layer directly against a fixture directory.
+// to build the layer directly against a fixture directory. A nil next is
+// treated as a 404-only terminator: the layer serves static files and the
+// SPA fallback, and answers anything it does not own with a plain 404 (used
+// when the router installs the layer as its not-found handler).
 func (s *SPAStaticFiles) Middleware(next http.Handler) http.Handler {
 	if s.root == "" {
 		return next
 	}
+	terminal := next
+	if terminal == nil {
+		terminal = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		})
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s.serve(w, r, next)
+		s.serve(w, r, terminal)
 	})
 }
 

@@ -16,16 +16,27 @@ import path from "node:path";
 // config source.
 //
 // Development: `npm run dev` serves the UI at `/` on :5173 and proxies /api,
-// /health, /ws and /web to the authoritative NSE backend (default 127.0.0.1:8080,
-// override with NSE_API_ORIGIN) so cookies/tokens and SSE/WebSockets work
-// without CORS games. The backend stays the single source of truth.
+// /health, /ws and /web to the authoritative NSE backend so cookies/tokens
+// and SSE/WebSockets work without CORS games.
 //
-// BUG-267: when the engine auto-incremented past an occupied port (8080 ->
-// 8081), the launcher records the ACTUAL bind in the repo-root .env
-// (NSE_WEB_ACTUAL_PORT, gitignored). Read it so `npm run dev` proxies to the
-// engine that is actually running instead of a dead :8080 (the "React
-// console shows UNAUTHORIZED / nothing loads" dev trap). Explicit
-// NSE_API_ORIGIN still wins.
+// The Go API server is the single API entrypoint in front of the Python
+// FastAPI app (it reverse-proxies every operation to Python, byte-compatible,
+// so /api/v1/* still answers {data,meta} and legacy /api/* still answers raw
+// JSON — see core/transport.ts). Dev traffic therefore targets Go by default:
+//
+//   1. NSE_API_ORIGIN  — explicit override, always wins (any origin).
+//   2. Go API origin   — http://127.0.0.1:8087 (Go's default -addr /
+//      NSE_GO_ADDR). Go then forwards to Python itself, so the dev proxy only
+//      ever needs to know one origin.
+//   3. recordedBackendPort — BUG-267 fallback: when the engine auto-incremented
+//      past an occupied port (8080 -> 8081) the launcher records the ACTUAL
+//      bind in the repo-root .env (NSE_WEB_ACTUAL_PORT, gitignored). Kept for
+//      the case where a Python-only engine is running with no Go layer in
+//      front of it.
+//
+// NOTE: the cookie-issuing asset /app.js is still served (Go proxies Python's
+// static mounts), so the BUG-267 one-shot 401 heal in core/middleware.ts keeps
+// working unchanged.
 import { existsSync, readFileSync } from "node:fs";
 
 function recordedBackendPort(): number | null {
@@ -41,8 +52,30 @@ function recordedBackendPort(): number | null {
   }
 }
 
-const backendOrigin =
-  process.env.NSE_API_ORIGIN || `http://127.0.0.1:${recordedBackendPort() ?? 8080}`;
+// The Go API server is the API entrypoint: it listens on :8087 by default
+// (flag -addr / env NSE_GO_ADDR) and reverse-proxies every operation to the
+// Python FastAPI process, so the frontend only ever talks to Go. The previous
+// default (8080) addressed the Python process directly; Go now owns that role.
+const GO_API_DEFAULT_PORT = 8087;
+
+// Dev backend resolution, in priority order:
+//   1. NSE_API_ORIGIN — explicit override, always wins (any origin).
+//   2. The Go API server on :8087 — the DEFAULT backend. Go is the API
+//      entrypoint and forwards to Python itself, so a normal `npm run dev`
+//      (no .env, no override) hits Go.
+//   3. recordedBackendPort — BUG-267 fallback, used only when the Go server is
+//      NOT reachable on :8087: when a Python-only engine auto-incremented past
+//      an occupied port (8080 -> 8081) the launcher records the ACTUAL bind in
+//      the repo-root .env (NSE_WEB_ACTUAL_PORT, gitignored). Fall back to it so
+//      dev still points at a live Python backend instead of a dead :8087 (the
+//      "React console shows UNAUTHORIZED / nothing loads" dev trap).
+function resolveBackendOrigin(): string {
+  if (process.env.NSE_API_ORIGIN) return process.env.NSE_API_ORIGIN;
+  const goOrigin = `http://127.0.0.1:${GO_API_DEFAULT_PORT}`;
+  return isPortOpen(goOrigin) ? goOrigin : `http://127.0.0.1:${recordedBackendPort() ?? GO_API_DEFAULT_PORT}`;
+}
+
+const backendOrigin = resolveBackendOrigin();
 
 // WebSocket proxy needs raw TCP (http://); everything else keeps http(s).
 const wsTarget = backendOrigin.replace(/^https/, "http");

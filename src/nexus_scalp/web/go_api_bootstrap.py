@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-import json
 import os
 import shutil
 import socket
@@ -98,9 +97,9 @@ def _find_go() -> str | None:
 
     home = os.path.expanduser("~")
     for rel in (
-        "go-toolchain/go/bin/go.exe",      # side install (this host)
-        "go/bin/go.exe",                    # GOPATH-style install
-        "scoop/apps/go/current/bin/go.exe", # scoop
+        "go-toolchain/go/bin/go.exe",  # side install (this host)
+        "go/bin/go.exe",  # GOPATH-style install
+        "scoop/apps/go/current/bin/go.exe",  # scoop
     ):
         p = Path(home) / rel
         if p.is_file():
@@ -200,9 +199,7 @@ def _shipped_binary_candidates() -> list[Path]:
         exe_dir = Path(sys.executable).resolve().parent
         candidates.append(exe_dir / SHIPPED_BINARY_DEST / SHIPPED_BINARY_NAME)
         candidates.append(exe_dir / SHIPPED_BINARY_NAME)
-        candidates.append(
-            exe_dir / "_internal" / SHIPPED_BINARY_DEST / SHIPPED_BINARY_NAME
-        )
+        candidates.append(exe_dir / "_internal" / SHIPPED_BINARY_DEST / SHIPPED_BINARY_NAME)
 
     candidates.append(Path.cwd() / SHIPPED_BINARY_DEST / SHIPPED_BINARY_NAME)
     candidates.append(Path.cwd() / SHIPPED_BINARY_NAME)
@@ -392,8 +389,13 @@ class GoApiSupervisor:
 
         try:
             self._proc = subprocess.Popen(
-                [self.binary, "-addr", f"{self.host}:{self.port}",
-                 "-python-origin", self.python_origin],
+                [
+                    self.binary,
+                    "-addr",
+                    f"{self.host}:{self.port}",
+                    "-python-origin",
+                    self.python_origin,
+                ],
                 cwd=_binary_workdir(self.binary),
                 env=env,
                 stdout=subprocess.PIPE,
@@ -426,7 +428,7 @@ class GoApiSupervisor:
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     pass
-        except Exception:  # noqa: BLE001 - teardown must never throw
+        except Exception:
             pass
         finally:
             self._proc = None
@@ -440,8 +442,8 @@ class GoApiSupervisor:
         Python is still starting (its own readiness gate), and we only need
         'the process is up and routing', not 'the engine is live'.
         """
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         url = f"http://{self.host}:{self.port}/health"
         deadline = time.monotonic() + timeout_s
@@ -505,7 +507,7 @@ def _creation_flags() -> int:
     try:
         # CREATE_NEW_PROCESS_GROUP = 0x00000200
         return 0x00000200
-    except Exception:  # noqa: BLE001
+    except Exception:
         return 0
 
 
@@ -537,7 +539,9 @@ def _force_kill(pid: int | None) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def boot_go_api(python_host: str, python_port: int, preferred_api_port: int) -> GoApiSupervisor | None:
+def boot_go_api(
+    python_host: str, python_port: int, preferred_api_port: int
+) -> GoApiSupervisor | None:
     """Build and launch the Go API as a supervised child.
 
     Called from the engine boot path AFTER Python's own web origin is known
@@ -550,7 +554,9 @@ def boot_go_api(python_host: str, python_port: int, preferred_api_port: int) -> 
     """
     go_exe = _find_go()
     if go_exe is None and resolve_go_api_binary() is None:
-        _log("go toolchain not found and no shipped nexus-api binary; serving python API directly (no go plane)")
+        _log(
+            "go toolchain not found and no shipped nexus-api binary; serving python API directly (no go plane)"
+        )
         return None
 
     ok, msg = build_go_api(go_exe)

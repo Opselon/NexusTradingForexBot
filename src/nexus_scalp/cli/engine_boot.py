@@ -156,7 +156,7 @@ def _boot_go_api_plane(bind_host: str, python_port: int) -> Any:
             python_port=python_port,
             preferred_api_port=python_port + 1,
         )
-    except Exception as go_err:  # noqa: BLE001 - never block a boot
+    except Exception as go_err:
         console.print(
             Panel(
                 "[yellow]Go API plane disabled[/yellow]"
