@@ -185,9 +185,9 @@ def _binary_path() -> Path:
 def _shipped_binary_candidates() -> list[Path]:
     """Where a RELEASE-BUILT Go API binary can live at runtime.
 
-    Mirrors the frontend_assets.py resolution style: first the PyInstaller
-    bundle (frozen _MEIPASS, then the onedir layout next to the running EXE),
-    then the repo-relative ship path as a dev/CI convenience.
+    Mirrors frontend_assets.py: the PyInstaller bundle first (frozen
+    _MEIPASS, then the onedir layout beside the running EXE), then the
+    repo-relative ship path as a dev/CI convenience.
     """
     bases: list[Path] = []
     meipass = getattr(sys, "_MEIPASS", None)
@@ -210,12 +210,11 @@ def resolve_go_api_binary() -> Path | None:
     """The SHIPPED Go API binary, if this process is running from a package.
 
     A release build compiles nexus-api.exe once (build_release.ps1) and bakes
-    it into the PyInstaller onedir. The end user has NO Go toolchain, so that
-    copy is authoritative and is used AS-IS — this function never compiles,
-    and never invalidates or rewrites what the release shipped.
+    it into the PyInstaller onedir. The end user has NO Go toolchain, so it
+    is authoritative, used AS-IS - never compiled, invalidated or rewritten.
 
-    Returns the path when present, else None (the caller then falls back to a
-    source build, which is the dev-checkout path).
+    Returns the path when present, else None (the caller falls back to a
+    source build, the dev-checkout path).
     """
     for cand in _shipped_binary_candidates():
         try:
@@ -229,13 +228,11 @@ def resolve_go_api_binary() -> Path | None:
 def build_go_api(go_exe: str | None = None, timeout_s: int = 300) -> tuple[bool, str]:
     """Resolve the nexus-api binary. Returns (ok, message).
 
-    SHIPPED FIRST: out of a release package, the binary the release compiled
-    is used exactly as shipped — never rebuilt (the end user has no compiler
-    and no source tree). Otherwise this is a dev/source checkout, so the
-    binary is COMPILED here (toolchain discovered when go_exe is None). Uses
-    the content cache: a hit skips the compile entirely. A build failure
-    returns the tail of the compiler output so the operator sees the real
-    cause, not a bare exit code.
+    SHIPPED FIRST: out of a release package, the release binary is used as
+    shipped - never rebuilt (no compiler/source tree on the user machine).
+    Otherwise this is a dev/source checkout: COMPILE here (toolchain found
+    when go_exe is None), content-cached. A build failure returns the tail
+    of the compiler output so the operator sees the real cause.
     """
     shipped = resolve_go_api_binary()
     if shipped is not None:
@@ -249,7 +246,7 @@ def build_go_api(go_exe: str | None = None, timeout_s: int = 300) -> tuple[bool,
         go_exe = _find_go()
         if go_exe is None:
             return False, (
-                "go toolchain not found and no shipped nexus-api binary — "
+                "go toolchain not found and no shipped nexus-api binary - "
                 "serving the python API directly"
             )
 
@@ -542,13 +539,12 @@ def boot_go_api(
 ) -> GoApiSupervisor | None:
     """Build and launch the Go API as a supervised child.
 
-    Called from the engine boot path AFTER Python's own web origin is known
-    but BEFORE uvicorn starts serving, so the Go plane is ready by the time
-    the dashboard opens.
+    Called from the engine boot path AFTER Python's own web origin is known,
+    so the Go plane is ready by the time the dashboard opens.
 
-    Returns None when Go cannot be used — the caller then simply serves the
-    FastAPI app on its own port and the product still works. That fallback
-    is intentional and is the ONLY one in this subsystem.
+    Returns None when Go cannot be used - the caller serves the FastAPI app
+    on its own port and the product still works. That fallback is the ONLY
+    one in this subsystem.
     """
     go_exe = _find_go()
     if go_exe is None and resolve_go_api_binary() is None:
@@ -559,7 +555,7 @@ def boot_go_api(
 
     ok, msg = build_go_api(go_exe)
     if not ok:
-        _log("go api unavailable — serving python API directly: %s", msg)
+        _log("go api unavailable - serving python API directly: %s", msg)
         return None
 
     addr = resolve_api_addr(preferred_api_port)

@@ -38,6 +38,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/Opselon/NexusTradingForexBot/go-api/internal/api/respond"
 )
 
 // DistEnvVar is the frozen env override slot (contract #9, search slot 1).
@@ -413,18 +415,22 @@ func (s *SPAStaticFiles) serveIndex(w http.ResponseWriter, r *http.Request, next
 
 // serve implements the _AltSpaStaticFiles.get_response contract for the root
 // mount: deny first, escape check, real file, else SPA fallback.
+//
+// notFoundTerminator answers a path the layer declines (deny list, escape
+// shape, missing asset) when the layer owns the request outright — the router
+// installed it as its not-found handler with a nil next. It writes the
+// canonical v1 404 envelope (respond.NotFound) so an unmatched /api child
+// gets the same body the router itself would have emitted, never an empty
+// 404 and never the shell.
 func (s *SPAStaticFiles) serve(w http.ResponseWriter, r *http.Request, next http.Handler) {
 	p := r.URL.Path
 
-	// The deny list is Python-owned surface: pass it through untouched so the
-	// API router's own 404/405 envelope applies (an unmatched /api child is
-	// an honest 404, never a shell document — §60).
-	if denied(p) {
-		next.ServeHTTP(w, r)
-		return
-	}
-	if escapeAttempt(p) {
-		next.ServeHTTP(w, r)
+	// The deny list is Python-owned surface: a /api, /ws, /web, /health,
+	// /healthz, /app.js or /api_client.js request is answered with an honest
+	// 404 — never a shell document (§60: a typo'd API call must never receive
+	// HTML the client parses as data).
+	if denied(p) || escapeAttempt(p) {
+		decline(w, r, next)
 		return
 	}
 
@@ -460,8 +466,20 @@ func (s *SPAStaticFiles) serve(w http.ResponseWriter, r *http.Request, next http
 		name = p[i+1:]
 	}
 	if strings.Contains(name, ".") && !strings.EqualFold(filepath.Ext(name), ".html") {
-		next.ServeHTTP(w, r)
+		decline(w, r, next)
 		return
 	}
 	s.serveIndex(w, r, next)
+}
+
+// decline answers a request the static layer does not own. next is the real
+// chain when the layer wraps the router; when the router installed the layer
+// as its not-found handler (nil next), the canonical v1 404 envelope is
+// written so the body matches what the router itself would have emitted.
+func decline(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	if next != nil {
+		next.ServeHTTP(w, r)
+		return
+	}
+	respond.NotFound(w, r)
 }
