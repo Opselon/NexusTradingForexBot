@@ -627,6 +627,8 @@ def test_postgresql_breaker_anchors_survive_a_restart(pg_repo: AuditRepository) 
 
     # Same psycopg v3 caveat as the fixture: the password must be a separate
     # connection kwarg, not embedded in the libpq keyword DSN string.
+    from nexus_scalp.database.fabric.pg_planes import _split_dsn_secret
+
     _verify_conninfo, _verify_kwargs = _split_dsn_secret(PG_URL)
     with psycopg.connect(_verify_conninfo, **_verify_kwargs) as conn, conn.cursor() as cur:
         cur.execute(

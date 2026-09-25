@@ -17,8 +17,8 @@ from typing import Any
 import pytest
 
 from nexus_scalp.cli.wizard import (
-    _postgres_config_was_validated,
     _persist_sqlite_choice,
+    _postgres_config_was_validated,
     run_first_run_database_choice,
 )
 
@@ -122,7 +122,10 @@ def test_a_dict_row_is_accepted_directly() -> None:
 def test_pg_row_without_stored_password_is_not_validated() -> None:
     """A PostgreSQL row is only 'validated' when the secret store has a
     password for it (the signal that a live connection once succeeded)."""
-    assert _postgres_config_was_validated(_validated_pg_row(), _FakeService(password_set=False)) is False
+    assert (
+        _postgres_config_was_validated(_validated_pg_row(), _FakeService(password_set=False))
+        is False
+    )
 
 
 # ---------------------------------------------------------------------------
