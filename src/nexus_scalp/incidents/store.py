@@ -93,7 +93,14 @@ CREATE TABLE IF NOT EXISTS incident_events (
     event_type TEXT NOT NULL,
     source TEXT NOT NULL,
     payload_json TEXT DEFAULT '{}',
-    correlation_id TEXT DEFAULT ''
+    correlation_id TEXT DEFAULT '',
+    -- The SQLite branch of save() has always deduped events (INSERT OR
+    -- REPLACE keyed on this triple) and traces (INSERT OR IGNORE). The
+    -- pooled/PG write path the PG-parity wave opened used a bare INSERT and
+    -- re-inserted the whole set on every save(); the constraint plus the
+    -- ON CONFLICT clause on that branch restores one-upsert semantics on
+    -- both providers, and gives the BUG-276 guard a live conflict target.
+    UNIQUE (incident_id, event_timestamp, event_type)
 )
 """
 
@@ -104,7 +111,10 @@ CREATE TABLE IF NOT EXISTS incident_value_traces (
     field TEXT NOT NULL,
     source TEXT NOT NULL,
     source_timestamp TEXT,
-    hops_json TEXT DEFAULT '[]'
+    hops_json TEXT DEFAULT '[]',
+    -- The SQLite path dedupes traces with INSERT OR IGNORE on the same
+    -- triple. The constraint mirrors that on the pooled/PG write path.
+    UNIQUE (incident_id, field, source)
 )
 """
 
@@ -544,7 +554,10 @@ class IncidentStore:
                 self._write_backend_run(
                     "INSERT INTO incident_events "
                     "(incident_id, event_timestamp, event_type, source, payload_json, correlation_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(incident_id, event_timestamp, event_type) DO UPDATE SET "
+                    "source=excluded.source, payload_json=excluded.payload_json, "
+                    "correlation_id=excluded.correlation_id",
                     (
                         incident.incident_id,
                         ev.timestamp.isoformat(),
@@ -557,7 +570,9 @@ class IncidentStore:
             for tr in incident.value_traces:
                 self._write_backend_run(
                     "INSERT INTO incident_value_traces "
-                    "(incident_id, field, source, source_timestamp, hops_json) VALUES (?, ?, ?, ?, ?)",
+                    "(incident_id, field, source, source_timestamp, hops_json) VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(incident_id, field, source) DO UPDATE SET "
+                    "source_timestamp=excluded.source_timestamp, hops_json=excluded.hops_json",
                     (
                         incident.incident_id,
                         tr.field,

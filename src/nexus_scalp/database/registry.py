@@ -278,7 +278,8 @@ def _audit_0006_incident_tables(conn: sqlite3.Connection, db_path: Path) -> None
             event_type TEXT NOT NULL,
             source TEXT NOT NULL,
             payload_json TEXT DEFAULT '{}',
-            correlation_id TEXT DEFAULT ''
+            correlation_id TEXT DEFAULT '',
+            UNIQUE (incident_id, event_timestamp, event_type)
         );
         CREATE TABLE IF NOT EXISTS incident_value_traces (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -286,7 +287,8 @@ def _audit_0006_incident_tables(conn: sqlite3.Connection, db_path: Path) -> None
             field TEXT NOT NULL,
             source TEXT NOT NULL,
             source_timestamp TEXT,
-            hops_json TEXT DEFAULT '[]'
+            hops_json TEXT DEFAULT '[]',
+            UNIQUE (incident_id, field, source)
         );
         CREATE TABLE IF NOT EXISTS incident_quarantine (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

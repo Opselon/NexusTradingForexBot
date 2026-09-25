@@ -146,6 +146,18 @@ class FakePgBackend:
             # already collapses duplicates, so the separator is cosmetic).
             distinct_arg = arg.split(",")[0].strip()
             out = f"{head}GROUP_CONCAT(DISTINCT {distinct_arg}){tail}"
+        # DDL reaches this fake already translated to PostgreSQL dialect by
+        # ``pg_schema.translate_ddl`` (ensure_schema applies it on the write
+        # plane because the governed migration, not the store, owns the real
+        # production schema). A real PostgreSQL server accepts that dialect;
+        # this SQLite-backed stand-in must undo it before executing, exactly
+        # as the real driver boundary does not. Without the reversal, every
+        # DDL statement dies on ``near "IDENTITY": syntax error`` and none of
+        # the Lane D assertions ever run.
+        out = out.replace(
+            "BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY",
+            "INTEGER PRIMARY KEY AUTOINCREMENT",
+        )
         return out
 
 
@@ -396,8 +408,13 @@ def test_incident_store_sql_is_portable_no_sqlite_dialect_on_write_plane(tmp_pat
 
     # The write-plane branch must not emit SQLite-only INSERT OR IGNORE /
     # INSERT OR REPLACE verbs (the audit queue path does, the direct plane
-    # path must not).
+    # path must not). DDL statements the ensure_schema heal applies are out of
+    # scope here — they carry the SQLite spellings the governed migration
+    # translates on the real plane, and have their own portability coverage in
+    # the pg_schema suite.
     for sql, _ in backend.executed:
+        if sql.lstrip().upper().startswith("CREATE"):
+            continue
         assert "INSERT OR IGNORE" not in sql, sql
         assert "INSERT OR REPLACE" not in sql, sql
 
