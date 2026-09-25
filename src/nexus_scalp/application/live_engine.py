@@ -4525,10 +4525,26 @@ class LiveEngine:
         HALTED / KILL_SWITCH: trading is refused for the whole process
         lifetime — the in-memory gate mirrors the persisted row and only
         release_runtime_risk_state (operator CLI / audited API) may lift it.
+
+        DB_READ_UNCERTAIN (RT-009, 2026-09-25): trading is refused for the
+        SAME reason and by the same mechanism — the persisted safety state
+        could not be read, so the engine must not arm the loop behind a
+        decision it never observed. The restore path already resolves the
+        failed read to this state; without an arm here the fail-closed
+        contract stopped one method short of the gate it is for, and boot
+        traded over an unreadable audit store (both providers). The engine
+        stays observable and the operator resolves the DB, then restarts; a
+        restart is required because the persisted row is the only authority
+        that can clear a halt, and it is the thing that is unreadable.
+
+        Any OTHER non-RUNNING state is refused too: ``resolve_boot_decision``
+        fails closed on every value it does not recognize, and this gate must
+        honour that verdict rather than re-deriving its own whitelist — a
+        state unknown to the boot resolver is untrusted by definition.
         """
         self._runtime_risk_state = decision.state
         self._runtime_risk_detail = decision.detail
-        if decision.state in ("HALTED", "KILL_SWITCH"):
+        if decision.state != "RUNNING":
             # Do NOT start the trading loop: restore-first contract. The
             # engine idles (run_loop returns before arming _running) and the
             # operator sees the persisted safety state, not a silent start.
@@ -4818,9 +4834,11 @@ class LiveEngine:
         background path must not place NEW entries on stale market truth.
         Protective exits/management use different seams and stay unaffected;
         the flag self-clears on the first fresh tick (recovery event)."""
-        return self._runtime_risk_state in ("HALTED", "KILL_SWITCH") or bool(
-            getattr(self, "_feed_stall_escalated", False)
-        )
+        return self._runtime_risk_state in (
+            "HALTED",
+            "KILL_SWITCH",
+            "DB_READ_UNCERTAIN",
+        ) or bool(getattr(self, "_feed_stall_escalated", False))
 
     def _update_survival_state(self, account: AccountInfo, current_pos_count: int) -> None:
         # RUNTIME CONFIG (BUG-132): the survival guard must use the SAME
