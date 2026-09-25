@@ -1,0 +1,3490 @@
+# NSE API migration inventory — AUTO-GENERATED (do not hand-edit)
+# Source of truth: live FastAPI route dump (create_app + create_v1_app)
+# Merged with AST source locations and React frontend consumer sites.
+# total operations: 442  (HEAD/OPTIONS excluded)
+# unique paths: 437
+version: 1
+generated_from:
+  - routes_ground_truth.json  # live app route dump
+  - api_registry.json         # AST source map
+  - react_endpoints.json      # React frontend consumers
+
+states: [DISCOVERED, CONTRACT_LOCKED, GO_IMPLEMENTED, UNIT_TESTED,
+  CONTRACT_TESTED, PARITY_VERIFIED, BENCHMARKED, INTEGRATED,
+  SHADOW_VERIFIED, CUTOVER_READY, MIGRATED]
+
+domain "api:account":
+  - method: GET
+    path: /api/account/drawdown
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_account_drawdown
+  - method: GET
+    path: /api/account/equity-curve
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_account_equity_curve
+  - method: GET
+    path: /api/account/growth
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_account_growth
+    react_consumers:
+      - frontend/src/api/accountingApi.ts
+  - method: GET
+    path: /api/account/performance
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_account_performance
+    react_consumers:
+      - frontend/src/api/accountingApi.ts
+  - method: GET
+    path: /api/account/performance/intelligence
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_account_performance_intelligence
+    react_consumers:
+      - frontend/src/api/accountingApi.ts
+  - method: GET
+    path: "/api/account/performance/{kind}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_account_performance_period
+  - method: GET
+    path: "/api/account/performance/{kind}/series"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_account_performance_series
+  - method: GET
+    path: /api/account/strategies
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_account_strategies
+    react_consumers:
+      - frontend/src/api/accountingApi.ts
+  - method: GET
+    path: /api/account/summary
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_account_summary
+    react_consumers:
+      - frontend/src/api/accountingApi.ts
+  - method: GET
+    path: /api/account/trades
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_account_trades
+  - method: GET
+    path: "/api/account/trades/{trade_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_account_trade_forensics
+
+domain "api:algo":
+  - method: GET
+    path: /api/algo/config
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 2545
+    handler: get_algo_config
+    react_consumers:
+      - frontend/src/api/configApi.ts
+  - method: PUT
+    path: /api/algo/config
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 2582
+    handler: save_algo_config
+    react_consumers:
+      - frontend/src/api/configApi.ts
+
+domain "api:chart":
+  - method: GET
+    path: /api/chart/history
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 2021
+    handler: get_chart_history
+
+domain "api:command-center":
+  - method: GET
+    path: "/api/command-center/execution-safety/{strategy_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: cc_execution_safety
+  - method: GET
+    path: /api/command-center/fleet
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: cc_fleet
+  - method: GET
+    path: "/api/command-center/inspector/{strategy_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: cc_inspector
+  - method: GET
+    path: /api/command-center/overview
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: cc_overview
+  - method: GET
+    path: /api/command-center/spatial
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: cc_spatial
+  - method: GET
+    path: "/api/command-center/timeline/{strategy_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: cc_timeline
+  - method: GET
+    path: /api/command-center/timemachine/bounds
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: cc_timemachine_bounds
+  - method: GET
+    path: /api/command-center/timemachine/frame
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: cc_timemachine_frame
+
+domain "api:config":
+  - method: GET
+    path: /api/config
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_config
+    react_consumers:
+      - frontend/src/api/configApi.ts
+  - method: POST
+    path: /api/config
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: save_config
+    react_consumers:
+      - frontend/src/api/configApi.ts
+
+domain "api:db":
+  - method: DELETE
+    path: "/api/db/console/apikey/{name}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/db_console.py
+    source_line: 787
+    handler: console_apikey_delete
+  - method: GET
+    path: /api/db/console/apikeys
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/db_console.py
+    source_line: 743
+    handler: console_apikeys
+    react_consumers:
+      - frontend/src/api/dbApi.ts
+  - method: GET
+    path: /api/db/console/columns
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/db_console.py
+    source_line: 424
+    handler: console_columns
+  - method: GET
+    path: /api/db/console/databases
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/db_console.py
+    source_line: 361
+    handler: console_databases
+    react_consumers:
+      - frontend/src/api/dbApi.ts
+  - method: GET
+    path: /api/db/console/quick
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/db_console.py
+    source_line: 662
+    handler: console_quick
+    react_consumers:
+      - frontend/src/api/dbApi.ts
+  - method: GET
+    path: /api/db/console/rows
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/db_console.py
+    source_line: 467
+    handler: console_rows
+  - method: GET
+    path: /api/db/console/tables
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/db_console.py
+    source_line: 383
+    handler: console_tables
+  - method: GET
+    path: /api/db/hygiene
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_db_hygiene
+    react_consumers:
+      - frontend/src/api/dbApi.ts
+  - method: GET
+    path: /api/db/manage/options
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/db_provider_routes.py
+    source_line: 133
+    handler: get_options
+  - method: GET
+    path: /api/db/manage/progress
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: db_manage_progress
+    react_consumers:
+      - frontend/src/api/dbApi.ts
+  - method: GET
+    path: /api/db/manage/report
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: db_manage_report
+    react_consumers:
+      - frontend/src/api/dbApi.ts
+  - method: GET
+    path: /api/db/manage/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: db_manage_status
+  - method: GET
+    path: /api/db/manage/validate
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: db_manage_validate
+    react_consumers:
+      - frontend/src/api/dbApi.ts
+  - method: GET
+    path: /api/db/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_db_migration_status
+    react_consumers:
+      - frontend/src/api/dbApi.ts
+  - method: POST
+    path: /api/db/console/apikey
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/db_console.py
+    source_line: 753
+    handler: console_apikey_set
+    react_consumers:
+      - frontend/src/api/dbApi.ts
+  - method: POST
+    path: /api/db/console/query
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/db_console.py
+    source_line: 569
+    handler: console_query
+    react_consumers:
+      - frontend/src/api/dbApi.ts
+  - method: POST
+    path: /api/db/console/refresh
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/db_console.py
+    source_line: 372
+    handler: console_refresh
+    react_consumers:
+      - frontend/src/api/dbApi.ts
+  - method: POST
+    path: /api/db/manage/backup
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: db_manage_backup
+    react_consumers:
+      - frontend/src/api/dbApi.ts
+  - method: POST
+    path: /api/db/manage/config
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: db_manage_config
+  - method: POST
+    path: /api/db/manage/migrate
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: db_manage_migrate
+    react_consumers:
+      - frontend/src/api/dbApi.ts
+  - method: POST
+    path: /api/db/manage/options
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/db_provider_routes.py
+    source_line: 148
+    handler: post_options
+  - method: POST
+    path: /api/db/manage/parse-url
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/db_provider_routes.py
+    source_line: 93
+    handler: parse_url
+  - method: POST
+    path: /api/db/manage/preview
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: db_manage_preview
+    react_consumers:
+      - frontend/src/api/dbApi.ts
+  - method: POST
+    path: /api/db/manage/provider
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: db_manage_provider
+  - method: POST
+    path: /api/db/manage/test-connection
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: db_manage_test_connection
+
+domain "api:debug":
+  - method: GET
+    path: /api/debug/compare
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_debug_compare
+  - method: GET
+    path: /api/debug/features
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_debug_features
+    react_consumers:
+      - frontend/src/api/debugApi.ts
+  - method: GET
+    path: /api/debug/freshness
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_debug_freshness
+  - method: GET
+    path: /api/debug/health
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_debug_health
+    react_consumers:
+      - frontend/src/api/debugApi.ts
+  - method: GET
+    path: /api/debug/ipc-telemetry
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_debug_ipc_telemetry
+  - method: GET
+    path: /api/debug/snapshots
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_debug_snapshots
+  - method: GET
+    path: "/api/debug/snapshots/{snapshot_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_debug_snapshot
+  - method: GET
+    path: /api/debug/state
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_debug_state
+    react_consumers:
+      - frontend/src/api/riskApi.ts
+  - method: GET
+    path: "/api/debug/trace/{execution_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_debug_trace
+  - method: POST
+    path: /api/debug/model-test
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: post_debug_model_test
+    react_consumers:
+      - frontend/src/api/debugApi.ts
+
+domain "api:dependency":
+  - method: GET
+    path: /api/dependency/cycles
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/dependency_routes.py
+    source_line: 172
+    handler: dependency_cycles
+  - method: GET
+    path: /api/dependency/graph
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/dependency_routes.py
+    source_line: 103
+    handler: dependency_graph
+  - method: GET
+    path: /api/dependency/health
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/dependency_routes.py
+    source_line: 204
+    handler: dependency_health
+  - method: GET
+    path: /api/dependency/impact
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/dependency_routes.py
+    source_line: 165
+    handler: dependency_impact
+  - method: GET
+    path: /api/dependency/metrics
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/dependency_routes.py
+    source_line: 192
+    handler: dependency_metrics
+  - method: GET
+    path: "/api/dependency/node/{node_id:path}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/dependency_routes.py
+    source_line: 109
+    handler: dependency_node
+  - method: GET
+    path: /api/dependency/path
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/dependency_routes.py
+    source_line: 158
+    handler: dependency_path
+  - method: GET
+    path: /api/dependency/summary
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/dependency_routes.py
+    source_line: 64
+    handler: dependency_summary
+  - method: GET
+    path: /api/dependency/violations
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/dependency_routes.py
+    source_line: 180
+    handler: dependency_violations
+
+domain "api:diagnostics":
+  - method: GET
+    path: /api/diagnostics/forensics
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_diagnostics_forensics
+  - method: GET
+    path: /api/diagnostics/health
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_diagnostics_health
+  - method: GET
+    path: /api/diagnostics/incidents
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_diagnostics_incidents
+  - method: GET
+    path: "/api/diagnostics/incidents/{incident_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_diagnostics_incident
+  - method: GET
+    path: "/api/diagnostics/incidents/{incident_id}/report"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_diagnostics_incident_report
+  - method: GET
+    path: "/api/diagnostics/incidents/{incident_id}/zip"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_diagnostics_incident_zip
+  - method: GET
+    path: /api/diagnostics/lineage
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_diagnostics_lineage
+  - method: GET
+    path: /api/diagnostics/search
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_diagnostics_search
+  - method: GET
+    path: /api/diagnostics/trace
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_diagnostics_trace
+  - method: POST
+    path: /api/diagnostics/incidents/reconcile
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: post_diagnostics_reconcile
+
+domain "api:engine":
+  - method: POST
+    path: /api/engine/mode
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: set_engine_mode
+    react_consumers:
+      - frontend/src/api/engineApi.ts
+  - method: POST
+    path: /api/engine/toggle
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: toggle_engine
+    react_consumers:
+      - frontend/src/api/engineApi.ts
+
+domain "api:experience":
+  - method: GET
+    path: /api/experience/decision
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_last_experience_decision
+  - method: GET
+    path: /api/experience/models
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_experience_models
+    react_consumers:
+      - frontend/src/api/governanceApi.ts
+  - method: GET
+    path: /api/experience/strategies
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_experience_strategies
+    react_consumers:
+      - frontend/src/api/governanceApi.ts
+  - method: GET
+    path: /api/experience/summary
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_experience_summary
+    react_consumers:
+      - frontend/src/api/governanceApi.ts
+  - method: POST
+    path: /api/experience/self-heal
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: trigger_experience_self_heal
+
+domain "api:factory":
+  - method: GET
+    path: /api/factory/benchmarks
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 191
+    handler: factory_benchmarks
+  - method: GET
+    path: /api/factory/candidates
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 168
+    handler: factory_candidates
+  - method: GET
+    path: /api/factory/events
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 259
+    handler: factory_events
+  - method: GET
+    path: /api/factory/failures
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 277
+    handler: factory_failures
+  - method: GET
+    path: /api/factory/generations
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 117
+    handler: factory_generations
+  - method: GET
+    path: "/api/factory/generations/{generation_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 134
+    handler: factory_generation
+  - method: GET
+    path: /api/factory/llm-config
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 341
+    handler: factory_llm_config_status
+  - method: GET
+    path: /api/factory/memory
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 320
+    handler: factory_memory
+  - method: GET
+    path: /api/factory/provider-health
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 567
+    handler: factory_provider_health
+  - method: GET
+    path: /api/factory/ranking
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 295
+    handler: factory_ranking
+  - method: GET
+    path: /api/factory/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 76
+    handler: factory_status
+  - method: POST
+    path: "/api/factory/complete/{generation_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 534
+    handler: factory_complete
+  - method: POST
+    path: "/api/factory/evaluate/{candidate_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 508
+    handler: factory_evaluate
+  - method: POST
+    path: /api/factory/generate
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 434
+    handler: factory_generate
+  - method: POST
+    path: /api/factory/llm-config
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 368
+    handler: factory_llm_config_save
+  - method: POST
+    path: /api/factory/loop/pause
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 794
+    handler: factory_loop_pause
+  - method: POST
+    path: /api/factory/loop/resume
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 807
+    handler: factory_loop_resume
+  - method: POST
+    path: /api/factory/loop/start
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 770
+    handler: factory_loop_start
+  - method: POST
+    path: /api/factory/loop/stop
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 820
+    handler: factory_loop_stop
+  - method: POST
+    path: /api/factory/provider-test
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 665
+    handler: factory_provider_test
+  - method: POST
+    path: /api/factory/provider-toggle
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/factory_routes.py
+    source_line: 608
+    handler: factory_provider_toggle
+
+domain "api:forensics":
+  - method: GET
+    path: /api/forensics/deploy-gate
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_forensic_deploy_gate
+    react_consumers:
+      - frontend/src/api/debugApi.ts
+  - method: GET
+    path: /api/forensics/health
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_forensic_health
+    react_consumers:
+      - frontend/src/api/debugApi.ts
+
+domain "api:intelligence":
+  - method: GET
+    path: /api/intelligence/anomalies
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_intelligence_anomalies
+  - method: GET
+    path: /api/intelligence/autopsies
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_intelligence_autopsies
+  - method: GET
+    path: "/api/intelligence/autopsies/{ticket}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_intelligence_autopsy
+  - method: GET
+    path: /api/intelligence/behavior
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_intelligence_behavior
+  - method: GET
+    path: /api/intelligence/evolution
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_intelligence_evolution
+  - method: GET
+    path: "/api/intelligence/positions/{ticket}/timeline"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_position_timeline
+  - method: GET
+    path: /api/intelligence/summary
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_intelligence_summary
+    react_consumers:
+      - frontend/src/api/intelligenceApi.ts
+  - method: POST
+    path: /api/intelligence/evolution/scan
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: trigger_evolution_scan
+  - method: POST
+    path: /api/intelligence/evolution/validate
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: validate_evolution_candidate
+  - method: POST
+    path: /api/intelligence/self-heal
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: trigger_intelligence_self_heal
+
+domain "api:liquidity":
+  - method: GET
+    path: /api/liquidity/features
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_liquidity_features
+    react_consumers:
+      - frontend/src/api/liquidityApi.ts
+  - method: GET
+    path: /api/liquidity/state
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_liquidity_state
+    react_consumers:
+      - frontend/src/api/liquidityApi.ts
+  - method: POST
+    path: /api/liquidity/toggle
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: set_liquidity_toggle
+    react_consumers:
+      - frontend/src/api/liquidityApi.ts
+
+domain "api:live":
+  - method: GET
+    path: /api/live/accounting
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_live_accounting
+    react_consumers:
+      - frontend/src/api/accountingApi.ts
+  - method: GET
+    path: /api/live/state
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_live_state
+    react_consumers:
+      - frontend/src/api/accountingApi.ts
+
+domain "api:model-studio":
+  - method: DELETE
+    path: "/api/model-studio/models/{model_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_delete_model
+  - method: GET
+    path: /api/model-studio/artifact-locations
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_artifact_locations
+  - method: GET
+    path: /api/model-studio/datasets
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_datasets
+  - method: GET
+    path: /api/model-studio/fetch-70d
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_fetch_70d
+  - method: GET
+    path: /api/model-studio/models
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_list_models
+  - method: GET
+    path: /api/model-studio/models/active
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_active_model
+  - method: GET
+    path: /api/model-studio/models/history
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_history
+  - method: GET
+    path: "/api/model-studio/models/{model_id}/scaler"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_get_scaler
+  - method: GET
+    path: /api/model-studio/overview
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_overview
+  - method: GET
+    path: /api/model-studio/train/progress
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_train_progress
+  - method: POST
+    path: /api/model-studio/benchmark
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_benchmark
+  - method: POST
+    path: /api/model-studio/datasets/download
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_download_dataset
+  - method: POST
+    path: /api/model-studio/datasets/inspect-features
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_inspect_features
+  - method: POST
+    path: /api/model-studio/models/benchmark-live
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_benchmark_live
+  - method: POST
+    path: /api/model-studio/models/canary
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_canary
+  - method: POST
+    path: /api/model-studio/models/drift-check
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_drift_check
+  - method: POST
+    path: /api/model-studio/models/export
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_export_model
+  - method: POST
+    path: /api/model-studio/models/fine-tune
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_fine_tune
+  - method: POST
+    path: /api/model-studio/models/hot-load
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_hot_load
+  - method: POST
+    path: /api/model-studio/models/register
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_register_model
+  - method: POST
+    path: /api/model-studio/models/rollback
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_rollback
+  - method: POST
+    path: /api/model-studio/models/tag
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_tag_model
+  - method: POST
+    path: /api/model-studio/models/verify
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_verify
+  - method: POST
+    path: /api/model-studio/position-dataset/generate
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_generate_position_dataset
+  - method: POST
+    path: /api/model-studio/position-dataset/validate
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_validate_position_dataset
+  - method: POST
+    path: /api/model-studio/predict
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_predict
+  - method: POST
+    path: /api/model-studio/stress-test
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_stress_test
+  - method: POST
+    path: /api/model-studio/train
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: route_train
+
+domain "api:models":
+  - method: GET
+    path: /api/models
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_models_list
+    react_consumers:
+      - frontend/src/api/governanceApi.ts
+  - method: GET
+    path: /api/models/challengers
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_models_challengers
+  - method: GET
+    path: /api/models/champion
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_models_champion
+  - method: GET
+    path: "/api/models/comparison/{run_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_models_comparison
+  - method: GET
+    path: /api/models/governance/audits
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_governance_audits
+  - method: GET
+    path: /api/models/governance/comparisons
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_governance_comparisons
+  - method: GET
+    path: /api/models/governance/events
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_governance_events
+  - method: GET
+    path: /api/models/governance/health
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_governance_health
+  - method: GET
+    path: /api/models/governance/promotion-preview
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_promotion_preview
+  - method: GET
+    path: /api/models/governance/registry
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_governance_registry
+  - method: GET
+    path: /api/models/governance/review
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_governance_review
+  - method: GET
+    path: /api/models/governance/rollback-preview
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_rollback_preview
+  - method: GET
+    path: /api/models/governance/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_governance_status
+  - method: GET
+    path: /api/models/integrity
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_models_integrity
+    react_consumers:
+      - frontend/src/api/mlApi.ts
+  - method: GET
+    path: /api/models/runs
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_models_runs
+  - method: GET
+    path: "/api/models/runs/{run_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_models_run
+  - method: GET
+    path: "/api/models/shadow/compare/{run_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_shadow_compare
+  - method: GET
+    path: /api/models/shadow/decisions
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_shadow_decisions
+  - method: GET
+    path: "/api/models/shadow/promotion/{run_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_shadow_promotion
+  - method: GET
+    path: /api/models/shadow/runs
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_shadow70_summary
+  - method: GET
+    path: /api/models/shadow/summary
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_shadow_summary
+  - method: GET
+    path: /api/models/shadow70/disagreements
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_shadow70_disagreements
+  - method: GET
+    path: /api/models/shadow70/health
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_shadow70_health
+  - method: GET
+    path: /api/models/shadow70/summary
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_shadow70_summary
+    react_consumers:
+      - frontend/src/api/mlApi.ts
+  - method: GET
+    path: /api/models/summary
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_models_summary
+  - method: POST
+    path: /api/models/governance/emergency/disable
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: disable_candidate
+  - method: POST
+    path: /api/models/governance/emergency/freeze
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: freeze_promotions
+  - method: POST
+    path: /api/models/governance/emergency/unfreeze
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: unfreeze_promotions
+  - method: POST
+    path: /api/models/promotion/approve
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: approve_promotion
+  - method: POST
+    path: /api/models/promotion/execute
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: execute_promotion
+  - method: POST
+    path: /api/models/promotion/rollback
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: rollback_promotion
+  - method: POST
+    path: /api/models/registry/reconcile
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: reconcile_registry
+  - method: POST
+    path: /api/models/shadow/attach
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: attach_shadow_challenger
+  - method: POST
+    path: /api/models/shadow/evaluate-promotion
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: evaluate_shadow_promotion
+  - method: POST
+    path: /api/models/shadow/outcomes
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: link_shadow_outcomes
+  - method: POST
+    path: /api/models/shadow/worker/start
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: start_shadow_worker
+  - method: POST
+    path: /api/models/shadow/worker/stop
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: stop_shadow_worker
+  - method: POST
+    path: /api/models/shadow70/attach
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: attach_shadow70
+  - method: POST
+    path: /api/models/shadow70/detach
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: detach_shadow70
+  - method: POST
+    path: /api/models/shadow70/start
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: start_shadow70_worker
+  - method: POST
+    path: /api/models/shadow70/stop
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: stop_shadow70_worker
+  - method: POST
+    path: /api/models/train
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: trigger_model_training
+  - method: POST
+    path: /api/models/worker/cancel
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: cancel_training_worker
+  - method: POST
+    path: /api/models/worker/start
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: start_training_worker
+  - method: POST
+    path: /api/models/worker/stop
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: stop_training_worker
+
+domain "api:mslie":
+  - method: GET
+    path: /api/mslie/features
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_mslie_features
+    react_consumers:
+      - frontend/src/api/liquidityApi.ts
+  - method: GET
+    path: /api/mslie/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_mslie_status
+    react_consumers:
+      - frontend/src/api/liquidityApi.ts
+
+domain "api:mt5":
+  - method: GET
+    path: /api/mt5/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 2275
+    handler: get_mt5_status
+    react_consumers:
+      - frontend/src/api/engineApi.ts
+
+domain "api:news":
+  - method: GET
+    path: /api/news
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_news
+  - method: GET
+    path: /api/news/ai-status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/news_intelligence_routes.py
+    source_line: 93
+    handler: news_ai_status
+    react_consumers:
+      - frontend/src/api/newsApi.ts
+  - method: GET
+    path: "/api/news/analysis/{article_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_news_analysis
+  - method: GET
+    path: /api/news/auto-analysis
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_news_auto_analysis
+    react_consumers:
+      - frontend/src/api/newsApi.ts
+  - method: GET
+    path: /api/news/health
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_news_health
+    react_consumers:
+      - frontend/src/api/intelligenceApi.ts
+  - method: GET
+    path: /api/news/impact
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_news_impact
+  - method: GET
+    path: /api/news/keywords
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_news_keywords
+  - method: GET
+    path: /api/news/latest
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_news_latest
+  - method: GET
+    path: /api/news/pro/console
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/news_intelligence_routes.py
+    source_line: 319
+    handler: news_pro_console
+    react_consumers:
+      - frontend/src/api/newsApi.ts
+  - method: GET
+    path: /api/news/pro/latest-answers
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/news_intelligence_routes.py
+    source_line: 401
+    handler: news_pro_latest_answers
+    react_consumers:
+      - frontend/src/api/newsApi.ts
+  - method: GET
+    path: /api/news/pro/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/news_intelligence_routes.py
+    source_line: 265
+    handler: news_pro_status
+    react_consumers:
+      - frontend/src/api/newsApi.ts
+  - method: GET
+    path: /api/news/sources
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_news_sources
+  - method: GET
+    path: /api/news/state
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_news_state
+    react_consumers:
+      - frontend/src/api/intelligenceApi.ts
+  - method: GET
+    path: /api/news/timeline
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_news_timeline
+  - method: GET
+    path: /api/news/toggle-state
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_news_toggle_state
+    react_consumers:
+      - frontend/src/api/newsApi.ts
+  - method: GET
+    path: "/api/news/trades/{trade_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_news_trade_links
+  - method: GET
+    path: "/api/news/{article_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_news_detail
+  - method: POST
+    path: /api/news/analyze/batch
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/news_intelligence_routes.py
+    source_line: 155
+    handler: news_analyze_batch
+    react_consumers:
+      - frontend/src/api/newsApi.ts
+  - method: POST
+    path: "/api/news/analyze/{article_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/news_intelligence_routes.py
+    source_line: 118
+    handler: news_analyze_article
+  - method: POST
+    path: /api/news/auto-analysis
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: set_news_auto_analysis
+    react_consumers:
+      - frontend/src/api/newsApi.ts
+  - method: POST
+    path: /api/news/auto-prune
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/news_intelligence_routes.py
+    source_line: 217
+    handler: news_auto_prune
+    react_consumers:
+      - frontend/src/api/newsApi.ts
+  - method: POST
+    path: /api/news/pro/analyze-all
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/news_intelligence_routes.py
+    source_line: 337
+    handler: news_pro_analyze_all
+    react_consumers:
+      - frontend/src/api/newsApi.ts
+  - method: POST
+    path: /api/news/pro/purge
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/news_intelligence_routes.py
+    source_line: 373
+    handler: news_pro_purge
+    react_consumers:
+      - frontend/src/api/newsApi.ts
+  - method: POST
+    path: /api/news/refresh
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: post_news_refresh
+    react_consumers:
+      - frontend/src/api/newsApi.ts
+  - method: POST
+    path: /api/news/self-heal
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: post_news_self_heal
+    react_consumers:
+      - frontend/src/api/newsApi.ts
+  - method: POST
+    path: /api/news/toggle
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: set_news_toggle
+    react_consumers:
+      - frontend/src/api/newsApi.ts
+  - method: POST
+    path: "/api/news/{article_id}/restore"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/news_intelligence_routes.py
+    source_line: 241
+    handler: news_restore_article
+
+domain "api:observability":
+  - method: GET
+    path: /api/observability/stats
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_observability_stats
+
+domain "api:operator":
+  - method: GET
+    path: /api/operator/calibration
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: operator_calibration
+  - method: GET
+    path: /api/operator/decisions
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: operator_decisions
+  - method: GET
+    path: "/api/operator/decisions/{decision_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: operator_decision_detail
+  - method: GET
+    path: /api/operator/funnel
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: operator_funnel
+  - method: GET
+    path: /api/operator/no-trade
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: operator_no_trade
+  - method: GET
+    path: /api/operator/orders
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: operator_orders
+  - method: GET
+    path: /api/operator/summary
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: operator_summary
+
+domain "api:position-adviser":
+  - method: GET
+    path: /api/position-adviser/advisories
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/position_adviser_routes.py
+    source_line: 348
+    handler: route_advisories
+  - method: GET
+    path: /api/position-adviser/datasets
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/position_adviser_routes.py
+    source_line: 426
+    handler: route_datasets
+  - method: GET
+    path: /api/position-adviser/models
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/position_adviser_routes.py
+    source_line: 183
+    handler: route_models
+  - method: GET
+    path: /api/position-adviser/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/position_adviser_routes.py
+    source_line: 173
+    handler: route_status
+  - method: POST
+    path: /api/position-adviser/activate
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/position_adviser_routes.py
+    source_line: 313
+    handler: route_activate
+  - method: POST
+    path: /api/position-adviser/auto-tune
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/position_adviser_routes.py
+    source_line: 494
+    handler: route_auto_tune
+  - method: POST
+    path: /api/position-adviser/checks/run
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/position_adviser_routes.py
+    source_line: 359
+    handler: route_run_checks
+  - method: POST
+    path: /api/position-adviser/config
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/position_adviser_routes.py
+    source_line: 332
+    handler: route_config
+  - method: POST
+    path: /api/position-adviser/load
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/position_adviser_routes.py
+    source_line: 293
+    handler: route_load
+  - method: POST
+    path: /api/position-adviser/train
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/position_adviser_routes.py
+    source_line: 239
+    handler: route_train
+  - method: POST
+    path: /api/position-adviser/unload
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/position_adviser_routes.py
+    source_line: 308
+    handler: route_unload
+
+domain "api:positions":
+  - method: POST
+    path: /api/positions/close
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 2646
+    handler: close_position
+    react_consumers:
+      - frontend/src/api/tradingApi.ts
+  - method: POST
+    path: /api/positions/modify
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 2628
+    handler: modify_position
+    react_consumers:
+      - frontend/src/api/tradingApi.ts
+
+domain "api:provisioning":
+  - method: GET
+    path: /api/provisioning/datasets
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: provisioning_datasets
+  - method: GET
+    path: /api/provisioning/environment
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: provisioning_environment
+  - method: GET
+    path: /api/provisioning/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: provisioning_status
+  - method: GET
+    path: /api/provisioning/train/progress
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: provisioning_train_progress
+  - method: POST
+    path: /api/provisioning/environment/install
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: provisioning_environment_install
+  - method: POST
+    path: /api/provisioning/official
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: provisioning_official
+  - method: POST
+    path: /api/provisioning/train/cancel
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: provisioning_train_cancel
+  - method: POST
+    path: /api/provisioning/train/start
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: provisioning_train_start
+
+domain "api:release":
+  - method: GET
+    path: /api/release/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: release_status
+    react_consumers:
+      - frontend/src/api/incidentsApi.ts
+
+domain "api:replay":
+  - method: GET
+    path: /api/replay/decision
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: replay_decision
+  - method: GET
+    path: /api/replay/report
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: replay_report
+  - method: GET
+    path: /api/replay/state
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: replay_state
+    react_consumers:
+      - frontend/src/api/replayApi.ts
+  - method: POST
+    path: /api/replay/control
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: replay_control
+    react_consumers:
+      - frontend/src/api/replayApi.ts
+  - method: POST
+    path: /api/replay/session
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: create_replay_session
+    react_consumers:
+      - frontend/src/api/replayApi.ts
+  - method: POST
+    path: /api/replay/toggle
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 2733
+    handler: toggle_replay
+    react_consumers:
+      - frontend/src/api/replayApi.ts
+
+domain "api:research":
+  - method: GET
+    path: /api/research/analytics
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_analytics
+  - method: GET
+    path: "/api/research/detail/{strategy_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_detail
+  - method: GET
+    path: /api/research/diagnostics
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_diagnostics
+    react_consumers:
+      - frontend/src/api/researchApi.ts
+  - method: GET
+    path: /api/research/events
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_events
+  - method: GET
+    path: /api/research/evidence
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_evidence
+  - method: GET
+    path: /api/research/gates
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_gates
+  - method: GET
+    path: /api/research/health
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_health
+  - method: GET
+    path: /api/research/history
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_history
+  - method: GET
+    path: /api/research/preflight
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_preflight
+    react_consumers:
+      - frontend/src/api/researchApi.ts
+  - method: GET
+    path: /api/research/queue
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_queue
+  - method: GET
+    path: /api/research/registry
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_registry
+  - method: GET
+    path: "/api/research/registry/{strategy_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_registry_entry
+  - method: GET
+    path: /api/research/runs
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_runs
+  - method: GET
+    path: /api/research/summary
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_summary
+  - method: GET
+    path: /api/research/trace
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_trace
+  - method: GET
+    path: /api/research/worker
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_research_worker
+  - method: POST
+    path: /api/research/cancel
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: post_research_cancel
+    react_consumers:
+      - frontend/src/api/researchApi.ts
+  - method: POST
+    path: /api/research/discover
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: trigger_research_discovery
+    react_consumers:
+      - frontend/src/api/researchApi.ts
+  - method: POST
+    path: /api/research/promote
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: promote_strategy_lifecycle
+    react_consumers:
+      - frontend/src/api/governanceApi.ts
+  - method: POST
+    path: /api/research/recover-missing-outcomes
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: trigger_outcome_recovery
+    react_consumers:
+      - frontend/src/api/researchApi.ts
+  - method: POST
+    path: /api/research/repair-outcomes
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: trigger_outcome_repair
+    react_consumers:
+      - frontend/src/api/researchApi.ts
+  - method: POST
+    path: /api/research/retry-gate
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: post_research_retry_gate
+    react_consumers:
+      - frontend/src/api/researchApi.ts
+  - method: POST
+    path: /api/research/self-heal
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: trigger_research_self_heal
+    react_consumers:
+      - frontend/src/api/researchApi.ts
+  - method: POST
+    path: /api/research/validate
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: trigger_research_validate
+    react_consumers:
+      - frontend/src/api/researchApi.ts
+
+domain "api:rules":
+  - method: GET
+    path: /api/rules
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_trading_rules
+    react_consumers:
+      - frontend/src/api/rulesApi.ts
+  - method: POST
+    path: /api/rules/toggle
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: toggle_trading_rule
+    react_consumers:
+      - frontend/src/api/rulesApi.ts
+
+domain "api:runtime-config":
+  - method: GET
+    path: /api/runtime-config
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_runtime_config_effective
+    react_consumers:
+      - frontend/src/api/configApi.ts
+  - method: GET
+    path: /api/runtime-config/diagnostics
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_runtime_config_diagnostics
+    react_consumers:
+      - frontend/src/api/configApi.ts
+  - method: POST
+    path: /api/runtime-config/apply
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: apply_runtime_config
+    react_consumers:
+      - frontend/src/api/configApi.ts
+  - method: POST
+    path: /api/runtime-config/model-swap
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: model_hot_swap
+    react_consumers:
+      - frontend/src/api/configApi.ts
+
+domain "api:settings":
+  - method: GET
+    path: /api/settings
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_settings
+    react_consumers:
+      - frontend/src/api/configApi.ts
+  - method: GET
+    path: /api/settings/telegram/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: telegram_settings_status
+    react_consumers:
+      - frontend/src/api/configApi.ts
+  - method: POST
+    path: /api/settings/telegram
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: update_telegram_settings
+    react_consumers:
+      - frontend/src/api/configApi.ts
+  - method: POST
+    path: /api/settings/validate
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: validate_setting
+    react_consumers:
+      - frontend/src/api/configApi.ts
+
+domain "api:simulation":
+  - method: POST
+    path: /api/simulation/tick
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 2662
+    handler: inject_tick
+
+domain "api:status":
+  - method: GET
+    path: /api/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_status
+    react_consumers:
+      - frontend/src/api/engineApi.ts
+
+domain "api:telegram":
+  - method: POST
+    path: /api/telegram/test
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: telegram_test
+    react_consumers:
+      - frontend/src/api/configApi.ts
+
+domain "api:ticks":
+  - method: GET
+    path: /api/ticks/stream
+    kind: sse
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 2916
+    handler: sse_telemetry_stream
+    react_consumers:
+      - frontend/src/core/config.ts
+
+domain "api:trace":
+  - method: GET
+    path: "/api/trace/bundle/{key}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_trace_bundle
+  - method: GET
+    path: /api/trace/decisions
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_trace_decisions
+  - method: GET
+    path: /api/trace/events
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_trace_events
+  - method: GET
+    path: /api/trace/integrity
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_trace_integrity
+  - method: GET
+    path: /api/trace/latency
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_trace_latency
+  - method: GET
+    path: /api/trace/observer
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_trace_observer
+  - method: GET
+    path: /api/trace/stream
+    kind: sse
+    surface: dashboard
+    state: DISCOVERED
+    handler: sse_trace_stream
+  - method: GET
+    path: /api/trace/topology
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: get_trace_topology
+  - method: POST
+    path: /api/trace/observer/start
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: post_trace_observer_start
+  - method: POST
+    path: /api/trace/observer/stop
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: post_trace_observer_stop
+
+domain "root:api_client.js":
+  - method: GET
+    path: /api_client.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1943
+    handler: serve_api_client
+
+domain "root:app.js":
+  - method: GET
+    path: /app.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1894
+    handler: serve_app
+
+domain "root:backtest_report_ui.js":
+  - method: GET
+    path: /backtest_report_ui.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1813
+    handler: serve_backtest_report_ui_js
+
+domain "root:cc_components.js":
+  - method: GET
+    path: /cc_components.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1847
+    handler: serve_cc_components
+
+domain "root:cc_state.js":
+  - method: GET
+    path: /cc_state.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1851
+    handler: serve_cc_state
+
+domain "root:cc_styles.css":
+  - method: GET
+    path: /cc_styles.css
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1839
+    handler: serve_cc_styles
+
+domain "root:command_center.html":
+  - method: GET
+    path: /command_center.html
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1777
+    handler: serve_command_center_html
+
+domain "root:command_center_console.js":
+  - method: GET
+    path: /command_center_console.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1827
+    handler: serve_command_center_console_js
+
+domain "root:command_center_spatial.js":
+  - method: GET
+    path: /command_center_spatial.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1823
+    handler: serve_command_center_spatial_js
+
+domain "root:command_center_timemachine.js":
+  - method: GET
+    path: /command_center_timemachine.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1831
+    handler: serve_command_center_timemachine_js
+
+domain "root:command_center_ui.js":
+  - method: GET
+    path: /command_center_ui.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1809
+    handler: serve_command_center_js
+
+domain "root:control_center.js":
+  - method: GET
+    path: /control_center.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1855
+    handler: serve_control_center
+
+domain "root:dependency":
+  - method: GET
+    path: /dependency
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1788
+    handler: serve_dependency_dashboard
+
+domain "root:dependency.html":
+  - method: GET
+    path: /dependency.html
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1793
+    handler: serve_dependency_dashboard_html
+
+domain "root:dependency_api.js":
+  - method: GET
+    path: /dependency_api.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1797
+    handler: serve_dependency_api_js
+
+domain "root:dependency_graph.js":
+  - method: GET
+    path: /dependency_graph.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1801
+    handler: serve_dependency_graph_js
+
+domain "root:dependency_ui.js":
+  - method: GET
+    path: /dependency_ui.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1805
+    handler: serve_dependency_ui_js
+
+domain "root:docs":
+  - method: GET
+    path: /docs
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: swagger_ui_html
+  - method: GET
+    path: /docs/oauth2-redirect
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: swagger_ui_redirect
+
+domain "root:first_setup.html":
+  - method: GET
+    path: /first_setup.html
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1784
+    handler: serve_first_setup_html
+
+domain "root:forensic_console.js":
+  - method: GET
+    path: /forensic_console.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1909
+    handler: serve_forensic
+
+domain "root:health":
+  - method: GET
+    path: /health
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/gateway/server.py
+    source_line: 506
+    handler: health
+
+domain "root:marketplace.js":
+  - method: GET
+    path: /marketplace.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1916
+    handler: serve_marketplace
+
+domain "root:model_studio_ui.js":
+  - method: GET
+    path: /model_studio_ui.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1926
+    handler: serve_model_studio_ui
+
+domain "root:news_intelligence.js":
+  - method: GET
+    path: /news_intelligence.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1905
+    handler: serve_news_intel
+
+domain "root:openapi.json":
+  - method: GET
+    path: /openapi.json
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: openapi
+
+domain "root:redoc":
+  - method: GET
+    path: /redoc
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: redoc_html
+
+domain "root:replay_panel.js":
+  - method: GET
+    path: /replay_panel.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1886
+    handler: serve_replay_panel
+
+domain "root:responsive.css":
+  - method: GET
+    path: /responsive.css
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1843
+    handler: serve_responsive
+
+domain "root:root":
+  - method: GET
+    path: /
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1705
+    handler: serve_index
+
+domain "root:styles.css":
+  - method: GET
+    path: /styles.css
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1835
+    handler: serve_styles
+
+domain "root:tailwind.css":
+  - method: GET
+    path: /tailwind.css
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1953
+    handler: serve_tailwind
+
+domain "root:tv_widget.html":
+  - method: GET
+    path: /tv_widget.html
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1931
+    handler: serve_tv_widget_html
+
+domain "root:tv_widget.js":
+  - method: GET
+    path: /tv_widget.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1935
+    handler: serve_tv_widget_js
+
+domain "root:tv_widget_styles.css":
+  - method: GET
+    path: /tv_widget_styles.css
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1939
+    handler: serve_tv_widget_styles
+
+domain "root:ux.js":
+  - method: GET
+    path: /ux.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1870
+    handler: serve_ux
+
+domain "root:ux_attention.js":
+  - method: GET
+    path: /ux_attention.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1878
+    handler: serve_ux_attention
+
+domain "root:ux_conn.js":
+  - method: GET
+    path: /ux_conn.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1866
+    handler: serve_ux_conn
+
+domain "root:ux_i18n.js":
+  - method: GET
+    path: /ux_i18n.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1862
+    handler: serve_ux_i18n
+
+domain "root:ux_palette.js":
+  - method: GET
+    path: /ux_palette.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1890
+    handler: serve_ux_palette
+
+domain "root:ux_signal.js":
+  - method: GET
+    path: /ux_signal.js
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1874
+    handler: serve_ux_signal
+
+domain "root:vendor":
+  - method: GET
+    path: /vendor/fontawesome/all.min.css
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1958
+    handler: serve_fa_css
+  - method: GET
+    path: "/vendor/webfonts/{font_name}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/server.py
+    source_line: 1962
+    handler: serve_fa_webfont
+
+domain "root:web":
+  - method: MOUNT
+    path: /web
+    kind: static
+    surface: dashboard
+    state: DISCOVERED
+    handler: websocket_endpoint
+
+domain "root:ws":
+  - method: MOUNT
+    path: /ws
+    kind: static
+    surface: dashboard
+    state: DISCOVERED
+    handler: websocket_endpoint
+
+domain "v1:audit":
+  - method: GET
+    path: /api/v1/audit/events
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/incidents.py
+    source_line: 218
+    handler: audit_events
+
+domain "v1:config":
+  - method: GET
+    path: /api/v1/config
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/incidents.py
+    source_line: 327
+    handler: config_effective
+  - method: GET
+    path: /api/v1/config/schema
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/incidents.py
+    source_line: 339
+    handler: config_schema
+  - method: POST
+    path: /api/v1/config/validate
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/incidents.py
+    source_line: 355
+    handler: config_validate
+
+domain "v1:database":
+  - method: GET
+    path: /api/v1/database/integrity
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/incidents.py
+    source_line: 278
+    handler: database_integrity
+    react_consumers:
+      - frontend/src/api/auditApi.ts
+  - method: GET
+    path: /api/v1/database/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/incidents.py
+    source_line: 246
+    handler: database_status
+    react_consumers:
+      - frontend/src/api/auditApi.ts
+  - method: GET
+    path: /api/v1/database/tables
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/incidents.py
+    source_line: 304
+    handler: database_tables
+
+domain "v1:decisions":
+  - method: GET
+    path: /api/v1/decisions
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: decisions_list
+  - method: GET
+    path: /api/v1/decisions/latest
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/decisions.py
+    source_line: 127
+    handler: decisions_latest
+  - method: GET
+    path: /api/v1/decisions/no-trade
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/decisions.py
+    source_line: 215
+    handler: decisions_no_trade
+  - method: GET
+    path: /api/v1/decisions/no-trade/reasons
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/decisions.py
+    source_line: 191
+    handler: decisions_no_trade_reasons
+  - method: GET
+    path: /api/v1/decisions/stats
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/decisions.py
+    source_line: 161
+    handler: decisions_stats
+  - method: GET
+    path: "/api/v1/decisions/{decision_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/decisions.py
+    source_line: 247
+    handler: decisions_detail
+  - method: GET
+    path: "/api/v1/decisions/{decision_id}/evidence"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/decisions.py
+    source_line: 260
+    handler: decisions_evidence
+  - method: GET
+    path: "/api/v1/decisions/{decision_id}/explanation"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/decisions.py
+    source_line: 319
+    handler: decisions_explanation
+  - method: GET
+    path: "/api/v1/decisions/{decision_id}/gates"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/decisions.py
+    source_line: 277
+    handler: decisions_gates
+
+domain "v1:execution":
+  - method: GET
+    path: /api/v1/execution/history
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/positions.py
+    source_line: 131
+    handler: execution_history
+  - method: GET
+    path: /api/v1/execution/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/positions.py
+    source_line: 100
+    handler: execution_status
+
+domain "v1:features":
+  - method: GET
+    path: /api/v1/features/contract
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/positions.py
+    source_line: 374
+    handler: features_contract
+  - method: GET
+    path: /api/v1/features/current
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/positions.py
+    source_line: 431
+    handler: features_current
+  - method: GET
+    path: /api/v1/features/groups
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/positions.py
+    source_line: 406
+    handler: features_groups
+  - method: GET
+    path: /api/v1/features/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/positions.py
+    source_line: 347
+    handler: features_status
+    react_consumers:
+      - frontend/src/api/mlApi.ts
+
+domain "v1:incidents":
+  - method: GET
+    path: /api/v1/incidents
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/incidents.py
+    source_line: 79
+    handler: incidents_list
+  - method: GET
+    path: /api/v1/incidents/stats
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/incidents.py
+    source_line: 120
+    handler: incidents_stats
+  - method: GET
+    path: "/api/v1/incidents/{incident_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/incidents.py
+    source_line: 129
+    handler: incident_detail
+  - method: GET
+    path: "/api/v1/incidents/{incident_id}/timeline"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/incidents.py
+    source_line: 138
+    handler: incident_timeline
+
+domain "v1:indicators":
+  - method: GET
+    path: /api/v1/indicators
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    handler: indicators_snapshot
+    react_consumers:
+      - frontend/src/api/indicatorsApi.ts
+  - method: GET
+    path: /api/v1/indicators/gauges
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/indicators.py
+    source_line: 178
+    handler: indicators_gauges
+  - method: GET
+    path: /api/v1/indicators/moving-averages
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/indicators.py
+    source_line: 146
+    handler: indicators_moving_averages
+  - method: GET
+    path: /api/v1/indicators/oscillators
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/indicators.py
+    source_line: 127
+    handler: indicators_oscillators
+  - method: GET
+    path: /api/v1/indicators/pivots
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/indicators.py
+    source_line: 165
+    handler: indicators_pivots
+  - method: GET
+    path: /api/v1/indicators/summary
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/indicators.py
+    source_line: 191
+    handler: indicators_summary
+
+domain "v1:market":
+  - method: GET
+    path: /api/v1/market/bars
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/market.py
+    source_line: 83
+    handler: market_bars
+  - method: GET
+    path: /api/v1/market/quote
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/market.py
+    source_line: 61
+    handler: market_quote
+  - method: GET
+    path: /api/v1/market/regime
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/market.py
+    source_line: 119
+    handler: market_regime
+  - method: GET
+    path: /api/v1/market/snapshot
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/market.py
+    source_line: 32
+    handler: market_snapshot
+  - method: GET
+    path: /api/v1/market/symbols
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/market.py
+    source_line: 134
+    handler: market_symbols
+
+domain "v1:marketplace":
+  - method: GET
+    path: /api/v1/marketplace/packs
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/marketplace.py
+    source_line: 95
+    handler: list_packs
+  - method: GET
+    path: /api/v1/marketplace/rankings
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/marketplace.py
+    source_line: 242
+    handler: rankings
+  - method: GET
+    path: /api/v1/marketplace/repairs
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/marketplace.py
+    source_line: 415
+    handler: list_repairs
+  - method: GET
+    path: /api/v1/marketplace/runtime-snapshot
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/marketplace.py
+    source_line: 438
+    handler: runtime_snapshot
+  - method: GET
+    path: "/api/v1/marketplace/scores/{seed_id}/history"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/marketplace.py
+    source_line: 455
+    handler: score_history
+  - method: GET
+    path: /api/v1/marketplace/seeds
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/marketplace.py
+    source_line: 155
+    handler: list_seeds
+  - method: GET
+    path: "/api/v1/marketplace/seeds/{seed_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/marketplace.py
+    source_line: 180
+    handler: seed_detail
+  - method: POST
+    path: "/api/v1/marketplace/packs/{pack_id}/install"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/marketplace.py
+    source_line: 126
+    handler: install_pack
+  - method: POST
+    path: "/api/v1/marketplace/seeds/{seed_id}/disable"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/marketplace.py
+    source_line: 212
+    handler: disable_seed
+  - method: POST
+    path: "/api/v1/marketplace/seeds/{seed_id}/enable"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/marketplace.py
+    source_line: 192
+    handler: enable_seed
+  - method: POST
+    path: "/api/v1/marketplace/seeds/{seed_id}/repair"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/marketplace.py
+    source_line: 300
+    handler: repair_seed
+  - method: POST
+    path: "/api/v1/marketplace/seeds/{seed_id}/run-research"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/marketplace.py
+    source_line: 229
+    handler: run_research
+
+domain "v1:model":
+  - method: GET
+    path: /api/v1/model/champion
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/positions.py
+    source_line: 324
+    handler: model_champion
+  - method: GET
+    path: /api/v1/model/contracts
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/positions.py
+    source_line: 243
+    handler: model_contracts
+  - method: GET
+    path: /api/v1/model/identity
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/positions.py
+    source_line: 187
+    handler: model_identity
+    react_consumers:
+      - frontend/src/api/mlApi.ts
+  - method: GET
+    path: /api/v1/model/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/positions.py
+    source_line: 169
+    handler: model_status
+    react_consumers:
+      - frontend/src/api/mlApi.ts
+
+domain "v1:observability":
+  - method: GET
+    path: /api/v1/observability/events
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/incidents.py
+    source_line: 154
+    handler: observability_events
+  - method: GET
+    path: /api/v1/observability/metrics
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/incidents.py
+    source_line: 183
+    handler: observability_metrics
+
+domain "v1:positions":
+  - method: GET
+    path: /api/v1/positions
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/positions.py
+    source_line: 52
+    handler: positions_list
+    react_consumers:
+      - frontend/src/api/positionsApi.ts
+  - method: GET
+    path: "/api/v1/positions/history/{ticket}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/positions.py
+    source_line: 85
+    handler: position_history_detail
+  - method: GET
+    path: "/api/v1/positions/{ticket}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/positions.py
+    source_line: 70
+    handler: position_detail
+
+domain "v1:research":
+  - method: GET
+    path: /api/v1/research/datasets
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/research.py
+    source_line: 166
+    handler: research_datasets
+    react_consumers:
+      - frontend/src/api/researchApi.ts
+  - method: GET
+    path: /api/v1/research/runs
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/research.py
+    source_line: 135
+    handler: research_runs
+    react_consumers:
+      - frontend/src/api/researchApi.ts
+  - method: GET
+    path: /api/v1/research/status
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/research.py
+    source_line: 44
+    handler: research_status
+    react_consumers:
+      - frontend/src/api/researchApi.ts
+  - method: GET
+    path: /api/v1/research/strategies
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/research.py
+    source_line: 71
+    handler: research_strategies
+    react_consumers:
+      - frontend/src/api/researchApi.ts
+  - method: GET
+    path: "/api/v1/research/strategies/{strategy_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/research.py
+    source_line: 111
+    handler: research_strategy_detail
+
+domain "v1:risk":
+  - method: GET
+    path: /api/v1/risk/status
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/risk.py
+    source_line: 25
+    handler: risk_status
+    react_consumers:
+      - frontend/src/api/riskApi.ts
+  - method: GET
+    path: /api/v1/risk/summary
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/risk.py
+    source_line: 63
+    handler: risk_summary
+    react_consumers:
+      - frontend/src/api/riskApi.ts
+
+domain "v1:runtime":
+  - method: GET
+    path: /api/v1/runtime/freshness
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/runtime.py
+    source_line: 74
+    handler: runtime_freshness
+    react_consumers:
+      - frontend/src/api/marketApi.ts
+  - method: GET
+    path: /api/v1/runtime/mode
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/runtime.py
+    source_line: 19
+    handler: runtime_mode
+    react_consumers:
+      - frontend/src/api/marketApi.ts
+  - method: GET
+    path: /api/v1/runtime/shutdown
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/runtime.py
+    source_line: 49
+    handler: runtime_shutdown
+  - method: POST
+    path: /api/v1/runtime/mode/preview
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/runtime.py
+    source_line: 176
+    handler: runtime_mode_preview
+  - method: POST
+    path: /api/v1/runtime/mode/validate
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/runtime.py
+    source_line: 169
+    handler: runtime_mode_validate
+
+domain "v1:shadow":
+  - method: GET
+    path: /api/v1/shadow/70d
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/shadow.py
+    source_line: 160
+    handler: shadow_70d
+  - method: GET
+    path: /api/v1/shadow/decisions
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/shadow.py
+    source_line: 131
+    handler: shadow_decisions
+  - method: GET
+    path: /api/v1/shadow/runs
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/shadow.py
+    source_line: 69
+    handler: shadow_runs
+  - method: GET
+    path: "/api/v1/shadow/runs/{run_id}"
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/shadow.py
+    source_line: 99
+    handler: shadow_run_detail
+  - method: GET
+    path: /api/v1/shadow/status
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/shadow.py
+    source_line: 45
+    handler: shadow_status
+
+domain "v1:signals":
+  - method: GET
+    path: /api/v1/signals/history
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/signals.py
+    source_line: 45
+    handler: signals_history
+  - method: GET
+    path: /api/v1/signals/latest
+    kind: http
+    surface: dashboard
+    state: DISCOVERED
+    source_file: src/nexus_scalp/web/api_v1/signals.py
+    source_line: 37
+    handler: signals_latest
+
+domain "v1:system":
+  - method: GET
+    path: /api/v1/system/capabilities
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/system.py
+    source_line: 202
+    handler: system_capabilities
+  - method: GET
+    path: /api/v1/system/diagnostics
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/system.py
+    source_line: 324
+    handler: system_diagnostics
+  - method: GET
+    path: /api/v1/system/health
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/system.py
+    source_line: 108
+    handler: system_health
+  - method: GET
+    path: /api/v1/system/readiness
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/system.py
+    source_line: 123
+    handler: system_readiness
+  - method: GET
+    path: /api/v1/system/runtime
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/system.py
+    source_line: 175
+    handler: system_runtime
+  - method: GET
+    path: /api/v1/system/status
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/system.py
+    source_line: 58
+    handler: system_status
+    react_consumers:
+      - frontend/src/api/engineApi.ts
+  - method: GET
+    path: /api/v1/system/version
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/system.py
+    source_line: 148
+    handler: system_version
+  - method: GET
+    path: /api/v1/system/workers
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/system.py
+    source_line: 245
+    handler: system_workers
+  - method: POST
+    path: /api/v1/system/diagnostics/run
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/system.py
+    source_line: 296
+    handler: system_diagnostics_run
+  - method: POST
+    path: /api/v1/system/refresh
+    kind: http
+    surface: dashboard
+    state: PARITY_VERIFIED
+    source_file: src/nexus_scalp/web/api_v1/system.py
+    source_line: 274
+    handler: system_refresh
+
+# React-frontend-referenced paths with NO matching backend route
+# (template-built paths, dead references, or extractor limits):
+react_orphan_paths:
+  - path: "/api/account/trades${suffix}"
+    methods: "['GET']"
+    files: "['frontend/src/api/positionsApi.ts']"
+  - path: /api/command-center
+    methods: "['GET']"
+    files: "['frontend/src/api/commandCenterApi.ts']"
+  - path: /api/diagnostics
+    methods: "['GET']"
+    files: "['frontend/src/api/incidentsApi.ts']"
+  - path: /api/v1/marketplace
+    methods: "['GET']"
+    files: "['frontend/src/api/marketplaceApi.ts']"

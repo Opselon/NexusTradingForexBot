@@ -1,0 +1,1113 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/research/status",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "data": {
+        "available": true,
+        "health": {
+          "available": false
+        },
+        "registry": {
+          "available": false,
+          "total": 0,
+          "by_lifecycle": {}
+        },
+        "generated_at": "2026-09-24T14:52:14.276359+00:00"
+      },
+      "meta": {
+        "request_id": "req_783d165a5e",
+        "generated_at": "2026-09-24T14:52:14.276359+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "available": true,
+        "generated_at": "2026-09-24T14:52:14.281462+00:00",
+        "health": {
+          "available": false
+        },
+        "registry": {
+          "available": false,
+          "by_lifecycle": {},
+          "total": 0
+        }
+      },
+      "meta": {
+        "generated_at": "2026-09-24T14:52:14.283743+00:00",
+        "request_id": "req_d96e880a8e"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "data.generated_at",
+        "py": "\"2026-09-24T14:52:14.276359+00:00\"",
+        "go": "\"2026-09-24T14:52:14.281462+00:00\""
+      },
+      {
+        "key": "data.generated_at",
+        "py": "\"2026-09-24T14:52:14.276359+00:00\"",
+        "go": "\"2026-09-24T14:52:14.281462+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_783d165a5e\"",
+        "go": "\"req_d96e880a8e\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.276359+00:00\"",
+        "go": "\"2026-09-24T14:52:14.283743+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_783d165a5e\"",
+        "go": "\"req_d96e880a8e\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.276359+00:00\"",
+        "go": "\"2026-09-24T14:52:14.283743+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/strategies",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "data": {
+        "items": [],
+        "page": 1,
+        "page_size": 50,
+        "has_more": false
+      },
+      "meta": {
+        "request_id": "req_6cb943420b",
+        "generated_at": "2026-09-24T14:52:14.288279+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "has_more": false,
+        "items": [],
+        "page": 1,
+        "page_size": 50
+      },
+      "meta": {
+        "generated_at": "2026-09-24T14:52:14.296879+00:00",
+        "request_id": "req_be257b7a71"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_6cb943420b\"",
+        "go": "\"req_be257b7a71\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.288279+00:00\"",
+        "go": "\"2026-09-24T14:52:14.296879+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_6cb943420b\"",
+        "go": "\"req_be257b7a71\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.288279+00:00\"",
+        "go": "\"2026-09-24T14:52:14.296879+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/strategies?page=1&page_size=2",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "data": {
+        "items": [],
+        "page": 1,
+        "page_size": 2,
+        "has_more": false
+      },
+      "meta": {
+        "request_id": "req_ce2a7d5981",
+        "generated_at": "2026-09-24T14:52:14.302441+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "has_more": false,
+        "items": [],
+        "page": 1,
+        "page_size": 2
+      },
+      "meta": {
+        "generated_at": "2026-09-24T14:52:14.319797+00:00",
+        "request_id": "req_a86847f83f"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_ce2a7d5981\"",
+        "go": "\"req_a86847f83f\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.302441+00:00\"",
+        "go": "\"2026-09-24T14:52:14.319797+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_ce2a7d5981\"",
+        "go": "\"req_a86847f83f\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.302441+00:00\"",
+        "go": "\"2026-09-24T14:52:14.319797+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/strategies?lifecycle=stable",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "data": {
+        "items": [],
+        "page": 1,
+        "page_size": 50,
+        "has_more": false
+      },
+      "meta": {
+        "request_id": "req_c88759d333",
+        "generated_at": "2026-09-24T14:52:14.334355+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "has_more": false,
+        "items": [],
+        "page": 1,
+        "page_size": 50
+      },
+      "meta": {
+        "generated_at": "2026-09-24T14:52:14.341338+00:00",
+        "request_id": "req_ffbbf2275e"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_c88759d333\"",
+        "go": "\"req_ffbbf2275e\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.334355+00:00\"",
+        "go": "\"2026-09-24T14:52:14.341338+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_c88759d333\"",
+        "go": "\"req_ffbbf2275e\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.334355+00:00\"",
+        "go": "\"2026-09-24T14:52:14.341338+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/strategies/does-not-exist",
+    "py_status": 404,
+    "go_status": 404,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "error": {
+        "code": "RESOURCE_NOT_FOUND",
+        "message": "strategy does-not-exist not found",
+        "details": {},
+        "request_id": "req_0b8fe7eee6",
+        "retryable": false
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "RESOURCE_NOT_FOUND",
+        "message": "strategy does-not-exist not found",
+        "details": {},
+        "request_id": "req_ec6f206c01",
+        "retryable": false
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_0b8fe7eee6\"",
+        "go": "\"req_ec6f206c01\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_0b8fe7eee6\"",
+        "go": "\"req_ec6f206c01\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/runs",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "data": {
+        "items": [],
+        "page": 1,
+        "page_size": 50,
+        "has_more": false
+      },
+      "meta": {
+        "request_id": "req_1352888cc6",
+        "generated_at": "2026-09-24T14:52:14.358842+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "has_more": false,
+        "items": [],
+        "page": 1,
+        "page_size": 50
+      },
+      "meta": {
+        "generated_at": "2026-09-24T14:52:14.369224+00:00",
+        "request_id": "req_1bdd204b76"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_1352888cc6\"",
+        "go": "\"req_1bdd204b76\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.358842+00:00\"",
+        "go": "\"2026-09-24T14:52:14.369224+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_1352888cc6\"",
+        "go": "\"req_1bdd204b76\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.358842+00:00\"",
+        "go": "\"2026-09-24T14:52:14.369224+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/runs?page=2&page_size=5",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "data": {
+        "items": [],
+        "page": 2,
+        "page_size": 5,
+        "has_more": false
+      },
+      "meta": {
+        "request_id": "req_cf49343160",
+        "generated_at": "2026-09-24T14:52:14.373790+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "has_more": false,
+        "items": [],
+        "page": 2,
+        "page_size": 5
+      },
+      "meta": {
+        "generated_at": "2026-09-24T14:52:14.381269+00:00",
+        "request_id": "req_bed60ba6a8"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_cf49343160\"",
+        "go": "\"req_bed60ba6a8\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.373790+00:00\"",
+        "go": "\"2026-09-24T14:52:14.381269+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_cf49343160\"",
+        "go": "\"req_bed60ba6a8\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.373790+00:00\"",
+        "go": "\"2026-09-24T14:52:14.381269+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/datasets",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "data": {
+        "datasets": [],
+        "distinct": 0,
+        "generated_at": "2026-09-24T14:52:14.386314+00:00"
+      },
+      "meta": {
+        "request_id": "req_4bdd52f113",
+        "generated_at": "2026-09-24T14:52:14.386314+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "datasets": [],
+        "distinct": 0,
+        "generated_at": "2026-09-24T14:52:14.392710+00:00"
+      },
+      "meta": {
+        "generated_at": "2026-09-24T14:52:14.393956+00:00",
+        "request_id": "req_870025f318"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "data.generated_at",
+        "py": "\"2026-09-24T14:52:14.386314+00:00\"",
+        "go": "\"2026-09-24T14:52:14.392710+00:00\""
+      },
+      {
+        "key": "data.generated_at",
+        "py": "\"2026-09-24T14:52:14.386314+00:00\"",
+        "go": "\"2026-09-24T14:52:14.392710+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_4bdd52f113\"",
+        "go": "\"req_870025f318\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.386314+00:00\"",
+        "go": "\"2026-09-24T14:52:14.393956+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_4bdd52f113\"",
+        "go": "\"req_870025f318\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.386314+00:00\"",
+        "go": "\"2026-09-24T14:52:14.393956+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/runs?page=0",
+    "py_status": 422,
+    "go_status": 422,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "Request validation failed.",
+        "details": {
+          "errors": [
+            {
+              "field": "page",
+              "issue": "greater_than_equal",
+              "input_present": true
+            }
+          ]
+        },
+        "request_id": "req_837a4a4a8f",
+        "retryable": false
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "Request validation failed.",
+        "details": {
+          "errors": [
+            {
+              "field": "page",
+              "input_present": true,
+              "issue": "greater_than_equal"
+            }
+          ]
+        },
+        "request_id": "req_8dbc8df858",
+        "retryable": false
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_837a4a4a8f\"",
+        "go": "\"req_8dbc8df858\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_837a4a4a8f\"",
+        "go": "\"req_8dbc8df858\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/runs?page_size=0",
+    "py_status": 422,
+    "go_status": 422,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "Request validation failed.",
+        "details": {
+          "errors": [
+            {
+              "field": "page_size",
+              "issue": "greater_than_equal",
+              "input_present": true
+            }
+          ]
+        },
+        "request_id": "req_5a1eabe77f",
+        "retryable": false
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "Request validation failed.",
+        "details": {
+          "errors": [
+            {
+              "field": "page_size",
+              "input_present": true,
+              "issue": "greater_than_equal"
+            }
+          ]
+        },
+        "request_id": "req_6133577e6c",
+        "retryable": false
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_5a1eabe77f\"",
+        "go": "\"req_6133577e6c\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_5a1eabe77f\"",
+        "go": "\"req_6133577e6c\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/runs?page_size=201",
+    "py_status": 422,
+    "go_status": 422,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "Request validation failed.",
+        "details": {
+          "errors": [
+            {
+              "field": "page_size",
+              "issue": "less_than_equal",
+              "input_present": true
+            }
+          ]
+        },
+        "request_id": "req_c46465423e",
+        "retryable": false
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "Request validation failed.",
+        "details": {
+          "errors": [
+            {
+              "field": "page_size",
+              "input_present": true,
+              "issue": "less_than_equal"
+            }
+          ]
+        },
+        "request_id": "req_60b754667d",
+        "retryable": false
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_c46465423e\"",
+        "go": "\"req_60b754667d\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_c46465423e\"",
+        "go": "\"req_60b754667d\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/runs?lifecycle=x",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "data": {
+        "items": [],
+        "page": 1,
+        "page_size": 50,
+        "has_more": false
+      },
+      "meta": {
+        "request_id": "req_369e09316e",
+        "generated_at": "2026-09-24T14:52:14.421717+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "has_more": false,
+        "items": [],
+        "page": 1,
+        "page_size": 50
+      },
+      "meta": {
+        "generated_at": "2026-09-24T14:52:14.429654+00:00",
+        "request_id": "req_fd3a9c2f20"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_369e09316e\"",
+        "go": "\"req_fd3a9c2f20\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.421717+00:00\"",
+        "go": "\"2026-09-24T14:52:14.429654+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_369e09316e\"",
+        "go": "\"req_fd3a9c2f20\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.421717+00:00\"",
+        "go": "\"2026-09-24T14:52:14.429654+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/risk/status",
+    "py_status": 503,
+    "go_status": 503,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "error": {
+        "code": "ENGINE_UNAVAILABLE",
+        "message": "The trading engine is not attached to the API server.",
+        "details": {},
+        "request_id": "req_ef3abae52e",
+        "retryable": true
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "ENGINE_UNAVAILABLE",
+        "message": "The trading engine is not attached to the API server.",
+        "details": {},
+        "request_id": "req_b1309dee36",
+        "retryable": true
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_ef3abae52e\"",
+        "go": "\"req_b1309dee36\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_ef3abae52e\"",
+        "go": "\"req_b1309dee36\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/risk/summary",
+    "py_status": 503,
+    "go_status": 503,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "error": {
+        "code": "ENGINE_UNAVAILABLE",
+        "message": "The trading engine is not attached to the API server.",
+        "details": {},
+        "request_id": "req_2d5c698207",
+        "retryable": true
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "ENGINE_UNAVAILABLE",
+        "message": "The trading engine is not attached to the API server.",
+        "details": {},
+        "request_id": "req_b0b5f6eb4d",
+        "retryable": true
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_2d5c698207\"",
+        "go": "\"req_b0b5f6eb4d\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_2d5c698207\"",
+        "go": "\"req_b0b5f6eb4d\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/runtime/mode",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "data": {
+        "mode": null,
+        "effective_mode": null,
+        "engine_attached": false,
+        "replaying": null
+      },
+      "meta": {
+        "request_id": "req_2a5347c57f",
+        "generated_at": "2026-09-24T14:52:14.459549+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "effective_mode": null,
+        "engine_attached": false,
+        "mode": null,
+        "replaying": null
+      },
+      "meta": {
+        "generated_at": "2026-09-24T14:52:14.468118+00:00",
+        "request_id": "req_91c6b87671"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_2a5347c57f\"",
+        "go": "\"req_91c6b87671\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.459549+00:00\"",
+        "go": "\"2026-09-24T14:52:14.468118+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_2a5347c57f\"",
+        "go": "\"req_91c6b87671\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.459549+00:00\"",
+        "go": "\"2026-09-24T14:52:14.468118+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/runtime/freshness",
+    "py_status": 503,
+    "go_status": 503,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "error": {
+        "code": "ENGINE_UNAVAILABLE",
+        "message": "The trading engine is not attached to the API server.",
+        "details": {},
+        "request_id": "req_fda8463e25",
+        "retryable": true
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "ENGINE_UNAVAILABLE",
+        "message": "The trading engine is not attached to the API server.",
+        "details": {},
+        "request_id": "req_c159e4d1ac",
+        "retryable": true
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_fda8463e25\"",
+        "go": "\"req_c159e4d1ac\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_fda8463e25\"",
+        "go": "\"req_c159e4d1ac\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/runtime/shutdown",
+    "py_status": 200,
+    "go_status": 200,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "data": {
+        "engine_attached": false,
+        "phase": "UNKNOWN"
+      },
+      "meta": {
+        "request_id": "req_33cd642b1e",
+        "generated_at": "2026-09-24T14:52:14.494361+00:00"
+      }
+    },
+    "go_json": {
+      "data": {
+        "engine_attached": false,
+        "phase": "UNKNOWN"
+      },
+      "meta": {
+        "generated_at": "2026-09-24T14:52:14.501967+00:00",
+        "request_id": "req_f04ccbf135"
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "meta.request_id",
+        "py": "\"req_33cd642b1e\"",
+        "go": "\"req_f04ccbf135\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.494361+00:00\"",
+        "go": "\"2026-09-24T14:52:14.501967+00:00\""
+      },
+      {
+        "key": "meta.request_id",
+        "py": "\"req_33cd642b1e\"",
+        "go": "\"req_f04ccbf135\""
+      },
+      {
+        "key": "meta.generated_at",
+        "py": "\"2026-09-24T14:52:14.494361+00:00\"",
+        "go": "\"2026-09-24T14:52:14.501967+00:00\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/risk/nope",
+    "py_status": 404,
+    "go_status": 404,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "error": {
+        "code": "RESOURCE_NOT_FOUND",
+        "message": "The requested resource was not found.",
+        "details": {},
+        "request_id": "req_68dae7249c",
+        "retryable": false
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "RESOURCE_NOT_FOUND",
+        "message": "The requested resource was not found.",
+        "details": {},
+        "request_id": "req_b4232c83a9",
+        "retryable": false
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_68dae7249c\"",
+        "go": "\"req_b4232c83a9\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_68dae7249c\"",
+        "go": "\"req_b4232c83a9\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/risk/status",
+    "py_status": 405,
+    "go_status": 405,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "error": {
+        "code": "METHOD_NOT_ALLOWED",
+        "message": "The HTTP method is not allowed for this resource.",
+        "details": {},
+        "request_id": "req_b41730195f",
+        "retryable": false
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "METHOD_NOT_ALLOWED",
+        "message": "The HTTP method is not allowed for this resource.",
+        "details": {},
+        "request_id": "req_9760031653",
+        "retryable": false
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_b41730195f\"",
+        "go": "\"req_9760031653\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_b41730195f\"",
+        "go": "\"req_9760031653\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/research/runs",
+    "py_status": 405,
+    "go_status": 405,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "error": {
+        "code": "METHOD_NOT_ALLOWED",
+        "message": "The HTTP method is not allowed for this resource.",
+        "details": {},
+        "request_id": "req_4032f47458",
+        "retryable": false
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "METHOD_NOT_ALLOWED",
+        "message": "The HTTP method is not allowed for this resource.",
+        "details": {},
+        "request_id": "req_e79ae60e4f",
+        "retryable": false
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_4032f47458\"",
+        "go": "\"req_e79ae60e4f\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_4032f47458\"",
+        "go": "\"req_e79ae60e4f\""
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/research/runs?page=abc",
+    "py_status": 422,
+    "go_status": 422,
+    "request_id_py": "",
+    "request_id_go": "",
+    "py_json": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "Request validation failed.",
+        "details": {
+          "errors": [
+            {
+              "field": "page",
+              "issue": "int_parsing",
+              "input_present": true
+            }
+          ]
+        },
+        "request_id": "req_ab1332ef68",
+        "retryable": false
+      }
+    },
+    "go_json": {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "Request validation failed.",
+        "details": {
+          "errors": [
+            {
+              "field": "page",
+              "input_present": true,
+              "issue": "int_parsing"
+            }
+          ]
+        },
+        "request_id": "req_629cad1afe",
+        "retryable": false
+      }
+    },
+    "keys_missing_in_go": [],
+    "keys_extra_in_go": [],
+    "value_diffs": [
+      {
+        "key": "error.request_id",
+        "py": "\"req_ab1332ef68\"",
+        "go": "\"req_629cad1afe\""
+      },
+      {
+        "key": "error.request_id",
+        "py": "\"req_ab1332ef68\"",
+        "go": "\"req_629cad1afe\""
+      }
+    ],
+    "verdict": "PASS"
+  }
+]
