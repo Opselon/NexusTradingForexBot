@@ -2526,7 +2526,13 @@ class AuditRepository:
         of an in-memory repository (disk-leak bug, 2026-09-09).
         """
         uri = self._db_path.startswith("file:")
-        return sqlite3.connect(self._db_path, timeout=timeout, uri=uri)
+        conn = sqlite3.connect(self._db_path, timeout=timeout, uri=uri)
+        # dict(row) consumers (provider_store._sqlite_rows) need the Row
+        # factory: a bare tuple makes dict() treat each element as a pair
+        # sequence, raising "dictionary update sequence element #0 has length
+        # N; 2 is required" and silently returning [] from every read.
+        conn.row_factory = sqlite3.Row
+        return conn
 
     def _provider_write_backend(self) -> Any:
         """The fabric's pooled WRITE backend for the audit domain, else None.
