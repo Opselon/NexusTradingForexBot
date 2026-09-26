@@ -440,6 +440,14 @@ def _parse_insert_shape(remainder: str) -> dict[str, Any] | None:
     # wrong for every row but the first.  Leave it to the caller.
     if tail.lstrip().startswith(","):
         return None
+    # REGR-004 (review: latent double-ON-CONFLICT): a statement that ALREADY
+    # carries a conflict clause must not be rewritten — the rewriter would
+    # emit its own clause after the existing one and produce invalid
+    # PostgreSQL. No production caller reaches this (they use the upsert
+    # helper rather than hand-authoring INSERT OR REPLACE ... ON CONFLICT),
+    # but fail-open here keeps the shape structurally unreachable.
+    if tail.upper().startswith("ON CONFLICT"):
+        return None
     return {
         "table": table,
         "raw_table": raw_table,
@@ -489,16 +497,18 @@ def _find_matching_paren(text: str, open_idx: int) -> int:
     return -1
 
 
-def _resolve_conflict_target(
-    table: str, conn: Any, cols: list[str]
-) -> tuple[list[str], bool] | None:
-    """Best conflict target for an upsert row — the single resolver.
+def _resolve_conflict_target(table: str, conn: Any) -> tuple[list[str], list[str]]:
+    """Catalog layout for ``table`` — the cached half of resolution.
 
-    Returns ``(target_columns, covers_row)``: PK columns when they are all
-    present in the row, else the unique columns present in the row, else
-    ``None``.  Used by :meth:`PostgreSQLDriver._conflict_target` (cached per
-    table) and by the static execution-translation seam, so the generic write
-    path and ``upsert()`` can never disagree on the target.
+    Returns ``(pks, uniques)``: the table's primary-key columns and its UNIQUE
+    constraint columns, straight from the catalog. Row-dependent logic (which
+    of those actually covers the row being written) lives in
+    :func:`_best_conflict_target`, so the cached part is a property of the
+    TABLE ONLY and never of the first row we happened to see.
+
+    Used by :meth:`PostgreSQLDriver._conflict_target` (cached per table) and by
+    the static execution-translation seam, so the generic write path and
+    ``upsert()`` can never disagree on a target.
     """
     pks: list[str] = []
     uniques: list[str] = []
@@ -522,6 +532,27 @@ def _resolve_conflict_target(
             (table,),
         ).fetchall()
         uniques = [str(r[0]) for r in rows]
+    return (pks, uniques)
+
+
+def _best_conflict_target(
+    pks: list[str], uniques: list[str], cols: list[str]
+) -> tuple[list[str], bool] | None:
+    """Best conflict target for ONE row, given the table's layout.
+
+    Returns ``(target_columns, covers_row)``: PK columns when they are all
+    present in the row, else the unique columns present in the row, else
+    ``None``. This is the row-dependent half — the reason the cache must hold
+    only the layout, not a decision made against the first row's columns.
+
+    REGR-002 (review: "_conflict_target cache key"): a cache keyed by table
+    alone froze the first row's verdict. A later insert whose column subset
+    differs (an additive migration making a column optional) silently degraded
+    to ``ON CONFLICT DO NOTHING`` — a no-update reported as a successful write.
+    Keeping this pure and re-evaluating per row removes that failure mode;
+    the two catalog queries are the only thing cached, and they are a property
+    of the schema, not the data.
+    """
     if pks and all(p in cols for p in pks):
         return (pks, True)
     present_unique = [u for u in uniques if u in cols]
@@ -563,7 +594,8 @@ def _conflict_clause(parsed: dict[str, Any], conn: Any) -> str | None:
     if conn is None:
         return None
     try:
-        target = _resolve_conflict_target(parsed["table"], conn, parsed["cols"])
+        pks, uniques = _resolve_conflict_target(parsed["table"], conn)
+        target = _best_conflict_target(pks, uniques, parsed["cols"])
     except Exception:
         return None
     if target is None:
@@ -736,9 +768,14 @@ class PostgreSQLDriver(DatabaseDriver):
 
     def configure_connection(self, conn: Any) -> None:
         if self.config.command_timeout_sec:
+            # REGR-005 (review: statement injection sink): the value is an int
+            # from a persisted config row today, but it reaches statement text
+            # without an allow-list, and the diagnostics UI already edits pool
+            # config. Binding the parameter keeps the text constant — no config
+            # value can ever become part of the statement.
             with contextlib.suppress(Exception):
                 conn.execute(
-                    f"SET statement_timeout = {int(self.config.command_timeout_sec) * 1000}"
+                    "SET statement_timeout = %s", (int(self.config.command_timeout_sec) * 1000,)
                 )
 
     # -- DDL --------------------------------------------------------------
@@ -966,7 +1003,10 @@ class PostgreSQLDriver(DatabaseDriver):
 
         Returns (target_columns, covers_row): PK columns when they are all
         present in the row, else the unique columns present in the row, else
-        None.  Cached per table (PK layout + unique columns).
+        None.  The catalog LAYOUT (PK + unique columns) is cached per table;
+        the row-dependent choice is re-evaluated on every call (see
+        :func:`_best_conflict_target` for why caching a verdict against the
+        first row's columns was a silent-failure bug).
 
         The resolution itself lives in the module-level
         :func:`_resolve_conflict_target` so the generic write path's SQL
@@ -979,16 +1019,9 @@ class PostgreSQLDriver(DatabaseDriver):
             self._conflict_cache = cached
         if table not in cached:
             with contextlib.suppress(Exception):
-                cached[table] = _resolve_conflict_target(table, conn, cols)
+                cached[table] = _resolve_conflict_target(table, conn)
         pks, uniques = cached[table]
-        if pks and all(p in cols for p in pks):
-            return (pks, True)
-        present_unique = [u for u in uniques if u in cols]
-        if present_unique:
-            return (present_unique, True)
-        if pks:
-            return (pks, False)
-        return None
+        return _best_conflict_target(pks, uniques, cols)
 
     def upsert(self, table: str, row: dict[str, Any], conn: Any = None) -> None:
         """ON CONFLICT (pk|unique, ...) DO UPDATE — portable REPLACE.

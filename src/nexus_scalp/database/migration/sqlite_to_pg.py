@@ -409,6 +409,20 @@ def _package_table_ddl(module_name: str) -> list[tuple[str, str]]:
     module = importlib.import_module(module_name)
     out: list[tuple[str, str]] = []
 
+    def _looks_like_schema_text(value: str) -> bool:
+        """Real DDL, not prose that quotes DDL?
+
+        REGR-007 (review: "_scan_text harvests any string containing CREATE
+        TABLE"): modules document their schema, and a docstring or error
+        message quoting ``CREATE TABLE`` used to be harvested and handed to
+        the splitter as if it were DDL. Requiring the string to START with a
+        CREATE TABLE statement (after whitespace) excludes prose while still
+        accepting both the single-statement constants and the multi-statement
+        schema strings.
+        """
+        head = value.lstrip()
+        return head[:12].upper() == "CREATE TABLE"
+
     def _scan_text(text: str) -> None:
         # Extract each CREATE TABLE from the constant (a constant may hold a
         # multi-statement schema string like settings._SCHEMA, or a list of
@@ -427,11 +441,11 @@ def _package_table_ddl(module_name: str) -> list[tuple[str, str]]:
             continue
         value = getattr(module, attr, None)
         if isinstance(value, str):
-            if "CREATE TABLE" in value.upper():
+            if _looks_like_schema_text(value):
                 _scan_text(value)
         elif isinstance(value, (list, tuple)):
             for item in value:
-                if isinstance(item, str) and "CREATE TABLE" in item.upper():
+                if isinstance(item, str) and _looks_like_schema_text(item):
                     _scan_text(item)
     return out
 

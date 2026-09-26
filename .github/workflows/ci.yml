@@ -137,6 +137,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    # REGR-CI-001 (review: the PG-arm gate never runs): the quality job runs
+    # the main pytest arm but had NO PostgreSQL service and did not export
+    # NSE_PG_TEST_URL - the var every PG arm actually keys off (PG_TEST_URL /
+    # PG_TEST_DSN at the workflow env level are read by nobody). The arms
+    # therefore skipped here, which is exactly the silent-skip defect class
+    # this PR exists to eliminate. Provisioning the service here AND exporting
+    # the var the suite reads makes the PG arms execute on the quality job too.
+    env:
+      # The suite keys every PG arm off THIS var (not PG_TEST_URL/PG_TEST_DSN).
+      # Pointed at the service container provisioned above.
+      NSE_PG_TEST_URL: "postgresql://pgarm:***@localhost:5432/nse_pgarm"
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: nse_pgarm
+          POSTGRES_USER: pgarm
+          POSTGRES_PASSWORD: pgarm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pgarm -d nse_pgarm"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -168,6 +194,24 @@ jobs:
           pip install -e ".[dev,web,postgres]"
 
       # -------- Results tree + run metadata (fresh on every run) --------
+      # -------- PG arm: RUN instead of skip (REGR-CI-001) --------
+      # The three CI gates Lane O wrote were never invoked by any workflow,
+      # so a skipping PG arm looked green. These are the guards that make a
+      # skip a failure rather than a pass.
+      - name: PG arm gate (fail on skip)
+        env:
+          NSE_PG_TEST_URL: ${{ env.NSE_PG_TEST_URL }}
+        run: |
+          python scripts/ci/check_pg_arm.py --junit "$CI_RESULTS_DIR/pg_arm/junit.xml"
+
+      - name: OR-verb portability gate
+        run: |
+          python scripts/ci/check_or_verb_portability.py
+
+      - name: Pre-existing reds gate
+        run: |
+          python scripts/ci/check_preexisting_reds.py
+
       - name: Initialize results tree
         run: |
           python scripts/ci/make_ci_results.py init "$CI_RESULTS_DIR" \

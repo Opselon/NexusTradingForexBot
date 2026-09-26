@@ -257,6 +257,42 @@ def classify(site: Site, state: State) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _text_imports_seam(text: str, seams: tuple[str, ...]) -> bool:
+    """Does this source text REALLY import one of the translating seams?
+
+    Resolves ``ast.Import``/``ast.ImportFrom`` targets rather than
+    substring-matching the source: a seam name appearing in a docstring,
+    comment or string literal is NOT a routing guarantee. ``from ... import
+    X as Y`` is followed through ``as``-aliases so a renamed import still
+    counts.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        # Unparseable module: the emitter regex already matched it, so a parse
+        # failure means we cannot prove routing. Fail closed (return False) —
+        # the caller reports an unverified emitter rather than passing it.
+        return False
+    seam_leaves = {s.split(".")[-1] for s in seams}
+    seam_dotted = set(seams)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name in seam_dotted or alias.name.split(".")[-1] in seam_leaves:
+                    return True
+                if alias.asname and alias.asname in seam_leaves:
+                    return True
+        elif isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            for alias in node.names:
+                dotted = f"{mod}.{alias.name}" if mod else alias.name
+                if dotted in seam_dotted or alias.name in seam_leaves:
+                    return True
+                if alias.asname and alias.asname in seam_leaves:
+                    return True
+    return False
+
+
 def check_emitter_coverage(state: State) -> None:
     """Every source module emitting the OR-verb must reach a translating seam.
 
@@ -278,10 +314,12 @@ def check_emitter_coverage(state: State) -> None:
         except OSError:
             continue
         # Does this module route its writes through a translating seam?
-        routed = any(seam in text for seam in TRANSLATING_SEAMS) or any(
-            re.search(rf"\b{re.escape(seam.rsplit('.', 1)[-1])}\b", text)
-            for seam in TRANSLATING_SEAMS
-        )
+        # REGR-006 (review: string-match false pass): matching the seam name
+        # anywhere in the text would count a docstring, a comment or an
+        # unrelated mention as "routed" — for a gate whose whole purpose is
+        # preventing silent bypass, a false pass here is exactly the failure
+        # mode it exists to catch. Only real import statements count.
+        routed = _text_imports_seam(text, TRANSLATING_SEAMS)
         # The driver layer itself IS the seam.
         is_seam = dotted in TRANSLATING_SEAMS
         if routed or is_seam:

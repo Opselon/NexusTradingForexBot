@@ -93,7 +93,6 @@ class DedupTargetError(RuntimeError):
     """
 
 
-@staticmethod
 def _stable_json(value: Any) -> str:
     """Deterministic JSON for hash input (dict key order must not matter)."""
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
@@ -238,7 +237,10 @@ class DedupGuard:
         Caches the answer per table for the driver's lifetime.
         """
         if self._target is not False:
-            return self._target if self._target else None  # already resolved
+            # Already resolved: a non-empty tuple is a usable conflict target;
+            # anything else (None, or the module's truthiness edge cases) means
+            # the table has no usable target.
+            return self._target if isinstance(self._target, tuple) else None
         resolved: tuple[str, ...] | None = None
         if self.natural_key:
             resolved = self.natural_key
@@ -413,11 +415,6 @@ class DedupGuard:
         if not self.natural_key:
             return False
         return self.key_for(row) in self._seen_keys
-
-
-def _dedupe_row_key(row: dict[str, Any], columns: Sequence[str]) -> str:
-    """Module-level alias kept for call sites that hold no guard instance."""
-    return natural_key_hash(row, columns)
 
 
 def _dedupe_row_key(row: dict[str, Any], columns: Sequence[str]) -> str:

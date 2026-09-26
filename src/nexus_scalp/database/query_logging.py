@@ -104,7 +104,12 @@ _TOKEN = re.compile(r"[A-Za-z0-9_\-]+")
 _TOKEN_IS_SECRET = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9_\-]{16,}$")
 #: PostgreSQL ``%s``/``$1`` placeholders — counted, and their text is kept
 #: verbatim (they carry no data).
-_PG_PLACEHOLDER = re.compile(r"%(?:s|\(\d+\)s)|\$\d+")
+_PG_POSITIONAL = re.compile(r"%(?:s|\(\d+\)s)")
+#: PostgreSQL named placeholder, ``%(name)s`` — counted separately so a mixed
+#: statement is never summed with the positional count (see placeholder_count).
+_PG_NAMED = re.compile(r"%\(\w+\)s")
+#: PostgreSQL dollar placeholder, ``$N`` — its own count for the same reason.
+_PG_DOLLAR = re.compile(r"\$\d+")
 #: SQLite qmark placeholder — kept for statements logged before translation.
 _QMARK_PLACEHOLDER = re.compile(r"\?")
 
@@ -151,13 +156,23 @@ def placeholder_count(sql: Any) -> int:
 
     Counts occurrences, not unique shapes: ``( %s, %s, %s )`` has THREE
     placeholders, and that count is what proves an arity mismatch against
-    ``arg_count``. Mixed placeholder styles are never a real statement, so
-    the larger of the two counts wins rather than summing.
+    ``arg_count``.
+
+    REGR-003 (review: "placeholder_count counts additively"): a real translated
+    statement uses ONE style only, so the counts must never be summed — a
+    statement carrying both ``%s`` and ``%(name)s`` is not a legal statement,
+    and summing them would point the arity diagnosis at the wrong number. Each
+    style is counted on its own and the largest wins.
     """
     if not isinstance(sql, str):
         return 0
     try:
-        pg = len(_PG_PLACEHOLDER.findall(sql))
+        counts = (
+            len(_PG_POSITIONAL.findall(sql)),
+            len(_PG_NAMED.findall(sql)),
+            len(_PG_DOLLAR.findall(sql)),
+        )
+        pg = max(counts)
         if pg:
             return pg
         return len(_QMARK_PLACEHOLDER.findall(sql))
