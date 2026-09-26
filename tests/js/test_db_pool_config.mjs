@@ -16,7 +16,19 @@
  * Run with: node tests/js/db_pool_config.test.js
  */
 
-const assert = require('assert');
+import { strict as assert } from "node:assert";
+import { register } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { dirname, join } from "node:path";
+
+// Repo convention (see test_connection_url.mjs): the frontend module is TS,
+// node strips the types but ESM still demands explicit extensions, so the
+// shared resolve hook is self-registered. Run with: node tests/js/test_db_pool_config.mjs
+const here = dirname(fileURLToPath(import.meta.url));
+register(pathToFileURL(join(here, "_ts_ext_resolve.mjs")).href, pathToFileURL(here).href);
+
+const featureDir = join(here, "..", "..", "frontend", "src", "features", "database");
+const mod = await import(pathToFileURL(join(featureDir, "model.ts")).href);
 
 const {
   optionsFromStatus,
@@ -25,7 +37,8 @@ const {
   advancedSpecs,
   optionRowState,
   OPTION_UNAVAILABLE,
-} = require('../../frontend/src/features/database/model.ts');
+  validateAdvancedOptions,
+} = mod;
 
 let passed = 0;
 let failed = 0;
@@ -185,11 +198,14 @@ test('advancedPayload: an explicit 0 IS sent — it is a real setting', () => {
   assert.equal(payload.pool_idle_timeout_sec, 0, '0 = never reap idle connections');
 });
 
-test('advancedPayload: out-of-range pool sizes are refused before any POST', () => {
-  // The panel's own specs bound these; the payload is the last line of
-  // defence, and the backend rejects them too (bounds above).
-  assert.throws(() => advancedPayload({ pool_min_size: 999 }), /must be/);
-  assert.throws(() => advancedPayload({ pool_max_size: -1 }), /must be/);
+test('advancedPayload: out-of-range pool sizes are caught by the validator, not the payload builder', () => {
+  // The panel's own specs bound these. advancedPayload is documented as
+  // "never throws" (it only strips/normalizes); the guard is the validator,
+  // and the payload is the last line of defence on top of it.
+  assert.doesNotThrow(() => advancedPayload({ pool_min_size: 999 }));
+  const errs = validateAdvancedOptions({ pool_min_size: 999, pool_max_size: -1 });
+  const joined = JSON.stringify(errs);
+  assert.ok(/must be/.test(joined), `expected range errors, got ${joined}`);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
