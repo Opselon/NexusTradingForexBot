@@ -4,12 +4,74 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
+    <!--
+      Critical first-paint shell (IM1, uiux-modern-20260926).
+      These literals are deliberately raw: CSS custom properties do not exist
+      until styles/theme.css loads, and every value here mirrors a token
+      (background = --bg, mark gradient = --accent/#1f4f96 brand tile,
+      progress = accent→violet). They are pre-CSS bootstrap values, not a
+      parallel palette — no url(), no @import, no external reference.
+      React clears #root on its first commit (react-dom clearContainer →
+      textContent = ""), so this only ever paints while the bundle loads.
+    -->
+    <style>
+      html { color-scheme: dark; background: #070a0f; }
+      body { margin: 0; background: #070a0f; }
+      #root { height: 100%; }
+      .boot {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        height: 100%;
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      }
+      .boot-mark {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "Cascadia Mono", Consolas, monospace;
+        font-weight: 800;
+        font-size: 13px;
+        letter-spacing: 0.04em;
+        color: #ffffff;
+        background: linear-gradient(135deg, #41a6f2, #1f4f96);
+        box-shadow: 0 4px 18px rgba(65, 166, 242, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+      }
+      .boot-bar {
+        width: 148px;
+        height: 2px;
+        border-radius: 2px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.07);
+      }
+      .boot-bar i {
+        display: block;
+        width: 38%;
+        height: 100%;
+        border-radius: 2px;
+        background: linear-gradient(90deg, #41a6f2, #9d7bf0);
+        animation: boot-slide 1.15s ease-in-out infinite;
+      }
+      @keyframes boot-slide {
+        0% { transform: translateX(-110%); }
+        100% { transform: translateX(370%); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-bar i { animation: none; width: 100%; }
+      }
+    </style>
     <title>Nexus Scalp Engine — Control Center</title>
     <meta
       name="description"
       content="Nexus Scalp Engine — Control Center. Backend-authoritative operator UI: trading rule matrix, risk gates and execution controls."
     />
-    <meta name="theme-color" content="#111821" />
+    <meta name="theme-color" content="#070a0f" />
+    <meta name="application-name" content="NSE Console" />
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
@@ -26,7 +88,14 @@
     <meta name="twitter:image" content="/og-image.png" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Purely visual first-paint shell: it claims no state, no value and no
+           progress — it is replaced wholesale on React's first commit. -->
+      <div class="boot" aria-hidden="true">
+        <div class="boot-mark">NSE</div>
+        <div class="boot-bar"><i></i></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
