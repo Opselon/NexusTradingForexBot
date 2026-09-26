@@ -91,11 +91,12 @@ def _is_write(sql: str) -> bool:
     A plain ``INSERT`` (no ``OR`` clause) is still refused — that is a
     genuine data write and exactly what the review console must not do.
     """
-    head = sql.lstrip()[:40].upper()
-    # Idempotent schema bootstrap: allowed.
-    if head.startswith("CREATE TABLE IF NOT EXISTS") or head.startswith(
-        "CREATE INDEX IF NOT EXISTS"
-    ):
+    head = sql.lstrip()[:60].upper()
+    # Idempotent schema bootstrap: any "CREATE ... IF NOT EXISTS" is allowed.
+    # It creates an object only when it is absent and can never alter or drop
+    # existing data, so refusing it protects nothing and only stops the console
+    # from booting. Covers TABLE, INDEX, UNIQUE INDEX, VIEW, TRIGGER.
+    if " IF NOT EXISTS" in head and head.startswith("CREATE"):
         return False
     # Idempotent seed writes: allowed (bootstrap data only, fixed constants).
     if head.startswith("INSERT OR IGNORE") or head.startswith("INSERT OR REPLACE"):

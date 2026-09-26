@@ -131,6 +131,7 @@ def test_review_mode_allows_idempotent_bootstrap(review_mode: str) -> None:
     try:
         conn.execute("CREATE TABLE IF NOT EXISTS t (a INTEGER)")
         conn.execute("CREATE INDEX IF NOT EXISTS ix_t ON t (a)")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_t ON t (a)")
         conn.commit()
     finally:
         conn.close()
