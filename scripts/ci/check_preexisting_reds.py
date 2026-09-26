@@ -52,7 +52,7 @@ DOCUMENTED_REDS: tuple[dict[str, str], ...] = (
 
 def _git(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=str(REPO_ROOT), capture_output=True, text=True
+        ["git", *args], cwd=str(REPO_ROOT), capture_output=True, text=True, check=False
     )
 
 
@@ -98,6 +98,7 @@ def _run_at_base(base_sha: str, file: str) -> tuple[int, str]:
             text=True,
             env={**__import__("os").environ, **env_cmd},
             timeout=900,
+            check=False,
         )
         tail = proc.stdout[-3000:] + proc.stderr[-1000:]
         return proc.returncode, tail
@@ -108,7 +109,6 @@ def _run_at_base(base_sha: str, file: str) -> tuple[int, str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    import os
 
     ap = argparse.ArgumentParser(prog="check_preexisting_reds")
     ap.add_argument("--base", default="origin/main", help="base revision to prove against")
@@ -143,8 +143,7 @@ def main(argv: list[str] | None = None) -> int:
         report["status"] = "documented-only"
         print(
             f"PRE-EXISTING REDS: {len(DOCUMENTED_REDS)} documented red(s) at "
-            f"{args.base} ({base_sha[:10]}): "
-            + "; ".join(d["file"] for d in DOCUMENTED_REDS)
+            f"{args.base} ({base_sha[:10]}): " + "; ".join(d["file"] for d in DOCUMENTED_REDS)
         )
         if args.json:
             print(json.dumps(report, indent=2))
@@ -173,9 +172,7 @@ def main(argv: list[str] | None = None) -> int:
             unproven.append(d["file"])
 
     reds = [v for v in report["verdicts"] if v.get("failed_at_base")]  # type: ignore[attr-defined]
-    report["status"] = (
-        f"{len(reds)}/{len(DOCUMENTED_REDS)} documented reds reproduced at base"
-    )
+    report["status"] = f"{len(reds)}/{len(DOCUMENTED_REDS)} documented reds reproduced at base"
     report["unproven"] = unproven  # type: ignore[assignment]
 
     if not reds and DOCUMENTED_REDS:

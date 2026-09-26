@@ -99,9 +99,9 @@ class State:
 # ---------------------------------------------------------------------------
 
 _ABSENCE_RE = re.compile(
-    r'(?P<assert>assert(?:\s+not)?\s*)'
+    r"(?P<assert>assert(?:\s+not)?\s*)"
     r'(?P<q>["\'])(?P<verb>INSERT OR (?:REPLACE|IGNORE))(?P=q)'
-    r'\s*(?P<op>not\s+in|in)\s*'
+    r"\s*(?P<op>not\s+in|in)\s*"
 )
 
 
@@ -128,7 +128,9 @@ def _absence_sites(test_file: Path) -> list[Site]:
                 lineno=lineno,
                 col=m.start() - (text.rfind("\n", 0, m.start()) + 1),
                 verb=m.group("verb"),
-                context=text.splitlines()[lineno - 1].strip() if lineno - 1 < len(text.splitlines()) else "",
+                context=text.splitlines()[lineno - 1].strip()
+                if lineno - 1 < len(text.splitlines())
+                else "",
             )
         )
     return sites
@@ -143,7 +145,7 @@ def _ast_absence_sites(test_file: Path) -> list[Site]:
         return sites
 
     class _Visitor(ast.NodeVisitor):
-        def visit_Compare(self, node: ast.Compare) -> None:  # noqa: N802
+        def visit_Compare(self, node: ast.Compare) -> None:
             self.generic_visit(node)
             # `a not in b`  ->  Compare(left=a, ops=[NotIn], comparators=[b])
             if not any(isinstance(op, ast.NotIn) for op in node.ops):
@@ -195,7 +197,7 @@ def _enclosing_scope(text: str, lineno: int) -> str:
     """The function/docstring context around a line (best-effort)."""
     lines = text.splitlines()
     start = max(0, lineno - 12)
-    return "\n".join(lines[start:lineno + 3])
+    return "\n".join(lines[start : lineno + 3])
 
 
 def classify(site: Site, state: State) -> None:
@@ -226,7 +228,11 @@ def classify(site: Site, state: State) -> None:
     # DDL-only carve-out: schema/heal statements carry the SQLite spellings
     # the governed migration translates on the real plane (the same carve-out
     # the test itself documents — see test_pg_store_paths.py:409-414).
-    if re.search(r"CREATE|DDL|ensure_schema|schema_heal|lstrip\(\)\.upper\(\)\.startswith\(\"CREATE\"\)", scope, re.I):
+    if re.search(
+        r"CREATE|DDL|ensure_schema|schema_heal|lstrip\(\)\.upper\(\)\.startswith\(\"CREATE\"\)",
+        scope,
+        re.I,
+    ):
         state.allowed(
             site.path,
             site.lineno,
@@ -249,6 +255,7 @@ def classify(site: Site, state: State) -> None:
 # ---------------------------------------------------------------------------
 # 3. Cross-check: do the emitting source paths actually reach a seam?
 # ---------------------------------------------------------------------------
+
 
 def check_emitter_coverage(state: State) -> None:
     """Every source module emitting the OR-verb must reach a translating seam.
@@ -291,6 +298,7 @@ def check_emitter_coverage(state: State) -> None:
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
+
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="check_or_verb_portability")

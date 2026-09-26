@@ -100,7 +100,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--pytest", nargs=argparse.REMAINDER, default=[], help="extra pytest args")
     ap.add_argument("--json", action="store_true", help="machine-readable report")
     ap.add_argument("--junit", type=Path, default=REPO_ROOT / "pg-arm-junit.xml")
-    ap.add_argument("--no-run", action="store_true", help="only verify env + files, do not run pytest")
+    ap.add_argument(
+        "--no-run", action="store_true", help="only verify env + files, do not run pytest"
+    )
     args = ap.parse_args(argv)
 
     report: dict[str, object] = {"env": {}, "files": [], "skipped": [], "summary": {}}
@@ -153,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
         *args.pytest,
     ]
     print("PG ARM GATE: running", " ".join(cmd[:6]), "...", file=sys.stderr)
-    proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
+    proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True, check=False)
 
     skipped = _junit_skips(args.junit)
     report["skipped"] = skipped
@@ -164,7 +166,9 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     # 3. A SKIP on a runner with a provisioned PG is a silent bypass.
-    pg_skips = [s for s in skipped if "PG" in s["reason"].upper() or "POSTGRES" in s["reason"].upper()]
+    pg_skips = [
+        s for s in skipped if "PG" in s["reason"].upper() or "POSTGRES" in s["reason"].upper()
+    ]
     if pg_skips:
         report["summary"]["status"] = "pg-arm-skipped"
         report["summary"]["error"] = True
