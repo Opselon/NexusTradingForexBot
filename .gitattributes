@@ -88,3 +88,8 @@ docker/*.sh text eol=lf
 installer/*.iss -text
 tests/fast_suite.txt text eol=lf
 tests/slow_suite.txt text eol=lf
+
+# The Wave 3 profiling pipeline is run from a Windows checkout but imports
+# against a POSIX-ified source tree; keep it LF so a CRLF checkout does not
+# trip ruff's E505/line-ending checks on CI.
+scripts/dev/*.py text eol=lf
