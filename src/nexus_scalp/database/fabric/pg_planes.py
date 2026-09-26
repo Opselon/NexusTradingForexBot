@@ -270,7 +270,6 @@ class PgPool:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
         from nexus_scalp.database.query_logging import pool_failure_guard, query_timer
 
-        translated = PostgreSQLDriver.translate_sql(sql)
         rows: list[dict[str, Any]] = []
 
         def _run() -> list[dict[str, Any]]:
@@ -279,6 +278,11 @@ class PgPool:
                 self.connection() as conn,
                 conn.cursor() as cur,
             ):
+                # The execution seam needs the connection to resolve the
+                # ON CONFLICT target from the catalog; the pure
+                # translate_sql() it replaces left INSERT OR REPLACE and
+                # :name placeholders untouched on the pooled write path.
+                translated = PostgreSQLDriver.translate_sql_for_execution(sql, conn)
                 cur.execute(translated, tuple(args))
                 cols = [d.name for d in cur.description] if cur.description else []
                 rows[:] = [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
@@ -304,7 +308,7 @@ class PgPool:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
         from nexus_scalp.database.query_logging import pool_failure_guard, query_timer
 
-        translated = PostgreSQLDriver.translate_sql(sql)
+        translated_holder: list[str] = []
         holder: list[Any] = []
 
         def _run() -> Any:
@@ -313,7 +317,12 @@ class PgPool:
                 self.connection() as conn,
                 conn.cursor() as cur,
             ):
-                cur.execute(translated, tuple(args))
+                # Resolve at the execution seam: the connection is needed to
+                # resolve the ON CONFLICT target from the catalog.
+                translated_holder.append(
+                    PostgreSQLDriver.translate_sql_for_execution(sql, conn)
+                )
+                cur.execute(translated_holder[-1], tuple(args))
                 row = cur.fetchone()
                 holder.append(row[0] if row is not None else None)
             return holder[0] if holder else None
@@ -448,12 +457,10 @@ class PgWritePlane:
             yield conn
 
     def execute(self, sql: str, args: Sequence[Any] = ()) -> None:
-        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
         from nexus_scalp.database.query_logging import pool_failure_guard
 
-        translated = PostgreSQLDriver.translate_sql(sql)
         pool_failure_guard(
-            lambda: self._execute_translated(translated, args),
+            lambda: self._execute_translated(sql, args),
             pool_name=self._pool.name,
             operation="execute",
             domain=self._pool.name,
@@ -462,8 +469,15 @@ class PgWritePlane:
             args=args,
         )
 
-    def _execute_translated(self, translated: str, args: Sequence[Any]) -> None:
+    def _execute_translated(self, sql: str, args: Sequence[Any]) -> None:
+        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+
         with self._pool.connection() as conn, conn.cursor() as cur:
+            # Resolve at the execution seam: it needs the connection to look
+            # up the ON CONFLICT target in the catalog, which the pure
+            # translate_sql() cannot do (it left INSERT OR REPLACE and
+            # :name placeholders untouched on this pooled write path).
+            translated = PostgreSQLDriver.translate_sql_for_execution(sql, conn)
             cur.execute(translated, tuple(args))
             # The pool lends connections with autocommit OFF (the psycopg
             # default); without an explicit commit the write is discarded when
@@ -482,7 +496,11 @@ class PgWritePlane:
         from nexus_scalp.database.query_logging import pool_failure_guard
 
         translated = [
-            (query, rows, PostgreSQLDriver.translate_sql(query)) for query, rows in statements
+            # The tuple's third element is the pre-translated statement; the
+            # execution seam needs a live connection to resolve the ON
+            # CONFLICT target, so it is applied inside _apply_batch.
+            (query, rows, query)
+            for query, rows in statements
         ]
         pool_failure_guard(
             lambda: self._apply_batch(translated),
@@ -498,14 +516,22 @@ class PgWritePlane:
         self,
         statements: Sequence[tuple[str, Sequence[Sequence[Any]], str]],
     ) -> None:
+        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+
         with self._pool.connection() as conn:
             try:
                 for _query, rows, translated in statements:
                     with conn.cursor() as cur:
+                        # Resolve at the execution seam (the connection is
+                        # in hand); the caller passes the untranslated query
+                        # as the third tuple element.
+                        resolved = PostgreSQLDriver.translate_sql_for_execution(
+                            translated, conn
+                        )
                         if len(rows) == 1:
-                            cur.execute(translated, tuple(rows[0]))
+                            cur.execute(resolved, tuple(rows[0]))
                         else:
-                            cur.executemany(translated, [tuple(r) for r in rows])
+                            cur.executemany(resolved, [tuple(r) for r in rows])
                 conn.commit()
             except Exception:
                 with contextlib_suppress():
@@ -513,12 +539,10 @@ class PgWritePlane:
                 raise
 
     def execute_one(self, query: str, args: Sequence[Any]) -> None:
-        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
         from nexus_scalp.database.query_logging import pool_failure_guard
 
-        translated = PostgreSQLDriver.translate_sql(query)
         pool_failure_guard(
-            lambda: self._apply_one(translated, args),
+            lambda: self._apply_one(query, args),
             pool_name=self._pool.name,
             operation="execute_one",
             domain=self._pool.name,
@@ -527,10 +551,17 @@ class PgWritePlane:
             args=args,
         )
 
-    def _apply_one(self, translated: str, args: Sequence[Any]) -> None:
+    def _apply_one(self, query: str, args: Sequence[Any]) -> None:
+        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+
         with self._pool.connection() as conn:
             try:
                 with conn.cursor() as cur:
+                    # Resolve at the execution seam: the connection is needed
+                    # to resolve the ON CONFLICT target from the catalog.
+                    translated = PostgreSQLDriver.translate_sql_for_execution(
+                        query, conn
+                    )
                     cur.execute(translated, tuple(args))
                 conn.commit()
             except Exception:
@@ -539,12 +570,10 @@ class PgWritePlane:
                 raise
 
     def executemany(self, sql: str, seq: Sequence[Sequence[Any]]) -> None:
-        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
         from nexus_scalp.database.query_logging import pool_failure_guard
 
-        translated = PostgreSQLDriver.translate_sql(sql)
         pool_failure_guard(
-            lambda: self._apply_many(translated, seq),
+            lambda: self._apply_many(sql, seq),
             pool_name=self._pool.name,
             operation="executemany",
             domain=self._pool.name,
@@ -553,8 +582,13 @@ class PgWritePlane:
             args=seq,
         )
 
-    def _apply_many(self, translated: str, seq: Sequence[Sequence[Any]]) -> None:
+    def _apply_many(self, sql: str, seq: Sequence[Sequence[Any]]) -> None:
+        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+
         with self._pool.connection() as conn, conn.cursor() as cur:
+            # Resolve at the execution seam: the connection is needed to
+            # resolve the ON CONFLICT target from the catalog.
+            translated = PostgreSQLDriver.translate_sql_for_execution(sql, conn)
             cur.executemany(translated, [tuple(a) for a in seq])
             conn.commit()
 
