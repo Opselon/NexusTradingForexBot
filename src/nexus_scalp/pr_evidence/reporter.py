@@ -97,6 +97,11 @@ class Reporter:
             result.published = outcome["published"]
             result.comment_id = outcome.get("comment_id")
             result.comment_action = outcome["action"]
+            # A publish failure must be DISCLOSED, never swallowed: an empty
+            # error list next to ``action: error`` told the operator nothing
+            # (spec §16/§26: what remains unresolved must be stated).
+            if outcome.get("error"):
+                result.errors = [*result.errors, f"comment publish failed: {outcome['error']}"]
         return result
 
     def _publish(self, pr: int, body: str) -> dict[str, Any]:

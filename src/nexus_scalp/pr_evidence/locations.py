@@ -31,8 +31,11 @@ __all__ = [
 ]
 
 #: ``tests/foo_test.py::test_bar`` — pytest node id (spec §4).
+#: The path body excludes ``/`` from the repeated segment class: including the
+#: separator inside a ``*``-quantified group makes the match ambiguous and lets
+#: a long ``-/-/-/`` run backtrack exponentially (CodeQL py/redos).
 PYTEST_NODEID_RE = re.compile(
-    r"(?<![\w./])((?:[\w./-]+/)*[\w./-]+\.(?:py|js|ts|jsx|tsx))::([^\s:]+)"
+    r"(?<![\w./])((?:[\w.@-]+/)*[\w.@-]+\.(?:py|js|ts|jsx|tsx))::([^\s:]+)"
 )
 
 #: ``File "/abs/path/file.py", line 123, in test_func`` (Python traceback).
@@ -40,7 +43,7 @@ TRACEBACK_FRAME_RE = re.compile(r'File\s+"([^"]+)",\s+line\s+(\d+)(?:,\s+in\s+([
 
 #: pytest's repo-relative frame form: ``tests/db/x.py:184: in test_func``.
 REL_FRAME_RE = re.compile(
-    r"(?<![\w/.])((?:[\w@./-]+/)*[\w@.-]+\.(?:py|js|ts|jsx|tsx)):(\d+): in ([^\s(]+)"
+    r"(?<![\w/.])((?:[\w@.-]+/)*[\w@.-]+\.(?:py|js|ts|jsx|tsx)):(\d+): in ([^\s(]+)"
 )
 
 #: ``File "/abs/path/file.py", line 123, in MyClass.method`` -> class capture.
@@ -49,9 +52,10 @@ TRACEBACK_FRAME_CLASS_RE = re.compile(
 )
 
 #: ``/path/to/file.py:123`` or ``/path/to/file.py:123:45`` — compiler/lint style.
+#: ``/`` is kept out of the repeated segment class for the same ReDoS reason.
 PATH_LINE_RE = re.compile(
     r"(?<![\w])"
-    r"((?:[A-Za-z]:[\\/]|/|[\w@./-]+/)+[\w@./+-]+\.(?:py|js|ts|jsx|tsx|go|rs|sql|ya?ml|json|toml|cfg|ini"
+    r"((?:[A-Za-z]:[\\/]|/|[\w@.-]+/)+[\w@.+-]+\.(?:py|js|ts|jsx|tsx|go|rs|sql|ya?ml|json|toml|cfg|ini"
     r"|sh|ps1|md|tsx?)):(\d+)(?::(\d+))?"
 )
 

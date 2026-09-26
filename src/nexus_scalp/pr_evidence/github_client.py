@@ -119,7 +119,13 @@ class SubprocessTransport:
     def __init__(self, cwd: str | Path | None = None) -> None:
         self._cwd = str(cwd) if cwd else None
 
-    def _invoke(self, args: list[str], timeout: float) -> dict[str, Any]:
+    def _invoke(self, args: list[str], timeout: float, body: Any = None) -> dict[str, Any]:
+        stdin_payload = None
+        if body is not None:
+            # ``gh api --input -`` reads the request body from stdin; without
+            # this the POST/PATCH carries an EMPTY payload (GitHub answers
+            # 422 "nil is not an object"). The body is passed as JSON text.
+            stdin_payload = json.dumps(body)
         try:
             proc = subprocess.run(
                 ["gh", "api", *args],
@@ -127,6 +133,7 @@ class SubprocessTransport:
                 text=True,
                 timeout=timeout,
                 cwd=self._cwd,
+                input=stdin_payload,
                 check=False,
             )
         except FileNotFoundError:
@@ -150,10 +157,10 @@ class SubprocessTransport:
         return self._invoke([url], timeout)
 
     def post(self, url: str, body: Any, *, timeout: float = _TIMEOUT_SEC) -> dict[str, Any]:
-        return self._invoke(["-X", "POST", url, "--input", "-"], timeout)
+        return self._invoke(["-X", "POST", url, "--input", "-"], timeout, body)
 
     def patch(self, url: str, body: Any, *, timeout: float = _TIMEOUT_SEC) -> dict[str, Any]:
-        return self._invoke(["-X", "PATCH", url, "--input", "-"], timeout)
+        return self._invoke(["-X", "PATCH", url, "--input", "-"], timeout, body)
 
 
 @dataclass
