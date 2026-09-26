@@ -38,10 +38,28 @@ import ResearchCommands from "./ResearchCommands";
 import StrategyDrawer from "./StrategyDrawer";
 import StrategyPlaybookLazy from "./StrategyPlaybookLazy";
 import "./research.css";
+import "./research-hero.css";
 
 type Tab = "registry" | "queue" | "worker" | "analytics" | "history" | "datasets" | "playbook";
 
 const PAGE_SIZE_HINT = "bounded server-side (limit params enforced by the backend)";
+
+/**
+ * Endpoint provenance chips — verbatim GET paths this page's own queries
+ * issue (see ../api.ts). Provenance only: the chips are a constant list of
+ * the routes already being called, never a trigger for a fetch.
+ */
+const RESEARCH_ENDPOINTS: readonly string[] = [
+  "GET /api/research/summary",
+  "GET /api/research/registry",
+  "GET /api/research/queue",
+  "GET /api/research/worker",
+  "GET /api/research/analytics",
+  "GET /api/research/history",
+  "GET /api/research/diagnostics",
+  "GET /api/v1/research/status",
+  "GET /api/v1/research/datasets",
+];
 
 /** One-line role per chain node in the hero pipeline map (handbook text). */
 const GATE_META: Record<string, string> = {
@@ -60,6 +78,19 @@ function liveTone(status: string | undefined): string {
   if (s === "DEGRADED") return "warn";
   if (s === "STUCK" || s === "FAILED") return "bad";
   return "idle";
+}
+
+/**
+ * Same backend word, mapped to the hero status-pill modifier. The pill only
+ * restates `summary.worker.status` — no frontend verdict, no color invented
+ * for a word the backend did not send.
+ */
+function workerPill(status: string | undefined): string {
+  const s = (status ?? "").toUpperCase();
+  if (s === "HEALTHY") return "on";
+  if (s === "DEGRADED") return "warn";
+  if (s === "STUCK" || s === "FAILED") return "bad";
+  return "unknown";
 }
 
 /**
@@ -203,33 +234,58 @@ export default function ResearchPage(props: ShellPageProps) {
   const summaryUnavailable = rows?.available === false;
 
   return (
-    <div>
+    <div className="rs-page">
       {/* ---------------------------------------------------------- hero */}
-      <section className="rs-hero" aria-label="Research pipeline overview">
-        <div className="rs-hero-top">
-          <h2>Research</h2>
-          <span className="rs-chip docs" title="Static documentation lives in the Playbook tab">
-            playbook · {GATE_CHAIN.length} gates documented
-          </span>
-          <button type="button" className="rs-chip accent" onClick={() => setTab("playbook")}>
-            open strategy handbook →
-          </button>
-          <span className="rs-chip" title="Research runs offline/background and never blocks the tick path">
-            <span className={`rs-live-dot ${liveTone(workerStatus)}`} aria-hidden="true" />
-            worker <strong>{workerStatus ?? "not reported"}</strong>
-          </span>
+      <header className="rs-hero" aria-label="Research pipeline overview">
+        <div className="rs-hero-row">
+          <div className="rs-hero-main">
+            <div className="rs-kicker">
+              <span className="dot" aria-hidden="true" />
+              MARKET &amp; RESEARCH
+            </div>
+            <h1 className="rs-title">
+              <span className="glyph" aria-hidden="true">
+                ◈
+              </span>
+              <span className="word">Research</span>
+            </h1>
+            <p className="rs-hero-sub">
+              Candidate validation pipeline — dataset → discovery → {GATE_CHAIN.join(" → ")} → registry,
+              promotion always operator-gated. Numbers below are backend responses; the playbook is
+              documentation compiled from source (legacy tab-research parity).
+            </p>
+            <div className="rs-ep-chips" role="list" aria-label="Endpoints this page reads">
+              {RESEARCH_ENDPOINTS.map((ep) => (
+                <span className="rs-ep" role="listitem" key={ep}>
+                  {ep}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="rs-hero-side">
+            <div className="rs-side-pills">
+              <span
+                className={`rs-state-pill ${workerPill(workerStatus)}`}
+                title="worker status — summary.worker.status as the backend reports it"
+              >
+                <span className={`rs-live-dot ${liveTone(workerStatus)}`} aria-hidden="true" />
+                worker <strong>{workerStatus ?? "not reported"}</strong>
+              </span>
+              <span className="rs-side-pill" title="Static documentation lives in the Playbook tab">
+                playbook · {GATE_CHAIN.length} gates documented
+              </span>
+              <button type="button" className="rs-chip accent" onClick={() => setTab("playbook")}>
+                open strategy handbook →
+              </button>
+            </div>
+            <FreshnessCaption
+              timestamp={v1StatusQ.data?.generated_at ?? undefined}
+              source="v1 /api/v1/research/status"
+              isFetching={summaryQ.isFetching}
+              error={summaryQ.isError}
+            />
+          </div>
         </div>
-        <p className="rs-hero-sub">
-          Candidate validation pipeline — dataset → discovery → {GATE_CHAIN.join(" → ")} → registry,
-          promotion always operator-gated. Numbers below are backend responses; the playbook is
-          documentation compiled from source (legacy tab-research parity).
-        </p>
-        <FreshnessCaption
-          timestamp={v1StatusQ.data?.generated_at ?? undefined}
-          source="v1 /api/v1/research/status"
-          isFetching={summaryQ.isFetching}
-          error={summaryQ.isError}
-        />
 
         <div className="rs-pipe" role="list" aria-label="Gate chain order">
           {GATE_CHAIN.map((g, i) => (
@@ -245,7 +301,7 @@ export default function ResearchPage(props: ShellPageProps) {
             </div>
           ))}
         </div>
-      </section>
+      </header>
 
       {/* ----------------------------------------------------------- KPIs */}
       <div className="grid cols-4 rs-stagger">
@@ -329,7 +385,7 @@ export default function ResearchPage(props: ShellPageProps) {
         )}
       </Panel>
 
-      <div style={{ marginBlock: 12 }}>
+      <div className="rs-cmdbar">
         <ResearchCommands strategyId={selected} />
       </div>
 
@@ -348,7 +404,7 @@ export default function ResearchPage(props: ShellPageProps) {
       />
 
       {/* key={tab} re-mounts the pane so the entrance animation replays per tab */}
-      <div className="rs-pane" key={tab} style={{ marginTop: 12, display: "grid", gap: 12 }}>
+      <div className="rs-pane" key={tab}>
         {tab === "registry" && (
           <Panel title={`Registry list ${lifecycle ? `· ${lifecycle}` : ""}`} right={<span className="tiny muted">{PAGE_SIZE_HINT}</span>} tight>
             {registryQ.isPending ? (

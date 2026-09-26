@@ -11,7 +11,9 @@
  *    --text-dim, --text-faint, --accent, --green, --amber, --red, radii,
  *    fonts) — no new palette, no bare hex;
  *  - the handbook/playbook rules live in ./research-playbook.css (imported
- *    by StrategyPlaybook.tsx so they ride the lazy handbook chunk).
+ *    by StrategyPlaybook.tsx so they ride the lazy handbook chunk) and the
+ *    page frame + hero live in ./research-hero.css (imported by
+ *    ResearchPage.tsx); this file carries the shared keyframes both use.
  */
 
 /* ------------------------------------------------------------------ *
@@ -83,130 +85,6 @@
   100% {
     background-position: -20% 0;
   }
-}
-
-@keyframes rsSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Hero ---------------------------------------------------------------- */
-
-.rs-hero {
-  position: relative;
-  overflow: hidden;
-  padding: 18px 20px 16px;
-  margin-bottom: 14px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background:
-    radial-gradient(1100px 240px at 8% -40%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 62%),
-    radial-gradient(700px 220px at 92% 140%, color-mix(in srgb, var(--green) 8%, transparent), transparent 60%),
-    var(--bg-panel);
-  animation: rsFadeUp 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
-}
-
-/* slow luminous sweep — marks the hero as the page's anchor */
-.rs-hero::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(
-    100deg,
-    transparent 30%,
-    color-mix(in srgb, var(--accent) 7%, transparent) 48%,
-    transparent 66%
-  );
-  background-size: 220% 100%;
-  animation: rsSweep 9s linear infinite;
-}
-
-.rs-hero-top {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  position: relative;
-  z-index: 1;
-}
-
-.rs-hero h2 {
-  margin: 0;
-  font-size: 22px;
-  letter-spacing: 0.2px;
-  background: linear-gradient(92deg, var(--text) 30%, color-mix(in srgb, var(--accent) 70%, var(--text)) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.rs-hero-sub {
-  margin-top: 6px;
-  color: var(--text-dim);
-  font-size: 12.5px;
-  position: relative;
-  z-index: 1;
-  max-width: 96ch;
-  line-height: 1.55;
-}
-
-.rs-hero-chips {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 12px;
-  position: relative;
-  z-index: 1;
-}
-
-.rs-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 9px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bg) 65%, transparent);
-  color: var(--text-dim);
-  font-size: 11px;
-  letter-spacing: 0.2px;
-  animation: rsFadeUp 0.5s ease both;
-}
-
-.rs-chip strong {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.rs-chip.accent {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-  color: var(--text);
-}
-
-.rs-chip.docs {
-  border-style: dashed;
-}
-
-/* live dot next to worker chips */
-.rs-live-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--green);
-  animation: rsPulse 2.2s ease-in-out infinite;
-}
-
-.rs-live-dot.warn {
-  background: var(--amber);
-}
-.rs-live-dot.bad {
-  background: var(--red);
-}
-.rs-live-dot.idle {
-  background: var(--text-dim);
-  animation: none;
 }
 
 /* Pipeline viz (hero) ------------------------------------------------- */
@@ -295,10 +173,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.rs-kpi-counting {
-  color: var(--accent);
-}
-
 /* staggered children (tables, chip clouds, panels) */
 .rs-stagger > * {
   animation: rsFadeUp 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) both;
@@ -370,6 +244,8 @@
 /* tab pane ------------------------------------------------------------- */
 
 .rs-pane {
+  display: grid;
+  gap: var(--panel-gap);
   animation: rsFadeUp 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
@@ -415,31 +291,15 @@
   opacity: 0.7;
 }
 
-/* busy spinner for refresh affordances */
-.rs-spin {
-  display: inline-block;
-  width: 11px;
-  height: 11px;
-  border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: rsSpin 0.8s linear infinite;
-}
-
 /* reduced motion: freeze everything in its resting state */
 @media (prefers-reduced-motion: reduce) {
-  .rs-hero,
-  .rs-hero::after,
-  .rs-chip,
   .rs-pipe-node,
   .rs-pipe-node + .rs-pipe-node::after,
   .rs-kpi,
   .rs-stagger > *,
   .rs-rail-chip::after,
   .rs-pane,
-  .rs-rail-drawer .rs-step.running,
-  .rs-live-dot,
-  .rs-spin {
+  .rs-rail-drawer .rs-step.running {
     animation: none !important;
     transition: none !important;
   }
