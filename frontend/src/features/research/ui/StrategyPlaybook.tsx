@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/primitives";
 import { useI18n } from "@/stores/i18nStore";
 import { getEntry, queryHandbook, type HandbookEntry } from "../handbook/content";
+import "./research-playbook.css";
 
 type Props = {
   /** Entry id to expand + scroll to on mount (cross-links, drawer deep-links). */
