@@ -42,7 +42,9 @@ used instead).
 from __future__ import annotations
 
 import io
+import os
 import subprocess
+import sys
 import tokenize
 from pathlib import Path
 
@@ -63,6 +65,30 @@ _DURABLE_TESTS = (
 )
 
 _MODULE_UNDER_TEST = "src/nexus_scalp/model_generation/schema_v2_incremental.py"
+
+
+def _pytest_env() -> tuple[list[str], dict[str, str]]:
+    """A portable pytest invocation for the subprocess legs.
+
+    ML-QA-019: the first attempt hardcoded ``/tmp/nse-venv/bin/python``, which
+    is this operator's local torch venv — CI has no such path, so both
+    subprocess legs raised ``FileNotFoundError`` there (a defect that only
+    shows on the runner: the battery was green locally and red in CI, exactly
+    the shape this gate exists to prevent). ``sys.executable`` is the running
+    interpreter, which by definition has the deps the battery itself needed
+    to import.
+    """
+    env = {
+        "PYTHONPATH": "src:.:/tmp/nse-slim/lib/python3.11/site-packages",
+        "PYTEST_ADDOPTS": "-p no:cacheprovider",
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+    }
+    # keep the site-packages shim ONLY when it exists on this host (it is the
+    # operator's polars source for the torch venv; CI has both in one env)
+    shim = "/tmp/nse-slim/lib/python3.11/site-packages"
+    if not Path(shim).is_dir():
+        env["PYTHONPATH"] = "src:."
+    return [sys.executable, "-m", "pytest"], env
 
 
 # ---------------------------------------------------------------------------
@@ -397,7 +423,9 @@ def test_speedup_ratio_contract_is_structural() -> None:
     contract the test exists for is "the incremental builder is not slower
     than the canonical one". Removing the ratio/leg comparison while keeping
     only a generous budget would leave the builder free to regress to
-    canonical speed unnoticed (the budget is ~6x the measured canonical cost).
+    canonical speed unnoticed (the budget is calibrated against the measured
+    CI cost of both legs, so it is loose to runner speed and tight to a
+    complexity blow-up).
     """
     code = _code_lines(_slice(_MODULE, "test_bug106_incremental_speedup"))
     assert code, "test_bug106_incremental_speedup must exist"
@@ -490,25 +518,25 @@ def test_the_old_data_gate_shape_was_a_no_coverage_module(tmp_path: Path) -> Non
     a green-looking module that exercised nothing.
     """
     old = _old_shape_module(tmp_path)
-    env = {
-        "PYTHONPATH": "src:.:/tmp/nse-slim/lib/python3.11/site-packages",
-        "PYTEST_ADDOPTS": "-p no:cacheprovider",
-        "PATH": "/usr/bin:/bin",
-    }
+    argv, env = _pytest_env()
+    # NOTE: cwd is the WORKTREE root, not the shared checkout — the analysed
+    # module and the repo's pyproject config live here, and a relative
+    # PYTHONPATH must resolve against this tree.
     proc = subprocess.run(
-        ["/tmp/nse-venv/bin/python", "-m", "pytest", str(old), "-v", "--no-header"],
+        [*argv, str(old), "-v", "--no-header"],
         capture_output=True,
         text=True,
         check=False,
         cwd=str(_BATTERY_DIR.parents[1]),
         env=env,
     )
-    # pytest writes the skip line to STDERR (the captured-report stream)
-    verdict = proc.stderr if proc.stderr.strip() else proc.stdout
+    verdict = proc.stdout + proc.stderr
+    # pytest -q under pytest 9.1.1 suppresses the pass/skip line from the
+    # captured report, which would make these asserts tautologies — -v keeps it
     assert "2 skipped" in verdict, (
         f"the OLD skipif-on-git-absent-data shape must skip BOTH durable "
         f"tests — that is the zero-coverage defect ML-QA-019 fixes. "
-        f"rc={proc.returncode} out={(proc.stdout + proc.stderr)[-600:]}"
+        f"rc={proc.returncode} out={verdict[-600:]}"
     )
     # the module must still COLLECT (skip, not error) — rc=0 with skips
     assert proc.returncode == 0, (
@@ -522,13 +550,9 @@ def test_current_module_has_no_skips() -> None:
     Complement to the negative control: the same subprocess collection over
     the remediated module must report 0 skipped and 3 passed.
     """
-    env = {
-        "PYTHONPATH": "src:.:/tmp/nse-slim/lib/python3.11/site-packages",
-        "PYTEST_ADDOPTS": "-p no:cacheprovider",
-        "PATH": "/usr/bin:/bin",
-    }
+    argv, env = _pytest_env()
     proc = subprocess.run(
-        ["/tmp/nse-venv/bin/python", "-m", "pytest", str(_MODULE), "--no-header", "-v"],
+        [*argv, str(_MODULE), "--no-header", "-v"],
         capture_output=True,
         text=True,
         check=False,
@@ -558,6 +582,30 @@ def _bars(count: int, seed: int = 4321) -> pl.DataFrame:
     from scripts.data.ingest_historical_candles import generate_synthetic_bars
 
     return generate_synthetic_bars(symbol="XAUUSD", count=count, seed=seed)
+
+
+def _module_budget_ms() -> float:
+    """The declared CPU budget from the analysed module.
+
+    Resolved LAZILY (the ML-QA-018 pattern): exec-ing the analysed module at
+    battery import time would fail collection on any interpreter lacking its
+    deps. A textual fallback keeps the rule working even if the constant is
+    renamed.
+    """
+    src = _read(_MODULE)
+    needle = "_CANON_CPU_BUDGET_MS = "
+    for line in src.splitlines():
+        text = _strip_trailing_comment(line).strip()
+        if text.startswith(needle):
+            try:
+                return float(text[len(needle) :].rstrip())
+            except ValueError:
+                break
+    raise AssertionError(
+        "_CANON_CPU_BUDGET_MS must be declared in the analysed module; the "
+        "behavioural budget leg reads it so the constant and the speedup "
+        "test cannot drift apart"
+    )
 
 
 def test_byte_identity_holds_on_a_synthetic_frame() -> None:
@@ -611,11 +659,14 @@ def test_the_cpu_budget_is_a_complexity_gate_not_a_clock() -> None:
     from nexus_scalp.model_generation.schema_v2 import compute_70d_frame
     from nexus_scalp.model_generation.schema_v2_incremental import compute_70d_frame_fast
 
+    # read the DECLARED budget from the analysed module so this leg fails if
+    # the constant and the speedup test drift apart
+    budget = _module_budget_ms()
     frame = _bars(300)
-    with budget_cpu_ms(20_000.0) as sw:
+    with budget_cpu_ms(budget) as sw:
         compute_70d_frame(frame, news_frame=None)
         compute_70d_frame_fast(frame, news_frame=None)
-    assert sw.consumed_ms < 20_000.0, (
+    assert sw.consumed_ms < budget, (
         f"both builders consumed {sw.consumed_ms:.1f} ms CPU on 246 rows — a "
         "complexity regression in either path (the canonical one is O(n^2))"
     )

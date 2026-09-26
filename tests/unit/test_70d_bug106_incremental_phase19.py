@@ -45,12 +45,14 @@ from tests.e2e.chain_clock import budget_cpu_ms
 _BAR_COUNT = 600  # bounded for CI speed; yields 600 - 54 = 546 feature rows
 _SEED = 4321
 
-# CPU-time budget for the speedup leg, calibrated against measured cost:
-# on 546 rows the canonical builder measured 3280 ms CPU and the fast
-# builder 975 ms on a 2-core CPU-only host. 20s is ~6x the measured
-# canonical cost, so it catches a complexity regression while a co-tenant
-# load spike on the runner cannot trip it.
-_CANON_CPU_BUDGET_MS = 20_000.0
+# CPU-time budget for the speedup leg, calibrated against MEASURED cost.
+# Local (2-core CPU-only host): canonical 3280 ms + fast 975 ms on 546 rows.
+# CI runner (2-core GHA, observed PR #493): 30886 ms for BOTH legs on 600 bars
+# — ~7x the local cost (a slower CPU class, under xdist co-tenant load). The
+# budget is set against the CI observation so the gate cannot trip on runner
+# speed alone, while still sitting well below an unbounded complexity blow-up:
+# 60s is ~2x the measured CI cost of both legs and ~18x the local cost.
+_CANON_CPU_BUDGET_MS = 60_000.0
 
 
 @pytest.fixture(scope="module")

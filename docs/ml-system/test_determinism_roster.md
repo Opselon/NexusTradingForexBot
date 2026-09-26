@@ -207,10 +207,13 @@ with no production-code impact — suitable for one cycle each, or a batch.
    by the deterministic synthetic bar generator the gate already uses
    (`generate_synthetic_bars`, the same importer/seed pattern as
    `test_position_replay_pipeline.py`), the speedup leg now measures CPU
-   time through the shared `budget_cpu_ms` stopwatch, and a new precondition
-   test pins the synthetic frame's schema/tz/sort/bar-count so a generator
-   change cannot degrade the coverage to a trivial frame. 20-test contract
-   battery `tests/unit/test_ml_qa_019_parity_coverage_cpu_budget.py` pins it
+   time through the shared `budget_cpu_ms` stopwatch (budget calibrated
+   against MEASURED cost on both hosts: 4.3 s local vs 30.9 s on the CI
+   runner for both legs, so 60 s is loose to runner speed and tight to a
+   complexity blow-up), and a new precondition test pins the synthetic
+   frame's schema/tz/sort/bar-count so a generator change cannot degrade
+   the coverage to a trivial frame. 20-test contract battery
+   `tests/unit/test_ml_qa_019_parity_coverage_cpu_budget.py` pins it
    (negative control: 10 rules fail on the pre-remediation file, incl. an
    EXECUTED proof that the old shape collects 2 skipped / 0 passed).
 9. **`tests/unit/test_runtime_config_hot_reload.py`** — 2 `getpid()` asserts
