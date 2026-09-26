@@ -29,6 +29,7 @@
  * EXTEND:   add overlay-derived visuals by reading more visual_overlays keys
  *   here; do not add data sources.
  */
+import { useMemo } from "react";
 import { EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { AgeNote } from "@/pages/_shared/SectionState";
 import type { OverlayRect, VisualOverlays } from "@/pages/_shared/contracts";
@@ -73,15 +74,19 @@ export default function MarketReadout(props: MarketReadoutProps) {
 
   // ---- SMC/ICT overlays: engine-computed only (the legacy visual_overlays
   // cast is the one sanctioned exception; reused read-only, no new cast). ----
+  // perf: every derivation below is memoized on the payload object. This panel
+  // re-renders on each socket tick; the derivations only change when the
+  // snapshot payload changes, so the rendered output is byte-identical while
+  // the per-tick work drops to a reference compare.
   const ov = snapshot.visual_overlays as VisualOverlays | null;
-  const zones = ov?.rectangles ?? [];
-  const bosLines = ov?.bos_lines ?? [];
-  const midlines = ov?.midlines ?? [];
-  const liqMarkers = ov?.liq_markers ?? [];
+  const zones = useMemo(() => ov?.rectangles ?? [], [ov]);
+  const bosLines = useMemo(() => ov?.bos_lines ?? [], [ov]);
+  const midlines = useMemo(() => ov?.midlines ?? [], [ov]);
+  const liqMarkers = useMemo(() => ov?.liq_markers ?? [], [ov]);
 
   // Ladder scale: payload prices only (zone extents + bars + live bid/ask).
   // The raw lo/hi pair is printed under the ladder, per the backend guarantee.
-  const scale = zoneLadderScale(zones, snapshot);
+  const scale = useMemo(() => zoneLadderScale(zones, snapshot), [zones, snapshot]);
   const ladderHi = scale?.hi ?? null;
   const ladderLo = scale?.lo ?? null;
 
@@ -92,25 +97,29 @@ export default function MarketReadout(props: MarketReadoutProps) {
   // the tallest-N by price height and the caption discloses the elision —
   // no zone is ever silently dropped (every bar keeps its full tooltip).
   const ladderPx = TR_LADDER_TRACK_PX;
-  const labelZoneIdx = scale
-    ? zones
-        .map((z, i) => ({ i, h: Math.abs(z.price_high - z.price_low) }))
-        .sort((a, b) => b.h - a.h)
-        .slice(0, Math.max(0, Math.floor(ladderPx / TR_LADDER_ROW_PX)))
-        .map((x) => x.i)
-        .sort((a, b) => a - b)
-    : [];
+  const labelZoneIdx = useMemo(
+    () =>
+      scale
+        ? zones
+            .map((z, i) => ({ i, h: Math.abs(z.price_high - z.price_low) }))
+            .sort((a, b) => b.h - a.h)
+            .slice(0, Math.max(0, Math.floor(ladderPx / TR_LADDER_ROW_PX)))
+            .map((x) => x.i)
+            .sort((a, b) => a - b)
+        : [],
+    [scale, zones],
+  );
   const elidedCount = zones.length - labelZoneIdx.length;
 
   // Spread meter: 0..1 of the window's observed spread budget, endpoints from
   // the payload itself (window bars); the raw pts value is always printed.
   const spreadPts = snapshot.spread;
-  const spreadBudget = (() => {
+  const spreadBudget = useMemo(() => {
     const px = Math.abs((snapshot.ask ?? NaN) - (snapshot.bid ?? NaN));
     if (!Number.isFinite(px) || px <= 0) return null;
     const hi = Math.max(...zones.map((z) => Math.abs(z.price_high - z.price_low)), px);
     return hi > 0 ? Math.min(1, (px / hi) * 4) : null;
-  })();
+  }, [zones, snapshot.ask, snapshot.bid]);
   // AI confidence rail: 0..1 of the raw backend fraction, printed alongside.
   const conf = snapshot.ai_confidence;
 

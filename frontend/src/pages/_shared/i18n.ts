@@ -12,4 +12,7 @@
  */
 import type { FeatureMessages } from "@/lib/i18n";
 
-export const MESSAGES: FeatureMessages = {};
+export const MESSAGES: FeatureMessages = {
+  "_shared.hero.endpoints_aria": { fa: "endpointهای بک‌اند که این صفحه می‌خواند", de: "von dieser Seite gelesene Backend-Endpunkte", es: "endpoints del backend que lee esta página", ar: "نقاط نهاية الخلفية التي تقرأها هذه الصفحة" },
+  "_shared.hero.endpoint_title": { fa: "منبع — endpoint بک‌اند {ep}: همه اعداد این صفحه از آن خوانده می‌شوند، هرگز اینجا استنباط نمی‌شوند", de: "Provenienz — Backend-Endpunkt {ep}: jede Zahl dieser Seite wird daraus gelesen, hier nie abgeleitet", es: "Procedencia: endpoint del backend {ep}; todas las cifras de esta página se leen de él, nunca se infieren aquí", ar: "المصدر: نقطة نهاية الخلفية {ep} — تُقرأ كل أرقام هذه الصفحة منها، ولا تُستنتج هنا أبدًا" },
+};

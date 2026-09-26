@@ -7,7 +7,7 @@
   gap: 8px;
   align-items: baseline;
   font: 10px/1.4 var(--mono, monospace);
-  color: var(--text-dim, #8398ad);
+  color: var(--text-dim);
   pointer-events: none;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
   /* single row — never wraps onto a second line; clip/ellipsize instead */
@@ -20,15 +20,15 @@
 
 .lg-legend__sym {
   font-weight: 700;
-  color: var(--text, #dbe4ee);
+  color: var(--text);
 }
 
 .lg-legend__tf {
-  color: var(--accent, #41a6f2);
+  color: var(--accent);
 }
 
 .lg-legend__forming {
-  color: var(--amber, #eba13f);
+  color: var(--amber);
   font-weight: 700;
 }
 
@@ -39,15 +39,15 @@
 }
 
 .lg-legend__vals b {
-  color: var(--text, #dbe4ee);
+  color: var(--text);
 }
 
 .lg-legend .up {
-  color: var(--green, #3ecf8e);
+  color: var(--green);
 }
 
 .lg-legend .down {
-  color: var(--red, #f2564d);
+  color: var(--red);
 }
 
 /* lane C: delta % vs open (up/down colored via the rules above) + forming
@@ -60,6 +60,6 @@
 }
 
 .lg-legend__count {
-  color: var(--text-dim, #8398ad);
+  color: var(--text-dim);
   opacity: 0.9;
 }

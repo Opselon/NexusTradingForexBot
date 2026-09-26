@@ -183,4 +183,6 @@ export const MESSAGES: FeatureMessages = {
   "ml.feat.valid": { fa: "معتبر", de: "VALID", es: "VÁLIDO", ar: "صالح" },
   "ml.feat.nan": { fa: "NAN", de: "NAN", es: "NAN", ar: "NAN" },
   "ml.feat.unavailable": { fa: "ناموجود", de: "NICHT VERFÜGBAR", es: "NO DISPONIBLE", ar: "غير متاح" },
+  "ml.hero.kicker": { fa: "یادگیری ماشین · 50D → 70D · سایه", de: "ML · 50D → 70D · Shadow", es: "ML · 50D → 70D · sombra", ar: "التعلّم الآلي · 50D → 70D · الظل" },
+  "ml.hero.desc": { fa: "سلامت مدل، بسته سرویس، گرم‌سازی ویژگی، زمان اجرای سایه 70D و شواهد کالیبراسیون — هر حکم همان کلمه بک‌اند است؛ صرف وجود یک فایل هرگز به‌عنوان سلامت خوانده نمی‌شود.", de: "Modellgesundheit, Serving-Bundle, Feature-Warmup, 70D-Shadow-Laufzeit und Kalibrierungsnachweise — jedes Urteil ist das eigene Wort des Backend; ein vorhandenes Artefakt wird nie als Gesundheit gelesen.", es: "Salud del modelo, paquete de servicio, calentamiento de características, ejecución sombra 70D y evidencia de calibración: cada veredicto es la propia palabra del backend; un artefacto existente nunca se lee como salud.", ar: "صحة النموذج، حزمة الخدمة، إحماء الخصائص، تشغيل الظل 70D وأدلة المعايرة — كل حكم هو كلمة الخلفية نفسها؛ وجود ملف لا يُقرأ أبدًا كصحة." },
 };

@@ -13,8 +13,8 @@
     radial-gradient(120% 130% at 100% 0%, rgba(242, 86, 77, 0.07), transparent 55%),
     radial-gradient(120% 130% at 0% 0%, rgba(65, 166, 242, 0.07), transparent 55%),
     linear-gradient(180deg, var(--elevate-hi, rgba(255, 255, 255, 0.035)), transparent 40%),
-    var(--surface, var(--bg-panel, #0d131b));
-  border: 1px solid var(--border, #1c2836);
+    var(--surface, var(--bg-panel));
+  border: 1px solid var(--border);
   box-shadow: var(--elev-2, 0 8px 22px -14px rgba(0, 0, 0, 0.65));
 }
 .tr-deck-head {
@@ -29,7 +29,7 @@
   font-size: 0.7rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--text-dim, #8398ad);
+  color: var(--text-dim);
   font-weight: 700;
 }
 .tr-deck-prov {
@@ -53,8 +53,8 @@
   min-width: 0;
   padding: 14px;
   border-radius: 12px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 45%), var(--bg-inset, #0a0f16);
-  border: 1px solid var(--border, #1c2836);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 45%), var(--bg-inset);
+  border: 1px solid var(--border);
 }
 .tr-deck-card--engine { border-top: 3px solid rgba(65, 166, 242, 0.55); }
 .tr-deck-card--mode   { border-top: 3px solid rgba(157, 123, 240, 0.5); }
@@ -76,7 +76,7 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--text-dim, #8398ad);
+  color: var(--text-dim);
 }
 .tr-deck-head-tools {
   display: inline-flex;
@@ -91,15 +91,15 @@
   height: 8px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: var(--text-faint, #708699);
+  background: var(--text-faint);
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.04);
 }
 .tr-deck-dot.is-live {
-  background: var(--green, #3ecf8e);
+  background: var(--green);
   box-shadow: 0 0 10px rgba(62, 207, 142, 0.75), 0 0 0 2px rgba(62, 207, 142, 0.18);
   animation: tr-deck-pulse 2.2s ease-in-out infinite;
 }
-.tr-deck-dot--mode { background: var(--violet, #9d7bf0); box-shadow: 0 0 8px rgba(157, 123, 240, 0.5); }
+.tr-deck-dot--mode { background: var(--violet); box-shadow: 0 0 8px rgba(157, 123, 240, 0.5); }
 @keyframes tr-deck-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(62, 207, 142, 0.42), 0 0 10px rgba(62, 207, 142, 0.75); }
   50%      { box-shadow: 0 0 0 6px rgba(62, 207, 142, 0),   0 0 10px rgba(62, 207, 142, 0.75); }
@@ -111,7 +111,7 @@
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--amber, #eba13f);
+  color: var(--amber);
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -152,11 +152,11 @@
 .tr-deck-btn--start {
   background: linear-gradient(180deg, rgba(62, 207, 142, 0.24), rgba(62, 207, 142, 0.08));
   border-color: rgba(62, 207, 142, 0.5);
-  color: #8fe9bd;
+  color: rgba(143, 233, 189, 1);
   box-shadow: 0 2px 12px -6px rgba(62, 207, 142, 0.5);
 }
 .tr-deck-btn--start:hover:not(:disabled) {
-  border-color: var(--green, #3ecf8e);
+  border-color: var(--green);
   background: linear-gradient(180deg, rgba(62, 207, 142, 0.34), rgba(62, 207, 142, 0.12));
   box-shadow: 0 6px 20px -8px rgba(62, 207, 142, 0.6), var(--glow-green, 0 0 16px rgba(62, 207, 142, 0.35));
 }
@@ -165,7 +165,7 @@
   box-shadow: 0 2px 12px -6px rgba(242, 86, 77, 0.5);
 }
 .tr-deck-btn--stop:hover:not(:disabled) {
-  border-color: var(--red, #f2564d);
+  border-color: var(--red);
   background: linear-gradient(180deg, rgba(242, 86, 77, 0.34), rgba(242, 86, 77, 0.12));
   box-shadow: 0 6px 20px -8px rgba(242, 86, 77, 0.6), var(--glow-red, 0 0 22px rgba(242, 86, 77, 0.3));
 }
@@ -181,11 +181,11 @@
   font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-faint, #708699);
+  color: var(--text-faint);
 }
-.tr-deck-hint .is-locked { color: var(--text-faint, #708699); }
-.tr-deck-hint .is-ready  { color: var(--green, #3ecf8e); }
-.tr-deck-hint .is-armed  { color: var(--amber, #eba13f); }
+.tr-deck-hint .is-locked { color: var(--text-faint); }
+.tr-deck-hint .is-ready  { color: var(--green); }
+.tr-deck-hint .is-armed  { color: var(--amber); }
 
 .tr-deck-note { line-height: 1.5; }
 
@@ -223,9 +223,9 @@
   gap: 3px;
   padding: 9px 11px;
   border-radius: 10px;
-  background: var(--bg-panel, #0d131b);
-  border: 1px solid var(--border, #1c2836);
-  color: var(--text-dim, #8398ad);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
   font-family: var(--sans, system-ui, sans-serif);
   text-align: start;
   cursor: pointer;
@@ -243,9 +243,9 @@
 }
 .tr-deck-seg:hover:not(.is-active) {
   transform: translateY(-2px);
-  border-color: var(--border-strong, #2b3d51);
-  color: var(--text, #dbe4ee);
-  background: var(--bg-panel-2, #131c27);
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--bg-panel-2);
 }
 .tr-deck-seg:hover:not(.is-active)::before { opacity: 0.35; }
 .tr-deck-seg:active { transform: translateY(0); }
@@ -258,14 +258,14 @@
 .tr-deck-seg-desc {
   font-size: 10px;
   letter-spacing: 0.02em;
-  color: var(--text-faint, #708699);
+  color: var(--text-faint);
 }
 .tr-deck-seg-current {
   font-family: var(--mono, monospace);
   font-size: 9px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-faint, #708699);
+  color: var(--text-faint);
 }
 .tr-deck-seg.is-active { cursor: default; }
 .tr-deck-seg.is-active::after {
@@ -279,20 +279,20 @@
 .tr-deck-seg--paper.is-active {
   border-color: rgba(65, 166, 242, 0.6);
   background: linear-gradient(90deg, rgba(65, 166, 242, 0.16), rgba(65, 166, 242, 0.03));
-  color: var(--accent-strong, #6cc0ff);
+  color: var(--accent-strong);
   box-shadow: inset 0 0 0 1px rgba(65, 166, 242, 0.25), var(--glow-blue, 0 0 14px rgba(65, 166, 242, 0.22));
 }
 
 .tr-deck-seg--shadow.is-active {
   border-color: rgba(235, 161, 63, 0.6);
   background: linear-gradient(90deg, rgba(235, 161, 63, 0.16), rgba(235, 161, 63, 0.03));
-  color: var(--amber, #eba13f);
+  color: var(--amber);
   box-shadow: inset 0 0 0 1px rgba(235, 161, 63, 0.25), var(--glow-amber, 0 0 14px rgba(235, 161, 63, 0.24));
 }
 .tr-deck-seg--live.is-active {
   border-color: rgba(242, 86, 77, 0.7);
   background: linear-gradient(90deg, rgba(243, 90, 80, 0.2), rgba(242, 86, 77, 0.04));
-  color: #ff938c;
+  color: rgba(255, 147, 140, 1);
   box-shadow: inset 0 0 0 1px rgba(242, 86, 77, 0.3), var(--glow-red, 0 0 22px rgba(242, 86, 77, 0.3));
   animation: tr-deck-live 2.4s ease-in-out infinite;
 }
@@ -320,7 +320,7 @@
   font-size: 9px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--text-faint, #708699);
+  color: var(--text-faint);
 }
 .tr-deck-select {
   width: 100%;
@@ -350,8 +350,8 @@
   flex-wrap: wrap;
   padding: 9px 11px;
   border-radius: 8px;
-  border: 1px solid var(--border, #1c2836);
-  background: var(--bg-panel, #0d131b);
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
 }
 .tr-deck-impact-tag {
   flex-shrink: 0;
@@ -360,7 +360,7 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--accent-strong, #6cc0ff);
+  color: var(--accent-strong);
   border: 1px solid rgba(65, 166, 242, 0.4);
   background: rgba(65, 166, 242, 0.1);
   border-radius: 4px;
@@ -394,7 +394,7 @@
   font-weight: 800;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #ff938c;
+  color: rgba(255, 147, 140, 1);
 }
 .tr-deck-danger-body {
   padding: 11px 12px;
@@ -417,14 +417,14 @@
   box-shadow: inset 0 0 0 1px rgba(242, 86, 77, 0.18);
 }
 .tr-deck-confirm-input:focus {
-  border-color: var(--red, #f2564d);
+  border-color: var(--red);
   box-shadow: 0 0 0 3px rgba(242, 86, 77, 0.28);
 }
 
 /* ------------------------- current-mode chip ------------------------- */
-.tr-deck-current.bad    { border-color: rgba(242, 86, 77, 0.55); color: #ff938c; }
-.tr-deck-current.accent { border-color: rgba(65, 166, 242, 0.5); color: var(--accent-strong, #6cc0ff); }
-.tr-deck-current.warn   { border-color: rgba(235, 161, 63, 0.5); color: var(--amber, #eba13f); }
+.tr-deck-current.bad    { border-color: rgba(242, 86, 77, 0.55); color: rgba(255, 147, 140, 1); }
+.tr-deck-current.accent { border-color: rgba(65, 166, 242, 0.5); color: var(--accent-strong); }
+.tr-deck-current.warn   { border-color: rgba(235, 161, 63, 0.5); color: var(--amber); }
 
 /* ------------------------------ responsive ------------------------------ */
 @media (max-width: 980px) {

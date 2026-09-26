@@ -42,6 +42,7 @@ import {
   Skeleton,
 } from "@/components/primitives";
 import { type Column } from "@/pages/_shared/widgets";
+import PageHero from "@/pages/_shared/PageHero";
 import { formatDateTime, formatNumber, formatPnl, formatPrice, positionSide } from "@/lib/format";
 import { ApiError } from "@/types/api";
 import { useI18n } from "@/stores/i18nStore";
@@ -51,6 +52,9 @@ import LedgerPanel from "./LedgerPanel";
 import { readDensity, writeDensity, type Density } from "./density";
 import "@/pages/_shared/pages.css";
 import "@/pages/Positions/positions.css";
+
+/** Endpoints this page reads — provenance chips in the hero, never decoration. */
+const POSITIONS_ENDPOINTS = ["/api/status", "/api/v1/positions", "/api/account/trades"] as const;
 
 interface Props {
   snapshot: EngineSnapshot | undefined;
@@ -282,6 +286,13 @@ export default function PositionsPage({ snapshot }: Props) {
 
   return (
     <div>
+      <PageHero
+        kicker={t("positions.hero.kicker", "OPEN POSITIONS · BLOTTER · LEDGER")}
+        glyph="▤"
+        title={t("nav.page.positions", "Positions")}
+        description={t("positions.hero.desc", "Broker positions from the v1 adapter with a canonical-snapshot cross-check, plus the closed-trade ledger — counts are shown side by side, never silently preferred.")}
+        endpoints={POSITIONS_ENDPOINTS}
+      />
       {/* PnL summary header — arithmetic over backend per-position values */}
       <div className="grid cols-4">
         <MetricCard

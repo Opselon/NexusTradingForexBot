@@ -39,6 +39,7 @@ import {
   StatusBadge,
 } from "@/components/primitives";
 import { AgeNote, SectionState, fmtAge, TriBadge } from "@/pages/_shared/SectionState";
+import PageHero from "@/pages/_shared/PageHero";
 import { InfoChip } from "@/pages/_shared/widgets";
 import { ReplayPanel } from "./ReplayPanel";
 import { PriceChart } from "./PriceChart";
@@ -53,6 +54,16 @@ import { ApiError } from "@/types/api";
 import type { VisualOverlays } from "@/pages/_shared/contracts";
 import "@/pages/_shared/pages.css";
 import "./market-console.css";
+
+/** Endpoints this page reads — provenance chips in the hero, never decoration
+ *  (/api/status is the shell's canonical snapshot the page renders from). */
+const DASHBOARD_ENDPOINTS = [
+  "/api/status",
+  "/api/mt5/status",
+  "/api/debug/state",
+  "/api/chart/history",
+  "/api/v1/runtime/mode",
+] as const;
 
 interface Props {
   snapshot: EngineSnapshot | undefined;
@@ -208,6 +219,13 @@ export default function DashboardPage({ snapshot, nowMs }: Props) {
 
   return (
     <div>
+      <PageHero
+        kicker={t("dash.hero.kicker", "ENGINE · ACCOUNT · MARKET")}
+        glyph="◉"
+        title={t("nav.page.dashboard", "Dashboard")}
+        description={t("dash.hero.desc", "The eight critical answers from the canonical snapshot — engine state, backend mode, broker gate, equity and drawdown — with the live chart beside them. Every figure is a backend field, never computed here.")}
+        endpoints={DASHBOARD_ENDPOINTS}
+      />
       {/* Top strip — the eight critical answers */}
       <div className="grid cols-4">
         <MetricCard
