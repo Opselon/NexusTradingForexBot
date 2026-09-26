@@ -1,7 +1,8 @@
 /**
  * Accounting tab — legacy tab-account parity (Web/app.js accounting block).
  *
- * Sections: hero telemetry ribbon, summary cards + period hero, equity /
+ * Sections: page hero (kicker + gradient title + endpoint provenance + source
+ * rail), hero telemetry ribbon, summary cards + period hero, equity /
  * drawdown / growth charts (shared viz kit), risk-adjusted metrics, per-kind
  * series, performance intelligence, strategy contributions, closed trades with
  * forensic drawer + PnL waterfall, and the live RiskEngine accounting panel.
@@ -13,6 +14,7 @@
  */
 
 import { AccountChartsSection } from "./AccountChartsSection";
+import { AccountHero } from "./AccountHero";
 import { AccountSummarySection } from "./AccountSummarySection";
 import { LiveAccountingSection } from "./LiveAccountingSection";
 import { AdvancedMetricsSection, PeriodSeriesSection, PerformanceIntelligenceSection } from "./PerformanceSections";
@@ -51,6 +53,7 @@ export default function AccountPage() {
   const t = useI18n((s) => s.t);
   return (
     <div className="acct-container">
+      <AccountHero />
       <TelemetryHeader />
       <nav className="acct-nav" aria-label={t("account.nav.aria", "Accounting sections")}>
         {SECTIONS.map((s) => (

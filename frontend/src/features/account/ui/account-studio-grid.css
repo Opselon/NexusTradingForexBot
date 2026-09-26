@@ -148,6 +148,16 @@
 .acc-tt-outc.pos { color: var(--green); background: var(--green-dim); border-color: color-mix(in srgb, var(--green) 35%, transparent); }
 .acc-tt-outc.neg { color: var(--red); background: var(--red-dim); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
 .acc-tt-outc.dim { color: var(--text-faint); background: var(--bg-panel-2); border-color: var(--border); }
+/* motion is decoration — density/heat changes must land without easing */
+@media (prefers-reduced-motion: reduce) {
+  .acc-toggle button,
+  .acc-tt tbody tr,
+  .acc-tt-ticket,
+  .acc-scard,
+  .acc-scard-fill,
+  .acc-scard-copy { transition: none; }
+}
+
 /* =========================== 5. strategy cards =========================== */
 
 .acc-scard-grid {

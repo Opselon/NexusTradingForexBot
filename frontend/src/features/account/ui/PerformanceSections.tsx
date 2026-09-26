@@ -32,12 +32,62 @@ import { useAccountPerformance, useAccountIntelligence, useAccountSeries } from 
 import { ADVANCED_ROWS } from "../model";
 import type { PeriodKind } from "../types";
 import { DASH, FreshnessNote, asErrorText, moneyOrDash } from "./shared";
-import { DistPanel, EmphBars } from "./studio-math-react";
+import { DistPanel, EmphBars, type DistRowProps } from "./studio-math-react";
+
+/**
+ * Unit family of an advanced row — a count (12 wins) shares no scale with a
+ * ratio (Sharpe 1.4), so each family gets its own magnitude ceiling. Pure,
+ * module scope: never re-declared inside a render.
+ */
+function advFamily(r: (typeof ADVANCED_ROWS)[number]): string {
+  if (r.money) return "$";
+  if (r.percentOfOne || r.suffix === "%") return "pct";
+  if (r.suffix === "R") return "R";
+  if (r.suffix === "s") return "s";
+  if (r.key.startsWith("max_consecutive")) return "count";
+  return "ratio";
+}
 
 export function AdvancedMetricsSection() {
   const t = useI18n((s) => s.t);
   const perf = useAccountPerformance();
   const a = perf.data?.advanced;
+
+  // One shared scale would let avg_hold_sec (1800s) flatten Sharpe (1.4) to a
+  // zero-width bar — the screen must not imply "≈ 0". Each unit family gets its
+  // own magnitude ceiling, computed ONCE per distinct payload instead of on
+  // every render. Deps are exactly the payload this reads; rows are unchanged.
+  const advRows = useMemo<DistRowProps[]>(() => {
+    if (!a) return [];
+    const ceiling = new Map<string, number>();
+    for (const r of ADVANCED_ROWS) {
+      const raw = (a as Record<string, number | null | undefined>)[r.key];
+      if (raw === null || raw === undefined || !Number.isFinite(raw)) continue;
+      const f = advFamily(r);
+      ceiling.set(f, Math.max(ceiling.get(f) ?? 0, Math.abs(raw)));
+    }
+    return ADVANCED_ROWS.map((row) => {
+      const raw = (a as Record<string, number | null | undefined>)[row.key];
+      const known = raw !== null && raw !== undefined && Number.isFinite(raw);
+      const v = known ? (raw as number) : null;
+      const shown =
+        v === null
+          ? DASH
+          : row.percentOfOne
+            ? `${(v * 100).toFixed(1)}%`
+            : row.money
+              ? moneyOrDash(v, true)
+              : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(row.digits)}${row.suffix ?? ""}`;
+      return {
+        label: row.label,
+        value: v,
+        text: shown,
+        full: ceiling.get(advFamily(row)) || 1,
+        tone: v === null ? "dim" : v > 0 ? "pos" : v < 0 ? "neg" : "dim",
+        title: `${row.key} = ${shown}`,
+      };
+    });
+  }, [a]);
 
   return (
     <Panel
@@ -55,49 +105,7 @@ export function AdvancedMetricsSection() {
           title={t("account.advanced.title", "Risk-adjusted performance")}
           scaleNote={t("account.advanced.scale_note", "bars scale within each unit family — $ rows against $, ratios against ratios, never mixed")}
           footer={t("account.advanced.footer", "source: accounting core · {n} closed trades · sharpe/sortino/calmar/sqn computed over the same realized series the period reports use", { n: a.sample_trades ?? 0 })}
-          rows={(() => {
-            // One shared scale would let avg_hold_sec (1800s) flatten Sharpe
-            // (1.4) to a zero-width bar — the screen must not imply "≈ 0".
-            // Each unit family gets its own magnitude ceiling instead.
-            // A count (12 wins) shares no unit with a ratio (Sharpe 1.4), and
-            // "%" and percentOfOne rows are both percentages — key them apart
-            // so no row's bar is flattened by an unrelated metric.
-            const family = (r: (typeof ADVANCED_ROWS)[number]) => {
-              if (r.money) return "$";
-              if (r.percentOfOne || r.suffix === "%") return "pct";
-              if (r.suffix === "R") return "R";
-              if (r.suffix === "s") return "s";
-              if (r.key.startsWith("max_consecutive")) return "count";
-              return "ratio";
-            };
-            const ceiling = new Map<string, number>();
-            for (const r of ADVANCED_ROWS) {
-              const raw = (a as Record<string, number | null | undefined>)[r.key];
-              if (raw === null || raw === undefined || !Number.isFinite(raw)) continue;
-              const f = family(r);
-              ceiling.set(f, Math.max(ceiling.get(f) ?? 0, Math.abs(raw)));
-            }
-            return ADVANCED_ROWS.map((row) => {
-              const raw = (a as Record<string, number | null | undefined>)[row.key];
-              const known = raw !== null && raw !== undefined && Number.isFinite(raw);
-              const v = known ? (raw as number) : null;
-              const shown = v === null
-                ? DASH
-                : row.percentOfOne
-                  ? `${(v * 100).toFixed(1)}%`
-                  : row.money
-                    ? moneyOrDash(v, true)
-                    : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(row.digits)}${row.suffix ?? ""}`;
-              return {
-                label: row.label,
-                value: v,
-                text: shown,
-                full: ceiling.get(family(row)) || 1,
-                tone: v === null ? "dim" : v > 0 ? "pos" : v < 0 ? "neg" : "dim",
-                title: `${row.key} = ${shown}`,
-              };
-            });
-          })()}
+          rows={advRows}
         />
       )}
     </Panel>
@@ -109,13 +117,16 @@ export function PeriodSeriesSection() {
   const [kind, setKind] = useState<PeriodKind>("DAY");
   const series = useAccountSeries(kind, 30);
 
-  // Backend series, memoized per response identity; the two derivations below
-  // read only it. `values` keeps its null gaps (Sparkline renders them as gaps).
-  const seriesData = series.data ?? [];
+  // Backend series, memoized per response identity; the derivations below read
+  // only it. `?? []` lives INSIDE the memo so a pending query does not hand
+  // every derivation a brand-new array reference each render. `values` keeps
+  // its null gaps (Sparkline renders them as gaps).
+  const seriesData = useMemo(() => series.data ?? [], [series.data]);
   const seriesValues = useMemo(
     () => seriesData.map((p) => (typeof p.net_pnl === "number" ? p.net_pnl : null)),
     [seriesData],
   );
+  const seriesBars = useMemo(() => seriesData.map((pr) => ({ value: pr.net_pnl ?? null })), [seriesData]);
   const seriesRows = useMemo(
     () =>
       seriesData.map((p, i) => (
@@ -165,7 +176,7 @@ export function PeriodSeriesSection() {
             </div>
           </div>
           <div style={{ marginTop: 4 }}>
-            <EmphBars bars={(series.data ?? []).map((pr) => ({ value: pr.net_pnl ?? null }))} minPct={10} />
+            <EmphBars bars={seriesBars} minPct={10} />
             <div className="tiny faint" style={{ marginBlockStart: 4 }}>
               {t("account.series.emph_note", "emphasis bars: per-period net PnL, scaled to the largest |net PnL| in view (derived from the values above)")}
             </div>

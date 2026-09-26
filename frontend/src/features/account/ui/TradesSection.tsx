@@ -122,7 +122,9 @@ export function TradesSection() {
   });
   const trades = useAccountTrades(PAGE, offset);
 
-  const rows = trades.data?.trades ?? [];
+  // `?? []` inside the memo: a pending/failed query must not invalidate the
+  // sort + heat-scale memos below on every render with a fresh empty array.
+  const rows = useMemo(() => trades.data?.trades ?? [], [trades.data]);
 
   const sorted = useMemo(() => {
     const out = [...rows];

@@ -193,12 +193,14 @@ export function StrategyMetricsTable({ rows, onCopy }: StrategyMetricsTableProps
                 <th scope="col"
                   key={k}
                   className={`st-th st-num ${sort.key === k ? "st-active" : ""}`}
-                  onClick={() => toggleSort(k)}
                   title={t("account.smt.sort_by", "sort by {key}", { key: k })}
                   aria-sort={sort.key === k ? (sort.dir === 1 ? "ascending" : "descending") : "none"}
                 >
-                  <span className="st-th-label">{metricLabelT(k, t)}</span>
-                  <span className="st-sort-ico">{sort.key === k ? (sort.dir === 1 ? "▲" : "▼") : "↕"}</span>
+                  {/* the control is a real button: keyboard + SR reachable, one tab stop per column */}
+                  <button type="button" className="st-th-btn" onClick={() => toggleSort(k)}>
+                    <span className="st-th-label">{metricLabelT(k, t)}</span>
+                    <span className="st-sort-ico">{sort.key === k ? (sort.dir === 1 ? "▲" : "▼") : "↕"}</span>
+                  </button>
                 </th>
               ))}
               <th scope="col" className="st-th" style={{ textAlign: "start" }}>{t("account.sth.lifecycle", "lifecycle")}</th>
