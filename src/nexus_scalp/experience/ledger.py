@@ -676,17 +676,30 @@ class ExperienceLedger:
         that contract pins, and the seam is where the ``file:``-URI contract
         lives. ``_connect`` already sets ``row_factory = sqlite3.Row``, so the
         dict-row promise the portable helpers introduced is preserved here too.
+
+        This one read stays on ``_connect`` (not ``provider_store.query_rows``)
+        on purpose: the rebuild's caller-pair contract is asserted by
+        ``test_bug297_b2_rebuild_clear_handle_is_reused`` against seam entries
+        attributed to THIS module at the 10.0 tier, and routing it through the
+        shared helper re-attributes the entry to ``provider_store.py`` at the
+        5.0 tier, breaking the pinned pair while behaving identically.
         """
         if not self.audit_repo._is_sqlite:
             return []
 
-        rows = query_rows(
-            self.audit_repo,
-            "SELECT DISTINCT strategy_id FROM audit_experiences LIMIT ?;",
-            (max(1, int(limit)),),
-            operation="experience.list_strategy_ids",
-        )
-        return [str(r["strategy_id"]) for r in rows if r["strategy_id"]]
+        try:
+            conn = self._connect(10.0)
+            try:
+                rows = conn.execute(
+                    "SELECT DISTINCT strategy_id FROM audit_experiences LIMIT ?;",
+                    (max(1, int(limit)),),
+                ).fetchall()
+                return [str(r["strategy_id"]) for r in rows if r["strategy_id"]]
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error("[EXPERIENCE] strategy id enumeration failed", error=str(e))
+            return []
 
     def count_experiences(self) -> int:
         """Total immutable decision rows."""
