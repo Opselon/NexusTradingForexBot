@@ -16,7 +16,7 @@
  * playbook is documentation; queries above are the data.
  */
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
@@ -153,6 +153,77 @@ function AnimatedNumber({ value }: { value: number }) {
   return <span className="rs-kpi-val">{formatNumber(display, 0)}</span>;
 }
 
+/**
+ * §9 error presentation: a read that FAILED renders the shared error surface
+ * with the backend's own message instead of collapsing into the "subsystem
+ * unavailable" empty state, which would misreport a transport failure as an
+ * intentional absence. Read-only — no refetch/retry wiring, no query option,
+ * key or interval touched. Pure: hoisted out of the render body so it is not
+ * re-allocated on every tick.
+ */
+function failed(q: { isError: boolean; error: unknown }): ReactNode {
+  return q.isError ? (
+    <ErrorState message={q.error instanceof Error ? q.error.message : "backend request failed"} />
+  ) : null;
+}
+
+/** Payload that never carried data (available:false / absent) — not an error. */
+function unavailable(data: { available?: boolean; reason?: string } | undefined): ReactNode {
+  return !data || data.available === false ? (
+    <EmptyState message="Research subsystem unavailable" hint={data?.reason ?? "backend answered without availability — nothing to show"} />
+  ) : null;
+}
+
+/**
+ * Hero pipeline nodes — pure function of the static gate chain, so the style
+ * objects (animation delay + --rs-delay) are built once instead of per render.
+ */
+const PIPE_NODES = GATE_CHAIN.map((name, i) => ({
+  key: name,
+  idx: i,
+  name,
+  meta: GATE_META[name] ?? "gate",
+  style: {
+    animationDelay: `${0.06 * i}s`,
+    ["--rs-delay" as string]: `${0.45 * i}s`,
+  } as CSSProperties,
+}));
+
+/**
+ * Registry row, memoized: the 20s summary tick / drawer open / tab switch
+ * re-renders ResearchPage but not the rows, so row number+date formatting is
+ * skipped unless that row's object actually changed. `onOpen` is a stable
+ * callback from the parent.
+ */
+const RegistryRow = memo(function RegistryRow({
+  row,
+  onOpen,
+}: {
+  row: ResearchStrategyVo;
+  onOpen: (id: string) => void;
+}) {
+  const s = row;
+  return (
+    <tr>
+      <td className="inline-mono tiny" title={s.strategyId}>
+        {s.strategyId.slice(0, 16)}…{s.version ? ` v${s.version}` : ""}
+      </td>
+      <td>
+        <StatusPill status={s.lifecycle} />
+      </td>
+      <td className="num tiny">{s.confidence === null ? "—" : formatNumber(s.confidence, 3)}</td>
+      <td className="num tiny">{s.sampleCount ?? "—"}</td>
+      <td className="num tiny">{s.score === null ? "—" : formatNumber(s.score, 2)}</td>
+      <td className="tiny">{s.updatedAt ? formatDateTime(s.updatedAt) : "—"}</td>
+      <td>
+        <button className="btn small ghost" onClick={() => onOpen(s.strategyId)}>
+          trace
+        </button>
+      </td>
+    </tr>
+  );
+});
+
 export default function ResearchPage(props: ShellPageProps) {
   void props;
   const [tab, setTab] = useState<Tab>("registry");
@@ -222,6 +293,8 @@ export default function ResearchPage(props: ShellPageProps) {
   // state; untouched (key=null) the accessor list stays empty and the array
   // is returned as-is, i.e. exactly the backend's own order.
   const regSort = useSort<RegistryCol>();
+  // perf: one stable handler for every "trace" cell instead of a closure per row
+  const openTrace = useCallback((id: string) => setSelected(id), []);
   const registryRows = useMemo(
     () => applySort(registry, regSort.sort.key ? REGISTRY_ACCESSORS[regSort.sort.key] : null, regSort.sort.dir),
     [registry, regSort.sort.key, regSort.sort.dir],
@@ -262,23 +335,6 @@ export default function ResearchPage(props: ShellPageProps) {
     () => Object.entries(byGate).map(([k, v]) => ({ label: k, count: Number(v) || 0 })),
     [byGate],
   );
-  const unavailable = (data: { available?: boolean; reason?: string } | undefined) =>
-    !data || data.available === false ? (
-      <EmptyState message="Research subsystem unavailable" hint={data?.reason ?? "backend answered without availability — nothing to show"} />
-    ) : null;
-
-  /**
-   * §9 error presentation: a read that FAILED renders the shared error
-   * surface with the backend's own message instead of collapsing into the
-   * "subsystem unavailable" empty state, which would misreport a transport
-   * failure as an intentional absence. Read-only — no refetch/retry wiring,
-   * no query option, key or interval touched.
-   */
-  const failed = (q: { isError: boolean; error: unknown }): ReactNode =>
-    q.isError ? (
-      <ErrorState message={q.error instanceof Error ? q.error.message : "backend request failed"} />
-    ) : null;
-
   const summaryUnavailable = rows?.available === false;
   /** summary read failed with nothing ever fetched — the KPIs must not show
    *  a zero the backend never sent (§9). */
@@ -339,16 +395,11 @@ export default function ResearchPage(props: ShellPageProps) {
         </div>
 
         <div className="rs-pipe" role="list" aria-label="Gate chain order">
-          {GATE_CHAIN.map((g, i) => (
-            <div
-              key={g}
-              role="listitem"
-              className="rs-pipe-node"
-              style={{ animationDelay: `${0.06 * i}s`, ["--rs-delay" as string]: `${0.45 * i}s` } as CSSProperties}
-            >
-              <span className="rs-pipe-idx">{i + 1}/{GATE_CHAIN.length}</span>
-              <div className="rs-pipe-name">{g}</div>
-              <div className="rs-pipe-meta">{GATE_META[g] ?? "gate"}</div>
+          {PIPE_NODES.map((n) => (
+            <div key={n.key} role="listitem" className="rs-pipe-node" style={n.style}>
+              <span className="rs-pipe-idx">{n.idx + 1}/{GATE_CHAIN.length}</span>
+              <div className="rs-pipe-name">{n.name}</div>
+              <div className="rs-pipe-meta">{n.meta}</div>
             </div>
           ))}
         </div>
@@ -485,23 +536,7 @@ export default function ResearchPage(props: ShellPageProps) {
                 ) : (
                   <RsTable cols={REGISTRY_COLS} sort={regSort.sort} onToggle={regSort.toggle}>
                     {registryRows.map((s) => (
-                      <tr key={s.strategyId}>
-                        <td className="inline-mono tiny" title={s.strategyId}>
-                          {s.strategyId.slice(0, 16)}…{s.version ? ` v${s.version}` : ""}
-                        </td>
-                        <td>
-                          <StatusPill status={s.lifecycle} />
-                        </td>
-                        <td className="num tiny">{s.confidence === null ? "—" : formatNumber(s.confidence, 3)}</td>
-                        <td className="num tiny">{s.sampleCount ?? "—"}</td>
-                        <td className="num tiny">{s.score === null ? "—" : formatNumber(s.score, 2)}</td>
-                        <td className="tiny">{s.updatedAt ? formatDateTime(s.updatedAt) : "—"}</td>
-                        <td>
-                          <button className="btn small ghost" onClick={() => setSelected(s.strategyId)}>
-                            trace
-                          </button>
-                        </td>
-                      </tr>
+                      <RegistryRow key={s.strategyId} row={s} onOpen={openTrace} />
                     ))}
                   </RsTable>
                 )}
