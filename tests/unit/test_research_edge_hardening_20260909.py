@@ -41,6 +41,13 @@ from nexus_scalp.research.scoring import (
     _oos_evidence_is_decisive,
     compute_strategy_score,
 )
+from tests.e2e.chain_clock import budget_cpu_ms
+
+# ML-QA-018: sized-path measurement budget. The 4000-sample leg is the larger
+# one; measured cost on a 2-core CPU-only host is ~43 ms CPU, so the budget only
+# has to be generous enough that a slower interpreter or a big-O regression
+# inside one leg reports a real figure instead of timing out.
+_SIZED_PATH_BUDGET_CPU_MS = 5000.0
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -232,22 +239,45 @@ def test_shared_risk_engine_produces_identical_volumes() -> None:
         peak = max(peak, equity)
 
 
-def test_sized_path_performance_is_linear() -> None:
-    """The equity curve construction must stay O(n): 4x samples -> <= ~6x time
-    (loose bound guards the O(n^2) regression without being flaky)."""
-    import time
+_SIZED_PATH_LINEARITY_RATIO = 6.0
+"""Worst/best CPU-time ratio bound for the sized-path linearity guard.
 
+The sized re-valuation is linear in samples by construction: per-trade cost is
+constant (one ``compute_sizing`` call plus a running-sum append), so 4x samples
+costs ~4x CPU time. The bound sits above the true factor plus margin — measured
+4.20x on a 2-core CPU-only host — so it catches a genuine O(n^2) regression
+(a per-trade scan over the whole history) while a loaded runner cannot trip it,
+because CPU time does not stretch with scheduler contention.
+"""
+
+
+def test_sized_path_performance_is_linear() -> None:
+    """The equity curve construction must stay O(n): 4x samples -> <= 6x CPU
+    time, asserted unconditionally.
+
+    Two changes vs the wall-clock original (ML-QA-018): the clock is
+    ``time.process_time()`` via the shared ``budget_cpu_ms`` stopwatch, because
+    a wall-clock ratio on a 2-core shared runner measures co-tenant load rather
+    than the algorithm (a stalled runner inflates BOTH legs, but the ``+ 1.0``
+    pad absorbed the small leg and the ratio drifted with it); and the ratio is
+    asserted on its own — the old ``+ 1.0`` additive pad on the small leg was a
+    waiver that made the bound meaningless at ``n=1000`` where the whole leg
+    costs ~10 ms CPU.
+    """
     econ = EconomicAssumptions()
 
-    def _time(n: int) -> float:
+    def _cost(n: int) -> float:
         samples = _mk_samples(n)
-        t0 = time.perf_counter()
-        compute_sized_economic_pnl(samples, econ)
-        return time.perf_counter() - t0
+        with budget_cpu_ms(_SIZED_PATH_BUDGET_CPU_MS) as sw:
+            compute_sized_economic_pnl(samples, econ)
+        return sw.consumed_ms
 
-    small = _time(1000)
-    big = _time(4000)
-    assert big < small * 8 + 1.0, f"quadratic regression suspected: {small=:.3f} {big=:.3f}"
+    small = _cost(1000)
+    big = _cost(4000)
+    assert big <= small * _SIZED_PATH_LINEARITY_RATIO, (
+        f"quadratic regression suspected: {small=:.3f} ms CPU {big=:.3f} ms CPU "
+        f"(ratio bound {_SIZED_PATH_LINEARITY_RATIO})"
+    )
 
 
 # ---------------------------------------------------------------------------
