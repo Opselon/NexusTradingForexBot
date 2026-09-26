@@ -336,6 +336,13 @@
   transition: box-shadow 0.15s ease;
 }
 
+/* panel padding rides the density token: theme's .panel-body is a fixed
+   12px 14px, so body.dense (7px 10px) never reached this page; `.tight`
+   (padding: 0) keeps its own meaning via :not() */
+.dbg-page .panel-body:not(.tight) {
+  padding: var(--card-pad);
+}
+
 .dbg-page .panel:hover {
   box-shadow: var(--elev-2);
 }

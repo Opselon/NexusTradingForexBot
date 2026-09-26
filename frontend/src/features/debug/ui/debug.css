@@ -57,7 +57,9 @@
 
 .dbg-sec {
   display: grid;
-  gap: 10px;
+  /* section rhythm rides the density token: --panel-gap (14px, 10px dense)
+     so body.dense tightens spacing the same way it tightens rows */
+  gap: var(--dbg-gap);
   animation: dbgSecIn 0.2s ease-out both;
 }
 

@@ -12,8 +12,10 @@ The full debug hub (legacy tab-debug), rebuilt as a SOLID decomposition:
   the old page never mounted).
 - `ui/sorting.tsx` — the single sorting primitive (useSortState / sortRows /
   SortTh). Nulls sink in both directions; `key: null` = backend order.
-- `ui/debug.css` — the trading-terminal skin, namespaced `dbg-`, imported
-  from the page component; tokens only, logical properties for RTL.
+- `ui/debug.css` + `ui/debug-panels.css` + `ui/debug-detail.css` — the
+  trading-terminal skin, namespaced `dbg-`, all three imported from the page
+  component (chrome / panel surfaces / tables+detail, split so each sheet
+  stays under 500 lines); tokens only, logical properties for RTL.
 - `api.ts` (transport) → `useCases.ts` (queries/mutations) → `hooks.ts`
   (barrel) → `ui/` (presentation); `model.ts` holds the pure VOs/diff logic.
 
