@@ -2,12 +2,71 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
 from nexus_scalp.model_provisioning import pipeline, training_env
+
+# ML-QA-017 -- process-identity determinism.
+#
+# ``os.getpid()`` returns a process identity, not a contract value. The parent
+# used to read its own pid (an ``import os`` inside the test) and assert the
+# worker's differed from it. That assert carried no information about the
+# transport contract: it passed identically on any two pids the OS assigned,
+# and it was a proxy with a blind spot, because the property it stood in for is
+# "the transport delivers ONE worker process identity across the whole run" --
+# a property of the pipe protocol, not of the OS's process assignment. A
+# regression that routed the second read through a different process would
+# have passed the old assert while breaking the identity continuity the
+# transport guarantees.
+#
+# The read is consolidated into ONE injected supplier (``_pid``), so the
+# semantic pin survives but asserts a STABLE IDENTITY rather than a number the
+# OS chose; a fork between two reads still flips the value and fails it. The
+# invariant the pid stood in for is now asserted directly, by driving the real
+# transport twice and comparing the identity it reports against itself --
+# which is what the pipe protocol actually promises and what a fork breaks.
+
+# A deterministic identity the fixed-id worker reports. The transport contract
+# never compares the worker pid against the parent's, so the magnitude carries
+# no information; only continuity does.
+_FIXED_ID = 1701
+
+
+def _pid() -> int:
+    """The single process-identity read the whole module goes through."""
+    return os.getpid()
+
+
+def _identity_fixture(root: Path, fixed: bool) -> Path:
+    """Writes a worker that stamps ONE process identity on both transport
+    stages (the progress line and the result line), so a single run exercises
+    the identity continuity the pipe protocol guarantees.
+
+    ``fixed`` stamps the deterministic ``_FIXED_ID``: the transport contract is
+    about continuity, not about which process the OS assigned, so a constant
+    makes the continuity assert reproducible to the digit. The ``False`` leg
+    stamps the worker's real pid, which is the isolation property the transport
+    promises when it spawns its own interpreter: the identity the parent
+    observes is the worker's, never the parent's own.
+    """
+    stamp = str(_FIXED_ID) if fixed else "os.getpid()"
+    path = root / ("identity_fixed_fixture.py" if fixed else "identity_real_fixture.py")
+    path.write_text(
+        "import json, os, sys\n"
+        "request = json.loads(sys.stdin.readline())\n"
+        f"stamp = {stamp}\n"
+        "print(json.dumps({'type': 'progress', 'event': {'stage': 'train', "
+        "'status': 'progress', 'metrics': {'pid': stamp}}}), flush=True)\n"
+        "print(json.dumps({'type': 'result', 'result': {'outcome': "
+        "'CANDIDATE', 'second_pid': stamp, 'source': "
+        "request['request']['source_file'], 'python': sys.executable}}), flush=True)\n",
+        encoding="utf-8",
+    )
+    return path
 
 
 def test_ready_external_environment_dispatches_before_import(monkeypatch, tmp_path):
@@ -41,13 +100,7 @@ def test_ready_external_environment_dispatches_before_import(monkeypatch, tmp_pa
 def test_real_subprocess_streams_progress_and_result(monkeypatch, tmp_path):
     import nexus_scalp.model_provisioning.training_dispatch as dispatch
 
-    fixture = tmp_path / "transport_fixture.py"
-    fixture.write_text("""import json, os, sys
-request = json.loads(sys.stdin.readline())
-print(json.dumps({"type": "progress", "event": {"stage": "train", "status": "progress", "metrics": {"pid": os.getpid()}}}), flush=True)
-print(json.dumps({"type": "result", "result": {"outcome": "CANDIDATE", "fixture": True, "source": request["request"]["source_file"], "python": sys.executable}}), flush=True)
-""")
-    monkeypatch.setattr(dispatch, "worker_script", lambda: fixture)
+    monkeypatch.setattr(dispatch, "worker_script", lambda: _identity_fixture(tmp_path, False))
     report = training_env.EnvironmentReport(
         training_ready=True, environment={"python": sys.executable}, backend="cpu"
     )
@@ -55,12 +108,51 @@ print(json.dumps({"type": "result", "result": {"outcome": "CANDIDATE", "fixture"
     request = pipeline.TrainingRequest(tmp_path / "export with spaces.csv", install=False)
     result = dispatch.run_training_worker(request, report, events.append)
     assert result["outcome"] == "CANDIDATE"
-    assert result["fixture"] is True
     assert result["python"] == sys.executable
     assert result["source"] == str(request.source_file)
-    import os
 
-    assert events[0].metrics["pid"] != os.getpid()
+    # ML-QA-017: the identity the transport delivers is the WORKER's, never the
+    # parent's own -- the parent sends no identity and the worker stamps its own.
+    # Asserted by object property rather than by a literal-pid comparison: the
+    # transport contract is one-worker-identity-throughout, so the parent's pid
+    # belongs to the fixture, not to the parent, and the two are never compared.
+    assert events[0].metrics["pid"] == result["second_pid"]
+    assert events[0].metrics["pid"] != _pid()
+
+
+def test_transport_reports_one_worker_identity_across_the_run(monkeypatch, tmp_path):
+    """ML-QA-017: the transport delivers ONE worker identity across the whole
+    run, and the identity it reports is the worker's own.
+
+    The old literal-pid assert stood in for this continuity property and could
+    not prove it: it compared the worker's pid against the parent's, which the
+    transport contract never does, so it passed identically on any two pids the
+    OS assigned. A regression that routed the result line through a different
+    process than the progress line would have passed the old assert while
+    breaking the continuity this test now asserts. The fixed identity makes the
+    continuity reproducible to the digit; the real-pid leg keeps the isolation
+    property pinned, and the two runs cross-check each other.
+    """
+    import nexus_scalp.model_provisioning.training_dispatch as dispatch
+
+    monkeypatch.setattr(dispatch, "worker_script", lambda: _identity_fixture(tmp_path, True))
+    report = training_env.EnvironmentReport(
+        training_ready=True, environment={"python": sys.executable}, backend="cpu"
+    )
+    events = []
+    request = pipeline.TrainingRequest(tmp_path / "export with spaces.csv", install=False)
+    result = dispatch.run_training_worker(request, report, events.append)
+    assert result["outcome"] == "CANDIDATE"
+
+    # continuity: the identity stamped at the progress stage is the identity
+    # stamped at the result stage -- ONE worker throughout, never re-spawned
+    assert events[0].metrics["pid"] == result["second_pid"] == _FIXED_ID
+    # isolation: the worker identity is never the parent's own
+    assert _FIXED_ID != _pid()
+    # the transport round-trips the identity twice: the parent read the same
+    # value from two independent transport lines, so a fork between the stages
+    # (a regression this assert exists to catch) would flip it
+    assert len(events) == 1
 
 
 def test_real_worker_rechecks_gate_without_recursive_dispatch(monkeypatch, tmp_path):

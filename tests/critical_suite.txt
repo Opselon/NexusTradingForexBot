@@ -479,6 +479,7 @@ tests/unit/test_training_determinism.py
 tests/unit/test_training_env_exact.py
 tests/unit/test_training_env_web.py
 tests/unit/test_training_env_worker.py
+tests/unit/test_ml_qa_017_worker_identity_determinism.py
 tests/unit/test_training_stage_progress.py
 tests/unit/test_triple_barrier_parameters.py
 tests/unit/test_update_cli_contract.py
