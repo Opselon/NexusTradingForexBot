@@ -5,13 +5,17 @@
  */
 
 import { useMemo, useState } from "react";
-import { DataTable, EmptyState, ErrorState, MetricCard, Panel } from "@/components/primitives";
+import { EmptyState, ErrorState, MetricCard, Panel } from "@/components/primitives";
 import { HeatBar } from "@/components/viz";
 import { formatNumber } from "@/lib/format";
 import { useI18n } from "@/stores/i18nStore";
 import { useNewsKeywords } from "../hooks";
 import { dirWord } from "../model";
+import type { NewsKeywordsResponse } from "../types";
+import { NewsSortTable, type SortColumn } from "./NewsSortTable";
 import { FreshnessNote, asErrorText } from "./shared";
+
+type TopKeyword = NonNullable<NonNullable<NewsKeywordsResponse["coverage"]>["top_keywords"]>[number];
 
 export function NewsKeywordsPanel() {
   const t = useI18n((s) => s.t);
@@ -29,6 +33,20 @@ export function NewsKeywordsPanel() {
 
   // perf: sorted category keys once per dataset, not on every render.
   const catKeys = useMemo(() => Object.keys(cats).sort(), [cats]);
+
+  // perf: header labels + sort extractors built once per translation identity
+  // rather than per render of the coverage table.
+  const columns = useMemo<SortColumn<TopKeyword>[]>(
+    () => [
+      { key: "keyword", label: t("news.keywords.h_keyword", "keyword"), sortValue: (k) => k.keyword },
+      { key: "category", label: t("news.keywords.h_category", "category"), sortValue: (k) => k.category ?? null },
+      { key: "bias", label: t("news.keywords.h_bias", "bias"), sortValue: (k) => (k.direction_bias ?? "NEUTRAL").toUpperCase() },
+      { key: "hits", label: t("news.keywords.h_hits", "hits"), num: true, sortValue: (k) => k.article_hits ?? null },
+      { key: "mentions", label: t("news.keywords.h_mentions", "mentions"), num: true, sortValue: (k) => k.mention_count ?? null },
+      { key: "share", label: t("news.keywords.h_share", "share"), num: true, sortValue: (k) => k.share ?? null },
+    ],
+    [t],
+  );
 
   const submitSearch = (value: string): void => {
     setQ(value);
@@ -92,18 +110,13 @@ export function NewsKeywordsPanel() {
         />
       ) : (
         <>
-          <DataTable
-            headers={[
-              { label: t("news.keywords.h_keyword", "keyword") },
-              { label: t("news.keywords.h_category", "category") },
-              { label: t("news.keywords.h_bias", "bias") },
-              { label: t("news.keywords.h_hits", "hits"), num: true },
-              { label: t("news.keywords.h_mentions", "mentions"), num: true },
-              { label: t("news.keywords.h_share", "share"), num: true },
-            ]}
-          >
-            {tops.map((k) => (
-              <tr key={k.keyword}>
+          <NewsSortTable
+            columns={columns}
+            rows={tops}
+            rowKey={(k) => k.keyword}
+            label={t("news.keywords.top_coverage", "top coverage (backend scan)")}
+            renderCells={(k) => (
+              <>
                 <td>{k.keyword}</td>
                 <td>{k.category ?? "—"}</td>
                 <td>
@@ -112,9 +125,9 @@ export function NewsKeywordsPanel() {
                 <td className="num">{k.article_hits ?? 0}</td>
                 <td className="num">{k.mention_count ?? 0}</td>
                 <td className="num">{formatNumber((k.share ?? 0) * 100, 1)}%</td>
-              </tr>
-            ))}
-          </DataTable>
+              </>
+            )}
+          />
           <div style={{ marginTop: 10 }}>
             <HeatBar
               items={tops.slice(0, 8).map((k) => ({
