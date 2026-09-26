@@ -324,7 +324,7 @@ export function AppShell() {
       <a className="skip-link" href="#main-content">{t("shell.skip_content", "Skip to content")}</a>
       <aside aria-label={t("shell.sidebar.landmark", "Sidebar")} className={`sidebar ${collapsed ? "collapsed" : ""}`}>
         <div className="brand">
-          <div className="brand-logo">NSE</div>
+          <div className="brand-logo" aria-hidden="true">NSE</div>
           <div className="brand-text">
             NEXUS SCALP ENGINE
             <span className="sub">PRO CONSOLE</span>
@@ -373,6 +373,11 @@ export function AppShell() {
 
       <div className="main-col">
         <header aria-label={t("shell.topbar.aria", "Top bar")} className="topbar">
+          {/* Two visual groups (IM1): engine state on the start side, clock +
+              feed on the end side, split by a hairline — the bar parses as
+              regions instead of one long row of pills. Same chips, same data,
+              presentation only. */}
+          <div className="topbar-group">
             <ModeIndicator snapshot={snapshot} />
             <span className="conn-chip" title={t("shell.engine.title", "Engine loop state (backend-authoritative)")}>
               <span className={`conn-dot ${snapshot?.engine_running ? "connected" : snapshot ? "disconnected" : "reconnecting"}`} />
@@ -389,8 +394,10 @@ export function AppShell() {
               <FreshnessMeter label="DEC" state={lf?.decision?.state} ageMs={lf?.decision?.age_ms ?? ageSecToMs(snapshot.diagnostics.proposal_age_sec)} />
             </span>
           )}
-          {snapshot?.symbol && <span className="inline-mono small muted">{snapshot.symbol} M1</span>}
+            {snapshot?.symbol && <span className="inline-mono small muted">{snapshot.symbol} M1</span>}
+          </div>
           <span className="spacer" />
+          <div className="topbar-group topbar-end">
           <span className="timestamp-note" title={t("shell.clock.title", "Local wall clock (visual aid)")}>
             {new Date(nowMs).toLocaleTimeString("en-GB", { hour12: false })} · v{snapshot?.state_version ?? "—"}
           </span>
@@ -401,6 +408,7 @@ export function AppShell() {
               queryClient.invalidateQueries({ queryKey: ["engine-snapshot"] });
             }}
           />
+          </div>
         </header>
 
         {!showAuthBanner && <AttentionStrip snapshot={snapshot} feed={realtimeStatus} nowMs={nowMs} />}

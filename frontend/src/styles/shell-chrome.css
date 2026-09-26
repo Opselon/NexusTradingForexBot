@@ -137,7 +137,7 @@ body.dense .app-shell .page { padding: var(--sp-4) var(--sp-4) var(--sp-7); }
 .sidebar.collapsed .brand { padding-inline: var(--sp-2); }
 
 /* --------------------------------- Nav ------------------------------------ */
-.app-shell .nav { padding: var(--sp-2) 6px var(--sp-3); }
+.app-shell .nav { padding: var(--sp-2) var(--sp-2) var(--sp-3); }
 /* Section label: micro-caps + a fading rule so the groups read as groups. */
 .app-shell .nav-section {
   display: flex;
@@ -211,9 +211,10 @@ body.dense .app-shell .page { padding: var(--sp-4) var(--sp-4) var(--sp-7); }
 :root[dir="rtl"] .app-shell .nav-item:focus-visible { background-image: linear-gradient(270deg, color-mix(in srgb, var(--accent) 20%, transparent), color-mix(in srgb, var(--accent) 6%, transparent) 55%, transparent); }
 :root[dir="rtl"] .app-shell .nav-item.active { background-image: linear-gradient(270deg, color-mix(in srgb, var(--accent) 26%, transparent), color-mix(in srgb, var(--violet) 10%, transparent) 60%, transparent); }
 
-/* Active rail: grows in instead of appearing (and lands flush with the rail
-   edge instead of 1px outside the nav's overflow clip, which is where the
-   old -7px inset put it). */
+/* Active rail: grows in instead of appearing. Inset -6px against an 8px nav
+   gutter puts it 3px inside the scrollport, so its 8px glow is not clipped
+   by the nav's overflow (theme.css -7px against a 6px gutter put it flush at
+   x=0, where the glow was cut off on the start edge). */
 .app-shell .nav .nav-item::before {
   content: "";
   position: absolute;
