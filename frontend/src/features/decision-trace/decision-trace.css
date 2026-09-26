@@ -18,36 +18,23 @@
   font-size: 13px;
 }
 
-/* ---------------------------------------------------------- header */
+/* ---------------------------------------------------------- hero/header
+ * The hero surface (kicker, glyph + gradient title, description, endpoint
+ * provenance chips, status side) lives in decision-trace-hero.css; this file
+ * keeps the shell + the runtime identity rail. */
 .dt-header {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 16px;
-  align-items: center;
-  padding: var(--card-pad);
-  background: linear-gradient(180deg, var(--bg-panel), var(--bg-inset));
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--elev-1);
-}
-.dt-eyebrow {
-  display: block;
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  color: var(--accent);
-  text-transform: uppercase;
-}
-.dt-title {
-  margin: 2px 0 0;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-.dt-header-rail {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  padding: var(--card-pad);
+  background:
+    radial-gradient(560px 220px at 4% -70%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 72%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 48%),
+    var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: var(--elev-2), inset 0 1px 0 var(--elevate-hi);
+  overflow: hidden;
 }
 .dt-rail-item {
   display: flex;
@@ -81,12 +68,6 @@
 .dt-rail-value.mono {
   font-family: var(--mono);
   font-size: 11px;
-}
-.dt-header-note {
-  max-width: 240px;
-  font-size: 11px;
-  color: var(--text-dim);
-  text-align: end;
 }
 
 /* -------------------------------------------------------- toolbar */
