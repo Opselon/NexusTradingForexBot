@@ -12,8 +12,9 @@
  * fights a tab's pause control and never invents a value: missing data
  * renders as "—", and every figure is a verbatim backend field.
  *
- * Styling: ./debug.css (namespaced `dbg-`), imported here so the feature is
- * self-contained — no other page loads it.
+ * Styling: ./debug.css + ./debug-panels.css + ./debug-detail.css (namespaced
+ * `dbg-`, split so each sheet stays under 500 lines), imported here so the
+ * feature is self-contained — no other page loads them.
  */
 
 import { useState } from "react";
@@ -33,6 +34,8 @@ import { TraceTab } from "./tabs/TraceTab";
 import { ResearchTab } from "./tabs/ResearchTab";
 import { OpsTab } from "./tabs/OpsTab";
 import "./debug.css";
+import "./debug-panels.css";
+import "./debug-detail.css";
 
 type TabId = "state" | "health" | "features" | "freshness" | "ipc" | "compare" | "snapshots" | "modeltest" | "trace" | "research" | "ops";
 

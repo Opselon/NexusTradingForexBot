@@ -1,0 +1,448 @@
+/* ==========================================================================
+   Debug hub — panel surfaces (part 2 of 3; see ./debug.css for the map).
+
+   PURPOSE:  notes/chips, health tile wall, feature contract grid,
+             freshness panes, ops block and the in-page refinements the
+             whole hub shares (.dbg-page .panel / .metric / .section-title).
+   OWNER:    uiux-modern-20260926 lane 7 (debug) — future edits go here.
+   CONSUMES: theme tokens only (--bg-panel*, --elev-*, --border, --green,
+             --amber, --red, --accent) + the `dbg-` markup of ./tabs/*.
+   PROVIDES: `.dbg-*` panel/section rules scoped to `.dbg-page`.
+   INVARIANTS: no fetch, no value logic, namespace `dbg-`, tokens only,
+             logical properties, < 500 lines.
+   EXTEND:   add a numbered section at the end; never rename an existing
+             class — ./tabs/*.tsx and ./DebugPage.tsx match them literally.
+   ========================================================================== */
+
+/* ------------------------------------------------------------------ *
+ * 5. Notes / safety callouts (scoped refinement of .l3-note)
+ * ------------------------------------------------------------------ */
+
+.dbg-page .l3-note {
+  position: relative;
+  padding-inline-start: 14px;
+  border-radius: var(--dbg-radius-sm);
+  line-height: 1.5;
+}
+
+.dbg-page .l3-note::before {
+  content: "";
+  position: absolute;
+  inset-block: 7px;
+  inset-inline-start: 5px;
+  inline-size: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+.dbg-page .l3-note.warn::before {
+  background: var(--amber);
+}
+
+.dbg-page .l3-note.bad::before {
+  background: var(--red);
+}
+
+.dbg-page .l3-note.good::before {
+  background: var(--green);
+}
+
+.dbg-safety b {
+  color: var(--amber);
+}
+
+/* ------------------------------------------------------------------ *
+ * 6. Section chips (state sections, sort controls)
+ * ------------------------------------------------------------------ */
+
+.dbg-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: rgba(8, 12, 18, 0.5);
+}
+
+.dbg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--text-dim);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 2px 11px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease, transform 0.1s ease;
+}
+
+.dbg-chip:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.dbg-chip.active {
+  color: color-mix(in srgb, var(--accent) 30%, var(--text));
+  border-color: rgba(65, 166, 242, 0.65);
+  background: linear-gradient(180deg, rgba(65, 166, 242, 0.22), rgba(65, 166, 242, 0.08));
+  box-shadow: 0 0 12px -4px rgba(65, 166, 242, 0.75);
+}
+
+.dbg-chip-flag {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--amber);
+}
+
+.dbg-sortctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: auto;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-inset);
+}
+
+/* ------------------------------------------------------------------ *
+ * 7. Overall health chip in the health toolbar
+ * ------------------------------------------------------------------ */
+
+.dbg-overall {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ------------------------------------------------------------------ *
+ * 8. Health tile wall — status glow rail per subsystem
+ * ------------------------------------------------------------------ */
+
+.dbg-health {
+  gap: 12px;
+}
+
+.dbg-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--dbg-radius-sm);
+  padding: 12px 14px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+  animation: dbgTileIn 0.22s ease-out both;
+}
+
+.dbg-tile:nth-child(2) { animation-delay: 0.03s; }
+.dbg-tile:nth-child(3) { animation-delay: 0.06s; }
+.dbg-tile:nth-child(4) { animation-delay: 0.09s; }
+.dbg-tile:nth-child(5) { animation-delay: 0.12s; }
+.dbg-tile:nth-child(6) { animation-delay: 0.15s; }
+
+@keyframes dbgTileIn {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.dbg-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--elev-2);
+}
+
+/* left status rail — color restates the badge on the same tile */
+.dbg-tile::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 3px;
+  background: var(--text-faint);
+  opacity: 0.85;
+}
+
+.dbg-tile.good::before {
+  background: var(--green);
+  box-shadow: 0 0 10px rgba(62, 207, 142, 0.7);
+}
+
+.dbg-tile.warn::before {
+  background: var(--amber);
+  box-shadow: 0 0 10px rgba(235, 161, 63, 0.7);
+}
+
+.dbg-tile.bad::before {
+  background: var(--red);
+  box-shadow: 0 0 10px rgba(242, 86, 77, 0.7);
+}
+
+.dbg-tile.good {
+  background: linear-gradient(135deg, rgba(62, 207, 142, 0.06), transparent 55%), var(--bg-panel);
+}
+
+.dbg-tile.warn {
+  background: linear-gradient(135deg, rgba(235, 161, 63, 0.07), transparent 55%), var(--bg-panel);
+}
+
+.dbg-tile.bad {
+  background: linear-gradient(135deg, rgba(242, 86, 77, 0.08), transparent 55%), var(--bg-panel);
+}
+
+.dbg-tile .name {
+  font-size: 12.5px;
+}
+
+.dbg-tile .metrics {
+  border-block-start: 1px dashed var(--border);
+  padding-block-start: 6px;
+}
+
+.dbg-tile .mrow .mk {
+  letter-spacing: 0.04em;
+}
+
+/* dotted leader between metric key and value */
+.dbg-tile .mrow {
+  position: relative;
+}
+
+/* ------------------------------------------------------------------ *
+ * 9. Feature contract grid — index-badged value cards
+ * ------------------------------------------------------------------ */
+
+.dbg-feats {
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+}
+
+.dbg-feat {
+  position: relative;
+  border-radius: var(--dbg-radius-sm);
+  padding: 7px 10px;
+  overflow: hidden;
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.dbg-feat:hover {
+  transform: translateY(-2px);
+  border-color: rgba(65, 166, 242, 0.5);
+  box-shadow: 0 8px 18px -12px rgba(65, 166, 242, 0.7);
+}
+
+.dbg-feat .n {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-inline-size: 0;
+}
+
+.dbg-feat-ix {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--accent-strong);
+  background: rgba(65, 166, 242, 0.12);
+  border: 1px solid rgba(65, 166, 242, 0.3);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.dbg-feat .v {
+  font-weight: 700;
+  color: color-mix(in srgb, var(--accent) 25%, var(--text));
+}
+
+.dbg-feat.bad {
+  animation: dbgBadPulse 1.6s ease-in-out infinite;
+}
+
+.dbg-feat.bad .dbg-feat-ix {
+  color: color-mix(in srgb, var(--red) 72%, white);
+  background: var(--red-dim);
+  border-color: rgba(242, 86, 77, 0.45);
+}
+
+.dbg-feat.warn .dbg-feat-ix {
+  color: var(--amber);
+  background: var(--amber-dim);
+  border-color: rgba(235, 161, 63, 0.45);
+}
+
+@keyframes dbgBadPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(242, 86, 77, 0.16);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(242, 86, 77, 0.05);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 10. Freshness split panes
+ * ------------------------------------------------------------------ */
+
+.dbg-split {
+  gap: 12px;
+}
+
+.dbg-pane {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-inline-size: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--dbg-radius-sm);
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 40%), var(--bg-inset);
+}
+
+/* ------------------------------------------------------------------ *
+ * 16. Ops tab — safety surface for the side-effecting panel
+ * ------------------------------------------------------------------ */
+
+.dbg-ops {
+  gap: 14px;
+}
+
+.dbg-ops .panel {
+  margin-bottom: 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * 17. Small shared refinements inside the debug page
+ * ------------------------------------------------------------------ */
+
+.dbg-page .panel {
+  border-radius: var(--dbg-radius);
+  box-shadow: var(--elev-1);
+  transition: box-shadow 0.15s ease;
+}
+
+.dbg-page .panel:hover {
+  box-shadow: var(--elev-2);
+}
+
+.dbg-page .panel-header {
+  background: linear-gradient(180deg, rgba(65, 166, 242, 0.05), transparent 60%);
+  border-radius: var(--dbg-radius) var(--dbg-radius) 0 0;
+}
+
+.dbg-page .metric {
+  min-inline-size: 132px;
+  border-radius: 10px;
+}
+
+.dbg-page .l3-toolbar {
+  gap: 10px;
+}
+
+.dbg-page .section-title {
+  color: var(--text-dim);
+}
+
+.dbg-page .section-title::before {
+  content: "▸ ";
+  color: var(--accent);
+}
+
+.dbg-page .l3-scroll {
+  scrollbar-gutter: stable;
+}
+
+/* split freshness: engine view gets the wider lane (falls back <1200px) */
+@media (min-width: 1201px) {
+  .dbg-split .dbg-pane:first-child {
+    min-inline-size: 0;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 18. Responsive — hero stacks, rail wraps, tabs scroll
+ * ------------------------------------------------------------------ */
+
+@media (max-width: 1080px) {
+  .dbg-hero {
+    flex-direction: column;
+  }
+
+  .dbg-rail {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
+
+  .dbg-rail-cell {
+    border-inline-start: 1px solid var(--border);
+    border-block-start: 1px solid var(--border);
+  }
+
+  .dbg-rail-cell:first-child {
+    border-block-start: none;
+  }
+
+  .dbg-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .dbg-tab {
+    flex: 0 0 auto;
+  }
+
+  .dbg-diff-row {
+    grid-template-columns: 16px 1fr 1fr 18px 1fr;
+  }
+
+  .dbg-diff-row > span:last-child {
+    display: none; /* status badge column folds under 1080px — kind color carries it */
+  }
+
+  .dbg-timeline::before {
+    inset-inline-start: 74px;
+  }
+
+  .dbg-tl-row {
+    grid-template-columns: 72px 1fr;
+  }
+
+  .dbg-tl-row::after {
+    inset-inline-start: 74px;
+  }
+}
+
+@media (max-width: 720px) {
+  .dbg-hero {
+    padding: 14px;
+  }
+
+  .dbg-title {
+    font-size: 19px;
+  }
+
+  .dbg-feats {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+
+  .dbg-sortctl {
+    margin-inline-start: 0;
+  }
+}
