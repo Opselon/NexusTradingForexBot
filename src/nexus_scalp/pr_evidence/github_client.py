@@ -518,6 +518,19 @@ class GitHubClient:
             return payload
         return []
 
+    def get_workflow_run(self, run_id: int) -> dict[str, Any]:
+        """Workflow run metadata — the authoritative workflow name (spec §10).
+
+        A check run's payload carries no ``workflow_name``; the owning workflow
+        name lives on the Actions run referenced by its ``details_url``. Missing
+        it left every CI row rendered as ``unknown``, which is a fact the
+        evidence DID support, so it must be resolved rather than guessed.
+        """
+        payload = self._get(f"/repos/{self._repo}/actions/runs/{run_id}")
+        if isinstance(payload, dict) and not _error_of(payload):
+            return payload
+        return {}
+
     def list_pr_comments(self, pr: int) -> list[dict[str, Any]]:
         payload = self._get(f"/repos/{self._repo}/issues/{pr}/comments")
         if isinstance(payload, list):

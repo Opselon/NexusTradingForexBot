@@ -71,8 +71,21 @@ class Reporter:
         self._marker = marker
 
     # ------------------------------------------------------------------
-    def report_once(self, pr: int, *, publish: bool = True, local_python: str = "") -> ReportResult:
-        """Collect + render + (optionally) publish one report (spec §§1-18)."""
+    def report_once(
+        self,
+        pr: int,
+        *,
+        publish: bool = True,
+        local_python: str = "",
+        refresh: bool = False,
+    ) -> ReportResult:
+        """Collect + render + (optionally) publish one report (spec §§1-18).
+
+        ``refresh`` forces the comment to be rewritten even when the rendered
+        evidence is byte-identical. Collection itself is always live (this
+        reporter keeps no cache), so refresh only relaxes the
+        "don't rewrite an unchanged body" optimisation (spec §19).
+        """
         evidence = collect_evidence(
             client=self._client,
             repo=self._client._repo,
@@ -93,7 +106,7 @@ class Reporter:
             body_sha=_body_sha(body),
         )
         if publish:
-            outcome = self._publish(pr, body)
+            outcome = self._publish(pr, body, force=refresh)
             result.published = outcome["published"]
             result.comment_id = outcome.get("comment_id")
             result.comment_action = outcome["action"]
@@ -104,14 +117,14 @@ class Reporter:
                 result.errors = [*result.errors, f"comment publish failed: {outcome['error']}"]
         return result
 
-    def _publish(self, pr: int, body: str) -> dict[str, Any]:
+    def _publish(self, pr: int, body: str, *, force: bool = False) -> dict[str, Any]:
         """Upsert exactly one comment (spec §18: never duplicate)."""
         try:
             existing = self._comments.find_existing(pr, marker=self._marker)
         except Exception as exc:
             return {"published": False, "action": "error", "error": str(exc)}
         try:
-            if existing is not None and self._body_unchanged(pr, existing, body):
+            if not force and existing is not None and self._body_unchanged(pr, existing, body):
                 return {
                     "published": True,
                     "action": "unchanged",

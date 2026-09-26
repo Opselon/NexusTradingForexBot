@@ -146,7 +146,12 @@ def report(
             resolved_pr, poll_sec=poll, timeout_sec=timeout_sec, local_python=_venv_python()
         )
     else:
-        result = reporter.report_once(resolved_pr, publish=not dry_run, local_python=_venv_python())
+        result = reporter.report_once(
+            resolved_pr,
+            publish=not dry_run,
+            local_python=_venv_python(),
+            refresh=refresh,
+        )
 
     if json_mode:
         _emit(_result_payload(result), True)

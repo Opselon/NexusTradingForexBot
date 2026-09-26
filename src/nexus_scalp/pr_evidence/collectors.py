@@ -49,6 +49,25 @@ __all__ = [
 ]
 
 
+def _actions_run_id(url: Any) -> int | None:
+    """Extract the Actions run id from a check-run URL (``.../runs/<id>/job/<id>``).
+
+    Generic over any repo/host: the id is whatever sits between ``/runs/`` and
+    the next ``/``. Returns ``None`` when the URL carries no run id, so callers
+    degrade to ``unknown`` instead of inventing one.
+    """
+    text = _text(url)
+    if not text:
+        return None
+    match = _ACTIONS_RUN_RE.search(text)
+    if match is None:
+        return None
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
 def _replace_check_sha(check: CheckResult, sha: str) -> CheckResult:
     """Adopt the queried SHA when a check run reports a different or empty one."""
     if not sha or sha == UNKNOWN:
@@ -116,6 +135,10 @@ class CheckRunCollector:
         failures: list[Failure] = []
         for raw in raw_runs:
             check = self._to_check(raw)
+            if check.workflow == UNKNOWN:
+                resolved = self._workflow_for(raw)
+                if resolved != UNKNOWN:
+                    check = replace(check, workflow=resolved)
             raw_annotations: list[dict[str, Any]] = []
             if fetch_annotations and check.annotations_count:
                 fetched = self.client.get_annotations(int(raw["id"]))
@@ -139,6 +162,29 @@ class CheckRunCollector:
             if check.is_failure or check.annotations:
                 failures.extend(self._failures_from_check(check, raw_annotations))
         return checks, failures
+
+    def _workflow_for(self, raw: dict[str, Any]) -> str:
+        """Resolve the owning workflow for a check run (spec §10).
+
+        A check-run payload carries no ``workflow_name``. Two evidence sources
+        exist, in order of specificity:
+
+        1. the Actions run named by ``details_url``
+           (``.../actions/runs/<id>/job/<id>``) → the workflow name, e.g. ``CI``;
+        2. the owning GitHub App (``app.name``), the only signal for non-Actions
+           checks such as the code-scanning ``CodeQL`` run.
+
+        Any failure degrades to ``UNKNOWN`` — the report must still render.
+        """
+        try:
+            run_id = _actions_run_id(raw.get("details_url")) or _actions_run_id(raw.get("html_url"))
+            if run_id is not None:
+                name = _text(self.client.get_workflow_run(run_id).get("name"))
+                if name:
+                    return name
+        except Exception:
+            pass
+        return _text((raw.get("app") or {}).get("name")) or UNKNOWN
 
     def _to_check(self, raw: dict[str, Any]) -> CheckResult:
         output = raw.get("output") or {}
@@ -290,6 +336,10 @@ class CheckRunCollector:
 
 _RE_RULE_CODE = re.compile(r"\b([A-Z][A-Z0-9_]{2,12})\b")
 _RE_RULE_ID = re.compile(r"\b([a-z][a-z0-9-]*/[a-z0-9-]+)\b")
+
+#: ``https://<host>/<owner>/<repo>/actions/runs/<run_id>[/job/<job_id>]``.
+#: Bounded quantifiers keep this linear (no nested repeats) — ReDoS-safe.
+_ACTIONS_RUN_RE = re.compile(r"/actions/runs/(\d{1,20})(?:/|$)")
 
 
 def normalize_or_unknown(path: str, repo_root: str | None = None) -> str:
