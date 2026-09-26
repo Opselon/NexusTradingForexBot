@@ -17,7 +17,9 @@ import { vectorSpec } from "../../model";
 export function ModelTestTab() {
   const t = useI18n((s) => s.t);
   const featuresQuery = useDebugFeaturesQuery(true);
-  const spec = vectorSpec(featuresQuery.data?.feature_count ?? null);
+  // memoized on the single field it reads: a stable object identity so the
+  // contract, the invalid-cell memo and the submit gate don't churn per render
+  const spec = useMemo(() => vectorSpec(featuresQuery.data?.feature_count ?? null), [featuresQuery.data?.feature_count]);
   const cells = useMemo(() => {
     const rows = featuresQuery.data?.features ?? [];
     return rows.map((r) => (r.value === null || r.value === undefined ? "0" : String(r.value)));
@@ -27,7 +29,9 @@ export function ModelTestTab() {
   const run = useModelTest(t);
 
   const source = cells;
-  const shown = useLive ? cells.map(() => "—") : localCells;
+  // memoized per (mode, contract cells, edited cells): the live-vector view
+  // is a fixed placeholder list and must not be rebuilt on every render
+  const shown = useMemo(() => (useLive ? cells.map(() => "—") : localCells), [useLive, cells, localCells]);
 
   const startCustom = () => {
     setLocalCells(source.length > 0 ? [...source] : []);
@@ -38,13 +42,18 @@ export function ModelTestTab() {
     await run.mutateAsync({ spec, cells: localCells, useLive });
   };
 
-  const badIdx = new Set<number>();
-  if (!useLive && spec) {
-    localCells.forEach((c, i) => {
-      const n = Number(c);
-      if (c.trim() === "" || !Number.isFinite(n) || n < spec.min || n > spec.max) badIdx.add(i);
-    });
-  }
+  // invalid-cell set: recomputed only when the mode, the contract or the
+  // edited cells change — same rule, same result, no per-render Set churn
+  const badIdx = useMemo(() => {
+    const invalid = new Set<number>();
+    if (!useLive && spec) {
+      localCells.forEach((c, i) => {
+        const n = Number(c);
+        if (c.trim() === "" || !Number.isFinite(n) || n < spec.min || n > spec.max) invalid.add(i);
+      });
+    }
+    return invalid;
+  }, [useLive, spec, localCells]);
 
   return (
     <Panel

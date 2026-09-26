@@ -16,16 +16,20 @@ type Kind = (typeof KINDS)[number];
 
 export function ResearchTab() {
   const t = useI18n((s) => s.t);
-  // literal keys only (parity gate bans dynamic t(variable)); rebuilt per
-  // render so the label follows the active language.
-  const kindLabels: Record<Kind, string> = {
+  // literal keys only (parity gate bans dynamic t(variable)); memoized on the
+  // translator so the labels follow the active language without being
+  // rebuilt on every render of the panel.
+  const kindLabels = useMemo<Record<Kind, string>>(
+    () => ({
     diagnostics: t("debug.research.kind_diagnostics", "diagnostics"),
     events: t("debug.research.kind_events", "events"),
     evidence: t("debug.research.kind_evidence", "evidence"),
     gates: t("debug.research.kind_gates", "gates"),
     history: t("debug.research.kind_history", "history"),
     trace: t("debug.research.kind_trace", "trace"),
-  };
+    }),
+    [t],
+  );
   const poll = usePolling(30_000);
   const [kind, setKind] = useState<Kind>("diagnostics");
   const [strategyId, setStrategyId] = useState("");
