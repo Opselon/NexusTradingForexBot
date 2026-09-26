@@ -770,3 +770,34 @@ kbd {
   --z-toast: 100;
   --z-skip: 200;
 }
+
+/* ==========================================================================
+   Shared-primitive state polish (IM1, uiux-modern-20260926).
+   Additive only: no selector, class or token above is renamed or removed —
+   these rules add the interaction states the primitives were missing (the
+   global :focus-visible and reduced-motion rules above already cover focus
+   and motion-off for every one of them).
+   ========================================================================== */
+.btn,
+.segmented button,
+.toast {
+  transition:
+    color var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out),
+    opacity var(--dur-1) var(--ease-out);
+}
+/* Hover halo, scoped so it can never cover a focus ring (.btn.primary:focus-
+   visible keeps its own box-shadow) and never paints accent on a danger verb. */
+.btn:hover:not(:disabled):not(:focus-visible):not(.danger) {
+  box-shadow: var(--glow-ring-accent);
+}
+.btn.danger:hover:not(:disabled):not(:focus-visible) {
+  box-shadow: var(--glow-ring-red);
+}
+.segmented button:hover:not(.active) { background-color: var(--surface-hover); }
+.segmented button:active:not(.active) { background-color: var(--surface-active); }
+/* Toasts are click-to-dismiss — the affordance should be visible. */
+.toast { cursor: pointer; }
+.toast:hover { border-color: var(--border-strong); }
