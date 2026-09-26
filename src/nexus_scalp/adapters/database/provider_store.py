@@ -83,10 +83,33 @@ OPS_HYGIENE_DOMAIN = "ops_hygiene"
 #: and can bootstrap it the same way it bootstraps the ``ops_*`` domains.
 NEWS_DOMAIN = "news"
 
+#: Lane D (2026-09-26): the isolated-store domains the fabric can now serve.
+#: Each store owns its schema, so the fabric bootstraps it on first use
+#: (``provision_domain`` runs the domain's authored DDL through the migrator).
+#: ``candle_intel`` is already declared as a ``DatabaseDomain`` and replay-
+#: provisioned by the migration chain, but it was absent from this set, so a
+#: provider helper resolving it (as opposed to the store's own resolve)
+#: returned ``None`` and never bootstrapped.
+MARKETPLACE_DOMAIN = "marketplace"
+MODELS_DOMAIN = "models"
+STRATEGIES_DOMAIN = "strategies"
+EXPERIMENTS_DOMAIN = "experiments"
+CANDLE_INTEL_DOMAIN = "candle_intel"
+
 #: Every domain an operational store may route through. ``resolve_backend``
 #: bootstraps the domain the first time a process touches a pooled provider.
 _KNOWN_DOMAINS: frozenset[str] = frozenset(
-    {AUDIT_DOMAIN, OPS_SHADOW_DOMAIN, OPS_HYGIENE_DOMAIN, NEWS_DOMAIN}
+    {
+        AUDIT_DOMAIN,
+        OPS_SHADOW_DOMAIN,
+        OPS_HYGIENE_DOMAIN,
+        NEWS_DOMAIN,
+        MARKETPLACE_DOMAIN,
+        MODELS_DOMAIN,
+        STRATEGIES_DOMAIN,
+        EXPERIMENTS_DOMAIN,
+        CANDLE_INTEL_DOMAIN,
+    }
 )
 
 #: Minimum spacing between repeated "not provisioned" warnings for one store.

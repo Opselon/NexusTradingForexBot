@@ -56,6 +56,15 @@ _DOMAIN_STATEMENTS: dict[str, str] = {
     # The operational tables the hygiene state + quarantine stores own
     # (DB-FABRIC-002), same ownership contract as ops_shadow.
     "ops_hygiene": "ops_hygiene_schema_statements",
+    # Lane D (2026-09-26): the four isolated-store domains. Same ownership
+    # contract as the entries above — the DDL is authored in the owning
+    # package (each store's declared schema constants), so the statements are
+    # read from there verbatim and the store is deliberately NOT constructed
+    # (its constructor opens a real database file / starts a worker thread).
+    DatabaseDomain.MARKETPLACE.value: "marketplace_schema_statements",
+    DatabaseDomain.MODELS.value: "models_schema_statements",
+    DatabaseDomain.STRATEGIES.value: "strategies_schema_statements",
+    DatabaseDomain.EXPERIMENTS.value: "experiments_schema_statements",
 }
 
 
