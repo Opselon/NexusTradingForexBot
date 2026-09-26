@@ -197,8 +197,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools wheel
           # pytest-cov ships in the [dev] extra installed above.
-          python -m pip install -e ".[dev,web,release]"
-          Write-Host "torch/pyinstaller ready"
+          # PG-BOOT-001: the release bundle must import psycopg/psycopg_pool at
+          # first boot — the postgres extra is installed at BUILD time so
+          # PyInstaller can collect it (the runtime-only try/except imports in
+          # pg_planes.py / postgres_driver.py are invisible to static analysis).
+          python -m pip install -e ".[dev,web,release,postgres]"
+          Write-Host "torch/pyinstaller/psycopg ready"
       # EUR-WAVE (contract #11): the release artifact MUST contain the
       # production React Control Center. Node exists ONLY at build time —
       # the shipped EXE serves the static dist, the end user never runs npm.
@@ -273,7 +277,10 @@ jobs:
             --add-data "$PWD\frontend\dist;frontend/dist" `
             --collect-submodules "uvicorn" --collect-submodules "fastapi" `
             --collect-submodules "feedparser" `
+            --collect-submodules "psycopg" --collect-submodules "psycopg_pool" `
             --hidden-import "MetaTrader5" --hidden-import "torch" --hidden-import "polars" `
+            --hidden-import "psycopg" --hidden-import "psycopg.rows" `
+            --hidden-import "psycopg_pool" --hidden-import "psycopg_pool.pool" `
             --distpath "release\build\windows-x64\onedir" `
             --workpath "release\build\windows-x64\work" `
             --specpath "release\build\windows-x64" `
@@ -290,7 +297,10 @@ jobs:
             --version-file "installer\version_info.txt" `
             --add-data "$PWD\build-info.json;." `
             --collect-submodules "uvicorn" --collect-submodules "fastapi" `
+            --collect-submodules "psycopg" --collect-submodules "psycopg_pool" `
             --hidden-import "MetaTrader5" --hidden-import "torch" --hidden-import "polars" `
+            --hidden-import "psycopg" --hidden-import "psycopg.rows" `
+            --hidden-import "psycopg_pool" --hidden-import "psycopg_pool.pool" `
             --distpath "release\build\windows-x64\onefile" `
             --workpath "release\build\windows-x64\work-cli" `
             --specpath "release\build\windows-x64" `

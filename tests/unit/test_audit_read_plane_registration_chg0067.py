@@ -202,8 +202,10 @@ def fake_fabric(monkeypatch: pytest.MonkeyPatch, isolated_registry: None) -> Any
             # mirrors the production open() call on each backend
             plane.open()
 
-        def _exec(sql: str) -> None:
-            write.execute(sql)
+        def _exec(sql: str, args: tuple[Any, ...] = ()) -> None:
+            # The migration recorder passes parameterized INSERTs through the
+            # same seam (args empty for the DDL replay).
+            write.execute(sql, args if args else ())
 
         from nexus_scalp.database.migration import migrate_domain
 

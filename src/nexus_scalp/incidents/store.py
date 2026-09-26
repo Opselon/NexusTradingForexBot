@@ -17,6 +17,7 @@ STORAGE STRATEGY (TASK-12 spec 58/59):
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -149,6 +150,51 @@ INCIDENT_DDL: tuple[str, ...] = (
     INCIDENT_QUARANTINE_TABLE_DDL,
     *INDEX_DDL,
 )
+
+
+def _ddl_table_columns(ddl: str) -> tuple[str, ...]:
+    """Column order declared by a ``CREATE TABLE`` statement.
+
+    The incidents column order is the contract between the row-projection
+    dict, the generated upsert SQL and the positional flatten the pooled
+    write plane consumes.  Deriving it from the DDL (the one place the schema
+    is spelled out) keeps all three aligned; the drift that dead-lettered
+    every incidents write on PostgreSQL came from a hand-typed copy going
+    stale while the DDL and the dict moved on.
+    """
+    import re
+
+    m = re.search(
+        r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"]?(\w+)[\"]?\s*\((?P<body>.*)\)\s*$",
+        ddl,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if m is None:
+        return ()
+    body = m.group("body")
+    names: list[str] = []
+    depth = 0
+    for line in body.split("\n"):
+        stripped = line.strip().rstrip(",")
+        if not stripped or stripped.startswith("--"):
+            continue
+        depth += stripped.count("(") - stripped.count(")")
+        if depth != 0:
+            continue  # inside a nested definition (CHECK (...), etc.)
+        first = stripped.split()[0] if stripped.split() else ""
+        upper = first.upper()
+        if upper in {"PRIMARY", "UNIQUE", "CHECK", "FOREIGN", "CONSTRAINT"}:
+            continue  # table-level constraint, not a column
+        if not re.fullmatch(r"[\"]?[A-Za-z_][A-Za-z0-9_$]*[\"]?", first):
+            continue
+        names.append(first.strip('"'))
+    return tuple(names)
+
+
+#: The ``incidents`` column order, parsed once from the DDL it must match.
+#: Kept module-level (cheap) and used both as the public constant and as the
+#: ground truth the DDL-vs-projection parity test asserts against.
+_INCIDENT_TABLE_COLUMNS: tuple[str, ...] = _ddl_table_columns(INCIDENTS_TABLE_DDL)
 
 
 # ---------------------------------------------------------------------------
@@ -313,43 +359,61 @@ def _incident_row_values(inc: Incident) -> dict[str, Any]:
     }
 
 
-#: Column order of the ``incidents`` row projection (see ``INCIDENTS_TABLE_DDL``).
-#: Used only to flatten the named upsert values into the positional argument
-#: sequence the pooled write plane accepts.
-_INCIDENT_COLUMN_ORDER: tuple[str, ...] = (
-    "incident_id",
-    "detected_at",
-    "severity",
-    "category",
-    "status",
-    "first_seen_at",
-    "last_seen_at",
-    "component",
-    "operation",
-    "correlation_id",
-    "root_cause_status",
-    "root_cause",
-    "evidence_json",
-    "impact_json",
-    "affected_records_json",
-    "affected_models_json",
-    "affected_runtime_json",
-    "affected_users_json",
-    "recovery_status",
-    "recommended_action",
-    "fingerprint",
-    "repeated_count",
-    "related_bug_id",
-    "fix_commit",
-    "regression_test",
-    "is_regression",
-    "previous_bug_id",
-    "resolved_without_evidence",
-    "recovery_plan_json",
-    "tags_json",
-    "notes_json",
-    "updated_at",
-)
+#: Column order of the ``incidents`` row projection (see ``INCIDENTS_TABLE_DDL``
+#: and the governed AUDIT-0005 migration).  Derived from the DDL itself so it
+#: can never drift from the schema: a hand-maintained copy here had
+#: ``is_regression`` three positions early, silently shifted every parameter by
+#: one on PostgreSQL (the int columns received the neighbouring string values
+#: and the row was dead-lettered with ``invalid input syntax for type
+#: bigint: "repeated_count"``) while SQLite's named binding was unaffected and
+#: hid the drift.  :func:`_flatten_named_args` reads the order from the
+#: statement instead and is the path the pooled write plane uses; this constant
+#: stays for the handful of callers that already import it.
+_INCIDENT_COLUMN_ORDER: tuple[str, ...] = tuple(_INCIDENT_TABLE_COLUMNS)
+
+
+def _incident_column_order() -> tuple[str, ...]:
+    """The authoritative column order for the incidents positional flatten.
+
+    Single-sourced from :func:`_incident_row_values` (which builds the dict
+    the upsert SQL's column list comes from) so the flatten can never drift
+    from the statement it feeds — the drift is what made PostgreSQL reject the
+    row while SQLite's named binding kept working and hid it.
+    """
+    from nexus_scalp.incidents.models import Incident
+
+    return tuple(_incident_row_values(Incident()).keys())
+
+
+def _flatten_named_args(sql: str, args: dict[str, Any]) -> tuple[Any, ...]:
+    """Flatten a ``:name``-bound argument dict to a positional sequence.
+
+    The pooled write plane takes positional parameters: the driver seam
+    rewrites ``:name`` to ``%s`` and drops the name, so the caller must supply
+    the values in the exact order the statement names its columns.  Reading
+    the order out of the statement itself (rather than a hand-maintained
+    tuple) is what keeps the flatten aligned with the SQL that consumes it.
+
+    Raises :class:`ValueError` when the statement carries no named
+    placeholders or the dict lacks one of them — a wrong-length flatten is a
+    data-corruption primitive, never a best-effort path.
+    """
+    if not isinstance(args, dict):
+        return tuple(args or ())
+    names = _NAMED_ARGS_PATTERN.findall(sql)
+    if not names:
+        raise ValueError("cannot flatten named arguments: the statement has no named placeholders")
+    missing = [n for n in names if n not in args]
+    if missing:
+        raise ValueError(f"named placeholder(s) without a value: {missing[:5]}")
+    return tuple(args[n] for n in names)
+
+
+#: Named-placeholder scan for the positional flatten.  Word characters and
+#: ``$`` continue a name (matching the driver's own SQLite named rule); a
+#: colon NOT followed by a letter/underscore (``::`` casts, ``:1``) is not a
+#: SQLite named placeholder and is left alone by the driver too.
+_NAMED_ARGS_PATTERN = re.compile(r":([A-Za-z_][A-Za-z0-9_$]*)")
 
 
 # ---------------------------------------------------------------------------
@@ -526,11 +590,14 @@ class IncidentStore:
 
         The plane's ``execute`` takes a flat argument sequence; the store's
         SQLite statements use ``?`` qmark placeholders, which the driver
-        layer translates at the boundary.
+        layer translates at the boundary.  Named-placeholder statements are
+        rewritten to positional ``%s`` by the same seam, so a dict of values
+        is flattened in the order the statement's own column list names them
+        — never a hand-maintained tuple that can drift out of sync.
         """
         values: tuple[Any, ...]
         if isinstance(args, dict):
-            values = tuple(args[c] for c in _INCIDENT_COLUMN_ORDER)
+            values = _flatten_named_args(sql, args)
         else:
             values = tuple(args)
         self._write_backend.execute(sql, values)
@@ -540,7 +607,21 @@ class IncidentStore:
         sql, values = self._upsert_incident_sql(incident)
         if self.audit_repo is not None and getattr(self.audit_repo, "_queue", None) is not None:
             try:
-                self.audit_repo._queue.put_nowait((sql, values))
+                # The queue's contract is a POSITIONAL argument sequence: the
+                # pooled write plane hands the payload to psycopg after the
+                # driver seam rewrites ``:name`` to ``%s`` (dropping the name),
+                # and SQLite's sqlite3 also binds a sequence positionally.
+                # A dict payload here binds as ONE positional argument, so
+                # psycopg received the whole mapping for ``$1`` and the int
+                # columns got the neighbouring string keys — every incidents
+                # write dead-lettered with
+                # ``invalid input syntax for type bigint: "repeated_count"``.
+                # Flatten at the only place that knows both the statement and
+                # the values.
+                payload: tuple[Any, ...] = (
+                    _flatten_named_args(sql, values) if isinstance(values, dict) else tuple(values)
+                )
+                self.audit_repo._queue.put_nowait((sql, payload))
             except Exception as err:
                 logger.error(
                     "[INCIDENTS] queued save failed",
