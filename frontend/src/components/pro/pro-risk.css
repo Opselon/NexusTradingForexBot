@@ -120,9 +120,9 @@
 .rv-limit__track.tone-ok .rv-limit__fill {
   background: linear-gradient(90deg, color-mix(in srgb, var(--green) 45%, transparent), var(--green));
 }
-.rv-limit__track.tone-warn .rv-limit__fill {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--amber) 45%, transparent), var(--amber));
-}
+/* No `tone-warn` fill: RiskViz renders the track as `tone-unknown` whenever
+   utilization is unknown, because a missing limit must never paint as an
+   amber "this much of the budget is gone" bar (honest-state law). */
 .rv-limit__track.tone-bad .rv-limit__fill {
   background: linear-gradient(90deg, color-mix(in srgb, var(--red) 45%, transparent), var(--red));
 }
@@ -136,9 +136,6 @@
 /* RTL: the vivid end of each gradient belongs at the fill's START edge */
 :root[dir="rtl"] .rv-limit__track.tone-ok .rv-limit__fill {
   background: linear-gradient(270deg, color-mix(in srgb, var(--green) 45%, transparent), var(--green));
-}
-:root[dir="rtl"] .rv-limit__track.tone-warn .rv-limit__fill {
-  background: linear-gradient(270deg, color-mix(in srgb, var(--amber) 45%, transparent), var(--amber));
 }
 :root[dir="rtl"] .rv-limit__track.tone-bad .rv-limit__fill {
   background: linear-gradient(270deg, color-mix(in srgb, var(--red) 45%, transparent), var(--red));

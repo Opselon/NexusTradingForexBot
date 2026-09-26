@@ -27,10 +27,6 @@
   overflow: visible;
 }
 
-/* Cap the gauge so a wide card never turns it into a giant dial. */
-.cg-cap-sm { max-inline-size: 132px; }
-.cg-cap-md { max-inline-size: 168px; }
-.cg-cap-lg { max-inline-size: 220px; }
 
 /* Track = recessed groove; the unknown variant is a dashed rail the value arc
    deliberately does not fill (backend sent no ratio). */

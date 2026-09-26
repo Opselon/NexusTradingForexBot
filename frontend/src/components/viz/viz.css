@@ -11,6 +11,13 @@
   inline-size: 100%;
   block-size: auto;
   overflow: visible;
+  /* Axis/step captions are numbers and backend words with text-anchor
+     start/end. Without this they inherit the page direction and, in RTL,
+     `start` flips to the right edge of the box and the labels spill off the
+     chart (measured: a `10000` tick lands at x=-21). Paths never mirror —
+     direction only re-resolves text anchors, which is exactly what we want
+     pinned for charts. */
+  direction: ltr;
 }
 .viz-frame {
   position: relative;
@@ -65,9 +72,10 @@
 .viz-line.dim { stroke: var(--text-faint); }
 
 /* Area fills: token ramps (transparent -> semantic), never a raw hex. */
-.viz-area.pos { fill: color-mix(in srgb, var(--green) 16%, transparent); }
+/* Only DrawdownChart fills an area today (`viz-area neg`). Add a tone here
+   only alongside the component that renders it — a selector must match a
+   real element (contract §6/STYLE-AUDIT). */
 .viz-area.neg { fill: color-mix(in srgb, var(--red) 18%, transparent); }
-.viz-area.neu { fill: color-mix(in srgb, var(--accent) 14%, transparent); }
 
 /* Bars keep the full-strength token; the hairline edge is what separates two
    neighbouring bars on the same panel without adding per-bar geometry. */
@@ -132,8 +140,9 @@
 }
 .viz-legend .sw.pos { background: var(--green); }
 .viz-legend .sw.neg { background: var(--red); }
-.viz-legend .sw.neu { background: var(--accent); }
-.viz-legend .sw.warn { background: var(--amber); }
+/* Only pos/neg/flat are produced by the three legends that render `.sw`
+   (EquityCurve, Drawdown, SignedBucket); a new tone is added with the chart
+   that renders it — a selector must match a real element (contract §6). */
 .viz-legend .sw.flat { background: var(--text-faint); }
 
 /* ---- arc gauge ------------------------------------------------------------ */
@@ -178,22 +187,23 @@
   text-transform: uppercase;
   overflow-wrap: anywhere;
 }
-.heatbar .track {
-  block-size: 14px;
+/* The strip IS the <svg class="viz"> (there is no inner .track element —
+   the inherited `.heatbar .track` selector matched nothing). The rail is
+   painted as the SVG's own background so a known row's rects cover it while
+   an unknown row, which paints no rect, leaves the rail showing.
+   `outline` (never `border`) carries the edge: a border would shrink the
+   SVG content box and letterbox the 120-unit viewBox. */
+.heatbar .row .viz {
   border-radius: 5px;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--bg) 55%, transparent), transparent 60%),
     var(--bg-inset);
-  border: 1px solid var(--border);
-  box-shadow: var(--elev-1);
-  overflow: hidden;
-  display: flex;
 }
-.heatbar .row:hover .track { border-color: var(--border-strong); }
+.heatbar .row:hover .viz { outline: 1px solid var(--border-strong); outline-offset: -1px; }
 /* Unknown row (no backend ratio): dashed rail, never a filled zero. */
-.heatbar .row.unknown .track {
-  border-style: dashed;
-  border-color: var(--border-strong);
+.heatbar .row.unknown .viz {
+  outline: 1px dashed var(--border-strong);
+  outline-offset: -1px;
   background:
     repeating-linear-gradient(
       45deg,
@@ -249,6 +259,6 @@
 
 /* ---- motion (decoration only; everything reads with motion off) ----------- */
 @media (prefers-reduced-motion: no-preference) {
-  .heatbar .track { transition: border-color 0.15s ease; }
+  .heatbar .row .viz { transition: outline-color 0.15s ease; }
   .viz-empty { transition: border-color 0.15s ease; }
 }
