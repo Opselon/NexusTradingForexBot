@@ -355,6 +355,14 @@ td.aa-reason {
 .aa-stack .panel { margin-bottom: 0; }
 .aa-stack { display: grid; gap: var(--panel-gap); }
 
+/* ── page rhythm (lane 9): one grid for the whole route so the hero, the
+ *   live card and every tab section step by the same --panel-gap. Panels are
+ *   grid items here, so the global stacked-panel margin is neutralised on the
+ *   direct children only (nested stacks already zero it above). */
+.aa-page { display: grid; gap: var(--panel-gap); }
+.aa-page > .panel { margin-bottom: 0; }
+.aa-tabbar { padding-block: 2px; }
+
 /* drawer gate-trace summary chips */
 .aa-gate-sum { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 14px 8px; }
 .aa-gate-sum .badge.good { border-color: var(--green); color: var(--green); }
