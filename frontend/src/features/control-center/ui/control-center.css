@@ -266,7 +266,18 @@
 .ctl-tape .ctl-open { text-align: end; }
 .ctl-tape-foot { padding: 7px 14px; }
 
-/* --- 6. responsive — hero stacks, rail wraps, rack collapses ------------- */
+/* --- 6. overview warnings + keyboard row affordances --------------------- */
+/* warning rows: grouped backend text, no per-row inline style objects */
+.ctl-warns { display: grid; gap: 8px; }
+.ctl-warn { border-inline-start: 2px solid var(--amber); padding-inline-start: 8px; }
+.ctl-warn-head { display: flex; gap: 8px; align-items: baseline; }
+.ctl-kv-gap { margin-block-end: 8px; }
+/* every row with an action is reachable by keyboard — focus lands on the row,
+   the global :focus-visible outline stays on the control itself */
+.ctl-tape > tbody > tr:focus-within > td { background: var(--bg-panel-2); }
+.ctl-page .data-table > tbody > tr:focus-within > td { background: var(--bg-panel-2); }
+
+/* --- 7. responsive — hero stacks, rail wraps, rack collapses ------------- */
 @media (max-width: 1080px) {
   .ctl-hero { flex-direction: column; }
   .ctl-rail { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
@@ -274,6 +285,8 @@
   .ctl-rail-cell:first-child { border-block-start: none; }
 }
 @media (max-width: 720px) {
+  .ctl-herohead { padding-block: 14px; }
+  .ctl-title { font-size: 22px; }
   .ctl-hero { padding: 14px; }
   .ctl-hero-main { min-inline-size: 0; }
   .ctl-rack { grid-template-columns: 1fr; }

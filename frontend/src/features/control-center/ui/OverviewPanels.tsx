@@ -46,6 +46,10 @@ export function OverviewPanels({ summary, pending, error, errorMessage, onRetry 
     () => Object.entries(obj(s?.ledger?.actions)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 })),
     [s?.ledger?.actions],
   );
+  // perf: warnings derive once per summary identity — the parent re-renders on
+  // every 15s poll; row markup uses .ctl-warn* classes so no style object is
+  // re-allocated per warning per render.
+  const warnings = useMemo(() => arr(s?.warnings), [s?.warnings]);
 
   return (
     <>
@@ -79,7 +83,7 @@ export function OverviewPanels({ summary, pending, error, errorMessage, onRetry 
             <EmptyState message={t("control-center.empty.ledger_unavailable", "ledger unavailable")} hint={s.ledger.reason ?? "LEDGER_UNAVAILABLE"} />
           ) : (
             <>
-              <dl className="kv" style={{ marginBottom: 8 }}>
+              <dl className="kv ctl-kv-gap">
                 <InfoRow label={t("control-center.label.scanned_rows", "scanned rows")} value={String(s?.ledger?.scanned_rows ?? "—")} />
                 <InfoRow label={t("control-center.label.latest_decision", "latest decision")} value={formatDateTime(s?.ledger?.latest_decision_at)} />
               </dl>
@@ -90,13 +94,13 @@ export function OverviewPanels({ summary, pending, error, errorMessage, onRetry 
       </div>
 
       <Panel title={t("control-center.panel.warnings", "Warnings (ledger-visible, backend-derived)")} tight>
-        {arr(s?.warnings).length === 0 ? (
+        {warnings.length === 0 ? (
           <EmptyState message={t("control-center.empty.no_warnings", "No warnings reported.")} />
         ) : (
-          <div style={{ display: "grid", gap: 8 }}>
-            {arr(s?.warnings).map((w, i) => (
-              <div key={i} style={{ borderInlineStart: "2px solid var(--amber)", paddingInlineStart: 8 }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+          <div className="ctl-warns">
+            {warnings.map((w, i) => (
+              <div className="ctl-warn" key={`${str(w.code) ?? "warning"}-${i}`}>
+                <div className="ctl-warn-head">
                   <SeverityBadge severity={str(w.severity)} />
                   <span className="small">{str(w.what)}</span>
                 </div>
