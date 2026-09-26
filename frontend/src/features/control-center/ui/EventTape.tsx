@@ -53,6 +53,38 @@ export function EventTape({ onInspect }: { onInspect: (id: number | null) => voi
   // re-renders this panel every second; decisionKey + the row cells derive
   // once per payload, only the ticking age cell recomputes.
   const rows = useMemo(() => tapeQ.data?.rows ?? [], [tapeQ.data]);
+  // perf: build the row elements once per (payload, clock second, callback) —
+  // a parent re-render inside the same second reuses the previous elements
+  // instead of re-allocating 12 rows + 12 closures.
+  const rowEls = useMemo(
+    () =>
+      rows.map((r: OperatorDecisionRow) => {
+        const id = num(r.id);
+        const at = r.generated_at ?? null;
+        return (
+          <tr key={controlCenterUseCases.decisionKey(r)}>
+            <td className="ctl-rel" title={formatDateTime(at)}>
+              {relAge(at, now, t)}
+            </td>
+            <td className="ctl-ts">{formatDateTime(at)}</td>
+            <td className="ctl-act">
+              <StatusBadge status={r.action} />
+            </td>
+            <td>{r.decision_stage ?? "—"}</td>
+            <td>{r.blocked_by ?? ""}</td>
+            <td className="ctl-reason" title={r.reason_code ?? ""}>
+              {r.reason_code ?? "—"}
+            </td>
+            <td className="ctl-open">
+              <button className="btn small ghost" disabled={r.payload_ok === false || id === null} onClick={() => onInspect(id)}>
+                {r.payload_ok === false ? t("control-center.action.payload_bad", "payload ✗") : t("control-center.action.inspect", "inspect")}
+              </button>
+            </td>
+          </tr>
+        );
+      }),
+    [rows, now, onInspect, t],
+  );
 
   return (
     <Panel
@@ -88,33 +120,7 @@ export function EventTape({ onInspect }: { onInspect: (id: number | null) => voi
                 </th>
               </tr>
             </thead>
-            <tbody>
-              {rows.map((r: OperatorDecisionRow) => {
-                const id = num(r.id);
-                const at = r.generated_at ?? null;
-                return (
-                  <tr key={controlCenterUseCases.decisionKey(r)}>
-                    <td className="ctl-rel" title={formatDateTime(at)}>
-                      {relAge(at, now, t)}
-                    </td>
-                    <td className="ctl-ts">{formatDateTime(at)}</td>
-                    <td className="ctl-act">
-                      <StatusBadge status={r.action} />
-                    </td>
-                    <td>{r.decision_stage ?? "—"}</td>
-                    <td>{r.blocked_by ?? ""}</td>
-                    <td className="ctl-reason" title={r.reason_code ?? ""}>
-                      {r.reason_code ?? "—"}
-                    </td>
-                    <td className="ctl-open">
-                      <button className="btn small ghost" disabled={r.payload_ok === false || id === null} onClick={() => onInspect(id)}>
-                        {r.payload_ok === false ? t("control-center.action.payload_bad", "payload ✗") : t("control-center.action.inspect", "inspect")}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
+            <tbody>{rowEls}</tbody>
           </table>
         </div>
       )}
