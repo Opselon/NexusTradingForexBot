@@ -6,7 +6,7 @@
  * the server pushes the payload into the store as a side effect.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { useI18n } from "@/stores/i18nStore";
@@ -26,6 +26,18 @@ export function SnapshotsTab({ onSendToCompare }: { onSendToCompare: (id: string
   const detail = useSnapshotDetail(detailId);
   const queryClient = useQueryClient();
   const api = useSortState<SortKey>({ key: "ts", dir: "desc" });
+
+  // Memoized per (snapshots, sort): the 30s list poll and any parent
+  // re-render reuse the already-sorted array instead of re-sorting the ring.
+  const rows = useMemo(
+    () =>
+      sortRows(
+        query.data?.snapshots ?? [],
+        (s) => (api.sort.key === "id" ? String(s.snapshot_id ?? "") : String(s.timestamp ?? "")),
+        api.sort.dir,
+      ),
+    [query.data?.snapshots, api.sort.key, api.sort.dir],
+  );
 
   const capture = async () => {
     try {
@@ -55,11 +67,6 @@ export function SnapshotsTab({ onSendToCompare }: { onSendToCompare: (id: string
         }
       >
         {(data) => {
-          const rows = sortRows(
-            data.snapshots ?? [],
-            (s) => (api.sort.key === "id" ? String(s.snapshot_id ?? "") : String(s.timestamp ?? "")),
-            api.sort.dir,
-          );
           return (
             <div className="dbg-sec">
               {!data.available && <div className="l3-note warn">{t("debug.snap.not_attached", "snapshot store not attached on this server process")}</div>}

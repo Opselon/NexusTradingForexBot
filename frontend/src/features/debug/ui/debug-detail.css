@@ -1,0 +1,365 @@
+/* ==========================================================================
+   Debug hub — tables, compare, model test, timeline (part 3 of 3; see
+   ./debug.css for the sheet map).
+
+   PURPOSE:  sortable evidence tables (sticky header + row hover/focus),
+             the A/B compare diff, the model-test verdict surface, the
+             execution timeline and the JSON viewer panes.
+   OWNER:    uiux-modern-20260926 lane 7 (debug) — future edits go here.
+   CONSUMES: theme tokens only + `.data-table` / `.l3-*` primitives and the
+             `dbg-` markup of ./tabs/*.
+   PROVIDES: `.dbg-table*`, `.dbg-compare*`, `.dbg-diff*`, `.dbg-vector*`,
+             `.dbg-verdict*`, `.dbg-timeline*`, `.dbg-json`.
+   INVARIANTS: no fetch, no value logic, namespace `dbg-`, tokens only,
+             logical properties, < 500 lines.
+   EXTEND:   add a numbered section at the end; never rename an existing
+             class — ./tabs/*.tsx matches them literally.
+   ========================================================================== */
+
+/* ------------------------------------------------------------------ *
+ * 11. Sortable tables
+ * ------------------------------------------------------------------ */
+
+.dbg-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--dbg-radius-sm);
+  overflow: auto;
+  background: var(--bg-inset);
+}
+
+.dbg-table {
+  min-inline-size: 560px;
+}
+
+/* sortable headers zero their own padding (the button carries it);
+   plain headers opt in with class="plain" — no :has() dependency */
+.dbg-table th {
+  padding: 0;
+}
+
+.dbg-table th.plain {
+  padding: 8px 12px;
+}
+
+.dbg-sortbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  inline-size: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.dbg-table th.num .dbg-sortbtn {
+  justify-content: flex-end;
+}
+
+.dbg-sortbtn:hover {
+  color: var(--accent-strong);
+}
+
+.dbg-sortarrow {
+  font-size: 8px;
+  opacity: 0;
+  transform: translateY(1px);
+  transition: opacity 0.12s ease;
+}
+
+.dbg-sortarrow.on {
+  opacity: 1;
+  color: var(--accent-strong);
+  text-shadow: 0 0 8px rgba(65, 166, 242, 0.8);
+}
+
+.dbg-table th.sorted {
+  color: var(--accent-strong);
+}
+
+.dbg-table tbody tr {
+  transition: background 0.1s ease;
+}
+
+.dbg-table tbody tr:hover td {
+  background: rgba(65, 166, 242, 0.06);
+}
+
+.dbg-table td {
+  font-size: 11.5px;
+}
+
+/* keyboard focus: a row lights up when focus is inside it (the action
+   buttons in the Snapshots table) and takes a visible ring itself */
+.dbg-table tbody tr:focus-within td {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.dbg-table tbody tr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ------------------------------------------------------------------ *
+ * 12. Compare — A/B pickers, ab line, signed key-level diff
+ * ------------------------------------------------------------------ */
+
+.dbg-compare-pick {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--dbg-radius-sm);
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 50%), var(--bg-inset);
+}
+
+.dbg-compare-arrow {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--accent-strong);
+  text-shadow: 0 0 10px rgba(65, 166, 242, 0.6);
+}
+
+.dbg-ab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+
+.dbg-ab .ab-a,
+.dbg-ab .ab-b {
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-panel-2);
+}
+
+.dbg-ab .ab-a {
+  color: var(--amber);
+  border-color: rgba(235, 161, 63, 0.45);
+}
+
+.dbg-ab .ab-b {
+  color: var(--accent-strong);
+  border-color: rgba(65, 166, 242, 0.45);
+}
+
+.dbg-diff-scroll {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--dbg-radius-sm);
+  background: var(--bg-inset);
+  padding: 6px 8px;
+}
+
+.dbg-diff {
+  gap: 3px;
+}
+
+.dbg-diff-row {
+  grid-template-columns: 18px minmax(120px, 1.2fr) minmax(0, 1fr) 22px minmax(0, 1fr) 108px;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border-inline-start: 3px solid transparent;
+  transition: background 0.1s ease, transform 0.1s ease;
+}
+
+.dbg-diff-row:hover {
+  transform: translateX(2px);
+}
+
+.dbg-diff-row .kind {
+  font-weight: 800;
+  text-align: center;
+  opacity: 0.9;
+}
+
+.dbg-diff-row .arrow {
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.dbg-diff-row.added {
+  border-inline-start-color: var(--green);
+}
+
+.dbg-diff-row.added .kind {
+  color: var(--green);
+}
+
+.dbg-diff-row.removed {
+  border-inline-start-color: var(--red);
+}
+
+.dbg-diff-row.removed .kind {
+  color: color-mix(in srgb, var(--red) 72%, white);
+}
+
+.dbg-diff-row.changed {
+  border-inline-start-color: var(--amber);
+}
+
+.dbg-diff-row.changed .kind {
+  color: var(--amber);
+}
+
+/* ------------------------------------------------------------------ *
+ * 13. Model test — vector grid, run button, verdict glow
+ * ------------------------------------------------------------------ */
+
+.dbg-vector {
+  padding: 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--dbg-radius-sm);
+  background: rgba(8, 12, 18, 0.6);
+  max-height: 240px;
+}
+
+.dbg-vector .l3-vector-cell .ix {
+  color: var(--accent-strong);
+  opacity: 0.75;
+}
+
+.dbg-vector .l3-vector-cell input {
+  border-radius: 5px;
+  font-size: 11px;
+}
+
+.dbg-run {
+  letter-spacing: 0.04em;
+  box-shadow: 0 6px 18px -10px rgba(65, 166, 242, 0.9);
+}
+
+.dbg-verdict-wrap {
+  margin-block-start: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.dbg-verdict .metric {
+  border-radius: var(--dbg-radius-sm);
+}
+
+.dbg-verdict .metric:has(.v.pos) {
+  border-color: rgba(62, 207, 142, 0.45);
+  box-shadow: 0 0 22px -14px rgba(62, 207, 142, 0.9);
+}
+
+.dbg-verdict .metric:has(.v.neg) {
+  border-color: rgba(242, 86, 77, 0.5);
+  box-shadow: 0 0 22px -14px rgba(242, 86, 77, 0.9);
+}
+
+/* probability bars: gradient fill + traveling sheen */
+.dbg-page .probbar .track {
+  block-size: 8px;
+}
+
+.dbg-page .probbar .track i {
+  position: relative;
+  overflow: hidden;
+}
+
+.dbg-page .probbar .track i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.35) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: dbgSheen 2.6s ease-in-out infinite;
+}
+
+@keyframes dbgSheen {
+  0% {
+    transform: translateX(-100%);
+  }
+  55%,
+  100% {
+    transform: translateX(160%);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 14. Execution timeline — railed stages
+ * ------------------------------------------------------------------ */
+
+.dbg-timeline {
+  position: relative;
+  padding-inline-start: 6px;
+}
+
+.dbg-timeline::before {
+  content: "";
+  position: absolute;
+  inset-block: 6px;
+  inset-inline-start: 104px;
+  inline-size: 1px;
+  background: linear-gradient(180deg, var(--accent), var(--border) 85%);
+  opacity: 0.55;
+}
+
+.dbg-tl-row {
+  position: relative;
+  grid-template-columns: 96px 1fr;
+  gap: 18px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  transition: background 0.1s ease;
+}
+
+.dbg-tl-row:hover {
+  background: rgba(65, 166, 242, 0.05);
+}
+
+/* stage dot on the rail */
+.dbg-tl-row::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 96px;
+  inset-block-start: 12px;
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background: var(--bg-panel);
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 8px rgba(65, 166, 242, 0.7);
+}
+
+.dbg-tl-row .t {
+  text-align: end;
+  color: var(--text-faint);
+}
+
+.dbg-tl-row .body b {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------------ *
+ * 15. JSON viewer panes — inset terminal look
+ * ------------------------------------------------------------------ */
+
+.dbg-json {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--dbg-radius-sm);
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 22px),
+    var(--bg-inset);
+  max-height: 460px;
+  overflow: auto;
+}
+
+.dbg-json .l3-json-key {
+  color: color-mix(in srgb, var(--accent) 85%, white);
+}
