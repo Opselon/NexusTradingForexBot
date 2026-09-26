@@ -189,7 +189,13 @@ body {
   display: flex; align-items: center; gap: 14px;
   padding: 8px 16px;
   background: rgba(13, 19, 27, 0.88);
-  backdrop-filter: blur(8px);
+  /* backdrop-filter removed (uiux-modern-20260926, IM1): this bar sits over
+     the scrolling page, so the blur re-composited every frame while a live
+     dashboard scrolled (R1 evidence §5.2 names it the shell's hot path).
+     shell-chrome.css paints this bar at 97% opacity, so under that layer the
+     8px blur was blending only that last 3% — below the noise floor. If the
+     chrome layer is ever removed, restore a filter here before judging the
+     bar naked. */
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
   z-index: var(--z-topbar);

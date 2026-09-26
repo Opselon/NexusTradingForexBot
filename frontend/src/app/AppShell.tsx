@@ -13,7 +13,7 @@
  * never by ad-hoc token probing.
  */
 
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 // Wave 6 (perf): the seven legacy routes are code-split like the feature
@@ -110,18 +110,22 @@ function LangRow() {
   return (
     <div className="side-row">
       <span>{t("ux.lang.label", "LANGUAGE")}</span>
-      <select
-        className="select lang-select"
-        value={lang}
-        onChange={(e) => setLang(e.target.value as (typeof LANGUAGES)[number]["id"])}
-        aria-label={t("shell.lang.aria", "Language")}
-      >
-        {LANGUAGES.map((l) => (
-          <option key={l.id} value={l.id}>
-            {l.label}
-          </option>
-        ))}
-      </select>
+      {/* Wrapper paints the chevron (::after never renders on a <select>); it
+          is presentation only — same control, same handler, same popup. */}
+      <span className="select-wrap">
+        <select
+          className="select lang-select"
+          value={lang}
+          onChange={(e) => setLang(e.target.value as (typeof LANGUAGES)[number]["id"])}
+          aria-label={t("shell.lang.aria", "Language")}
+        >
+          {LANGUAGES.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+      </span>
     </div>
   );
 }
@@ -132,6 +136,11 @@ export function AppShell() {
   const dense = useUiStore((s) => s.dense);
   const toggleDense = useUiStore((s) => s.toggleDense);
   const [helpOpen, setHelpOpen] = useState(false);
+  // Stable identity for CommandPalette's `commands` useMemo: an inline arrow
+  // prop would be a fresh function on every AppShell render (snapshot poll +
+  // clock tick), invalidating that memo and rebuilding the whole command list
+  // on each one (R1 evidence §5.1, render-cost entry for CommandPalette).
+  const openHelp = useCallback(() => setHelpOpen(true), []);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const t = useI18n((s) => s.t);
@@ -465,7 +474,7 @@ export function AppShell() {
         </main>
       </div>
       <ToastHost />
-      <CommandPalette onOpenHelp={() => setHelpOpen(true)} />
+      <CommandPalette onOpenHelp={openHelp} />
       {helpOpen && (
         <ConfirmModal
           title={t("ux.shortcut.help", "Keyboard shortcuts")}

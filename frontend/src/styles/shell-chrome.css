@@ -10,7 +10,7 @@
  * PROVIDES: no exports — pure CSS, loaded once from src/main.tsx AFTER
  *           theme.css and after the component stylesheets so it wins every
  *           equal-specificity tie without relying on cascade luck.
- * INVIANTS: additive and scoped under `.app-shell` (never a feature page);
+ * INVARIANTS: additive and scoped under `.app-shell` (never a feature page);
  *           no token/keyframe/selector from theme.css renamed or removed;
  *           colour only as color-mix()/rgba() of EXISTING tokens (no bare
  *           hex, no new hue); logical properties throughout with explicit
@@ -82,7 +82,7 @@ body.dense .app-shell .page { padding: var(--sp-4) var(--sp-4) var(--sp-7); }
 .app-shell .brand {
   position: relative;
   gap: var(--sp-3);
-  padding: 14px var(--sp-4) 13px;
+  padding: 14px var(--sp-3) 13px;
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--accent) 7%, transparent),
@@ -138,13 +138,16 @@ body.dense .app-shell .page { padding: var(--sp-4) var(--sp-4) var(--sp-7); }
 
 /* --------------------------------- Nav ------------------------------------ */
 .app-shell .nav { padding: var(--sp-2) var(--sp-2) var(--sp-3); }
-/* Section label: micro-caps + a fading rule so the groups read as groups. */
+/* Section label: micro-caps + a fading rule so the groups read as groups.
+   Weight, not size or hue — 9px uppercase needs the extra stroke to stay
+   legible on the panel without stealing the label colour from --text-faint. */
 .app-shell .nav-section {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   padding: var(--sp-4) var(--sp-2) var(--sp-1);
   letter-spacing: var(--ls-wider);
+  font-weight: 600;
   color: var(--text-faint);
 }
 .app-shell .nav-section::after {
@@ -268,6 +271,35 @@ body.dense .app-shell .page { padding: var(--sp-4) var(--sp-4) var(--sp-7); }
     box-shadow var(--dur-2) var(--ease-out);
 }
 .app-shell .switch::after { transition: transform var(--dur-3) var(--ease-emph), background var(--dur-2) var(--ease-out); }
+/* Language select: the OS chevron is the one control left in the rail that
+   still reads as a browser widget. Wrapper exists only to draw a matching
+   chevron (::after never renders on a <select>) and to pad the text clear of
+   it; the native popup, keyboard behaviour and handler are untouched. */
+.app-shell .select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.app-shell .select-wrap::after {
+  content: "▾";
+  position: absolute;
+  inset-inline-end: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px;
+  line-height: 1;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+.app-shell .lang-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-block: 3px;
+  padding-inline-start: 7px;
+  padding-inline-end: 22px;
+  cursor: pointer;
+}
+
 .app-shell .switch.on {
   background: color-mix(in srgb, var(--accent) 30%, transparent);
   border-color: var(--accent);
@@ -279,13 +311,16 @@ body.dense .app-shell .page { padding: var(--sp-4) var(--sp-4) var(--sp-7); }
   gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-4);
   z-index: var(--z-topbar);
+  /* Deliberately NO backdrop-filter: this bar sits over the scrolling page,
+     so a blur here re-composites every frame while a live dashboard scrolls.
+     The gradient is opaque enough to read as a bar on its own (R1 evidence
+     §5.2 names backdrop-filter the shell's CSS hot path — shell.css:10,
+     theme.css:190,488). */
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--bg-panel) 94%, transparent),
-    color-mix(in srgb, var(--bg-inset) 90%, transparent)
+    color-mix(in srgb, var(--bg-panel) 97%, transparent),
+    color-mix(in srgb, var(--bg-inset) 96%, transparent)
   );
-  backdrop-filter: blur(12px) saturate(140%);
-  -webkit-backdrop-filter: blur(12px) saturate(140%);
   box-shadow: 0 1px 0 var(--elevate-hi), var(--elev-1);
 }
 /* Two visual groups: status (left) and clock + feed (right), divided so the
