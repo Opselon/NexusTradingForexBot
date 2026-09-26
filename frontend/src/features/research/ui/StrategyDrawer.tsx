@@ -5,17 +5,39 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ConfirmModal, DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { CommandResultLine, Drawer, GateStepper, JsonBlock, StatusPill } from "./lane5Kit";
+import { RsTable, applySort, useSort, type RsColumn, type SortValue } from "./rsTable";
 import { GATE_CHAIN } from "../handbook/gateChain";
 import StrategyPlaybookLazy from "./StrategyPlaybookLazy";
 import "./research.css";
-import { commandVerdict, obj, str, toGateVo, type Row } from "../model";
+import { commandVerdict, obj, str, toGateVo, type GateVo, type Row } from "../model";
 import { researchQueries, researchUseCases } from "../useCases";
+
+type GateCol = "gate" | "status" | "class" | "reason" | "ms";
+
+/** Gate-ledger headers — a `key` marks the column as sortable. */
+const GATE_COLS: Array<RsColumn<GateCol>> = [
+  { label: "gate", key: "gate", title: "sort by gate name" },
+  { label: "status", key: "status", title: "sort by backend status" },
+  { label: "class", key: "class", title: "sort by failure class" },
+  { label: "reason", key: "reason" },
+  { label: "ms", key: "ms", num: true, title: "sort by duration" },
+  { label: "" },
+];
+
+/** Accessors over the loaded gate VOs — a click only reorders loaded rows. */
+const GATE_ACCESSORS: Record<GateCol, (g: GateVo) => SortValue> = {
+  gate: (g) => g.name,
+  status: (g) => g.status,
+  class: (g) => g.failureClass,
+  reason: (g) => g.reason,
+  ms: (g) => g.durationMs,
+};
 
 export default function StrategyDrawer({ strategyId, onClose }: { strategyId: string; onClose: () => void }) {
   const [tab, setTab] = useState<"trace" | "gates" | "events" | "evidence" | "raw" | "playbook">("trace");
@@ -108,6 +130,25 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
     [gates, cmd.state.running],
   );
 
+  /**
+   * §9 error presentation: a failed detail read renders the backend's own
+   * error message through the shared ErrorState instead of reading as "the
+   * backend returned no rows". Read-only — no refetch/retry wiring, no
+   * query option, key or interval touched.
+   */
+  const failed = (q: { isError: boolean; error: unknown }): ReactNode =>
+    q.isError ? (
+      <ErrorState message={q.error instanceof Error ? q.error.message : "backend request failed"} />
+    ) : null;
+
+  // perf: gate-ledger sort is a pure function of the loaded rows + sort
+  // state; untouched (key=null) the list comes back unchanged (backend order).
+  const gateSort = useSort<GateCol>();
+  const ledgerRows = useMemo(
+    () => applySort(gates, gateSort.sort.key ? GATE_ACCESSORS[gateSort.sort.key] : null, gateSort.sort.dir),
+    [gates, gateSort.sort.key, gateSort.sort.dir],
+  );
+
   const tabs: Array<[typeof tab, string]> = [
     ["trace", "Trace"],
     ["gates", `Gates (${gates.length})`],
@@ -119,14 +160,15 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
 
   return (
     <Drawer title={`Strategy trace — ${strategyId}`} onClose={onClose}>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-        {tabs.map(([id, label]) => (
-          <button key={id} className={`btn small ${tab === id ? "primary" : "ghost"}`} aria-pressed={tab === id} onClick={() => setTab(id)}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <CommandResultLine state={cmd.state} />
+      <div className="rs-drawer">
+        <div className="rs-drawer-tabs" role="group" aria-label="Strategy trace sections">
+          {tabs.map(([id, label]) => (
+            <button key={id} className={`btn small ${tab === id ? "primary" : "ghost"}`} aria-pressed={tab === id} onClick={() => setTab(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <CommandResultLine state={cmd.state} />
 
       {tab === "trace" &&
         (detailQ.isPending ? (
@@ -139,7 +181,7 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
         ) : detailQ.data?.available === false ? (
           <EmptyState message="Research subsystem unavailable" hint={detailQ.data.reason ?? "backend answered available:false"} />
         ) : (
-          <div style={{ display: "grid", gap: 10 }}>
+          <div className="rs-drawer-grid">
             <div className="grid cols-3">
               <MetricCard label="Lifecycle" value={<StatusBadge status={str(trace?.lifecycle)} />} sub={str(trace?.blocked_reason) ?? undefined} />
               <MetricCard label="Gate records" value={String(gates.length)} tone="dim" sub="from /api/research/gates" />
@@ -151,7 +193,7 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
             </div>
             <div className="rs-rail-drawer" aria-label="Gate chain position">
               {GATE_CHAIN.map((g, i) => (
-                <span key={g} style={{ display: "contents" }}>
+                <span key={g} className="rs-contents">
                   {i > 0 && <span className="rs-rail-arrow" aria-hidden="true">→</span>}
                   <span className={`rs-step ${chainClass(g)}`} title={`chain step ${i + 1}: ${g}`}>
                     {i + 1}. {g}
@@ -165,7 +207,7 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
             </Panel>
             <Panel title="Validation runs (reproducibility lineage)" tight>
               {runs.length === 0 ? (
-                runsQ.isPending ? <Skeleton /> : <EmptyState message="No research runs recorded for this strategy." />
+                runsQ.isPending ? <Skeleton /> : (failed(runsQ) ?? <EmptyState message="No research runs recorded for this strategy." />)
               ) : (
                 <DataTable headers={[{ label: "run" }, { label: "dataset" }, { label: "executed" }, { label: "result" }, { label: "" }]}>
                   {runs.slice(0, 12).map((r: Row, i: number) => (
@@ -190,17 +232,17 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
       {tab === "gates" && (
         <Panel title="Gate ledger" tight>
           {gates.length === 0 ? (
-            gatesQ.isPending ? <Skeleton /> : <EmptyState message="No gate records returned." />
+            gatesQ.isPending ? <Skeleton /> : (failed(gatesQ) ?? <EmptyState message="No gate records returned." />)
           ) : (
-            <DataTable headers={[{ label: "gate" }, { label: "status" }, { label: "class" }, { label: "reason" }, { label: "ms", num: true }, { label: "" }]}>
-              {gates.map((g, i) => (
+            <RsTable cols={GATE_COLS} sort={gateSort.sort} onToggle={gateSort.toggle}>
+              {ledgerRows.map((g, i) => (
                 <tr key={g.gateId ?? i}>
                   <td className="small">{g.name}</td>
                   <td>
                     <StatusPill status={g.status} />
                   </td>
                   <td className="tiny muted">{g.failureClass ?? "—"}</td>
-                  <td className="tiny" style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }} title={g.reason ?? ""}>
+                  <td className="tiny rs-cell-clip" title={g.reason ?? ""}>
                     {g.reason ?? "—"}
                   </td>
                   <td className="tiny num">{g.durationMs === null ? "—" : formatNumber(g.durationMs, 0)}</td>
@@ -213,7 +255,7 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
                   </td>
                 </tr>
               ))}
-            </DataTable>
+            </RsTable>
           )}
         </Panel>
       )}
@@ -221,7 +263,7 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
       {tab === "events" && (
         <Panel title="Persisted gate timeline" tight>
           {events.length === 0 ? (
-            eventsQ.isPending ? <Skeleton /> : <EmptyState message="No archived/live events for this strategy." />
+            eventsQ.isPending ? <Skeleton /> : (failed(eventsQ) ?? <EmptyState message="No archived/live events for this strategy." />)
           ) : (
             <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "detail" }]}>
               {events.slice(0, 100).map((e: Row, i: number) => (
@@ -239,16 +281,16 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
       {tab === "evidence" && (
         <Panel title="Immutable evidence vault" tight>
           {evidence.length === 0 ? (
-            evidenceQ.isPending ? <Skeleton /> : <EmptyState message="No evidence rows returned." />
+            evidenceQ.isPending ? <Skeleton /> : (failed(evidenceQ) ?? <EmptyState message="No evidence rows returned." />)
           ) : (
-            <div style={{ display: "grid", gap: 8 }}>
+            <div className="rs-drawer-grid tight">
               {evidence.slice(0, 25).map((e: Row, i: number) => (
-                <details key={i} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "6px 10px" }}>
+                <details key={i} className="rs-drawer-details">
                   <summary className="small">
                     {str(e.evidence_id)?.slice(0, 14) ?? "evidence"} · {str(e.kind) ?? str(e.evidence_type) ?? "—"} ·{" "}
                     <span className="muted">{formatDateTime(str(e.created_at))}</span>
                   </summary>
-                  <div style={{ marginTop: 6 }}>
+                  <div className="rs-drawer-foot">
                     <JsonBlock value={e.payload ?? e.data ?? e} maxChars={2500} />
                   </div>
                 </details>
@@ -269,6 +311,8 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
           <JsonBlock value={trace?.invariant ?? obj(trace)} />
         </Panel>
       )}
+
+      </div>
 
       {confirmGate && (
         <ConfirmModal
