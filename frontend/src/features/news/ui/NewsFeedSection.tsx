@@ -7,7 +7,7 @@
  * refetched feed decide what to show (server owns the state).
  */
 
-import { useMemo, useState, type KeyboardEvent } from "react";
+import { memo, useCallback, useMemo, useState, type KeyboardEvent } from "react";
 import { useI18n } from "@/stores/i18nStore";
 import { ConfirmModal, EmptyState, ErrorState, Panel, Segmented, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
@@ -37,11 +37,24 @@ export function NewsFeedSection() {
   const counts = feed.data?.statusCounts;
 
   const ids = useMemo(() => articles.map((a) => a.article_id), [articles]);
+  // perf: one linear scan per (articles, selection) change instead of a fresh
+  // `articles.find(...)` on every render of the feed.
+  const selectedArticle = useMemo(
+    () => (selected ? articles.find((a) => a.article_id === selected) : undefined),
+    [articles, selected],
+  );
 
   const ai = aiStatus.data?.ai_status;
 
-  const runAnalyze = (articleId: string, force: boolean): void => {
-    analyze.mutate(
+  // perf: row callbacks are created ONCE (deps are the mutation observers'
+  // stable `mutate`), so the 50-row list stops re-allocating three closures
+  // per row per render — ArticleRow is memoized against them.
+  const { mutate: analyzeMutate } = analyze;
+  const { mutate: restoreMutate } = restore;
+  const handleSelect = useCallback((articleId: string): void => setSelected(articleId), []);
+
+  const runAnalyze = useCallback((articleId: string, force: boolean): void => {
+    analyzeMutate(
       { articleId, force },
       {
         onSuccess: (res) =>
@@ -56,7 +69,7 @@ export function NewsFeedSection() {
         onError: (e) => setNote({ err: true, text: `Analyze failed: ${asErrorText(e)}` }),
       },
     );
-  };
+  }, [analyzeMutate]);
 
   const runBatch = (): void => {
     if (ids.length === 0) {
@@ -92,12 +105,12 @@ export function NewsFeedSection() {
     });
   };
 
-  const runRestore = (articleId: string): void => {
-    restore.mutate(articleId, {
+  const runRestore = useCallback((articleId: string): void => {
+    restoreMutate(articleId, {
       onSuccess: (res) => setNote({ err: !!res.error, text: res.error ? t("news.feed.restore_refused", "Restore refused: {e}", { e: res.error }) : t("news.feed.restore_done", "Article restored to ACTIVE (backend-confirmed).") }),
       onError: (e) => setNote({ err: true, text: t("news.feed.restore_failed", "Restore failed: {e}", { e: asErrorText(e) }) }),
     });
-  };
+  }, [restoreMutate, t]);
 
   return (
     <Panel
@@ -156,9 +169,9 @@ export function NewsFeedSection() {
               selected={selected === a.article_id}
               busy={analyze.isPending}
               restoreBusy={restore.isPending}
-              onSelect={() => setSelected(a.article_id)}
-              onAnalyze={(force) => runAnalyze(a.article_id, force)}
-              onRestore={() => runRestore(a.article_id)}
+              onSelect={handleSelect}
+              onAnalyze={runAnalyze}
+              onRestore={runRestore}
             />
           ))}
         </div>
@@ -167,7 +180,7 @@ export function NewsFeedSection() {
       {selected && (
         <ArticleDrawer
           articleId={selected}
-          fallback={articles.find((a) => a.article_id === selected)}
+          fallback={selectedArticle}
           busy={analyze.isPending}
           analyzeNote={note?.text ?? null}
           onClose={() => setSelected(null)}
@@ -201,7 +214,7 @@ function impClass(pct: number | null): string {
   return "news-imp";
 }
 
-export function ArticleRow({
+export const ArticleRow = memo(function ArticleRow({
   article: a,
   selected,
   busy,
@@ -214,9 +227,9 @@ export function ArticleRow({
   selected: boolean;
   busy: boolean;
   restoreBusy: boolean;
-  onSelect: () => void;
-  onAnalyze: (force: boolean) => void;
-  onRestore: () => void;
+  onSelect: (articleId: string) => void;
+  onAnalyze: (articleId: string, force: boolean) => void;
+  onRestore: (articleId: string) => void;
 }) {
   const t = useI18n((s) => s.t);
   const dir = directionOf(a);
@@ -230,14 +243,12 @@ export function ArticleRow({
     if (e.key !== "Enter" && e.key !== " ") return;
     if (e.target !== e.currentTarget) return;
     e.preventDefault();
-    onSelect();
+    onSelect(a.article_id);
   };
   return (
-    <article className={`news-item ${selected ? "selected" : ""}`} onClick={onSelect} onKeyDown={activate} tabIndex={0} aria-current={selected || undefined}>
-      <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
-        <span className="title" style={{ flex: 1, minWidth: 0 }}>
-          {a.title}
-        </span>
+    <article className={`news-item ${selected ? "selected" : ""}`} onClick={() => onSelect(a.article_id)} onKeyDown={activate} tabIndex={0} aria-current={selected || undefined}>
+      <div className="news-item-head">
+        <span className="title">{a.title}</span>
         <span className={`news-dir ${dir}`}>{dirWord(t, dir)}</span>
       </div>
       <div className="metarow">
@@ -261,16 +272,16 @@ export function ArticleRow({
       )}
       <div className="news-actions" onClick={(e) => e.stopPropagation()}>
         {status === "IRRELEVANT" && (
-          <button className="btn small" onClick={onRestore} disabled={busy || restoreBusy}>
+          <button className="btn small" onClick={() => onRestore(a.article_id)} disabled={busy || restoreBusy}>
             {restoreBusy ? t("news.feed.restoring", "restoring…") : t("news.feed.restore", "Restore")}
           </button>
         )}
         {aiDone ? (
-          <button className="btn small primary" onClick={() => onAnalyze(true)} disabled={busy || restoreBusy}>
+          <button className="btn small primary" onClick={() => onAnalyze(a.article_id, true)} disabled={busy || restoreBusy}>
             {busy ? t("news.feed.analyzing", "analyzing…") : t("news.feed.reanalyze", "Re-analyze (force)")}
           </button>
         ) : (
-          <button className="btn small primary" onClick={() => onAnalyze(false)} disabled={busy || restoreBusy}>
+          <button className="btn small primary" onClick={() => onAnalyze(a.article_id, false)} disabled={busy || restoreBusy}>
             {busy ? t("news.feed.analyzing", "analyzing…") : t("news.feed.analyze_ai", "Analyze with AI")}
           </button>
         )}
@@ -279,4 +290,4 @@ export function ArticleRow({
       </div>
     </article>
   );
-}
+});
