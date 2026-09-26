@@ -113,6 +113,33 @@ def _junit_failures(junit: Path) -> list[str]:
     return out
 
 
+def _junit_first_failure_message(junit: Path) -> str:
+    """The first failure's own message text, flattened for an annotation.
+
+    ``failure``/``error`` elements carry the assertion text either in their
+    ``message`` attribute or as body text; both shapes appear in the wild.
+    """
+    if not junit.is_file():
+        return ""
+    try:
+        tree = ET.parse(junit)
+    except ET.ParseError:
+        return ""
+    root = tree.getroot()
+    nodes = root.findall("testsuite") if root.tag == "testsuites" else [root]
+    for node in nodes:
+        for tc in node.findall("testcase"):
+            for tag in ("failure", "error"):
+                el = tc.find(tag)
+                if el is None:
+                    continue
+                joined = " ".join(filter(None, (el.attrib.get("message"), el.text or "")))
+                if joined.strip():
+                    name = tc.attrib.get("name", "?")
+                    return f"{name}: {joined.strip()[:1200]}"
+    return ""
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="check_pg_arm")
     ap.add_argument("--pytest", nargs=argparse.REMAINDER, default=[], help="extra pytest args")
@@ -231,6 +258,13 @@ def main(argv: list[str] | None = None) -> int:
             f"pytest rc={proc.returncode}; failing: {detail}",
             title="PG arm gate — arm failed",
         )
+        # A second annotation carries the FIRST failure's own message. The
+        # gate's step log is not retrievable from a review host, and a list of
+        # test names alone does not say WHY they failed — which is the whole
+        # point of this gate being self-describing.
+        first_msg = _junit_first_failure_message(args.junit)
+        if first_msg:
+            _annotate(first_msg, title="PG arm gate — first failure")
         print(f"PG ARM GATE FAILED — pytest rc={proc.returncode}", file=sys.stderr)
         print(proc.stdout[-4000:], file=sys.stderr)
         if args.json:
