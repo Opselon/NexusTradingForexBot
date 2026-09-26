@@ -21,7 +21,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/stores/i18nStore";
 import {
   ConfirmModal,
-  DataTable,
   EmptyState,
   ErrorState,
   MetricCard,
@@ -48,6 +47,7 @@ import {
 } from "../model";
 import type { ProConsoleEntry } from "../proTypes";
 import type { NewsAiAnalysisRow } from "../types";
+import { NewsSortTable, type SortColumn } from "./NewsSortTable";
 import { FreshnessNote, asErrorText } from "./shared";
 
 type ConfirmKind = "analyze-all" | "purge-soft" | "purge-hard" | "auto-prune" | null;
@@ -98,6 +98,19 @@ export function NewsProConsolePanel() {
     : t("news.pro.provider_none", "provider —");
 
   const busy = analyzeAll.isPending || purge.isPending || prune.isPending;
+
+  // perf: localized header labels + sort extractors memoized per translation
+  // identity — the panel re-renders on the 1.5s console poll.
+  const answerColumns = useMemo<SortColumn<NewsAiAnalysisRow>[]>(
+    () => [
+      { key: "analyzed", label: t("news.pro.h_analyzed", "analyzed"), sortValue: (a) => (a.analyzed_at ? Date.parse(a.analyzed_at) : null) },
+      { key: "summary", label: t("news.pro.h_summary", "summary"), sortValue: (a) => a.summary ?? null },
+      { key: "sentiment", label: t("news.pro.h_sentiment", "sentiment"), sortValue: (a) => a.sentiment ?? null },
+      { key: "provider", label: t("news.pro.h_provider", "provider / model"), sortValue: (a) => [a.provider, a.model].filter(Boolean).join(" ") || null },
+      { key: "status", label: t("news.pro.h_status", "status"), sortValue: (a) => a.analysis_status ?? null },
+    ],
+    [t],
+  );
   const logRef = useAutoScroll(log.entries.length);
 
   const runAnalyzeAll = (): void => {
@@ -252,25 +265,21 @@ export function NewsProConsolePanel() {
       ) : (answers.data ?? []).length === 0 ? (
         <EmptyState message={t("news.pro.answers_empty", "No AI answers stored yet.")} hint={t("news.pro.answers_empty_hint", "Analyze an article or enable auto-analysis — rows come from news_ai_analysis verbatim.")} />
       ) : (
-        <DataTable
-          headers={[
-            { label: t("news.pro.h_analyzed", "analyzed") },
-            { label: t("news.pro.h_summary", "summary") },
-            { label: t("news.pro.h_sentiment", "sentiment") },
-            { label: t("news.pro.h_provider", "provider / model") },
-            { label: t("news.pro.h_status", "status") },
-          ]}
-        >
-          {(answers.data ?? []).map((a: NewsAiAnalysisRow, i) => (
-            <tr key={a.ai_analysis_id ?? `${a.article_id}-${i}`}>
+        <NewsSortTable
+          columns={answerColumns}
+          rows={answers.data ?? []}
+          rowKey={(a, i) => String(a.ai_analysis_id ?? `${a.article_id}-${i}`)}
+          label={t("news.pro.title", "Pro auto console")}
+          renderCells={(a) => (
+            <>
               <td>{a.analyzed_at ? formatDateTime(a.analyzed_at) : "—"}</td>
               <td className="news-pro-summary" title={a.summary ?? ""}>{truncate(a.summary, 160) || "—"}</td>
               <td>{a.sentiment || "—"}</td>
               <td className="inline-mono tiny">{[a.provider, a.model].filter(Boolean).join(" ") || "—"}</td>
               <td><StatusBadge status={a.analysis_status ?? "UNKNOWN"} /></td>
-            </tr>
-          ))}
-        </DataTable>
+            </>
+          )}
+        />
       )}
 
       {confirm && (
