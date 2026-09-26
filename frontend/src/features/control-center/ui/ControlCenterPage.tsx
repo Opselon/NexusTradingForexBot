@@ -39,6 +39,16 @@ import "./control-center.css";
 
 type Tab = "overview" | "decisions" | "funnel" | "no-trade" | "orders" | "calibration";
 
+/** Endpoint provenance chips for the hero — verbatim transport paths this page
+ *  already prints elsewhere in its own UI (api.ts constants, no new call). */
+const PROVENANCE: ReadonlyArray<string> = [
+  "/api/operator/summary",
+  "/api/operator/decisions",
+  "/api/operator/calibration",
+  "/api/engine/toggle",
+  "/api/engine/mode",
+];
+
 export default function ControlCenterPage(props: ShellPageProps) {
   void props;
   const t = useI18n((s) => s.t);
@@ -75,19 +85,39 @@ export default function ControlCenterPage(props: ShellPageProps) {
 
   return (
     <div className="ctl-page">
-      <div className="page-head ctl-head">
-        <h2>{t("nav.feature.control-center", "Control Center")}</h2>
-        <span className="muted small">{t("control-center.page.subtitle", "operator evidence console (read-only ledger views + guarded engine control)")}</span>
-        <span className={`badge ${isLive ? "bad" : "good"}`} title={t("control-center.a11y.mode_banner", "mode banner")}>
-          {mode}
-        </span>
-        <FreshnessCaption
-          timestamp={str(rt.snapshot_timestamp)}
-          source="operator/summary"
-          isFetching={summaryQ.isFetching}
-          error={summaryQ.isError}
-        />
-      </div>
+      <header className="ctl-herohead">
+        <div className="ctl-herohead-main">
+          <div className="ctl-kicker">
+            <span className="ctl-kicker-bar" aria-hidden="true" />
+            {t("control-center.page.eyebrow", "OPERATOR CONSOLE")}
+          </div>
+          <div className="ctl-title-row">
+            <span className="ctl-title-glyph" aria-hidden="true">
+              ✜
+            </span>
+            <h2 className="ctl-title">{t("nav.feature.control-center", "Control Center")}</h2>
+          </div>
+          <p className="ctl-desc">{t("control-center.page.subtitle", "operator evidence console (read-only ledger views + guarded engine control)")}</p>
+          <div className="ctl-provenance">
+            {PROVENANCE.map((ep) => (
+              <span className="ctl-prov" key={ep}>
+                {ep}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="ctl-herohead-status">
+          <span className={`badge ${isLive ? "bad" : "good"}`} title={t("control-center.a11y.mode_banner", "mode banner")}>
+            {mode}
+          </span>
+          <FreshnessCaption
+            timestamp={str(rt.snapshot_timestamp)}
+            source="operator/summary"
+            isFetching={summaryQ.isFetching}
+            error={summaryQ.isError}
+          />
+        </div>
+      </header>
 
       {isLive && (
         <div className="banner down" role="alert">

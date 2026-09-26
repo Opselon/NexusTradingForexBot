@@ -19,12 +19,63 @@
              existing token pair; keep every new rule inside its own section.
    ========================================================================== */
 
-/* --- 1. page frame ------------------------------------------------------- */
+/* --- 1. page frame + hero header ---------------------------------------- */
 .ctl-page { --ctl-radius: 12px; --ctl-radius-sm: 8px; }
-.ctl-head { flex-wrap: wrap; }
-.ctl-body { margin-block-start: 12px; display: grid; gap: 12px; }
+.ctl-body { margin-block-start: 12px; display: grid; gap: var(--panel-gap); }
 /* panels carry their own spacing — inside the grid the gap does the job */
 .ctl-body .panel { margin-bottom: 0; }
+
+/* hero header: kicker → glyph + gradient title → description + provenance
+   chips | status side (mode badge + freshness caption) */
+.ctl-herohead {
+  position: relative; overflow: hidden;
+  display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
+  gap: 16px; padding: var(--card-pad); padding-block: 16px;
+  border: 1px solid var(--border); border-radius: var(--ctl-radius);
+  background:
+    radial-gradient(560px 200px at 88% -40%, rgba(65, 166, 242, 0.14), transparent 70%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 55%), var(--bg-panel);
+  box-shadow: var(--elev-1);
+}
+/* top hairline that fades out at both ends */
+.ctl-herohead::before {
+  content: ""; position: absolute; inset: 0 0 auto; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(108, 192, 255, 0.5), transparent);
+}
+.ctl-herohead-main { display: grid; gap: 8px; align-content: start; min-inline-size: 0; flex: 1 1 340px; }
+.ctl-kicker {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent-strong);
+}
+.ctl-kicker-bar {
+  inline-size: 18px; block-size: 2px; border-radius: 2px; flex-shrink: 0;
+  background: linear-gradient(90deg, var(--accent), var(--violet));
+  box-shadow: 0 0 8px rgba(65, 166, 242, 0.7);
+}
+.ctl-title-row { display: flex; align-items: center; gap: 10px; }
+.ctl-title-glyph {
+  font-size: 22px; line-height: 1; color: var(--accent-strong);
+  text-shadow: 0 0 14px rgba(65, 166, 242, 0.45);
+}
+.ctl-title {
+  margin: 0; font-size: 26px; line-height: 1.15; letter-spacing: -0.01em;
+  color: var(--text);
+  background-image: linear-gradient(90deg, var(--text), var(--accent-strong));
+}
+/* gradient text only where the browser can clip it — otherwise the token color
+   above keeps the title readable (never an invisible heading) */
+@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+  .ctl-title { -webkit-background-clip: text; background-clip: text; color: transparent; }
+}
+.ctl-desc { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-dim); max-inline-size: 84ch; }
+.ctl-provenance { display: flex; flex-wrap: wrap; gap: 6px; }
+.ctl-prov {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em;
+  color: var(--text-faint); background: var(--bg-inset);
+  border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px;
+}
+.ctl-herohead-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; align-self: center; }
 
 @media (prefers-reduced-motion: no-preference) {
   .ctl-hero { animation: ctlIn 0.22s ease-out both; }
