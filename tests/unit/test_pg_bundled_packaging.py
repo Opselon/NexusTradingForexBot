@@ -220,14 +220,14 @@ def _build_probe_bundle(workdir: Path, *, entry: str, with_flags: bool) -> Path:
         f"""
 import sys, time
 sys.setrecursionlimit(20000)
-sys.path.insert(0, r"{_REPO_ROOT / 'src'}")
+sys.path.insert(0, r"{_REPO_ROOT / "src"}")
 import PyInstaller.__main__ as pyim
 
 args = [
     "--noconfirm", "--clean",
-    "--workpath", r"{workdir / 'work'}",
-    "--distpath", r"{workdir / 'dist'}",
-    "--specpath", r"{workdir / 'spec'}",
+    "--workpath", r"{workdir / "work"}",
+    "--distpath", r"{workdir / "dist"}",
+    "--specpath", r"{workdir / "spec"}",
     "--log-level", "ERROR",
     "--onefile", "--name", "probe",
     # the bundled scientific stack is irrelevant to the psycopg question and
@@ -237,7 +237,7 @@ args = [
     "--exclude-module", "MetaTrader5", "--exclude-module", "matplotlib",
     "--exclude-module", "PIL", "--exclude-module", "scipy",
     "--exclude-module", "sklearn", "--exclude-module", "numba",
-    r"{_REPO_ROOT / 'src' / 'nexus_scalp' / 'release' / '{entry}'}",
+    r"{_REPO_ROOT / "src" / "nexus_scalp" / "release" / "{entry}"}",
 ]
 if {with_flags!r}:
     for m in {_PG_HIDDEN!r}:
@@ -350,8 +350,7 @@ def test_real_bundle_carries_psycopg(tmp_path: Path) -> None:
     assert "psycopg.rows" in found, "psycopg.rows missing (the row factory the pool uses)"
     # the C extension that makes `import psycopg` work without a compiler
     assert any(f.startswith("psycopg_binary") for f in found), (
-        "psycopg_binary (the C extension) is missing — psycopg would be "
-        "importable in name only"
+        "psycopg_binary (the C extension) is missing — psycopg would be importable in name only"
     )
 
 
@@ -386,8 +385,8 @@ def test_psycopg_pool_importable_in_dev_env() -> None:
     bundle; mirror that here so a dev environment without the postgres extra
     fails loudly at test time rather than at release time.
     """
-    import psycopg  # noqa: F401
-    import psycopg_pool  # noqa: F401
+    import psycopg
+    import psycopg_pool
 
     from nexus_scalp.database.config import DatabaseConfig
     from nexus_scalp.database.drivers import driver_available

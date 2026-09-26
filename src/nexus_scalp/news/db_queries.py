@@ -246,9 +246,7 @@ class QueriesMixin(_NewsDbCoreProto):
         impact_timeline invocation. Returns rows updated."""
         try:
             with self._connect() as conn:
-                cur = conn.execute(
-                    _backfill_impact_anchors_sql(sqlite=self._conn_is_sqlite(conn))
-                )
+                cur = conn.execute(_backfill_impact_anchors_sql(sqlite=self._conn_is_sqlite(conn)))
                 return int(cur.rowcount or 0)
         except Exception:
             return 0

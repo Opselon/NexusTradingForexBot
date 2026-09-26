@@ -1383,7 +1383,6 @@ def migrate_sqlite_to_pg(
     """
     import time
 
-
     started = time.monotonic()
     sqlite_dir = Path(sqlite_dir)
     result = MigrationResult(

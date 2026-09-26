@@ -443,8 +443,7 @@ def _fail(exc: BaseException, action: str, cfg: DatabaseConfig | None = None) ->
             "success": False,
             "code": "DB_QUERY_ERROR",
             "error": (
-                f"The database rejected the statement: {action} stopped "
-                "before reading any data."
+                f"The database rejected the statement: {action} stopped before reading any data."
             ),
             "hint": "Check the table/column names and permissions; the server "
             "itself is reachable (see the masked statement in the server log).",

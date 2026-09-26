@@ -163,8 +163,7 @@ def ddl_constraints() -> dict[str, set[tuple[str, ...]]]:
             for idx in conn.execute(f"PRAGMA index_list({table})").fetchall():
                 if idx[2] == 1:  # unique index
                     names = tuple(
-                        i[2]
-                        for i in conn.execute(f"PRAGMA index_info('{idx[1]}')").fetchall()
+                        i[2] for i in conn.execute(f"PRAGMA index_info('{idx[1]}')").fetchall()
                     )
                     cols.add(names)
             out[table] = cols
@@ -222,8 +221,7 @@ def test_pg_branch_conflict_target_is_a_real_constraint(
     target = tuple(c.strip().strip('"') for c in m.group(1).split(","))
     constraints = ddl_constraints[table]
     assert target in constraints, (
-        f"ON CONFLICT {target} on {table} is not a constraint the DDL declares "
-        f"(have {constraints})"
+        f"ON CONFLICT {target} on {table} is not a constraint the DDL declares (have {constraints})"
     )
     # and the helper agrees, resolved from the DDL rather than the statement
     assert list(target) == upsert_columns(table)

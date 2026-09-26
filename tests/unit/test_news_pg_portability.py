@@ -113,7 +113,9 @@ def test_pg_store_never_returns_a_raw_sqlite3_connection(tmp_path: Path) -> None
             conn.close()
 
 
-def test_sqlite_store_keeps_the_sqlite3_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sqlite_store_keeps_the_sqlite3_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """``(b)`` the SQLite provider keeps the exact sqlite3 path as before."""
     _pin_sqlite(monkeypatch, tmp_path)
     path = tmp_path / "sqlite_news.db"

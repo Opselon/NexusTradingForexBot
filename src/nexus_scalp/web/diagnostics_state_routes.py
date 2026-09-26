@@ -79,6 +79,7 @@ def _audit_repository() -> Any:
     """
     from nexus_scalp.adapters.database.audit_repository import AuditRepository
     from nexus_scalp.database.config import build_postgres_url, load_database_config
+    from nexus_scalp.web.server import db_path_for_audit
 
     cfg = load_database_config("audit")
     if cfg.is_postgresql:

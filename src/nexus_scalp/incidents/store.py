@@ -164,20 +164,24 @@ def _ddl_table_columns(ddl: str) -> tuple[str, ...]:
     """
     import re
 
-    m = re.search(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"]?(\w+)[\"]?\s*\((?P<body>.*)\)\s*$", ddl, re.IGNORECASE | re.DOTALL)
+    m = re.search(
+        r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"]?(\w+)[\"]?\s*\((?P<body>.*)\)\s*$",
+        ddl,
+        re.IGNORECASE | re.DOTALL,
+    )
     if m is None:
         return ()
     body = m.group("body")
     names: list[str] = []
     depth = 0
     for line in body.split("\n"):
-        line = line.strip().rstrip(",")
-        if not line or line.startswith("--"):
+        stripped = line.strip().rstrip(",")
+        if not stripped or stripped.startswith("--"):
             continue
-        depth += line.count("(") - line.count(")")
+        depth += stripped.count("(") - stripped.count(")")
         if depth != 0:
             continue  # inside a nested definition (CHECK (...), etc.)
-        first = line.split()[0] if line.split() else ""
+        first = stripped.split()[0] if stripped.split() else ""
         upper = first.upper()
         if upper in {"PRIMARY", "UNIQUE", "CHECK", "FOREIGN", "CONSTRAINT"}:
             continue  # table-level constraint, not a column
@@ -398,9 +402,7 @@ def _flatten_named_args(sql: str, args: dict[str, Any]) -> tuple[Any, ...]:
         return tuple(args or ())
     names = _NAMED_ARGS_PATTERN.findall(sql)
     if not names:
-        raise ValueError(
-            "cannot flatten named arguments: the statement has no named placeholders"
-        )
+        raise ValueError("cannot flatten named arguments: the statement has no named placeholders")
     missing = [n for n in names if n not in args]
     if missing:
         raise ValueError(f"named placeholder(s) without a value: {missing[:5]}")

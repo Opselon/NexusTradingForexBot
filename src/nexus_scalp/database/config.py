@@ -88,8 +88,7 @@ def _opt_int(raw: dict[str, Any], key: str) -> int | None:
         parsed = int(value)
     except (TypeError, ValueError) as exc:
         raise DatabaseConfigError(
-            f"PostgreSQL configuration key '{key}' must be a whole number, "
-            f"got {value!r}."
+            f"PostgreSQL configuration key '{key}' must be a whole number, got {value!r}."
         ) from exc
     if parsed < 0:
         raise DatabaseConfigError(

@@ -319,9 +319,7 @@ class PgPool:
             ):
                 # Resolve at the execution seam: the connection is needed to
                 # resolve the ON CONFLICT target from the catalog.
-                translated_holder.append(
-                    PostgreSQLDriver.translate_sql_for_execution(sql, conn)
-                )
+                translated_holder.append(PostgreSQLDriver.translate_sql_for_execution(sql, conn))
                 cur.execute(translated_holder[-1], tuple(args))
                 row = cur.fetchone()
                 holder.append(row[0] if row is not None else None)
@@ -492,7 +490,6 @@ class PgWritePlane:
         commits atomically, and any exception leaves the connection rolled
         back so the caller's row-level salvage starts from a clean slate.
         """
-        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
         from nexus_scalp.database.query_logging import pool_failure_guard
 
         translated = [
@@ -525,9 +522,7 @@ class PgWritePlane:
                         # Resolve at the execution seam (the connection is
                         # in hand); the caller passes the untranslated query
                         # as the third tuple element.
-                        resolved = PostgreSQLDriver.translate_sql_for_execution(
-                            translated, conn
-                        )
+                        resolved = PostgreSQLDriver.translate_sql_for_execution(translated, conn)
                         if len(rows) == 1:
                             cur.execute(resolved, tuple(rows[0]))
                         else:
@@ -559,9 +554,7 @@ class PgWritePlane:
                 with conn.cursor() as cur:
                     # Resolve at the execution seam: the connection is needed
                     # to resolve the ON CONFLICT target from the catalog.
-                    translated = PostgreSQLDriver.translate_sql_for_execution(
-                        query, conn
-                    )
+                    translated = PostgreSQLDriver.translate_sql_for_execution(query, conn)
                     cur.execute(translated, tuple(args))
                 conn.commit()
             except Exception:

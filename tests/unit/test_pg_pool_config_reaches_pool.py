@@ -190,7 +190,9 @@ def test_persisted_min_max_reach_the_real_pool(
 
     try:
         # The call-site literals deliberately DISAGREE with the persisted row.
-        provision_domain(DOMAIN, throwaway_pg["dsn"], min_size=CALL_SITE_MIN, max_size=CALL_SITE_MAX)
+        provision_domain(
+            DOMAIN, throwaway_pg["dsn"], min_size=CALL_SITE_MIN, max_size=CALL_SITE_MAX
+        )
         read = get_domain_backend(DOMAIN, readonly=True)
         assert read is not None, "provision registered no read plane"
 
@@ -238,7 +240,9 @@ def test_persisted_statement_timeout_reaches_a_checked_out_connection(
         },
     )
     try:
-        provision_domain(DOMAIN, throwaway_pg["dsn"], min_size=CALL_SITE_MIN, max_size=CALL_SITE_MAX)
+        provision_domain(
+            DOMAIN, throwaway_pg["dsn"], min_size=CALL_SITE_MIN, max_size=CALL_SITE_MAX
+        )
         read = get_domain_backend(DOMAIN, readonly=True)
         assert read is not None
 
@@ -284,7 +288,9 @@ def test_persisted_idle_and_lifetime_bounds_reach_the_pool(
         },
     )
     try:
-        provision_domain(DOMAIN, throwaway_pg["dsn"], min_size=CALL_SITE_MIN, max_size=CALL_SITE_MAX)
+        provision_domain(
+            DOMAIN, throwaway_pg["dsn"], min_size=CALL_SITE_MIN, max_size=CALL_SITE_MAX
+        )
         read = get_domain_backend(DOMAIN, readonly=True)
         assert read is not None
         limits = read._limits  # type: ignore[attr-defined]
@@ -323,7 +329,9 @@ def test_without_a_persisted_row_the_call_site_literals_win(
     assert cfg.is_sqlite, "an empty settings DB must resolve to the SQLite default"
 
     try:
-        provision_domain(DOMAIN, throwaway_pg["dsn"], min_size=CALL_SITE_MIN, max_size=CALL_SITE_MAX)
+        provision_domain(
+            DOMAIN, throwaway_pg["dsn"], min_size=CALL_SITE_MIN, max_size=CALL_SITE_MAX
+        )
         read = get_domain_backend(DOMAIN, readonly=True)
         assert read is not None
         pool = read._primary._pool  # type: ignore[attr-defined]

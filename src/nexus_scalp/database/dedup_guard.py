@@ -70,9 +70,9 @@ from nexus_scalp.database.drivers.base import DatabaseDriver
 
 __all__ = [
     "DedupGuard",
-    "natural_key_hash",
-    "insert_ignore_sql",
     "InsertResult",
+    "insert_ignore_sql",
+    "natural_key_hash",
 ]
 
 #: Hash length for the derived idempotency key. Long enough that a clash is
@@ -160,8 +160,7 @@ def insert_ignore_sql(table: str, columns: Sequence[str], driver: DatabaseDriver
     if _is_postgres(driver):
         placeholders = ", ".join("%s" for _ in columns)
         return (
-            f"INSERT INTO {table_sql} ({col_list}) VALUES ({placeholders}) "
-            "ON CONFLICT DO NOTHING"
+            f"INSERT INTO {table_sql} ({col_list}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
         )
     placeholders = ", ".join("?" for _ in columns)
     return f"INSERT OR IGNORE INTO {table_sql} ({col_list}) VALUES ({placeholders})"
@@ -213,7 +212,7 @@ class DedupGuard:
         #: unique constraint at all.
         self.natural_key: tuple[str, ...] = tuple(natural_key or ())
         self._fail_unresolved = fail_unresolved
-        self._target: tuple[str, ...] | None | bool = False  # unresolved marker
+        self._target: tuple[str, ...] | bool | None = False  # unresolved marker
         if conflict_target:
             self._target = tuple(conflict_target)
         #: ``column -> occurrences`` of suppressed duplicates this guard saw.
@@ -306,9 +305,7 @@ class DedupGuard:
 
     # -- writes -------------------------------------------------------------
 
-    def insert_ignore(
-        self, row: dict[str, Any], conn: Any = None
-    ) -> InsertResult:
+    def insert_ignore(self, row: dict[str, Any], conn: Any = None) -> InsertResult:
         """Insert ``row`` exactly once per natural key.
 
         Returns an :class:`InsertResult` telling the caller whether the row

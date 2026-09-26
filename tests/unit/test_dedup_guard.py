@@ -300,9 +300,7 @@ def test_identifiers_are_quoted_not_interpolated() -> None:
 
 def test_sqlite_inserts_then_suppresses_on_natural_key(sqlite_driver: SQLiteDriver) -> None:
     """Re-sent event: second insert is suppressed, not duplicated."""
-    guard = DedupGuard(
-        sqlite_driver, "dedup_orders", conflict_target=["execution_id"]
-    )
+    guard = DedupGuard(sqlite_driver, "dedup_orders", conflict_target=["execution_id"])
     row = {
         "ticket": 7001,
         "order_id": "ord-7001",
@@ -394,7 +392,10 @@ def test_sqlite_seen_key_probe(sqlite_driver: SQLiteDriver) -> None:
     signal ``already_seen`` answers for, and it needs no provider round trip.
     """
     guard = DedupGuard(
-        sqlite_driver, "dedup_orders", conflict_target=["execution_id"], natural_key=["execution_id"]
+        sqlite_driver,
+        "dedup_orders",
+        conflict_target=["execution_id"],
+        natural_key=["execution_id"],
     )
     row = {"ticket": 1, "order_id": "o", "symbol": "X", "execution_id": "e", "timestamp": "t"}
     assert not guard.already_seen(row)
@@ -411,7 +412,10 @@ def test_sqlite_seen_key_probe(sqlite_driver: SQLiteDriver) -> None:
 
 def test_sqlite_clear_cache_forgets(sqlite_driver: SQLiteDriver) -> None:
     guard = DedupGuard(
-        sqlite_driver, "dedup_orders", conflict_target=["execution_id"], natural_key=["execution_id"]
+        sqlite_driver,
+        "dedup_orders",
+        conflict_target=["execution_id"],
+        natural_key=["execution_id"],
     )
     row = {"ticket": 1, "order_id": "o", "symbol": "X", "execution_id": "e", "timestamp": "t"}
     guard.insert_ignore(row)
@@ -435,9 +439,11 @@ def test_sqlite_conflict_target_resolution(sqlite_driver: SQLiteDriver) -> None:
     # No declaration: falls back to the table's PK (id).
     assert DedupGuard(sqlite_driver, "dedup_orders").conflict_target() == ("id",)
     # Composite PK is resolved as-is.
-    assert tuple(
-        DedupGuard(sqlite_driver, "dedup_guard_telemetry").conflict_target()
-    ) == ("window_start", "symbol", "reason_code")
+    assert tuple(DedupGuard(sqlite_driver, "dedup_guard_telemetry").conflict_target()) == (
+        "window_start",
+        "symbol",
+        "reason_code",
+    )
 
 
 def test_sqlite_row_missing_declared_target_still_dedupes(
@@ -485,7 +491,7 @@ def test_pg_emits_on_conflict_do_nothing(pg_driver: Any) -> None:
         {"ticket": 1, "order_id": "o", "symbol": "X", "execution_id": "e", "timestamp": "t"}
     )
     sql = guard._targeted_sql(["execution_id"], ["execution_id"])
-    assert "ON CONFLICT (\"execution_id\") DO NOTHING" in sql
+    assert 'ON CONFLICT ("execution_id") DO NOTHING' in sql
     assert "%s" in sql
     assert "OR IGNORE" not in sql
     assert "?" not in sql
