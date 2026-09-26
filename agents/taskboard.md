@@ -584,3 +584,9 @@ behind full-green required checks (this row written pre-merge; merge state = PR 
 | Status | DONE (PR #490 pending) |
 | Owner | AGENT-QA |
 | Scope | tests/unit/test_sample_weights.py, tests/unit/test_research_edge_hardening_20260909.py, tests/unit/test_ml_qa_018_benchmark_cpu_budget.py, tests/critical_suite.txt, docs/ml-system/tasks/ML-QA-018.md |
+
+## ML-QA-019 — BUG-106 parity coverage restored (2026-09-26)
+
+| Task | Status | Owner | Evidence |
+|---|---|---|---|
+| ML-QA-019 | DONE | AGENT-QA | tests/unit/test_ml_qa_019_parity_coverage_cpu_budget.py (20 tests); negative control 10 failed / 10 passed |
