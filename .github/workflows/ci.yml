@@ -947,3 +947,52 @@ jobs:
           path: ci-results/
           retention-days: ${{ env.CI_ARTIFACT_RETENTION_DAYS }}
           if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # NSE PR Evidence Reporter — publishes ONE evidence report comment into the
+  # PR (``<!-- NSE-EVIDENCE-REPORT -->``), updated in place on every re-run.
+  # Generic for ANY PR: it discovers this run's check runs + annotations for
+  # the PR HEAD, collects local test evidence, normalizes file/line/function
+  # for each failure, and renders the report. Never fails CI itself.
+  # ---------------------------------------------------------------------------
+  pr-evidence-report:
+    name: PR Evidence Report
+    if: always() && github.event_name == 'pull_request'
+    needs: [quality, extended]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: write
+      statuses: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "${{ env.PYTHON_VERSION }}"
+          cache: "pip"
+
+      - name: Install package
+        run: pip install -e ".[dev]"
+
+      - name: Publish / update the single evidence report comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p "$CI_RESULTS_DIR/pr-evidence"
+          nse pr report --pr "${{ github.event.pull_request.number }}" \
+            --json > "$CI_RESULTS_DIR/pr-evidence/report.json" || true
+          echo "Report published/updated for PR #${{ github.event.pull_request.number }}"
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-evidence-report-${{ github.run_number }}-${{ github.sha }}
+          path: ${{ env.CI_RESULTS_DIR }}/pr-evidence/
+          retention-days: ${{ env.CI_ARTIFACT_RETENTION_DAYS }}
+          if-no-files-found: ignore

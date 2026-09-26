@@ -154,6 +154,16 @@ try:
 except Exception:
     pass
 
+# PR EVIDENCE REPORTER — file-level failure intelligence inside any PR
+# (``nexus pr report [--pr N] [--watch] [--json]``). Guarded like the other
+# optional sub-apps so a missing dependency can never break the CLI import.
+try:
+    from nexus_scalp.cli.pr_commands import register_pr_commands as _register_pr_commands
+
+    _register_pr_commands(app)
+except Exception:
+    pass
+
 
 def _resolve_facade_seam(name: str, default: Any) -> Any:
     """Late-binding seam for test monkeypatching through the cli.main facade.
