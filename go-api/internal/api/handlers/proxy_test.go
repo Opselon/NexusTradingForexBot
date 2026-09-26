@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/infrastructure/python"
@@ -64,5 +65,47 @@ func TestLegacyResponseNotBoundary(t *testing.T) {
 	}
 	if _, ok := python.AsBoundary(lr); ok {
 		t.Fatal("AsBoundary must reject a LegacyResponse")
+	}
+}
+
+// TestProxyAttachesRoutingDecision pins the Wave 3 contract: every proxied
+// response carries the dependency classification as X-NSE-Routing-Reason so
+// the routing table is observable in flight. A route the table never
+// classified reports "unclassified" - the safe default, never silence.
+//
+// The proxy is driven against a real python.Client bound to a stub upstream
+// so the header is exercised on the actual forward path, not a mock of it.
+func TestProxyAttachesRoutingDecision(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer upstream.Close()
+
+	py := python.New(python.Options{Origin: upstream.URL})
+	p := NewProxy(py)
+
+	cases := []struct {
+		method, path, want string
+	}{
+		// A real classified candidate (profiler: stateless 2xx).
+		{"GET", "/api/algo/config", "stateless-2xx"},
+		// A route outside the table must say so, not omit the header.
+		{"GET", "/api/never-classified", "unclassified"},
+		// A DB-backed route must not advertise itself as a candidate.
+		{"GET", "/api/db/manage/validate", "observed:db"},
+	}
+	for _, c := range cases {
+		rec := httptest.NewRecorder()
+		p.Handler(c.method, c.path).ServeHTTP(
+			rec, httptest.NewRequest(c.method, c.path, nil))
+		if got := rec.Header().Get("X-NSE-Routing-Reason"); got != c.want {
+			t.Errorf("Decide(%s %s): reason = %q, want %q", c.method, c.path, got, c.want)
+		}
+		if got := rec.Body.String(); !strings.Contains(got, `"success":true`) {
+			t.Errorf("Decide(%s %s): body = %q, want the upstream payload forwarded",
+				c.method, c.path, got)
+		}
 	}
 }
