@@ -173,12 +173,14 @@ body {
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 .switch::after {
-  content: ""; position: absolute; top: 1px; left: 1px; width: 12px; height: 12px;
+  content: ""; position: absolute; top: 1px; inset-inline-start: 1px; width: 12px; height: 12px;
   border-radius: 50%; background: var(--text-faint);
   transition: transform 0.12s ease, background 0.12s ease;
 }
 .switch.on { background: rgba(65, 166, 242, 0.25); border-color: var(--accent); }
 .switch.on::after { transform: translateX(14px); background: var(--accent-strong); }
+/* RTL: the knob travels to the END edge (left), not to the right */
+:root[dir="rtl"] .switch.on::after { transform: translateX(-14px); }
 
 /* ------------------------------ Main column ------------------------------ */
 .main-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -190,7 +192,7 @@ body {
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
-  z-index: 5;
+  z-index: var(--z-topbar);
 }
 .topbar .spacer { flex: 1; }
 
@@ -305,13 +307,13 @@ body {
 /* row wrapper inside .kv — dissolves so dt/dd become the grid's own items */
 .kv-row { display: contents; }
 .kv dt { color: var(--text-dim); }
-.kv dd { margin: 0; font-family: var(--mono); text-align: right; }
+.kv dd { margin: 0; font-family: var(--mono); text-align: end; }
 
 /* ------------------------------ Tables ------------------------------ */
 .table-wrap { overflow-x: auto; overflow-y: auto; max-height: min(64vh, 620px); }
 .data-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
 .data-table th {
-  text-align: left; padding: 8px 12px;
+  text-align: start; padding: 8px 12px;
   font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--text-faint); border-bottom: 1px solid var(--border-strong);
   position: sticky; top: 0; z-index: 1;
@@ -323,7 +325,7 @@ body {
 }
 .data-table tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.015); }
 .data-table tbody tr:hover td { background: var(--bg-panel-2); }
-.data-table td.num, .data-table th.num { text-align: right; }
+.data-table td.num, .data-table th.num { text-align: end; }
 .data-table tr.is-new { animation: rowFlash 1.2s ease-out 1; }
 @keyframes rowFlash { from { background: rgba(65, 166, 242, 0.14); } to { background: transparent; } }
 .pnl-pos { color: var(--green); }
@@ -346,7 +348,7 @@ body {
 .probbar { display: grid; gap: 6px; }
 .probbar .row { display: grid; grid-template-columns: 84px 1fr 56px; align-items: center; gap: 10px; font-family: var(--mono); font-size: 11px; }
 .probbar .row .lab { color: var(--text-dim); letter-spacing: 0.08em; text-transform: uppercase; font-size: 10px; }
-.probbar .row .val { text-align: right; }
+.probbar .row .val { text-align: end; }
 .probbar .track { height: 6px; border-radius: 4px; background: var(--bg-inset); border: 1px solid var(--border); overflow: hidden; }
 .probbar .track i { display: block; height: 100%; border-radius: 3px; transition: width 0.4s ease; }
 .probbar .track i.buy { background: linear-gradient(90deg, rgba(62, 207, 142, 0.5), var(--green)); }
@@ -412,7 +414,7 @@ body {
 .banner.info { background: rgba(65, 166, 242, 0.10); color: var(--accent-strong); border-color: rgba(65, 166, 242, 0.35); }
 .banner.good { background: rgba(62, 207, 142, 0.10); color: var(--green); border-color: rgba(62, 207, 142, 0.35); }
 .banner .retry-btn {
-  margin-left: auto; background: transparent; color: inherit;
+  margin-inline-start: auto; background: transparent; color: inherit;
   border: 1px solid currentColor; border-radius: 6px;
   padding: 3px 10px; cursor: pointer; font-size: 11px; font-weight: 700;
 }
@@ -440,7 +442,14 @@ body {
 .btn.ghost { background: transparent; border-color: var(--border); color: var(--text-dim); }
 .btn.ghost:hover:not(:disabled) { color: var(--text); }
 
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
+/* Focus ring (IM1, wave uiux-modern-20260926): tokenized width/offset/colour.
+   The previous declaration also forced `border-radius: 4px`, which snapped a
+   4px corner onto every focused element that carries its own radius (nav
+   items and buttons are 6px) — the ring visibly jumped on keyboard focus.
+   Modern outline already follows the element's own border-radius, and the
+   box-shadow ring tokens (--focus-ring / --focus-ring-soft) stay available
+   for surfaces that need a halo instead of an outline. */
+:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
 
 .select, .input {
   background: var(--bg-inset); color: var(--text);
@@ -458,7 +467,7 @@ kbd {
 
 /* ------------------------------ Toasts ------------------------------ */
 .toast-stack {
-  position: fixed; bottom: 18px; right: 18px; z-index: 100;
+  position: fixed; bottom: 18px; inset-inline-end: 18px; z-index: var(--z-toast);
   display: flex; flex-direction: column; gap: 8px; max-width: 440px;
 }
 .toast {
@@ -483,7 +492,7 @@ kbd {
 
 /* ------------------------------ Modal confirm ------------------------------ */
 .modal-overlay {
-  position: fixed; inset: 0; z-index: 90;
+  position: fixed; inset: 0; z-index: var(--z-modal);
   background: rgba(4, 7, 11, 0.72);
   backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
@@ -626,10 +635,10 @@ kbd {
 .freshness-chip { gap: 10px; }
 .start-8 { margin-inline-start: 8px; }
 /* help-modal key/value list: descriptions read left-aligned */
-.kv.left dd { text-align: left; }
+.kv.left dd { text-align: start; }
 /* keyboard skip link — first tab stop, hidden until focused */
 .skip-link {
-  position: fixed; top: -48px; inset-inline-start: 8px; z-index: 200;
+  position: fixed; top: -48px; inset-inline-start: 8px; z-index: var(--z-skip);
   background: var(--bg-panel-2); color: var(--text);
   border: 1px solid var(--accent); border-radius: 6px;
   padding: 8px 14px; font-size: 12px; text-decoration: none;
