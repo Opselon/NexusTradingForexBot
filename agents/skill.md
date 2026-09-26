@@ -106,6 +106,29 @@ Merged as `930e6912` (PR #461). The Go API server is the product's API entrypoin
 
 Boundary client: `internal/infrastructure/python/client.go` — localhost HTTP, never a per-request subprocess; 30s timeout (a slow-but-successful answer is not a circuit failure), circuit breaker after 3 consecutive failures (5s cooldown); forwards `Authorization` + `X-Request-ID` on every hop; `DoRaw` streams byte-for-byte when the caller must preserve Python's exact output.
 
+### 5.5 Wave 3 — dependency-aware routing table (BINDING RULES)
+
+Merged as `480a4aef`. Every route in the table (§5.4) now carries a dependency classification: of 464 classified operations, **334 must forward** to Python and **130 are Go-servable candidates**. Wave 3 only classifies — every route still proxies — the decision is surfaced on the response as `X-NSE-Routing-Reason` so it is observable in flight and testable now; a later wave flips serving for candidates only.
+
+| Rule | Why |
+|---|---|
+| **`needs_python=true` means forward.** The profiler observed a relational read (`observed:db`), the operation is a non-GET (`write:assumed` — writes are not safely replayable, so forwarding is the only defensible answer), or its 2xx body was a masked stub. | Go has no database driver and never will (DATABASE PORTABILITY mission: SQLite *and* PostgreSQL behind one `DatabaseDriver` seam). A write or masked stub served from Go would fabricate a fact Python owns. |
+| **`needs_python=false` means CANDIDATE, not permission.** `routing.Candidate()` is a hint; a route is served locally only after a **separate parity gate** proves the served body matches Python's answer. | The classifier proves a route *can* be stateless; it does not prove Go's reconstruction of it. Classification and serving are two gates, never one. |
+| **Unknown routes always forward.** Absent from `DepsTable` → `Decide()` returns `NeedsPython=true, Classified=false` and the proxy tags the response `unclassified`. | An unclassified route must never be served locally on the *absence* of a hint. The proxy is the safe default. |
+| **The table is GENERATED, never hand-edited.** `go-api/internal/routing/deps_table.go` is emitted from `api/migration/route_dependencies.json` by `scripts/dev/gen_deps_table.py`; the JSON is produced by `scripts/dev/profile_route_deps.py` (runtime profiler: wraps the `DatabaseDriver` seam and replays each route, recording what the handler *actually* touched) then `scripts/dev/classify_route_deps.py`. Regenerate as profile → classify → emit. | Same discipline as the §5.4 route table. A profiler reads ground truth a static scan cannot: this codebase resolves dependencies *inside* handlers, so an AST pass sees zero DB hints on a surface where ~half the routes hit SQLite. |
+
+Classifier `why` taxonomy: `observed:db` · `write:assumed` · `stateless-2xx` (the only candidate class) · the three masked classes below · `non-2xx:NNN` — a handler that could not complete without state the probe lacked, itself evidence it needs the Python plane.
+
+The three masked-dependency false positives the classifier must keep rejecting — each is an HTTP 200 that looks stateless and is not:
+
+| Class | Signature | Why it is a masked dependency |
+|---|---|---|
+| `stub-in-2xx` | 200 body with a synthesized "subsystem absent" marker (`"reason":"ENGINE_UNAVAILABLE"`, `"available":false`, `MT5_UNAVAILABLE`, …) | The handler took its early-exit branch because no engine was attached; with one attached it reads live state. Serving the stub from Go ships a permanent `ENGINE_UNAVAILABLE` where Python ships real data (`/api/account/performance`). |
+| `empty-in-2xx` | 200 body that is `[]` / `{}` / `null` | The "nothing to report" branch of a route whose backing state was unpopulated under the probe. `/api/account/trades` returns `[]` with no engine and `audit.get_broker_trades()` rows with one — serving the empty body erases the trade history. |
+| `failed-in-2xx` | 200 body carrying `{"success":false,...}` (this codebase's legacy self-report convention) | The handler reported its own failure inside a 200 because a required input was absent from the probe — a live query interface, not a stateless constant (`/api/db/console/quick`). |
+
+Profiler scope, kept honest: only GET/HEAD were replayed (a mutating probe would corrupt the shared backend), and the two SSE routes are skipped (`/api/ticks/stream`, `/api/trace/stream`). Tests: `go test ./internal/routing/...` pins both directions — `TestDecideRequiresPython` (forward classes) and `TestDecideCandidates` (the candidate population).
+
 ## 6. Non-Negotiable Invariants
 
 Reference: `agents/runtime_invariants.md` and `agents/contracts.md`. Every change to shared runtime code must consider these (new invariant requires `agents/decisions/DEC-XXXX`).

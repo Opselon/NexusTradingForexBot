@@ -1,0 +1,3636 @@
+{
+ "routes": {
+  "DELETE /api/db/console/apikey/{name}": {
+   "body": "{\"success\":true,\"deleted\":\"default\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "DELETE /api/model-studio/models/{model_id}": {
+   "body": "{\"detail\":\"Model 'champion' not found.\"}",
+   "needs_python": true,
+   "observed": [
+    "db",
+    "write:assumed"
+   ],
+   "status": 404,
+   "why": "observed:db"
+  },
+  "GET /": {
+   "body": "<!doctype html>\r\n<html lang=\"en\">\r\n  <head>\r\n    <meta charset=\"UTF-8\" />\r\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\r\n    <me",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/account/drawdown": {
+   "body": "{\"available\":false,\"reason\":\"ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/account/equity-curve": {
+   "body": "{\"available\":false,\"reason\":\"ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/account/growth": {
+   "body": "[]",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "empty-in-2xx"
+  },
+  "GET /api/account/performance": {
+   "body": "{\"available\":false,\"reason\":\"ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/account/performance/intelligence": {
+   "body": "{\"available\":false,\"reason\":\"ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/account/performance/{kind}": {
+   "body": "{\"available\":false,\"reason\":\"ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/account/performance/{kind}/series": {
+   "body": "{\"available\":false,\"reason\":\"ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/account/strategies": {
+   "body": "{\"available\":false,\"reason\":\"ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/account/summary": {
+   "body": "{\"available\":false,\"balance\":null,\"equity\":null,\"margin\":null,\"open_positions\":null,\"win_rate\":null,\"profit_factor\":null,\"max_drawdown\":null,\"total_trades\":null",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/account/trades": {
+   "body": "[]",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "empty-in-2xx"
+  },
+  "GET /api/account/trades/{trade_id}": {
+   "body": "{\"detail\":[{\"type\":\"int_parsing\",\"loc\":[\"path\",\"trade_id\"],\"msg\":\"Input should be a valid integer, unable to parse string as an integer\",\"input\":\"{trade_id}\"}]}",
+   "needs_python": true,
+   "observed": [],
+   "status": 422,
+   "why": "non-2xx:422"
+  },
+  "GET /api/ai-providers": {
+   "body": "{\"status\":\"OK\",\"decision_mode\":\"INTERNAL_ONLY\",\"active_provider\":\"internal_nse_ml\",\"active_model\":null,\"secondary_provider\":null,\"fallback_provider\":null,\"shado",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/ai-providers/": {
+   "body": "{\"status\":\"OK\",\"decision_mode\":\"INTERNAL_ONLY\",\"active_provider\":\"internal_nse_ml\",\"active_model\":null,\"secondary_provider\":null,\"fallback_provider\":null,\"shado",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/ai-providers/activation": {
+   "body": "{\"status\":\"OK\",\"activation\":{\"decision_mode\":\"INTERNAL_ONLY\",\"active_provider\":\"internal_nse_ml\",\"active_model\":null,\"secondary_provider\":null,\"fallback_provide",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/ai-providers/decision/{decision_id}": {
+   "body": "{\"detail\":\"decision not found\"}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 404,
+   "why": "observed:db"
+  },
+  "GET /api/ai-providers/decisions": {
+   "body": "{\"status\":\"OK\",\"decisions\":[{\"decision_id\":\"dec-c91948e8c2934dd3\",\"final_action\":\"HOLD\",\"policy\":{\"scores\":{\"HOLD\":-1.053,\"CLOSE\":-0.5,\"REDUCE\":-1.0515,\"ADJUST_",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/ai-providers/providers": {
+   "body": "{\"status\":\"OK\",\"providers\":[{\"provider_id\":\"internal_nse_ml\",\"provider_name\":\"internal_nse_ml\",\"type\":\"external\",\"endpoint\":\"\",\"auth_type\":\"bearer\",\"default_mod",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/ai-providers/providers/{provider_id}/models": {
+   "body": "{\"status\":\"OK\",\"provider_id\":\"{provider_id}\",\"models\":[]}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/ai-providers/providers/{provider_id}/status": {
+   "body": "{\"detail\":\"provider {provider_id} not configured or disabled\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/ai-providers/restart-matrix": {
+   "body": "{\"status\":\"OK\",\"matrix\":{\"endpoint\":\"HOT_APPLY\",\"model\":\"HOT_APPLY\",\"timeout\":\"HOT_APPLY\",\"max_retries\":\"HOT_APPLY\",\"enabled\":\"HOT_APPLY\",\"provider_name\":\"HOT_A",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/algo/config": {
+   "body": "{\"atr_sl_buffer_multiplier\":1.5,\"min_risk_reward_ratio\":1.8,\"ai_zone_confidence_threshold\":0.6,\"fvg_mitigation_sensitivity\":0.5,\"order_block_lookback_bars\":30,\"",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/chart/history": {
+   "body": "{\"bars\":[],\"bars_available\":false,\"source\":\"UNAVAILABLE\",\"symbol\":null,\"timeframe\":\"M1\",\"requested\":900,\"returned\":0,\"first_timestamp\":null,\"last_timestamp\":nul",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/command-center/execution-safety/{strategy_id}": {
+   "body": "{\"available\":false,\"reason\":\"RESEARCH_ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/command-center/fleet": {
+   "body": "{\"available\":false,\"reason\":\"RESEARCH_ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/command-center/inspector/{strategy_id}": {
+   "body": "{\"available\":false,\"reason\":\"RESEARCH_ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/command-center/overview": {
+   "body": "{\"available\":false,\"reason\":\"RESEARCH_ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/command-center/spatial": {
+   "body": "{\"available\":false,\"reason\":\"RESEARCH_ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/command-center/timeline/{strategy_id}": {
+   "body": "{\"available\":false,\"reason\":\"RESEARCH_ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/command-center/timemachine/bounds": {
+   "body": "{\"available\":false,\"reason\":\"RESEARCH_ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/command-center/timemachine/frame": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"at\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [],
+   "status": 422,
+   "why": "non-2xx:422"
+  },
+  "GET /api/config": {
+   "body": "{\"execution\":{\"symbol\":\"XAUUSD\",\"mode\":\"PAPER\",\"timeframe\":\"M1\",\"magic_number\":999101,\"max_slippage_points\":30,\"enabled_symbols\":[\"XAUUSD\"]},\"paper_data\":{\"mode",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/db/console/apikeys": {
+   "body": "{\"success\":true,\"apikeys\":[{\"name\":\"web_auth_token\",\"masked\":\"web_****\",\"set\":true}],\"timestamp\":\"2026-09-26T00:46:21+00:00\"}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/db/console/columns": {
+   "body": "{\"success\":false,\"error\":\"table required\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "failed-in-2xx"
+  },
+  "GET /api/db/console/databases": {
+   "body": "{\"success\":true,\"databases\":[{\"name\":\"audit\",\"provider\":\"postgresql\",\"database\":\"nexusdb\",\"server\":\"localhost:5432\",\"path\":\"\",\"size_bytes\":null,\"status\":\"CONNEC",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/db/console/quick": {
+   "body": "{\"success\":false,\"error\":\"table required\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "failed-in-2xx"
+  },
+  "GET /api/db/console/rows": {
+   "body": "{\"success\":false,\"error\":\"table required\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "failed-in-2xx"
+  },
+  "GET /api/db/console/tables": {
+   "body": "{\"success\":true,\"database\":\"audit\",\"provider\":\"postgresql\",\"tables\":[{\"name\":\"ai_provider_activation\",\"rows\":0},{\"name\":\"ai_provider_config\",\"rows\":0},{\"name\":\"",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/db/hygiene": {
+   "body": "{\"status\":{\"state\":\"IDLE\",\"mode\":\"AUDIT_ONLY\",\"cycle\":0,\"last_scan\":\"\",\"last_cleanup\":\"\",\"last_success\":\"\",\"last_failure\":\"\",\"stats\":{},\"updated_at\":\"\",\"executi",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/db/manage/options": {
+   "body": "{\"success\":true,\"options\":{\"command_timeout_sec\":30,\"connect_timeout_sec\":10,\"migrate_on_startup\":true,\"pooling_enabled\":true,\"domain\":\"audit\",\"database\":\"nexus",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/db/manage/progress": {
+   "body": "{\"success\":true,\"done\":false,\"progress\":0,\"report\":null}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/db/manage/report": {
+   "body": "{\"success\":true,\"report\":null}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/db/manage/status": {
+   "body": "{\"success\":true,\"provider\":\"postgresql\",\"supported_providers\":[\"sqlite\",\"postgresql\"],\"overall\":\"Healthy\",\"domains\":{\"audit\":{\"domain\":\"audit\",\"provider\":\"postg",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/db/manage/validate": {
+   "body": "{\"success\":true,\"validation\":\"FAILED\"}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/db/status": {
+   "body": "{\"available\":true,\"databases\":{\"audit\":{\"schema_version\":0,\"expected_version\":9,\"migration_state\":\"DB_MIGRATION_PENDING\",\"pending_count\":8,\"integrity\":\"ok\",\"las",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/debug/compare": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"a\"],\"msg\":\"Field required\",\"input\":null},{\"type\":\"missing\",\"loc\":[\"query\",\"b\"],\"msg\":\"Field required\",\"input\":null}",
+   "needs_python": true,
+   "observed": [],
+   "status": 422,
+   "why": "non-2xx:422"
+  },
+  "GET /api/debug/features": {
+   "body": "{\"engine_online\":false,\"feature_count\":50,\"features\":[{\"index\":0,\"key\":\"feat_0\",\"name\":\"upper_wick_ratio\",\"value\":0.0,\"status\":\"VALID\",\"is_valid\":true},{\"index\"",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/debug/freshness": {
+   "body": "{\"available\":false,\"reason\":\"ENGINE_NOT_ATTACHED\",\"frozen_at\":\"UNKNOWN\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/debug/health": {
+   "body": "{\"overall_status\":\"DISCONNECTED\",\"subsystems\":[{\"name\":\"Feature Engine\",\"status\":\"DISCONNECTED\",\"detail\":\"Engine reference is not attached to the web server.\",\"",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/debug/ipc-telemetry": {
+   "body": "{\"events\":[],\"event_count\":0,\"avg_latency_ms\":0.0,\"exposure\":{\"positions\":0,\"pendings\":0},\"max_total_exposure\":1,\"fetched_at\":\"2026-09-26T00:46:08.471012+00:00\"",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/debug/snapshots": {
+   "body": "{\"available\":true,\"snapshots\":[{\"snapshot_id\":\"snap_20260926_004608_480018_34bc2d\",\"correlation_id\":\"req_d815436855\",\"timestamp\":\"2026-09-26T00:46:08.480018+00:",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/debug/snapshots/{snapshot_id}": {
+   "body": "{\"available\":false,\"reason\":\"SNAPSHOT_NOT_FOUND: {snapshot_id}\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/debug/state": {
+   "body": "{\"snapshot_id\":\"snap_20260926_004608_480018_34bc2d\",\"correlation_id\":\"req_d815436855\",\"timestamp\":\"2026-09-26T00:46:08.480018+00:00\",\"engine_attached\":false,\"ru",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/debug/trace/{execution_id}": {
+   "body": "{\"execution_id\":\"{execution_id}\",\"available\":true,\"reason\":\"NO_AUDIT_DB\",\"signal\":[],\"orders\":[],\"db_path\":\"C:\\\\Users\\\\Capsizer\\\\source\\\\repos\\\\nse-api-golang-m",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/dependency/cycles": {
+   "body": "{\"status\":\"ok\",\"count\":85,\"cycles\":[{\"cycle_id\":\"CYC-001\",\"severity\":\"HIGH\",\"path\":[\"mod:nexus_scalp.web.api_v1.common\",\"mod:nexus_scalp.web.server\",\"mod:nexus_",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/dependency/graph": {
+   "body": "{\"analyzer_version\":\"0.1.0\",\"repository_root\":\"C:\\\\Users\\\\Capsizer\\\\source\\\\repos\\\\nse-api-golang-migration\\\\src\\\\nexus_scalp\",\"generated_at\":\"2026-09-26T00:29:",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/dependency/health": {
+   "body": "{\"status\":\"degraded\",\"analyzer_version\":\"0.1.0\",\"generated_at\":\"2026-09-26T00:29:10Z\",\"nodes\":2220,\"edges\":7683,\"cycles\":85,\"violations\":0,\"unresolved_imports\":",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/dependency/impact": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"path\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [],
+   "status": 422,
+   "why": "non-2xx:422"
+  },
+  "GET /api/dependency/metrics": {
+   "body": "{\"status\":\"ok\",\"nodes\":2220,\"metrics\":{\"mod:nexus_scalp\":{\"fan_in\":1,\"fan_out\":0,\"instability\":0.0,\"centrality\":0.000225,\"in_cycle\":false,\"violations\":0,\"unreso",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/dependency/node/{node_id:path}": {
+   "body": "{\"detail\":\"node not found: {node_id:path}\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/dependency/path": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"source\"],\"msg\":\"Field required\",\"input\":null},{\"type\":\"missing\",\"loc\":[\"query\",\"target\"],\"msg\":\"Field required\",\"in",
+   "needs_python": true,
+   "observed": [],
+   "status": 422,
+   "why": "non-2xx:422"
+  },
+  "GET /api/dependency/summary": {
+   "body": "{\"status\":\"ok\",\"analyzer_version\":\"0.1.0\",\"generated_at\":\"2026-09-26T00:29:10Z\",\"repository\":{\"files_analyzed\":695,\"modules\":696,\"nodes\":2220,\"edges\":7683,\"di_r",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/dependency/violations": {
+   "body": "{\"status\":\"ok\",\"count\":0,\"violations\":[]}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/diagnostics/forensics": {
+   "body": "{\"available\":true,\"kind\":\"accounting\",\"checked_records\":0,\"classification_counts\":{},\"zero_outcome_classification_counts\":{},\"recovery_candidate_count\":0}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/diagnostics/health": {
+   "body": "{\"available\":true,\"counts\":{\"total\":0,\"open\":0,\"critical\":0,\"high\":0,\"medium\":0,\"low\":0,\"unknown\":0,\"recovered\":0,\"false_positive\":0},\"recurring\":[],\"by_compone",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/diagnostics/incidents": {
+   "body": "{\"available\":true,\"counts\":{\"total\":0,\"open\":0,\"critical\":0,\"high\":0,\"medium\":0,\"low\":0,\"unknown\":0,\"recovered\":0,\"false_positive\":0},\"incidents\":[]}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/diagnostics/incidents/{incident_id}": {
+   "body": "{\"available\":false,\"error\":\"incident {incident_id} not found\"}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/diagnostics/incidents/{incident_id}/report": {
+   "body": "{\"available\":false,\"error\":\"incident {incident_id} not found\"}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/diagnostics/incidents/{incident_id}/zip": {
+   "body": "{\"available\":false,\"error\":\"incident {incident_id} not found\"}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/diagnostics/lineage": {
+   "body": "{\"available\":true,\"field\":\"pnl\",\"source\":\"MT5 deal history (broker truth) -> deal snapshot\",\"hops\":[{\"stage\":\"SOURCE_OF_TRUTH\",\"name\":\"MT5 deal history (broker ",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/diagnostics/search": {
+   "body": "{\"available\":true,\"incidents\":[]}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/diagnostics/trace": {
+   "body": "{\"available\":true,\"trace\":{\"kind\":\"unknown\",\"reason\":\"empty query\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/experience/decision": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/experience/models": {
+   "body": "[]",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "empty-in-2xx"
+  },
+  "GET /api/experience/strategies": {
+   "body": "[]",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "empty-in-2xx"
+  },
+  "GET /api/experience/summary": {
+   "body": "{\"enabled\":false,\"recorded_experiences\":0,\"active_strategies\":0}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/factory/benchmarks": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/factory/candidates": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/factory/events": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/factory/failures": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/factory/generations": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/factory/generations/{generation_id}": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/factory/llm-config": {
+   "body": "{\"available\":true,\"status\":{\"configured\":false,\"api_key_present\":false,\"masked_api_key\":\"\",\"base_url\":\"\",\"model\":\"\",\"temperature\":0.7,\"request_timeout_sec\":300.",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/factory/memory": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/factory/provider-health": {
+   "body": "{\"available\":true,\"feature\":\"strategy_factory\",\"user_enabled\":false,\"auto_disabled\":false,\"auto_disabled_reason\":\"\",\"auto_disabled_detail\":\"\",\"auto_disabled_at\"",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/factory/ranking": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/factory/status": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/forensics/deploy-gate": {
+   "body": "{\"available\":true,\"gate\":{\"decision\":\"FORENSIC_ENGINE_UNAVAILABLE\",\"overall_status\":\"UNKNOWN\",\"deployment_allowed\":false,\"blocking_reasons\":[\"gate engine unavai",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/forensics/health": {
+   "body": "{\"available\":true,\"forensics\":{\"groups\":{\"FeatureContract\":\"UNKNOWN\",\"Model\":\"UNKNOWN\",\"Parity\":\"PASS\",\"Dataset\":\"PASS\",\"Accounting\":\"PASS\",\"Database\":\"WARNING\"",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/intelligence/anomalies": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/intelligence/autopsies": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/intelligence/autopsies/{ticket}": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/intelligence/behavior": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/intelligence/evolution": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/intelligence/positions/{ticket}/timeline": {
+   "body": "{\"detail\":[{\"type\":\"int_parsing\",\"loc\":[\"path\",\"ticket\"],\"msg\":\"Input should be a valid integer, unable to parse string as an integer\",\"input\":\"{ticket}\"}]}",
+   "needs_python": true,
+   "observed": [],
+   "status": 422,
+   "why": "non-2xx:422"
+  },
+  "GET /api/intelligence/summary": {
+   "body": "{\"available\":false,\"reasons\":\"ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/liquidity/features": {
+   "body": "{\"success\":true,\"schema_id\":\"scalp_v1\",\"dimension\":50,\"timestamp\":null,\"source\":\"UNAVAILABLE\",\"source_status\":\"UNAVAILABLE\",\"feature_availability\":\"NOT_ACTIVE\",",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/liquidity/state": {
+   "body": "{\"success\":true,\"enabled\":false,\"state_revision\":0,\"available\":false,\"feature_availability\":\"NOT_ACTIVE\",\"status\":\"DISABLED\",\"calculation_status\":\"NOT_RUN\",\"sou",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/live/accounting": {
+   "body": "{\"available\":false,\"reason\":\"ENGINE_OFFLINE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/live/state": {
+   "body": "{\"contract\":\"LiveUiState.2\",\"state_version\":2,\"snapshot_timestamp\":\"2026-09-26T00:45:58.717258+00:00\",\"generated_at\":\"2026-09-26T00:45:58.717258+00:00\",\"engine_",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/model-studio/artifact-locations": {
+   "body": "{\"status\":\"OK\",\"repo_root\":\"C:\\\\Users\\\\Capsizer\\\\source\\\\repos\\\\nse-api-golang-migration\",\"separator\":\"\\\\\",\"locations\":{\"datasets\":{\"absolute_path\":\"C:\\\\Users\\\\",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/model-studio/datasets": {
+   "body": "{\"status\":\"OK\",\"count\":2,\"datasets\":[{\"name\":\"dataset.parquet\",\"path\":\"artifacts\\\\model_generation\\\\datasets\\\\ds_d6c4808f97c1c664\\\\dataset.parquet\",\"size_bytes\"",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/model-studio/fetch-70d": {
+   "body": "{\"status\":\"OK\",\"dimension\":70,\"contract_valid\":true,\"contract_error\":null,\"schema_hash\":\"235b8fccc96b7e0e\",\"sources\":{\"base\":\"SYNTHETIC_BASELINE\",\"news\":\"NEUTRA",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/model-studio/models": {
+   "body": "{\"status\":\"OK\",\"count\":60,\"active_champion_id\":null,\"models\":[{\"id\":\"model\",\"name\":\"model.pt\",\"version\":\"1.0.0\",\"dimension\":50,\"architecture\":\"ScalpNet\",\"weight",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/model-studio/models/active": {
+   "body": "{\"status\":\"NO_ACTIVE_MODEL\",\"active_model\":null,\"message\":\"No model is currently hot-loaded in memory.\"}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/model-studio/models/history": {
+   "body": "{\"status\":\"OK\",\"count\":0,\"history\":[]}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/model-studio/models/{model_id}/scaler": {
+   "body": "{\"status\":\"NO_SCALER_SIDECAR\",\"model_id\":\"champion\",\"dimension\":50,\"features\":[],\"message\":\"No dedicated scaler sidecar found for this model; standard unit scal",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/model-studio/overview": {
+   "body": "{\"status\":\"OK\",\"active_schema_id\":\"scalp_v1\",\"effective_dimension\":50,\"model_source\":\"IN_MEMORY_INSTANCE\",\"architecture\":\"ScalpNet\",\"parameter_count\":264899,\"tr",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/model-studio/train/progress": {
+   "body": "{\"status\":\"OK\",\"progress\":{\"status\":\"IDLE\",\"stage\":\"IDLE\",\"epoch\":0,\"epochs\":0,\"loss\":0.0,\"val_loss\":0.0,\"started_at\":null,\"updated_at\":null,\"run_id\":\"\",\"messag",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/models": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/challengers": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/champion": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/comparison/{run_id}": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/governance/audits": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/governance/comparisons": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/governance/events": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/governance/health": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/governance/promotion-preview": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/governance/registry": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/governance/review": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/governance/rollback-preview": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/governance/status": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/integrity": {
+   "body": "{\"available\":false,\"state\":\"UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/runs": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/runs/{run_id}": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/shadow/compare/{run_id}": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/shadow/decisions": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/shadow/promotion/{run_id}": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/shadow/runs": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/shadow/summary": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/shadow70/disagreements": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/shadow70/health": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/shadow70/summary": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/models/summary": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/mslie/features": {
+   "body": "{\"success\":true,\"available\":false,\"reason\":\"NO_MSLIE_VECTOR\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/mslie/status": {
+   "body": "{\"success\":true,\"available\":false,\"status\":\"STANDBY\",\"engine_status\":{\"market_structure_engine\":\"STANDBY\",\"liquidity_engine\":\"STANDBY\",\"feature_generator\":\"IDLE",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/mt5/status": {
+   "body": "{\"available\":false,\"reason\":\"ENGINE_OFFLINE\",\"account\":{},\"symbol\":{},\"positions\":[],\"orders\":[],\"history\":{},\"calculations\":{},\"connection\":{}}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/news": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/news/ai-status": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/news/analysis/{article_id}": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/news/auto-analysis": {
+   "body": "{\"success\":true,\"enabled\":false,\"worker_enabled\":null,\"runtime_version\":null,\"source\":\"\"}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/news/health": {
+   "body": "{\"available\":false,\"enabled\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/news/impact": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/news/keywords": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/news/latest": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/news/pro/console": {
+   "body": "{\"available\":true,\"entries\":[],\"count\":0}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/news/pro/latest-answers": {
+   "body": "{\"available\":true,\"answers\":[],\"count\":0}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/news/pro/status": {
+   "body": "{\"available\":true,\"console\":{\"size\":0,\"latest_seq\":0,\"available\":true},\"counts\":{\"total\":295,\"pending\":295,\"status_counts\":{\"ACTIVE\":267,\"QUARANTINE\":28}},\"late",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/news/sources": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/news/state": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/news/timeline": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/news/toggle-state": {
+   "body": "{\"success\":true,\"enabled\":false,\"runtime_version\":null,\"source\":\"\"}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/news/trades/{trade_id}": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/news/{article_id}": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/observability/stats": {
+   "body": "{\"tg_enabled\":false,\"tg_queue\":0,\"telegram\":{}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/operator/calibration": {
+   "body": "{\"available\":true,\"serving_fingerprint\":null,\"serving_artifact_mtime\":null,\"fingerprint_stable_hint\":true,\"artifact_status\":\"ABSENT\",\"calibration_status\":\"NOT_C",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/operator/decisions": {
+   "body": "{\"available\":true,\"filters\":{\"hours\":null,\"action\":null,\"gate\":null,\"search\":null},\"count\":0,\"rows\":[]}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/operator/decisions/{decision_id}": {
+   "body": "{\"detail\":[{\"type\":\"int_parsing\",\"loc\":[\"path\",\"decision_id\"],\"msg\":\"Input should be a valid integer, unable to parse string as an integer\",\"input\":\"{decision_i",
+   "needs_python": true,
+   "observed": [],
+   "status": 422,
+   "why": "non-2xx:422"
+  },
+  "GET /api/operator/funnel": {
+   "body": "{\"available\":true,\"window\":50000,\"scanned_rows\":0,\"total\":0,\"stages\":[],\"gates\":[],\"actions\":[],\"note\":\"TERMINAL distributions: the ledger records the final blo",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/operator/no-trade": {
+   "body": "{\"available\":true,\"total\":0,\"gates\":[],\"regimes\":[],\"reasons\":[],\"reasons_top_n\":0,\"hourly_trend\":[],\"model_direction_unresolved\":0,\"model_direction_unresolved_",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/operator/orders": {
+   "body": "{\"available\":true,\"count\":0,\"latency\":null,\"rows\":[]}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/operator/summary": {
+   "body": "{\"available\":true,\"runtime\":{\"engine_running\":false,\"execution_mode\":null,\"runtime_mode\":null,\"symbol\":null,\"regime\":null,\"bid\":null,\"ask\":null,\"spread\":null,\"t",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/position-adviser/advisories": {
+   "body": "{\"status\":\"OK\",\"count\":0,\"advisories\":[]}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/position-adviser/datasets": {
+   "body": "{\"status\":\"OK\",\"count\":0,\"datasets\":[]}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/position-adviser/models": {
+   "body": "{\"status\":\"OK\",\"count\":0,\"active_adviser_id\":\"\",\"models\":[]}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/position-adviser/status": {
+   "body": "{\"activation\":\"DISABLED\",\"model_id\":\"\",\"weights_path\":\"\",\"scaler_path\":\"\",\"weights_sha256\":\"\",\"manifest_path\":\"\",\"integrity\":\"unverified\",\"source_dataset_hash\":",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/provisioning/datasets": {
+   "body": "{\"success\":true,\"roots\":[{\"root\":\"C:\\\\Users\\\\Capsizer\\\\source\\\\repos\\\\nse-api-golang-migration\\\\data\\\\imports\",\"exists\":false,\"count\":0,\"files\":[]},{\"root\":\"C:\\",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/provisioning/environment": {
+   "body": "{\"success\":true,\"report\":{\"backend\":\"cuda\",\"python\":{\"found\":true,\"version\":\"3.11.16\",\"path\":\"C:\\\\Users\\\\Capsizer\\\\source\\\\repos\\\\NexusTradingForexBot\\\\.venv\\\\S",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/provisioning/status": {
+   "body": "{\"success\":true,\"slot\":{\"state\":\"missing\",\"origin\":\"\",\"detail\":\"artifact missing or empty\",\"path\":\"C:\\\\Users\\\\Capsizer\\\\source\\\\repos\\\\nse-api-golang-migration\\",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/provisioning/train/progress": {
+   "body": "{\"success\":true,\"active\":false,\"events\":[],\"result\":{\"state\":\"rejected\",\"updated_at\":\"2026-09-26T00:46:56+00:00\",\"path\":\"official\",\"error\":\"DOWNLOAD_FAILED: <ur",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/release/status": {
+   "body": "{\"contract\":\"RELEASE_STATUS v1\",\"generated_at\":\"2026-09-26T00:45:57.731793+00:00\",\"current_version\":\"9.0.14\",\"current_commit\":\"10aaac0f1b1b3ba8586a419e1dd557aca",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/replay/decision": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"seq\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [],
+   "status": 422,
+   "why": "non-2xx:422"
+  },
+  "GET /api/replay/report": {
+   "body": "{\"detail\":\"no replay session active\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/replay/state": {
+   "body": "{\"detail\":\"no replay session active\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/research/analytics": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/research/detail/{strategy_id}": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/research/diagnostics": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/research/events": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/research/evidence": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/research/gates": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/research/health": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/research/history": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/research/preflight": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"strategy_id\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [],
+   "status": 422,
+   "why": "non-2xx:422"
+  },
+  "GET /api/research/queue": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/research/registry": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/research/registry/{strategy_id}": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/research/runs": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/research/summary": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/research/trace": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/research/worker": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/rules": {
+   "body": "[]",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/runtime-config": {
+   "body": "{\"success\":false,\"reason\":\"ENGINE_OFFLINE\",\"runtime_applied\":false}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "failed-in-2xx"
+  },
+  "GET /api/runtime-config/diagnostics": {
+   "body": "{\"success\":true,\"persistent_version\":2,\"runtime_version\":null,\"live_yaml_version\":null,\"live_yaml_hash\":\"\",\"live_yaml_exists\":false,\"last_apply_status\":\"APPLIED",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/settings": {
+   "body": "{\"success\":true,\"state\":\"OK\",\"db_path\":\"C:\\\\Users\\\\Capsizer\\\\AppData\\\\Local\\\\NexusScalpEngine\\\\databases\\\\app_settings.db\",\"settings\":{\"telegram\":{\"enabled\":tru",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/settings/telegram/status": {
+   "body": "{\"success\":true,\"enabled\":true,\"configured\":false,\"token_present\":false,\"token_length\":0,\"masked_token\":\"\",\"token_status\":\"MISSING\",\"admin_id_present\":false,\"ad",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/status": {
+   "body": "{\"state_version\":1,\"snapshot_timestamp\":\"2026-09-26T00:45:56.309161+00:00\",\"generated_at\":\"2026-09-26T00:45:56.309161+00:00\",\"engine_running\":false,\"symbol\":nul",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/trace/bundle/{key}": {
+   "body": "{\"query\":\"{key}\",\"trace_id\":null,\"decision_id\":null,\"events\":[],\"summary\":null,\"found\":false}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/trace/decisions": {
+   "body": "{\"total\":0,\"offset\":0,\"rows\":[],\"last_seq\":0}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/trace/events": {
+   "body": "{\"events\":[],\"gap\":false,\"last_seq\":0,\"filters\":{}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/trace/integrity": {
+   "body": "{\"generated_at\":\"2026-09-26T00:46:21.499+00:00\",\"traces_scanned\":0,\"warnings\":[],\"truncated\":false}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/trace/latency": {
+   "body": "{\"generated_at\":\"2026-09-26T00:46:21.487+00:00\",\"min_sample_n\":30,\"stages\":{}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/trace/observer": {
+   "body": "{\"observer_id\":\"OBS-20260926-004552-2e291f\",\"status\":\"OFF\",\"session\":null,\"recent_sessions\":[],\"counters\":{\"events_emitted\":0,\"decisions_total\":0,\"unmapped_even",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/trace/topology": {
+   "body": "{\"generated_at\":\"2026-09-26T00:46:21.475+00:00\",\"observer_status\":\"OFF\",\"nodes\":[],\"edges\":[],\"counters\":{\"events_emitted\":0,\"decisions_total\":0,\"unmapped_event",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/trace/why/{event_id}": {
+   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"No stored event with this id (never emitted or already evicted).\",\"request_id",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/v1/audit/events": {
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_4223ee6a0b\",\"generated_at\":\"2026-09-26T00:47:04.151913+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/config": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_2c27659bb9\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/config/schema": {
+   "body": "{\"data\":{\"sections\":[{\"name\":\"execution\",\"required\":false,\"type\":\"ExecutionConfig\",\"fields\":[\"enabled_symbols\",\"magic_number\",\"max_slippage_points\",\"mode\",\"symb",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/database/integrity": {
+   "body": "{\"error\":{\"code\":\"DEPENDENCY_UNAVAILABLE\",\"message\":\"audit database not readable\",\"details\":{},\"request_id\":\"req_03fed80c64\",\"retryable\":true}}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 503,
+   "why": "observed:db"
+  },
+  "GET /api/v1/database/status": {
+   "body": "{\"data\":{\"filename\":\"nexusdb\",\"exists\":false,\"size_bytes\":null,\"probed_at\":\"2026-09-26T00:47:04.161912+00:00\",\"table_count\":null,\"integrity_endpoint\":\"/api/v1/d",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/database/tables": {
+   "body": "{\"error\":{\"code\":\"DEPENDENCY_UNAVAILABLE\",\"message\":\"audit database not readable\",\"details\":{},\"request_id\":\"req_8418e08f25\",\"retryable\":true}}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 503,
+   "why": "observed:db"
+  },
+  "GET /api/v1/decisions": {
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_4f23d73c49\",\"generated_at\":\"2026-09-26T00:47:03.783384+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/decisions/latest": {
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"no decisions recorded yet\",\"details\":{},\"request_id\":\"req_462f2fbfc9\",\"retryable\":false}}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/v1/decisions/no-trade": {
+   "body": "{\"data\":{\"total\":0,\"reasons\":[],\"latest\":null},\"meta\":{\"request_id\":\"req_1e8e3bb167\",\"generated_at\":\"2026-09-26T00:47:03.806409+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/decisions/no-trade/reasons": {
+   "body": "{\"data\":{\"total\":0,\"reasons\":{}},\"meta\":{\"request_id\":\"req_337caafe74\",\"generated_at\":\"2026-09-26T00:47:03.798408+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/decisions/stats": {
+   "body": "{\"data\":{\"window_hours\":168,\"total\":0,\"by_action\":{},\"by_stage\":{}},\"meta\":{\"request_id\":\"req_fe189799a6\",\"generated_at\":\"2026-09-26T00:47:03.791386+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/decisions/{decision_id}": {
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"decision {decision_id} not found\",\"details\":{},\"request_id\":\"req_2a664e8228\",\"retryable\":false}}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/v1/decisions/{decision_id}/evidence": {
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"decision {decision_id} not found\",\"details\":{},\"request_id\":\"req_890c7ee96f\",\"retryable\":false}}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/v1/decisions/{decision_id}/explanation": {
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"decision {decision_id} not found\",\"details\":{},\"request_id\":\"req_5cc0070ea5\",\"retryable\":false}}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/v1/decisions/{decision_id}/gates": {
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"decision {decision_id} not found\",\"details\":{},\"request_id\":\"req_def2ba69fe\",\"retryable\":false}}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/v1/execution/history": {
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_7746ed0781\",\"generated_at\":\"2026-09-26T00:47:03.884178+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/execution/status": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_9212f5143d\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/features/contract": {
+   "body": "{\"data\":{\"schema_id\":\"scalp_v3\",\"feature_count\":70,\"feature_schema_hash\":\"235b8fccc96b7e0e\",\"registry_canonical\":true,\"groups\":{\"base_0_49\":{\"count\":0,\"indices\"",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/features/current": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_205e5e35d8\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/features/groups": {
+   "body": "{\"data\":{\"dimension\":70,\"families\":{\"base\":{\"count\":50,\"names\":[\"upper_wick_ratio\",\"lower_wick_ratio\",\"body_to_range_ratio\",\"is_doji\",\"pinbar_sig\",\"engulfing_si",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/features/status": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_34099d7a7f\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/incidents": {
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_a6a6f2712c\",\"generated_at\":\"2026-09-26T00:47:04.077379+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/incidents/stats": {
+   "body": "{\"data\":{\"counts\":{\"total\":0,\"open\":0,\"critical\":0,\"high\":0,\"medium\":0,\"low\":0,\"unknown\":0,\"recovered\":0,\"false_positive\":0},\"by_component\":[],\"recurring\":[]},\"",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/incidents/{incident_id}": {
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"incident {incident_id} not found\",\"details\":{},\"request_id\":\"req_7cff5e6018\",\"retryable\":false}}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/v1/incidents/{incident_id}/timeline": {
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"incident {incident_id} not found\",\"details\":{},\"request_id\":\"req_ab55f97dec\",\"retryable\":false}}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/v1/indicators": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_e8f34785b4\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/indicators/gauges": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_1fd7a5bf6e\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/indicators/moving-averages": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_82b8a90f48\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/indicators/oscillators": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_4323c91aef\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/indicators/pivots": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_d347736580\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/indicators/summary": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_0442b0b0d3\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/market/bars": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_58b21caf5f\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/market/quote": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_2cb3b1a92f\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/market/regime": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_6717dbde41\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/market/snapshot": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_14275e55cd\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/market/symbols": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_76ce64a072\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/marketplace/packs": {
+   "body": "{\"data\":{\"packs\":[{\"id\":\"price_action\",\"name\":\"Price Action\",\"family\":\"PRICE_ACTION\",\"description\":\"Pure price-action entry variants: pullback, sweep reversal, ",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/marketplace/rankings": {
+   "body": "{\"data\":{\"items\":[],\"dimension\":\"OVERALL\",\"profile_id\":\"default\",\"has_more\":false},\"meta\":{\"request_id\":\"req_4391320ae2\",\"generated_at\":\"2026-09-26T00:47:04.777",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/marketplace/repairs": {
+   "body": "{\"data\":{\"items\":[]},\"meta\":{\"request_id\":\"req_91046336a9\",\"generated_at\":\"2026-09-26T00:47:04.832927+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/marketplace/runtime-snapshot": {
+   "body": "{\"data\":{\"version\":1,\"enabled_set\":[],\"created_at\":\"2026-09-26T00:47:02.815459+00:00\",\"source\":\"marketplace\"},\"meta\":{\"request_id\":\"req_c18e1e84fe\",\"generated_a",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/marketplace/scores/{seed_id}/history": {
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"seed {seed_id} not found\",\"details\":{},\"request_id\":\"req_56689e2bdf\",\"retryable\":false}}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/v1/marketplace/seeds": {
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_b22529f9c5\",\"generated_at\":\"2026-09-26T00:47:04.314399+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/marketplace/seeds/{seed_id}": {
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"seed {seed_id} not found\",\"details\":{},\"request_id\":\"req_54cc8752c4\",\"retryable\":false}}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/v1/model/champion": {
+   "body": "{\"data\":{\"available\":false,\"reason\":\"engine not attached\"},\"meta\":{\"request_id\":\"req_53e0d3008f\",\"generated_at\":\"2026-09-26T00:47:03.916756+00:00\"}}",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/v1/model/contracts": {
+   "body": "{\"data\":{\"feature_schema_ids\":[\"scalp_v3\",\"scalp_v1\",\"scalp_v2\"],\"compatible_model_schemas\":{\"result\":\"UNKNOWN\",\"reason\":\"NO_MODEL_METADATA\",\"model_schema_id\":n",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/model/identity": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_b17fd1ac14\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/model/status": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_df813ca0f0\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/observability/events": {
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_5984d0d8b2\",\"generated_at\":\"2026-09-26T00:47:04.134760+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/observability/metrics": {
+   "body": "{\"data\":{\"thread_count\":44,\"daemon_thread_count\":43,\"generated_at\":\"2026-09-26T00:47:04.145802+00:00\",\"resource_usage\":\"UNAVAILABLE\",\"sse\":{\"connection\":\"UNKNOW",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/v1/positions": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_7aa3366ddd\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/positions/history/{ticket}": {
+   "body": "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Request validation failed.\",\"details\":{\"errors\":[{\"field\":\"ticket\",\"issue\":\"int_parsing\",\"input_present\":true}]},",
+   "needs_python": true,
+   "observed": [],
+   "status": 422,
+   "why": "non-2xx:422"
+  },
+  "GET /api/v1/positions/{ticket}": {
+   "body": "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Request validation failed.\",\"details\":{\"errors\":[{\"field\":\"ticket\",\"issue\":\"int_parsing\",\"input_present\":true}]},",
+   "needs_python": true,
+   "observed": [],
+   "status": 422,
+   "why": "non-2xx:422"
+  },
+  "GET /api/v1/research/datasets": {
+   "body": "{\"data\":{\"datasets\":[],\"distinct\":0,\"generated_at\":\"2026-09-26T00:47:04.013655+00:00\"},\"meta\":{\"request_id\":\"req_b473fd11c0\",\"generated_at\":\"2026-09-26T00:47:04",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/research/runs": {
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_43b04930fc\",\"generated_at\":\"2026-09-26T00:47:04.001615+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/research/status": {
+   "body": "{\"data\":{\"available\":true,\"health\":{\"available\":false},\"registry\":{\"available\":false,\"total\":0,\"by_lifecycle\":{}},\"generated_at\":\"2026-09-26T00:47:03.979545+00:",
+   "needs_python": true,
+   "observed": [],
+   "status": 200,
+   "why": "stub-in-2xx"
+  },
+  "GET /api/v1/research/strategies": {
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_f715259618\",\"generated_at\":\"2026-09-26T00:47:03.985550+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/research/strategies/{strategy_id}": {
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"strategy scalp_v1 not found\",\"details\":{},\"request_id\":\"req_06f8570cb3\",\"retryable\":false}}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/v1/risk/status": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_d33ee39f22\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/risk/summary": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_9d33cb59cb\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/runtime/freshness": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_30d9a0d298\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [],
+   "status": 503,
+   "why": "non-2xx:503"
+  },
+  "GET /api/v1/runtime/mode": {
+   "body": "{\"data\":{\"mode\":null,\"effective_mode\":null,\"engine_attached\":false,\"replaying\":null},\"meta\":{\"request_id\":\"req_e4783a6da1\",\"generated_at\":\"2026-09-26T00:47:03.6",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/runtime/shutdown": {
+   "body": "{\"data\":{\"engine_attached\":false,\"phase\":\"UNKNOWN\"},\"meta\":{\"request_id\":\"req_682a4a0e30\",\"generated_at\":\"2026-09-26T00:47:03.689394+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/shadow/70d": {
+   "body": "{\"data\":{\"summary\":{\"available\":true,\"observations\":0,\"agreements\":0,\"invalid\":0,\"events\":0},\"disagreement_counts\":{},\"drift_alerts\":[],\"feature_health\":[],\"gen",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/shadow/decisions": {
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_24573ee56d\",\"generated_at\":\"2026-09-26T00:47:04.051854+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/shadow/runs": {
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_f6890171d6\",\"generated_at\":\"2026-09-26T00:47:04.032757+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/shadow/runs/{run_id}": {
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"shadow run 1 not found\",\"details\":{},\"request_id\":\"req_ad1cf82efb\",\"retryable\":false}}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/v1/shadow/status": {
+   "body": "{\"data\":{\"shadow_60d\":{\"available\":true,\"runs\":{},\"decisions\":0,\"promotions\":0},\"shadow_70d\":{\"available\":true,\"observations\":0,\"agreements\":0,\"invalid\":0,\"even",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/signals/history": {
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_96f9db827f\",\"generated_at\":\"2026-09-26T00:47:03.767652+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/signals/latest": {
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"no signals recorded yet\",\"details\":{},\"request_id\":\"req_d2893c96b6\",\"retryable\":false}}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "GET /api/v1/system/capabilities": {
+   "body": "{\"data\":{\"api_version\":\"v1\",\"spec\":\"docs/api/API_PLATFORM_V1.md\",\"read_only\":true,\"domains\":{\"audit\":1,\"config\":1,\"database\":1,\"decisions\":1,\"execution\":1,\"feat",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/system/diagnostics": {
+   "body": "{\"data\":{\"mt5\":null,\"last_selftest\":{\"result\":{\"overall\":\"PASS\",\"checks\":{\"contract\":\"PASS\",\"redaction\":\"PASS\",\"aggregation_bound\":\"PASS\",\"singleton\":\"PASS\",\"re",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/system/health": {
+   "body": "{\"data\":{\"verdict\":\"DEGRADED\",\"checks\":[{\"category\":\"SYSTEM\",\"verdict\":\"PASS\",\"reason\":\"Windows 10.0.28000 / x64\",\"suggestion\":\"\",\"state\":\"HEALTHY\",\"optional\":f",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/system/readiness": {
+   "body": "{\"data\":{\"ready\":true,\"verdict\":\"DEGRADED\",\"required_layers\":[{\"category\":\"SYSTEM\",\"verdict\":\"PASS\",\"reason\":\"Windows 10.0.28000 / x64\",\"suggestion\":\"\",\"state\":",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/system/runtime": {
+   "body": "{\"data\":{\"engine_attached\":false,\"engine_running\":false,\"warmup_state\":null,\"inference_enabled\":false,\"freshness\":null},\"meta\":{\"request_id\":\"req_59308bf319\",\"g",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/system/status": {
+   "body": "{\"data\":{\"health_verdict\":\"DEGRADED\",\"critical_failures\":[\"DATA\"],\"version\":{\"product\":\"NexusScalpEngine\",\"version\":\"9.0.14\",\"commit\":\"10aaac0f1b1b3ba8586a419e1",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/system/version": {
+   "body": "{\"data\":{\"product\":\"NexusScalpEngine\",\"product_display\":\"Nexus Trading Forex Bot\",\"version\":\"9.0.14\",\"commit\":\"10aaac0f1b1b3ba8586a419e1dd557aca50966dc\",\"commit",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api/v1/system/workers": {
+   "body": "{\"data\":{\"workers\":[],\"engine_attached\":false},\"meta\":{\"request_id\":\"req_ae477bc0c8\",\"generated_at\":\"2026-09-26T00:47:03.486197+00:00\"}}",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /api_client.js": {
+   "body": "/* =========================================================================\r\n * NEXUS CONTROL CENTER \u2014 Central API Client & Error Contract (app.js part 1)\r\n * ",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /app.js": {
+   "body": "// app.js\r\n\r\n// Front-End Engine for Nexus Scalp Engine (NSE) Control Center\r\n\r\n\r\n\r\nlet eventSource = null;\r\n\r\nlet currentTab = 'tab-monitoring';\r\n\r\nlet current",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /backtest_report_ui.js": {
+   "body": "/* Read-only empirical report UI. Imported values are always escaped. */\r\n(function (global) {\r\n    'use strict';\r\n\r\n    function escape(value) {\r\n        retur",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /cc_components.js": {
+   "body": "/* =========================================================================\r\n * NEXUS CONTROL CENTER \u2014 Design System & Component Library (NX.cc.design)\r\n * ---",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /cc_state.js": {
+   "body": "/* =========================================================================\r\n * NEXUS CONTROL CENTER \u2014 UI state machine & polling engine (NX.cc.state)\r\n * ----",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /cc_styles.css": {
+   "body": "/* =========================================================================\r\n * NEXUS CONTROL CENTER \u2014 CSS layer (CHG-0043, TASK-CONTROL-CENTER)\r\n * ----------",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /command_center.html": {
+   "body": "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\r\n    <title>NE",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /command_center_console.js": {
+   "body": "/* =========================================================================\r\n * NEXUS COMMAND CENTER \u2014 Live Event Stream + Debug Console (Frontend)\r\n * -------",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /command_center_spatial.js": {
+   "body": "/**\r\n * Command Center Spatial Renderer \u2014 2.5D lifecycle zones + animated strategy movement\r\n * ----------------------------------------------------------------",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /command_center_timemachine.js": {
+   "body": "/* =========================================================================\r\n * NEXUS COMMAND CENTER \u2014 Historical Time Machine (Frontend Replay)\r\n * ----------",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /command_center_ui.js": {
+   "body": "/* =========================================================================\r\n * NEXUS COMMAND CENTER \u2014 Spatial 2.5D Renderer & UI Controller\r\n * --------------",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /control_center.js": {
+   "body": "/* =========================================================================\r\n * NEXUS CONTROL CENTER \u2014 operator views (NX.cc.views)\r\n * -----------------------",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /dependency": {
+   "body": "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<meta charset=\"utf-8\" />\r\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\r\n<title>Dependency I",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /dependency.html": {
+   "body": "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<meta charset=\"utf-8\" />\r\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\r\n<title>Dependency I",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /dependency_api.js": {
+   "body": "/* Dependency Intelligence \u2014 API client.\r\n * Defensive: AbortController, timeout, no silent failures, null-safe parse.\r\n * Exposes window.NXDependency.api with ",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /dependency_graph.js": {
+   "body": "/* Dependency Intelligence \u2014 SVG graph renderer (no external library).\r\n * Deterministic package-cluster layout with zoom-aware progressive rendering,\r\n * selec",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /dependency_ui.js": {
+   "body": "/* Dependency Intelligence \u2014 UI controller (state, filters, inspector, explorers).\r\n * Pulls from window.NXDependency.api and window.NXDependencyGraph. No build",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /docs": {
+   "body": "\n    <!DOCTYPE html>\n    <html>\n    <head>\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <link type=\"text/css\" rel=\"stylesheet\"",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /docs/oauth2-redirect": {
+   "body": "\n    <!doctype html>\n    <html lang=\"en-US\">\n    <head>\n        <title>Swagger UI: OAuth2 Redirect</title>\n    </head>\n    <body>\n    <script>\n        'use stri",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /first_setup.html": {
+   "body": "<!doctype html>\r\n<html lang=\"en\">\r\n<head>\r\n<meta charset=\"utf-8\">\r\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\r\n<title>Nexus First Setu",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /forensic_console.js": {
+   "body": "/* =========================================================================\r\n * NEXUS CONTROL CENTER \u2014 Forensic Incident Center shared infrastructure\r\n * -----",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /health": {
+   "body": "{\"detail\":{\"verdict\":\"DEGRADED\",\"checks\":[{\"category\":\"SYSTEM\",\"verdict\":\"PASS\",\"reason\":\"Windows 10.0.28000 / x64\",\"suggestion\":\"\",\"state\":\"HEALTHY\",\"optional\"",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
+   "status": 503,
+   "why": "observed:db"
+  },
+  "GET /index.html": {
+   "body": "<!doctype html>\r\n<html lang=\"en\">\r\n  <head>\r\n    <meta charset=\"UTF-8\" />\r\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\r\n    <me",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /legacy": {
+   "body": "\ufeff<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\r\n    <title>N",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /legacy.html": {
+   "body": "\ufeff<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\r\n    <title>N",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /legacy/": {
+   "body": "\ufeff<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n    <meta charset=\"UTF-8\">\r\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\r\n    <title>N",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /marketplace.js": {
+   "body": "/* =========================================================================\r\n * STRATEGY MARKETPLACE UI \u2014 Control Center Marketplace Tab (CHG-0058)\r\n * -------",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /model_studio_ui.js": {
+   "body": "/**\r\n * Model Studio UI - Deep Learning & Neural Network Inspection, Prediction & Training.\r\n * Connects to /api/model-studio/* endpoints for both 50D and 70D m",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /news_intelligence.js": {
+   "body": "/* =========================================================================\r\n * NEXUS CONTROL CENTER \u2014 News Intelligence (0100)\r\n * ---------------------------",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /openapi.json": {
+   "body": "{\"openapi\":\"3.1.0\",\"info\":{\"title\":\"Nexus Scalp Engine Control Center\",\"version\":\"0.1.0\"},\"paths\":{\"/\":{\"get\":{\"summary\":\"Serve Index\",\"operationId\":\"serve_inde",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /position_adviser_ui.js": {
+   "body": "\r\n// =============================================================================\r\n// Layer-2 ML: Position Decision Adviser (keep/close/reduce decide-system ho",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /redoc": {
+   "body": "\n    <!DOCTYPE html>\n    <html>\n    <head>\n    <title>Nexus Scalp Engine Control Center - ReDoc</title>\n    <!-- needed for adaptive design -->\n    <meta charse",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /replay_panel.js": {
+   "body": "/*CHG-0043 replay-on-chart frontend (Web/replay_panel.js).\r\n\r\nWires the EXISTING dashboard to the real replay pipeline (REPLAY_API v1):\r\n\r\n* Session panel: data",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /responsive.css": {
+   "body": "/* =========================================================================\r\n * NSE Responsive Layer \u2014 v1.0\r\n * Pure CSS. No JS logic touched. Loaded AFTER sty",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /styles.css": {
+   "body": "/* styles.css */\r\n@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=sw",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /tailwind.css": {
+   "body": "*,:after,:before{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /tv_widget.html": {
+   "body": "<!-- Nexus Technicals \u2014 professional terminal card (TV-REDESIGN-1, Hermes-Main/Hermes-UI-01).\r\n     UI-only redesign. Data contract unchanged: /api/v1/indicator",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /tv_widget.js": {
+   "body": "// Nexus Technicals widget \u2014 professional terminal redesign (TV-REDESIGN-1).\r\n// Agent: Hermes-Main (Hermes-UI-01). UI layer only: SAME endpoint, SAME params,\r\n",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /tv_widget_styles.css": {
+   "body": "/* ==========================================================================\r\n   Nexus Technicals card \u2014 professional terminal restyle (TV-REDESIGN-1)\r\n   Agen",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /ux.js": {
+   "body": "/* ==========================================================================\r\n * Nexus Scalp Engine \u2014 UX Safety & Feedback Layer (ux.js)  \u00b7  CHG-0048\r\n * -----",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /ux_attention.js": {
+   "body": "/* ==========================================================================\r\n * Nexus Scalp Engine \u2014 Attention Strip (NXAttention)  \u00b7  CHG-0048\r\n * ----------",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /ux_conn.js": {
+   "body": "/* ==========================================================================\r\n * Nexus Scalp Engine \u2014 Connectivity Banner Controller (NXConn)  \u00b7 CHG-0048\r\n * -",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /ux_i18n.js": {
+   "body": "/* ==========================================================================\r\n * Nexus Scalp Engine \u2014 UX i18n Core (NX_I18N)  \u00b7  CHG-0048\r\n * -----------------",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /ux_palette.js": {
+   "body": "/* ==========================================================================\r\n * Nexus Scalp Engine \u2014 Command Palette + Keyboard Shortcuts (NXPalette) \u00b7 CHG-00",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /ux_signal.js": {
+   "body": "/* ==========================================================================\r\n * Nexus Scalp Engine \u2014 Decision Humanizer (NXSignal)  \u00b7  CHG-0048\r\n * ----------",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /vendor/fontawesome/all.min.css": {
+   "body": "/*!\r\n * Font Awesome Free 6.4.0 by @fontawesome - https://fontawesome.com\r\n * License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1",
+   "needs_python": false,
+   "observed": [],
+   "status": 200,
+   "why": "stateless-2xx"
+  },
+  "GET /vendor/webfonts/{font_name}": {
+   "body": "{\"detail\":\"Not Found\"}",
+   "needs_python": true,
+   "observed": [],
+   "status": 404,
+   "why": "non-2xx:404"
+  },
+  "POST /api/ai-providers/activate": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/ai-providers/decision/compare": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/ai-providers/decision/evaluate": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/ai-providers/export": {
+   "body": "{\"status\":\"OK\",\"exported_at\":\"2026-09-26T00:46:59.561693+00:00\",\"providers\":[],\"activation\":{\"primary_provider\":\"internal_nse_ml\",\"secondary_provider\":null,\"fal",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/ai-providers/import": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/ai-providers/providers/{provider_id}/configure": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/ai-providers/providers/{provider_id}/disable": {
+   "body": "{\"detail\":\"cannot disable provider\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 400,
+   "why": "write:assumed"
+  },
+  "POST /api/ai-providers/providers/{provider_id}/enable": {
+   "body": "{\"detail\":\"cannot enable provider\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 400,
+   "why": "write:assumed"
+  },
+  "POST /api/ai-providers/providers/{provider_id}/test": {
+   "body": "{\"status\":\"FAIL\",\"passed\":false,\"stage\":\"connection\",\"detail\":\"provider is disabled or not configured\",\"latency_ms\":null,\"raw_response\":\"\",\"normalized_response\"",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/ai-providers/reset": {
+   "body": "{\"status\":\"OK\",\"removed_providers\":[],\"note\":\"Provider settings only. Models, datasets, trades and account history untouched.\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/ai-providers/switch": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/config": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/db/console/apikey": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/db/console/query": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/db/console/refresh": {
+   "body": "{\"success\":true,\"databases\":[{\"name\":\"audit\",\"provider\":\"postgresql\",\"database\":\"nexusdb\",\"server\":\"localhost:5432\",\"path\":\"\",\"size_bytes\":null,\"status\":\"CONNEC",
+   "needs_python": true,
+   "observed": [
+    "db",
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "POST /api/db/manage/backup": {
+   "body": "{\"success\":true,\"backup_path\":\"artifacts/backups/audit_backup_20260926-041600.db\"}",
+   "needs_python": true,
+   "observed": [
+    "db",
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "POST /api/db/manage/config": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/migrate": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/options": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/parse-url": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/preview": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/provider": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/test-connection": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/debug/model-test": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/diagnostics/incidents/reconcile": {
+   "body": "{\"available\":true,\"audit_started\":\"2026-09-26T00:45:58.633261+00:00\",\"audit_scope\":[\"accounting\",\"timebase\",\"outcome\",\"learning\",\"split_fill\"],\"findings\":{\"acco",
+   "needs_python": true,
+   "observed": [
+    "db",
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "POST /api/engine/mode": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/engine/toggle": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/experience/self-heal": {
+   "body": "{\"success\":false,\"rebuilt_strategies\":0,\"reason\":\"ENGINE_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/factory/complete/{generation_id}": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/factory/evaluate/{candidate_id}": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/factory/generate": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/factory/llm-config": {
+   "body": "{\"available\":true,\"success\":true,\"correlation_id\":\"factory_b7475bf805b8\",\"status\":{\"configured\":false,\"api_key_present\":false,\"masked_api_key\":\"\",\"base_url\":\"\",",
+   "needs_python": true,
+   "observed": [
+    "db",
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "POST /api/factory/loop/pause": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/factory/loop/resume": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/factory/loop/start": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/factory/loop/stop": {
+   "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/factory/provider-test": {
+   "body": "{\"available\":false,\"reason\":\"STRATEGY_FACTORY_DISABLED\"}",
+   "needs_python": true,
+   "observed": [
+    "db",
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "POST /api/factory/provider-toggle": {
+   "body": "{\"available\":true,\"enabled\":false,\"state\":{\"feature\":\"strategy_factory\",\"user_enabled\":false,\"auto_disabled\":false,\"auto_disabled_reason\":\"\",\"auto_disabled_deta",
+   "needs_python": true,
+   "observed": [
+    "db",
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "observed:db"
+  },
+  "POST /api/intelligence/evolution/scan": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/intelligence/evolution/validate": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"candidate_id\"],\"msg\":\"Field required\",\"input\":null},{\"type\":\"missing\",\"loc\":[\"query\",\"backtest_expectancy_r\"],\"msg\"",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/intelligence/self-heal": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/liquidity/toggle": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/benchmark": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/datasets/download": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/datasets/inspect-features": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/models/benchmark-live": {
+   "body": "{\"detail\":\"No active model hot-loaded to benchmark.\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 400,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/models/canary": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/models/drift-check": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/models/export": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/models/fine-tune": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/models/hot-load": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/models/register": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/models/rollback": {
+   "body": "{\"detail\":\"No previous champion model found in audit history to roll back to.\"}",
+   "needs_python": true,
+   "observed": [
+    "db",
+    "write:assumed"
+   ],
+   "status": 400,
+   "why": "observed:db"
+  },
+  "POST /api/model-studio/models/tag": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/models/verify": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/position-dataset/generate": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/position-dataset/validate": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/predict": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/stress-test": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/train": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/models/governance/emergency/disable": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/models/governance/emergency/freeze": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/models/governance/emergency/unfreeze": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/models/promotion/approve": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/models/promotion/execute": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/models/promotion/rollback": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/models/registry/reconcile": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/models/shadow/attach": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/models/shadow/evaluate-promotion": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"run_id\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/models/shadow/outcomes": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/models/shadow/worker/start": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/models/shadow/worker/stop": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/models/shadow70/attach": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/models/shadow70/detach": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/models/shadow70/start": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/models/shadow70/stop": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/models/train": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/models/worker/cancel": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/models/worker/start": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/models/worker/stop": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/news/analyze/batch": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/news/analyze/{article_id}": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/news/auto-analysis": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/news/auto-prune": {
+   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"NEWS_UNAVAILABLE\",\"message\":\"News subsystem not enabled\",\"request_id\":\"req_4bc6ae36e4\"}}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/news/pro/analyze-all": {
+   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"NEWS_UNAVAILABLE\",\"message\":\"News subsystem not enabled\",\"request_id\":\"req_f717440ce5\"}}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/news/pro/purge": {
+   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"NEWS_UNAVAILABLE\",\"message\":\"News subsystem not enabled\",\"request_id\":\"req_729045644b\"}}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/news/refresh": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/news/self-heal": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/news/toggle": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/news/{article_id}/restore": {
+   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"NEWS_UNAVAILABLE\",\"message\":\"News subsystem not enabled\",\"request_id\":\"req_e1c8a8fb66\"}}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/position-adviser/activate": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/position-adviser/auto-tune": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/position-adviser/checks/run": {
+   "body": "{\"status\":\"OK\",\"all_passed\":false,\"checks\":[{\"name\":\"adviser_model_loaded\",\"passed\":false,\"detail\":\"an adviser checkpoint is loaded in memory\",\"evidence\":{\"mode",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/position-adviser/config": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/position-adviser/load": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/position-adviser/train": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/position-adviser/unload": {
+   "body": "{\"status\":\"OK\",\"message\":\"adviser unloaded and disabled\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/positions/close": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/positions/modify": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/provisioning/environment/install": {
+   "body": "{\"success\":true,\"report\":{\"backend\":\"cuda\",\"python\":{\"found\":true,\"version\":\"3.11.16\",\"path\":\"C:\\\\Users\\\\Capsizer\\\\source\\\\repos\\\\NexusTradingForexBot\\\\.venv\\\\S",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/provisioning/official": {
+   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"OFFICIAL_BUNDLE_REJECTED\",\"message\":\"official bundle failed verification \u2014 nothing was installed (run `nexus",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/provisioning/train/cancel": {
+   "body": "{\"success\":true,\"cancel\":\"NO_ACTIVE_RUN\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/provisioning/train/start": {
+   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"TRAIN_INPUT_REJECTED\",\"message\":\"The server could not complete this request.\",\"request_id\":\"req_b504aa444a\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/replay/control": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/replay/session": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/replay/toggle": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/research/cancel": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"research_run_id\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/research/discover": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/research/promote": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/research/recover-missing-outcomes": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/research/repair-outcomes": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/research/retry-gate": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"gate_id\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/research/self-heal": {
+   "body": "{\"available\":false}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/research/validate": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"strategy_id\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/rules/toggle": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/runtime-config/apply": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/runtime-config/model-swap": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/settings/telegram": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/settings/validate": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/simulation/tick": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/telegram/test": {
+   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"NOTIFIER_UNAVAILABLE\",\"message\":\"Engine notifier is not available (engine not running).\",\"request_id\":\"req_a",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/trace/observer/start": {
+   "body": "{\"observer_id\":\"OBS-20260926-004552-2e291f\",\"session_id\":\"SES-20260926-004621-3e49d9\",\"started_at\":\"2026-09-26T00:46:21.453+00:00\",\"stopped_at\":null,\"status\":\"A",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/trace/observer/stop": {
+   "body": "{\"status\":\"OFF\"}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/v1/config/validate": {
+   "body": "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Request validation failed.\",\"details\":{\"errors\":[{\"field\":\"('body',)\",\"issue\":\"missing\",\"input_present\":false}]},",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/v1/marketplace/packs/{pack_id}/install": {
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"pack {pack_id} not found\",\"details\":{},\"request_id\":\"req_acac1b89a5\",\"retryable\":false}}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 404,
+   "why": "write:assumed"
+  },
+  "POST /api/v1/marketplace/seeds/{seed_id}/disable": {
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"seed {seed_id} not found\",\"details\":{},\"request_id\":\"req_a93d4a1230\",\"retryable\":false}}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 404,
+   "why": "write:assumed"
+  },
+  "POST /api/v1/marketplace/seeds/{seed_id}/enable": {
+   "body": "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Request validation failed.\",\"details\":{\"errors\":[{\"field\":\"('body',)\",\"issue\":\"missing\",\"input_present\":false}]},",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/v1/marketplace/seeds/{seed_id}/repair": {
+   "body": "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Request validation failed.\",\"details\":{\"errors\":[{\"field\":\"('body',)\",\"issue\":\"missing\",\"input_present\":false}]},",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/v1/marketplace/seeds/{seed_id}/run-research": {
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"seed {seed_id} not found\",\"details\":{},\"request_id\":\"req_0f923cbf6f\",\"retryable\":false}}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 404,
+   "why": "write:assumed"
+  },
+  "POST /api/v1/runtime/mode/preview": {
+   "body": "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Request validation failed.\",\"details\":{\"errors\":[{\"field\":\"('body',)\",\"issue\":\"missing\",\"input_present\":false}]},",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/v1/runtime/mode/validate": {
+   "body": "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Request validation failed.\",\"details\":{\"errors\":[{\"field\":\"('body',)\",\"issue\":\"missing\",\"input_present\":false}]},",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/v1/system/diagnostics/run": {
+   "body": "{\"data\":{\"overall\":\"PASS\",\"checks\":{\"contract\":\"PASS\",\"redaction\":\"PASS\",\"aggregation_bound\":\"PASS\",\"singleton\":\"PASS\",\"recovery\":\"PASS\",\"process_scope\":\"PASS\",",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/v1/system/refresh": {
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_1bc8f6e711\",\"retryable\":t",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 503,
+   "why": "write:assumed"
+  },
+  "PUT /api/algo/config": {
+   "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 422,
+   "why": "write:assumed"
+  }
+ },
+ "skipped": [
+  "GET /api/trace/stream",
+  "GET /api/ticks/stream"
+ ]
+}

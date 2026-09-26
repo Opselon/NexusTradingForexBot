@@ -15,6 +15,7 @@ import (
 
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/api/respond"
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/infrastructure/python"
+	"github.com/Opselon/NexusTradingForexBot/go-api/internal/routing"
 )
 
 // Proxy forwards requests to the Python runtime unchanged.
@@ -43,6 +44,19 @@ func (p *Proxy) Handler(method, path string) http.Handler {
 		full := r.URL.Path
 		if r.URL.RawQuery != "" {
 			full += "?" + r.URL.RawQuery
+		}
+
+		// Wave 3: dependency-aware routing. Record the classification the
+		// table holds for this route on every proxied response, so an
+		// operator can see in flight which routes carry a real Python/DB
+		// dependency and which are Go-serving candidates. The decision does
+		// NOT change behaviour yet - every route still forwards to Python -
+		// but it is visible and testable now, and a later wave flips the
+		// switch only for Candidate routes.
+		if d := routing.Decide(method, path); d.Classified {
+			w.Header().Set("X-NSE-Routing-Reason", d.Why)
+		} else {
+			w.Header().Set("X-NSE-Routing-Reason", "unclassified")
 		}
 
 		raw, err := p.py.DoRaw(r.Context(), method, full, r.Body)
