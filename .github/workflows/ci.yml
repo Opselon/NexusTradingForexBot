@@ -145,9 +145,12 @@ jobs:
     # this PR exists to eliminate. Provisioning the service here AND exporting
     # the var the suite reads makes the PG arms execute on the quality job too.
     env:
-      # The suite keys every PG arm off THIS var (not PG_TEST_URL/PG_TEST_DSN).
-      # Pointed at the service container provisioned above.
+      # The suite has TWO PG env-var conventions and both must be exported or
+      # part of the arm skips: NSE_PG_TEST_URL (67 test sites) and
+      # NSE_TEST_PG_DSN (test_fabric_guards). Pointed at the service
+      # container provisioned below.
       NSE_PG_TEST_URL: "postgresql://pgarm:***@localhost:5432/nse_pgarm"
+      NSE_TEST_PG_DSN: "postgresql://pgarm:***@localhost:5432/nse_pgarm"
     services:
       postgres:
         image: postgres:16-alpine
@@ -199,8 +202,6 @@ jobs:
       # so a skipping PG arm looked green. These are the guards that make a
       # skip a failure rather than a pass.
       - name: PG arm gate (fail on skip)
-        env:
-          NSE_PG_TEST_URL: ${{ env.NSE_PG_TEST_URL }}
         run: |
           python scripts/ci/check_pg_arm.py --junit "$CI_RESULTS_DIR/pg_arm/junit.xml"
 

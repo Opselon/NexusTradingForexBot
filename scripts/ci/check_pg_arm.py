@@ -165,9 +165,18 @@ def main(argv: list[str] | None = None) -> int:
         "stdout_tail": proc.stdout[-2000:],
     }
 
-    # 3. A SKIP on a runner with a provisioned PG is a silent bypass.
+    # 3. A SKIP on a runner with a provisioned PG is a silent bypass — EXCEPT
+    #    the skips that are correct on a PG runner. Some of these files hold
+    #    tests that REQUIRE SQLite (the db_console tests need a SQLite
+    #    application_settings catalog), and their skip reason says so plainly.
+    #    Those are not a PG wiring failure and must not fail this gate, or the
+    #    gate could never pass on correctly-provisioned CI.
+    SQLITE_REQUIRED = ("requires sqlite", "sqlite application_settings")
     pg_skips = [
-        s for s in skipped if "PG" in s["reason"].upper() or "POSTGRES" in s["reason"].upper()
+        s
+        for s in skipped
+        if ("PG" in s["reason"].upper() or "POSTGRES" in s["reason"].upper())
+        and not any(marker in s["reason"].lower() for marker in SQLITE_REQUIRED)
     ]
     if pg_skips:
         report["summary"]["status"] = "pg-arm-skipped"
