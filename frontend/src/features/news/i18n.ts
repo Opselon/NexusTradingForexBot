@@ -386,6 +386,11 @@ export const MESSAGES: FeatureMessages = {
   "news.pro.refreshing": { fa: "در حال تازه‌سازی…", de: "Aktualisieren…", es: "Actualizando…", ar: "جارٍ التحديث…" },
   "news.pro.fresh_status": { fa: "وضعیت حرفه‌ای", de: "Pro-Status", es: "estado pro", ar: "حالة الاحتراف" },
   "news.fresh.ai_status": { fa: "وضعیت هوش مصنوعی", de: "KI-Status", es: "estado de IA", ar: "حالة الذكاء الاصطناعي" },
+  "news.hero.kicker": { fa: "بازار و پژوهش · زیرساخت اخبار جداشده", de: "Markt & Research · Isoliertes Nachrichten-Subsystem", es: "Mercado e investigación · subsistema de noticias aislado", ar: "السوق والبحث · نظام أخبار معزول" },
+  "news.hero.endpoints_aria": { fa: "نقاط پایانی که این صفحه می‌خواندد", de: "Backend-Endpunkte, die diese Seite liest", es: "Puntos de conexión que lee esta página", ar: "نقاط النهاية التي تقرأها هذه الصفحة" },
+  "news.hero.endpoint_title": { fa: "منبع — نقطه پایانی {ep}: هر عدد این صفحه از همین‌جا خوانده می‌شود، هرگز اینجا استخراج نمی‌شود", de: "Herkunft — Backend-Endpunkt {ep}: jede Zahl auf dieser Seite wird dort gelesen, hier nie abgeleitet", es: "Procedencia — punto de conexión {ep}: cada cifra de esta página se lee ahí, nunca se infiere aquí", ar: "المصدر — نقطة النهاية {ep}: كل رقم في هذه الصفحة يُقرأ منها، لا يُستنتج هنا أبدًا" },
+  "news.hero.rail_aria": { fa: "منابع دادهٔ این صفحه", de: "auf dieser Seite geladene Datenquellen", es: "fuentes de datos cargadas en esta página", ar: "مصادر البيانات في هذه الصفحة" },
+  "news.hero.unavailable": { fa: "در دسترس نیست", de: "NICHT VERFÜGBAR", es: "NO DISPONIBLE", ar: "غير متاح" },
 };
 
 /** Key catalogue generated alongside MESSAGES. */
@@ -757,4 +762,9 @@ export const MESSAGE_KEYS: string[] = [
   "news.pro.refreshing",
   "news.pro.fresh_status",
   "news.fresh.ai_status",
+  "news.hero.kicker",
+  "news.hero.endpoints_aria",
+  "news.hero.endpoint_title",
+  "news.hero.rail_aria",
+  "news.hero.unavailable",
 ];

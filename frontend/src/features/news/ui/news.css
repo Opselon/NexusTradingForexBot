@@ -1,5 +1,15 @@
 /* News feature — scoped styles (tokens only, logical props for RTL). */
 
+/* Page rhythm: hero + one panel per section, evenly spaced by --panel-gap. */
+.news-page {
+  display: grid;
+  gap: var(--panel-gap);
+  align-content: start;
+}
+.news-page > .grid {
+  gap: var(--panel-gap);
+}
+
 .news-toolbar {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   margin-block-end: 12px;
