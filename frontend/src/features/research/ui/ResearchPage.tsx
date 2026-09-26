@@ -32,7 +32,8 @@ import {
 } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { DistBars, FreshnessCaption, GateStepper, InfoRow, StatusPill } from "./lane5Kit";
-import { registryCounters, obj, str, type Row } from "../model";
+import { RsTable, applySort, useSort, type RsColumn, type SortValue } from "./rsTable";
+import { registryCounters, obj, str, type ResearchStrategyVo, type Row } from "../model";
 import { researchQueries, researchUseCases } from "../useCases";
 import { GATE_CHAIN } from "../handbook/gateChain";
 import ResearchCommands from "./ResearchCommands";
@@ -44,6 +45,32 @@ import "./research-hero.css";
 type Tab = "registry" | "queue" | "worker" | "analytics" | "history" | "datasets" | "playbook";
 
 const PAGE_SIZE_HINT = "bounded server-side (limit params enforced by the backend)";
+
+type RegistryCol = "strategy" | "lifecycle" | "conf" | "samples" | "score" | "updated";
+
+/** Registry table headers — a `key` marks the column as sortable. */
+const REGISTRY_COLS: Array<RsColumn<RegistryCol>> = [
+  { label: "strategy", key: "strategy", title: "sort by strategy id" },
+  { label: "lifecycle", key: "lifecycle", title: "sort by lifecycle state" },
+  { label: "conf", key: "conf", num: true, title: "sort by confidence" },
+  { label: "samples", key: "samples", num: true, title: "sort by sample count" },
+  { label: "score", key: "score", num: true, title: "sort by score" },
+  { label: "updated", key: "updated", title: "sort by last update" },
+  { label: "" },
+];
+
+/**
+ * Pure accessors over the already-loaded rows: a header click only REORDERS
+ * what the backend returned (null/absent cells sink, never zero-filled).
+ */
+const REGISTRY_ACCESSORS: Record<RegistryCol, (r: ResearchStrategyVo) => SortValue> = {
+  strategy: (r) => r.strategyId,
+  lifecycle: (r) => r.lifecycle,
+  conf: (r) => r.confidence,
+  samples: (r) => r.sampleCount,
+  score: (r) => r.score,
+  updated: (r) => r.updatedAt,
+};
 
 /**
  * Endpoint provenance chips — verbatim GET paths this page's own queries
@@ -190,6 +217,14 @@ export default function ResearchPage(props: ShellPageProps) {
   const registry = useMemo(
     () => (registryQ.data?.available === true ? researchUseCases.registryList(registryQ.data.registry ?? []) : []),
     [registryQ.data],
+  );
+  // perf: the header sort is a pure function of the loaded rows + the sort
+  // state; untouched (key=null) the accessor list stays empty and the array
+  // is returned as-is, i.e. exactly the backend's own order.
+  const regSort = useSort<RegistryCol>();
+  const registryRows = useMemo(
+    () => applySort(registry, regSort.sort.key ? REGISTRY_ACCESSORS[regSort.sort.key] : null, regSort.sort.dir),
+    [registry, regSort.sort.key, regSort.sort.dir],
   );
   // perf: queued/running census derived only when the queue payload changes
   // (deps: queueQ.data — the only reactive value read).
@@ -448,19 +483,9 @@ export default function ResearchPage(props: ShellPageProps) {
                 {registry.length === 0 ? (
                   <EmptyState message="Registry is empty for this filter." hint="/api/research/health explains WHY (source trades, rejections, attempts)." />
                 ) : (
-                  <DataTable
-                    headers={[
-                      { label: "strategy" },
-                      { label: "lifecycle" },
-                      { label: "conf", num: true },
-                      { label: "samples", num: true },
-                      { label: "score", num: true },
-                      { label: "updated" },
-                      { label: "" },
-                    ]}
-                  >
-                    {registry.map((s, i) => (
-                      <tr key={`${s.strategyId}-${i}`}>
+                  <RsTable cols={REGISTRY_COLS} sort={regSort.sort} onToggle={regSort.toggle}>
+                    {registryRows.map((s) => (
+                      <tr key={s.strategyId}>
                         <td className="inline-mono tiny" title={s.strategyId}>
                           {s.strategyId.slice(0, 16)}…{s.version ? ` v${s.version}` : ""}
                         </td>
@@ -478,7 +503,7 @@ export default function ResearchPage(props: ShellPageProps) {
                         </td>
                       </tr>
                     ))}
-                  </DataTable>
+                  </RsTable>
                 )}
               </>
             )}

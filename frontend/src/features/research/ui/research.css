@@ -291,6 +291,60 @@
   opacity: 0.7;
 }
 
+/* Sortable research tables (.rs-table) ---------------------------------- */
+/* Sticky headers, striping and the base hover come from the global
+   .data-table rules; this block adds only the sort affordance and the
+   research row states, so it cannot reach another feature's tables. */
+
+.rs-table th[aria-sort="ascending"],
+.rs-table th[aria-sort="descending"] {
+  color: var(--text);
+}
+
+.rs-sortbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.rs-sortbtn:hover {
+  color: var(--accent);
+}
+
+.rs-sortarrow {
+  font-size: 8px;
+  line-height: 1;
+  opacity: 0.4;
+}
+
+.rs-table th[aria-sort="ascending"] .rs-sortarrow,
+.rs-table th[aria-sort="descending"] .rs-sortarrow {
+  opacity: 1;
+  color: var(--accent);
+}
+
+/* row states: hover is a colour shift, keyboard focus is a real ring */
+.rs-pane .data-table tbody tr:focus-within,
+.rs-drawer .data-table tbody tr:focus-within,
+.rs-table tbody tr:focus-within {
+  outline: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: -1px;
+}
+
+.rs-pane .data-table tbody tr:hover td,
+.rs-drawer .data-table tbody tr:hover td,
+.rs-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel-2));
+}
+
 /* reduced motion: freeze everything in its resting state */
 @media (prefers-reduced-motion: reduce) {
   .rs-pipe-node,

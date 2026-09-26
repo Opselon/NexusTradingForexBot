@@ -11,11 +11,33 @@ import { ConfirmModal, DataTable, EmptyState, ErrorState, MetricCard, Panel, Ske
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { CommandResultLine, Drawer, GateStepper, JsonBlock, StatusPill } from "./lane5Kit";
+import { RsTable, applySort, useSort, type RsColumn, type SortValue } from "./rsTable";
 import { GATE_CHAIN } from "../handbook/gateChain";
 import StrategyPlaybookLazy from "./StrategyPlaybookLazy";
 import "./research.css";
-import { commandVerdict, obj, str, toGateVo, type Row } from "../model";
+import { commandVerdict, obj, str, toGateVo, type GateVo, type Row } from "../model";
 import { researchQueries, researchUseCases } from "../useCases";
+
+type GateCol = "gate" | "status" | "class" | "reason" | "ms";
+
+/** Gate-ledger headers — a `key` marks the column as sortable. */
+const GATE_COLS: Array<RsColumn<GateCol>> = [
+  { label: "gate", key: "gate", title: "sort by gate name" },
+  { label: "status", key: "status", title: "sort by backend status" },
+  { label: "class", key: "class", title: "sort by failure class" },
+  { label: "reason", key: "reason" },
+  { label: "ms", key: "ms", num: true, title: "sort by duration" },
+  { label: "" },
+];
+
+/** Accessors over the loaded gate VOs — a click only reorders loaded rows. */
+const GATE_ACCESSORS: Record<GateCol, (g: GateVo) => SortValue> = {
+  gate: (g) => g.name,
+  status: (g) => g.status,
+  class: (g) => g.failureClass,
+  reason: (g) => g.reason,
+  ms: (g) => g.durationMs,
+};
 
 export default function StrategyDrawer({ strategyId, onClose }: { strategyId: string; onClose: () => void }) {
   const [tab, setTab] = useState<"trace" | "gates" | "events" | "evidence" | "raw" | "playbook">("trace");
@@ -119,6 +141,14 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
       <ErrorState message={q.error instanceof Error ? q.error.message : "backend request failed"} />
     ) : null;
 
+  // perf: gate-ledger sort is a pure function of the loaded rows + sort
+  // state; untouched (key=null) the list comes back unchanged (backend order).
+  const gateSort = useSort<GateCol>();
+  const ledgerRows = useMemo(
+    () => applySort(gates, gateSort.sort.key ? GATE_ACCESSORS[gateSort.sort.key] : null, gateSort.sort.dir),
+    [gates, gateSort.sort.key, gateSort.sort.dir],
+  );
+
   const tabs: Array<[typeof tab, string]> = [
     ["trace", "Trace"],
     ["gates", `Gates (${gates.length})`],
@@ -138,6 +168,8 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
         ))}
       </div>
       <CommandResultLine state={cmd.state} />
+
+      <div className="rs-drawer">
 
       {tab === "trace" &&
         (detailQ.isPending ? (
@@ -203,8 +235,8 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
           {gates.length === 0 ? (
             gatesQ.isPending ? <Skeleton /> : (failed(gatesQ) ?? <EmptyState message="No gate records returned." />)
           ) : (
-            <DataTable headers={[{ label: "gate" }, { label: "status" }, { label: "class" }, { label: "reason" }, { label: "ms", num: true }, { label: "" }]}>
-              {gates.map((g, i) => (
+            <RsTable cols={GATE_COLS} sort={gateSort.sort} onToggle={gateSort.toggle}>
+              {ledgerRows.map((g, i) => (
                 <tr key={g.gateId ?? i}>
                   <td className="small">{g.name}</td>
                   <td>
@@ -224,7 +256,7 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
                   </td>
                 </tr>
               ))}
-            </DataTable>
+            </RsTable>
           )}
         </Panel>
       )}
@@ -280,6 +312,8 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
           <JsonBlock value={trace?.invariant ?? obj(trace)} />
         </Panel>
       )}
+
+      </div>
 
       {confirmGate && (
         <ConfirmModal
