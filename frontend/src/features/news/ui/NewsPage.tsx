@@ -10,10 +10,11 @@
  * Presentation only: every read goes through ../useCases via ../hooks.
  */
 
-import { Panel, Skeleton } from "@/components/primitives";
+import { ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { useI18n } from "@/stores/i18nStore";
 import { useNewsAiStatus } from "../hooks";
 import { ArticleAiStatusLine } from "./AiStatusLine";
+import { asErrorText } from "./shared";
 import { NewsFeedSection } from "./NewsFeedSection";
 import { NewsHero } from "./NewsHero";
 import { NewsKeywordsPanel } from "./NewsKeywordsPanel";
@@ -46,8 +47,12 @@ export default function NewsPage() {
         title={t("news.page.ai_ready", "AI readiness (secret-free)")}
         right={<span className="timestamp-note">GET /api/news/ai-status</span>}
       >
+        {/* §9 states: a failed ai-status fetch renders the backend's own error
+            text instead of collapsing into the "not reported" wording below. */}
         {aiStatus.isPending ? (
           <Skeleton count={1} height={28} />
+        ) : aiStatus.isError ? (
+          <ErrorState message={asErrorText(aiStatus.error, t)} onRetry={() => aiStatus.refetch()} />
         ) : (
           <ArticleAiStatusLine status={aiStatus.data?.ai_status ?? null} />
         )}
