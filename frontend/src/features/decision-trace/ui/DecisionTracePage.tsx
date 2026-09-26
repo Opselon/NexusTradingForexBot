@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/stores/i18nStore";
+import { errorRequestId, errorText } from "@/pages/_shared/SectionState";
 import type { ShellPageProps } from "@/app/featureModule";
 import { ReplayControls } from "./ReplayControls";
 import { TraceCompare } from "./TraceCompare";
@@ -106,7 +107,7 @@ export default function DecisionTracePage({ snapshot }: ShellPageProps) {
   const observerQ = useObserverQuery(!live);
   const topoQ = useTopologyQuery(!live);
   useIntegrityQuery(!live);
-  useDecisionsQuery(100);
+  const decisionsQ = useDecisionsQuery(100);
   useResumeHydration();
   const { status: streamStatus, error: streamError } = useTraceStream(live);
 
@@ -116,12 +117,33 @@ export default function DecisionTracePage({ snapshot }: ShellPageProps) {
   const decisions = useFilteredDecisions();
 
   const bundleKey = selectedBundle?.decision_id ?? selectedBundle?.trace_id ?? null;
-  const bundleQ = useBundleQuery(
-    bundleKey,
-    selectedBundleSource === "HISTORICAL" && !!bundleKey,
-  );
+  const bundleEnabled = selectedBundleSource === "HISTORICAL" && !!bundleKey;
+  const bundleQ = useBundleQuery(bundleKey, bundleEnabled);
   const activeBundle =
     selectedBundleSource === "HISTORICAL" && bundleQ.data ? bundleQ.data : selectedBundle;
+
+  /**
+   * Presentation-only state signals (CONTRACT §9): each keys off a query or
+   * stream state that already exists — no fetch, refetch or interval is
+   * touched. An error is only surfaced when the payload never arrived, so a
+   * stale-but-real value keeps rendering (SectionState order).
+   */
+  const eventsPending = events.length === 0 && streamStatus === "connecting";
+  const eventsError =
+    events.length === 0 && streamStatus === "failed"
+      ? (streamError ??
+        t("trace.banner.offline", "OBSERVABILITY OFFLINE — stream failed; polling continues."))
+      : null;
+  const endpointFallback = t("shell.section.error_fallback", "Endpoint unavailable.");
+  const decisionsError =
+    decisionsQ.isError && decisionsQ.data === undefined
+      ? errorText(decisionsQ.error, endpointFallback)
+      : null;
+  const bundlePending = bundleEnabled && bundleQ.isPending;
+  const bundleError =
+    bundleEnabled && bundleQ.isError && bundleQ.data === undefined
+      ? errorText(bundleQ.error, endpointFallback)
+      : null;
 
   const replayEvent =
     replay.active && activeBundle ? (activeBundle.events[replay.index] ?? null) : null;
@@ -277,17 +299,31 @@ export default function DecisionTracePage({ snapshot }: ShellPageProps) {
                       onPlaying={store.replaySetPlaying}
                     />
                   </div>
-                  <TraceTimeline entries={timeline} onSelectStage={selectStage} selectedStage={selectedNodeStage} />
+                  <TraceTimeline
+                    entries={timeline}
+                    onSelectStage={selectStage}
+                    selectedStage={selectedNodeStage}
+                    pending={bundlePending}
+                    error={bundleError}
+                  />
                 </div>
               ) : null}
             </div>
           ) : panel === "events" ? (
-            <TraceEventList events={events} selectedId={selectedEventId} onSelect={selectEvent} />
+            <TraceEventList
+              events={events}
+              selectedId={selectedEventId}
+              onSelect={selectEvent}
+              pending={eventsPending}
+              error={eventsError}
+            />
           ) : (
             <TraceDecisions
               rows={decisions}
               total={decisionsTotal}
-              loading={observerQ.isPending}
+              loading={observerQ.isPending || decisionsQ.isPending}
+              error={decisionsError}
+              requestId={decisionsError ? errorRequestId(decisionsQ.error) : null}
               filter={filter}
               search={search}
               onFilter={store.setFilter}

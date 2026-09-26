@@ -8,6 +8,7 @@
  */
 
 import { memo } from "react";
+import { ErrorState, Skeleton } from "@/components/primitives";
 import { useI18n } from "@/stores/i18nStore";
 import type { TimelineEntry } from "../traceGraph";
 
@@ -15,14 +16,33 @@ interface Props {
   entries: TimelineEntry[];
   onSelectStage?: (stage: string | null) => void;
   selectedStage?: string | null;
+  /** True while the historical bundle that carries these entries is loading. */
+  pending?: boolean;
+  /** Backend's own words when that bundle fetch failed. */
+  error?: string | null;
 }
 
 export const TraceTimeline = memo(function TraceTimeline({
   entries,
   onSelectStage,
   selectedStage,
+  pending,
+  error,
 }: Props) {
   const t = useI18n((s) => s.t);
+  // loading → error → empty (SectionState order): a bundle still in flight is
+  // never reported as "no latency observed".
+  if (!entries.length && pending) {
+    return (
+      <div className="dt-tl-empty" role="status">
+        <div className="dt-tl-empty-title">{t("ui.state.loading", "Loading backend state…")}</div>
+        <Skeleton count={4} height={12} />
+      </div>
+    );
+  }
+  if (!entries.length && error) {
+    return <ErrorState message={error} />;
+  }
   if (!entries.length) {
     return (
       <div className="dt-tl-empty">
