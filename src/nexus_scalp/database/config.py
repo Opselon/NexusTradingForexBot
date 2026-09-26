@@ -290,6 +290,35 @@ def mask_url_password(url: str) -> str:
     return f"{scheme}://{rest}"
 
 
+def _pg_dsn_kwargs(url: str) -> dict[str, Any]:
+    """Parse a ``postgresql://[user[:pw]@]host[:port]/database`` DSN.
+
+    The minimal shape :meth:`DatabaseConfig.for_postgres` needs to point at the
+    cluster the seam names.  A password in the URL is left in the URL — the
+    config never stores a plaintext password, it stores a SECRET KEY
+    (``PG_PASSWORD_SECRET_KEY``), and the live credential is resolved at
+    connect time from the secret store.  Components that carry their own
+    password (an isolated CI cluster) read the DSN directly.
+    """
+    rest = url.split("://", 1)[1]
+    authority, _, path = rest.partition("/")
+    user = ""
+    if "@" in authority:
+        user, authority = authority.rsplit("@", 1)
+    # Strip the password: never copied into the config object.
+    if ":" in user:
+        user = user.split(":", 1)[0]
+    host, _, port = authority.partition(":")
+    kwargs: dict[str, Any] = {"host": host or "localhost"}
+    if port.strip().isdigit():
+        kwargs["port"] = int(port)
+    if path.strip():
+        kwargs["database"] = path.strip()
+    if user.strip():
+        kwargs["username"] = user.strip()
+    return kwargs
+
+
 def load_database_config(
     domain: str = "audit",
     *,
@@ -345,7 +374,21 @@ def load_database_config(
         env_audit_db = envd.get("NEXUS_AUDIT_DB", "").strip()
         if env_audit_db and not envd.get("NSE_DATABASE__SQLITE_PATH", "").strip():
             audit_seam_applies = True
-            cfg = DatabaseConfig.for_sqlite(domain, path=env_audit_db)
+            # The seam is a DATABASE URL, not a filesystem path: a postgresql://
+            # URL was being stamped into sqlite_path and every downstream reader
+            # (the web DB console, the driver factory) then tried to open it as
+            # a SQLite file and died with "unable to open database file" — the
+            # audit READ surface went blind on a PostgreSQL cluster even though
+            # the writes had landed. Detect the scheme and build the right
+            # provider config: postgresql:// -> for_postgres with the DSN's
+            # host/port/database/user, everything else stays a SQLite path.
+            if env_audit_db.lower().startswith("postgresql://"):
+                cfg = DatabaseConfig.for_postgres(
+                    domain=domain,
+                    **_pg_dsn_kwargs(env_audit_db),
+                )
+            else:
+                cfg = DatabaseConfig.for_sqlite(domain, path=env_audit_db)
 
     # --- persisted settings (authoritative for interactive installs) -------
     # When the audit test-isolation seam applies (CHG-0067 contract 3), the
