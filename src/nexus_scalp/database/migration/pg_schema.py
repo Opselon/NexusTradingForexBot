@@ -37,6 +37,12 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
+from typing import Any
+
+from nexus_scalp.database.migration import analyze as analyze_mod
+from nexus_scalp.database.migration import indexes as indexes_mod
+from nexus_scalp.database.migration import triggers as triggers_mod
 
 logger = logging.getLogger(__name__)
 
@@ -187,5 +193,285 @@ def apply_schema(
         "[DB-MIGRATE] schema applied=%d errors=%d",
         len(applied),
         len(errors),
+    )
+    return result
+
+
+# --- DBA layer: ordered, idempotent server-side migrations -------------------
+#
+# The DBA migrations are the server-side query layer the operator expects on a
+# live PostgreSQL cluster: missing indexes, the ``updated_at`` trigger function
+# and its per-table wiring, ANALYZE stats maintenance and VACUUM bloat
+# maintenance. They are NOT schema (no table is created or altered), so they do
+# not live in the SQLite migration registry — SQLite has no server-side objects
+# and stays first-class. They run on the DDL-replayed PostgreSQL schema, in a
+# stable id order, after ``apply_schema`` has created the tables.
+#
+# TRANSACTION CONTRACT
+# --------------------
+# ``CREATE INDEX CONCURRENTLY``, ``VACUUM`` and ``ANALYZE`` cannot run inside a
+# transaction block — PostgreSQL raises ``ActiveSqlTransaction``. psycopg3
+# defaults to ``autocommit=False``, so a connection that has already executed a
+# statement is inside an implicit transaction. The runner therefore asks the
+# caller for TWO executors: ``execute`` (transactional, DDL/trigger function)
+# and ``execute_autocommit`` (one statement per implicit transaction, for the
+# statements PG forbids inside a block). The record for each migration states
+# which path it took.
+#
+# ORDERING + FAILURE CONTRACT
+# ---------------------------
+# Migrations apply in ascending :data:`DBA_MIGRATION_IDS` order and each is
+# independently idempotent. A failed migration logs ERROR, records
+# ``status='FAILED'`` and the runner CONTINUES — a failure never raises out of
+# the boot path and never blocks the cluster from coming up.
+#
+# Lock levels: ANALYZE takes SHARE, VACUUM takes SHARE UPDATE EXCLUSIVE, an
+# index build takes SHARE. None block reads/writes; all contend on a tick-hot
+# table, so the caller schedules the DBA layer at engine-idle moments only.
+
+#: The ordered DBA migration ids. ``AUDIT-0010`` follows the last registry
+#: migration (``AUDIT-0009``) and each entry is a stable, monotone key the
+#: history table records. The order is dependency-ordered, not urgency-ordered:
+#: indexes first (they need nothing but the tables), the trigger function next
+#: (a trigger needs the function to exist), then stats, then bloat (VACUUM
+#: ANALYZE refreshes the stats the ANALYZE entry just wrote, so it runs last).
+DBA_MIGRATION_IDS: tuple[str, ...] = (
+    "AUDIT-0010-missing-indexes",
+    "AUDIT-0011-updated-at-triggers",
+    "AUDIT-0012-analyze-stats-maintenance",
+    "AUDIT-0013-vacuum-bloat-maintenance",
+)
+
+#: The human description the history table stores alongside each id.
+DBA_MIGRATION_DESCRIPTIONS: dict[str, str] = {
+    "AUDIT-0010-missing-indexes": (
+        "evidence-based indexes for the seq-scan pressure tables "
+        "(news_junk_hashes / audit_ledger / news_sources / incidents / broker history)"
+    ),
+    "AUDIT-0011-updated-at-triggers": (
+        "SECURITY INVOKER updated_at trigger function + per-table wiring "
+        "(the invariant the app cannot enforce across two providers)"
+    ),
+    "AUDIT-0012-analyze-stats-maintenance": (
+        "ANALYZE the public schema (102/116 tables have reltuples=-1) so the "
+        "planner has statistics; SHARE lock, idle-path only"
+    ),
+    "AUDIT-0013-vacuum-bloat-maintenance": (
+        "read-only n_dead_tup report + VACUUM (ANALYZE) above "
+        "VACUUM_DEAD_TUPLE_THRESHOLD; SHARE UPDATE EXCLUSIVE, idle-path only"
+    ),
+}
+
+
+def _record_migration(
+    record: Callable[[str, str, str], None] | None,
+    migration_id: str,
+    status: str,
+    detail: str,
+) -> None:
+    """Persist one DBA migration's outcome in ``schema_migrations``.
+
+    ``record(migration_id, status, detail)`` is the caller-supplied writer
+    (the fabric's write plane); None means the caller does not want the audit
+    trail written (the unit tests of the layers themselves). Failures here are
+    logged, never raised — the audit trail is best-effort and a dead history
+    table must not kill the boot.
+    """
+    if record is None:
+        return
+    try:
+        record(migration_id, status, detail)
+    except Exception as exc:
+        logger.error("[DB-MIGRATE] history record failed for %s: %s", migration_id, exc)
+
+
+def apply_dba_migrations(
+    *,
+    execute: Callable[[str], None],
+    execute_autocommit: Callable[[str], None],
+    query: Callable[[str], list[tuple[Any, ...]]],
+    query_scalar: Callable[[str], Any],
+    recover: Callable[[], None] | None = None,
+    record: Callable[[str, str, str], None] | None = None,
+    concurrently: bool = True,
+) -> dict[str, Any]:
+    """Apply the ordered DBA migration set to a PostgreSQL provider.
+
+    The four entries run in :data:`DBA_MIGRATION_IDS` order, each idempotent,
+    each isolated from the others' failures. The whole call returns an audit
+    record (per-migration results + the ordered history) and never raises:
+    a failed migration becomes ``status='FAILED'`` in the history table and the
+    runner continues, so the cluster always finishes booting.
+
+    ``execute`` runs a statement inside a transaction block (indexes without
+    CONCURRENTLY, the trigger function, per-table triggers). Statements PG
+    forbids inside a block — ``CREATE INDEX CONCURRENTLY``, ``ANALYZE``,
+    ``VACUUM`` — go through ``execute_autocommit`` instead. ``recover`` rolls
+    back an aborted transaction so one failed statement cannot poison the
+    shared connection for the rest of the pass. Which path each migration took
+    is recorded in its result and in the history detail.
+    """
+    history: list[dict[str, str]] = []
+    per_migration: dict[str, dict[str, Any]] = {}
+    error_total = 0
+
+    # AUDIT-0010 — missing indexes. CONCURRENTLY needs an autocommit
+    # connection; inside a transaction block the plain IF NOT EXISTS spelling
+    # is correct and the runner records which path it used.
+    index_result: dict[str, Any]
+    try:
+        index_result = indexes_mod.apply_index_migrations(
+            execute=execute_autocommit if concurrently else execute,
+            query_scalar=query_scalar,
+            recover=recover,
+            concurrently=concurrently,
+        )
+    except Exception as exc:
+        index_result = {
+            "applied": [],
+            "applied_count": 0,
+            "error_count": 1,
+            "errors": [{"statement": "AUDIT-0010", "error": f"{type(exc).__name__}: {exc}"}],
+            "concurrently": concurrently,
+        }
+        logger.error("[DB-MIGRATE] AUDIT-0010 raised out of its layer: %s", exc)
+    error_total += int(index_result.get("error_count") or 0)
+    per_migration["AUDIT-0010-missing-indexes"] = index_result
+    _record_migration(
+        record,
+        "AUDIT-0010-missing-indexes",
+        "applied" if not index_result.get("error_count") else "FAILED",
+        f"indexes={index_result.get('applied_count', 0)} "
+        f"errors={index_result.get('error_count', 0)} "
+        f"concurrently={index_result.get('concurrently', concurrently)}",
+    )
+    history.append(
+        {
+            "migration_id": "AUDIT-0010-missing-indexes",
+            "status": "applied" if not index_result.get("error_count") else "FAILED",
+        }
+    )
+
+    # AUDIT-0011 — the updated_at trigger layer. The function and the triggers
+    # are plain DDL, so both go through the transactional executor.
+    trigger_result: dict[str, Any]
+    try:
+        trigger_result = triggers_mod.apply_trigger_layer(
+            execute=execute,
+            execute_query=query,
+            query_scalar=query_scalar,
+            recover=recover,
+        )
+    except Exception as exc:
+        trigger_result = {
+            "applied": [],
+            "applied_count": 0,
+            "error_count": 1,
+            "errors": [{"statement": "AUDIT-0011", "error": f"{type(exc).__name__}: {exc}"}],
+        }
+        logger.error("[DB-MIGRATE] AUDIT-0011 raised out of its layer: %s", exc)
+    error_total += int(trigger_result.get("error_count") or 0)
+    per_migration["AUDIT-0011-updated-at-triggers"] = trigger_result
+    _record_migration(
+        record,
+        "AUDIT-0011-updated-at-triggers",
+        "applied" if not trigger_result.get("error_count") else "FAILED",
+        f"triggers={trigger_result.get('applied_count', 0)} "
+        f"errors={trigger_result.get('error_count', 0)}",
+    )
+    history.append(
+        {
+            "migration_id": "AUDIT-0011-updated_at-triggers",
+            "status": "applied" if not trigger_result.get("error_count") else "FAILED",
+        }
+    )
+
+    # AUDIT-0012 — ANALYZE stats maintenance. ANALYZE cannot run inside a
+    # transaction block, so it always uses the autocommit executor.
+    try:
+        analyze_result = analyze_mod.apply_analyze_migrations(
+            execute=execute_autocommit,
+            query=query,
+            query_scalar=query_scalar,
+            recover=recover,
+            record=None,
+        )
+    except Exception as exc:
+        analyze_result = {
+            "applied": [],
+            "applied_count": 0,
+            "error_count": 1,
+            "errors": [{"statement": "AUDIT-0012", "error": f"{type(exc).__name__}: {exc}"}],
+        }
+        logger.error("[DB-MIGRATE] AUDIT-0012 raised out of its layer: %s", exc)
+    error_total += int(analyze_result.get("error_count", 0))
+    per_migration["AUDIT-0012-analyze-stats-maintenance"] = analyze_result
+    _record_migration(
+        record,
+        "AUDIT-0012-analyze-stats-maintenance",
+        "applied" if not analyze_result.get("error_count") else "FAILED",
+        f"analyze_statements={analyze_result.get('applied_count', 0)} "
+        f"errors={analyze_result.get('error_count', 0)}",
+    )
+    history.append(
+        {
+            "migration_id": "AUDIT-0012-analyze-stats-maintenance",
+            "status": "applied" if not analyze_result.get("error_count") else "FAILED",
+        }
+    )
+
+    # AUDIT-0013 — VACUUM bloat maintenance. VACUUM cannot run inside a
+    # transaction block either. Runs last: VACUUM (ANALYZE) refreshes the
+    # statistics the AUDIT-0012 pass just wrote.
+    try:
+        vacuum_result = analyze_mod.apply_vacuum_migrations(
+            execute=execute_autocommit,
+            query=query,
+            recover=recover,
+            record=None,
+        )
+    except Exception as exc:
+        vacuum_result = {
+            "report": [],
+            "report_count": 0,
+            "vacuumed": [],
+            "vacuumed_count": 0,
+            "error_count": 1,
+            "errors": [{"statement": "AUDIT-0013", "error": f"{type(exc).__name__}: {exc}"}],
+        }
+        logger.error("[DB-MIGRATE] AUDIT-0013 raised out of its layer: %s", exc)
+    error_total += int(vacuum_result.get("error_count", 0))
+    per_migration["AUDIT-0013-vacuum-bloat-maintenance"] = vacuum_result
+    _record_migration(
+        record,
+        "AUDIT-0013-vacuum-bloat-maintenance",
+        "applied" if not vacuum_result.get("error_count") else "FAILED",
+        f"vacuumed={vacuum_result.get('vacuumed_count', 0)} "
+        f"report_rows={vacuum_result.get('report_count', 0)} "
+        f"errors={vacuum_result.get('error_count', 0)}",
+    )
+    history.append(
+        {
+            "migration_id": "AUDIT-0013-vacuum-bloat-maintenance",
+            "status": "applied" if not vacuum_result.get("error_count") else "FAILED",
+        }
+    )
+
+    result: dict[str, Any] = {
+        "migrations": DBA_MIGRATION_IDS,
+        "per_migration": per_migration,
+        "history": history,
+        "applied_count": sum(int(m.get("applied_count", 0)) for m in per_migration.values()),
+        "error_count": error_total,
+        "errors": [
+            {"migration": mid, **err}
+            for mid, res in per_migration.items()
+            for err in res.get("errors", [])
+        ],
+    }
+    logger.info(
+        "[DB-MIGRATE] DBA layer applied=%d errors=%d",
+        result["applied_count"],
+        error_total,
     )
     return result

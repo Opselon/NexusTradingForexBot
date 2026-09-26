@@ -101,6 +101,146 @@ def _db_file_size(path: str | Path) -> int | None:
         return None
 
 
+#: The one-round-trip server-side object inventory (Lane H diagnostics).
+#:
+#: Fixed literal SQL (no user-controlled text — the console's /query guard
+#: never sees it) reading the catalog views any CONNECT role can read. The
+#: ``reltuples = -1`` row counts tables the planner has never ANALYZEd, which
+#: is the exact condition AUDIT-0012 exists to clear; ``n_dead_tup`` is the
+#: bloat signal AUDIT-0013 vacuums above its threshold. The bloat entry is
+#: reported per-table only for tables that actually have dead tuples, so a
+#: healthy cluster answers an empty list.
+_OBJECT_INVENTORY_SQL = """
+SELECT
+    (SELECT count(*) FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_type = 'BASE TABLE')        AS tables,
+    (SELECT count(*) FROM information_schema.views
+       WHERE table_schema = 'public')                                       AS views,
+    (SELECT count(*) FROM pg_proc p
+       JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public')                                          AS functions,
+    (SELECT count(*) FROM pg_trigger t
+       JOIN pg_class c ON c.oid = t.tgrelid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public' AND NOT t.tgisinternal)                   AS triggers,
+    (SELECT count(*) FROM pg_indexes WHERE schemaname = 'public')           AS indexes,
+    (SELECT count(*) FROM pg_class
+       WHERE relkind = 'r'
+         AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')
+         AND reltuples = -1)                                                AS never_analyzed
+"""
+
+_BLOAT_SQL = """
+SELECT relname, n_live_tup, n_dead_tup
+FROM pg_stat_user_tables
+WHERE n_dead_tup > 0
+ORDER BY n_dead_tup DESC, n_live_tup DESC
+LIMIT 20
+"""
+
+
+def pg_object_inventory(driver: Any) -> dict[str, Any]:
+    """Live server-side object counts + ANALYZE/bloat state (read-only).
+
+    ``driver`` is the console's provider-abstracted driver (see
+    :func:`nexus_scalp.database.drivers.get_driver`). Never raises: a catalog
+    the connected role cannot read degrades to ``null`` counts, not a dead
+    diagnostics page. The DBA layer's own objects are named explicitly so the
+    operator can see they landed: the trigger function, the per-table triggers
+    it owns and the missing-index layer's indexes.
+    """
+    from nexus_scalp.database.migration import indexes as indexes_mod
+    from nexus_scalp.database.migration import triggers as triggers_mod
+
+    out: dict[str, Any] = {
+        "objects": {
+            "tables": None,
+            "views": None,
+            "functions": None,
+            "triggers": None,
+            "indexes": None,
+            "never_analyzed": None,
+        },
+        "dba_layer": {
+            "trigger_function": None,
+            "updated_at_triggers": None,
+            "missing_indexes": None,
+        },
+        "bloat": [],
+    }
+    try:
+        row = driver.query_readonly(_OBJECT_INVENTORY_SQL)
+        if row:
+            r = row[0]
+            out["objects"] = {
+                "tables": int(r["tables"] or 0),
+                "views": int(r["views"] or 0),
+                "functions": int(r["functions"] or 0),
+                "triggers": int(r["triggers"] or 0),
+                "indexes": int(r["indexes"] or 0),
+                "never_analyzed": int(r["never_analyzed"] or 0),
+            }
+    except Exception as exc:
+        logger.debug("object inventory unavailable: %s", exc)
+
+    # The DBA layer's own objects, by name: 1 function, one trigger per wired
+    # table, one index per seq-scan-pressure table. Anything else is not this
+    # layer's and is not reported as if it were.
+    fn_name = triggers_mod.UPDATED_AT_FUNCTION_NAME
+    try:
+        rows = driver.query_readonly(
+            "SELECT count(*) AS n FROM pg_proc p"
+            " JOIN pg_namespace n ON n.oid = p.pronamespace"
+            " WHERE n.nspname = 'public' AND p.proname = ?",
+            (fn_name,),
+        )
+        if rows:
+            out["dba_layer"]["trigger_function"] = int(rows[0]["n"] or 0)
+    except Exception as exc:
+        logger.debug("trigger-function probe unavailable: %s", exc)
+
+    try:
+        placeholders = ", ".join("?" * len(triggers_mod.TRIGGER_TARGETS))
+        rows = driver.query_readonly(
+            "SELECT count(*) AS n FROM pg_trigger t"
+            " JOIN pg_class c ON c.oid = t.tgrelid"
+            " JOIN pg_namespace n ON n.oid = c.relnamespace"
+            " WHERE n.nspname = 'public' AND NOT t.tgisinternal"
+            f" AND t.tgname IN ({placeholders})",
+            tuple(triggers_mod.trigger_name_for(t) for t in triggers_mod.TRIGGER_TARGETS),
+        )
+        if rows:
+            out["dba_layer"]["updated_at_triggers"] = int(rows[0]["n"] or 0)
+    except Exception as exc:
+        logger.debug("updated_at trigger probe unavailable: %s", exc)
+
+    try:
+        placeholders = ", ".join("?" * len(indexes_mod.MISSING_INDEXES))
+        rows = driver.query_readonly(
+            "SELECT count(*) AS n FROM pg_indexes"
+            f" WHERE schemaname = 'public' AND indexname IN ({placeholders})",
+            tuple(indexes_mod.index_names()),
+        )
+        if rows:
+            out["dba_layer"]["missing_indexes"] = int(rows[0]["n"] or 0)
+    except Exception as exc:
+        logger.debug("missing-index probe unavailable: %s", exc)
+
+    try:
+        rows = driver.query_readonly(_BLOAT_SQL)
+        out["bloat"] = [
+            {
+                "table": str(r["relname"]),
+                "live_tuples": int(r["n_live_tup"] or 0),
+                "dead_tuples": int(r["n_dead_tup"] or 0),
+            }
+            for r in rows
+        ]
+    except Exception as exc:
+        logger.debug("bloat report unavailable: %s", exc)
+    return out
+
+
 def _list_databases() -> list[dict[str, Any]]:
     """Enumerate every domain DB + the settings DB (provider-abstracted)."""
     out: list[dict[str, Any]] = []
@@ -418,6 +558,66 @@ def console_tables(database: str = "audit") -> dict[str, Any]:
     except Exception as exc:
         logger.warning("db_console error", exc_info=exc)
         return _fail(exc, f"listing tables in '{database}'", cfg)
+
+
+@router.get("/objects")
+def console_objects(database: str = "audit") -> dict[str, Any]:
+    """Live server-side object inventory for a database (PostgreSQL only).
+
+    The diagnostics surface for the DBA layer (Lane H): reports the counts the
+    operator needs to SEE that the server-side query layer landed — functions,
+    triggers, indexes, views — plus the ANALYZE/bloat state the maintenance
+    entries own. Before this, the console could only count TABLES, so a cluster
+    with zero functions/triggers looked identical to one with the full layer.
+
+    Read-only, one round trip, no user-controlled SQL text: the query is a
+    fixed literal. SQLite has no server-side objects (the DBA layer is a
+    PostgreSQL-only concern), so the endpoint answers ``available: False``
+    there rather than faking a zero-row inventory.
+    """
+    cfg: DatabaseConfig | None = None
+    driver = None
+    try:
+        driver, cfg = _driver_for(database)
+        if driver is None:
+            return {"success": False, "error": f"unknown database '{database}'"}
+        if cfg is None or not cfg.is_postgresql:
+            return {
+                "success": True,
+                "available": False,
+                "database": database,
+                "provider": cfg.provider.value if cfg else "",
+                "reason": "server-side objects are a PostgreSQL-only concern",
+                "timestamp": _utc_now(),
+            }
+        try:
+            if not driver.ping():
+                out: dict[str, Any] = {
+                    "success": False,
+                    "code": "DB_UNREACHABLE",
+                    "error": (f"'{database}' is not reachable ({_server_target(cfg, database)})."),
+                }
+                hint = _connection_hint(cfg)
+                if hint:
+                    out["hint"] = hint
+                return out
+            inventory = pg_object_inventory(driver)
+            inventory.update(
+                {
+                    "success": True,
+                    "available": True,
+                    "database": database,
+                    "provider": cfg.provider.value,
+                    "server": _server_target(cfg, database),
+                    "timestamp": _utc_now(),
+                }
+            )
+            return inventory
+        finally:
+            driver.close()
+    except Exception as exc:
+        logger.warning("db_console objects error", exc_info=exc)
+        return _fail(exc, f"reading the object inventory of '{database}'", cfg)
 
 
 @router.get("/columns")
