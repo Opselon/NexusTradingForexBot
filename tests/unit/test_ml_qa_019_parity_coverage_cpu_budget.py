@@ -42,7 +42,9 @@ used instead).
 from __future__ import annotations
 
 import io
+import os
 import subprocess
+import sys
 import tokenize
 from pathlib import Path
 
@@ -397,13 +399,31 @@ def test_speedup_ratio_contract_is_structural() -> None:
     contract the test exists for is "the incremental builder is not slower
     than the canonical one". Removing the ratio/leg comparison while keeping
     only a generous budget would leave the builder free to regress to
-    canonical speed unnoticed (the budget is ~6x the measured canonical cost).
+    canonical speed unnoticed.
     """
     code = _code_lines(_slice(_MODULE, "test_bug106_incremental_speedup"))
     assert code, "test_bug106_incremental_speedup must exist"
     assert "compute_70d_frame(" in code, "the canonical leg must run"
     assert "compute_70d_frame_fast(" in code, "the incremental leg must run"
-    assert "consumed_ms" in code, "the CPU-time figure must be read from the stopwatch"
+    # The structural contract: a direct comparison of the two legs' CPU cost.
+    # ``consumed_ms`` is the single-shot stopwatch total (both legs summed,
+    # indistinguishable); the ratio contract needs per-leg figures, so the
+    # module reads each leg separately and compares them.
+    assert "canon_ms" in code, "the canonical leg's CPU cost must be measured"
+    assert "fast_ms" in code, "the incremental leg's CPU cost must be measured"
+    assert "fast_ms <= canon_ms" in code, (
+        "the structural contract is a direct leg-to-leg comparison — the "
+        "incremental builder must not be slower than the canonical one"
+    )
+    # The CPU-time source is still the shared ``budget_cpu_ms`` seam: the
+    # measurement runs inside it, and ``_cpu_ms`` reads the same
+    # ``time.process_time()`` the stopwatch does.
+    assert "budget_cpu_ms(" in code, "the measurement must run inside the shared CPU-time stopwatch"
+    assert "_BUDGET_MULTIPLE" in code, (
+        "the complexity budget must be a RATIO over the measured canonical "
+        "leg, not a fixed millisecond figure — a flat bound fails on a runner "
+        "slower than the calibration host with no code change"
+    )
 
 
 def test_dimension_contract_pinned() -> None:
@@ -480,6 +500,27 @@ def test_bug106_incremental_speedup(real_bars: pl.DataFrame) -> None:
     return out
 
 
+def _subprocess_env() -> dict[str, str]:
+    """Env for the negative-control / collection subprocess.
+
+    ML-QA-019 fix: the first cut hard-coded ``/tmp/nse-venv/bin/python`` and a
+    ``/tmp/nse-slim`` PYTHONPATH entry — paths on the author's worktree host
+    that do not exist on a CI runner, so both legs failed with
+    ``FileNotFoundError: '/tmp/nse-venv/bin/python'`` and the gate went red.
+    The interpreter is now ``sys.executable`` (the same interpreter that is
+    already running the suite, so the builders and their deps resolve exactly
+    as they do in-process) and PYTHONPATH is inherited rather than replaced,
+    extended only with the paths pytest already resolved (``src`` and ``.``).
+    """
+    env = dict(os.environ)
+    # Keep pytest from inheriting a cacheprovider/breakpoint set; the
+    # subprocess must report its own verdict.
+    env["PYTEST_ADDOPTS"] = "-p no:cacheprovider"
+    pythonpath = [p for p in (os.environ.get("PYTHONPATH", ""), "src", ".") if p]
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath)
+    return env
+
+
 def test_the_old_data_gate_shape_was_a_no_coverage_module(tmp_path: Path) -> None:
     """NEGATIVE CONTROL (executed): the old shape collects and skips both tests.
 
@@ -490,18 +531,13 @@ def test_the_old_data_gate_shape_was_a_no_coverage_module(tmp_path: Path) -> Non
     a green-looking module that exercised nothing.
     """
     old = _old_shape_module(tmp_path)
-    env = {
-        "PYTHONPATH": "src:.:/tmp/nse-slim/lib/python3.11/site-packages",
-        "PYTEST_ADDOPTS": "-p no:cacheprovider",
-        "PATH": "/usr/bin:/bin",
-    }
     proc = subprocess.run(
-        ["/tmp/nse-venv/bin/python", "-m", "pytest", str(old), "-v", "--no-header"],
+        [sys.executable, "-m", "pytest", str(old), "-v", "--no-header"],
         capture_output=True,
         text=True,
         check=False,
         cwd=str(_BATTERY_DIR.parents[1]),
-        env=env,
+        env=_subprocess_env(),
     )
     # pytest writes the skip line to STDERR (the captured-report stream)
     verdict = proc.stderr if proc.stderr.strip() else proc.stdout
@@ -522,18 +558,13 @@ def test_current_module_has_no_skips() -> None:
     Complement to the negative control: the same subprocess collection over
     the remediated module must report 0 skipped and 3 passed.
     """
-    env = {
-        "PYTHONPATH": "src:.:/tmp/nse-slim/lib/python3.11/site-packages",
-        "PYTEST_ADDOPTS": "-p no:cacheprovider",
-        "PATH": "/usr/bin:/bin",
-    }
     proc = subprocess.run(
-        ["/tmp/nse-venv/bin/python", "-m", "pytest", str(_MODULE), "--no-header", "-v"],
+        [sys.executable, "-m", "pytest", str(_MODULE), "--no-header", "-v"],
         capture_output=True,
         text=True,
         check=False,
         cwd=str(_BATTERY_DIR.parents[1]),
-        env=env,
+        env=_subprocess_env(),
     )
     verdict = proc.stdout + proc.stderr
     assert "skipped" not in verdict, (
