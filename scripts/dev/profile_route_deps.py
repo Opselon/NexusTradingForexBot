@@ -80,22 +80,15 @@ def _record(subsystem: str) -> None:
 # ------------------------------------------------------------- the seams --- #
 
 
-def _instrument_driver() -> None:
-    """Wrap the DatabaseDriver methods every persistence consumer goes
-    through, so any route that reads/writes the relational store records a
-    'db' hit regardless of which repository called it."""
-    from nexus_scalp.database.drivers import base as driver_base
+def _wrap_methods(cls: type, names: tuple[str, ...]) -> None:
+    """Wrap the named methods on ONE class, skipping anything already wrapped.
 
-    for name in (
-        "execute",
-        "executemany",
-        "query",
-        "query_readonly",
-        "query_one",
-        "upsert",
-        "insert_ignore",
-    ):
-        original = getattr(driver_base.DatabaseDriver, name, None)
+    Methods defined on the class itself (as opposed to inherited from an
+    ABC) shadow a base-class monkeypatch - the whole reason the concrete
+    drivers must be wrapped individually.
+    """
+    for name in names:
+        original = getattr(cls, name, None)
         if original is None or getattr(original, "_nse_profiled", False):
             continue
 
@@ -107,7 +100,48 @@ def _instrument_driver() -> None:
             inner._nse_profiled = True
             return inner
 
-        setattr(driver_base.DatabaseDriver, name, wrap(original))
+        setattr(cls, name, wrap(original))
+
+
+# The methods every persistence consumer goes through, regardless of which
+# repository or plane called them.
+_DRIVER_METHODS = (
+    "execute",
+    "executemany",
+    "query",
+    "query_readonly",
+    "query_one",
+    "upsert",
+    "insert_ignore",
+)
+
+
+def _instrument_driver() -> None:
+    """Wrap the DatabaseDriver entry points every persistence consumer goes
+    through, so any route that reads/writes the relational store records a
+    'db' hit regardless of which repository called it.
+
+    Both concrete drivers OVERRIDE the ABC's methods (PostgreSQLDriver.query
+    at postgres_driver.py:305, SQLiteDriver.query at sqlite_driver.py:279),
+    so wrapping only the base class is intercepted by nobody under a real
+    provider. Wrap each class in its own right.
+    """
+    from nexus_scalp.database.drivers import base as driver_base
+    from nexus_scalp.database.drivers import postgres_driver, sqlite_driver
+
+    _wrap_methods(driver_base.DatabaseDriver, _DRIVER_METHODS)
+    _wrap_methods(postgres_driver.PostgreSQLDriver, _DRIVER_METHODS)
+    _wrap_methods(sqlite_driver.SQLiteDriver, _DRIVER_METHODS)
+
+    # The pooled fabric planes are a SEPARATE read/write path the drivers do
+    # not participate in (PG-READ-PLANE-001): IncidentStore and the v1 audit
+    # reads go through these under a non-SQLite provider, and PgReadPlane /
+    # PgWritePlane open their own psycopg connections. If they were not
+    # wrapped, a route that really hit Postgres would record observed=[].
+    from nexus_scalp.database.fabric import pg_planes
+
+    for plane in (pg_planes.PgReadPlane, pg_planes.PgWritePlane):
+        _wrap_methods(plane, ("query", "query_one", "execute", "execute_batch"))
 
 
 def _instrument_raw_sqlite() -> None:
@@ -180,6 +214,22 @@ def probe_routes() -> dict[str, dict]:
         # A bare query string is harmless and makes list endpoints exercise
         # their real pagination path.
         url = path + "?limit=1"
+
+        # Probe SHAPE matters as much as instrumentation. Several handlers
+        # guard their store reads behind an input the profiler did not send:
+        #   /diagnostics/search + /diagnostics/trace return a constant on an
+        #     EMPTY query and never build the IncidentStore;
+        #   /diagnostics/lineage only reads the audit tables when ?ticket=
+        #     is present (the default ?field=pnl path is a constant table);
+        #   calibration only joins the audit tables when the serving model
+        #     artifact exists.
+        # Sending these makes the dependency visible instead of letting an
+        # empty-probe short-circuit masquerade as statelessness.
+        if "?" in url:
+            url += "&"
+        else:
+            url += "?"
+        url += "query=XAUUSD&ticket=1"
 
         _start(key)
         status = None

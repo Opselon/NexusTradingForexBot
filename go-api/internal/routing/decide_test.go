@@ -19,6 +19,12 @@ func TestDecideRequiresPython(t *testing.T) {
 		{"GET", "/api/account/performance", "stub-in-2xx"},
 		// Empty answer: [] with no engine, audit rows with one.
 		{"GET", "/api/account/trades", "empty-in-2xx"},
+		// A substantive 200 whose items list was empty: the v1 read layer
+		// short-circuits a non-SQLite provider before the driver seam.
+		{"GET", "/api/v1/decisions", "empty-items-in-2xx"},
+		// Conditionally DB: reads the store only when the engine is attached.
+		{"GET", "/api/experience/summary", "conditionally-db:engine-gated"},
+		{"GET", "/api/operator/calibration", "conditionally-db:artifact-gated"},
 		// A write with no observed DB hit: not safely replayable, so the
 		// only defensible answer. (A write that also hits the DB reports
 		// observed:db, which wins.)
@@ -51,7 +57,7 @@ func TestDecideCandidates(t *testing.T) {
 		method, path, why string
 	}{
 		{"GET", "/api/algo/config", "stateless-2xx"},
-		{"GET", "/api/ai-providers", "stateless-2xx"},
+		{"GET", "/api/ai-providers/restart-matrix", "stateless-2xx"},
 	}
 	for _, c := range cases {
 		d := Decide(c.method, c.path)
@@ -93,15 +99,18 @@ func TestUnknownRouteForwards(t *testing.T) {
 // A new Why appearing here means the generator and classifier drifted.
 func TestTableCompleteness(t *testing.T) {
 	valid := map[string]bool{
-		"observed:db":   true,
-		"write:assumed": true,
-		"stateless-2xx": true,
-		"stub-in-2xx":   true,
-		"empty-in-2xx":  true,
-		"failed-in-2xx": true,
-		"non-2xx:422":   true,
-		"non-2xx:404":   true,
-		"non-2xx:503":   true,
+		"observed:db":                     true,
+		"write:assumed":                   true,
+		"stateless-2xx":                   true,
+		"stub-in-2xx":                     true,
+		"empty-in-2xx":                    true,
+		"failed-in-2xx":                   true,
+		"empty-items-in-2xx":              true,
+		"non-2xx:422":                     true,
+		"non-2xx:404":                     true,
+		"non-2xx:503":                     true,
+		"conditionally-db:engine-gated":   true,
+		"conditionally-db:artifact-gated": true,
 	}
 	n := 0
 	for key, e := range DepsTable {
