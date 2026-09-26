@@ -631,7 +631,13 @@ def provision_domain(domain: str, dsn: str, **pool_kwargs: Any) -> Any:
     try:
         from nexus_scalp.database.migration import migrate_domain
 
-        def _exec(sql: str) -> None:
+        def _exec(sql: str, args: tuple[Any, ...] = ()) -> None:
+            if args:
+                # A parameterized statement from the migration recorder: run it
+                # on a borrowed pooled transaction (the plane's execute()
+                # commits) instead of the single-string replay path.
+                backend.execute(sql, tuple(args))
+                return
             backend.execute(sql)
 
         migration = migrate_domain(domain, _exec)
