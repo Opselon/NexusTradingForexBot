@@ -1,13 +1,17 @@
 /* ============================================================
    Decision Trace — page-scoped styles (namespace `dt-`).
    States are encoded icon+label+color, never color alone (§a11y).
-   Part 1: page shell, header, toolbar, banners, canvas.
+   Page shell, hero header, toolbar, banners, tabs, canvas, footer.
+   Siblings: decision-trace-lists.css, decision-trace-side.css,
+   decision-trace-graph.css (split for the < 500 line rule).
+   Rhythm: --panel-gap between sections, --card-pad inside panels,
+   depth from --elev-* shadows over --bg-panel hairlines.
    ============================================================ */
 
 .dt-page {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--panel-gap);
   min-height: 0;
   height: 100%;
   color: var(--text);
@@ -20,10 +24,11 @@
   grid-template-columns: auto 1fr auto;
   gap: 16px;
   align-items: center;
-  padding: 10px 14px;
+  padding: var(--card-pad);
   background: linear-gradient(180deg, var(--bg-panel), var(--bg-inset));
   border: 1px solid var(--border);
   border-radius: 10px;
+  box-shadow: var(--elev-1);
 }
 .dt-eyebrow {
   display: block;
@@ -90,10 +95,11 @@
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
-  padding: 8px 14px;
+  padding: var(--card-pad);
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 10px;
+  box-shadow: var(--elev-1);
 }
 .dt-tb-status {
   display: flex;
@@ -164,6 +170,10 @@
   border: 1px solid var(--amber);
   background: var(--amber-dim);
 }
+.dt-banner.warn {
+  border-color: var(--amber);
+  background: var(--amber-dim);
+}
 .dt-banner.fail {
   border-color: var(--red);
   background: var(--red-dim);
@@ -177,7 +187,7 @@
   display: grid;
   grid-template-columns: 1fr 340px;
   grid-template-rows: auto 1fr;
-  gap: 10px;
+  gap: var(--panel-gap);
   min-height: 420px;
   flex: 1;
 }
@@ -223,7 +233,8 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--panel-gap);
+  padding-inline-end: 2px;
 }
 
 /* --------------------------------------------------------- canvas */
@@ -243,6 +254,7 @@
     var(--bg-inset);
   border: 1px solid var(--border);
   border-radius: 10px;
+  box-shadow: var(--elev-2);
   overflow: hidden;
 }
 .dt-canvas-svg {
@@ -271,10 +283,12 @@
 .dt-node.terminal .dt-node-body { stroke: var(--violet); }
 .dt-node.unmapped .dt-node-body { stroke: var(--amber); stroke-dasharray: 4 3; }
 .dt-node.gap .dt-node-body { stroke: var(--amber); }
+/* Selected node: emphasis comes from the stroke + the .dt-node-halo ring
+ * rendered in TraceGraphCanvas — NO `filter: drop-shadow` (a filter forces
+ * an offscreen raster on every repaint of a canvas that updates live). */
 .dt-node.selected .dt-node-body {
   stroke: var(--accent);
   stroke-width: 2.2;
-  filter: drop-shadow(0 0 6px rgba(65, 166, 242, 0.5));
 }
 .dt-node.dim { opacity: 0.35; }
 .dt-node { cursor: pointer; }
@@ -366,490 +380,7 @@
 .dt-dot.gap { background: var(--amber); }
 
 
-/* ============================================================
-   Part 2: timeline, event feed, decisions, inspector, replay,
-   compare, footer.
-   ============================================================ */
-
-/* ----------------------------------------------------- timeline */
-.dt-timeline-wrap {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-panel);
-  padding: 8px 10px;
-}
-.dt-timeline-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  color: var(--text-dim);
-  margin-bottom: 6px;
-}
-.dt-tl {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 240px;
-  overflow-y: auto;
-}
-.dt-tl-scale {
-  position: relative;
-  height: 14px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 4px;
-}
-.dt-tl-tick {
-  position: absolute;
-  top: 0;
-  transform: translateX(-50%);
-  font-size: 9px;
-  font-family: var(--mono);
-  color: var(--text-faint);
-}
-.dt-tl-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: none;
-  border: none;
-  padding: 2px 4px;
-  cursor: pointer;
-  text-align: start;
-}
-.dt-tl-row:hover {
-  background: var(--elevate-hi);
-}
-.dt-tl-row.selected {
-  background: rgba(65, 166, 242, 0.1);
-}
-.dt-tl-row.unobserved .dt-tl-bar {
-  opacity: 0.5;
-}
-.dt-tl-label {
-  font-size: 10px;
-  font-family: var(--mono);
-  color: var(--text-dim);
-  text-align: end;
-  flex-shrink: 0;
-}
-.dt-tl-track {
-  position: relative;
-  height: 12px;
-  background: var(--bg-inset);
-  border-radius: 3px;
-}
-.dt-tl-bar {
-  position: absolute;
-  top: 2px;
-  height: 8px;
-  border-radius: 3px;
-  background: var(--accent);
-}
-.dt-tl-bar.unobserved {
-  background: var(--text-faint);
-  width: 2px;
-  border-radius: 1px;
-}
-.dt-tl-dur {
-  font-size: 10px;
-  font-family: var(--mono);
-  color: var(--text-dim);
-  min-width: 52px;
-  text-align: end;
-}
-.dt-tl-empty,
-.dt-ev-empty {
-  padding: 26px;
-  text-align: center;
-}
-.dt-tl-empty-title,
-.dt-ev-empty-title {
-  font-size: 13px;
-  letter-spacing: 0.1em;
-  color: var(--text-dim);
-}
-.dt-tl-empty-sub,
-.dt-ev-empty-sub {
-  font-size: 12px;
-  color: var(--text-faint);
-  margin-top: 6px;
-}
-
-/* --------------------------------------------------- event feed */
-.dt-ev-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow-y: auto;
-}
-.dt-ev-row {
-  display: grid;
-  grid-template-columns: 78px 44px 84px 62px 1fr 56px;
-  gap: 8px;
-  align-items: center;
-  padding: 5px 8px;
-  background: var(--bg-panel);
-  border: 1px solid transparent;
-  border-radius: 6px;
-  font-size: 11px;
-  cursor: pointer;
-  text-align: start;
-}
-.dt-ev-row:hover {
-  background: var(--bg-panel-2);
-}
-.dt-ev-row.selected {
-  border-color: var(--accent);
-  background: rgba(65, 166, 242, 0.08);
-}
-.dt-ev-row.terminal {
-  border-inline-start: 3px solid var(--violet);
-}
-.dt-ev-row.unmapped {
-  border-inline-start: 3px solid var(--amber);
-}
-.dt-ev-time {
-  font-family: var(--mono);
-  color: var(--text-faint);
-}
-.dt-ev-seq {
-  font-family: var(--mono);
-  color: var(--text-faint);
-  text-align: end;
-}
-.dt-ev-stage {
-  font-family: var(--mono);
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  text-align: center;
-  background: var(--bg-inset);
-  border: 1px solid var(--border);
-}
-.dt-ev-stage.market { color: var(--accent-strong); }
-.dt-ev-stage.feature { color: var(--text-dim); }
-.dt-ev-stage.model { color: var(--violet); }
-.dt-ev-stage.regime { color: var(--amber); }
-.dt-ev-stage.policy { color: var(--accent); }
-.dt-ev-stage.gate { color: var(--green); }
-.dt-ev-stage.risk { color: var(--red); }
-.dt-ev-stage.decision { color: var(--accent-strong); }
-.dt-ev-stage.exec,
-.dt-ev-stage.gateway { color: var(--violet); }
-.dt-ev-sym {
-  font-family: var(--mono);
-  color: var(--text);
-}
-.dt-ev-sym.none { color: var(--text-faint); }
-.dt-ev-reason {
-  color: var(--text-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.dt-ev-ms {
-  font-family: var(--mono);
-  color: var(--text-faint);
-  text-align: end;
-}
-
-/* --------------------------------------------------- decisions */
-.dt-decisions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 0;
-}
-.dt-dec-head {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.dt-dec-title {
-  font-weight: 700;
-}
-.dt-dec-count {
-  font-size: 11px;
-  color: var(--text-dim);
-  font-family: var(--mono);
-}
-.dt-dec-search {
-  flex: 1;
-  min-width: 180px;
-}
-.dt-d-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  overflow-y: auto;
-}
-.dt-d-row {
-  display: grid;
-  grid-template-columns: 62px 86px 62px 1fr 62px 76px 1fr;
-  gap: 8px;
-  align-items: center;
-  padding: 6px 8px;
-  background: var(--bg-panel);
-  border: 1px solid transparent;
-  border-radius: 6px;
-  font-size: 11px;
-  cursor: pointer;
-  text-align: start;
-}
-.dt-d-row:hover { background: var(--bg-panel-2); }
-.dt-d-row.selected { border-color: var(--accent); }
-.dt-d-row.error { border-inline-start: 3px solid var(--red); }
-.dt-d-row.pass { border-inline-start: 3px solid var(--green); }
-.dt-d-row.reject { border-inline-start: 3px solid var(--amber); }
-.dt-d-time { font-family: var(--mono); color: var(--text-faint); }
-.dt-d-status { font-family: var(--mono); font-weight: 700; }
-.dt-d-status.error { color: var(--red); }
-.dt-d-status.pass { color: var(--green); }
-.dt-d-status.reject { color: var(--amber); }
-.dt-d-status.neutral { color: var(--text-dim); }
-.dt-d-sym { font-family: var(--mono); }
-.dt-d-model,
-.dt-d-contract,
-.dt-d-regime { font-family: var(--mono); color: var(--text-dim); }
-.dt-d-reason { color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* --------------------------------------------------- inspector */
-.dt-inspector {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-panel);
-  padding: 10px 12px;
-  min-height: 200px;
-}
-.dt-insp-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.dt-insp-title {
-  font-weight: 700;
-  font-size: 13px;
-}
-.dt-src-badge {
-  font-size: 9px;
-  letter-spacing: 0.1em;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: var(--mono);
-  border: 1px solid var(--border-strong);
-  color: var(--text-dim);
-}
-.dt-src-badge.live { color: var(--green); border-color: var(--green); }
-.dt-src-badge.replay { color: var(--violet); border-color: var(--violet); }
-.dt-src-badge.historical { color: var(--accent); border-color: var(--accent); }
-.dt-insp-close {
-  margin-inline-start: auto;
-  background: none;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  font-size: 13px;
-}
-.dt-insp-id {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  background: var(--bg-inset);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  margin-bottom: 8px;
-}
-.dt-insp-id code {
-  font-size: 11px;
-  color: var(--accent-strong);
-}
-.dt-insp-id-label {
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  color: var(--text-faint);
-}
-.dt-insp-empty,
-.dt-stage-panel {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-panel);
-  padding: 10px 12px;
-}
-.dt-insp-empty-title,
-.dt-insp-sec-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-dim);
-}
-.dt-insp-empty-sub {
-  font-size: 11px;
-  color: var(--text-faint);
-  margin-top: 6px;
-}
-.dt-insp-sec {
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
-  margin-top: 8px;
-}
-.dt-insp-sec-body {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-top: 5px;
-}
-.dt-field {
-  display: flex;
-  gap: 8px;
-  font-size: 11px;
-}
-.dt-field-label {
-  flex: 0 0 124px;
-  color: var(--text-faint);
-  font-family: var(--mono);
-  font-size: 10px;
-}
-.dt-field-value {
-  color: var(--text);
-  word-break: break-all;
-}
-.dt-field.unknown .dt-field-value {
-  color: var(--amber);
-  font-style: italic;
-}
-.dt-why {
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  padding: 8px 10px;
-  background: var(--bg-inset);
-}
-.dt-why.reject { border-color: var(--red); background: var(--red-dim); }
-.dt-why.pass { border-color: var(--green); background: var(--green-dim); }
-.dt-why-status {
-  font-weight: 700;
-  font-size: 12px;
-}
-.dt-why-list {
-  margin: 6px 0 0;
-  padding-inline-start: 18px;
-  font-size: 11px;
-  color: var(--text-dim);
-}
-.dt-notreached-row {
-  display: flex;
-  gap: 8px;
-  font-size: 11px;
-  padding: 3px 0;
-}
-.dt-notreached-row span { color: var(--text-faint); }
-.dt-stage-meta { font-size: 11px; color: var(--text-dim); }
-.dt-stage-list {
-  margin: 6px 0 0;
-  padding-inline-start: 16px;
-  font-size: 10px;
-  font-family: var(--mono);
-  color: var(--text-faint);
-}
-.dt-source {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-bottom: 6px;
-}
-
-/* ------------------------------------------------------ replay */
-.dt-replay {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  background: var(--bg-inset);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.dt-replay.active {
-  border-color: var(--violet);
-}
-.dt-replay-btn {
-  min-width: 28px;
-  height: 24px;
-  background: var(--bg-panel-2);
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  color: var(--text);
-  cursor: pointer;
-  font-size: 12px;
-}
-.dt-replay-btn:disabled { opacity: 0.4; cursor: default; }
-.dt-replay-pos {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-dim);
-}
-.dt-replay-speeds {
-  display: flex;
-  gap: 3px;
-}
-.dt-replay-speed {
-  min-width: 30px;
-  height: 22px;
-  background: var(--bg-panel-2);
-  border: 1px solid var(--border-strong);
-  border-radius: 5px;
-  color: var(--text-faint);
-  cursor: pointer;
-  font-size: 10px;
-  font-family: var(--mono);
-}
-.dt-replay-speed.active {
-  color: var(--violet);
-  border-color: var(--violet);
-}
-.dt-replay-btn.exit { color: var(--red); }
-
-/* ------------------------------------------------------ compare */
-.dt-compare {
-  border: 1px solid var(--accent);
-  border-radius: 10px;
-  background: var(--bg-panel);
-  padding: 10px 12px;
-}
-.dt-compare-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 700;
-  margin-bottom: 6px;
-}
-.dt-compare-cols,
-.dt-compare-rows {
-  display: grid;
-  grid-template-columns: 1fr 110px 1fr;
-  gap: 4px;
-}
-.dt-compare-col-title {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--accent-strong);
-}
-.dt-compare-label {
-  font-size: 10px;
-  color: var(--text-faint);
-  text-align: center;
-  font-family: var(--mono);
-}
-.dt-compare-val {
-  font-size: 11px;
-  color: var(--text);
-  word-break: break-all;
-}
-.dt-compare-row.diff .dt-compare-val {
-  color: var(--amber);
-}
-
+/* ------------------------------------------------------- footer */
 /* ------------------------------------------------------- footer */
 .dt-footer {
   display: flex;
@@ -867,138 +398,25 @@
   color: var(--text-faint);
 }
 
-/* ============================================================ LIVE-CAUSAL-TOPOLOGY (lane C)
- * §4 state tokens -> theme.css vars. NO raw hex anywhere: every color is a
- * token (or color-mix/rgba of tokens). Logical properties only.
- * §51: professional dark-quant style, theme-token driven.
- * §44: SHADOW is amber-outline only and can never match the EXECUTED look. */
-
-.dt-node.dt-st-none        .dt-node-body { stroke: var(--border-strong); }
-.dt-node.dt-st-idle        .dt-node-body { stroke: var(--border-strong); }
-.dt-node.dt-st-received    .dt-node-body { stroke: var(--blue, var(--accent)); }
-.dt-node.dt-st-processing  .dt-node-body { stroke: var(--accent); }
-.dt-node.dt-st-waiting     .dt-node-body { stroke: color-mix(in srgb, var(--amber) 70%, var(--border)); }
-.dt-node.dt-st-completed   .dt-node-body { stroke: var(--green); }
-.dt-node.dt-st-passed      .dt-node-body { stroke: var(--green); }
-.dt-node.dt-st-ok          .dt-node-body { stroke: var(--green); }
-.dt-node.dt-st-rejected    .dt-node-body { stroke: var(--amber); stroke-dasharray: 5 3; }
-.dt-node.dt-st-failed      .dt-node-body { stroke: var(--red); }
-.dt-node.dt-st-error,
-.dt-node.dt-st-timeout     .dt-node-body { stroke: var(--red); }
-.dt-node.dt-st-blocked     .dt-node-body { stroke: var(--red); stroke-width: 2; }
-.dt-node.dt-st-skipped     .dt-node-body { stroke: var(--text-faint); stroke-dasharray: 3 3; }
-.dt-node.dt-st-stale       .dt-node-body { stroke: var(--text-faint); }
-.dt-node.dt-st-cancelled   .dt-node-body { stroke: var(--text-faint); }
-.dt-node.dt-st-executing   .dt-node-body { stroke: var(--accent); stroke-width: 2; }
-.dt-node.dt-st-executed    .dt-node-body { stroke: var(--green); stroke-width: 2; }
-.dt-node.dt-st-confirmed   .dt-node-body { stroke: var(--green); stroke-width: 2; }
-.dt-node.dt-st-dispatched  .dt-node-body { stroke: var(--accent-strong); }
-.dt-node.dt-st-observed    .dt-node-body { stroke: var(--accent); }
-.dt-node.dt-st-warn        .dt-node-body { stroke: var(--amber); }
-.dt-node.dt-st-unknown     .dt-node-body { stroke: color-mix(in srgb, var(--border-strong) 60%, var(--text-faint)); stroke-dasharray: 2 3; }
-
-/* §4 label colors follow the tone */
-.dt-node.dt-st-rejected .dt-node-label,
-.dt-node.dt-st-failed   .dt-node-label,
-.dt-node.dt-st-error    .dt-node-label,
-.dt-node.dt-st-timeout  .dt-node-label,
-.dt-node.dt-st-blocked  .dt-node-label { color: var(--red); }
-.dt-node.dt-st-completed .dt-node-label,
-.dt-node.dt-st-passed    .dt-node-label,
-.dt-node.dt-st-confirmed .dt-node-label,
-.dt-node.dt-st-ok        .dt-node-label { color: var(--green); }
-
-/* §5: a pulse marks an IN-FLIGHT state only, and only while real events are
- * arriving — CSS animation only, no JS timer involved. */
-.dt-node.dt-pulse .dt-node-body {
-  animation: dt-pulse-anim 1.6s ease-in-out infinite;
-}
-@keyframes dt-pulse-anim {
-  0%, 100% { filter: drop-shadow(0 0 0 rgba(0, 0, 0, 0)); }
-  50%      { filter: drop-shadow(0 0 6px rgba(120, 180, 255, 0.55)); }
+/* ============================================================ interaction
+ * One :focus-visible ring and one reduced-motion block for the whole
+ * feature (contract §3) — motion is decoration, everything stays usable
+ * with motion off. */
+.dt-page :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-/* ------------------------------------------ §6 edge states (taken branch) */
-.dt-edge-line { stroke: var(--border-strong); }
-.dt-edge.dt-edge-active   .dt-edge-line { stroke: var(--accent); stroke-width: 2; }
-.dt-edge.dt-edge-success  .dt-edge-line { stroke: var(--green); }
-.dt-edge.dt-edge-rejected .dt-edge-line { stroke: var(--amber); stroke-dasharray: 5 3; }
-.dt-edge.dt-edge-error    .dt-edge-line { stroke: var(--red); }
-.dt-edge.dt-edge-blocked  .dt-edge-line { stroke: var(--red); stroke-width: 2; stroke-dasharray: 2 3; }
-.dt-edge.dt-edge-retry    .dt-edge-line { stroke: color-mix(in srgb, var(--amber) 60%, var(--accent)); stroke-dasharray: 8 4; }
-.dt-edge.dt-edge-idle     .dt-edge-line { stroke: color-mix(in srgb, var(--border-strong) 55%, transparent); }
-
-/* §56: PROVENANCE GAP is DASHED amber + explicit label — never a solid
- * arrow, and never removed from the canvas. */
-.dt-edge.dt-edge-gap .dt-edge-line {
-  stroke: var(--amber);
-  stroke-dasharray: 7 5;
-  stroke-width: 1.5;
-}
-.dt-edge.dt-edge-gap .dt-edge-hit { pointer-events: stroke; }
-
-/* §7: unused branches are SUBDUED (never removed — the topology still shows
- * what was possible). */
-.dt-edge.dim .dt-edge-line {
-  opacity: 0.22;
-  stroke: var(--text-faint);
-  stroke-dasharray: 2 4;
+.dt-page button {
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
-/* §5 packet: lit ONLY when a real event traversed this edge. */
-.dt-edge.dt-packet-on .dt-edge-line {
-  stroke: var(--accent-strong);
-  stroke-width: 3;
-  filter: drop-shadow(0 0 5px rgba(120, 180, 255, 0.7));
-}
-.dt-packet {
-  fill: var(--accent-strong);
-  filter: drop-shadow(0 0 4px rgba(120, 180, 255, 0.85));
-}
-
-/* ------------------------------------------ §12 external participants */
-.dt-ext { fill: none; pointer-events: none; }
-.dt-ext-mt5     { stroke: color-mix(in srgb, var(--violet) 70%, var(--bg-panel)); stroke-dasharray: 4 2; }
-.dt-ext-gateway { stroke: color-mix(in srgb, var(--accent) 70%, var(--bg-panel)); stroke-dasharray: 4 2; }
-.dt-ext-provider{ stroke: color-mix(in srgb, var(--amber) 70%, var(--bg-panel)); stroke-dasharray: 4 2; }
-.dt-ext-db      { stroke: color-mix(in srgb, var(--text-dim) 70%, var(--bg-panel)); stroke-dasharray: 4 2; }
-
-/* ------------------------------------------ §44 mode badges (distinct) */
-.dt-mode { font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em; }
-.dt-mode-text { fill: var(--text); font-family: var(--mono); font-size: 9px; }
-.dt-mode-live     { fill: color-mix(in srgb, var(--live-red-bg) 55%, transparent); stroke: var(--red); }
-.dt-mode-paper    { fill: color-mix(in srgb, var(--paper-blue-bg) 55%, transparent); stroke: var(--accent); }
-/* SHADOW: amber OUTLINE only — it can never read as executed/confirmed. */
-.dt-mode-shadow   { fill: none; stroke: var(--amber); stroke-dasharray: 3 2; }
-.dt-mode-replay   { fill: color-mix(in srgb, var(--bg-panel-2) 80%, transparent); stroke: var(--text-dim); }
-.dt-mode-backtest { fill: color-mix(in srgb, var(--bg-panel-2) 80%, transparent); stroke: var(--violet); }
-.dt-mode-training { fill: color-mix(in srgb, var(--bg-panel-2) 80%, transparent); stroke: var(--green-dim); }
-.dt-mode-unknown  { fill: none; stroke: var(--text-faint); stroke-dasharray: 2 2; }
-.dt-mode-other    { fill: none; stroke: var(--text-faint); }
-.dt-mode-shadow .dt-mode-text { fill: var(--amber); }
-
-/* §56 gap label */
-.dt-gap-label {
-  fill: var(--amber);
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  paint-order: stroke;
-  stroke: var(--bg);
-  stroke-width: 3px;
-}
-
-/* collapsed-node badge */
-.dt-badge.collapsed { fill: var(--bg-panel-2); stroke: var(--amber); }
-
-/* ------------------------------------------ §52/§53 canvas tools */
-.dt-zoom-btn.on {
-  border-color: var(--green);
-  color: var(--green);
-}
-.dt-zoom-btn.fit {
-  min-width: 3rem;
-}
-.dt-node.collapsed .dt-node-body {
-  stroke-dasharray: 3 3;
+@media (prefers-reduced-motion: reduce) {
+  .dt-page *,
+  .dt-page *::before,
+  .dt-page *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

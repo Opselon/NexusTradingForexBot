@@ -1,0 +1,176 @@
+/* ============================================================
+   Decision Trace — LIVE-CAUSAL-TOPOLOGY graph layer (namespace `dt-`).
+   Split from decision-trace.css (lane 6, uiux-modern-20260926).
+   Node/edge state tokens -> theme.css vars. NO raw hex: every color is
+   a token or a color-mix()/rgba() of tokens. Logical properties only.
+   No `filter`/`backdrop-filter` here — glow is done with static fills
+   + opacity animation (see the cost note on .dt-node-halo).
+   Imported by ui/DecisionTracePage.tsx.
+   ============================================================ */
+
+/* ============================================================ LIVE-CAUSAL-TOPOLOGY (lane C)
+ * §4 state tokens -> theme.css vars. NO raw hex anywhere: every color is a
+ * token (or color-mix/rgba of tokens). Logical properties only.
+ * §51: professional dark-quant style, theme-token driven.
+ * §44: SHADOW is amber-outline only and can never match the EXECUTED look. */
+
+.dt-node.dt-st-none        .dt-node-body { stroke: var(--border-strong); }
+.dt-node.dt-st-idle        .dt-node-body { stroke: var(--border-strong); }
+.dt-node.dt-st-received    .dt-node-body { stroke: var(--blue, var(--accent)); }
+.dt-node.dt-st-processing  .dt-node-body { stroke: var(--accent); }
+.dt-node.dt-st-waiting     .dt-node-body { stroke: color-mix(in srgb, var(--amber) 70%, var(--border)); }
+.dt-node.dt-st-completed   .dt-node-body { stroke: var(--green); }
+.dt-node.dt-st-passed      .dt-node-body { stroke: var(--green); }
+.dt-node.dt-st-ok          .dt-node-body { stroke: var(--green); }
+.dt-node.dt-st-rejected    .dt-node-body { stroke: var(--amber); stroke-dasharray: 5 3; }
+.dt-node.dt-st-failed      .dt-node-body { stroke: var(--red); }
+.dt-node.dt-st-error,
+.dt-node.dt-st-timeout     .dt-node-body { stroke: var(--red); }
+.dt-node.dt-st-blocked     .dt-node-body { stroke: var(--red); stroke-width: 2; }
+.dt-node.dt-st-skipped     .dt-node-body { stroke: var(--text-faint); stroke-dasharray: 3 3; }
+.dt-node.dt-st-stale       .dt-node-body { stroke: var(--text-faint); }
+.dt-node.dt-st-cancelled   .dt-node-body { stroke: var(--text-faint); }
+.dt-node.dt-st-executing   .dt-node-body { stroke: var(--accent); stroke-width: 2; }
+.dt-node.dt-st-executed    .dt-node-body { stroke: var(--green); stroke-width: 2; }
+.dt-node.dt-st-confirmed   .dt-node-body { stroke: var(--green); stroke-width: 2; }
+.dt-node.dt-st-dispatched  .dt-node-body { stroke: var(--accent-strong); }
+.dt-node.dt-st-observed    .dt-node-body { stroke: var(--accent); }
+.dt-node.dt-st-warn        .dt-node-body { stroke: var(--amber); }
+.dt-node.dt-st-unknown     .dt-node-body { stroke: color-mix(in srgb, var(--border-strong) 60%, var(--text-faint)); stroke-dasharray: 2 3; }
+
+/* §4 label colors follow the tone */
+.dt-node.dt-st-rejected .dt-node-label,
+.dt-node.dt-st-failed   .dt-node-label,
+.dt-node.dt-st-error    .dt-node-label,
+.dt-node.dt-st-timeout  .dt-node-label,
+.dt-node.dt-st-blocked  .dt-node-label { color: var(--red); }
+.dt-node.dt-st-completed .dt-node-label,
+.dt-node.dt-st-passed    .dt-node-label,
+.dt-node.dt-st-confirmed .dt-node-label,
+.dt-node.dt-st-ok        .dt-node-label { color: var(--green); }
+
+/* §5: a pulse marks an IN-FLIGHT state only, and only while real events are
+ * arriving — CSS animation only, no JS timer involved.
+ *
+ * COST (R1 §3.5 / §5.2): this used to animate `filter: drop-shadow(...)`,
+ * the most expensive declaration on a canvas that repaints while the stream
+ * is live — every frame re-rasterised an offscreen blur mask. The glow is
+ * now a dedicated halo ring (`.dt-node-halo`, painted by TraceGraphCanvas)
+ * whose only animated property is `opacity`, which the compositor can
+ * promote; the node geometry never re-rasterises. The animation runs only
+ * under prefers-reduced-motion: no-preference; with motion off the halo
+ * holds a steady opacity instead. */
+.dt-node-halo {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  opacity: 0;
+  pointer-events: none;
+}
+.dt-node.selected .dt-node-halo {
+  opacity: 0.5;
+}
+.dt-node.dt-pulse .dt-node-halo {
+  stroke: color-mix(in srgb, var(--accent) 75%, var(--green));
+  opacity: 0.35;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .dt-node.dt-pulse .dt-node-halo {
+    animation: dt-pulse-anim 1.6s ease-in-out infinite;
+  }
+}
+@keyframes dt-pulse-anim {
+  0%, 100% { opacity: 0.15; }
+  50%      { opacity: 0.9; }
+}
+
+/* ------------------------------------------ §6 edge states (taken branch) */
+.dt-edge-line { stroke: var(--border-strong); }
+.dt-edge.dt-edge-active   .dt-edge-line { stroke: var(--accent); stroke-width: 2; }
+.dt-edge.dt-edge-success  .dt-edge-line { stroke: var(--green); }
+.dt-edge.dt-edge-rejected .dt-edge-line { stroke: var(--amber); stroke-dasharray: 5 3; }
+.dt-edge.dt-edge-error    .dt-edge-line { stroke: var(--red); }
+.dt-edge.dt-edge-blocked  .dt-edge-line { stroke: var(--red); stroke-width: 2; stroke-dasharray: 2 3; }
+.dt-edge.dt-edge-retry    .dt-edge-line { stroke: color-mix(in srgb, var(--amber) 60%, var(--accent)); stroke-dasharray: 8 4; }
+.dt-edge.dt-edge-idle     .dt-edge-line { stroke: color-mix(in srgb, var(--border-strong) 55%, transparent); }
+
+/* §56: PROVENANCE GAP is DASHED amber + explicit label — never a solid
+ * arrow, and never removed from the canvas. */
+.dt-edge.dt-edge-gap .dt-edge-line {
+  stroke: var(--amber);
+  stroke-dasharray: 7 5;
+  stroke-width: 1.5;
+}
+.dt-edge.dt-edge-gap .dt-edge-hit { pointer-events: stroke; }
+
+/* §7: unused branches are SUBDUED (never removed — the topology still shows
+ * what was possible). */
+.dt-edge.dim .dt-edge-line {
+  opacity: 0.22;
+  stroke: var(--text-faint);
+  stroke-dasharray: 2 4;
+}
+
+/* §5 packet: lit ONLY when a real event traversed this edge. */
+/* Lit edge: emphasis is stroke width + colour only (no filter — see the
+ * cost note above). */
+.dt-edge.dt-packet-on .dt-edge-line {
+  stroke: var(--accent-strong);
+  stroke-width: 3;
+}
+/* Packet dot: the "glow" is a second, larger, low-opacity fill circle
+ * (.dt-packet-halo, painted by TraceGraphCanvas) instead of a per-dot
+ * drop-shadow filter. */
+.dt-packet-halo {
+  fill: color-mix(in srgb, var(--accent-strong) 28%, transparent);
+}
+.dt-packet {
+  fill: var(--accent-strong);
+}
+
+/* ------------------------------------------ §12 external participants */
+.dt-ext { fill: none; pointer-events: none; }
+.dt-ext-mt5     { stroke: color-mix(in srgb, var(--violet) 70%, var(--bg-panel)); stroke-dasharray: 4 2; }
+.dt-ext-gateway { stroke: color-mix(in srgb, var(--accent) 70%, var(--bg-panel)); stroke-dasharray: 4 2; }
+.dt-ext-provider{ stroke: color-mix(in srgb, var(--amber) 70%, var(--bg-panel)); stroke-dasharray: 4 2; }
+.dt-ext-db      { stroke: color-mix(in srgb, var(--text-dim) 70%, var(--bg-panel)); stroke-dasharray: 4 2; }
+
+/* ------------------------------------------ §44 mode badges (distinct) */
+.dt-mode { font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em; }
+.dt-mode-text { fill: var(--text); font-family: var(--mono); font-size: 9px; }
+.dt-mode-live     { fill: color-mix(in srgb, var(--live-red-bg) 55%, transparent); stroke: var(--red); }
+.dt-mode-paper    { fill: color-mix(in srgb, var(--paper-blue-bg) 55%, transparent); stroke: var(--accent); }
+/* SHADOW: amber OUTLINE only — it can never read as executed/confirmed. */
+.dt-mode-shadow   { fill: none; stroke: var(--amber); stroke-dasharray: 3 2; }
+.dt-mode-replay   { fill: color-mix(in srgb, var(--bg-panel-2) 80%, transparent); stroke: var(--text-dim); }
+.dt-mode-backtest { fill: color-mix(in srgb, var(--bg-panel-2) 80%, transparent); stroke: var(--violet); }
+.dt-mode-training { fill: color-mix(in srgb, var(--bg-panel-2) 80%, transparent); stroke: var(--green-dim); }
+.dt-mode-unknown  { fill: none; stroke: var(--text-faint); stroke-dasharray: 2 2; }
+.dt-mode-other    { fill: none; stroke: var(--text-faint); }
+.dt-mode-shadow .dt-mode-text { fill: var(--amber); }
+
+/* §56 gap label */
+.dt-gap-label {
+  fill: var(--amber);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+}
+
+/* collapsed-node badge */
+.dt-badge.collapsed { fill: var(--bg-panel-2); stroke: var(--amber); }
+
+/* ------------------------------------------ §52/§53 canvas tools */
+.dt-zoom-btn.on {
+  border-color: var(--green);
+  color: var(--green);
+}
+.dt-zoom-btn.fit {
+  min-width: 3rem;
+}
+.dt-node.collapsed .dt-node-body {
+  stroke-dasharray: 3 3;
+}

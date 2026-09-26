@@ -40,6 +40,9 @@ import {
 } from "../useCases";
 
 import "../decision-trace.css";
+import "../decision-trace-lists.css";
+import "../decision-trace-side.css";
+import "../decision-trace-graph.css";
 import "../traceInspectors.css";
 
 type Panel = "canvas" | "events" | "decisions";
