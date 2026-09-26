@@ -667,3 +667,91 @@ kbd {
   .topbar { overflow-x: auto; overflow-y: hidden; }
   .page { padding: 12px 12px 32px; }
 }
+
+/* ==========================================================================
+   Lane IM1 (design shell) — wave uiux-modern-20260926: ADDITIVE token layer.
+
+   APPENDED ONLY: not one token, keyframe or selector above was renamed or
+   removed — a CSS-var rename never fails tsc/vite/jstests, it silently
+   unstyles all 22 feature pages while the gate stays green. Everything in
+   this block is new and is consumed by components/shell.css + app/AppShell
+   (other lanes may opt rules in one declaration at a time).
+
+   Derivation law: every color below is a color-mix()/rgba() composition of
+   an EXISTING token — no new literal hue enters the system, so a future
+   theme swap, a palette tune-up of the base tokens, or `body.dense` still
+   cascades into the shell untouched. Raw hex appears only inside rgba() /
+   color-mix() / gradients, as the styling law requires.
+
+   Density law: `body.dense` keeps meaning "padding only" — this scale is
+   NOT overridden there, so compact mode can never hide data.
+   ========================================================================== */
+:root {
+  /* ---- radius scale (sharp → soft; pills keep the 999px convention) ---- */
+  --r-xs: 3px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-pill: 999px;
+
+  /* ---- spacing / rhythm scale (4px base unit, matches --panel-gap 14px
+         neighbourhood and the 7/10/12 paddings already in use) ---- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 40px;
+
+  /* ---- motion: durations + easings (decoration only; the global
+         prefers-reduced-motion rule above already neutralises all of it) ---- */
+  --dur-1: 90ms;
+  --dur-2: 150ms;
+  --dur-3: 240ms;
+  --dur-4: 380ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-emph: cubic-bezier(0.2, 0.9, 0.3, 1.18);
+  --motion-fast: var(--dur-1) var(--ease-out);
+  --motion-base: var(--dur-2) var(--ease-out);
+  --motion-slow: var(--dur-3) var(--ease-in-out);
+
+  /* ---- focus ring: one definition every :focus-visible rule can reuse ---- */
+  --focus-w: 2px;
+  --focus-offset: 2px;
+  --focus-ring-color: var(--accent-strong);
+  --focus-outline: var(--focus-w) solid var(--focus-ring-color);
+  --focus-ring: 0 0 0 var(--focus-w) color-mix(in srgb, var(--accent) 60%, transparent);
+  --focus-ring-soft: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+
+  /* ---- derived surfaces (hover / pressed / sunken states) ---- */
+  --surface-hover: color-mix(in srgb, var(--accent) 7%, transparent);
+  --surface-active: color-mix(in srgb, var(--accent) 14%, transparent);
+  --surface-sunken: color-mix(in srgb, var(--bg-inset) 80%, var(--bg) 20%);
+  --hairline: color-mix(in srgb, var(--border-strong) 55%, transparent);
+
+  /* ---- elevation refinements: compose the existing --elev-* scale ---- */
+  --elev-inset: inset 0 1px 0 var(--elevate-hi), inset 0 -1px 0 var(--elevate-lo);
+  --elev-chrome: var(--elev-2), inset 0 1px 0 var(--elevate-hi);
+  --elev-float: var(--elev-pop), inset 0 1px 0 var(--elevate-hi);
+  --elev-edge: 0 0 0 1px color-mix(in srgb, var(--border-strong) 65%, transparent);
+
+  /* ---- glow refinements: soft halos for chrome state, never for data ---- */
+  --glow-ring-accent: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+  --glow-ring-red: 0 0 0 3px color-mix(in srgb, var(--red) 22%, transparent);
+  --glow-edge-accent: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+  --glow-bloom-accent: 0 0 20px color-mix(in srgb, var(--accent) 26%, transparent);
+
+  /* ---- letter-spacing scale for uppercase micro-labels ---- */
+  --ls-wide: 0.08em;
+  --ls-wider: 0.16em;
+
+  /* ---- z additions (IM1 owns the scale; existing --z-* values untouched) ---- */
+  --z-topbar: 5;
+  --z-modal: 90;
+  --z-toast: 100;
+  --z-skip: 200;
+}
