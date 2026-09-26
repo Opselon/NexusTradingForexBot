@@ -1,0 +1,231 @@
+/*
+ * PURPOSE:  hero header surface for the AI Analysis page — kicker, gradient
+ *           title, description, endpoint provenance chips and the latest-signal
+ *           status side.
+ * OWNER:    uiux-modern-20260926 lane 9 (ai-analysis) — future edits go here.
+ * CONSUMES: theme tokens only (--bg-panel*, --bg-inset, --elev-*, --border*,
+ *           --text*, --accent*, --green/red/amber, --glow-accent, --mono,
+ *           --panel-gap, --card-pad); consumed by ui/AaHero.tsx (imported
+ *           there).
+ * PROVIDES: .aa-page-hero*, .aa-hero-*, .aa-hero-live* (prefix `aa`, the
+ *           feature namespace declared in aiAnalysis.css).
+ * INVARIANTS: no bare hex outside rgba()/color-mix(); logical properties only
+ *           (RTL-safe); NO filter/backdrop-filter on this surface (visual hot
+ *           path); the mesh overlay is static — no animation, no blur;
+ *           `:focus-visible` and reduced-motion handled once, here.
+ * EXTEND:   new hero visuals = new `.aa-hero-*` rules here, never a global
+ *           restyle and never a one-off selector from another stylesheet.
+ */
+
+.aa-page-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--panel-gap);
+  padding: calc(var(--card-pad) * 1.6) calc(var(--card-pad) * 1.8) calc(var(--card-pad) * 1.4);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background:
+    radial-gradient(560px 240px at 3% -60%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 72%),
+    radial-gradient(480px 230px at 97% -45%, color-mix(in srgb, var(--violet) 16%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--elevate-hi), transparent 48%),
+    var(--bg-panel);
+  box-shadow: var(--elev-2), inset 0 1px 0 var(--elevate-hi);
+  overflow: hidden;
+}
+
+/* Fine grid texture clipped to the hero — decoration only, never data. */
+.aa-hero-mesh {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.4;
+  background-image:
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--border-strong) 45%, transparent) 0 1px, transparent 1px 30px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--border-strong) 45%, transparent) 0 1px, transparent 1px 30px);
+  -webkit-mask-image: radial-gradient(120% 130% at 88% -20%, var(--bg) 0%, transparent 68%);
+  mask-image: radial-gradient(120% 130% at 88% -20%, var(--bg) 0%, transparent 68%);
+}
+
+.aa-hero-main {
+  position: relative;
+  z-index: 1;
+  min-inline-size: 0;
+  flex: 1 1 420px;
+}
+
+/* ------------------------------ kicker / title / desc ------------------- */
+
+.aa-hero-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.aa-hero-kicker .dot {
+  inline-size: 6px;
+  block-size: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.aa-hero-kicker-rule {
+  flex: 1;
+  min-inline-size: 48px;
+  block-size: 1px;
+  /* symmetric fade so the rule reads the same in RTL */
+  background: linear-gradient(90deg, transparent, var(--border-strong) 22%, var(--border-strong) 78%, transparent);
+}
+
+.aa-hero-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0 7px;
+  font-size: clamp(22px, 2.4vw, 27px);
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+}
+.aa-hero-title .glyph {
+  flex-shrink: 0;
+  font-size: 15px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.aa-hero-title .word {
+  color: var(--text);
+}
+/* Gradient word only where the browser can clip it — otherwise the title
+   stays solid `--text`, never transparent. */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .aa-hero-title .word {
+    background: linear-gradient(180deg, var(--text) 25%, color-mix(in srgb, var(--accent) 55%, var(--text)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+.aa-hero-desc {
+  margin: 0;
+  max-width: 78ch;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+/* ------------------------------ endpoint provenance chips ---------------- */
+
+.aa-hero-endpoints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block-start: 14px;
+}
+.aa-hero-ep {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  border: 1px dashed color-mix(in srgb, var(--border-strong) 75%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-inset) 75%, transparent);
+  color: var(--text-faint);
+  transition: color 0.14s ease, border-color 0.14s ease;
+}
+.aa-hero-ep:hover {
+  color: var(--text-dim);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.aa-hero-ep-dot {
+  inline-size: 4px;
+  block-size: 4px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 75%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* ------------------------------ status side ------------------------------ */
+
+.aa-hero-side {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-inset) 72%, transparent);
+}
+.aa-hero-side :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.aa-hero-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-inline-size: 0;
+}
+.aa-hero-live-dot {
+  inline-size: 7px;
+  block-size: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.aa-hero-live-ok .aa-hero-live-dot {
+  background: var(--green);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--green) 65%, transparent);
+}
+.aa-hero-live-bad .aa-hero-live-dot {
+  background: var(--red);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--red) 65%, transparent);
+}
+.aa-hero-live-busy .aa-hero-live-dot {
+  background: var(--amber);
+}
+.aa-hero-src {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-inline-size: 26ch;
+}
+.aa-hero-side .timestamp-note {
+  margin-inline-start: 0;
+}
+
+/* ------------------------------ motion / narrow viewports ---------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .aa-hero-ep {
+    transition: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .aa-page-hero {
+    padding: 16px 16px 14px;
+  }
+}

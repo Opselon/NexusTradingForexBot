@@ -7,10 +7,10 @@
  * HistoryRow rides along — only this table renders it.
  */
 
-import { memo } from "react";
+import { memo, useCallback, useMemo } from "react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton } from "@/components/primitives";
+import { EmptyState, ErrorState, MetricCard, Panel, Skeleton } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
 import { ApiError } from "@/types/api";
 import { confidence01, str, type SignalDto, type DecisionStatsDto, type NoTradeReasonsDto } from "../model";
@@ -18,10 +18,23 @@ import type { V1Page } from "@/types/domain";
 import { useI18n } from "@/stores/i18nStore";
 import { topEntry, type ActionKpi, type CountRow } from "./vizMath";
 import { AaActionChip, ActionDonut, BarList, ConfCell } from "./aaCharts";
+import { AaTable, cmpNum, cmpStr, type AaColumn, type AaSort } from "./AaTable";
 
 /** Wave 2b (#39): named here because only this table's BarList uses it —
  *  the caption-lockstep rule applies wherever a number feeds a slice. */
 const STAGE_MAX = 20;
+
+/** Epoch ms for ledger timestamps — absent/unparseable → null (cmpNum pins
+ *  those last); never coerced to 0. */
+function tsNum(v: string | null | undefined): number | null {
+  if (!v) return null;
+  const ms = Date.parse(v);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** The panel title already claims "newest first", so that IS the order this
+ *  table shows before anyone clicks a header (law 1: no surprise reorder). */
+const HISTORY_SORT: AaSort = { id: "generated_at", dir: "desc" };
 
 
 /* ────────────── wave 2b (#42): signals tab extracted ──────────────
@@ -61,17 +74,81 @@ export default function SignalsTab({
   timelineBody: ReactNode;
 }) {
   const t = useI18n((s) => s.t);
+  /** Header definitions built once per locale: the 15s latest-signal poll
+   *  re-renders this tab, so a fresh columns array would defeat AaTable's
+   *  memo and re-sort all 100 rows on every pass. */
+  const historyColumns = useMemo<AaColumn<SignalDto>[]>(
+    () => [
+      {
+        id: "request_id",
+        label: t("ai-analysis.th.decision", "decision"),
+        keyOf: (s) => str(s.request_id),
+        compare: (a, b) => cmpStr(str(a.request_id), str(b.request_id)),
+      },
+      {
+        id: "symbol",
+        label: t("ai-analysis.th.symbol", "symbol"),
+        keyOf: (s) => s.symbol,
+        compare: (a, b) => cmpStr(a.symbol, b.symbol),
+      },
+      {
+        id: "action",
+        label: t("ai-analysis.th.action", "action"),
+        keyOf: (s) => s.action,
+        compare: (a, b) => cmpStr(a.action, b.action),
+      },
+      {
+        id: "confidence",
+        label: t("ai-analysis.th.conf", "conf"),
+        num: true,
+        keyOf: (s) => confidence01(s.confidence),
+        compare: (a, b) => cmpNum(confidence01(a.confidence), confidence01(b.confidence)),
+      },
+      {
+        id: "decision_stage",
+        label: t("ai-analysis.th.stage", "stage"),
+        keyOf: (s) => s.decision_stage,
+        compare: (a, b) => cmpStr(a.decision_stage, b.decision_stage),
+      },
+      {
+        id: "reason_code",
+        label: t("ai-analysis.th.reason", "reason"),
+        keyOf: (s) => s.blocked_by ?? s.reason_code,
+        compare: (a, b) => cmpStr(a.blocked_by ?? a.reason_code, b.blocked_by ?? b.reason_code),
+      },
+      {
+        id: "generated_at",
+        label: t("ai-analysis.th.at", "at"),
+        num: true,
+        keyOf: (s) => s.generated_at,
+        compare: (a, b) => cmpNum(tsNum(a.generated_at), tsNum(b.generated_at)),
+      },
+      { id: "drill", label: t("ai-analysis.th.drill", "drill") },
+    ],
+    [t],
+  );
+  /** Stable row identity: the memoized HistoryRow bails out of poll
+   *  re-renders instead of rebuilding 100 rows every 15 seconds. */
+  const renderRow = useCallback(
+    (s: SignalDto, i: number) => (
+      <HistoryRow
+        key={s.request_id ?? `${s.symbol}-${s.generated_at}-${i}`}
+        s={s}
+        onInspect={inspectDecision}
+      />
+    ),
+    [inspectDecision],
+  );
   return (
     <div className="aa-stack">
       <div className="aa-segbar">
-        <span className="section-title" style={{ margin: 0 }}>
+        <span className="section-title aa-segbar-title">
           {t("ai-analysis.stats.heading", "decision stats")}
         </span>
         <span className="tiny faint">{t("ai-analysis.stats.window", "window")}</span>
         <select
           aria-label={t("ai-analysis.stats.window_aria", "Stats window (hours)")}
-          className="select"
-          style={{ width: 92 }}
+          className="select aa-window-select"
           value={hoursBack}
           onChange={(e) => {
             setHoursBack(Number(e.target.value));
@@ -152,23 +229,13 @@ export default function SignalsTab({
           <EmptyState message={t("ai-analysis.empty.window", "No signals in this window.")} />
         ) : (
           <>
-            <DataTable
-              headers={[
-                              { label: t("ai-analysis.th.decision", "decision") },
-                              { label: t("ai-analysis.th.symbol", "symbol") },
-                              { label: t("ai-analysis.th.action", "action") },
-                              { label: t("ai-analysis.th.conf", "conf"), num: true },
-                              { label: t("ai-analysis.th.stage", "stage") },
-                              { label: t("ai-analysis.th.reason", "reason") },
-                              { label: t("ai-analysis.th.at", "at") },
-                              { label: t("ai-analysis.th.drill", "drill") },
-                            ]}
-            >
-              {historyRows.map((s: SignalDto, i: number) => (
-                <HistoryRow key={s.request_id ?? `${s.symbol}-${s.generated_at}-${i}`} s={s} onInspect={inspectDecision} />
-              ))}
-            </DataTable>
-            <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+            <AaTable
+              rows={historyRows}
+              columns={historyColumns}
+              defaultSort={HISTORY_SORT}
+              renderRow={renderRow}
+            />
+            <div className="aa-pager">
               <button className="btn small" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
                 {t("ai-analysis.pager.newer", "← newer")}
                               </button>
@@ -179,7 +246,7 @@ export default function SignalsTab({
               <button className="btn small" disabled={!historyQ.data?.has_more} onClick={() => setPage((p) => p + 1)}>
                 {t("ai-analysis.pager.older", "older →")}
                               </button>
-              <span className="tiny faint" style={{ marginInlineStart: "auto" }}>
+              <span className="tiny faint aa-pager-more">
                 {t("ai-analysis.pager.rows", "{n} rows/page · hours_back cap 720 (backend-enforced)", { n: historyQ.data?.page_size ?? "—" })}
               </span>
             </div>
