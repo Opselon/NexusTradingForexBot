@@ -284,7 +284,7 @@ export function ArticleDrawer({
                 ) : (
                   <DataTable headers={[{ label: t("news.article.h_trade", "trade") }, { label: t("news.article.h_strategy", "strategy") }, { label: t("news.article.h_link", "link") }, { label: t("news.article.h_at", "at") }]}>
                     {tradeLinks.map((l, i) => (
-                      <tr key={i}>
+                      <tr key={`${String(l.trade_id ?? l.ticket ?? "link")}-${i}`}>
                         <td>{String(l.trade_id ?? l.ticket ?? "—")}</td>
                         <td>{String(l.strategy_id ?? "—")}</td>
                         <td>{l.linked_at && !l.link_type ? t("news.article.linked", "linked") : String(l.link_type ?? "—")}</td>
@@ -300,7 +300,7 @@ export function ArticleDrawer({
                   <div className="section-title">{t("news.article.related_title", "Related coverage")}</div>
                   <ul className="small muted" style={{ margin: 0, paddingInlineStart: 16 }}>
                     {related.map((r, i) => (
-                      <li key={i}>{String(r.title ?? r.article_id ?? "—")}</li>
+                      <li key={`${String(r.article_id ?? r.title ?? "rel")}-${i}`}>{String(r.title ?? r.article_id ?? "—")}</li>
                     ))}
                   </ul>
                 </section>

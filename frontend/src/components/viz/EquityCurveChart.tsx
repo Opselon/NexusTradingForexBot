@@ -33,6 +33,15 @@ export interface EquityCurveChartProps {
 
 const W = 640;
 
+/** Default axis/legend formatter — module-level so renders share one closure. */
+const fmtAxis = (v: number): string => fmtCompact(v, 1);
+
+/** `M/D` caption for an ISO timestamp; "" when the backend sent junk. */
+function shortIso(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
 export function EquityCurveChart({
   points,
   field = "equity",
@@ -72,13 +81,9 @@ export function EquityCurveChart({
     return <div className="viz-empty">{emptyHintText}</div>;
   }
   const { toY, step, pts, peakPts, first, last, rising, ticks, real, padB } = geo;
-  const fmt = formatValue ?? ((v: number) => fmtCompact(v, 1));
+  const fmt = formatValue ?? fmtAxis;
   const x0 = points[0]?.timestamp ?? "";
   const x1 = points[points.length - 1]?.timestamp ?? "";
-  const short = (iso: string) => {
-    const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? "" : `${d.getMonth() + 1}/${d.getDate()}`;
-  };
   return (
     <div className="viz-frame">
       <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={t("ui.viz.eq_aria", "equity curve, {n} samples, from {a} to {b}", { n: real.length, a: fmt(first), b: fmt(last) })}>
@@ -101,10 +106,10 @@ export function EquityCurveChart({
         <path className={`viz-line ${rising ? "pos" : "neg"}`} d={linePath(pts)} />
         <circle className={`viz-dot ${rising ? "pos" : "neg"}`} cx={(points.length - 1) * step} cy={toY(last)} r={2.6} fill="currentColor" style={{ color: rising ? "var(--green)" : "var(--red)" }} />
         <text className="viz-axis" x={0} y={height - 6}>
-          {short(x0)}
+          {shortIso(x0)}
         </text>
         <text className="viz-axis" x={W} y={height - 6} textAnchor="end">
-          {short(x1)}
+          {shortIso(x1)}
         </text>
       </svg>
       {showPeak && (

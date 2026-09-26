@@ -76,9 +76,13 @@ export function ConfidenceGauge({
   const tier = tierFor(ratio);
   const readout = ratio === null ? "—" : ratio.toFixed(2);
 
-  const { cx, cy, r } = useMemo(() => {
+  // The dial's static geometry (centre, radius, full-sweep track path) is a
+  // pure function of the viewBox size — computed once per size, not per paint
+  // of a live-updating strategy grid.
+  const { cx, cy, r, trackD } = useMemo(() => {
     const c = viewBoxSize / 2;
-    return { cx: c, cy: c, r: c - 14 };
+    const radius = c - 14;
+    return { cx: c, cy: c, r: radius, trackD: arcPath(c, c, radius, START, START + SWEEP) };
   }, [viewBoxSize]);
 
   const angle = START + (ratio ?? 0) * SWEEP;
@@ -91,10 +95,13 @@ export function ConfidenceGauge({
         role="img"
         aria-label={label ? `${label}: ${readout}` : t("ui.viz.confidence_aria", "confidence {r}", { r: readout })}
       >
-        {/* Track + value arc. vector-effect keeps the stroke crisp at any scale. */}
+        {/* Track + value arc. vector-effect keeps the stroke crisp at any
+            scale. A null ratio swaps the track for the dashed indeterminate
+            rail — the arc is not drawn at 0, because the backend sent no
+            ratio (see confidence-gauge.css `.cg-track.unknown`). */}
         <path
-          className="cg-track"
-          d={arcPath(cx, cy, r, START, START + SWEEP)}
+          className={`cg-track${ratio === null ? " unknown" : ""}`}
+          d={trackD}
           fill="none"
           strokeLinecap="round"
         />

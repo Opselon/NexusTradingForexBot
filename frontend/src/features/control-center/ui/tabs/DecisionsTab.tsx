@@ -51,7 +51,7 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
           <td>
             <StatusBadge status={r.action} />
           </td>
-          {r.confidence == null ? t("control-center.truth.not_recorded", "NOT RECORDED") : formatNumber(r.confidence, 3)}
+          <td className="num tiny">{r.confidence == null ? t("control-center.truth.not_recorded", "NOT RECORDED") : formatNumber(r.confidence, 3)}</td>
           <td className="tiny">{r.decision_stage ?? "—"}</td>
           <td className="tiny">{r.blocked_by ?? ""}</td>
           <td className="tiny muted" title={r.reason_code ?? ""}>
@@ -72,10 +72,9 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
     <Panel
       title={t("control-center.panel.decisions", "Decision observatory (audit_signals, read-only)")}
       right={
-        <div style={{ display: "flex", gap: 6 }}>
+        <div className="ctl-filters">
           <input
-            className="input"
-            style={{ width: 150 }}
+            className="input ctl-f-search"
             aria-label={t("control-center.action.search_aria", "Search decisions")}
             placeholder={t("control-center.action.search", "search")}
             value={search}
@@ -83,8 +82,7 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
           />
           <select
             aria-label={t("control-center.filter.action_aria", "Action filter")}
-            className="select"
-            style={{ width: 120 }}
+            className="select ctl-f-action"
             value={actionFilter}
             onChange={(e) => onActionFilter(e.target.value)}
           >
@@ -97,8 +95,7 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
           </select>
           <select
             aria-label={t("control-center.filter.window_aria", "Window (hours)")}
-            className="select"
-            style={{ width: 96 }}
+            className="select ctl-f-window"
             value={String(hours ?? 72)}
             onChange={(e) => onHours(Number(e.target.value))}
           >
@@ -140,7 +137,7 @@ export function DecisionsTab({ hours, actionFilter, search, onHours, onActionFil
           {rowEls}
         </DataTable>
       )}
-      <div className="tiny faint" style={{ marginTop: 6 }}>
+      <div className="tiny faint ctl-footnote">
         {t("control-center.decisions.footnote", "rows with unparseable payload are kept and flagged (never silently dropped) — inspect disabled for them by the backend contract.")}
       </div>
     </Panel>

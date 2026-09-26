@@ -9,10 +9,11 @@
  */
 
 import { useState, type ChangeEvent } from "react";
-import { EmptyState, ErrorState, Panel } from "@/components/primitives";
+import { EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { useLiveAccounting } from "../hooks";
 import { validatePlanInputs } from "../model";
 import { DASH, FreshnessNote, asErrorText, moneyOrDash, numOrDash, pctOrDash } from "./shared";
+import "./account.css";
 import { useI18n } from "@/stores/i18nStore";
 
 const EMPTY = { equity: "", entry: "", stopLoss: "", riskPct: "" };
@@ -72,7 +73,10 @@ export function LiveAccountingSection() {
       }
     >
       {live.isPending ? (
-        <div className="viz-empty">{t("account.live.querying", "querying the risk engine…")}</div>
+        <div className="acc-state-loading" role="status">
+          <span>{t("account.live.querying", "querying the risk engine…")}</span>
+          <Skeleton count={2} height={24} />
+        </div>
       ) : live.isError ? (
         <ErrorState message={asErrorText(live.error, t)} onRetry={() => live.refetch()} />
       ) : !d?.available ? (

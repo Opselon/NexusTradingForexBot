@@ -80,4 +80,6 @@ export const MESSAGES: FeatureMessages = {
   "audit.severity.high": { fa: "شدید", de: "Hoch", es: "Alta", ar: "عالية" },
   "audit.severity.medium": { fa: "متوسط", de: "Mittel", es: "Media", ar: "متوسطة" },
   "audit.severity.low": { fa: "پایین", de: "Niedrig", es: "Baja", ar: "منخفضة" },
+  "audit.hero.kicker": { fa: "ممیزی · دفتر · یکپارچگی", de: "Audit · Ledger · Integrität", es: "Auditoría · Libro · Integridad", ar: "التدقيق · السجل · السلامة" },
+  "audit.hero.desc": { fa: "نمای فقط‌خواندنی از لایه ممیزی بک‌اند — جریان رویداد سیستم، دفتر معاملات، فهرست رخدادها و یکپارچگی پایگاه داده. React هرگز به SQLite دست نمی‌زند؛ هر ردیف یک خواندن محدود از بک‌اند است.", de: "Read-only-Ansichten über die Backend-Audit-Schicht — Systemereignisstrom, Handelsbuch, Vorfallsliste und Datenbankintegrität. React berührt nie SQLite; jede Zeile ist ein begrenzter Backend-Leszugriff.", es: "Vistas de solo lectura de la capa de auditoría del backend: flujo de eventos del sistema, libro de operaciones, inventario de incidentes e integridad de la base de datos. React nunca toca SQLite; cada fila es una lectura limitada del backend.", ar: "عروض للقراءة فقط عبر طبقة التدقيق في الخادم: تدفق أحداث النظام، سجل التداولات، جرد الحوادث وسلامة قاعدة البيانات. لا تلمس الواجهة SQLite أبدًا؛ كل سطر قراءة محدودة من الخادم." },
 };

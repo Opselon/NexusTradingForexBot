@@ -58,6 +58,9 @@
   align-items: center;
   flex-wrap: wrap;
 }
+/* toolbar bits that used to be inline styles (lane 9: no per-render objects) */
+.aa-segbar-title { margin: 0; }
+.aa-window-select { width: 92px; }
 .aa-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .aa-chip {
   font-family: var(--mono);
@@ -354,6 +357,63 @@ td.aa-reason {
    (descendant selector: shadow/intel stacks nest Panels one level deeper) */
 .aa-stack .panel { margin-bottom: 0; }
 .aa-stack { display: grid; gap: var(--panel-gap); }
+
+/* ── page rhythm (lane 9): one grid for the whole route so the hero, the
+ *   live card and every tab section step by the same --panel-gap. Panels are
+ *   grid items here, so the global stacked-panel margin is neutralised on the
+ *   direct children only (nested stacks already zero it above). */
+.aa-page { display: grid; gap: var(--panel-gap); }
+.aa-page > .panel { margin-bottom: 0; }
+.aa-tabbar { padding-block: 2px; }
+
+/* ── sortable ledger table (ui/AaTable.tsx): sticky header comes from the
+ *   shared .data-table th rule; here we only add the sort affordance and the
+ *   keyboard focus treatment for rows and header buttons. */
+.aa-table th { white-space: nowrap; }
+.aa-th-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.aa-th-btn:hover { color: var(--text); }
+.aa-th-arrow {
+  font-size: 9px;
+  line-height: 1;
+  color: var(--accent);
+  opacity: 0.5;
+}
+.aa-table th[aria-sort="ascending"] .aa-th-arrow,
+.aa-table th[aria-sort="descending"] .aa-th-arrow { opacity: 1; }
+.aa-table th[aria-sort="ascending"],
+.aa-table th[aria-sort="descending"] { color: var(--text-dim); }
+.aa-th-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+/* row focus ring: any focusable cell (the drilldown button) lights the row */
+.aa-table-wrap tbody tr:focus-within td {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* pager row under the history table */
+.aa-pager {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-block-start: 8px;
+}
+.aa-pager-more { margin-inline-start: auto; }
 
 /* drawer gate-trace summary chips */
 .aa-gate-sum { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 14px 8px; }

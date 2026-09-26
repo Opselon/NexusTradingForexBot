@@ -5,11 +5,12 @@
  */
 
 import { useMemo } from "react";
-import { DataTable, EmptyState, ErrorState, Panel } from "@/components/primitives";
+import { DataTable, EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { Gauge, HeatBar } from "@/components/viz";
 import { useI18n } from "@/stores/i18nStore";
 import { formatNumber } from "@/lib/format";
 import { useAccountStrategies } from "../hooks";
+import "./account.css";
 import { DASH, FreshnessNote, asErrorText, moneyOrDash, pctOrDash } from "./shared";
 
 export function StrategiesSection() {
@@ -54,7 +55,10 @@ export function StrategiesSection() {
       right={<FreshnessNote updatedAtMs={strategies.dataUpdatedAt ?? null} label={t("account.fresh.strategies", "strategies")} />}
     >
       {strategies.isPending ? (
-        <div className="viz-empty">{t("account.strategies.loading", "loading contributions…")}</div>
+        <div className="acc-state-loading" role="status">
+          <span>{t("account.strategies.loading", "loading contributions…")}</span>
+          <Skeleton count={4} height={18} />
+        </div>
       ) : strategies.isError ? (
         <ErrorState message={asErrorText(strategies.error)} onRetry={() => strategies.refetch()} />
       ) : rows.length === 0 ? (

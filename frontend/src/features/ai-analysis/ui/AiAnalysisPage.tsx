@@ -28,6 +28,7 @@ import { aiAnalysisQueries, orderHistory } from "../useCases";
 import { actionFamily, actionKpi, countRows, timelineSeries, topEntry } from "./vizMath";
 import { BarList, ConfidenceTimeline, PriceLadder } from "./aaCharts";
 import SignalsTab from "./SignalsTab";
+import AaHero from "./AaHero";
 import "./aiAnalysis.css";
 
 // Wave-2 latency: the five heavyweight sections (indicators console 19KB,
@@ -256,12 +257,17 @@ export default function AiAnalysisPage(props: ShellPageProps) {
     [shadowQ.data?.drift_alerts],
   );
   return (
-    <div>
-      <div className="page-head" style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <h2>{t("ai-analysis.page.title", "AI Analysis")}</h2>
-                <span className="muted small">{t("ai-analysis.page.subtitle_intel", "model signals · decision gates · indicators · shadow 70D · intel")}</span>
-                <FreshnessCaption timestamp={str(latest?.generated_at)} source={t("ai-analysis.latest.source", "audit_signals ledger")} isFetching={latestQ.isFetching} error={latestQ.isError && !isNotFound(latestQ.error)} />
-      </div>
+    <div className="aa-page">
+      {/* Hero chrome: kicker + gradient title + provenance chips | status side.
+          State comes in as props from THIS page's latest-signal query — the
+          hero mounts no query of its own, so it can never add a poller. */}
+      <AaHero
+        timestamp={str(latest?.generated_at)}
+        source={t("ai-analysis.latest.source", "audit_signals ledger")}
+        isFetching={latestQ.isFetching}
+        error={latestQ.isError && !isNotFound(latestQ.error)}
+        pending={latestQ.isPending}
+      />
 
       <Panel title={t("ai-analysis.panel.latest", "Latest signal (live card)")} accent tight>
         {latestQ.isPending ? (
@@ -328,7 +334,7 @@ export default function AiAnalysisPage(props: ShellPageProps) {
         ) : null}
       </Panel>
 
-      <div style={{ marginBlock: 12 }}>
+      <div className="aa-tabbar">
         <Segmented
           options={[
                       { id: "signals" as const, label: t("ai-analysis.tab.decisions", "Decisions & history") },

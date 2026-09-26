@@ -160,7 +160,7 @@ export function LoadingState({ label }: { label?: string }) {
   const text = label ?? t("ui.state.loading", "Loading backend state…");
   return (
     <div className="state-block" role="status">
-      <div className="spinner" />
+      <div className="spinner" aria-hidden="true" />
       <div>{text}</div>
     </div>
   );
@@ -170,7 +170,8 @@ export function ErrorState({ message, requestId, onRetry }: { message: string; r
   const t = useI18n((s) => s.t);
   return (
     <div className="state-block" role="alert">
-      <div className="glyph">⚠</div>
+      {/* Decorative: the message below carries the meaning for AT. */}
+      <div className="glyph" aria-hidden="true">⚠</div>
       <div>{message}</div>
       {requestId && <div className="hint inline-mono">request_id: {requestId}</div>}
       {onRetry && (
@@ -185,7 +186,8 @@ export function ErrorState({ message, requestId, onRetry }: { message: string; r
 export function EmptyState({ message, hint }: { message: string; hint?: string }) {
   return (
     <div className="state-block" role="status">
-      <div className="glyph">∅</div>
+      {/* Decorative: the message below carries the meaning for AT. */}
+      <div className="glyph" aria-hidden="true">∅</div>
       <div>{message}</div>
       {hint && <div className="hint">{hint}</div>}
     </div>

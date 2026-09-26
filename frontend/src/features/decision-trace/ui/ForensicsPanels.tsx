@@ -11,7 +11,7 @@
  * OWNER: lane D, LIVE-CAUSAL-TOPOLOGY wave.
  */
 
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import {
   BACKEND_PENDING,
   NOT_OBSERVED,
@@ -50,7 +50,9 @@ export const LatencyWaterfallPanel = memo(function LatencyWaterfallPanel({
   stats: LatencyStats | null;
   compact?: boolean;
 }) {
-  const w = latencyWaterfall(events, stats ?? null);
+  /** Waterfall is a filter/aggregate chain — memoized so a parent re-render
+   *  with unchanged props costs nothing (R1 §5.1). */
+  const w = useMemo(() => latencyWaterfall(events, stats ?? null), [events, stats]);
   if (!w.bars.length) {
     return (
       <section className="dti-section" aria-label="Latency waterfall">
@@ -125,8 +127,18 @@ export const LatencyWaterfallPanel = memo(function LatencyWaterfallPanel({
 
 /** §40 — freshness display: event.freshness verbatim, with a restating tone. */
 export const FreshnessPanel = memo(function FreshnessPanel({ events }: { events: TraceEvent[] }) {
-  const withFreshness = events.filter((e) => e.freshness !== undefined && e.freshness !== null);
-  if (!withFreshness.length) {
+  /** filter + sort + slice chain memoized (R1 §5.1): newest 6 carrying a
+   *  runtime freshness word. `.filter` already yields a fresh array, so the
+   *  sort never touches the store's event list. */
+  const newest = useMemo(
+    () =>
+      events
+        .filter((e) => e.freshness !== undefined && e.freshness !== null)
+        .sort((a, b) => b.sequence - a.sequence)
+        .slice(0, 6),
+    [events],
+  );
+  if (!newest.length) {
     return (
       <section className="dti-section" aria-label="Freshness">
         <div className="dti-section-head">FRESHNESS — data age verdict</div>
@@ -140,21 +152,17 @@ export const FreshnessPanel = memo(function FreshnessPanel({ events }: { events:
     <section className="dti-section" aria-label="Freshness">
       <div className="dti-section-head">FRESHNESS — data age verdict</div>
       <div className="dti-stream">
-        {withFreshness
-          .slice()
-          .sort((a, b) => b.sequence - a.sequence)
-          .slice(0, 6)
-          .map((e) => {
-            const word = freshnessWord(e);
-            return (
-              <div className="dti-stream-row" key={e.event_id} style={{ cursor: "default" }}>
-                <span className="stage">{e.stage}</span>
-                <span className={`dti-word tone-${freshnessTone(word) === "fresh" ? "ok" : freshnessTone(word) === "stale" ? "warn" : freshnessTone(word) === "invalid" ? "fail" : "unknown"}`}>
-                  {word}
-                </span>
-              </div>
-            );
-          })}
+        {newest.map((e) => {
+          const word = freshnessWord(e);
+          return (
+            <div className="dti-stream-row" key={e.event_id} style={{ cursor: "default" }}>
+              <span className="stage">{e.stage}</span>
+              <span className={`dti-word tone-${freshnessTone(word) === "fresh" ? "ok" : freshnessTone(word) === "stale" ? "warn" : freshnessTone(word) === "invalid" ? "fail" : "unknown"}`}>
+                {word}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -165,7 +173,8 @@ export const FreshnessPanel = memo(function FreshnessPanel({ events }: { events:
  * in the trace renders NO ERROR OBSERVED (never an invented root cause).
  */
 export const ErrorCascadePanel = memo(function ErrorCascadePanel({ events }: { events: TraceEvent[] }) {
-  const cascade = errorCascade(events);
+  /** Error-chain walk memoized — same inputs, no re-walk per render (R1 §5.1). */
+  const cascade = useMemo(() => errorCascade(events), [events]);
   if (!cascade.nodes.length) {
     return (
       <section className="dti-section" aria-label="Error cascade">

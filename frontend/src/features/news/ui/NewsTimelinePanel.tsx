@@ -6,12 +6,14 @@
  */
 
 import { useMemo, useState } from "react";
-import { DataTable, EmptyState, ErrorState, Panel, Segmented } from "@/components/primitives";
+import { EmptyState, ErrorState, Panel, Segmented } from "@/components/primitives";
 import { formatDateTime, formatNumber, formatPct } from "@/lib/format";
 import { useI18n } from "@/stores/i18nStore";
 import { useNewsImpact, useNewsTimeline } from "../hooks";
 import { dirWord, timelineWindow } from "../model";
+import type { NewsImpactRow } from "../types";
 import { NewsImpactCanvas } from "./NewsImpactCanvas";
+import { NewsSortTable, type SortColumn } from "./NewsSortTable";
 import { FreshnessNote, asErrorText } from "./shared";
 
 type TfId = "15m" | "1h" | "4h" | "1d";
@@ -33,6 +35,21 @@ export function NewsTimelinePanel() {
 
   const timeline = useNewsTimeline(bucket, hours);
   const impact = useNewsImpact(asset, 40);
+
+  // perf: the sortable header (localized labels + sort extractors) is built
+  // once per translation identity, not on every render of the 40-row table.
+  const impactColumns = useMemo<SortColumn<NewsImpactRow>[]>(
+    () => [
+      { key: "evaluated", label: t("news.timeline.h_evaluated", "evaluated"), sortValue: (im) => (im.evaluated_at ? Date.parse(im.evaluated_at) : null) },
+      { key: "direction", label: t("news.timeline.h_direction", "direction"), sortValue: (im) => (im.direction ?? "NEUTRAL").toUpperCase() },
+      { key: "strength", label: t("news.timeline.h_strength", "strength"), num: true, sortValue: (im) => im.strength ?? null },
+      { key: "relevance", label: t("news.timeline.h_relevance", "relevance"), num: true, sortValue: (im) => im.relevance ?? null },
+      { key: "confidence", label: t("news.timeline.h_confidence", "confidence"), num: true, sortValue: (im) => im.confidence ?? null },
+      { key: "horizon", label: t("news.timeline.h_horizon", "horizon"), sortValue: (im) => im.horizon ?? null },
+      { key: "article", label: t("news.timeline.h_article", "article"), sortValue: (im) => im.article_id ?? null },
+    ],
+    [t],
+  );
 
   const buckets = timeline.data ?? [];
   // perf: window derivation (first/last/sum over the bucket array) once per
@@ -130,19 +147,13 @@ export function NewsTimelinePanel() {
           )}
         />
       ) : (
-        <DataTable
-          headers={[
-            { label: t("news.timeline.h_evaluated", "evaluated") },
-            { label: t("news.timeline.h_direction", "direction") },
-            { label: t("news.timeline.h_strength", "strength"), num: true },
-            { label: t("news.timeline.h_relevance", "relevance"), num: true },
-            { label: t("news.timeline.h_confidence", "confidence"), num: true },
-            { label: t("news.timeline.h_horizon", "horizon") },
-            { label: t("news.timeline.h_article", "article") },
-          ]}
-        >
-          {(impact.data ?? []).map((im, i) => (
-            <tr key={`${im.id ?? i}`}>
+        <NewsSortTable
+          columns={impactColumns}
+          rows={impact.data ?? []}
+          rowKey={(im, i) => `${im.id ?? i}`}
+          label={t("news.timeline.recent_title", "Recent impact records · {asset}", { asset })}
+          renderCells={(im) => (
+            <>
               <td>{im.evaluated_at ? formatDateTime(im.evaluated_at) : "—"}</td>
               <td>
                 <span className={`news-dir ${(im.direction ?? "NEUTRAL").toUpperCase()}`}>
@@ -154,9 +165,9 @@ export function NewsTimelinePanel() {
               <td className="num">{formatNumber(im.confidence, 3)}</td>
               <td>{im.horizon ?? "—"}</td>
               <td className="inline-mono">{String(im.article_id ?? "—").slice(0, 10)}</td>
-            </tr>
-          ))}
-        </DataTable>
+            </>
+          )}
+        />
       )}
     </Panel>
   );

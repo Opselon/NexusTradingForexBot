@@ -1,0 +1,208 @@
+/* ==========================================================================
+ * PURPOSE:  Hero header surface for the decision-trace page — kicker →
+ *           glyph + gradient title → description + endpoint provenance
+ *           chips | status side, matching the wave's merged heroes.
+ * OWNER:    uiux-modern-20260926 lane 6 (decision-trace) — future edits here.
+ * CONSUMES: styles/theme.css tokens only (`--bg* --elev* --border* --text*
+ *           --accent --green --red --amber --mono --panel-gap`); consumed by
+ *           ui/TraceHeader.tsx (imported by ui/DecisionTracePage.tsx).
+ * PROVIDES: `.dt-hero*`, `.dt-eyebrow*`, `.dt-title*`, `.dt-ep*`,
+ *           `.dt-status-*` rules.
+ * INVARIANTS: class prefix `dt` (contract §3); no bare hex (tokens /
+ *           rgba() / color-mix() only); logical properties only (RTL-safe);
+ *           NO filter/backdrop-filter on this surface (visual hot path);
+ *           endpoint chips are provenance text, never controls.
+ * EXTEND:   new hero visuals = new `.dt-*` rules here, never elsewhere.
+ * ========================================================================== */
+
+.dt-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+/* Fine grid texture clipped to the hero — decoration only, never data. */
+.dt-hero-mesh {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background-image:
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--border-strong) 45%, transparent) 0 1px, transparent 1px 30px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--border-strong) 45%, transparent) 0 1px, transparent 1px 30px);
+  -webkit-mask-image: radial-gradient(120% 130% at 88% -20%, var(--bg) 0%, transparent 68%);
+  mask-image: radial-gradient(120% 130% at 88% -20%, var(--bg) 0%, transparent 68%);
+}
+
+.dt-hero-main {
+  position: relative;
+  z-index: 1;
+  min-inline-size: 0;
+  flex: 1 1 420px;
+}
+
+/* ------------------------------------------------------------- kicker */
+.dt-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.dt-eyebrow-dot {
+  inline-size: 6px;
+  block-size: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.dt-eyebrow-rule {
+  flex: 1;
+  min-inline-size: 48px;
+  block-size: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-strong) 22%, var(--border-strong) 78%, transparent);
+}
+
+/* -------------------------------------------------- glyph + gradient title */
+.dt-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-block-start: 8px;
+}
+.dt-hero-glyph {
+  flex-shrink: 0;
+  font-size: 15px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.dt-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  background: linear-gradient(100deg, var(--text) 30%, var(--accent-strong) 75%, var(--violet) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ------------------------------------------------------------ description */
+.dt-hero-desc {
+  margin: 7px 0 0;
+  max-inline-size: 74ch;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* ---------------------------------------------- endpoint provenance chips */
+.dt-hero-endpoints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block-start: 10px;
+}
+.dt-ep {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-inset);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.dt-ep-dot {
+  inline-size: 5px;
+  block-size: 5px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--green) 60%, transparent);
+}
+
+/* ------------------------------------------------------------ status side */
+.dt-hero-side {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-inline-size: 190px;
+}
+.dt-status-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-inset);
+}
+.dt-status-dot {
+  inline-size: 8px;
+  block-size: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.dt-status-label {
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.dt-status-value {
+  margin-inline-start: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+}
+/* Colour + glow only: the word itself always comes from the backend token. */
+.dt-status-pill.ok { border-color: color-mix(in srgb, var(--green) 60%, var(--border)); }
+.dt-status-pill.ok .dt-status-dot { background: var(--green); box-shadow: var(--glow-green); }
+.dt-status-pill.ok .dt-status-value { color: var(--green); }
+.dt-status-pill.fail { border-color: color-mix(in srgb, var(--red) 60%, var(--border)); }
+.dt-status-pill.fail .dt-status-dot { background: var(--red); }
+.dt-status-pill.fail .dt-status-value { color: var(--red); }
+.dt-status-pill.warn { border-color: color-mix(in srgb, var(--amber) 60%, var(--border)); }
+.dt-status-pill.warn .dt-status-dot { background: var(--amber); }
+.dt-status-pill.warn .dt-status-value { color: var(--amber); }
+.dt-status-pill.unknown .dt-status-value { color: var(--text-faint); }
+
+/* The glow breathes only when motion is welcome; with motion off the dot is
+ * simply steady (contract §3: motion is decoration). */
+@media (prefers-reduced-motion: no-preference) {
+  .dt-status-pill.ok .dt-status-dot { animation: dt-status-pulse 2s ease-in-out infinite; }
+}
+@keyframes dt-status-pulse {
+  0%, 100% { box-shadow: 0 0 0 color-mix(in srgb, var(--green) 0%, transparent); }
+  50%      { box-shadow: var(--glow-green); }
+}
+
+/* ---------------------------------------------------------- identity rail */
+.dt-header-rail {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-start;
+  padding-block-start: 10px;
+  border-block-start: 1px solid var(--border);
+}

@@ -31,6 +31,8 @@ export const MESSAGES: FeatureMessages = {
   "trace.replay.position": { fa: "{pos} / {total} رویداد", de: "{pos} / {total} Ereignisse", es: "{pos} / {total} eventos", ar: "{pos} / {total} أحداث" },
   "trace.replay.exit_aria": { fa: "خروج از بازپخش", de: "Wiederholung verlassen", es: "Salir de la repetición", ar: "الخروج من إعادة التشغيل" },
   "trace.inspector.contract_value": { fa: "{contract} (منبع: {source})", de: "{contract} (Quelle: {source})", es: "{contract} (fuente: {source})", ar: "{contract} (المصدر: {source})" },
+  "trace.header.endpoints": { fa: "نقاط پایانی که این صفحه می‌خوانَد", de: "von dieser Seite gelesene Backend-Endpunkte", es: "puntos finales del backend que lee esta página", ar: "نقاط النهاية التي تقرأها هذه الصفحة" },
+  "trace.header.endpoint_title": { fa: "منبع — نقطه پایانی {ep}: هر عدد این صفحه از همین نقطه خوانده می‌شود، هرگز اینجا استنباط نمی‌شود", de: "Provenienz — Backend-Endpunkt {ep}: jede Zahl auf dieser Seite wird daraus gelesen, hier nie abgeleitet", es: "Procedencia — endpoint del backend {ep}: cada cifra de esta página se lee de aquí, nunca se infiere aquí", ar: "المصدر — نقطة النهاية {ep}: كل رقم في هذه الصفحة يُقرأ منها، ولا يُستنتج هنا أبدًا" },
   // ---- header rail: labels
   "trace.header.eyebrow": { fa: "قابلیت مشاهده توپولوژی زمان اجرا", de: "Laufzeit-Topologie-Observability", es: "Observabilidad de topología en tiempo de ejecución", ar: "إمكانية رصد طوبولوجيا وقت التشغيل" },
   "trace.header.title": { fa: "ردیابی تصمیم", de: "Entscheidungs-Trace", es: "Trazo de decisiones", ar: "تتبع القرار" },

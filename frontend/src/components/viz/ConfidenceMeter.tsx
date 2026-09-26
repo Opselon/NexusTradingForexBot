@@ -35,7 +35,9 @@ export function ConfidenceMeter({ value, label, alias, tone }: ConfidenceMeterPr
     >
       <div className="cm-name">{name}</div>
       <div className="cm-track-wrap">
-        <div className="cm-track">
+        {/* `.unknown` = the backend sent no ratio: dashed rail, hatched
+            inset, NO fill bar (a missing value must not read as 0). */}
+        <div className={`cm-track${ratio === null ? " unknown" : ""}`}>
           {ratio !== null && (
             <div className={`cm-fill ${toneCls}`} style={{ width: `${ratio * 100}%` }} />
           )}

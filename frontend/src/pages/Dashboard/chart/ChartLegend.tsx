@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { Bar } from "@/types/domain";
 import type { ChartHistoryResponse } from "@/pages/_shared/contracts";
@@ -68,7 +68,14 @@ export function ChartLegend({ hovered, last, digits, timeframe, symbol }: ChartL
   // Countdown describes the LIVE forming bar (not the hovered one): next
   // boundary = last bar time + median spacing of the last 5 completed bars.
   const forming = last !== null && last.is_complete === false;
-  const spacingMs = forming && last ? medianBarSpacing(historyBars(qc, symbol, timeframe)) : null;
+  // Perf: this component re-renders every second (the countdown tick), and the
+  // derivation above walks the WHOLE react-query cache via findAll() to find
+  // the freshest chart-history entry. Memoised on its real inputs so the cache
+  // scan runs only when the bar/symbol/timeframe change — same output.
+  const spacingMs = useMemo(
+    () => (forming && last ? medianBarSpacing(historyBars(qc, symbol, timeframe)) : null),
+    [qc, forming, last, symbol, timeframe],
+  );
   const lastMs = last ? Date.parse(last.time) : NaN;
   const boundary = spacingMs !== null && Number.isFinite(lastMs) ? lastMs + spacingMs : null;
 

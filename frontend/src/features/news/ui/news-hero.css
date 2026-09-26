@@ -1,0 +1,277 @@
+/**
+ * PURPOSE:  hero header surface for the News page — kicker, gradient title,
+ *           description, endpoint provenance chips and the query-status rail.
+ * OWNER:    uiux-modern-20260926 lane 8 (news) — future edits go here.
+ * CONSUMES: theme tokens only (--bg-panel*, --bg-inset, --elev-1, --border*,
+ *           --text*, --accent*, --green/red, --glow-accent, --mono,
+ *           --panel-gap, --card-pad, --skeleton treatment in theme.css).
+ * PROVIDES: .news-hero*, .news-kicker*, .news-title, .news-desc,
+ *           .news-endpoints, .news-ep*, .news-rail-* (prefix `news-`, the
+ *           feature namespace).
+ * INVARIANTS: no bare hex outside rgba()/color-mix(); logical properties
+ *           only; the mesh overlay is static (no animation, no filter/blur).
+ * EXTEND:   new rail cells belong in NewsHero.tsx — style them through
+ *           .news-rail-cell, never with a one-off selector here.
+ */
+
+.news-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--panel-gap);
+  flex-wrap: wrap;
+  padding: calc(var(--card-pad) * 1.4) calc(var(--card-pad) * 1.5);
+  margin-block-end: var(--panel-gap);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background:
+    radial-gradient(120% 150% at 0% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 62%),
+    linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
+  box-shadow: var(--elev-1);
+  overflow: hidden;
+}
+.news-hero::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 0;
+  block-size: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--accent) 65%, transparent),
+    color-mix(in srgb, var(--violet) 45%, transparent),
+    transparent
+  );
+}
+
+/* static engineering grid — decorative only, painted once */
+.news-hero-mesh {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--border) 70%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--border) 70%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 72%);
+}
+
+.news-hero-main {
+  position: relative;
+  min-inline-size: 0;
+  flex: 1 1 460px;
+}
+
+/* ---- kicker: dot + letterspaced label + fading hairline ---- */
+.news-kicker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.news-kicker-dot {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 9px var(--glow-accent);
+  flex-shrink: 0;
+}
+.news-kicker-rule {
+  flex: 1 1 auto;
+  min-inline-size: 32px;
+  block-size: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, transparent), transparent);
+}
+
+/* ---- title: glyph chip + gradient word ---- */
+.news-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 9px 0 6px;
+  font-size: clamp(22px, 2.6vw, 30px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.12;
+}
+.news-title .glyph {
+  font-family: var(--mono);
+  font-size: 0.72em;
+  font-weight: 700;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 9px;
+  padding: 5px 8px;
+}
+.news-title .word {
+  color: var(--text);
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .news-title .word {
+    background: linear-gradient(115deg, var(--text) 32%, var(--accent-strong));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+.news-desc {
+  margin: 0;
+  max-width: 84ch;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+/* ---- endpoint provenance chips ---- */
+.news-endpoints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block-start: 12px;
+}
+.news-ep {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+  background: var(--bg-inset);
+  border: 1px dashed var(--border-strong);
+  border-radius: 999px;
+  padding: 3px 9px;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.news-ep:hover {
+  color: var(--text-dim);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+}
+.news-ep-dot {
+  inline-size: 4px;
+  block-size: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+/* ---- source rail: one cell per mounted query (state, not a verdict) ---- */
+.news-hero-side {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(140px, 1fr));
+  gap: 8px;
+  align-content: start;
+  flex: 0 1 auto;
+}
+.news-rail-cell {
+  display: grid;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-inset) 72%, transparent);
+}
+.news-rail-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.news-rail-k {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.news-rail-v {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  min-block-size: 16px;
+  display: flex;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+
+/* status glow dot — pulse only when motion is welcome */
+.news-rail-dot {
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-faint);
+}
+.news-rail-ok {
+  background: var(--green);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--green) 65%, transparent);
+}
+.news-rail-bad {
+  background: var(--red);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--red) 65%, transparent);
+}
+/* sizes the shared .skeleton bar (theme.css owns the shimmer sweep) to the rail */
+.news-rail-busy {
+  display: block;
+  border-radius: 5px;
+  inline-size: 72%;
+  block-size: 12px;
+}
+.news-hero-fresh {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .news-rail-ok {
+    animation: news-rail-pulse 2.4s ease-in-out infinite;
+  }
+}
+@keyframes news-rail-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 5px color-mix(in srgb, var(--green) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 11px color-mix(in srgb, var(--green) 85%, transparent);
+  }
+}
+
+/* ---- responsive ---- */
+@media (max-width: 880px) {
+  .news-hero-side {
+    inline-size: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+  .news-title {
+    font-size: 22px;
+  }
+}
+
+/* ---- motion is decoration: the hero must read fine without it ---- */
+@media (prefers-reduced-motion: reduce) {
+  .news-ep {
+    transition: none;
+  }
+  .news-rail-ok {
+    animation: none;
+  }
+  .news-rail-busy::after {
+    animation: none;
+  }
+}

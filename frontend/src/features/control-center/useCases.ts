@@ -61,6 +61,10 @@ export const controlCenterUseCases = {
   toggleEngine: async (active: boolean): Promise<LegacyMutationResult> => toMutationToggle(await controlCenterApi.toggleEngine(active)),
   setMode: async (mode: string): Promise<LegacyMutationResult> => toMutationMode(await controlCenterApi.setMode(mode)),
 
-  /** Decisions with unparseable payload are KEPT and flagged (never dropped). */
-  decisionKey: (r: OperatorDecisionRow): string => String(r.id ?? r.request_id ?? Math.random()),
+  /** Decisions with unparseable payload are KEPT and flagged (never dropped).
+   *  Deterministic key: a Math.random() fallback remounted those rows on every
+   *  render (the tape re-renders each second) — identity now comes from the
+   *  ledger's own fields only, never from a random token. */
+  decisionKey: (r: OperatorDecisionRow): string =>
+    String(r.id ?? r.request_id ?? `${r.generated_at ?? ""}|${r.action ?? ""}|${r.decision_stage ?? ""}|${r.reason_code ?? ""}`),
 };

@@ -23,17 +23,6 @@
   }
 }
 
-.sd-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-block-size: 72px;
-  color: var(--text-faint);
-  font-size: 11px;
-  font-family: var(--mono);
-}
-
 .sd-meter-list { display: flex; flex-direction: column; gap: 2px; max-block-size: 340px; overflow-y: auto; }
 
 .sd-view-toggle {
@@ -56,6 +45,13 @@
 }
 .sd-view-toggle button:hover { color: var(--text); background: var(--bg-panel-2); }
 .sd-view-toggle button.active { color: var(--accent); background: var(--paper-blue-bg); }
+
+.sd-view-toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* motion is decoration — view toggles and meters must read fine with it off */
+@media (prefers-reduced-motion: reduce) {
+  .sd-view-toggle button { transition: none; }
+}
 
 .sd-note { margin-block-start: 8px; }
 .tiny { font-size: 9.5px; }

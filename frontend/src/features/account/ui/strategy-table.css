@@ -16,15 +16,17 @@
   color: var(--text);
   font-family: var(--mono);
   font-size: 11.5px;
-  padding: 5px 26px 5px 9px;
-  outline: none;
+  padding-block: 5px;
+  padding-inline: 9px 26px;
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 .st-search-input::placeholder { color: var(--text-faint); }
 .st-search-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(65, 166, 242, 0.12);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
 }
+/* the global :focus-visible outline from theme.css carries the a11y ring */
+.st-search-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .st-search-clear {
   margin-inline-start: -24px;
   background: none;
@@ -69,15 +71,34 @@
 .st-table thead th.st-num:hover { color: var(--text); }
 .st-table thead th.st-active { color: var(--accent); }
 .st-th-label { margin-inline-end: 4px; }
+/* sortable headers are real <button>s so the sort is reachable by keyboard */
+.st-th-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.st-table thead th.st-num .st-th-btn { margin-inline-start: auto; }
+.st-th-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .st-sort-ico { font-size: 8px; opacity: 0.55; }
 .st-table thead th.st-active .st-sort-ico { opacity: 1; color: var(--accent); }
 
 .st-table tbody tr { transition: background-color 0.1s ease; }
 .st-table tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.012); }
 .st-table tbody tr:hover td { background: var(--bg-panel-2); }
+.st-table tbody tr:focus-visible td { background: var(--bg-panel-2); outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .st-td {
-  padding: 7px 10px;
+  /* --row-pad: identical 7px at default density, tightens under body.dense */
+  padding: var(--row-pad) 10px;
   border-block-end: 1px solid rgba(255, 255, 255, 0.035);
   font-variant-numeric: tabular-nums;
 }
@@ -102,6 +123,14 @@
 .st-id { font-size: 11px; color: var(--text-dim); letter-spacing: 0.02em; }
 .st-copy-ico { font-size: 10px; color: var(--text-faint); transition: color 0.12s ease; }
 .st-id-btn:hover .st-copy-ico { color: var(--accent); }
+
+/* motion is decoration — the table must read fine with it off */
+@media (prefers-reduced-motion: reduce) {
+  .st-search-input,
+  .st-id-btn,
+  .st-table tbody tr,
+  .st-copy-ico { transition: none; }
+}
 
 .st-empty {
   display: flex;

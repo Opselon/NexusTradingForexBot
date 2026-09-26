@@ -7,6 +7,7 @@
  */
 
 import { memo, useMemo } from "react";
+import { ErrorState, Skeleton } from "@/components/primitives";
 import { useI18n } from "@/stores/i18nStore";
 import type { TraceEvent } from "../types";
 
@@ -15,6 +16,10 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   limit?: number;
+  /** True while the observer stream is still opening and nothing arrived yet. */
+  pending?: boolean;
+  /** Backend's own stream failure words — rendered instead of the empty state. */
+  error?: string | null;
 }
 
 const STAGE_GROUPS: Record<string, string> = {
@@ -101,12 +106,26 @@ export const TraceEventRow = memo(function TraceEventRow({
   );
 });
 
-export function TraceEventList({ events, selectedId, onSelect, limit = 140 }: Props) {
+export function TraceEventList({ events, selectedId, onSelect, limit = 140, pending, error }: Props) {
   const t = useI18n((s) => s.t);
   const rows = useMemo(() => {
     const sorted = events.slice().sort((a, b) => b.sequence - a.sequence);
     return sorted.slice(0, limit);
   }, [events, limit]);
+
+  // State order (pages/_shared/SectionState quality bar): loading → error → empty.
+  if (!rows.length && pending) {
+    return (
+      <div className="dt-ev-empty" role="status">
+        <div className="dt-ev-empty-title">{t("ui.state.loading", "Loading backend state…")}</div>
+        <Skeleton count={6} height={12} />
+      </div>
+    );
+  }
+
+  if (!rows.length && error) {
+    return <ErrorState message={error} />;
+  }
 
   if (!rows.length) {
     return (

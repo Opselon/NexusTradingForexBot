@@ -13,7 +13,7 @@
  * never by ad-hoc token probing.
  */
 
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 // Wave 6 (perf): the seven legacy routes are code-split like the feature
@@ -110,18 +110,22 @@ function LangRow() {
   return (
     <div className="side-row">
       <span>{t("ux.lang.label", "LANGUAGE")}</span>
-      <select
-        className="select lang-select"
-        value={lang}
-        onChange={(e) => setLang(e.target.value as (typeof LANGUAGES)[number]["id"])}
-        aria-label={t("shell.lang.aria", "Language")}
-      >
-        {LANGUAGES.map((l) => (
-          <option key={l.id} value={l.id}>
-            {l.label}
-          </option>
-        ))}
-      </select>
+      {/* Wrapper paints the chevron (::after never renders on a <select>); it
+          is presentation only — same control, same handler, same popup. */}
+      <span className="select-wrap">
+        <select
+          className="select lang-select"
+          value={lang}
+          onChange={(e) => setLang(e.target.value as (typeof LANGUAGES)[number]["id"])}
+          aria-label={t("shell.lang.aria", "Language")}
+        >
+          {LANGUAGES.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+      </span>
     </div>
   );
 }
@@ -132,6 +136,11 @@ export function AppShell() {
   const dense = useUiStore((s) => s.dense);
   const toggleDense = useUiStore((s) => s.toggleDense);
   const [helpOpen, setHelpOpen] = useState(false);
+  // Stable identity for CommandPalette's `commands` useMemo: an inline arrow
+  // prop would be a fresh function on every AppShell render (snapshot poll +
+  // clock tick), invalidating that memo and rebuilding the whole command list
+  // on each one (R1 evidence §5.1, render-cost entry for CommandPalette).
+  const openHelp = useCallback(() => setHelpOpen(true), []);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const t = useI18n((s) => s.t);
@@ -324,7 +333,7 @@ export function AppShell() {
       <a className="skip-link" href="#main-content">{t("shell.skip_content", "Skip to content")}</a>
       <aside aria-label={t("shell.sidebar.landmark", "Sidebar")} className={`sidebar ${collapsed ? "collapsed" : ""}`}>
         <div className="brand">
-          <div className="brand-logo">NSE</div>
+          <div className="brand-logo" aria-hidden="true">NSE</div>
           <div className="brand-text">
             NEXUS SCALP ENGINE
             <span className="sub">PRO CONSOLE</span>
@@ -373,6 +382,11 @@ export function AppShell() {
 
       <div className="main-col">
         <header aria-label={t("shell.topbar.aria", "Top bar")} className="topbar">
+          {/* Two visual groups (IM1): engine state on the start side, clock +
+              feed on the end side, split by a hairline — the bar parses as
+              regions instead of one long row of pills. Same chips, same data,
+              presentation only. */}
+          <div className="topbar-group">
             <ModeIndicator snapshot={snapshot} />
             <span className="conn-chip" title={t("shell.engine.title", "Engine loop state (backend-authoritative)")}>
               <span className={`conn-dot ${snapshot?.engine_running ? "connected" : snapshot ? "disconnected" : "reconnecting"}`} />
@@ -389,8 +403,10 @@ export function AppShell() {
               <FreshnessMeter label="DEC" state={lf?.decision?.state} ageMs={lf?.decision?.age_ms ?? ageSecToMs(snapshot.diagnostics.proposal_age_sec)} />
             </span>
           )}
-          {snapshot?.symbol && <span className="inline-mono small muted">{snapshot.symbol} M1</span>}
+            {snapshot?.symbol && <span className="inline-mono small muted">{snapshot.symbol} M1</span>}
+          </div>
           <span className="spacer" />
+          <div className="topbar-group topbar-end">
           <span className="timestamp-note" title={t("shell.clock.title", "Local wall clock (visual aid)")}>
             {new Date(nowMs).toLocaleTimeString("en-GB", { hour12: false })} · v{snapshot?.state_version ?? "—"}
           </span>
@@ -401,6 +417,7 @@ export function AppShell() {
               queryClient.invalidateQueries({ queryKey: ["engine-snapshot"] });
             }}
           />
+          </div>
         </header>
 
         {!showAuthBanner && <AttentionStrip snapshot={snapshot} feed={realtimeStatus} nowMs={nowMs} />}
@@ -457,7 +474,7 @@ export function AppShell() {
         </main>
       </div>
       <ToastHost />
-      <CommandPalette onOpenHelp={() => setHelpOpen(true)} />
+      <CommandPalette onOpenHelp={openHelp} />
       {helpOpen && (
         <ConfirmModal
           title={t("ux.shortcut.help", "Keyboard shortcuts")}

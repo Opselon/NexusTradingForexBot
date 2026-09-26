@@ -12,11 +12,12 @@
  * fights a tab's pause control and never invents a value: missing data
  * renders as "—", and every figure is a verbatim backend field.
  *
- * Styling: ./debug.css (namespaced `dbg-`), imported here so the feature is
- * self-contained — no other page loads it.
+ * Styling: ./debug.css + ./debug-panels.css + ./debug-detail.css (namespaced
+ * `dbg-`, split so each sheet stays under 500 lines), imported here so the
+ * feature is self-contained — no other page loads them.
  */
 
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { ShellPageProps } from "@/app/featureModule";
 import { StatusBadge } from "@/components/primitives";
 import { useI18n } from "@/stores/i18nStore";
@@ -33,6 +34,8 @@ import { TraceTab } from "./tabs/TraceTab";
 import { ResearchTab } from "./tabs/ResearchTab";
 import { OpsTab } from "./tabs/OpsTab";
 import "./debug.css";
+import "./debug-panels.css";
+import "./debug-detail.css";
 
 type TabId = "state" | "health" | "features" | "freshness" | "ipc" | "compare" | "snapshots" | "modeltest" | "trace" | "research" | "ops";
 
@@ -44,7 +47,7 @@ interface TabDef {
   ep: string;
 }
 
-function useDebugTabs(t: (k: string, fb: string, v?: Record<string, string | number>) => string): TabDef[] {
+function debugTabs(t: (k: string, fb: string, v?: Record<string, string | number>) => string): TabDef[] {
   return [
     { id: "state", label: t("debug.tab.state", "State"), icon: "▦", ep: "/api/debug/state" },
     { id: "health", label: t("debug.tab.health", "Health"), icon: "✚", ep: "/api/debug/health" },
@@ -85,11 +88,18 @@ function modeTone(mode: string | undefined): string {
   return "neutral";
 }
 
-function RailItem({ label, value, tone, title }: { label: string; value: string; tone?: string; title?: string }) {
+function RailItem({ label, value, tone, title, err }: { label: string; value: string; tone?: string; title?: string; err?: string | null }) {
   return (
-    <div className="dbg-rail-item" title={title}>
+    <div className="dbg-rail-item" title={err ?? title}>
       <span className="dbg-rail-label">{label}</span>
-      <span className={`dbg-rail-value ${tone ?? ""}`}>{value}</span>
+      <span className={`dbg-rail-value ${tone ?? ""}`}>
+        {value}
+        {err && (
+          <span className="dbg-rail-err" role="img" aria-label={err} title={err}>
+            !
+          </span>
+        )}
+      </span>
     </div>
   );
 }
@@ -100,6 +110,16 @@ function StatusRail() {
   const state = useDebugStateQuery(true);
   const health = useDebugHealthQuery(true);
   const features = useDebugFeaturesQuery(true);
+
+  // A failed mirror must not read as "not loaded": the rail keeps the absent
+  // value ("—") and carries the backend's own error words instead of a guess.
+  const railErr = (q: { isError: boolean; error: unknown }): string | null =>
+    q.isError
+      ? `${t("debug.rail.query_failed", "query failed — backend message:")}${q.error instanceof Error ? ` ${q.error.message}` : ""}`
+      : null;
+  const errState = railErr(state);
+  const errHealth = railErr(health);
+  const errFeatures = railErr(features);
 
   const rt = (state.data?.runtime ?? {}) as Record<string, unknown>;
   const mode = typeof rt.mode === "string" ? rt.mode : undefined;
@@ -114,6 +134,7 @@ function StatusRail() {
           label={t("debug.rail.engine", "engine")}
           value={mode ?? "—"}
           tone={modeTone(mode)}
+          err={errState}
           title={
             mode
               ? t("debug.rail.engine_title", "mode {mode}{suffix}", {
@@ -124,15 +145,23 @@ function StatusRail() {
           }
         />
       </div>
-      <div className="dbg-rail-cell">
+      <div className="dbg-rail-cell" title={errHealth ?? undefined}>
         <span className="dbg-rail-label">{t("debug.rail.health", "health")}</span>
-        <span className="dbg-rail-value">{health.data ? <StatusBadge status={health.data.overall_status} /> : "—"}</span>
+        <span className="dbg-rail-value">
+          {health.data ? <StatusBadge status={health.data.overall_status} /> : "—"}
+          {errHealth && (
+            <span className="dbg-rail-err" role="img" aria-label={errHealth} title={errHealth}>
+              !
+            </span>
+          )}
+        </span>
       </div>
       <div className="dbg-rail-cell">
         <RailItem
           label={t("debug.rail.vector", "vector")}
           value={features.data ? `${features.data.feature_count}D` : "—"}
           tone={features.data ? (features.data.is_stale ? "stale" : "fresh") : undefined}
+          err={errFeatures}
           title={
             features.data
               ? t("debug.rail.vector_title", "age {age} · threshold {threshold}s · anomalies {anomalies}", {
@@ -149,6 +178,7 @@ function StatusRail() {
           label={t("debug.rail.anomalies", "anomalies")}
           value={features.data ? `${features.data.anomaly_count}` : "—"}
           tone={features.data ? (features.data.anomaly_count > 0 ? "bad" : "fresh") : undefined}
+          err={errFeatures}
           title={
             features.data
               ? t("debug.rail.anomalies_title", "NaN {nan} · Inf {inf} of {total}", {
@@ -178,16 +208,18 @@ function StatusRail() {
 export default function DebugPage(props: ShellPageProps) {
   void props;
   const t = useI18n((s) => s.t);
-  const TABS = useDebugTabs(t);
+  const TABS = useMemo(() => debugTabs(t), [t]);
   const [tab, setTab] = useState<TabId>("state");
   const [cmpA, setCmpA] = useState<string | null>(null);
   const [cmpB, setCmpB] = useState<string | null>(null);
 
-  const sendToCompare = (id: string, slot: "a" | "b") => {
+  // stable identity: the Snapshots tab (its only consumer) is not re-rendered
+  // by every DebugPage render, only by its own query state
+  const sendToCompare = useCallback((id: string, slot: "a" | "b") => {
     if (slot === "a") setCmpA(id);
     else setCmpB(id);
     setTab("compare");
-  };
+  }, []);
 
   return (
     <div className="dbg-page l3-wrap">

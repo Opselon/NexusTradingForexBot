@@ -30,6 +30,7 @@ import {
   SeverityBadge,
 } from "@/components/primitives";
 import { AgeNote, errorText } from "@/pages/_shared/SectionState";
+import PageHero from "@/pages/_shared/PageHero";
 import { Drawer, InfoChip, JsonBlock } from "@/pages/_shared/widgets";
 import { downloadCsv, stampForFilename } from "@/pages/_shared/csv";
 import { formatDateTime, formatMoney, formatNumber } from "@/lib/format";
@@ -38,6 +39,16 @@ import { useI18n } from "@/stores/i18nStore";
 import "@/pages/_shared/pages.css";
 
 const PAGE_SIZE = 25;
+
+/** Endpoints this page reads — provenance chips in the hero, never decoration
+ *  (the same five reads documented in the file header / api/auditApi.ts). */
+const AUDIT_ENDPOINTS = [
+  "/api/v1/observability/events",
+  "/api/v1/audit/events",
+  "/api/v1/incidents",
+  "/api/v1/database/status",
+  "/api/v1/database/integrity",
+] as const;
 
 type Tab = "events" | "ledger" | "incidents" | "db";
 
@@ -187,6 +198,13 @@ export default function AuditPage() {
 
   return (
     <div>
+      <PageHero
+        kicker={t("audit.hero.kicker", "AUDIT · LEDGER · INTEGRITY")}
+        glyph="◎"
+        title={t("nav.page.audit", "Audit")}
+        description={t("audit.hero.desc", "Read-only views over the backend audit layer — the system event stream, the trade ledger, the incident inventory and database integrity. React never touches SQLite; every row is a bounded backend read.")}
+        endpoints={AUDIT_ENDPOINTS}
+      />
       <Panel title={t("audit.panel.db", "Audit database (backend-reported metadata)")}>
         <div className="grid cols-4">
           <div className="metric">

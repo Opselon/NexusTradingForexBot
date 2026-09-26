@@ -1,0 +1,264 @@
+/**
+ * PURPOSE:  hero header surface for the Accounting page (kicker, gradient
+ *           title, description, endpoint provenance chips, source rail).
+ * OWNER:    uiux-modern-20260926 lane 5 (account) — future edits go here.
+ * CONSUMES: theme tokens only (--bg-panel*, --elev-*, --border, --text*,
+ *           --accent, --green/red/amber, --mono, --panel-gap, --card-pad).
+ * PROVIDES: .acc-hero*, .acc-kicker*, .acc-title, .acc-desc, .acc-endpoints,
+ *           .acc-ep*, .acc-rail-* (class prefix acc-, the feature namespace).
+ * INVARIANTS: no bare hex outside rgba()/color-mix(); logical properties only;
+ *           the mesh overlay is static (no animation, no filter/blur).
+ * EXTEND:   new rail cells belong in AccountHero.tsx — style them through
+ *           .acc-rail-cell, never with a one-off selector here.
+ */
+
+.acc-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--panel-gap);
+  flex-wrap: wrap;
+  padding: calc(var(--card-pad) * 1.4) calc(var(--card-pad) * 1.5);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background:
+    radial-gradient(120% 150% at 0% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 62%),
+    linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
+  box-shadow: var(--elev-1);
+  overflow: hidden;
+}
+.acc-hero::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 0;
+  block-size: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 65%, transparent), color-mix(in srgb, var(--violet) 45%, transparent), transparent);
+}
+
+/* static engineering grid — decorative only, painted once */
+.acc-hero-mesh {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--border) 70%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--border) 70%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 72%);
+}
+
+.acc-hero-main {
+  position: relative;
+  min-inline-size: 0;
+  flex: 1 1 460px;
+}
+
+/* ---- kicker: dot + letterspaced label + fading hairline ---- */
+.acc-kicker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.acc-kicker-dot {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 9px var(--glow-accent);
+  flex-shrink: 0;
+}
+.acc-kicker-rule {
+  flex: 1 1 auto;
+  min-inline-size: 32px;
+  block-size: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, transparent), transparent);
+}
+
+/* ---- title: glyph chip + gradient word ---- */
+.acc-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 9px 0 6px;
+  font-size: clamp(22px, 2.6vw, 30px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.12;
+}
+.acc-title .glyph {
+  font-family: var(--mono);
+  font-size: 0.72em;
+  font-weight: 700;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 9px;
+  padding: 5px 8px;
+}
+.acc-title .word {
+  color: var(--text);
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .acc-title .word {
+    background: linear-gradient(115deg, var(--text) 32%, var(--accent-strong));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+.acc-desc {
+  margin: 0;
+  max-width: 84ch;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+/* ---- endpoint provenance chips ---- */
+.acc-endpoints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block-start: 12px;
+}
+.acc-ep {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+  background: var(--bg-inset);
+  border: 1px dashed var(--border-strong);
+  border-radius: 999px;
+  padding: 3px 9px;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.acc-ep:hover {
+  color: var(--text-dim);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+}
+.acc-ep-dot {
+  inline-size: 4px;
+  block-size: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+/* ---- source rail: one cell per mounted query (status, not a verdict) ---- */
+.acc-hero-side {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(132px, 1fr));
+  gap: 8px;
+  align-content: start;
+  flex: 0 1 auto;
+}
+.acc-rail-cell {
+  display: grid;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-inset) 72%, transparent);
+}
+.acc-rail-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.acc-rail-k {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acc-rail-v {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  min-block-size: 16px;
+  display: flex;
+  align-items: center;
+}
+
+/* status glow dot — the pulse is decoration, so it only runs when motion is welcome */
+.acc-rail-dot {
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-faint);
+}
+.acc-rail-ok {
+  background: var(--green);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--green) 65%, transparent);
+}
+.acc-rail-bad {
+  background: var(--red);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--red) 65%, transparent);
+}
+/* shimmer bar reuses the global .skeleton treatment (theme.css owns the
+   ::after sweep + the `shimmer` keyframe); this only sizes it to the rail. */
+.acc-rail-busy {
+  display: block;
+  border-radius: 5px;
+  inline-size: 72%;
+  block-size: 12px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .acc-rail-ok {
+    animation: acc-rail-pulse 2.4s ease-in-out infinite;
+  }
+}
+@keyframes acc-rail-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 5px color-mix(in srgb, var(--green) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 11px color-mix(in srgb, var(--green) 85%, transparent);
+  }
+}
+
+/* ---- responsive ---- */
+@media (max-width: 880px) {
+  .acc-hero-side {
+    inline-size: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  }
+  .acc-title {
+    font-size: 22px;
+  }
+}
+
+/* ---- motion is decoration: the whole hero must read fine without it ---- */
+@media (prefers-reduced-motion: reduce) {
+  .acc-ep {
+    transition: none;
+  }
+  .acc-rail-ok {
+    animation: none;
+  }
+  .acc-rail-busy::after {
+    animation: none;
+  }
+}

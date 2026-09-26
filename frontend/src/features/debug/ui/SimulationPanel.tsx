@@ -12,7 +12,7 @@
  * implies success when the backend refused.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Panel } from "@/components/primitives";
 import { useI18n } from "@/stores/i18nStore";
@@ -24,7 +24,10 @@ type Phase = "idle" | "dispatching" | "dispatched" | "refused" | "failed";
 export function SimulationPanel() {
   const t = useI18n((s) => s.t);
   const pushToast = useUiStore((s) => s.pushToast);
-  const BUTTONS: Array<{ type: SimulationTickType; label: string; hint: string; tone: string }> = [
+  // The three dispatch tiles are rebuilt only when the language changes —
+  // not on every mutation-state render (same labels, same tones, same order).
+  const BUTTONS = useMemo<Array<{ type: SimulationTickType; label: string; hint: string; tone: string }>>(
+    () => [
     { type: "BUY_PRESSURE", label: t("debug.sim.buy", "↑ Buy pressure"), hint: t("debug.sim.buy_hint", "upward pressure tick"), tone: "var(--green)" },
     { type: "SELL_PRESSURE", label: t("debug.sim.sell", "↓ Sell pressure"), hint: t("debug.sim.sell_hint", "downward pressure tick"), tone: "var(--red)" },
     {
@@ -33,7 +36,9 @@ export function SimulationPanel() {
       hint: t("debug.sim.sweep_hint", "deep swing sweep"),
       tone: "var(--amber)",
     },
-  ];
+    ],
+    [t],
+  );
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState<string | null>(null);
 

@@ -12,6 +12,11 @@ import { fmtCompact, scaleLinear } from "./geometry";
 import { useI18n } from "@/stores/i18nStore";
 import "./viz.css";
 
+const W = 560;
+
+/** Default waterfall value format — module-level, one shared closure. */
+const fmtStep = (v: number): string => fmtCompact(v, 2);
+
 export interface WaterfallStep {
   label: string;
   /** Absolute reported value (backend). null = reported as unavailable. */
@@ -26,8 +31,6 @@ export interface PnlWaterfallProps {
   formatValue?: (v: number) => string;
   emptyHint?: string;
 }
-
-const W = 560;
 
 export function buildTradeWaterfall(outcome: {
   gross_pnl?: number | null;
@@ -52,14 +55,22 @@ export function buildTradeWaterfall(outcome: {
 
 export function PnlWaterfall({ steps, height = 170, formatValue, emptyHint }: PnlWaterfallProps) {
   const t = useI18n((s) => s.t);
-  const stepLabel = (raw: string): string =>
-    raw === "gross" ? t("ui.viz.step_gross", "gross")
-      : raw === "commission" ? t("ui.viz.step_commission", "commission")
-        : raw === "commission?" ? t("ui.viz.step_commission_unknown", "commission?")
-          : raw === "swap" ? t("ui.viz.step_swap", "swap")
-            : raw === "swap?" ? t("ui.viz.step_swap_unknown", "swap?")
-              : raw === "net" ? t("ui.viz.step_net", "net")
-                : raw;
+  // Label words depend only on `t`, the formatter only on `formatValue`:
+  // memoizing keeps a parent re-render (live trade panel) from rebuilding two
+  // closures per paint. Output is byte-identical.
+  const stepLabel = useMemo(
+    () =>
+      (raw: string): string =>
+        raw === "gross" ? t("ui.viz.step_gross", "gross")
+          : raw === "commission" ? t("ui.viz.step_commission", "commission")
+            : raw === "commission?" ? t("ui.viz.step_commission_unknown", "commission?")
+              : raw === "swap" ? t("ui.viz.step_swap", "swap")
+                : raw === "swap?" ? t("ui.viz.step_swap_unknown", "swap?")
+                  : raw === "net" ? t("ui.viz.step_net", "net")
+                    : raw,
+    [t],
+  );
+  const fmt = useMemo(() => formatValue ?? fmtStep, [formatValue]);
   const emptyHintText = emptyHint ?? t("ui.viz.pnl_empty", "no PnL decomposition reported");
   // Running levels + scale are a pure function of `steps` (memoized so an
   // unchanged trade never re-derives them); the emitted SVG is byte-identical.
@@ -96,7 +107,6 @@ export function PnlWaterfall({ steps, height = 170, formatValue, emptyHint }: Pn
 
   if (geo === null) return <div className="viz-empty">{emptyHintText}</div>;
   const { bars, toY, zeroY, step, barW } = geo;
-  const fmt = formatValue ?? ((v: number) => fmtCompact(v, 2));
 
   return (
     <div className="viz-frame">

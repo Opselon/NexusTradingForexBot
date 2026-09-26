@@ -46,6 +46,10 @@ const fmtMoney = (v: number): string => moneyOrDash(v);
 /** Stable bucket caption identity for the per-trade waterfall. */
 const bucketLabel = (b: SignedBucket): string => (b.bucket_start ? formatDateTime(b.bucket_start) : "");
 
+/** Stable formatter identities (module scope) — no fresh closures per render. */
+const fmt = (ts?: string): string => (ts ? formatDateTime(ts) : DASH);
+const rangeLabel = (first?: string, last?: string): string => `${fmt(first)} → ${fmt(last)}`;
+
 export function AccountChartsSection() {
   const t = useI18n((s) => s.t);
   const [range, setRange] = useState<RangeId>("all");
@@ -67,6 +71,26 @@ export function AccountChartsSection() {
     () => cum.map((c) => ({ timestamp: c.timestamp, balance: null, equity: c.cumulative_pnl })),
     [cum],
   );
+  // The emphasis strips below take an ARRAY prop: memoize each one so a
+  // re-render does not hand EmphBars a fresh identity and re-scale from scratch.
+  const equityBars = useMemo(
+    () =>
+      points.map((pt, i) => {
+        if (i === 0) return { value: null as number | null };
+        const a = pt.equity;
+        const b = points[i - 1]?.equity ?? null;
+        if (a === null || b === null) return { value: null as number | null };
+        return { value: a - b };
+      }),
+    [points],
+  );
+  const ddBars = useMemo(
+    () => points.map((pt) => ({ value: pt.drawdown_pct ?? null, tone: "neg" as const })),
+    [points],
+  );
+  const cumBars = useMemo(() => cum.map((c) => ({ value: c.net_pnl })), [cum]);
+  const growthLevels = useMemo(() => (growth.data ?? []).map((g) => g.balance), [growth.data]);
+
   const buckets = useMemo(
     () =>
       cum
@@ -82,9 +106,6 @@ export function AccountChartsSection() {
         })),
     [cum],
   );
-
-  const fmt = (ts?: string) => (ts ? formatDateTime(ts) : DASH);
-  const rangeLabel = (first?: string, last?: string) => `${fmt(first)} → ${fmt(last)}`;
 
   return (
     <Panel
@@ -119,17 +140,7 @@ export function AccountChartsSection() {
             <div className="tiny faint" style={{ marginBlockStart: 5 }}>
               {t("account.charts.emph_note_equity", "emphasis bars: per-sample equity move scaled to the largest move in view (derived from the samples above)")}
             </div>
-            <EmphBars
-              bars={points.map((pt, i) => {
-                if (i === 0) return { value: null as number | null };
-                const prev = points[i - 1];
-                const a = pt.equity;
-                const b = prev?.equity ?? null;
-                if (a === null || b === null) return { value: null as number | null };
-                return { value: a - b };
-              })}
-              minPct={8}
-            />
+            <EmphBars bars={equityBars} minPct={8} />
           </Plate>
 
           <Plate
@@ -138,10 +149,7 @@ export function AccountChartsSection() {
             footer={t("account.charts.dd_footer", "worst sample in view shown in meta · depth comes from the accounting core, never recomputed here")}
           >
             <DrawdownChart points={points} maxDrawdownPct={maxDd} />
-            <EmphBars
-              bars={points.map((pt) => ({ value: pt.drawdown_pct ?? null, tone: "neg" as const }))}
-              minPct={8}
-            />
+            <EmphBars bars={ddBars} minPct={8} />
           </Plate>
 
           <Plate
@@ -163,7 +171,7 @@ export function AccountChartsSection() {
                 <div className="tiny faint" style={{ marginBlockStart: 5 }}>
                   {t("account.charts.emph_note_cum", "emphasis bars: each closed trade's net PnL, scaled to the largest |net| on this range (backend values)")}
                 </div>
-                <EmphBars bars={cum.map((c) => ({ value: c.net_pnl }))} minPct={8} />
+                <EmphBars bars={cumBars} minPct={8} />
               </>
             )}
           </Plate>
@@ -204,7 +212,7 @@ export function AccountChartsSection() {
         ) : (
           <>
             <EquityCurveChart points={growth.data ?? []} field="balance" formatValue={(v) => moneyOrDash(v)} />
-            <EmphLevel values={(growth.data ?? []).map((g) => g.balance)} minPct={10} />
+            <EmphLevel values={growthLevels} minPct={10} />
             <div className="tiny faint" style={{ marginBlockStart: 5 }}>
               {t("account.charts.emph_note_growth", "emphasis strip: audit balance levels (min→max scale, backend snapshots only)")}
             </div>

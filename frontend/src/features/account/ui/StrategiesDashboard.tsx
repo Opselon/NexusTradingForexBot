@@ -24,7 +24,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { EmptyState, ErrorState, Panel } from "@/components/primitives";
+import { EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { ConfidenceGauge, ConfidenceMeter } from "@/components/viz";
 import { useI18n } from "@/stores/i18nStore";
 import { useAccountStrategies } from "../hooks";
@@ -96,7 +96,10 @@ export function StrategiesDashboard() {
           }
         >
           {strategies.isPending ? (
-            <div className="sd-loading">{t("account.strategies.loading", "loading contributions…")}</div>
+            <div className="acc-state-loading" role="status">
+              <span>{t("account.strategies.loading", "loading contributions…")}</span>
+              <Skeleton count={3} height={24} />
+            </div>
           ) : strategies.isError ? (
             <ErrorState message={asErrorText(strategies.error)} onRetry={() => strategies.refetch()} />
           ) : rows.length === 0 ? (

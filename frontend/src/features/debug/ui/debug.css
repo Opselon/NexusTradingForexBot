@@ -1,6 +1,16 @@
 /* ==========================================================================
    Debug hub (/alt/debug) — trading-terminal skin for the debug feature.
 
+   SHEET MAP (split so every file stays under 500 lines; imported together
+   by ui/DebugPage.tsx, cascade order = this file first):
+     ./debug.css         page frame, hero header, status rail, tab rail,
+                         focus + reduced-motion blocks
+     ./debug-panels.css  notes/chips, health tile wall, feature grid,
+                         freshness panes, ops, shared in-page refinements
+                         and the responsive frame (@media) rules
+     ./debug-detail.css  sortable tables, compare diff, model test,
+                         execution timeline, JSON viewer
+
    Design language: a dark operator console — layered hero header with a
    grid-plate backdrop and accent glow, gradient display title, endpoint
    chips, a live status rail, pill tab rail with icon tiles, glass panel
@@ -9,16 +19,17 @@
    railed execution timeline.
 
    Rules (same discipline as the rest of the console):
-     - colors come EXCLUSIVELY from theme.css tokens (plus rgba() of them),
-       so a theme swap / body.dense cascades into this feature untouched;
+     - colors come EXCLUSIVELY from theme.css tokens (plus rgba() /
+       color-mix() of them), so a theme swap / body.dense cascades into
+       this feature untouched;
      - every selector is namespaced `dbg-` (or scoped under `.dbg-page`),
        additive — no other feature's markup is affected;
      - logical properties (margin-inline-*, inset-inline-*, border-inline-*)
        everywhere so the RTL console (fa/ar) mirrors correctly;
      - semantics stay backend-authoritative: a color restates a status word
        the backend already sent, never a fabricated verdict;
-     - motion is decorative-only and already neutralized globally by the
-       theme's prefers-reduced-motion override.
+     - motion is decorative-only: neutralized here under
+       prefers-reduced-motion and globally by theme.css.
    ========================================================================== */
 
 /* ------------------------------------------------------------------ *
@@ -46,7 +57,9 @@
 
 .dbg-sec {
   display: grid;
-  gap: 10px;
+  /* section rhythm rides the density token: --panel-gap (14px, 10px dense)
+     so body.dense tightens spacing the same way it tightens rows */
+  gap: var(--dbg-gap);
   animation: dbgSecIn 0.2s ease-out both;
 }
 
@@ -147,7 +160,7 @@
   font-weight: 800;
   letter-spacing: -0.01em;
   line-height: 1.15;
-  background: linear-gradient(92deg, #eef5ff 8%, var(--accent-strong) 55%, var(--violet) 100%);
+  background: linear-gradient(92deg, var(--text) 8%, var(--accent-strong) 55%, var(--violet) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -253,13 +266,13 @@
 
 /* rail value tones — each restates a backend word (LIVE/STALE/…) */
 .dbg-rail-value.live {
-  color: #ff938c;
+  color: color-mix(in srgb, var(--red) 72%, white);
   text-shadow: 0 0 14px rgba(242, 86, 77, 0.45);
   animation: dbgLiveGlow 2.6s ease-in-out infinite;
 }
 
 .dbg-rail-value.paper {
-  color: #86c8fa;
+  color: color-mix(in srgb, var(--accent) 75%, white);
 }
 
 .dbg-rail-value.shadow {
@@ -277,6 +290,17 @@
 
 .dbg-rail-value.neutral {
   color: var(--text-dim);
+}
+
+/* error marker beside an absent rail value: the query failed, so the value
+   stays "—" and the cell carries the backend's own message (title/aria) */
+.dbg-rail-err {
+  display: inline-block;
+  margin-inline-start: 5px;
+  font-weight: 800;
+  color: var(--red);
+  text-shadow: 0 0 10px rgba(242, 86, 77, 0.65);
+  cursor: help;
 }
 
 @keyframes dbgLiveGlow {
@@ -384,771 +408,41 @@
 }
 
 /* ------------------------------------------------------------------ *
- * 5. Notes / safety callouts (scoped refinement of .l3-note)
+ * 19. Focus visibility + reduced motion (once per stylesheet)
  * ------------------------------------------------------------------ */
 
-.dbg-page .l3-note {
-  position: relative;
-  padding-inline-start: 14px;
-  border-radius: var(--dbg-radius-sm);
-  line-height: 1.5;
+.dbg-tab:focus-visible,
+.dbg-chip:focus-visible,
+.dbg-sortbtn:focus-visible,
+.dbg-ep:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-.dbg-page .l3-note::before {
-  content: "";
-  position: absolute;
-  inset-block: 7px;
-  inset-inline-start: 5px;
-  inline-size: 3px;
-  border-radius: 3px;
-  background: var(--accent);
-  opacity: 0.7;
-}
-
-.dbg-page .l3-note.warn::before {
-  background: var(--amber);
-}
-
-.dbg-page .l3-note.bad::before {
-  background: var(--red);
-}
-
-.dbg-page .l3-note.good::before {
-  background: var(--green);
-}
-
-.dbg-safety b {
-  color: var(--amber);
-}
-
-/* ------------------------------------------------------------------ *
- * 6. Section chips (state sections, sort controls)
- * ------------------------------------------------------------------ */
-
-.dbg-chips {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding: 6px;
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-  background: rgba(8, 12, 18, 0.5);
-}
-
-.dbg-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.03em;
-  color: var(--text-dim);
-  background: var(--bg-inset);
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  padding: 2px 11px;
-  cursor: pointer;
-  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease, transform 0.1s ease;
-}
-
-.dbg-chip:hover {
-  color: var(--text);
-  border-color: var(--accent);
-  transform: translateY(-1px);
-}
-
-.dbg-chip.active {
-  color: #d7ecff;
-  border-color: rgba(65, 166, 242, 0.65);
-  background: linear-gradient(180deg, rgba(65, 166, 242, 0.22), rgba(65, 166, 242, 0.08));
-  box-shadow: 0 0 12px -4px rgba(65, 166, 242, 0.75);
-}
-
-.dbg-chip-flag {
-  font-size: 9.5px;
-  font-weight: 700;
-  color: var(--amber);
-}
-
-.dbg-sortctl {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-inline-start: auto;
-  padding: 3px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg-inset);
-}
-
-/* ------------------------------------------------------------------ *
- * 7. Overall health chip in the health toolbar
- * ------------------------------------------------------------------ */
-
-.dbg-overall {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-}
-
-/* ------------------------------------------------------------------ *
- * 8. Health tile wall — status glow rail per subsystem
- * ------------------------------------------------------------------ */
-
-.dbg-health {
-  gap: 12px;
-}
-
-.dbg-tile {
-  position: relative;
-  overflow: hidden;
-  border-radius: var(--dbg-radius-sm);
-  padding: 12px 14px;
-  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
-  animation: dbgTileIn 0.22s ease-out both;
-}
-
-.dbg-tile:nth-child(2) { animation-delay: 0.03s; }
-.dbg-tile:nth-child(3) { animation-delay: 0.06s; }
-.dbg-tile:nth-child(4) { animation-delay: 0.09s; }
-.dbg-tile:nth-child(5) { animation-delay: 0.12s; }
-.dbg-tile:nth-child(6) { animation-delay: 0.15s; }
-
-@keyframes dbgTileIn {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
+@media (prefers-reduced-motion: reduce) {
+  /* every dbg animation is decorative: page/section/tab entrances, tile
+     stagger, tab sweep, live glow, feature pulse and the meter sheen all
+     resolve to their final frame with motion off. */
+  .dbg-page,
+  .dbg-sec,
+  .dbg-tabbody,
+  .dbg-tile,
+  .dbg-ep,
+  .dbg-tab,
+  .dbg-chip,
+  .dbg-feat,
+  .dbg-tab.active::after,
+  .dbg-page .probbar .track i::after {
+    animation: none;
   }
-  to {
-    opacity: 1;
+
+  .dbg-ep:hover,
+  .dbg-tab:hover,
+  .dbg-chip:hover,
+  .dbg-feat,
+  .dbg-tile,
+  .dbg-diff-row:hover {
     transform: none;
-  }
-}
-
-.dbg-tile:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--elev-2);
-}
-
-/* left status rail — color restates the badge on the same tile */
-.dbg-tile::before {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: 0;
-  inline-size: 3px;
-  background: var(--text-faint);
-  opacity: 0.85;
-}
-
-.dbg-tile.good::before {
-  background: var(--green);
-  box-shadow: 0 0 10px rgba(62, 207, 142, 0.7);
-}
-
-.dbg-tile.warn::before {
-  background: var(--amber);
-  box-shadow: 0 0 10px rgba(235, 161, 63, 0.7);
-}
-
-.dbg-tile.bad::before {
-  background: var(--red);
-  box-shadow: 0 0 10px rgba(242, 86, 77, 0.7);
-}
-
-.dbg-tile.good {
-  background: linear-gradient(135deg, rgba(62, 207, 142, 0.06), transparent 55%), var(--bg-panel);
-}
-
-.dbg-tile.warn {
-  background: linear-gradient(135deg, rgba(235, 161, 63, 0.07), transparent 55%), var(--bg-panel);
-}
-
-.dbg-tile.bad {
-  background: linear-gradient(135deg, rgba(242, 86, 77, 0.08), transparent 55%), var(--bg-panel);
-}
-
-.dbg-tile .name {
-  font-size: 12.5px;
-}
-
-.dbg-tile .metrics {
-  border-block-start: 1px dashed var(--border);
-  padding-block-start: 6px;
-}
-
-.dbg-tile .mrow .mk {
-  letter-spacing: 0.04em;
-}
-
-/* dotted leader between metric key and value */
-.dbg-tile .mrow {
-  position: relative;
-}
-
-/* ------------------------------------------------------------------ *
- * 9. Feature contract grid — index-badged value cards
- * ------------------------------------------------------------------ */
-
-.dbg-feats {
-  gap: 8px;
-  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
-}
-
-.dbg-feat {
-  position: relative;
-  border-radius: var(--dbg-radius-sm);
-  padding: 7px 10px;
-  overflow: hidden;
-  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
-}
-
-.dbg-feat:hover {
-  transform: translateY(-2px);
-  border-color: rgba(65, 166, 242, 0.5);
-  box-shadow: 0 8px 18px -12px rgba(65, 166, 242, 0.7);
-}
-
-.dbg-feat .n {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-inline-size: 0;
-}
-
-.dbg-feat-ix {
-  flex-shrink: 0;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--accent-strong);
-  background: rgba(65, 166, 242, 0.12);
-  border: 1px solid rgba(65, 166, 242, 0.3);
-  border-radius: 4px;
-  padding: 0 4px;
-}
-
-.dbg-feat .v {
-  font-weight: 700;
-  color: #cfe6fb;
-}
-
-.dbg-feat.bad {
-  animation: dbgBadPulse 1.6s ease-in-out infinite;
-}
-
-.dbg-feat.bad .dbg-feat-ix {
-  color: #ff938c;
-  background: var(--red-dim);
-  border-color: rgba(242, 86, 77, 0.45);
-}
-
-.dbg-feat.warn .dbg-feat-ix {
-  color: var(--amber);
-  background: var(--amber-dim);
-  border-color: rgba(235, 161, 63, 0.45);
-}
-
-@keyframes dbgBadPulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(242, 86, 77, 0.16);
-  }
-  50% {
-    box-shadow: 0 0 0 3px rgba(242, 86, 77, 0.05);
-  }
-}
-
-/* ------------------------------------------------------------------ *
- * 10. Freshness split panes
- * ------------------------------------------------------------------ */
-
-.dbg-split {
-  gap: 12px;
-}
-
-.dbg-pane {
-  display: grid;
-  gap: 6px;
-  align-content: start;
-  min-inline-size: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--dbg-radius-sm);
-  background: linear-gradient(180deg, var(--elevate-hi), transparent 40%), var(--bg-inset);
-}
-
-/* ------------------------------------------------------------------ *
- * 11. Sortable tables
- * ------------------------------------------------------------------ */
-
-.dbg-table-wrap {
-  border: 1px solid var(--border);
-  border-radius: var(--dbg-radius-sm);
-  overflow: auto;
-  background: var(--bg-inset);
-}
-
-.dbg-table {
-  min-inline-size: 560px;
-}
-
-/* sortable headers zero their own padding (the button carries it);
-   plain headers opt in with class="plain" — no :has() dependency */
-.dbg-table th {
-  padding: 0;
-}
-
-.dbg-table th.plain {
-  padding: 8px 12px;
-}
-
-.dbg-sortbtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  inline-size: 100%;
-  padding: 8px 12px;
-  background: transparent;
-  border: none;
-  color: inherit;
-  font: inherit;
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: color 0.12s ease;
-}
-
-.dbg-table th.num .dbg-sortbtn {
-  justify-content: flex-end;
-}
-
-.dbg-sortbtn:hover {
-  color: var(--accent-strong);
-}
-
-.dbg-sortarrow {
-  font-size: 8px;
-  opacity: 0;
-  transform: translateY(1px);
-  transition: opacity 0.12s ease;
-}
-
-.dbg-sortarrow.on {
-  opacity: 1;
-  color: var(--accent-strong);
-  text-shadow: 0 0 8px rgba(65, 166, 242, 0.8);
-}
-
-.dbg-table th.sorted {
-  color: var(--accent-strong);
-}
-
-.dbg-table tbody tr {
-  transition: background 0.1s ease;
-}
-
-.dbg-table tbody tr:hover td {
-  background: rgba(65, 166, 242, 0.06);
-}
-
-.dbg-table td {
-  font-size: 11.5px;
-}
-
-/* ------------------------------------------------------------------ *
- * 12. Compare — A/B pickers, ab line, signed key-level diff
- * ------------------------------------------------------------------ */
-
-.dbg-compare-pick {
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--dbg-radius-sm);
-  background: linear-gradient(180deg, var(--elevate-hi), transparent 50%), var(--bg-inset);
-}
-
-.dbg-compare-arrow {
-  font-family: var(--mono);
-  font-size: 14px;
-  color: var(--accent-strong);
-  text-shadow: 0 0 10px rgba(65, 166, 242, 0.6);
-}
-
-.dbg-ab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  font-size: 11px;
-}
-
-.dbg-ab .ab-a,
-.dbg-ab .ab-b {
-  padding: 1px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-panel-2);
-}
-
-.dbg-ab .ab-a {
-  color: var(--amber);
-  border-color: rgba(235, 161, 63, 0.45);
-}
-
-.dbg-ab .ab-b {
-  color: var(--accent-strong);
-  border-color: rgba(65, 166, 242, 0.45);
-}
-
-.dbg-diff-scroll {
-  max-height: 420px;
-  overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--dbg-radius-sm);
-  background: var(--bg-inset);
-  padding: 6px 8px;
-}
-
-.dbg-diff {
-  gap: 3px;
-}
-
-.dbg-diff-row {
-  grid-template-columns: 18px minmax(120px, 1.2fr) minmax(0, 1fr) 22px minmax(0, 1fr) 108px;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  border-inline-start: 3px solid transparent;
-  transition: background 0.1s ease, transform 0.1s ease;
-}
-
-.dbg-diff-row:hover {
-  transform: translateX(2px);
-}
-
-.dbg-diff-row .kind {
-  font-weight: 800;
-  text-align: center;
-  opacity: 0.9;
-}
-
-.dbg-diff-row .arrow {
-  color: var(--text-faint);
-  text-align: center;
-}
-
-.dbg-diff-row.added {
-  border-inline-start-color: var(--green);
-}
-
-.dbg-diff-row.added .kind {
-  color: var(--green);
-}
-
-.dbg-diff-row.removed {
-  border-inline-start-color: var(--red);
-}
-
-.dbg-diff-row.removed .kind {
-  color: #ff938c;
-}
-
-.dbg-diff-row.changed {
-  border-inline-start-color: var(--amber);
-}
-
-.dbg-diff-row.changed .kind {
-  color: var(--amber);
-}
-
-/* ------------------------------------------------------------------ *
- * 13. Model test — vector grid, run button, verdict glow
- * ------------------------------------------------------------------ */
-
-.dbg-vector {
-  padding: 8px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--dbg-radius-sm);
-  background: rgba(8, 12, 18, 0.6);
-  max-height: 240px;
-}
-
-.dbg-vector .l3-vector-cell .ix {
-  color: var(--accent-strong);
-  opacity: 0.75;
-}
-
-.dbg-vector .l3-vector-cell input {
-  border-radius: 5px;
-  font-size: 11px;
-}
-
-.dbg-run {
-  letter-spacing: 0.04em;
-  box-shadow: 0 6px 18px -10px rgba(65, 166, 242, 0.9);
-}
-
-.dbg-verdict-wrap {
-  margin-block-start: 12px;
-  display: grid;
-  gap: 8px;
-}
-
-.dbg-verdict .metric {
-  border-radius: var(--dbg-radius-sm);
-}
-
-.dbg-verdict .metric:has(.v.pos) {
-  border-color: rgba(62, 207, 142, 0.45);
-  box-shadow: 0 0 22px -14px rgba(62, 207, 142, 0.9);
-}
-
-.dbg-verdict .metric:has(.v.neg) {
-  border-color: rgba(242, 86, 77, 0.5);
-  box-shadow: 0 0 22px -14px rgba(242, 86, 77, 0.9);
-}
-
-/* probability bars: gradient fill + traveling sheen */
-.dbg-page .probbar .track {
-  block-size: 8px;
-}
-
-.dbg-page .probbar .track i {
-  position: relative;
-  overflow: hidden;
-}
-
-.dbg-page .probbar .track i::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.35) 50%, transparent 70%);
-  transform: translateX(-100%);
-  animation: dbgSheen 2.6s ease-in-out infinite;
-}
-
-@keyframes dbgSheen {
-  0% {
-    transform: translateX(-100%);
-  }
-  55%,
-  100% {
-    transform: translateX(160%);
-  }
-}
-
-/* ------------------------------------------------------------------ *
- * 14. Execution timeline — railed stages
- * ------------------------------------------------------------------ */
-
-.dbg-timeline {
-  position: relative;
-  padding-inline-start: 6px;
-}
-
-.dbg-timeline::before {
-  content: "";
-  position: absolute;
-  inset-block: 6px;
-  inset-inline-start: 104px;
-  inline-size: 1px;
-  background: linear-gradient(180deg, var(--accent), var(--border) 85%);
-  opacity: 0.55;
-}
-
-.dbg-tl-row {
-  position: relative;
-  grid-template-columns: 96px 1fr;
-  gap: 18px;
-  padding: 7px 8px;
-  border-radius: 6px;
-  transition: background 0.1s ease;
-}
-
-.dbg-tl-row:hover {
-  background: rgba(65, 166, 242, 0.05);
-}
-
-/* stage dot on the rail */
-.dbg-tl-row::after {
-  content: "";
-  position: absolute;
-  inset-inline-start: 96px;
-  inset-block-start: 12px;
-  inline-size: 7px;
-  block-size: 7px;
-  border-radius: 50%;
-  background: var(--bg-panel);
-  border: 2px solid var(--accent);
-  box-shadow: 0 0 8px rgba(65, 166, 242, 0.7);
-}
-
-.dbg-tl-row .t {
-  text-align: end;
-  color: var(--text-faint);
-}
-
-.dbg-tl-row .body b {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  letter-spacing: 0.04em;
-  color: var(--text);
-}
-
-/* ------------------------------------------------------------------ *
- * 15. JSON viewer panes — inset terminal look
- * ------------------------------------------------------------------ */
-
-.dbg-json {
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--dbg-radius-sm);
-  background:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 22px),
-    var(--bg-inset);
-  max-height: 460px;
-  overflow: auto;
-}
-
-.dbg-json .l3-json-key {
-  color: #7ec4ff;
-}
-
-/* ------------------------------------------------------------------ *
- * 16. Ops tab — safety surface for the side-effecting panel
- * ------------------------------------------------------------------ */
-
-.dbg-ops {
-  gap: 14px;
-}
-
-.dbg-ops .panel {
-  margin-bottom: 0;
-}
-
-/* ------------------------------------------------------------------ *
- * 17. Small shared refinements inside the debug page
- * ------------------------------------------------------------------ */
-
-.dbg-page .panel {
-  border-radius: var(--dbg-radius);
-  box-shadow: var(--elev-1);
-  transition: box-shadow 0.15s ease;
-}
-
-.dbg-page .panel:hover {
-  box-shadow: var(--elev-2);
-}
-
-.dbg-page .panel-header {
-  background: linear-gradient(180deg, rgba(65, 166, 242, 0.05), transparent 60%);
-  border-radius: var(--dbg-radius) var(--dbg-radius) 0 0;
-}
-
-.dbg-page .metric {
-  min-inline-size: 132px;
-  border-radius: 10px;
-}
-
-.dbg-page .l3-toolbar {
-  gap: 10px;
-}
-
-.dbg-page .section-title {
-  color: var(--text-dim);
-}
-
-.dbg-page .section-title::before {
-  content: "▸ ";
-  color: var(--accent);
-}
-
-.dbg-page .l3-scroll {
-  scrollbar-gutter: stable;
-}
-
-/* split freshness: engine view gets the wider lane (falls back <1200px) */
-@media (min-width: 1201px) {
-  .dbg-split .dbg-pane:first-child {
-    min-inline-size: 0;
-  }
-}
-
-/* ------------------------------------------------------------------ *
- * 18. Responsive — hero stacks, rail wraps, tabs scroll
- * ------------------------------------------------------------------ */
-
-@media (max-width: 1080px) {
-  .dbg-hero {
-    flex-direction: column;
-  }
-
-  .dbg-rail {
-    grid-auto-flow: row;
-    grid-auto-columns: auto;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  }
-
-  .dbg-rail-cell {
-    border-inline-start: 1px solid var(--border);
-    border-block-start: 1px solid var(--border);
-  }
-
-  .dbg-rail-cell:first-child {
-    border-block-start: none;
-  }
-
-  .dbg-tabs {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: thin;
-  }
-
-  .dbg-tab {
-    flex: 0 0 auto;
-  }
-
-  .dbg-diff-row {
-    grid-template-columns: 16px 1fr 1fr 18px 1fr;
-  }
-
-  .dbg-diff-row > span:last-child {
-    display: none; /* status badge column folds under 1080px — kind color carries it */
-  }
-
-  .dbg-timeline::before {
-    inset-inline-start: 74px;
-  }
-
-  .dbg-tl-row {
-    grid-template-columns: 72px 1fr;
-  }
-
-  .dbg-tl-row::after {
-    inset-inline-start: 74px;
-  }
-}
-
-@media (max-width: 720px) {
-  .dbg-hero {
-    padding: 14px;
-  }
-
-  .dbg-title {
-    font-size: 19px;
-  }
-
-  .dbg-feats {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  }
-
-  .dbg-sortctl {
-    margin-inline-start: 0;
+    transition: none;
   }
 }

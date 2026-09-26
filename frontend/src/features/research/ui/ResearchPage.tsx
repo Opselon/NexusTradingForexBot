@@ -16,13 +16,14 @@
  * playbook is documentation; queries above are the data.
  */
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import {
   DataTable,
   EmptyState,
+  ErrorState,
   MetricCard,
   Panel,
   Segmented,
@@ -31,17 +32,62 @@ import {
 } from "@/components/primitives";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { DistBars, FreshnessCaption, GateStepper, InfoRow, StatusPill } from "./lane5Kit";
-import { registryCounters, obj, str, type Row } from "../model";
+import { RsTable, applySort, useSort, type RsColumn, type SortValue } from "./rsTable";
+import { registryCounters, obj, str, type ResearchStrategyVo, type Row } from "../model";
 import { researchQueries, researchUseCases } from "../useCases";
 import { GATE_CHAIN } from "../handbook/gateChain";
 import ResearchCommands from "./ResearchCommands";
 import StrategyDrawer from "./StrategyDrawer";
 import StrategyPlaybookLazy from "./StrategyPlaybookLazy";
 import "./research.css";
+import "./research-hero.css";
 
 type Tab = "registry" | "queue" | "worker" | "analytics" | "history" | "datasets" | "playbook";
 
 const PAGE_SIZE_HINT = "bounded server-side (limit params enforced by the backend)";
+
+type RegistryCol = "strategy" | "lifecycle" | "conf" | "samples" | "score" | "updated";
+
+/** Registry table headers — a `key` marks the column as sortable. */
+const REGISTRY_COLS: Array<RsColumn<RegistryCol>> = [
+  { label: "strategy", key: "strategy", title: "sort by strategy id" },
+  { label: "lifecycle", key: "lifecycle", title: "sort by lifecycle state" },
+  { label: "conf", key: "conf", num: true, title: "sort by confidence" },
+  { label: "samples", key: "samples", num: true, title: "sort by sample count" },
+  { label: "score", key: "score", num: true, title: "sort by score" },
+  { label: "updated", key: "updated", title: "sort by last update" },
+  { label: "" },
+];
+
+/**
+ * Pure accessors over the already-loaded rows: a header click only REORDERS
+ * what the backend returned (null/absent cells sink, never zero-filled).
+ */
+const REGISTRY_ACCESSORS: Record<RegistryCol, (r: ResearchStrategyVo) => SortValue> = {
+  strategy: (r) => r.strategyId,
+  lifecycle: (r) => r.lifecycle,
+  conf: (r) => r.confidence,
+  samples: (r) => r.sampleCount,
+  score: (r) => r.score,
+  updated: (r) => r.updatedAt,
+};
+
+/**
+ * Endpoint provenance chips — verbatim GET paths this page's own queries
+ * issue (see ../api.ts). Provenance only: the chips are a constant list of
+ * the routes already being called, never a trigger for a fetch.
+ */
+const RESEARCH_ENDPOINTS: readonly string[] = [
+  "GET /api/research/summary",
+  "GET /api/research/registry",
+  "GET /api/research/queue",
+  "GET /api/research/worker",
+  "GET /api/research/analytics",
+  "GET /api/research/history",
+  "GET /api/research/diagnostics",
+  "GET /api/v1/research/status",
+  "GET /api/v1/research/datasets",
+];
 
 /** One-line role per chain node in the hero pipeline map (handbook text). */
 const GATE_META: Record<string, string> = {
@@ -60,6 +106,19 @@ function liveTone(status: string | undefined): string {
   if (s === "DEGRADED") return "warn";
   if (s === "STUCK" || s === "FAILED") return "bad";
   return "idle";
+}
+
+/**
+ * Same backend word, mapped to the hero status-pill modifier. The pill only
+ * restates `summary.worker.status` — no frontend verdict, no color invented
+ * for a word the backend did not send.
+ */
+function workerPill(status: string | undefined): string {
+  const s = (status ?? "").toUpperCase();
+  if (s === "HEALTHY") return "on";
+  if (s === "DEGRADED") return "warn";
+  if (s === "STUCK" || s === "FAILED") return "bad";
+  return "unknown";
 }
 
 /**
@@ -93,6 +152,77 @@ function AnimatedNumber({ value }: { value: number }) {
   }, [value]);
   return <span className="rs-kpi-val">{formatNumber(display, 0)}</span>;
 }
+
+/**
+ * §9 error presentation: a read that FAILED renders the shared error surface
+ * with the backend's own message instead of collapsing into the "subsystem
+ * unavailable" empty state, which would misreport a transport failure as an
+ * intentional absence. Read-only — no refetch/retry wiring, no query option,
+ * key or interval touched. Pure: hoisted out of the render body so it is not
+ * re-allocated on every tick.
+ */
+function failed(q: { isError: boolean; error: unknown }): ReactNode {
+  return q.isError ? (
+    <ErrorState message={q.error instanceof Error ? q.error.message : "backend request failed"} />
+  ) : null;
+}
+
+/** Payload that never carried data (available:false / absent) — not an error. */
+function unavailable(data: { available?: boolean; reason?: string } | undefined): ReactNode {
+  return !data || data.available === false ? (
+    <EmptyState message="Research subsystem unavailable" hint={data?.reason ?? "backend answered without availability — nothing to show"} />
+  ) : null;
+}
+
+/**
+ * Hero pipeline nodes — pure function of the static gate chain, so the style
+ * objects (animation delay + --rs-delay) are built once instead of per render.
+ */
+const PIPE_NODES = GATE_CHAIN.map((name, i) => ({
+  key: name,
+  idx: i,
+  name,
+  meta: GATE_META[name] ?? "gate",
+  style: {
+    animationDelay: `${0.06 * i}s`,
+    ["--rs-delay" as string]: `${0.45 * i}s`,
+  } as CSSProperties,
+}));
+
+/**
+ * Registry row, memoized: the 20s summary tick / drawer open / tab switch
+ * re-renders ResearchPage but not the rows, so row number+date formatting is
+ * skipped unless that row's object actually changed. `onOpen` is a stable
+ * callback from the parent.
+ */
+const RegistryRow = memo(function RegistryRow({
+  row,
+  onOpen,
+}: {
+  row: ResearchStrategyVo;
+  onOpen: (id: string) => void;
+}) {
+  const s = row;
+  return (
+    <tr>
+      <td className="inline-mono tiny" title={s.strategyId}>
+        {s.strategyId.slice(0, 16)}…{s.version ? ` v${s.version}` : ""}
+      </td>
+      <td>
+        <StatusPill status={s.lifecycle} />
+      </td>
+      <td className="num tiny">{s.confidence === null ? "—" : formatNumber(s.confidence, 3)}</td>
+      <td className="num tiny">{s.sampleCount ?? "—"}</td>
+      <td className="num tiny">{s.score === null ? "—" : formatNumber(s.score, 2)}</td>
+      <td className="tiny">{s.updatedAt ? formatDateTime(s.updatedAt) : "—"}</td>
+      <td>
+        <button className="btn small ghost" onClick={() => onOpen(s.strategyId)}>
+          trace
+        </button>
+      </td>
+    </tr>
+  );
+});
 
 export default function ResearchPage(props: ShellPageProps) {
   void props;
@@ -159,6 +289,16 @@ export default function ResearchPage(props: ShellPageProps) {
     () => (registryQ.data?.available === true ? researchUseCases.registryList(registryQ.data.registry ?? []) : []),
     [registryQ.data],
   );
+  // perf: the header sort is a pure function of the loaded rows + the sort
+  // state; untouched (key=null) the accessor list stays empty and the array
+  // is returned as-is, i.e. exactly the backend's own order.
+  const regSort = useSort<RegistryCol>();
+  // perf: one stable handler for every "trace" cell instead of a closure per row
+  const openTrace = useCallback((id: string) => setSelected(id), []);
+  const registryRows = useMemo(
+    () => applySort(registry, regSort.sort.key ? REGISTRY_ACCESSORS[regSort.sort.key] : null, regSort.sort.dir),
+    [registry, regSort.sort.key, regSort.sort.dir],
+  );
   // perf: queued/running census derived only when the queue payload changes
   // (deps: queueQ.data — the only reactive value read).
   const queued = useMemo(() => {
@@ -195,57 +335,75 @@ export default function ResearchPage(props: ShellPageProps) {
     () => Object.entries(byGate).map(([k, v]) => ({ label: k, count: Number(v) || 0 })),
     [byGate],
   );
-  const unavailable = (data: { available?: boolean; reason?: string } | undefined) =>
-    !data || data.available === false ? (
-      <EmptyState message="Research subsystem unavailable" hint={data?.reason ?? "backend answered without availability — nothing to show"} />
-    ) : null;
-
   const summaryUnavailable = rows?.available === false;
+  /** summary read failed with nothing ever fetched — the KPIs must not show
+   *  a zero the backend never sent (§9). */
+  const summaryLost = summaryQ.isError && summary === undefined;
 
   return (
-    <div>
+    <div className="rs-page">
       {/* ---------------------------------------------------------- hero */}
-      <section className="rs-hero" aria-label="Research pipeline overview">
-        <div className="rs-hero-top">
-          <h2>Research</h2>
-          <span className="rs-chip docs" title="Static documentation lives in the Playbook tab">
-            playbook · {GATE_CHAIN.length} gates documented
-          </span>
-          <button type="button" className="rs-chip accent" onClick={() => setTab("playbook")}>
-            open strategy handbook →
-          </button>
-          <span className="rs-chip" title="Research runs offline/background and never blocks the tick path">
-            <span className={`rs-live-dot ${liveTone(workerStatus)}`} aria-hidden="true" />
-            worker <strong>{workerStatus ?? "not reported"}</strong>
-          </span>
+      <header className="rs-hero" aria-label="Research pipeline overview">
+        <div className="rs-hero-row">
+          <div className="rs-hero-main">
+            <div className="rs-kicker">
+              <span className="dot" aria-hidden="true" />
+              MARKET &amp; RESEARCH
+            </div>
+            <h1 className="rs-title">
+              <span className="glyph" aria-hidden="true">
+                ◈
+              </span>
+              <span className="word">Research</span>
+            </h1>
+            <p className="rs-hero-sub">
+              Candidate validation pipeline — dataset → discovery → {GATE_CHAIN.join(" → ")} → registry,
+              promotion always operator-gated. Numbers below are backend responses; the playbook is
+              documentation compiled from source (legacy tab-research parity).
+            </p>
+            <div className="rs-ep-chips" role="list" aria-label="Endpoints this page reads">
+              {RESEARCH_ENDPOINTS.map((ep) => (
+                <span className="rs-ep" role="listitem" key={ep}>
+                  {ep}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="rs-hero-side">
+            <div className="rs-side-pills">
+              <span
+                className={`rs-state-pill ${workerPill(workerStatus)}`}
+                title="worker status — summary.worker.status as the backend reports it"
+              >
+                <span className={`rs-live-dot ${liveTone(workerStatus)}`} aria-hidden="true" />
+                worker <strong>{workerStatus ?? "not reported"}</strong>
+              </span>
+              <span className="rs-side-pill" title="Static documentation lives in the Playbook tab">
+                playbook · {GATE_CHAIN.length} gates documented
+              </span>
+              <button type="button" className="rs-chip accent" onClick={() => setTab("playbook")}>
+                open strategy handbook →
+              </button>
+            </div>
+            <FreshnessCaption
+              timestamp={v1StatusQ.data?.generated_at ?? undefined}
+              source="v1 /api/v1/research/status"
+              isFetching={summaryQ.isFetching}
+              error={summaryQ.isError}
+            />
+          </div>
         </div>
-        <p className="rs-hero-sub">
-          Candidate validation pipeline — dataset → discovery → {GATE_CHAIN.join(" → ")} → registry,
-          promotion always operator-gated. Numbers below are backend responses; the playbook is
-          documentation compiled from source (legacy tab-research parity).
-        </p>
-        <FreshnessCaption
-          timestamp={v1StatusQ.data?.generated_at ?? undefined}
-          source="v1 /api/v1/research/status"
-          isFetching={summaryQ.isFetching}
-          error={summaryQ.isError}
-        />
 
         <div className="rs-pipe" role="list" aria-label="Gate chain order">
-          {GATE_CHAIN.map((g, i) => (
-            <div
-              key={g}
-              role="listitem"
-              className="rs-pipe-node"
-              style={{ animationDelay: `${0.06 * i}s`, ["--rs-delay" as string]: `${0.45 * i}s` } as CSSProperties}
-            >
-              <span className="rs-pipe-idx">{i + 1}/{GATE_CHAIN.length}</span>
-              <div className="rs-pipe-name">{g}</div>
-              <div className="rs-pipe-meta">{GATE_META[g] ?? "gate"}</div>
+          {PIPE_NODES.map((n) => (
+            <div key={n.key} role="listitem" className="rs-pipe-node" style={n.style}>
+              <span className="rs-pipe-idx">{n.idx + 1}/{GATE_CHAIN.length}</span>
+              <div className="rs-pipe-name">{n.name}</div>
+              <div className="rs-pipe-meta">{n.meta}</div>
             </div>
           ))}
         </div>
-      </section>
+      </header>
 
       {/* ----------------------------------------------------------- KPIs */}
       <div className="grid cols-4 rs-stagger">
@@ -253,15 +411,31 @@ export default function ResearchPage(props: ShellPageProps) {
           <MetricCard
             label="Registry total"
             value={
-              summaryQ.isPending ? "…" : summaryUnavailable ? "n/a" : <AnimatedNumber value={Number(summary?.total ?? 0)} />
+              summaryQ.isPending ? (
+                "…"
+              ) : summaryUnavailable ? (
+                "n/a"
+              ) : summaryLost ? (
+                "—"
+              ) : (
+                <AnimatedNumber value={Number(summary?.total ?? 0)} />
+              )
             }
-            sub={summaryUnavailable ? (rows?.reason ?? "unavailable") : "strategy_intelligence_registry"}
+            sub={
+              summaryLost
+                ? summaryQ.error instanceof Error
+                  ? summaryQ.error.message
+                  : "summary request failed"
+                : summaryUnavailable
+                  ? (rows?.reason ?? "unavailable")
+                  : "strategy_intelligence_registry"
+            }
           />
         </div>
         <div className="rs-kpi">
           <MetricCard
             label="Validated"
-            value={summaryQ.isPending ? "…" : <AnimatedNumber value={Number(summary?.by_lifecycle?.VALIDATED ?? 0)} />}
+            value={summaryQ.isPending ? "…" : summaryLost ? "—" : <AnimatedNumber value={Number(summary?.by_lifecycle?.VALIDATED ?? 0)} />}
             tone={summary?.by_lifecycle?.VALIDATED ? "pos" : "dim"}
             sub="lifecycle census"
           />
@@ -269,7 +443,7 @@ export default function ResearchPage(props: ShellPageProps) {
         <div className="rs-kpi">
           <MetricCard
             label="Active strategies"
-            value={summaryQ.isPending ? "…" : <AnimatedNumber value={Number(summary?.by_lifecycle?.ACTIVE ?? 0)} />}
+            value={summaryQ.isPending ? "…" : summaryLost ? "—" : <AnimatedNumber value={Number(summary?.by_lifecycle?.ACTIVE ?? 0)} />}
             tone={summary?.by_lifecycle?.ACTIVE ? "pos" : "dim"}
             sub="backend lifecycle counts"
           />
@@ -296,40 +470,42 @@ export default function ResearchPage(props: ShellPageProps) {
         {summaryQ.isPending ? (
           <Skeleton count={2} />
         ) : (
-          <div className="rs-rail" role="group" aria-label="Filter registry by lifecycle state">
-            {counters.length === 0 ? (
-              <span className="muted small">no lifecycle rows reported</span>
-            ) : (
-              counters.map((c) => {
-                const pct = Math.round((Number(c.value) / registryTotal) * 100);
-                return (
-                  <button
-                    key={c.label}
-                    type="button"
-                    className={`rs-rail-chip ${lifecycle === c.label ? "active" : ""}`}
-                    style={{ ["--pct" as string]: `${pct}%` } as CSSProperties}
-                    aria-pressed={lifecycle === c.label}
-                    title={
-                      lifecycle === c.label
-                        ? "filter: clear"
-                        : `filter registry by ${c.label} · ${c.value} of ${summary?.total ?? 0} rows (${pct}%)`
-                    }
-                    onClick={() => {
-                      setLifecycle(lifecycle === c.label ? undefined : c.label);
-                      void queryClient.invalidateQueries({ queryKey: ["research", "registry"] });
-                    }}
-                  >
-                    <span className="rs-rail-count">{Number(c.value) || 0}</span>
-                    {c.label}
-                  </button>
-                );
-              })
-            )}
-          </div>
+          failed(summaryQ) ?? (
+            <div className="rs-rail" role="group" aria-label="Filter registry by lifecycle state">
+              {counters.length === 0 ? (
+                <span className="muted small">no lifecycle rows reported</span>
+              ) : (
+                counters.map((c) => {
+                  const pct = Math.round((Number(c.value) / registryTotal) * 100);
+                  return (
+                    <button
+                      key={c.label}
+                      type="button"
+                      className={`rs-rail-chip ${lifecycle === c.label ? "active" : ""}`}
+                      style={{ ["--pct" as string]: `${pct}%` } as CSSProperties}
+                      aria-pressed={lifecycle === c.label}
+                      title={
+                        lifecycle === c.label
+                          ? "filter: clear"
+                          : `filter registry by ${c.label} · ${c.value} of ${summary?.total ?? 0} rows (${pct}%)`
+                      }
+                      onClick={() => {
+                        setLifecycle(lifecycle === c.label ? undefined : c.label);
+                        void queryClient.invalidateQueries({ queryKey: ["research", "registry"] });
+                      }}
+                    >
+                      <span className="rs-rail-count">{Number(c.value) || 0}</span>
+                      {c.label}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )
         )}
       </Panel>
 
-      <div style={{ marginBlock: 12 }}>
+      <div className="rs-cmdbar">
         <ResearchCommands strategyId={selected} />
       </div>
 
@@ -348,47 +524,21 @@ export default function ResearchPage(props: ShellPageProps) {
       />
 
       {/* key={tab} re-mounts the pane so the entrance animation replays per tab */}
-      <div className="rs-pane" key={tab} style={{ marginTop: 12, display: "grid", gap: 12 }}>
+      <div className="rs-pane" key={tab}>
         {tab === "registry" && (
           <Panel title={`Registry list ${lifecycle ? `· ${lifecycle}` : ""}`} right={<span className="tiny muted">{PAGE_SIZE_HINT}</span>} tight>
             {registryQ.isPending ? (
               <Skeleton count={4} />
-            ) : unavailable(registryQ.data) ?? (
+            ) : failed(registryQ) ?? unavailable(registryQ.data) ?? (
               <>
                 {registry.length === 0 ? (
                   <EmptyState message="Registry is empty for this filter." hint="/api/research/health explains WHY (source trades, rejections, attempts)." />
                 ) : (
-                  <DataTable
-                    headers={[
-                      { label: "strategy" },
-                      { label: "lifecycle" },
-                      { label: "conf", num: true },
-                      { label: "samples", num: true },
-                      { label: "score", num: true },
-                      { label: "updated" },
-                      { label: "" },
-                    ]}
-                  >
-                    {registry.map((s, i) => (
-                      <tr key={`${s.strategyId}-${i}`}>
-                        <td className="inline-mono tiny" title={s.strategyId}>
-                          {s.strategyId.slice(0, 16)}…{s.version ? ` v${s.version}` : ""}
-                        </td>
-                        <td>
-                          <StatusPill status={s.lifecycle} />
-                        </td>
-                        <td className="num tiny">{s.confidence === null ? "—" : formatNumber(s.confidence, 3)}</td>
-                        <td className="num tiny">{s.sampleCount ?? "—"}</td>
-                        <td className="num tiny">{s.score === null ? "—" : formatNumber(s.score, 2)}</td>
-                        <td className="tiny">{s.updatedAt ? formatDateTime(s.updatedAt) : "—"}</td>
-                        <td>
-                          <button className="btn small ghost" onClick={() => setSelected(s.strategyId)}>
-                            trace
-                          </button>
-                        </td>
-                      </tr>
+                  <RsTable cols={REGISTRY_COLS} sort={regSort.sort} onToggle={regSort.toggle}>
+                    {registryRows.map((s) => (
+                      <RegistryRow key={s.strategyId} row={s} onOpen={openTrace} />
                     ))}
-                  </DataTable>
+                  </RsTable>
                 )}
               </>
             )}
@@ -399,7 +549,7 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title="Gate queue census" right={<FreshnessCaption timestamp={null} isFetching={queueQ.isFetching} error={queueQ.isError} />} tight>
             {queueQ.isPending ? (
               <Skeleton count={3} />
-            ) : unavailable(queueQ.data) ?? (
+            ) : failed(queueQ) ?? unavailable(queueQ.data) ?? (
               <div className="grid cols-2">
                 <div>
                   <div className="section-title">queued / running by gate type</div>
@@ -432,7 +582,7 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title="Worker heartbeat + diagnostics" right={<FreshnessCaption timestamp={null} isFetching={workerQ.isFetching || !workerQ.isFetched} error={workerQ.isError} />} tight>
             {workerQ.isPending ? (
               <Skeleton count={3} />
-            ) : unavailable(workerQ.data) ?? (
+            ) : failed(workerQ) ?? unavailable(workerQ.data) ?? (
               <div className="grid cols-2">
                 <div>
                   <dl className="kv">
@@ -453,7 +603,7 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title="Failure heatmap + families" right={<FreshnessCaption timestamp={null} isFetching={analyticsQ.isFetching} error={analyticsQ.isError} />} tight>
             {analyticsQ.isPending ? (
               <Skeleton count={3} />
-            ) : unavailable(analyticsQ.data) ?? (
+            ) : failed(analyticsQ) ?? unavailable(analyticsQ.data) ?? (
               <div className="grid cols-2">
                 <div>
                   <div className="section-title">failed gates (total: {String(heatmap.total_failures ?? 0)})</div>
@@ -472,7 +622,7 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title="Retention (live vs archive — archive-only contract)" tight>
             {historyQ.isPending ? (
               <Skeleton count={2} />
-            ) : unavailable(historyQ.data) ?? (
+            ) : failed(historyQ) ?? unavailable(historyQ.data) ?? (
               <dl className="kv">
                 {Object.entries(obj(historyQ.data?.retention)).map(([k, v]) => (
                   <InfoRow key={k} label={k} value={formatNumber(Number(v) || 0, 0)} />
@@ -486,21 +636,19 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title="v1 datasets (provenance from real runs)" right={<span className="tiny muted">/api/v1/research/datasets</span>} tight>
             {datasetsQ.isPending ? (
               <Skeleton count={3} />
-            ) : datasetsQ.isError ? (
-              <div className="small tx-bad">
-                {datasetsQ.error instanceof Error ? datasetsQ.error.message : "request failed"}
-              </div>
-            ) : (datasetsQ.data?.datasets ?? []).length === 0 ? (
-              <EmptyState message="No datasets derived from runs yet." />
-            ) : (
-              <DataTable headers={[{ label: "dataset_id" }, { label: "runs", num: true }]}>
-                {(datasetsQ.data?.datasets ?? []).map((d, i) => (
-                  <tr key={i}>
-                    <td className="inline-mono tiny">{d.dataset_id ?? "—"}</td>
-                    <td className="num tiny">{d.run_count ?? 0}</td>
-                  </tr>
-                ))}
-              </DataTable>
+            ) : failed(datasetsQ) ?? (
+              (datasetsQ.data?.datasets ?? []).length === 0 ? (
+                <EmptyState message="No datasets derived from runs yet." />
+              ) : (
+                <DataTable headers={[{ label: "dataset_id" }, { label: "runs", num: true }]}>
+                  {(datasetsQ.data?.datasets ?? []).map((d, i) => (
+                    <tr key={i}>
+                      <td className="inline-mono tiny">{d.dataset_id ?? "—"}</td>
+                      <td className="num tiny">{d.run_count ?? 0}</td>
+                    </tr>
+                  ))}
+                </DataTable>
+              )
             )}
           </Panel>
         )}
@@ -545,6 +693,8 @@ function ResearchDiagMini() {
       <div className="section-title">blocked / failed gates (diagnostics)</div>
       {diagQ.isPending ? (
         <Skeleton count={2} />
+      ) : diagQ.isError ? (
+        <ErrorState message={diagQ.error instanceof Error ? diagQ.error.message : "diagnostics request failed"} />
       ) : gateRows.length === 0 ? (
         <EmptyState message="No blocked gates reported." />
       ) : (

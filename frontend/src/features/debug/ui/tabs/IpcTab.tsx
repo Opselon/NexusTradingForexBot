@@ -6,6 +6,7 @@
  * so a payload without those keys shows the real mode instead of "—".
  */
 
+import { useMemo } from "react";
 import { EmptyState, MetricCard } from "@/components/primitives";
 import { FreshnessCaption, PollControl, QuerySection, usePolling } from "@/features/config/ui/kit";
 import { useI18n } from "@/stores/i18nStore";
@@ -44,6 +45,28 @@ export function IpcTab() {
   const query = useIpcTelemetryQuery(poll.paused);
   const api = useSortState<SortKey>({ key: null, dir: "desc" });
 
+  // One derivation per (events, sort) identity: a polling tick or an
+  // unrelated re-render never re-walks/re-sorts the event rows. Sort
+  // semantics are untouched — backend order when no column is active,
+  // null accessors still sink, numbers compare numerically.
+  const rows = useMemo(() => {
+    const events = query.data?.events ?? [];
+    if (api.sort.key === null) return events;
+    return sortRows(
+      events,
+      (ev) =>
+        api.sort.key === "ts"
+          ? eventTs(ev)
+          : api.sort.key === "event"
+            ? eventName(ev)
+            : api.sort.key === "state"
+              ? eventState(ev)
+              : eventLatency(ev),
+      api.sort.dir,
+      api.sort.key === "latency" ? "number" : "string",
+    );
+  }, [query.data?.events, api.sort.key, api.sort.dir]);
+
   return (
     <QuerySection<IpcTelemetry>
       title={t("debug.ipc.title", "MT5 IPC telemetry (/api/debug/ipc-telemetry)")}
@@ -59,22 +82,6 @@ export function IpcTab() {
       }
     >
       {(data) => {
-        const rows: IpcEvent[] =
-          api.sort.key === null
-            ? data.events
-            : sortRows(
-                data.events,
-                (ev) =>
-                  api.sort.key === "ts"
-                    ? eventTs(ev)
-                    : api.sort.key === "event"
-                      ? eventName(ev)
-                      : api.sort.key === "state"
-                        ? eventState(ev)
-                        : eventLatency(ev),
-                api.sort.dir,
-                api.sort.key === "latency" ? "number" : "string",
-              );
         return (
           <div className="dbg-sec">
             <div className="l3-toolbar">

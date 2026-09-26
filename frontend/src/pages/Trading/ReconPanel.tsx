@@ -77,7 +77,9 @@ export function ReconPanel({ snapshot, mt5Query }: Props) {
     }
     return [...byTicket.values()].sort((a, b) => Number(b.state === "MATCHED") - Number(a.state === "MATCHED"));
 }, [ledgerOpenQuery.data, mt5Query.data, snapshot?.positions]);
-  const drift = recon.filter((r) => r.state !== "MATCHED");
+  // perf: derived from the memoized `recon` only — recomputed when the
+  // reconciliation changes, not on every parent render.
+  const drift = useMemo(() => recon.filter((r) => r.state !== "MATCHED"), [recon]);
   const matched = recon.length - drift.length;
   // Virtual ↔ real reconciliation (verbatim block, extracted for the line law).
   return (

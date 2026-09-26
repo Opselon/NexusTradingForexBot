@@ -1,5 +1,15 @@
 /* News feature — scoped styles (tokens only, logical props for RTL). */
 
+/* Page rhythm: hero + one panel per section, evenly spaced by --panel-gap. */
+.news-page {
+  display: grid;
+  gap: var(--panel-gap);
+  align-content: start;
+}
+.news-page > .grid {
+  gap: var(--panel-gap);
+}
+
 .news-toolbar {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   margin-block-end: 12px;
@@ -11,19 +21,32 @@
   background: var(--bg-inset); font-size: 11px; cursor: pointer; color: var(--text-dim);
   font-family: var(--mono); letter-spacing: 0.06em;
 }
-.news-switch.on { border-color: var(--accent); color: var(--accent-strong); background: rgba(65, 166, 242, 0.08); }
+.news-switch.on { border-color: var(--accent); color: var(--accent-strong); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .news-switch:disabled { opacity: 0.5; cursor: progress; }
+.news-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .news-status-line { font-size: 11px; color: var(--text-dim); font-family: var(--mono); margin-block-end: 10px; }
 .news-status-line.err { color: var(--red); }
 
 .news-list { display: grid; gap: 8px; max-block-size: 640px; overflow-y: auto; padding-inline-end: 4px; }
 .news-item {
-  border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px;
+  position: relative;
+  border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
   background: linear-gradient(180deg, var(--elevate-hi), transparent 50%), var(--bg-panel);
-  cursor: pointer; transition: border-color 0.1s ease;
+  box-shadow: var(--elev-1);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
 }
-.news-item:hover { border-color: var(--border-strong); }
-.news-item.selected { border-color: var(--accent); }
+.news-item:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 55%), var(--bg-panel-2);
+  box-shadow: var(--elev-2);
+}
+.news-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: var(--accent);
+}
+.news-item.selected { border-color: var(--accent); box-shadow: var(--elev-2), 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 .news-item .title { font-size: 12.5px; font-weight: 600; color: var(--text); }
 .news-item .metarow { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-block-start: 5px; font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
 .news-item .mech { font-size: 10.5px; color: var(--text-faint); margin-block-start: 4px; }
@@ -31,14 +54,27 @@
   font-family: var(--mono); font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
   border: 1px solid var(--border-strong); background: var(--bg-panel-2); color: var(--text-dim);
 }
-/* Impact scale from the backend importance_score only (legacy 70/50/30 bands),
-   modernized with severity glow. */
-.news-imp.low { border-color: rgba(235, 161, 63, 0.35); color: var(--amber); background: var(--amber-dim); }
-.news-imp.mid { border-color: rgba(235, 161, 63, 0.55); color: var(--amber); background: var(--amber-dim); box-shadow: 0 0 8px rgba(235, 161, 63, 0.28); }
-.news-imp.high { border-color: rgba(242, 86, 77, 0.55); color: #ff8f89; background: var(--red-dim); box-shadow: 0 0 10px rgba(242, 86, 77, 0.4); }
+/* Impact scale from the backend importance_score only (legacy 70/50/30 bands).
+   Severity is painted with color-mix() over the amber/red tokens — the band
+   still comes from the backend number, never from a frontend verdict. */
+.news-imp.low {
+  border-color: color-mix(in srgb, var(--amber) 35%, transparent);
+  color: var(--amber); background: var(--amber-dim);
+}
+.news-imp.mid {
+  border-color: color-mix(in srgb, var(--amber) 55%, transparent);
+  color: var(--amber); background: var(--amber-dim);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--amber) 28%, transparent);
+}
+.news-imp.high {
+  border-color: color-mix(in srgb, var(--red) 55%, transparent);
+  color: color-mix(in srgb, var(--red) 72%, var(--text));
+  background: var(--red-dim);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--red) 40%, transparent);
+}
 .news-dir { font-family: var(--mono); font-size: 10px; font-weight: 800; letter-spacing: 0.08em; }
-.news-dir.BULLISH { color: var(--green); text-shadow: 0 0 8px rgba(62, 207, 142, 0.35); }
-.news-dir.BEARISH { color: var(--red); text-shadow: 0 0 8px rgba(242, 86, 77, 0.35); }
+.news-dir.BULLISH { color: var(--green); text-shadow: 0 0 8px color-mix(in srgb, var(--green) 35%, transparent); }
+.news-dir.BEARISH { color: var(--red); text-shadow: 0 0 8px color-mix(in srgb, var(--red) 35%, transparent); }
 .news-dir.NEUTRAL { color: var(--text-dim); }
 .news-dir.PENDING { color: var(--text-faint); }
 .news-kw { display: inline-block; font-size: 9.5px; color: var(--text-faint); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; margin-inline-start: 4px; font-family: var(--mono); }
@@ -54,14 +90,22 @@
 /* source grid */
 .news-sources { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
 .news-source {
-  border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; background: var(--bg-panel);
+  border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  background: var(--bg-panel); box-shadow: var(--elev-1);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
+}
+.news-source:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-panel-2);
+  box-shadow: var(--elev-2);
 }
 .news-source .name { font-size: 12px; font-weight: 700; }
 .news-source .sub { font-size: 10px; color: var(--text-faint); font-family: var(--mono); margin-block-start: 2px; }
 
 /* drawer */
 .news-drawer-overlay {
-  position: fixed; inset: 0; z-index: 80; background: rgba(4, 7, 11, 0.6);
+  position: fixed; inset: 0; z-index: 80;
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
   display: flex; justify-content: flex-end;
 }
 .news-drawer {
@@ -105,8 +149,9 @@
   background: var(--bg-panel-2); color: var(--text-dim);
 }
 .news-pro-badge.on {
-  border-color: rgba(62, 207, 142, 0.5); color: var(--green); background: var(--green-dim);
-  box-shadow: 0 0 10px rgba(62, 207, 142, 0.28);
+  border-color: color-mix(in srgb, var(--green) 50%, transparent);
+  color: var(--green); background: var(--green-dim);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--green) 28%, transparent);
 }
 .news-pro-ok { color: var(--green); }
 .news-pro-warn { color: var(--amber); }
@@ -119,8 +164,10 @@
   margin-block-start: 6px; max-block-size: 260px; overflow-y: auto; padding: 6px 8px;
   border: 1px solid var(--border); border-radius: 8px;
   background: linear-gradient(180deg, var(--elevate-hi), transparent 40%), var(--bg-inset);
+  box-shadow: var(--elev-1);
   font-family: var(--mono); font-size: 10px; line-height: 1.45;
 }
+.news-pro-log:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .news-pro-log-empty { color: var(--text-faint); font-style: italic; padding: 4px 2px; }
 .news-pro-row { display: flex; gap: 8px; align-items: baseline; padding: 1px 0; border-radius: 4px; }
 .news-pro-row .ts { color: var(--text-faint); flex-shrink: 0; }
@@ -169,3 +216,45 @@
 body.dense .news-list { gap: 5px; }
 body.dense .news-item { padding: 6px 10px; }
 body.dense .news-pro-log { font-size: 9.5px; }
+
+/* ─────────────────────────── SORTABLE TABLES (NewsSortTable) ──────────── */
+/* The shared `.table-wrap`/`.data-table` already supplies the scroll frame,
+   sticky header, zebra rows and `.num` alignment — these rules only add the
+   news frame, the sort affordance and row hover/focus. */
+.news-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  box-shadow: var(--elev-1);
+}
+.news-th-sort {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit;
+  transition: color 0.12s ease;
+}
+.news-th-sort:hover { color: var(--text-dim); }
+.news-th-sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.news-th-arrow { font-size: 9px; opacity: 0.45; }
+.news-th-sort.active { color: var(--accent-strong); }
+.news-th-sort.active .news-th-arrow { opacity: 1; }
+.news-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel-2));
+}
+.news-table tbody tr:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.news-table tbody tr:focus-within td {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-panel-2));
+}
+
+/* Motion is decoration: every hover/selection transition in this file is
+   dropped when the user asks for reduced motion (the shared theme rule
+   covers legacy declarations; this guards the ones added here). */
+@media (prefers-reduced-motion: reduce) {
+  .news-item,
+  .news-source {
+    transition: none;
+  }
+}
