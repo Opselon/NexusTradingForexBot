@@ -41,7 +41,7 @@ export function DecisionInspector({ id, onClose }: { id: number; onClose: () => 
       ) : detailQ.data?.available === false ? (
         <EmptyState message={str(obj(detailQ.data?.error).reason) ?? t("control-center.empty.decision_not_found", "decision not found")} />
       ) : (
-        <div style={{ display: "grid", gap: 10 }}>
+        <div className="ctl-stack">
           <Panel title={t("control-center.panel.ledger_row", "Ledger row")} tight>
             <dl className="kv">
               <InfoRow label={t("control-center.label.action_mode", "action / mode")} value={`${notRecorded(str(d.action))} / ${notRecorded(str(d.execution_mode))}`} />
@@ -66,7 +66,7 @@ export function DecisionInspector({ id, onClose }: { id: number; onClose: () => 
             )}
           </Panel>
           <Panel title={t("control-center.inspector.correlated_orders", "Correlated orders ({n})", { n: arr(d.orders).length })} tight>
-            <div className="tiny muted" style={{ marginBottom: 6 }}>
+            <div className="tiny muted ctl-note-tight">
               {t("control-center.inspector.correlation_method", "correlation method: {v}", { v: notRecorded(str(d.correlation_method)) })}
             </div>
             {arr(d.orders).length === 0 ? (

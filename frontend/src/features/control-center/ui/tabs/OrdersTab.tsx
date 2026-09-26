@@ -63,7 +63,7 @@ export function OrdersTab() {
         <EmptyState message={t("control-center.empty.ledger_unavailable", "ledger unavailable")} />
       ) : (
         <>
-          <div style={{ marginBottom: 8 }}>
+          <div className="ctl-metric">
             <MetricCard
               label={t("control-center.kpi.latency", "latency p50 / p95 / p99 (ms)")}
               value={

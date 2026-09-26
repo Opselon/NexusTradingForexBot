@@ -271,7 +271,20 @@
 .ctl-warns { display: grid; gap: 8px; }
 .ctl-warn { border-inline-start: 2px solid var(--amber); padding-inline-start: 8px; }
 .ctl-warn-head { display: flex; gap: 8px; align-items: baseline; }
+/* panel notes / footnotes / section rhythm — class rules instead of
+   per-render style objects in the tabs */
 .ctl-kv-gap { margin-block-end: 8px; }
+.ctl-note { margin-block-end: 8px; }
+.ctl-note-tight { margin-block-end: 6px; }
+.ctl-footnote { margin-block-start: 6px; }
+.ctl-sec-gap { margin-block-start: 8px; }
+.ctl-metric { margin-block-end: 8px; }
+.ctl-stack { display: grid; gap: 10px; }
+/* decisions filter row (rendered in the panel header tools slot) */
+.ctl-filters { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.ctl-f-search { inline-size: 150px; }
+.ctl-f-action { inline-size: 120px; }
+.ctl-f-window { inline-size: 96px; }
 /* every row with an action is reachable by keyboard — focus lands on the row,
    the global :focus-visible outline stays on the control itself */
 .ctl-tape > tbody > tr:focus-within > td { background: var(--bg-panel-2); }

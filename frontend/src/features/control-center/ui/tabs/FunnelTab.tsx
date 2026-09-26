@@ -57,7 +57,7 @@ export function FunnelTab({ hours }: { hours: number | undefined }) {
         />
       ) : (
         <>
-          <div className="tiny muted" style={{ marginBottom: 8 }}>
+          <div className="tiny muted ctl-note">
             {funnelQ.data?.note ?? "TERMINAL distributions — the ledger records the final blocking stage per decision."}
           </div>
           {empty ? (
@@ -78,7 +78,7 @@ export function FunnelTab({ hours }: { hours: number | undefined }) {
               </div>
             </div>
           )}
-          <div className="tiny faint" style={{ marginTop: 6 }}>
+          <div className="tiny faint ctl-footnote">
             {t("control-center.funnel.footnote", "scanned {scanned} rows / total {total} — summary numbers reconcile against the same window", { scanned: String(funnelQ.data?.scanned_rows ?? "—"), total: String(funnelQ.data?.total ?? "—") })}
           </div>
         </>
