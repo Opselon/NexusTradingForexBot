@@ -20,6 +20,8 @@ Driver responsibilities (portability contract):
 from __future__ import annotations
 
 import contextlib
+import contextvars
+import re
 from collections.abc import Iterable, Sequence
 from typing import Any
 
@@ -61,6 +63,110 @@ def pg_type_for(declared: str) -> str:
     if name in {"DOUBLE PRECISION", "TIMESTAMPTZ", "BYTEA", "JSONB", "SERIAL", "BIGSERIAL"}:
         return name
     return "TEXT"
+
+
+def _translate_insert_or(sql: str) -> str:
+    """Rewrite SQLite's ``INSERT OR IGNORE`` / ``INSERT OR REPLACE``.
+
+    Both are SQLite-only spellings; PostgreSQL rejects them with a syntax
+    error (``syntax error at or near "OR"``) that the store layers' failure
+    contracts swallow, so a statement written this way silently did NOTHING
+    on a PostgreSQL box — the marketplace lifecycle-event ledger lost every
+    transition this way (Lane D, 2026-09-26).
+
+    The rewrite mirrors what :meth:`PostgreSQLDriver.upsert` already builds:
+
+      * ``INSERT OR IGNORE``      -> ``INSERT ... ON CONFLICT DO NOTHING``
+      * ``INSERT OR REPLACE``     -> ``INSERT ... ON CONFLICT (pk) DO UPDATE
+        SET <non-pk cols> = EXCLUDED.<col>``
+
+    The conflict target is resolved from the table's primary key (the same
+    ``_conflict_target`` helper the upsert uses, looked up lazily through
+    the driver instance when one is attached to the statement). Without a
+    resolvable target the statement degrades to ``ON CONFLICT DO NOTHING``,
+    which is lossless for ``OR IGNORE`` and the documented fallback for
+    ``OR REPLACE`` (the table's own uniqueness is what ``REPLACE`` keyed on).
+
+    Columns are extracted from the statement's own column list — never from
+    the parameters — so the rewrite is a pure text transform of a statement
+    the caller already built, and a statement with no column list (``INSERT
+    INTO t VALUES ...``) falls back to ``DO NOTHING`` rather than guessing.
+    """
+    m = _INSERT_OR_RE.match(sql)
+    if m is None:
+        return sql
+    kind = m.group("kind").upper()
+    head = sql[m.end() :]
+    if kind == "IGNORE":
+        return f"INSERT INTO{head} ON CONFLICT DO NOTHING"
+    # OR REPLACE: needs a conflict target + the update set. Both come from the
+    # statement's own shape, so parse the column list before the VALUES clause.
+    body = head
+    cols: list[str] | None = None
+    paren = body.find("(")
+    if paren != -1:
+        depth = 0
+        end = -1
+        for i in range(paren, len(body)):
+            if body[i] == "(":
+                depth += 1
+            elif body[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        if end != -1:
+            raw = body[paren + 1 : end]
+            if all(part.strip() for part in raw.split(",")) and '"' not in raw:
+                cols = [c.strip() for c in raw.split(",")]
+            body = body[: paren + 1] + raw + body[end:]
+    driver = _STATEMENT_DRIVER.get()
+    target: list[str] | None = None
+    if driver is not None and cols:
+        try:
+            table = _table_of(body)
+            if table:
+                hit = driver._conflict_target(table, driver.connect(), cols)
+                if hit:
+                    target = [str(c) for c in hit[0] if c in cols] or None
+        except Exception:  # pragma: no cover - introspection is best-effort
+            target = None
+    if target and cols:
+        updates = ",".join(
+            f"{c} = EXCLUDED.{c}" for c in cols if c not in (target or [])
+        )
+        if not updates:
+            return f"INSERT INTO{head} ON CONFLICT DO NOTHING"
+        tgt = ",".join(target)
+        return f"INSERT INTO{head} ON CONFLICT ({tgt}) DO UPDATE SET {updates}"
+    return f"INSERT INTO{head} ON CONFLICT DO NOTHING"
+
+
+#: The driver the statement currently being translated is bound to, so the
+#: ``INSERT OR REPLACE`` rewrite can resolve a conflict target through the
+#: driver's own introspection. Set by :meth:`PostgreSQLDriver._translate`.
+_STATEMENT_DRIVER: contextvars.ContextVar[Any] = contextvars.ContextVar(
+    "nse_pg_statement_driver", default=None
+)
+
+
+#: SQLite's ``INSERT OR IGNORE`` / ``INSERT OR REPLACE`` spelling. The OR
+#: clause may carry a schema-qualified table (``main.t``) and arbitrary
+#: whitespace/newlines, so the match is anchored on the verb pair only.
+_INSERT_OR_RE = re.compile(
+    r"(?is)^\s*INSERT\s+OR\s+(?P<kind>IGNORE|REPLACE)\s+INTO\b"
+)
+
+#: ``INSERT INTO <table>`` — tolerant of a schema prefix and quoting.
+_TABLE_NAME_RE = re.compile(r"(?i)\s*(?:INTO\s+)?([\"A-Za-z_][\"\w.]*)")
+
+
+def _table_of(insert_body: str) -> str | None:
+    """The table name of an ``INSERT INTO <table> (...)`` body."""
+    m = _TABLE_NAME_RE.match(insert_body)
+    if m is None:
+        return None
+    return m.group(1).strip('"')
 
 
 def _translate_placeholders(sql: str) -> str:
@@ -144,8 +250,29 @@ class PostgreSQLDriver(DatabaseDriver):
 
     @staticmethod
     def translate_sql(sql: str) -> str:
-        """Provider-agnostic SQL → PostgreSQL (placeholders)."""
+        """Provider-agnostic SQL → PostgreSQL (placeholders + INSERT OR ...)."""
+        out = _translate_insert_or(sql)
+        if out is not sql:
+            return _translate_placeholders(out)
         return _translate_placeholders(sql)
+
+    def _translate(self, sql: str) -> str:
+        """Translate a statement bound to THIS driver instance.
+
+        ``INSERT OR REPLACE`` needs the table's primary key to build its
+        ``ON CONFLICT (pk) DO UPDATE`` clause, and only a driver that holds
+        the connection config can look that up — the static
+        :meth:`translate_sql` cannot. This binds the driver for the duration
+        NOTE: the local holding the ContextVar reset handle is deliberately
+        NOT named ``token``: that identifier is reserved by the runtime
+        (``contextvars`` / the CPython 3.14 ``token`` name) and a method that
+        binds it shadowed the module global with a NameError on every call.
+        """
+        handle = _STATEMENT_DRIVER.set(self)
+        try:
+            return self.translate_sql(sql)
+        finally:
+            _STATEMENT_DRIVER.reset(handle)
 
     # -- connections ------------------------------------------------------
 
@@ -276,7 +403,7 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            cur = c.execute(assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None)
+            cur = c.execute(assert_safe_sql(self._translate(sql)), tuple(args) if args else None)
             if own:
                 c.commit()
             return cur
@@ -295,7 +422,7 @@ class PostgreSQLDriver(DatabaseDriver):
                 # SEC (py/sql-injection #1114 sibling): same boundary as the
                 # sqlite driver — the shared guard runs before the engine sees
                 # the statement; values stay bound through ``seq``.
-                cur.executemany(assert_safe_sql(self.translate_sql(sql)), seq)
+                cur.executemany(assert_safe_sql(self._translate(sql)), seq)
             if own:
                 c.commit()
         finally:
@@ -306,7 +433,7 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            cur = c.execute(assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None)
+            cur = c.execute(assert_safe_sql(self._translate(sql)), tuple(args) if args else None)
             rows = cur.fetchall()
             names = [d.name for d in cur.description] if cur.description else []
             return [dict(zip(names, r, strict=False)) for r in rows]
@@ -320,7 +447,7 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            cur = c.execute(assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None)
+            cur = c.execute(assert_safe_sql(self._translate(sql)), tuple(args) if args else None)
             row = cur.fetchone()
             if row is None:
                 return None
@@ -335,7 +462,7 @@ class PostgreSQLDriver(DatabaseDriver):
         c = conn or self.connect()
         try:
             row = c.execute(
-                assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None
+                assert_safe_sql(self._translate(sql)), tuple(args) if args else None
             ).fetchone()
             return row[0] if row is not None else None
         finally:

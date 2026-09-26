@@ -76,6 +76,15 @@ DEFAULT_DB_FILES: dict[str, str] = {
     "strategies": "strategies.db",
     # Isolated neural model registry & hot-load lifecycle DB
     "models": "models.db",
+    # Lane D (2026-09-26): the marketplace pack/seed ledger and the model_lab
+    # immutable experiment ledger — both isolated stores, both first-class
+    # persistence domains now that the fabric knows their names. The
+    # experiments ledger lives one directory deeper
+    # (``artifacts/experiments/``) beside its per-experiment manifests; the
+    # path helper joins ``artifacts/`` already, so the name carries the
+    # sub-directory.
+    "marketplace": "marketplace.db",
+    "experiments": "experiments/experiments.db",
 }
 
 

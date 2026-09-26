@@ -270,6 +270,54 @@ MANIFESTS: dict[DatabaseDomain, SchemaManifest] = {
     DatabaseDomain.AUDIT: AUDIT_MANIFEST,
     DatabaseDomain.NEWS: NEWS_MANIFEST,
     DatabaseDomain.CANDLE_INTEL: CANDLE_MANIFEST,
+    # Lane D (2026-09-26): the isolated-store domains. Skeleton contracts —
+    # the owning package authors and applies its own DDL, so only the table
+    # names are declared here (``full_contract=False``: the domain's own
+    # columns are never flagged as drift). Version 1 = the authored schema;
+    # no migrations are registered for these domains.
+    DatabaseDomain.MARKETPLACE: SchemaManifest(
+        database=DatabaseDomain.MARKETPLACE,
+        schema_version=1,
+        tables=tuple(
+            SchemaTable(name=t)
+            for t in (
+                "mk_packages",
+                "mk_seeds",
+                "mk_lifecycle_events",
+                "mk_enablement",
+                "mk_score_snapshots",
+                "mk_repairs",
+                "mk_runtime_snapshots",
+                "mk_meta",
+            )
+        ),
+    ),
+    DatabaseDomain.MODELS: SchemaManifest(
+        database=DatabaseDomain.MODELS,
+        schema_version=1,
+        tables=tuple(SchemaTable(name=t) for t in ("model_checkpoints", "model_load_history")),
+    ),
+    DatabaseDomain.STRATEGIES: SchemaManifest(
+        database=DatabaseDomain.STRATEGIES,
+        schema_version=1,
+        tables=tuple(
+            SchemaTable(name=t)
+            for t in (
+                "factory_generations",
+                "factory_candidates",
+                "factory_failures",
+                "factory_events",
+                "factory_runs",
+                "factory_provider_usage",
+                "factory_loop_state",
+            )
+        ),
+    ),
+    DatabaseDomain.EXPERIMENTS: SchemaManifest(
+        database=DatabaseDomain.EXPERIMENTS,
+        schema_version=1,
+        tables=(SchemaTable(name="experiments"),),
+    ),
 }
 
 

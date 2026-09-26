@@ -605,6 +605,14 @@ AUDIT_BASELINE_VERSION = 1
 NEWS_BASELINE_VERSION = 1
 CANDLE_BASELINE_VERSION = 1
 
+# Lane D (2026-09-26): the isolated-store domains have no ordered migration
+# chain (their schema is authored and applied idempotently by the owning
+# store), so their authored schema IS version 1.
+MARKETPLACE_BASELINE_VERSION = 1
+MODELS_BASELINE_VERSION = 1
+STRATEGIES_BASELINE_VERSION = 1
+EXPERIMENTS_BASELINE_VERSION = 1
+
 AUDIT_MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         migration_id="AUDIT-0002-add-audit-orders-ticket-index",
@@ -747,12 +755,27 @@ REGISTRY: dict[DatabaseDomain, tuple[Migration, ...]] = {
     DatabaseDomain.AUDIT: AUDIT_MIGRATIONS,
     DatabaseDomain.NEWS: NEWS_MIGRATIONS,
     DatabaseDomain.CANDLE_INTEL: CANDLE_MIGRATIONS,
+    # Lane D (2026-09-26): the four isolated-store domains. Their schema is
+    # authored in the owning package (marketplace.store / model_generation
+    # .model_registry / strategies.research_store / model_lab
+    # .experiment_registry) and applied idempotently by the store itself, so
+    # there is no ordered migration chain to replay — an empty tuple keeps the
+    # engine's version arithmetic honest (baseline 1 = authored schema) while
+    # ``replay_schema`` stays the audit/news/candle_intel-only path it is.
+    DatabaseDomain.MARKETPLACE: (),
+    DatabaseDomain.MODELS: (),
+    DatabaseDomain.STRATEGIES: (),
+    DatabaseDomain.EXPERIMENTS: (),
 }
 
 BASELINE_VERSIONS: dict[DatabaseDomain, int] = {
     DatabaseDomain.AUDIT: AUDIT_BASELINE_VERSION,
     DatabaseDomain.NEWS: NEWS_BASELINE_VERSION,
     DatabaseDomain.CANDLE_INTEL: CANDLE_BASELINE_VERSION,
+    DatabaseDomain.MARKETPLACE: MARKETPLACE_BASELINE_VERSION,
+    DatabaseDomain.MODELS: MODELS_BASELINE_VERSION,
+    DatabaseDomain.STRATEGIES: STRATEGIES_BASELINE_VERSION,
+    DatabaseDomain.EXPERIMENTS: EXPERIMENTS_BASELINE_VERSION,
 }
 
 
