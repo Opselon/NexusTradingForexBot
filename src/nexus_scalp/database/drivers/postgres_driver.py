@@ -354,6 +354,16 @@ def _split_top_level(body: str, sep: str = ",") -> list[str]:
 #: ``INTO``; matching ``INSERT`` too keeps the helper usable on full
 #: statements.  Multi-row VALUES lists, ``RETURNING``, sub-select bodies and
 #: ``DEFAULT VALUES`` are left untouched (fail-open).
+#:
+#: SEC (py/redos / CodeQL #108): every bounded class uses a *negated character
+#: class* (``[^()]``) rather than an unbounded quantifier over a nested
+#: optional group. There is no path on which the engine backtracks
+#: super-linearly: each class consumes a disjoint char set and no class can
+#: consume another's first char, so a failed match terminates in linear time
+#: regardless of the input. The classes are bounded in practice too — a
+#: statement longer than _MAX_SHAPE_CHARS falls through to the unmodified
+#: pass-through path before this ever matches.
+_MAX_SHAPE_CHARS = 16_384
 _INSERT_SHAPE_PATTERN = re.compile(
     r"^(?:INSERT\s+)?INTO\s+(?P<table>\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s*"
     r"\((?P<cols>[^()]*)\)\s*"
@@ -369,6 +379,11 @@ def _parse_insert_shape(remainder: str) -> dict[str, Any] | None:
     is anything but the single-row VALUES form: those statements pass through
     unchanged rather than risk malformed SQL.
     """
+    if len(remainder) > _MAX_SHAPE_CHARS:
+        # SEC (py/redos / CodeQL #108): bounds the work this regex can be asked
+        # to do. Past this length the statement is not the single-row shape we
+        # rewrite anyway, so it passes through untouched (fail-open).
+        return None
     m = _INSERT_SHAPE_PATTERN.match(remainder.strip())
     if m is None:
         return None
@@ -744,6 +759,18 @@ class PostgreSQLDriver(DatabaseDriver):
         c = conn or self.connect()
         try:
             cur = c.execute(
+                # SEC (py/sql-injection #108): this driver IS the
+                # parameterization boundary — callers bind values through
+                # ``args`` placeholders and identifier interpolation is routed
+                # through quote_ident allow-lists by the store layer. The
+                # shared boundary guard enforces the verb allow-list, the
+                # single-statement rule and the block-comment ban at this
+                # sink. User-controlled SQL text exists only in the auth-gated,
+                # read-only db console, which allow-lists
+                # SELECT/EXPLAIN/WITH/PRAGMA/VALUES BEFORE reaching here.
+                # CodeQL recognises no runtime regex/whitelist as a sanitizer
+                # barrier, so the taint chain cannot be cut statically; the
+                # disposition is documented at the boundary that enforces it.
                 assert_safe_sql(_translate_upsert_verb(sql, c)),
                 tuple(args) if args else None,
             )
@@ -777,6 +804,18 @@ class PostgreSQLDriver(DatabaseDriver):
         c = conn or self.connect()
         try:
             cur = c.execute(
+                # SEC (py/sql-injection #108): this driver IS the
+                # parameterization boundary — callers bind values through
+                # ``args`` placeholders and identifier interpolation is routed
+                # through quote_ident allow-lists by the store layer. The
+                # shared boundary guard enforces the verb allow-list, the
+                # single-statement rule and the block-comment ban at this
+                # sink. User-controlled SQL text exists only in the auth-gated,
+                # read-only db console, which allow-lists
+                # SELECT/EXPLAIN/WITH/PRAGMA/VALUES BEFORE reaching here.
+                # CodeQL recognises no runtime regex/whitelist as a sanitizer
+                # barrier, so the taint chain cannot be cut statically; the
+                # disposition is documented at the boundary that enforces it.
                 assert_safe_sql(_translate_upsert_verb(sql, c)),
                 tuple(args) if args else None,
             )
@@ -794,6 +833,18 @@ class PostgreSQLDriver(DatabaseDriver):
         c = conn or self.connect()
         try:
             cur = c.execute(
+                # SEC (py/sql-injection #108): this driver IS the
+                # parameterization boundary — callers bind values through
+                # ``args`` placeholders and identifier interpolation is routed
+                # through quote_ident allow-lists by the store layer. The
+                # shared boundary guard enforces the verb allow-list, the
+                # single-statement rule and the block-comment ban at this
+                # sink. User-controlled SQL text exists only in the auth-gated,
+                # read-only db console, which allow-lists
+                # SELECT/EXPLAIN/WITH/PRAGMA/VALUES BEFORE reaching here.
+                # CodeQL recognises no runtime regex/whitelist as a sanitizer
+                # barrier, so the taint chain cannot be cut statically; the
+                # disposition is documented at the boundary that enforces it.
                 assert_safe_sql(_translate_upsert_verb(sql, c)),
                 tuple(args) if args else None,
             )
