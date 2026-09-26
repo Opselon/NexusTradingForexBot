@@ -1,7 +1,12 @@
-/* ConfidenceGauge — the scaling fix lives here.
+/* ConfidenceGauge + ConfidenceMeter — the scaling fix lives here.
    .cg-svg has a fixed viewBox coordinate space; CSS controls the rendered
    box (inline-size 100% + aspect-ratio 1). The gauge can NEVER exceed its
-   parent card, whatever the container width. */
+   parent card, whatever the container width.
+   OWNER: uiux-modern-20260926 lane 2 (components/viz) — future edits go here.
+   INVARIANTS: colour from theme tokens only (ramps via color-mix over
+   --green/--red/--amber/--accent); `.unknown` is the indeterminate treatment
+   for a ratio the backend never sent (dashed, no fill, never a fake 0);
+   motion only inside prefers-reduced-motion: no-preference. */
 
 .cg-wrap {
   display: flex;
@@ -22,12 +27,14 @@
   overflow: visible;
 }
 
-/* Cap the gauge so a wide card never turns it into a giant dial. */
-.cg-cap-sm { max-inline-size: 132px; }
-.cg-cap-md { max-inline-size: 168px; }
-.cg-cap-lg { max-inline-size: 220px; }
 
-.cg-track { stroke: var(--bg-panel-2); stroke-width: 10; }
+/* Track = recessed groove; the unknown variant is a dashed rail the value arc
+   deliberately does not fill (backend sent no ratio). */
+.cg-track {
+  stroke: color-mix(in srgb, var(--border) 62%, var(--bg-inset));
+  stroke-width: 10;
+}
+.cg-track.unknown { stroke-dasharray: 5 7; }
 .cg-value { stroke-width: 10; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .cg-value.pos { stroke: var(--green); }
 .cg-value.warn { stroke: var(--amber); }
@@ -48,6 +55,7 @@
   fill: var(--text);
   font-size: 0.19em;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 .cg-compact-text { font-size: 0.16em; }
 .cg-tier-text {
@@ -73,11 +81,11 @@
   grid-template-columns: minmax(0, 118px) minmax(60px, 1fr) auto;
   align-items: center;
   gap: 10px;
-  padding: 4px 6px;
+  padding-block: 4px;
+  padding-inline: 6px;
   border-radius: 6px;
-  transition: background-color 0.12s ease;
+  border: 1px solid transparent;
 }
-.cm-row:hover { background: var(--bg-panel-2); }
 /* min-inline-size:0 lets the grid item shrink below its content width, so the
    ellipsis — not layout overflow — handles an over-long localized alias */
 .cm-name {
@@ -95,18 +103,28 @@
   position: relative;
   block-size: 8px;
   border-radius: 999px;
-  background: var(--bg-inset);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 55%, transparent), transparent 65%),
+    var(--bg-inset);
   border: 1px solid var(--border);
   overflow: hidden;
 }
-/* UNKNOWN track: dashed outline, no fill (never a fake zero bar). */
-.cm-track:has(.cm-fill:not(.loaded)) {
+/* UNKNOWN track: dashed rail + hatched inset, no fill — a missing ratio must
+   never read as a healthy 0 %. (Explicit class from the component; the old
+   :has() probe matched a filled track too, i.e. every real value.) */
+.cm-track.unknown {
   border: 1px dashed var(--border-strong);
+  background:
+    repeating-linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--border) 55%, transparent) 0 4px,
+      transparent 4px 8px
+    ),
+    var(--bg-inset);
 }
 .cm-fill {
   block-size: 100%;
   border-radius: 999px;
-  transition: inline-size 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .cm-fill.pos { background: var(--green); }
 .cm-fill.warn { background: var(--amber); }
@@ -138,6 +156,32 @@
   gap: 8px;
   grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
 }
-.cg-grid .cg-wrap { padding: 10px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-inset); }
-.cg-grid .cg-wrap:hover { border-color: var(--border-strong); background: var(--bg-panel-2); }
+.cg-grid .cg-wrap {
+  padding-block: 10px;
+  padding-inline: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, var(--elevate-hi), transparent 60%),
+    var(--bg-inset);
+  box-shadow: var(--elev-1);
+}
+.cg-grid .cg-wrap:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-panel-2);
+  box-shadow: var(--elev-2);
+}
 .cg-grid .cg-svg { max-inline-size: 116px; margin-inline: auto; }
+
+/* Hover/focus feedback is not motion — it survives motion-off. */
+.cm-row:hover {
+  background: var(--bg-panel-2);
+  border-color: var(--border);
+}
+
+/* ---- motion (decoration only; meters read with motion off) ------------- */
+@media (prefers-reduced-motion: no-preference) {
+  .cm-fill { transition: inline-size 0.35s cubic-bezier(0.22, 1, 0.36, 1); }
+  .cm-row { transition: background-color 0.12s ease, border-color 0.12s ease; }
+  .cg-grid .cg-wrap { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+}
