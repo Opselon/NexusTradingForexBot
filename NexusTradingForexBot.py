@@ -322,6 +322,39 @@ def run_infrastructure_doctor(config_path: Path) -> bool:
         else:
             cfg_ok = False
             cfg_detail = f"File not found: {config_path} — run nexus repair --recreate-config"
+        # Database provider + driver check (PG-BOOT-001): the persisted
+        # database.provider row decides which backend the engine boots against.
+        # provider=postgresql with a missing psycopg is the packaging symptom —
+        # a fresh install would boot straight into
+        # RuntimeError('PostgreSQL pooling requires psycopg_pool'). `nexus
+        # doctor` reports this through database/health.py; the launcher did not
+        # check it at all, so a double-click launch died with no diagnostic.
+        db_provider_name = "sqlite"
+        db_driver_ok = True
+        db_detail = ""
+        try:
+            from nexus_scalp.database.config import load_database_config
+            from nexus_scalp.database.drivers import driver_available
+
+            db_cfg = load_database_config("audit")
+            db_provider_name = db_cfg.provider.value
+            if not driver_available(db_cfg):
+                db_driver_ok = False
+                db_detail = (
+                    f"Provider is {db_provider_name} but its driver "
+                    "(psycopg) is unavailable — reinstall the release "
+                    "(the bundle is missing psycopg/psycopg_pool) or run "
+                    "`nexus db-portability switch sqlite`."
+                )
+            else:
+                db_detail = (
+                    f"Provider {db_provider_name}"
+                    + (f" · {db_cfg.host}:{db_cfg.port}" if db_cfg.is_postgresql else "")
+                )
+        except Exception as err:
+            # Read-only diagnostics: never fail the launch on a settings-DB
+            # read problem (the engine's own boot surface reports that loudly).
+            db_detail = f"Provider check unavailable: {err}"
         time.sleep(0.18)
         progress.update(task, completed=1)
 
@@ -336,6 +369,11 @@ def run_infrastructure_doctor(config_path: Path) -> bool:
         "Native MT5 IPC Driver",
         "[green]AVAILABLE[/green]" if mt5_ok else "[yellow]UNAVAILABLE[/yellow]",
         mt5_detail,
+    )
+    table.add_row(
+        "Database Provider Driver",
+        "[green]AVAILABLE[/green]" if db_driver_ok else "[red]UNAVAILABLE[/red]",
+        db_detail,
     )
     if not config_path.exists():
         table.add_row("Configuration File", "[red]MISSING[/red]", cfg_detail)

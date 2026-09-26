@@ -582,6 +582,84 @@ def _close_backend(backend: Any) -> None:
             backend_close()
 
 
+def _persisted_pool_config(domain: str) -> DatabaseConfig | None:
+    """Resolve the persisted DatabaseConfig for ``domain``, or None.
+
+    ``provision_domain`` receives only a DSN + literal pool sizes, so the
+    persisted row is the only place the operator's pool knobs live.  This is
+    best-effort by design: a fresh install, a missing settings DB, or an
+    unreadable row must all fall through to the call-site defaults rather
+    than break provisioning (the failure is loud at validation boundaries
+    elsewhere — see ``DatabaseConfig.from_dict``).
+    """
+    try:
+        from nexus_scalp.database.config import load_database_config
+
+        cfg = load_database_config(domain)
+    except Exception:
+        return None
+    return cfg if cfg.is_postgresql else None
+
+
+def _pool_limits_from_config(
+    cfg: DatabaseConfig | None,
+    pool_kwargs: dict[str, Any],
+) -> PoolLimits:
+    """Build PoolLimits with the persisted config as the BASE.
+
+    The persisted ``postgresql_config`` row is what the operator actually
+    edits (DATABASE TAB / ``provider_options``), so it is the base and the
+    call-site literals are overrides only when the persisted value is absent
+    — otherwise a UI save would change nothing (the observed defect: every
+    call site passed the identical ``min_size=1, max_size=4`` and the row was
+    ignored entirely).
+
+    Pool sizing is optional on the row (``None`` = "never set"), so an unset
+    knob falls through to the caller's literal; an explicit 0 is a real
+    choice (``min_size=0`` opens the pool lazily, 0 idle/lifetime = never
+    reap) and is honored as-is.
+
+    ``statement_timeout_ms`` / ``idle_timeout_sec`` / ``max_lifetime_sec``
+    have no call-site equivalent, so they come ONLY from the persisted row:
+    pooled connections previously never applied ``command_timeout_sec`` (the
+    raw driver path did, via ``options='-c statement_timeout=<ms>'``) and the
+    pool's ``max_idle`` / ``max_lifetime`` stayed 0, holding every connection
+    for process lifetime.
+    """
+    min_size = int(pool_kwargs.get("min_size", 2))
+    max_size = int(pool_kwargs.get("max_size", 10))
+    connect_timeout_sec = PoolLimits.connect_timeout_sec
+    statement_timeout_ms = 0
+    idle_timeout_sec = 0
+    max_lifetime_sec = 0
+    if cfg is not None:
+        if cfg.command_timeout_sec:
+            # The raw driver path applies the same knob as a statement_timeout;
+            # pooled connections get it as a session SET (pg_planes.configure).
+            statement_timeout_ms = max(0, int(cfg.command_timeout_sec) * 1000)
+        if cfg.connect_timeout_sec:
+            connect_timeout_sec = int(cfg.connect_timeout_sec)
+        # A pool sizing knob is only a BASE when the operator actually set it
+        # (None = never touched); an explicit 0 is a deliberate choice.
+        if cfg.pooling_enabled:
+            if cfg.pool_min_size is not None:
+                min_size = int(cfg.pool_min_size)
+            if cfg.pool_max_size is not None:
+                max_size = int(cfg.pool_max_size)
+            if cfg.pool_idle_timeout_sec is not None:
+                idle_timeout_sec = int(cfg.pool_idle_timeout_sec)
+            if cfg.pool_max_lifetime_sec is not None:
+                max_lifetime_sec = int(cfg.pool_max_lifetime_sec)
+    return PoolLimits(
+        min_size=min_size,
+        max_size=max_size,
+        connect_timeout_sec=connect_timeout_sec,
+        statement_timeout_ms=statement_timeout_ms,
+        idle_timeout_sec=idle_timeout_sec,
+        max_lifetime_sec=max_lifetime_sec,
+    )
+
+
 def provision_domain(domain: str, dsn: str, **pool_kwargs: Any) -> Any:
     """Provision a domain on a pooled provider and return its WRITE backend.
 
@@ -590,13 +668,14 @@ def provision_domain(domain: str, dsn: str, **pool_kwargs: Any) -> Any:
     Idempotent: re-provisioning replaces both pools and closes the old ones.
     Opening the read pool is a hard step — it raises instead of leaving a
     write-only domain registered while provision reports success.
+
+    Pool sizing/timeouts take the persisted ``postgresql_config`` row as the
+    BASE and treat the caller's literals as overrides only when the persisted
+    value is absent or at its default (see :func:`_pool_limits_from_config`).
     """
     cfg = FabricConfig.for_postgresql(
         dsn,
-        pool_limits=PoolLimits(
-            min_size=int(pool_kwargs.get("min_size", 2)),
-            max_size=int(pool_kwargs.get("max_size", 10)),
-        ),
+        pool_limits=_pool_limits_from_config(_persisted_pool_config(domain), pool_kwargs),
     )
     domain_cfg = cfg.for_domain(domain)
     # Resolve the whole registry entry (both planes): ``get_domain_backend``
