@@ -95,6 +95,24 @@ def _junit_skips(junit: Path) -> list[dict[str, str]]:
     return out
 
 
+def _junit_failures(junit: Path) -> list[str]:
+    """Names of every failed case in the junit xml (for the annotation)."""
+    out: list[str] = []
+    if not junit.is_file():
+        return out
+    try:
+        tree = ET.parse(junit)
+    except ET.ParseError:
+        return out
+    root = tree.getroot()
+    nodes = root.findall("testsuite") if root.tag == "testsuites" else [root]
+    for node in nodes:
+        for tc in node.findall("testcase"):
+            if tc.find("failure") is not None or tc.find("error") is not None:
+                out.append(f"{tc.attrib.get('classname', '')}::{tc.attrib.get('name', '')}")
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="check_pg_arm")
     ap.add_argument("--pytest", nargs=argparse.REMAINDER, default=[], help="extra pytest args")
@@ -114,6 +132,11 @@ def main(argv: list[str] | None = None) -> int:
     #    gate has nothing to prove (this is the CI-wiring contract).
     if not present:
         report["summary"] = {"status": "env-missing", "error": True}
+        _annotate(
+            f"no PG connection env var is set ({', '.join(PG_ENV_VARS)}); CI must "
+            "provision the throwaway PG service and export it job-wide",
+            title="PG arm gate — env missing",
+        )
         print(
             "PG ARM GATE: no PostgreSQL connection env var is set "
             f"({', '.join(PG_ENV_VARS)}). CI must install the postgres extra "
@@ -129,6 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     report["files"] = [str(f.relative_to(REPO_ROOT)) for f in files]
     if missing:
         report["summary"] = {"status": "files-missing", "missing": missing, "error": True}
+        _annotate(f"PG-arm files absent: {missing}", title="PG arm gate — files missing")
         print(f"PG ARM GATE: listed PG-arm files are absent: {missing}", file=sys.stderr)
         if args.json:
             print(json.dumps(report, indent=2))
@@ -181,6 +205,12 @@ def main(argv: list[str] | None = None) -> int:
     if pg_skips:
         report["summary"]["status"] = "pg-arm-skipped"
         report["summary"]["error"] = True
+        detail = "; ".join(f"{s['name']}: {s['reason']}" for s in pg_skips[:6])
+        _annotate(
+            f"{len(pg_skips)} PostgreSQL test(s) SKIPPED although a PG service was "
+            f"provisioned — the readiness/env wiring lied. {detail}",
+            title="PG arm gate — arm skipped",
+        )
         print(
             "PG ARM GATE FAILED — PostgreSQL tests SKIPPED although a PG service "
             "was provisioned (the readiness/env wiring lied). Skipped:",
@@ -195,6 +225,12 @@ def main(argv: list[str] | None = None) -> int:
     if proc.returncode != 0:
         report["summary"]["status"] = "pg-arm-failed"
         report["summary"]["error"] = True
+        failed_names = _junit_failures(args.junit)
+        detail = ", ".join(failed_names[:8]) or "no JUnit failure list (see stdout)"
+        _annotate(
+            f"pytest rc={proc.returncode}; failing: {detail}",
+            title="PG arm gate — arm failed",
+        )
         print(f"PG ARM GATE FAILED — pytest rc={proc.returncode}", file=sys.stderr)
         print(proc.stdout[-4000:], file=sys.stderr)
         if args.json:
@@ -210,6 +246,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps(report, indent=2))
     return 0
+
+
+def _annotate(message: str, *, title: str = "PG arm gate") -> None:
+    """Emit a GitHub Actions error annotation.
+
+    The step's log blob is not always retrievable (and never from a review
+    host), so a gate that only prints to stderr leaves reviewers with
+    "evidence unavailable" exactly when the gate is red. Annotations ride the
+    check-run API, which is reachable — the failure names its own cause.
+    """
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    # Workflow commands are line-oriented; a newline would truncate the rest.
+    flat = " ".join(message.split())
+    print(f"::error title={title}::{flat}", flush=True)
 
 
 if __name__ == "__main__":

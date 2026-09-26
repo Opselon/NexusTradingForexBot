@@ -149,8 +149,12 @@ jobs:
       # part of the arm skips: NSE_PG_TEST_URL (67 test sites) and
       # NSE_TEST_PG_DSN (test_fabric_guards). Pointed at the service
       # container provisioned below.
-      NSE_PG_TEST_URL: "postgresql://pgarm:***@localhost:5432/nse_pgarm"
-      NSE_TEST_PG_DSN: "postgresql://pgarm:***@localhost:5432/nse_pgarm"
+      # Password is the service container's POSTGRES_PASSWORD below. It is a
+      # throwaway CI-only credential for a container that lives for one job,
+      # never a real secret - a literal is required here because the suite
+      # connects with it directly.
+      NSE_PG_TEST_URL: "postgresql://pgarm:pgarm@localhost:5432/nse_pgarm"
+      NSE_TEST_PG_DSN: "postgresql://pgarm:pgarm@localhost:5432/nse_pgarm"
     services:
       postgres:
         image: postgres:16-alpine
