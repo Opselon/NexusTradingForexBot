@@ -19,7 +19,6 @@ Covers:
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 
 import numpy as np
@@ -44,6 +43,14 @@ from nexus_scalp.labeling.sample_weights import (
 )
 from nexus_scalp.labeling.triple_barrier import TripleBarrierConfig, TripleBarrierLabeler
 from scripts.data.ingest_historical_candles import generate_synthetic_bars
+from tests.e2e.chain_clock import budget_cpu_ms
+
+# ML-QA-018: the 50k-row SLA is measured in CPU time (process_time), not wall
+# clock. Calibrated against the measured cost on a 2-core CPU-only host
+# (~0.87 ms CPU for the 50k-row vectorized path), the budget carries ~570x
+# margin: enough for any runner core count, tight enough that a real O(n^2)
+# regression (the failure the benchmark exists to catch) blows through it.
+_UNIQUENESS_50K_BUDGET_CPU_MS = 500.0
 
 # =============================================================================
 # 1. Concurrency Counting (compute_concurrency_events)
@@ -443,22 +450,33 @@ def test_triple_barrier_sample_weights_e2e() -> None:
 
 
 def test_benchmark_50k_rows_sla() -> None:
-    """Enforces < 2.0 second benchmark SLA on 50,000 samples across 50,000 bars."""
+    """Enforces the 50,000-sample SLA on CPU time, not wall clock.
+
+    The uniqueness computation is O(M) difference-array updates + an O(N)
+    cumsum, so its cost is bounded by the work, not by the scheduler. Wall
+    clock on a 2-core shared CI runner measures co-tenant load (a stalled
+    runner slows the clock with zero change in the code under test and trips
+    the 2.0s bound); ``time.process_time()`` measures the work. Measured on a
+    2-core CPU-only host: ~0.87 ms CPU for 50k rows, so the budget carries
+    ~570x margin.
+    """
     n = 50_000
     rng = np.random.default_rng(12345)
     starts = np.sort(rng.integers(0, n - 20, size=n))
     durations = rng.integers(1, 16, size=n)
     ends = np.minimum(starts + durations - 1, n - 1)
 
-    t0 = time.perf_counter()
-    weights = compute_sample_uniqueness(
-        start_indices=starts,
-        end_indices=ends,
-        total_bars=n,
-        normalize=True,
-    )
-    elapsed = time.perf_counter() - t0
+    with budget_cpu_ms(_UNIQUENESS_50K_BUDGET_CPU_MS) as sw:
+        weights = compute_sample_uniqueness(
+            start_indices=starts,
+            end_indices=ends,
+            total_bars=n,
+            normalize=True,
+        )
 
     assert len(weights) == n
-    assert elapsed < 2.0, f"Benchmark failed: 50k rows took {elapsed:.3f}s (limit: 2.0s)"
+    assert sw.consumed_ms < _UNIQUENESS_50K_BUDGET_CPU_MS, (
+        f"Benchmark failed: 50k rows took {sw.consumed_ms:.3f} ms CPU "
+        f"(limit: {_UNIQUENESS_50K_BUDGET_CPU_MS} ms)"
+    )
     assert np.all(weights > 0.0)

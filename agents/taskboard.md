@@ -576,3 +576,11 @@ behind full-green required checks (this row written pre-merge; merge state = PR 
 | Scope | tests/unit/test_training_env_worker.py, tests/unit/test_ml_qa_017_worker_identity_determinism.py, tests/critical_suite.txt, docs/ml-system/tasks/ML-QA-017.md |
 | Verification | 32 passed (21 module + 13 battery, 1 pre-existing torch-env failure at baseline); negative control 9 fail / 4 pass; ruff/format/mypy clean; manifest 254; markers/dupes/drift OK |
 | Locks taken | none (no production path) |
+
+## ML-QA-018 — Benchmark Wall-Clock -> CPU-Time Determinism (2026-09-26)
+
+| Field | Value |
+| --- | --- |
+| Status | DONE (PR #490 pending) |
+| Owner | AGENT-QA |
+| Scope | tests/unit/test_sample_weights.py, tests/unit/test_research_edge_hardening_20260909.py, tests/unit/test_ml_qa_018_benchmark_cpu_budget.py, tests/critical_suite.txt, docs/ml-system/tasks/ML-QA-018.md |
