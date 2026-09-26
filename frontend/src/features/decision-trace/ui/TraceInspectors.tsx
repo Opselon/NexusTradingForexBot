@@ -30,12 +30,14 @@ import {
 } from "./TracePanels";
 import { WhyInspector, WhyPayloadBlock } from "./WhyInspector";
 import { activeFilterWords } from "../types";
+import type { TraceEvent } from "../types";
 import { selectFilteredEvents, useDecisionTraceStore } from "../store";
 import { useWhyQuery } from "../useCases";
 import type { WhyViewState } from "../forensics";
 
 const NOT_AVAILABLE = "NOT AVAILABLE";
-
+/** Shared empty array so a missing bundle does not allocate per render. */
+const NO_EVENTS: TraceEvent[] = [];
 /**
  * The WHY view state is derived strictly from the query's own states
  * (§37): EMPTY before selection, PENDING while loading, NOT_FOUND on the
@@ -67,7 +69,7 @@ export const TraceInspectors = memo(function TraceInspectors({
 }) {
   const store = useDecisionTraceStore();
   const selectedBundle = store.selectedBundle;
-  const events = selectedBundle?.events ?? [];
+  const events = selectedBundle?.events ?? NO_EVENTS;
   const { ctx, res } = useWhyViewState();
   const selectedEventId = store.selectedEventId;
 
@@ -102,6 +104,17 @@ export const TraceInspectors = memo(function TraceInspectors({
     },
     [selectEvent],
   );
+  /** Stable identities: the queue/stream panels are memoized and receive these. */
+  const selectTrace = useCallback(
+    (traceId: string) => {
+      useDecisionTraceStore.getState().setEventFilters({ trace_id: traceId });
+      selectEvent(null);
+    },
+    [selectEvent],
+  );
+  const toggleTraceCollapsed = useCallback((traceId: string) => {
+    useDecisionTraceStore.getState().toggleTraceCollapsed(traceId);
+  }, []);
   const liveRows = useMemo(
     () => store.streamRows.slice(-120),
     [store.streamRows],
@@ -112,7 +125,11 @@ export const TraceInspectors = memo(function TraceInspectors({
   );
   const clocks = useViewClockBindings();
   const counters = store.topology?.counters ?? store.observer?.counters ?? null;
-  const chips = activeFilterWords(store.eventFilters);
+  /** Rebuilt only when the filter set changes, not on every parent render. */
+  const chips = useMemo(() => activeFilterWords(store.eventFilters), [store.eventFilters]);
+  /** selectFilteredEvents allocates a new array — memoized so the state
+   *  timeline keeps referential stability across unrelated re-renders. */
+  const stateTimelineEvents = useMemo(() => selectFilteredEvents(store), [store]);
 
   return (
     <div className="dti-inspector dti-inspector-col" role="region" aria-label="Decision trace inspectors">
@@ -184,10 +201,7 @@ export const TraceInspectors = memo(function TraceInspectors({
       <TraceQueuePanel
         queue={store.queue}
         selectedTraceId={selectedBundle?.trace_id ?? null}
-        onSelectTrace={(traceId) => {
-          useDecisionTraceStore.getState().setEventFilters({ trace_id: traceId });
-          selectEvent(null);
-        }}
+        onSelectTrace={selectTrace}
       />
       <LiveStreamPanel
         rows={liveRows}
@@ -195,9 +209,9 @@ export const TraceInspectors = memo(function TraceInspectors({
         selectedEventId={selectedEventId}
         onSelect={onSelectStreamRow}
         collapsedTraces={store.collapsedTraces}
-        onToggleCollapse={(id) => useDecisionTraceStore.getState().toggleTraceCollapsed(id)}
+        onToggleCollapse={toggleTraceCollapsed}
       />
-      <StateTimelinePanel events={selectFilteredEvents(store)} onSelectEvent={selectEvent} />
+      <StateTimelinePanel events={stateTimelineEvents} onSelectEvent={selectEvent} />
       <ProvenanceLegend gapCount={gapCount} />
     </div>
   );

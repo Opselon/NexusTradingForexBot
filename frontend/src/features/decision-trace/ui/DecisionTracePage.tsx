@@ -193,6 +193,16 @@ export default function DecisionTracePage({ snapshot }: ShellPageProps) {
     }
   }, []);
 
+  /** Stage events for the selected-node panel — one filter per store change,
+   *  not per page render (the page re-renders on every SSE batch). */
+  const stageEvents = useMemo(
+    () => (selectedNodeStage ? events.filter((e) => e.stage === selectedNodeStage) : []),
+    [events, selectedNodeStage],
+  );
+  const closeBundle = useCallback(() => {
+    useDecisionTraceStore.getState().selectBundle(null, "LIVE");
+  }, []);
+
   const integrityItems = useMemo(() => {
     if (!integrity || integrity.total === 0) return [];
     const items: string[] = [];
@@ -343,7 +353,7 @@ export default function DecisionTracePage({ snapshot }: ShellPageProps) {
             bundle={activeBundle}
             source={replay.active ? "REPLAY" : selectedBundleSource}
             replayEvent={replayEvent}
-            onClose={() => useDecisionTraceStore.getState().selectBundle(null, "LIVE")}
+            onClose={closeBundle}
           />
           {/* §74 desktop layout: lane-D forensics column sits beside the graph
            * (never over it), compact by default. */}
@@ -352,7 +362,7 @@ export default function DecisionTracePage({ snapshot }: ShellPageProps) {
             <NodeStagePanel
               stage={selectedNodeStage}
               count={graph.nodes.find((n) => n.stage === selectedNodeStage)?.count ?? 0}
-              events={events.filter((e) => e.stage === selectedNodeStage)}
+              events={stageEvents}
               onClose={() => selectStage(null)}
             />
           ) : null}
