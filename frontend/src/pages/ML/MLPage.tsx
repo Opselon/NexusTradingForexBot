@@ -18,7 +18,7 @@
  * LIQUIDITY 60..69) — index ranges, not guesses about names.
  */
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { mlApi } from "@/api/mlApi";
 import { operatorApi, shadowApi } from "@/pages/_shared/edgeApi";
@@ -43,6 +43,27 @@ import "@/pages/_shared/pages.css";
 
 interface Props {
   snapshot: EngineSnapshot | undefined;
+}
+
+/** Static style objects hoisted out of render — the values never change, so
+ *  React gets a stable object reference instead of a fresh literal per tick. */
+const NOTE_STYLE_TIGHT: CSSProperties = { marginTop: 4 };
+const NOTE_STYLE_CAL: CSSProperties = { marginTop: 6 };
+
+/**
+ * Stable React key for one untyped drift-alert row (`Record<string, unknown>`,
+ * no id field in the payload). Built from the row's own identity fields with a
+ * collision counter, so a reordered page of alerts reconciles by identity
+ * instead of by array position — and two identical records still never share
+ * a key. Pure function of the row list; the rendered cells are untouched.
+ */
+function driftAlertKey(rows: readonly Record<string, unknown>[], i: number): string {
+  const base = (r: Record<string, unknown>): string =>
+    `${String(r.timestamp ?? r.ts ?? "")}|${String(r.feature ?? r.name ?? "")}|${String(r.reason ?? r.kind ?? "")}`;
+  const key = base(rows[i] ?? {});
+  let dup = 0;
+  for (let j = 0; j < i; j++) if (base(rows[j] ?? {}) === key) dup++;
+  return dup === 0 ? key : `${key}#${dup}`;
 }
 
 /**
@@ -169,7 +190,7 @@ function FeatureBlock({
           </div>
         ))}
       </div>
-      <div className="l4-note" style={{ marginTop: 4 }}>{hint}</div>
+      <div className="l4-note" style={NOTE_STYLE_TIGHT}>{hint}</div>
     </div>
   );
 }
@@ -533,7 +554,7 @@ export default function MLPage({ snapshot }: Props) {
               <dt>{t("ml.cal.oos", "OOS cutoff")}</dt>
               <dd className="small">{calibrationQuery.data.oos_cutoff ?? "—"}</dd>
             </dl>
-            <div className="l4-note" style={{ marginTop: 6 }}>
+            <div className="l4-note" style={NOTE_STYLE_CAL}>
               {t(
                 "ml.cal.note",
                 "Eligibility, fingerprint binding and the 60/40 chronological split are computed by the backend monitor; this panel only displays them. An INSUFFICIENT_EVIDENCE collector status is an honest gap, not a failure of the model.",
@@ -613,8 +634,8 @@ export default function MLPage({ snapshot }: Props) {
                       { label: t("ml.th.metric", "Metric"), num: true },
                       { label: t("ml.th.detail", "Detail") },
                     ]}>
-                      {d.drift_alerts!.slice(0, 10).map((a, i) => (
-                        <tr key={i}>
+                      {d.drift_alerts!.slice(0, 10).map((a, i, rows) => (
+                        <tr key={driftAlertKey(rows, i)}>
                           <td className="small">{String(a.timestamp ?? a.ts ?? "—")}</td>
                           <td>{String(a.feature ?? a.name ?? "—")}</td>
                           <td className="num">{typeof a.value === "number" ? formatNumber(a.value, 4) : String(a.value ?? "—")}</td>
@@ -681,7 +702,7 @@ export default function MLPage({ snapshot }: Props) {
                   hint={t("ml.shadow.empty_hint", "generated_at: — means the endpoint returned no block.")}
                 />
               )}
-              <div className="l4-note" style={{ marginTop: 6 }}>
+              <div className="l4-note" style={NOTE_STYLE_CAL}>
                 {shadowStatusQuery.data?.generated_at
                   ? t("ml.shadow.gen_line", "status generated {v}", { v: shadowStatusQuery.data.generated_at })
                   : t("ml.shadow.gen_none", "no generated_at in payload")}
