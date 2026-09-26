@@ -322,13 +322,21 @@ def _is_pg_conn(conn: Any) -> bool:
     module = type(conn).__module__ or ""
     if module.startswith("psycopg"):
         return True
-    # PortableConnection wraps a driver; its cursor proxies a psycopg cursor.
+    # The news store's pooled connection (``_PooledNewsConnection``) wraps a
+    # psycopg cursor: the statement builder has to see it as PostgreSQL, or
+    # a provider-pinned statement would spell the SQLite dialect at a PG pool.
+    if type(conn).__name__ == "_PooledNewsConnection":
+        return True
     proxy = getattr(conn, "_pg", None)
     if proxy is not None:
         return True
     cursor = getattr(conn, "_cursor", None)
-    if cursor is not None and (type(cursor).__module__ or "").startswith("psycopg"):
-        return True
+    if cursor is not None:
+        inner = getattr(cursor, "_cursor", None)
+        if inner is not None and (type(inner).__module__ or "").startswith("psycopg"):
+            return True
+        if cursor is not None and (type(cursor).__module__ or "").startswith("psycopg"):
+            return True
     return False
 
 

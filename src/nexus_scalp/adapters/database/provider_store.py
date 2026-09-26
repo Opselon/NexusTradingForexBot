@@ -76,9 +76,18 @@ OPS_SHADOW_DOMAIN = "ops_shadow"
 #: which the audit domain's schema does not hold either.
 OPS_HYGIENE_DOMAIN = "ops_hygiene"
 
+#: The fabric domain for the News subsystem's own tables (news_articles,
+#: news_sources, ... + calendar_events, which the news store provisions). The
+#: news store resolves its pooled backend through the fabric directly; it is
+#: declared here so the shared ``resolve_backend`` seam recognises the domain
+#: and can bootstrap it the same way it bootstraps the ``ops_*`` domains.
+NEWS_DOMAIN = "news"
+
 #: Every domain an operational store may route through. ``resolve_backend``
 #: bootstraps the domain the first time a process touches a pooled provider.
-_KNOWN_DOMAINS: frozenset[str] = frozenset({AUDIT_DOMAIN, OPS_SHADOW_DOMAIN, OPS_HYGIENE_DOMAIN})
+_KNOWN_DOMAINS: frozenset[str] = frozenset(
+    {AUDIT_DOMAIN, OPS_SHADOW_DOMAIN, OPS_HYGIENE_DOMAIN, NEWS_DOMAIN}
+)
 
 #: Minimum spacing between repeated "not provisioned" warnings for one store.
 #: The first occurrence always logs; later repeats are rate-limited so a hot
