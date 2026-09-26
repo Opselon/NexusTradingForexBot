@@ -248,6 +248,7 @@ def log_query_failure(
     # The message carries the headline fields for a human scanning the severity
     # log; the kwargs carry the SAME fields machine-readably (structlog binds
     # them onto the record). One record, one structured payload.
+    query_observability.note_error()
     _log(
         logger.error,
         "[PG-QUERY] query failed domain=%s op=%s error_type=%s placeholders=%d args=%d",
@@ -286,6 +287,7 @@ def log_slow_query(
     }
     if rows is not None:
         context["rows"] = int(rows)
+    query_observability.note_slow()
     _log(
         logger.warning,
         "[PG-QUERY] slow query domain=%s op=%s duration_ms=%.2f threshold_ms=%.2f",
@@ -391,6 +393,13 @@ class DegradedReadTracker:
     ERROR — that is the difference between "a provider is not provisioned"
     and "reads have been silently wrong for a minute".
 
+    Escalation itself is also rate-limited: the ERROR fires at the threshold
+    crossing and then every :data:`PG_DEGRADED_LOG_EVERY` occurrences, not on
+    every one. Escalating 368 times would have been a second flood of the
+    very kind this tracker exists to stop — the cumulative ``occurrences``
+    counter still records every degradation, so nothing is hidden, and the
+    recurring ERROR keeps the condition from aging out of sight.
+
     Thread-safe through a single lock; the hot read path takes it only when a
     degradation actually happens (the healthy path never calls in).
     """
@@ -427,10 +436,19 @@ class DegradedReadTracker:
                 state.total += 1
                 state.consecutive += 1
                 escalated = state.consecutive > PG_DEGRADED_ESCALATION_AFTER
-                should_warn = (
-                    state.emitted == 0 or state.total % PG_DEGRADED_LOG_EVERY == 0 or escalated
+                # The escalation ERROR is rate-limited too: it fires at the
+                # threshold crossing and then every PG_DEGRADED_LOG_EVERY
+                # occurrences. Escalating on every one of 368 degradations
+                # would just have been a second flood at ERROR level — the
+                # cumulative counter below still records every occurrence.
+                escalation_due = escalated and (
+                    state.consecutive == PG_DEGRADED_ESCALATION_AFTER + 1
+                    or state.total % PG_DEGRADED_LOG_EVERY == 0
                 )
-                state.emitted += 1 if should_warn else 0
+                should_warn = (
+                    state.emitted == 0 or state.total % PG_DEGRADED_LOG_EVERY == 0
+                ) and not escalated
+                state.emitted += 1 if (should_warn or escalation_due) else 0
                 total = state.total
                 consecutive = state.consecutive
                 emitted = state.emitted
@@ -448,6 +466,22 @@ class DegradedReadTracker:
         if detail:
             context["detail"] = detail
         if escalated:
+            if not escalation_due:
+                # Persistent but not due for an ERROR record: still counted,
+                # still visible at DEBUG with the cumulative counter, just not
+                # re-flooding the ERROR stream.
+                _log(
+                    logger.debug,
+                    "[PG-QUERY] read degraded (deduplicated) domain=%s reason=%s "
+                    "occurrences=%d consecutive=%d",
+                    key[0],
+                    key[1],
+                    total,
+                    consecutive,
+                    **context,
+                )
+                return
+            query_observability.note_error()
             _log(
                 logger.error,
                 "[PG-QUERY] read degraded ESCALATED domain=%s reason=%s "
@@ -524,6 +558,72 @@ class DegradedReadTracker:
 #: stores hitting the same unprovisioned domain produce one warning, not
 #: three floods.
 degraded_reads = DegradedReadTracker()
+
+
+#: Process-global query-observability counters. Incremented by the ERROR and
+#: WARNING emitters below, so the counts cover EVERY sink the operators asked
+#: about (pool, both planes, driver, store adapters) with one source of truth.
+#: Read by the web diagnostics UI so the "is PostgreSQL healthy" question is
+#: answered from measured query outcomes, not from a connectivity probe alone
+#: — a server that answers the probe while every query fails is NOT healthy.
+class _QueryObservabilityCounters:
+    """Monotonic ERROR/WARNING counters for the query observability surface."""
+
+    __slots__ = ("errors", "lock", "slow_queries", "warnings")
+
+    def __init__(self) -> None:
+        import threading
+
+        self.lock = threading.Lock()
+        self.errors = 0
+        self.warnings = 0
+        self.slow_queries = 0
+
+    def note_error(self) -> None:
+        try:
+            with self.lock:
+                self.errors += 1
+        except Exception:
+            pass
+
+    def note_slow(self) -> None:
+        try:
+            with self.lock:
+                self.warnings += 1
+                self.slow_queries += 1
+        except Exception:
+            pass
+
+    def snapshot(self) -> dict[str, Any]:
+        """Read-only view (never raises; a health surface must not fail)."""
+        try:
+            with self.lock:
+                return {
+                    "query_errors": self.errors,
+                    "query_warnings": self.warnings,
+                    "slow_queries": self.slow_queries,
+                    "degraded_reads": dict(self._degraded_snapshot()),
+                }
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _degraded_snapshot() -> dict[str, Any]:
+        try:
+            return degraded_reads.snapshot()
+        except Exception:
+            return {}
+
+
+query_observability = _QueryObservabilityCounters()
+
+
+def query_observability_snapshot() -> dict[str, Any]:
+    """Public read-only accessor for health/diagnostics surfaces."""
+    try:
+        return query_observability.snapshot()
+    except Exception:
+        return {}
 
 
 def note_degraded_read(
@@ -622,6 +722,7 @@ def log_pool_failure(
         "pool_error_type": classification["pool_error_type"],
         "pool_stats": stats if isinstance(stats, dict) else {},
     }
+    query_observability.note_error()
     _log(
         logger.error,
         "[PG-POOL] connection failure pool=%s op=%s class=%s client_side=%s",
@@ -711,5 +812,6 @@ __all__ = [
     "note_degraded_read",
     "placeholder_count",
     "pool_failure_guard",
+    "query_observability_snapshot",
     "query_timer",
 ]

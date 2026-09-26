@@ -268,20 +268,33 @@ class PgPool:
 
     def query(self, sql: str, args: Sequence[Any] = ()) -> list[dict[str, Any]]:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
-        from nexus_scalp.database.query_logging import query_timer
+        from nexus_scalp.database.query_logging import pool_failure_guard, query_timer
 
         translated = PostgreSQLDriver.translate_sql(sql)
-        with (
-            query_timer("query", sql, domain=self._name) as timer,
-            self.connection() as conn,
-            conn.cursor() as cur,
-        ):
-            cur.execute(translated, tuple(args))
-            cols = [d.name for d in cur.description] if cur.description else []
-            rows = [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
-            # Row count set INSIDE the block: the timer renders it on __exit__.
-            timer.rows = len(rows)
-        return rows
+        rows: list[dict[str, Any]] = []
+
+        def _run() -> list[dict[str, Any]]:
+            with (
+                query_timer("query", sql, domain=self._name) as timer,
+                self.connection() as conn,
+                conn.cursor() as cur,
+            ):
+                cur.execute(translated, tuple(args))
+                cols = [d.name for d in cur.description] if cur.description else []
+                rows[:] = [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
+                # Row count set INSIDE the block: the timer renders it on __exit__.
+                timer.rows = len(rows)
+            return rows
+
+        return pool_failure_guard(
+            _run,
+            pool_name=self._name,
+            operation="query",
+            domain=self._name,
+            stats=self.stats,
+            sql=sql,
+            args=args,
+        )
 
     def query_one(self, sql: str, args: Sequence[Any] = ()) -> dict[str, Any] | None:
         rows = self.query(sql, args)
@@ -289,17 +302,31 @@ class PgPool:
 
     def scalar(self, sql: str, args: Sequence[Any] = ()) -> Any:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
-        from nexus_scalp.database.query_logging import query_timer
+        from nexus_scalp.database.query_logging import pool_failure_guard, query_timer
 
         translated = PostgreSQLDriver.translate_sql(sql)
-        with (
-            query_timer("scalar", sql, domain=self._name),
-            self.connection() as conn,
-            conn.cursor() as cur,
-        ):
-            cur.execute(translated, tuple(args))
-            row = cur.fetchone()
-            return row[0] if row is not None else None
+        holder: list[Any] = []
+
+        def _run() -> Any:
+            with (
+                query_timer("scalar", sql, domain=self._name),
+                self.connection() as conn,
+                conn.cursor() as cur,
+            ):
+                cur.execute(translated, tuple(args))
+                row = cur.fetchone()
+                holder.append(row[0] if row is not None else None)
+            return holder[0] if holder else None
+
+        return pool_failure_guard(
+            _run,
+            pool_name=self._name,
+            operation="scalar",
+            domain=self._name,
+            stats=self.stats,
+            sql=sql,
+            args=args,
+        )
 
     # -- stats ------------------------------------------------------------
 
