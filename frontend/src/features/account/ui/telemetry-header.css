@@ -141,3 +141,11 @@
   border-inline-start: 1px solid var(--border);
   padding-inline-start: 12px;
 }
+
+/* motion is decoration: the live pulse and the stale blink are announcements
+   only — with motion off the pill still reads LIVE / STALE in full color. */
+@media (prefers-reduced-motion: reduce) {
+  .th-dot,
+  .th-warn-dot { animation: none; }
+  .th-live .th-dot { box-shadow: 0 0 6px rgba(62, 207, 142, 0.7); }
+}

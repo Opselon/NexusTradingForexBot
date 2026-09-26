@@ -111,6 +111,12 @@
   text-align: center;
 }
 
+/* motion is decoration — the heat bars keep their final width with motion off */
+@media (prefers-reduced-motion: reduce) {
+  .ld-row,
+  .ld-heat { transition: none; }
+}
+
 /* unscored / DISCOVERED strategies row — informational, not an error */
 .ld-unknown { border: 1px dashed var(--border-strong); opacity: 0.8; }
 .ld-unknown:hover { opacity: 1; }
