@@ -42,7 +42,6 @@ logger = get_logger("nexus_scalp.web.diagnostics_state_routes")
 
 def _frontend_block() -> dict[str, Any]:
     """END-USER-RUNTIME-UI-INTEGRATION (contract frozen decision #7):
-    additive /health diagnostics for the production React build.
 
     Pure/deterministic — the frozen seam is consulted at call time so
     /health reflects env changes without a restart; a raise never breaks
@@ -54,6 +53,37 @@ def _frontend_block() -> dict[str, Any]:
         return frontend_status()
     except Exception as exc:  # pragma: no cover — probe must never die here
         return {"mode": "unknown", "error": type(exc).__name__}
+
+
+def _active_provider_name() -> str:
+    """The ACTIVE persistence provider for the audit domain (``sqlite``/``postgresql``).
+
+    Single source for the routes that must route by provider instead of by
+    path: ``db_path_for_audit()`` always returns the local SQLite file, so a
+    route that keys on it silently reads the wrong database under PostgreSQL.
+    """
+    try:
+        from nexus_scalp.database.config import load_database_config
+
+        return load_database_config("audit").provider.value
+    except Exception:
+        return "sqlite"
+
+
+def _audit_repository() -> Any:
+    """The audit repository bound to the ACTIVE provider's connection.
+
+    Constructed lazily and per-call: routes are stateless and the repository
+    owns a background worker + pooled connection, so a module-level singleton
+    would outlive the request and hold a pool nothing closes on re-provision.
+    """
+    from nexus_scalp.adapters.database.audit_repository import AuditRepository
+    from nexus_scalp.database.config import build_postgres_url, load_database_config
+
+    cfg = load_database_config("audit")
+    if cfg.is_postgresql:
+        return AuditRepository(db_url=build_postgres_url(cfg))
+    return AuditRepository(db_url=f"sqlite:///{db_path_for_audit()}")
 
 
 #: PERF-HEALTH (2026-09-10): /health verdict cache TTL (seconds). The Docker
@@ -561,8 +591,25 @@ def register_diagnostics_state_routes(
     # ---------------------------------------------------------------------
 
     def _incident_store() -> Any:
+        """The incident store over the ACTIVE provider, never a stale SQLite path.
+
+        ``db_path_for_audit()`` returns the local ``artifacts/audit.db`` path
+        unconditionally: under a PostgreSQL provider ``IncidentStore(db_path=...)``
+        adopts it, runs its SQLite branches, and reports an EMPTY incident list
+        while every live row sits in PostgreSQL — the diagnostics tab showed a
+        blank board on a healthy cluster (the same "documented defaults instead
+        of real data" defect the read-plane lane logged 368 warnings for).
+
+        Only pass the SQLite path when SQLite is the active provider; under a
+        pooled provider resolve the store from the audit repository so it uses
+        the fabric's pooled read/write planes (the store ignores the repo's
+        provider URI as a path by design).
+        """
         from nexus_scalp.incidents.store import IncidentStore
 
+        provider = _active_provider_name()
+        if provider == "postgresql":
+            return IncidentStore(audit_repo=_audit_repository())
         db = db_path_for_audit()
         return IncidentStore(db_path=db)
 

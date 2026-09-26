@@ -236,9 +236,8 @@ class PgPool:
     def query(self, sql: str, args: Sequence[Any] = ()) -> list[dict[str, Any]]:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
 
-        translated = PostgreSQLDriver.translate_sql(sql)
         with self.connection() as conn, conn.cursor() as cur:
-            cur.execute(translated, tuple(args))
+            cur.execute(PostgreSQLDriver.translate_sql_for_execution(sql, conn), tuple(args))
             cols = [d.name for d in cur.description] if cur.description else []
             return [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
 
@@ -249,9 +248,8 @@ class PgPool:
     def scalar(self, sql: str, args: Sequence[Any] = ()) -> Any:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
 
-        translated = PostgreSQLDriver.translate_sql(sql)
         with self.connection() as conn, conn.cursor() as cur:
-            cur.execute(translated, tuple(args))
+            cur.execute(PostgreSQLDriver.translate_sql_for_execution(sql, conn), tuple(args))
             row = cur.fetchone()
             return row[0] if row is not None else None
 
@@ -377,9 +375,8 @@ class PgWritePlane:
     def execute(self, sql: str, args: Sequence[Any] = ()) -> None:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
 
-        translated = PostgreSQLDriver.translate_sql(sql)
         with self._pool.connection() as conn, conn.cursor() as cur:
-            cur.execute(translated, tuple(args))
+            cur.execute(PostgreSQLDriver.translate_sql_for_execution(sql, conn), tuple(args))
             # The pool lends connections with autocommit OFF (the psycopg
             # default); without an explicit commit the write is discarded when
             # the connection is returned. Financial rows must never be
@@ -398,12 +395,17 @@ class PgWritePlane:
         with self._pool.connection() as conn:
             try:
                 for query, rows in statements:
-                    translated = PostgreSQLDriver.translate_sql(query)
                     with conn.cursor() as cur:
                         if len(rows) == 1:
-                            cur.execute(translated, tuple(rows[0]))
+                            cur.execute(
+                                PostgreSQLDriver.translate_sql_for_execution(query, conn),
+                                tuple(rows[0]),
+                            )
                         else:
-                            cur.executemany(translated, [tuple(r) for r in rows])
+                            cur.executemany(
+                                PostgreSQLDriver.translate_sql_for_execution(query, conn),
+                                [tuple(r) for r in rows],
+                            )
                 conn.commit()
             except Exception:
                 with contextlib_suppress():
@@ -413,11 +415,13 @@ class PgWritePlane:
     def execute_one(self, query: str, args: Sequence[Any]) -> None:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
 
-        translated = PostgreSQLDriver.translate_sql(query)
         with self._pool.connection() as conn:
             try:
                 with conn.cursor() as cur:
-                    cur.execute(translated, tuple(args))
+                    cur.execute(
+                        PostgreSQLDriver.translate_sql_for_execution(query, conn),
+                        tuple(args),
+                    )
                 conn.commit()
             except Exception:
                 with contextlib_suppress():
@@ -427,9 +431,11 @@ class PgWritePlane:
     def executemany(self, sql: str, seq: Sequence[Sequence[Any]]) -> None:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
 
-        translated = PostgreSQLDriver.translate_sql(sql)
         with self._pool.connection() as conn, conn.cursor() as cur:
-            cur.executemany(translated, [tuple(a) for a in seq])
+            cur.executemany(
+                PostgreSQLDriver.translate_sql_for_execution(sql, conn),
+                [tuple(a) for a in seq],
+            )
             conn.commit()
 
 

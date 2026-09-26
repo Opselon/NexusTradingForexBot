@@ -6,11 +6,15 @@ only code paths that actually connect to PostgreSQL import it (lazy import
 inside the driver).
 
 Driver responsibilities (portability contract):
-  * translate ``?`` qmark placeholders to ``%s`` automatically so existing
-    repository SQL works against both providers;
-  * emulate ``INSERT OR IGNORE`` → ``ON CONFLICT DO NOTHING`` and
-    ``INSERT OR REPLACE`` → ``ON CONFLICT (...) DO UPDATE`` via
-    :meth:`upsert` / :meth:`insert_ignore`;
+  * translate ``?`` qmark and ``:name`` placeholders to ``%s`` automatically
+    so existing repository SQL works against both providers;
+  * translate the SQLite upsert verbs on the generic path —
+    ``INSERT OR IGNORE`` → ``ON CONFLICT DO NOTHING`` and
+    ``INSERT OR REPLACE`` → ``ON CONFLICT (...) DO UPDATE`` — inside
+    :meth:`translate_sql_for_execution`, which every execute/query method
+    goes through (``upsert`` / ``insert_ignore`` remain available for
+    callers that build rows as dicts, but they are NOT the path stores that
+    author their own SQL strings land on);
   * translate SQLite DDL types (INTEGER identity → BIGSERIAL, REAL → DOUBLE
     PRECISION, BLOB → BYTEA, ...) via :meth:`portable_type_for`;
   * never embed the password: it is injected at connect time from the
@@ -20,12 +24,13 @@ Driver responsibilities (portability contract):
 from __future__ import annotations
 
 import contextlib
+import re
 from collections.abc import Iterable, Sequence
 from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig, build_postgres_url, mask_url_password
 from nexus_scalp.database.drivers._sql_guard import assert_safe_sql
-from nexus_scalp.database.drivers.base import DatabaseDriver
+from nexus_scalp.database.drivers.base import _IDENT_SHAPE, DatabaseDriver
 
 #: Case-insensitive map: SQLite/logical type -> PostgreSQL DDL type.
 PG_TYPE_MAP: dict[str, str] = {
@@ -63,12 +68,43 @@ def pg_type_for(declared: str) -> str:
     return "TEXT"
 
 
-def _translate_placeholders(sql: str) -> str:
-    """Rewrite ``?`` qmark placeholders to ``%s`` (psycopg format style).
+#: A character that may continue an identifier inside a named placeholder.
+_IDENT_CHAR = re.compile(r"[A-Za-z0-9_$]")
 
-    Only replaces ``?`` OUTSIDE single-quoted string literals and
-    double-quoted identifiers, so string content (URLs, JSON, regex) is
-    never corrupted.
+#: First character of a SQLite named placeholder (``:name``): a letter or
+#: underscore.  This is what distinguishes ``:a`` (placeholder) from ``::``
+#: (a PostgreSQL cast) and ``:1`` (not SQLite named syntax).
+_NAMED_PLACEHOLDER_START = re.compile(r":[A-Za-z_]")
+
+#: psycopg-native positional placeholder forms that must NOT be re-escaped:
+#: psycopg's client-side scanner accepts ``%s``/``%b``/``%t`` and collapses
+#: ``%%`` back to ``%``, so these already reach the server as written.
+_PG_NATIVE_PLACEHOLDER = re.compile(r"%(?:[sbt]|%|\([A-Za-z_][A-Za-z0-9_$]*\)s)")
+
+
+def _translate_placeholders(sql: str) -> str:
+    """Rewrite SQLite-style placeholders to psycopg format style.
+
+    Translates in ONE quote-aware pass:
+
+      * qmark ``?`` → ``%s``;
+      * named ``:name`` → ``%s``.  SQLite's named style is what repositories
+        build (``VALUES (:a, :b, ...)`` with the params flattened to a
+        positional sequence); psycopg leaves ``:name`` untouched, so without
+        this it sees a statement with ZERO placeholders and rejects it with
+        ``the query has 0 placeholders but N parameters were passed``.
+
+    Both rewrites happen OUTSIDE single-quoted literals and double-quoted
+    identifiers, so string content (URLs, JSON, regex) is never corrupted.
+    Named placeholders follow the SQLite rule — a letter or underscore after
+    the colon — so ``::`` (PostgreSQL casts) and ``:1`` are left alone.
+
+    Stray percent signs are doubled (``%`` → ``%%``).  psycopg's client-side
+    placeholder scanner is NOT quote-aware: it scans the whole statement for
+    ``%s`` and raises ``incomplete placeholder: '%'`` on a bare ``%`` —
+    including one inside a string literal.  Percent signs that already form a
+    psycopg placeholder (``%s``/``%b``/``%t``/``%(name)s``/``%%``) are copied
+    as-is, so statements already written in psycopg format keep working.
     """
     out: list[str] = []
     i = 0
@@ -76,7 +112,10 @@ def _translate_placeholders(sql: str) -> str:
     while i < n:
         ch = sql[i]
         if ch == "'":
-            # single-quoted literal: copy until closing quote ('' escape)
+            # single-quoted literal: copy until closing quote ('' escape).
+            # Every ``%`` inside it is doubled: psycopg's scanner reads the
+            # whole statement, so a literal must never look like a
+            # placeholder (``'a%sb'`` would bind as ``$1``).
             j = i + 1
             while j < n:
                 if sql[j] == "'":
@@ -85,7 +124,8 @@ def _translate_placeholders(sql: str) -> str:
                         continue
                     break
                 j += 1
-            out.append(sql[i : j + 1])
+            literal = sql[i : j + 1]
+            out.append(literal.replace("%", "%%") if "%" in literal else literal)
             i = j + 1
         elif ch == '"':
             # double-quoted identifier: copy verbatim
@@ -97,10 +137,306 @@ def _translate_placeholders(sql: str) -> str:
         elif ch == "?":
             out.append("%s")
             i += 1
+        elif ch == ":" and _NAMED_PLACEHOLDER_START.match(sql, i):
+            # named placeholder: ``:name`` -> ``%s``.  The NAME is dropped,
+            # never interpolated: the caller flattens params to positional
+            # order, and the rewrite must not turn a name into SQL text.
+            j = i + 1
+            while j < n and _IDENT_CHAR.match(sql[j]):
+                j += 1
+            out.append("%s")
+            i = j
+        elif ch == ":" and i + 1 < n and sql[i + 1] == ":":
+            # PostgreSQL cast operator (``::int``): two colons are syntax,
+            # never a placeholder, so both are copied verbatim.
+            out.append("::")
+            i += 2
+        elif ch == "%":
+            # A psycopg-native placeholder is copied verbatim (doubling it
+            # would make the server see a literal ``%s``); anything else is
+            # escaped so psycopg's scanner cannot read it as a placeholder.
+            m = _PG_NATIVE_PLACEHOLDER.match(sql, i)
+            if m is not None:
+                out.append(m.group(0))
+                i = m.end()
+            else:
+                out.append("%%")
+                i += 1
         else:
             out.append(ch)
             i += 1
     return "".join(out)
+
+
+#: Cheap quote-aware scan of the code (non-literal) part of a statement.
+#:
+#: Reused by the upsert-verb rewriter so a ``?`` or ``OR`` inside a string
+#: literal or a quoted identifier is never mistaken for SQL syntax.
+_QUOTED_PATTERN = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")+\"")
+
+
+def _code_regions(sql: str) -> list[tuple[int, int]]:
+    """Spans of ``sql`` OUTSIDE quoted literals/identifiers.
+
+    One linear scan (``re.finditer`` over the quote forms only); the verb and
+    ``VALUES`` shape checks then run against the code regions alone so literal
+    content can never be read as SQL.
+    """
+    regions: list[tuple[int, int]] = []
+    pos = 0
+    for m in _QUOTED_PATTERN.finditer(sql):
+        if m.start() > pos:
+            regions.append((pos, m.start()))
+        pos = m.end()
+    if pos < len(sql):
+        regions.append((pos, len(sql)))
+    return regions
+
+
+#: ``INSERT OR REPLACE/IGNORE`` head, quote-aware (code regions only).
+_INSERT_OR_VERB_PATTERN = re.compile(r"INSERT\s+OR\s+(REPLACE|IGNORE)\b", re.IGNORECASE)
+
+
+def _parse_insert_or_verb(sql: str) -> tuple[str, str] | None:
+    """Split a SQLite upsert verb out of an INSERT statement.
+
+    Returns ``(verb, remainder)`` with ``verb`` ∈ ``{"REPLACE", "IGNORE"}``
+    and ``remainder`` the rest of the statement (``" INTO <t> (...)"``), or
+    ``None`` when the statement is not a SQLite upsert INSERT.  Quote-aware:
+    the verb is matched in the CODE regions only, so an ``OR`` inside a
+    string literal is never mistaken for the verb.
+
+    Hot path: one quote scan + one head match, and nothing else for the
+    overwhelming majority of statements (every SELECT/UPDATE/plain INSERT
+    returns here).
+    """
+    regions = _code_regions(sql)
+    if not regions:
+        return None
+    # The verb always precedes any value literal, so it lives in the first
+    # code region; scanning from its start keeps literal text out of the match.
+    text = sql[regions[0][0] :].lstrip()
+    m = _INSERT_OR_VERB_PATTERN.match(text)
+    if m is None:
+        return None
+    return (m.group(1).upper(), text[m.end() :])
+
+
+def _split_top_level(body: str, sep: str = ",") -> list[str]:
+    """Split ``body`` on ``sep`` outside parentheses and quotes."""
+    parts: list[str] = []
+    depth = 0
+    last = 0
+    i = 0
+    n = len(body)
+    while i < n:
+        ch = body[i]
+        if ch in "'\"":
+            j = i + 1
+            while j < n:
+                if body[j] == ch:
+                    if j + 1 < n and body[j + 1] == ch:
+                        j += 2
+                        continue
+                    break
+                j += 1
+            i = j + 1
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            if depth > 0:
+                depth -= 1
+        elif ch == sep and depth == 0:
+            parts.append(body[last:i])
+            last = i + 1
+        i += 1
+    parts.append(body[last:])
+    return parts
+
+
+#: ``[INSERT OR REPLACE/IGNORE ]INTO <t> (<cols>) VALUES (...)`` — the
+#: single-row shape this rewrite supports confidently.  :func:`_parse_insert_or_verb`
+#: has already consumed the verb when this sees the remainder, which starts at
+#: ``INTO``; matching ``INSERT`` too keeps the helper usable on full
+#: statements.  Multi-row VALUES lists, ``RETURNING``, sub-select bodies and
+#: ``DEFAULT VALUES`` are left untouched (fail-open).
+_INSERT_SHAPE_PATTERN = re.compile(
+    r"^(?:INSERT\s+)?INTO\s+(?P<table>\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s*"
+    r"\((?P<cols>[^()]*)\)\s*"
+    r"VALUES\s*\((?P<vals>[^()]*)\)\s*(?P<tail>[^()]*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _parse_insert_shape(remainder: str) -> dict[str, Any] | None:
+    """Confidently parse ``INTO <t> (<cols>) VALUES (<vals>)``.
+
+    Returns a dict with table/columns/values/tail, or ``None`` when the shape
+    is anything but the single-row VALUES form: those statements pass through
+    unchanged rather than risk malformed SQL.
+    """
+    m = _INSERT_SHAPE_PATTERN.match(remainder.strip())
+    if m is None:
+        return None
+    cols = [c.strip().strip('"') for c in _split_top_level(m.group("cols"))]
+    if not cols or any(not c for c in cols):
+        return None
+    # ``VALUES (..),(..)`` is a multi-row list: the conflict target of ONE
+    # row cannot be resolved for a batch, and the rewritten clause would be
+    # wrong for every row but the first.  Leave it to the caller.
+    if m.group("tail").lstrip().startswith(","):
+        return None
+    # The table name reaches the catalog queries as a bound PARAMETER, so it
+    # must be the bare name: a quoted ``"order"`` would look up a table whose
+    # name literally contains the quotes and never match a constraint.  The
+    # original text is kept separately for the output, so a quoted identifier
+    # stays quoted (``_quote_ident`` re-quotes only the conflict target).
+    table = m.group("table").strip('"')
+    return {
+        "table": table,
+        "raw_table": m.group("table"),
+        "cols": cols,
+        "raw_cols": m.group("cols"),
+        "vals": m.group("vals"),
+        "tail": m.group("tail").strip(),
+    }
+
+
+def _resolve_conflict_target(
+    table: str, conn: Any, cols: list[str]
+) -> tuple[list[str], bool] | None:
+    """Best conflict target for an upsert row — the single resolver.
+
+    Returns ``(target_columns, covers_row)``: PK columns when they are all
+    present in the row, else the unique columns present in the row, else
+    ``None``.  Used by :meth:`PostgreSQLDriver._conflict_target` (cached per
+    table) and by the static execution-translation seam, so the generic write
+    path and ``upsert()`` can never disagree on the target.
+    """
+    pks: list[str] = []
+    uniques: list[str] = []
+    with contextlib.suppress(Exception):
+        rows = conn.execute(
+            "SELECT a.attname FROM pg_index i "
+            "JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) "
+            "WHERE i.indrelid = (SELECT c.oid FROM pg_class c JOIN pg_namespace n "
+            "  ON n.oid = c.relnamespace WHERE c.relname = %s AND n.nspname = 'public') "
+            "AND i.indisprimary",
+            (table,),
+        ).fetchall()
+        pks = [str(r[0]) for r in rows]
+    with contextlib.suppress(Exception):
+        rows = conn.execute(
+            "SELECT kcu.column_name FROM information_schema.table_constraints tc "
+            "JOIN information_schema.key_column_usage kcu "
+            "  ON tc.constraint_name = kcu.constraint_name "
+            "WHERE tc.table_name = %s AND tc.constraint_type = 'UNIQUE' "
+            "ORDER BY kcu.ordinal_position",
+            (table,),
+        ).fetchall()
+        uniques = [str(r[0]) for r in rows]
+    if pks and all(p in cols for p in pks):
+        return (pks, True)
+    present_unique = [u for u in uniques if u in cols]
+    if present_unique:
+        return (present_unique, True)
+    if pks:
+        return (pks, False)
+    return None
+
+
+def _quote_ident(ident: str) -> str:
+    """Validate and quote a simple SQL identifier (the driver's own rule).
+
+    The accepted characters are pulled out of the input rather than
+    interpolated whole, so nothing outside the whitelist can reach a
+    statement.  Mirrors :meth:`DatabaseDriver.quote_ident` for the static
+    translation seam, which has no driver instance.
+    """
+    if not isinstance(ident, str):
+        raise ValueError("invalid SQL identifier")
+    m = _IDENT_SHAPE.fullmatch(ident)
+    if m is None:
+        raise ValueError("invalid SQL identifier")
+    return f'"{m.group(0)}"'
+
+
+def _conflict_clause(parsed: dict[str, Any], conn: Any) -> str | None:
+    """Build the ON CONFLICT clause for a parsed INSERT, or None to fail open.
+
+    The target is resolved exactly as :meth:`PostgreSQLDriver.upsert` resolves
+    it.  ``ON CONFLICT DO NOTHING`` needs no target, so ``INSERT OR IGNORE``
+    always rewrites confidently; ``INSERT OR REPLACE`` without a resolvable
+    target returns ``None`` (the caller leaves the statement alone) because a
+    bare ``ON CONFLICT ... DO UPDATE`` with no target is a PostgreSQL syntax
+    error and a wrong target is worse than no rewrite.
+    """
+    if parsed["verb"] == "IGNORE":
+        return " ON CONFLICT DO NOTHING"
+    if conn is None:
+        return None
+    try:
+        target = _resolve_conflict_target(parsed["table"], conn, parsed["cols"])
+    except Exception:
+        return None
+    if target is None:
+        return None
+    tcols, _covers = target
+    if not tcols:
+        return " ON CONFLICT DO NOTHING"
+    non_key = [c for c in parsed["cols"] if c not in tcols]
+    if not non_key:
+        return " ON CONFLICT DO NOTHING"
+    target_sql = ",".join(_quote_ident(c) for c in tcols)
+    sets = ", ".join(f"{_quote_ident(c)} = EXCLUDED.{_quote_ident(c)}" for c in non_key)
+    return f" ON CONFLICT ({target_sql}) DO UPDATE SET {sets}"
+
+
+def _apply_upsert_verb(sql: str, parsed: dict[str, Any], conn: Any) -> str:
+    """Rebuild a parsed INSERT with its ON CONFLICT clause (or fail open)."""
+    clause = _conflict_clause(parsed, conn)
+    if clause is None:
+        return sql
+    # Only the table name is re-emitted (whitelist-validated at parse time);
+    # the column list and values are copied from the already
+    # placeholder-translated text, so nothing is translated twice.  A trailing
+    # ``;`` is legal caller input but the conflict clause must follow the
+    # statement, not the terminator, so it is dropped here (``assert_safe_sql``
+    # rejects interior semicolons, a single trailing one adds nothing).
+    tail = parsed["tail"].rstrip()
+    if tail.endswith(";"):
+        tail = tail[:-1].rstrip()
+    return (
+        "INSERT INTO "
+        + parsed.get("raw_table", parsed["table"])
+        + " ("
+        + parsed["raw_cols"]
+        + ") VALUES ("
+        + parsed["vals"]
+        + ")"
+        + clause
+        + ((" " + tail) if tail else "")
+    )
+
+
+def _translate_upsert_verb(sql: str, conn: Any) -> str:
+    """Placeholder-translate ``sql`` and rewrite its SQLite upsert verb.
+
+    Pure string function apart from the optional conflict-target lookup, and
+    a no-op (one quote scan + one head match) for anything that is not an
+    ``INSERT OR REPLACE``/``INSERT OR IGNORE`` statement.
+    """
+    out = _translate_placeholders(sql)
+    verb = _parse_insert_or_verb(out)
+    if verb is None:
+        return out
+    kind, remainder = verb
+    parsed = _parse_insert_shape(remainder)
+    if parsed is None:
+        return out  # unparseable VALUES shape: fail open
+    parsed["verb"] = kind
+    return _apply_upsert_verb(out, parsed, conn)
 
 
 class PostgreSQLDriver(DatabaseDriver):
@@ -144,8 +480,46 @@ class PostgreSQLDriver(DatabaseDriver):
 
     @staticmethod
     def translate_sql(sql: str) -> str:
-        """Provider-agnostic SQL → PostgreSQL (placeholders)."""
+        """Provider-agnostic SQL → PostgreSQL (placeholders).
+
+        Pure string function, no DB I/O: rewrites ``?`` qmark placeholders to
+        ``%s`` outside literals/identifiers.  Kept callable with just the SQL
+        string — the pooled write plane's static call site (and any other
+        pure-string caller) keeps working unchanged.
+
+        The SQLite upsert *verbs* (``INSERT OR REPLACE`` / ``INSERT OR
+        IGNORE``) need a connection to resolve the conflict target, so they
+        are translated on the execution path via
+        :meth:`translate_sql_for_execution`.
+        """
         return _translate_placeholders(sql)
+
+    @staticmethod
+    def translate_sql_for_execution(sql: str, conn: Any = None) -> str:
+        """Translate a statement for execution on a connection.
+
+        Thin module-level seam: kept as a named method so callers that hold a
+        connection (the pooled write plane, the portable connection proxy, the
+        instance execute/query methods) can reach the verb rewrite without
+        importing a private helper, while :meth:`translate_sql` stays the
+        pure-string entry point.
+
+
+        Same contract as :meth:`translate_sql` (placeholders first), and ALSO
+        rewrites the SQLite upsert verbs on the generic write path:
+
+          * ``INSERT OR REPLACE INTO <t> (<cols>) VALUES (...)`` →
+            ``INSERT INTO <t> (<cols>) VALUES (...) ON CONFLICT (<target>)
+            DO UPDATE SET <non-key> = EXCLUDED.<non-key>, ...``
+          * ``INSERT OR IGNORE INTO <t> ...`` → ``... ON CONFLICT DO NOTHING``
+
+        The conflict target is resolved exactly as :meth:`upsert` resolves it
+        (PK columns when all present in the row, else the table's UNIQUE
+        columns present in the row, else the statement is left untouched — a
+        bare ``ON CONFLICT`` with no target is a PostgreSQL syntax error).
+
+        """
+        return _translate_upsert_verb(sql, conn)
 
     # -- connections ------------------------------------------------------
 
@@ -276,7 +650,10 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            cur = c.execute(assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None)
+            cur = c.execute(
+                assert_safe_sql(_translate_upsert_verb(sql, c)),
+                tuple(args) if args else None,
+            )
             if own:
                 c.commit()
             return cur
@@ -295,7 +672,7 @@ class PostgreSQLDriver(DatabaseDriver):
                 # SEC (py/sql-injection #1114 sibling): same boundary as the
                 # sqlite driver — the shared guard runs before the engine sees
                 # the statement; values stay bound through ``seq``.
-                cur.executemany(assert_safe_sql(self.translate_sql(sql)), seq)
+                cur.executemany(assert_safe_sql(_translate_upsert_verb(sql, c)), seq)
             if own:
                 c.commit()
         finally:
@@ -306,7 +683,10 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            cur = c.execute(assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None)
+            cur = c.execute(
+                assert_safe_sql(_translate_upsert_verb(sql, c)),
+                tuple(args) if args else None,
+            )
             rows = cur.fetchall()
             names = [d.name for d in cur.description] if cur.description else []
             return [dict(zip(names, r, strict=False)) for r in rows]
@@ -320,7 +700,10 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         try:
-            cur = c.execute(assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None)
+            cur = c.execute(
+                assert_safe_sql(_translate_upsert_verb(sql, c)),
+                tuple(args) if args else None,
+            )
             row = cur.fetchone()
             if row is None:
                 return None
@@ -335,7 +718,8 @@ class PostgreSQLDriver(DatabaseDriver):
         c = conn or self.connect()
         try:
             row = c.execute(
-                assert_safe_sql(self.translate_sql(sql)), tuple(args) if args else None
+                assert_safe_sql(_translate_upsert_verb(sql, c)),
+                tuple(args) if args else None,
             ).fetchone()
             return row[0] if row is not None else None
         finally:
@@ -361,29 +745,19 @@ class PostgreSQLDriver(DatabaseDriver):
         Returns (target_columns, covers_row): PK columns when they are all
         present in the row, else the unique columns present in the row, else
         None.  Cached per table (PK layout + unique columns).
+
+        The resolution itself lives in the module-level
+        :func:`_resolve_conflict_target` so the generic write path's SQL
+        translation and :meth:`upsert` share ONE resolver and can never
+        disagree on a target.
         """
         cached = getattr(self, "_conflict_cache", None)
         if cached is None:
             cached = {}
             self._conflict_cache = cached
         if table not in cached:
-            pks: list[str] = []
-            uniques: list[str] = []
             with contextlib.suppress(Exception):
-                for col in self.table_columns(table, conn=conn):
-                    if col.get("pk"):
-                        pks.append(str(col["name"]))
-            with contextlib.suppress(Exception):
-                rows = conn.execute(
-                    "SELECT kcu.column_name FROM information_schema.table_constraints tc "
-                    "JOIN information_schema.key_column_usage kcu "
-                    "  ON tc.constraint_name = kcu.constraint_name "
-                    "WHERE tc.table_name = %s AND tc.constraint_type = 'UNIQUE' "
-                    "ORDER BY kcu.ordinal_position",
-                    (table,),
-                ).fetchall()
-                uniques = [r[0] for r in rows]
-            cached[table] = (pks, uniques)
+                cached[table] = _resolve_conflict_target(table, conn, cols)
         pks, uniques = cached[table]
         if pks and all(p in cols for p in pks):
             return (pks, True)
