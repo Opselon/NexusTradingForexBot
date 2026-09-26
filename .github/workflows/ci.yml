@@ -28,6 +28,15 @@ permissions:
 env:
   PYTHON_VERSION: "3.11"
 
+  # Throwaway PostgreSQL service container for the PG test arm
+  # (check_pg_arm.py). CI provisions this on every run so the PostgreSQL
+  # integration arms RUN instead of silently skipping without
+  # NSE_PG_TEST_URL — that skip is how the empty live tables hid behind a
+  # green suite (PG_VERIFIED_STATE.md). Both env vars are exported: the
+  # suite has two conventions (URL + libpq DSN).
+  PG_TEST_URL: "postgresql://pgarm:pgarm@localhost:5432/nse_pgarm"
+  PG_TEST_DSN: "postgresql://pgarm:pgarm@localhost:5432/nse_pgarm"
+
   # Canonical per-run results directory. Every check writes ONLY into its own
   # subdirectory; the tree is wiped and recreated at the start of every run so
   # no result from a previous run can leak into this one.
@@ -152,7 +161,11 @@ jobs:
           # pytest-cov>=4.1.0 + pytest-xdist>=3.5.0 ship in the [dev] extra
           # (pyproject) - the editable install above already provides them;
           # a second resolver pass only added 10-20s per job.
-          pip install -e ".[dev,web]"
+          # The [postgres] extra (psycopg + psycopg-pool) is REQUIRED here:
+          # the PG test arm (check_pg_arm.py / the suite's NSE_PG_TEST_URL
+          # arms) skips silently without psycopg installed, which is how the
+          # empty live tables hid behind a green suite.
+          pip install -e ".[dev,web,postgres]"
 
       # -------- Results tree + run metadata (fresh on every run) --------
       - name: Initialize results tree
