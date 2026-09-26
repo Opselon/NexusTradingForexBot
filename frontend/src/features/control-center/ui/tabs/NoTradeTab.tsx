@@ -11,7 +11,7 @@
  */
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { DataTable, EmptyState, Panel, Skeleton } from "@/components/primitives";
+import { DataTable, EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
 import { useI18n } from "@/stores/i18nStore";
 import { DistBars } from "../../../research/ui/lane5Kit";
@@ -56,7 +56,11 @@ export function NoTradeTab({ hours }: { hours: number | undefined }) {
       {noTradeQ.isPending ? (
         <Skeleton count={4} />
       ) : noTradeQ.isError ? (
-        <EmptyState message={t("control-center.err.no_trade", "no-trade endpoint failed")} />
+        /* §9: a failed GET is an error, never "no NO_TRADE rows" — backend words + retry */
+        <ErrorState
+          message={noTradeQ.error instanceof Error ? noTradeQ.error.message : t("control-center.err.no_trade", "no-trade endpoint failed")}
+          onRetry={() => void noTradeQ.refetch()}
+        />
       ) : (
         <div className="grid cols-2">
           <div>
@@ -73,15 +77,19 @@ export function NoTradeTab({ hours }: { hours: number | undefined }) {
             <div className="section-title" style={{ marginTop: 8 }}>
                           {t("control-center.section.recent_examples", "recent examples")}
                         </div>
-            <DataTable headers={[{ label: t("control-center.th.at", "at") }, { label: t("control-center.th.reason", "reason") }, { label: t("control-center.th.gate", "gate") }]}>
-              {recentRows.map((r, i) => (
-                <tr key={r.key ?? i}>
-                  <td className="tiny">{r.at}</td>
-                  <td className="tiny">{r.reason}</td>
-                  <td className="tiny">{r.gate}</td>
-                </tr>
-              ))}
-            </DataTable>
+            {recentRows.length === 0 ? (
+              <EmptyState message={t("control-center.empty.no_rows_in_window", "No decision rows in this window.")} />
+            ) : (
+              <DataTable headers={[{ label: t("control-center.th.at", "at") }, { label: t("control-center.th.reason", "reason") }, { label: t("control-center.th.gate", "gate") }]}>
+                {recentRows.map((r, i) => (
+                  <tr key={r.key ?? i}>
+                    <td className="tiny">{r.at}</td>
+                    <td className="tiny">{r.reason}</td>
+                    <td className="tiny">{r.gate}</td>
+                  </tr>
+                ))}
+              </DataTable>
+            )}
             <div className="tiny faint" style={{ marginTop: 4 }}>
               {t("control-center.nt.unresolved", "model direction unresolved: {n}", { n: String(noTradeQ.data?.model_direction_unresolved ?? "—") })}
             </div>

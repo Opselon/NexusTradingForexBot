@@ -12,7 +12,7 @@
  *           OperatorDecisionDetailDto.decision.
  */
 import { useQuery } from "@tanstack/react-query";
-import { DataTable, EmptyState, Panel, Skeleton } from "@/components/primitives";
+import { DataTable, EmptyState, ErrorState, Panel, Skeleton } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
 import { Drawer, InfoRow, JsonBlock } from "../../research/ui/lane5Kit";
 import { arr, bool, notRecorded, num, obj, str } from "../model";
@@ -32,6 +32,12 @@ export function DecisionInspector({ id, onClose }: { id: number; onClose: () => 
     <Drawer title={t("control-center.inspector.title", "Decision #{id} — evidence", { id })} onClose={onClose}>
       {detailQ.isPending ? (
         <Skeleton count={4} />
+      ) : detailQ.isError ? (
+        /* §9: a failed detail fetch must not render as an all-NOT-RECORDED drawer */
+        <ErrorState
+          message={detailQ.error instanceof Error ? detailQ.error.message : t("control-center.err.decisions", "decisions failed")}
+          onRetry={() => void detailQ.refetch()}
+        />
       ) : detailQ.data?.available === false ? (
         <EmptyState message={str(obj(detailQ.data?.error).reason) ?? t("control-center.empty.decision_not_found", "decision not found")} />
       ) : (
