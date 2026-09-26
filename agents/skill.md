@@ -108,7 +108,7 @@ Boundary client: `internal/infrastructure/python/client.go` — localhost HTTP, 
 
 ### 5.5 Wave 3 — dependency-aware routing table (BINDING RULES)
 
-Merged as `480a4aef`. Every route in the table (§5.4) now carries a dependency classification: of 464 classified operations, **334 must forward** to Python and **130 are Go-servable candidates**. Wave 3 only classifies — every route still proxies — the decision is surfaced on the response as `X-NSE-Routing-Reason` so it is observable in flight and testable now; a later wave flips serving for candidates only.
+Merged as `480a4f2`, corrected by `696fb9f2`. Every route in the table (§5.4) now carries a dependency classification: of 464 classified operations, **359 must forward** to Python and **105 are Go-servable candidates**. Wave 3 only classifies — every route still proxies — the decision is surfaced on the response as `X-NSE-Routing-Reason` so it is observable in flight and testable now; a later wave flips serving for candidates only.
 
 | Rule | Why |
 |---|---|
@@ -117,17 +117,21 @@ Merged as `480a4aef`. Every route in the table (§5.4) now carries a dependency 
 | **Unknown routes always forward.** Absent from `DepsTable` → `Decide()` returns `NeedsPython=true, Classified=false` and the proxy tags the response `unclassified`. | An unclassified route must never be served locally on the *absence* of a hint. The proxy is the safe default. |
 | **The table is GENERATED, never hand-edited.** `go-api/internal/routing/deps_table.go` is emitted from `api/migration/route_dependencies.json` by `scripts/dev/gen_deps_table.py`; the JSON is produced by `scripts/dev/profile_route_deps.py` (runtime profiler: wraps the `DatabaseDriver` seam and replays each route, recording what the handler *actually* touched) then `scripts/dev/classify_route_deps.py`. Regenerate as profile → classify → emit. | Same discipline as the §5.4 route table. A profiler reads ground truth a static scan cannot: this codebase resolves dependencies *inside* handlers, so an AST pass sees zero DB hints on a surface where ~half the routes hit SQLite. |
 
-Classifier `why` taxonomy: `observed:db` · `write:assumed` · `stateless-2xx` (the only candidate class) · the three masked classes below · `non-2xx:NNN` — a handler that could not complete without state the probe lacked, itself evidence it needs the Python plane.
+Classifier `why` taxonomy: `observed:db` · `write:assumed` · `stateless-2xx` (the only candidate class) · the five masked classes below · `non-2xx:NNN` — a handler that could not complete without state the probe lacked, itself evidence it needs the Python plane.
 
-The three masked-dependency false positives the classifier must keep rejecting — each is an HTTP 200 that looks stateless and is not:
+The five masked-dependency false positives the classifier must keep rejecting — each is an HTTP 200 that looks stateless and is not:
 
 | Class | Signature | Why it is a masked dependency |
 |---|---|---|
 | `stub-in-2xx` | 200 body with a synthesized "subsystem absent" marker (`"reason":"ENGINE_UNAVAILABLE"`, `"available":false`, `MT5_UNAVAILABLE`, …) | The handler took its early-exit branch because no engine was attached; with one attached it reads live state. Serving the stub from Go ships a permanent `ENGINE_UNAVAILABLE` where Python ships real data (`/api/account/performance`). |
 | `empty-in-2xx` | 200 body that is `[]` / `{}` / `null` | The "nothing to report" branch of a route whose backing state was unpopulated under the probe. `/api/account/trades` returns `[]` with no engine and `audit.get_broker_trades()` rows with one — serving the empty body erases the trade history. |
 | `failed-in-2xx` | 200 body carrying `{"success":false,...}` (this codebase's legacy self-report convention) | The handler reported its own failure inside a 200 because a required input was absent from the probe — a live query interface, not a stateless constant (`/api/db/console/quick`). |
+| `empty-items-in-2xx` | a substantive `{data:{items:[...]}}` envelope whose list is empty | The v1 read layer funnels through readers guarded by `if not repo._is_sqlite: return []` (124 such guards). On a PostgreSQL box the guard fires *before the driver seam*, so the profiler records `observed=[]` and the route looks pristine — it is a live query that returns real rows the moment the SQLite path is active (`/api/v1/decisions`). |
+| `conditionally-db:*` | a substantive 200 under the probe | The handler reads a store only behind a runtime precondition the probe cannot synthesise: `/api/experience/summary` needs an attached engine (then SELECTs `strategy_intelligence_registry`), `/api/operator/calibration` needs the serving-model artifact (then joins the audit tables). Source is the only honest authority, so both are pinned in `CONDITIONALLY_DB`. |
 
-Profiler scope, kept honest: only GET/HEAD were replayed (a mutating probe would corrupt the shared backend), and the two SSE routes are skipped (`/api/ticks/stream`, `/api/trace/stream`). Tests: `go test ./internal/routing/...` pins both directions — `TestDecideRequiresPython` (forward classes) and `TestDecideCandidates` (the candidate population).
+**Two instrumentation blind spots that made a real Postgres query invisible, and the fix.** The original profiler wrapped `DatabaseDriver` methods only. But `PostgreSQLDriver`/`SQLiteDriver` *override* those methods (`postgres_driver.py:305`, `sqlite_driver.py:279`), so a base-class `setattr` is shadowed by the subclass and intercepts nobody; and the pooled fabric planes (`PgReadPlane`/`PgWritePlane`) open their own psycopg connections and never go through a driver at all. Both are wrapped now — wrap the concrete classes and the planes, never just the ABC. Verify any future seam change by asserting a known-DB route records a hit.
+
+Profiler scope, kept honest: only GET/HEAD were replayed (a mutating probe would corrupt the shared backend), and the two SSE routes are skipped (`/api/ticks/stream`, `/api/trace/stream`). The probe sends `?limit=1&query=XAUUSD&ticket=1` so handlers that guard their store reads behind an input actually reach them. Tests: `go test ./internal/routing/...` pins both directions — `TestDecideRequiresPython` (forward classes) and `TestDecideCandidates` (the candidate population) — and `TestDepsTableCoversRouteSurface` fails when the generated table drifts from the registered route surface.
 
 ## 6. Non-Negotiable Invariants
 

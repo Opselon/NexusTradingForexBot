@@ -105,10 +105,12 @@
   },
   "GET /api/ai-providers": {
    "body": "{\"status\":\"OK\",\"decision_mode\":\"INTERNAL_ONLY\",\"active_provider\":\"internal_nse_ml\",\"active_model\":null,\"secondary_provider\":null,\"fallback_provider\":null,\"shado",
-   "needs_python": false,
-   "observed": [],
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/ai-providers/": {
    "body": "{\"status\":\"OK\",\"decision_mode\":\"INTERNAL_ONLY\",\"active_provider\":\"internal_nse_ml\",\"active_model\":null,\"secondary_provider\":null,\"fallback_provider\":null,\"shado",
@@ -121,10 +123,12 @@
   },
   "GET /api/ai-providers/activation": {
    "body": "{\"status\":\"OK\",\"activation\":{\"decision_mode\":\"INTERNAL_ONLY\",\"active_provider\":\"internal_nse_ml\",\"active_model\":null,\"secondary_provider\":null,\"fallback_provide",
-   "needs_python": false,
-   "observed": [],
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/ai-providers/decision/{decision_id}": {
    "body": "{\"detail\":\"decision not found\"}",
@@ -146,24 +150,30 @@
   },
   "GET /api/ai-providers/providers": {
    "body": "{\"status\":\"OK\",\"providers\":[{\"provider_id\":\"internal_nse_ml\",\"provider_name\":\"internal_nse_ml\",\"type\":\"external\",\"endpoint\":\"\",\"auth_type\":\"bearer\",\"default_mod",
-   "needs_python": false,
-   "observed": [],
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/ai-providers/providers/{provider_id}/models": {
    "body": "{\"status\":\"OK\",\"provider_id\":\"{provider_id}\",\"models\":[]}",
-   "needs_python": false,
-   "observed": [],
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/ai-providers/providers/{provider_id}/status": {
    "body": "{\"detail\":\"provider {provider_id} not configured or disabled\"}",
    "needs_python": true,
-   "observed": [],
+   "observed": [
+    "db"
+   ],
    "status": 404,
-   "why": "non-2xx:404"
+   "why": "observed:db"
   },
   "GET /api/ai-providers/restart-matrix": {
    "body": "{\"status\":\"OK\",\"matrix\":{\"endpoint\":\"HOT_APPLY\",\"model\":\"HOT_APPLY\",\"timeout\":\"HOT_APPLY\",\"max_retries\":\"HOT_APPLY\",\"enabled\":\"HOT_APPLY\",\"provider_name\":\"HOT_A",
@@ -252,7 +262,7 @@
    "why": "stateless-2xx"
   },
   "GET /api/db/console/apikeys": {
-   "body": "{\"success\":true,\"apikeys\":[{\"name\":\"web_auth_token\",\"masked\":\"web_****\",\"set\":true}],\"timestamp\":\"2026-09-26T00:46:21+00:00\"}",
+   "body": "{\"success\":true,\"apikeys\":[{\"name\":\"web_auth_token\",\"masked\":\"web_****\",\"set\":true}],\"timestamp\":\"2026-09-26T04:07:50+00:00\"}",
    "needs_python": false,
    "observed": [],
    "status": 200,
@@ -289,7 +299,7 @@
    "why": "failed-in-2xx"
   },
   "GET /api/db/console/tables": {
-   "body": "{\"success\":true,\"database\":\"audit\",\"provider\":\"postgresql\",\"tables\":[{\"name\":\"ai_provider_activation\",\"rows\":0},{\"name\":\"ai_provider_config\",\"rows\":0},{\"name\":\"",
+   "body": "{\"success\":true,\"database\":\"audit\",\"provider\":\"postgresql\",\"tables\":[{\"name\":\"_probe_ro_test\",\"rows\":0},{\"name\":\"ai_provider_activation\",\"rows\":0},{\"name\":\"ai_p",
    "needs_python": true,
    "observed": [
     "db"
@@ -387,7 +397,7 @@
    "why": "observed:db"
   },
   "GET /api/debug/ipc-telemetry": {
-   "body": "{\"events\":[],\"event_count\":0,\"avg_latency_ms\":0.0,\"exposure\":{\"positions\":0,\"pendings\":0},\"max_total_exposure\":1,\"fetched_at\":\"2026-09-26T00:46:08.471012+00:00\"",
+   "body": "{\"events\":[],\"event_count\":0,\"avg_latency_ms\":0.0,\"exposure\":{\"positions\":0,\"pendings\":0},\"max_total_exposure\":1,\"fetched_at\":\"2026-09-26T04:07:40.132222+00:00\"",
    "needs_python": true,
    "observed": [
     "db"
@@ -396,7 +406,7 @@
    "why": "observed:db"
   },
   "GET /api/debug/snapshots": {
-   "body": "{\"available\":true,\"snapshots\":[{\"snapshot_id\":\"snap_20260926_004608_480018_34bc2d\",\"correlation_id\":\"req_d815436855\",\"timestamp\":\"2026-09-26T00:46:08.480018+00:",
+   "body": "{\"available\":true,\"snapshots\":[{\"snapshot_id\":\"snap_20260926_040740_137684_09d7e1\",\"correlation_id\":\"req_52db6c9242\",\"timestamp\":\"2026-09-26T04:07:40.137684+00:",
    "needs_python": false,
    "observed": [],
    "status": 200,
@@ -410,7 +420,7 @@
    "why": "stub-in-2xx"
   },
   "GET /api/debug/state": {
-   "body": "{\"snapshot_id\":\"snap_20260926_004608_480018_34bc2d\",\"correlation_id\":\"req_d815436855\",\"timestamp\":\"2026-09-26T00:46:08.480018+00:00\",\"engine_attached\":false,\"ru",
+   "body": "{\"snapshot_id\":\"snap_20260926_040740_137684_09d7e1\",\"correlation_id\":\"req_52db6c9242\",\"timestamp\":\"2026-09-26T04:07:40.137684+00:00\",\"engine_attached\":false,\"ru",
    "needs_python": true,
    "observed": [
     "db"
@@ -428,7 +438,7 @@
    "why": "observed:db"
   },
   "GET /api/dependency/cycles": {
-   "body": "{\"status\":\"ok\",\"count\":85,\"cycles\":[{\"cycle_id\":\"CYC-001\",\"severity\":\"HIGH\",\"path\":[\"mod:nexus_scalp.web.api_v1.common\",\"mod:nexus_scalp.web.server\",\"mod:nexus_",
+   "body": "{\"status\":\"ok\",\"count\":85,\"cycles\":[{\"cycle_id\":\"CYC-001\",\"severity\":\"HIGH\",\"path\":[\"mod:nexus_scalp.web.server\",\"mod:nexus_scalp.web.debug_research_routes\"],\"e",
    "needs_python": false,
    "observed": [],
    "status": 200,
@@ -546,24 +556,30 @@
   },
   "GET /api/diagnostics/lineage": {
    "body": "{\"available\":true,\"field\":\"pnl\",\"source\":\"MT5 deal history (broker truth) -> deal snapshot\",\"hops\":[{\"stage\":\"SOURCE_OF_TRUTH\",\"name\":\"MT5 deal history (broker ",
-   "needs_python": false,
-   "observed": [],
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/diagnostics/search": {
-   "body": "{\"available\":true,\"incidents\":[]}",
-   "needs_python": false,
-   "observed": [],
+   "body": "{\"available\":true,\"query\":\"XAUUSD\",\"incidents\":[]}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/diagnostics/trace": {
-   "body": "{\"available\":true,\"trace\":{\"kind\":\"unknown\",\"reason\":\"empty query\"}}",
-   "needs_python": false,
-   "observed": [],
+   "body": "{\"available\":true,\"query\":\"XAUUSD\",\"trace\":{\"query\":\"XAUUSD\",\"kind\":\"ticket/execution/order\",\"ledger\":null,\"broker_position\":null,\"outcome\":null,\"experience\":nu",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/experience/decision": {
    "body": "{\"available\":false}",
@@ -588,10 +604,10 @@
   },
   "GET /api/experience/summary": {
    "body": "{\"enabled\":false,\"recorded_experiences\":0,\"active_strategies\":0}",
-   "needs_python": false,
+   "needs_python": true,
    "observed": [],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "conditionally-db:engine-gated"
   },
   "GET /api/factory/benchmarks": {
    "body": "{\"available\":false,\"reason\":\"FACTORY_UNAVAILABLE\"}",
@@ -744,16 +760,20 @@
   "GET /api/liquidity/features": {
    "body": "{\"success\":true,\"schema_id\":\"scalp_v1\",\"dimension\":50,\"timestamp\":null,\"source\":\"UNAVAILABLE\",\"source_status\":\"UNAVAILABLE\",\"feature_availability\":\"NOT_ACTIVE\",",
    "needs_python": true,
-   "observed": [],
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stub-in-2xx"
+   "why": "observed:db"
   },
   "GET /api/liquidity/state": {
    "body": "{\"success\":true,\"enabled\":false,\"state_revision\":0,\"available\":false,\"feature_availability\":\"NOT_ACTIVE\",\"status\":\"DISABLED\",\"calculation_status\":\"NOT_RUN\",\"sou",
    "needs_python": true,
-   "observed": [],
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stub-in-2xx"
+   "why": "observed:db"
   },
   "GET /api/live/accounting": {
    "body": "{\"available\":false,\"reason\":\"ENGINE_OFFLINE\"}",
@@ -763,7 +783,7 @@
    "why": "stub-in-2xx"
   },
   "GET /api/live/state": {
-   "body": "{\"contract\":\"LiveUiState.2\",\"state_version\":2,\"snapshot_timestamp\":\"2026-09-26T00:45:58.717258+00:00\",\"generated_at\":\"2026-09-26T00:45:58.717258+00:00\",\"engine_",
+   "body": "{\"contract\":\"LiveUiState.2\",\"state_version\":2,\"snapshot_timestamp\":\"2026-09-26T04:07:31.301561+00:00\",\"generated_at\":\"2026-09-26T04:07:31.301561+00:00\",\"engine_",
    "needs_python": true,
    "observed": [
     "db"
@@ -1020,16 +1040,20 @@
   "GET /api/mslie/features": {
    "body": "{\"success\":true,\"available\":false,\"reason\":\"NO_MSLIE_VECTOR\"}",
    "needs_python": true,
-   "observed": [],
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stub-in-2xx"
+   "why": "observed:db"
   },
   "GET /api/mslie/status": {
    "body": "{\"success\":true,\"available\":false,\"status\":\"STANDBY\",\"engine_status\":{\"market_structure_engine\":\"STANDBY\",\"liquidity_engine\":\"STANDBY\",\"feature_generator\":\"IDLE",
    "needs_python": true,
-   "observed": [],
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stub-in-2xx"
+   "why": "observed:db"
   },
   "GET /api/mt5/status": {
    "body": "{\"available\":false,\"reason\":\"ENGINE_OFFLINE\",\"account\":{},\"symbol\":{},\"positions\":[],\"orders\":[],\"history\":{},\"calculations\":{},\"connection\":{}}",
@@ -1041,11 +1065,9 @@
   "GET /api/news": {
    "body": "{\"available\":false}",
    "needs_python": true,
-   "observed": [
-    "db"
-   ],
+   "observed": [],
    "status": 200,
-   "why": "observed:db"
+   "why": "stub-in-2xx"
   },
   "GET /api/news/ai-status": {
    "body": "{\"available\":false}",
@@ -1078,11 +1100,9 @@
   "GET /api/news/impact": {
    "body": "{\"available\":false}",
    "needs_python": true,
-   "observed": [
-    "db"
-   ],
+   "observed": [],
    "status": 200,
-   "why": "observed:db"
+   "why": "stub-in-2xx"
   },
   "GET /api/news/keywords": {
    "body": "{\"available\":false}",
@@ -1094,11 +1114,9 @@
   "GET /api/news/latest": {
    "body": "{\"available\":false}",
    "needs_python": true,
-   "observed": [
-    "db"
-   ],
+   "observed": [],
    "status": 200,
-   "why": "observed:db"
+   "why": "stub-in-2xx"
   },
   "GET /api/news/pro/console": {
    "body": "{\"available\":true,\"entries\":[],\"count\":0}",
@@ -1117,7 +1135,7 @@
    "why": "observed:db"
   },
   "GET /api/news/pro/status": {
-   "body": "{\"available\":true,\"console\":{\"size\":0,\"latest_seq\":0,\"available\":true},\"counts\":{\"total\":295,\"pending\":295,\"status_counts\":{\"ACTIVE\":267,\"QUARANTINE\":28}},\"late",
+   "body": "{\"available\":true,\"console\":{\"size\":0,\"latest_seq\":0,\"available\":true},\"counts\":{\"total\":24945,\"pending\":24942,\"status_counts\":{\"IRRELEVANT\":3560,\"ACTIVE\":21326",
    "needs_python": true,
    "observed": [
     "db"
@@ -1142,11 +1160,9 @@
   "GET /api/news/timeline": {
    "body": "{\"available\":false}",
    "needs_python": true,
-   "observed": [
-    "db"
-   ],
+   "observed": [],
    "status": 200,
-   "why": "observed:db"
+   "why": "stub-in-2xx"
   },
   "GET /api/news/toggle-state": {
    "body": "{\"success\":true,\"enabled\":false,\"runtime_version\":null,\"source\":\"\"}",
@@ -1178,10 +1194,10 @@
   },
   "GET /api/operator/calibration": {
    "body": "{\"available\":true,\"serving_fingerprint\":null,\"serving_artifact_mtime\":null,\"fingerprint_stable_hint\":true,\"artifact_status\":\"ABSENT\",\"calibration_status\":\"NOT_C",
-   "needs_python": false,
+   "needs_python": true,
    "observed": [],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "conditionally-db:artifact-gated"
   },
   "GET /api/operator/decisions": {
    "body": "{\"available\":true,\"filters\":{\"hours\":null,\"action\":null,\"gate\":null,\"search\":null},\"count\":0,\"rows\":[]}",
@@ -1285,20 +1301,18 @@
    "why": "stateless-2xx"
   },
   "GET /api/provisioning/train/progress": {
-   "body": "{\"success\":true,\"active\":false,\"events\":[],\"result\":{\"state\":\"rejected\",\"updated_at\":\"2026-09-26T00:46:56+00:00\",\"path\":\"official\",\"error\":\"DOWNLOAD_FAILED: <ur",
+   "body": "{\"success\":true,\"active\":false,\"events\":[],\"result\":{\"state\":\"rejected\",\"updated_at\":\"2026-09-26T04:08:02+00:00\",\"path\":\"official\",\"error\":\"OFFICIAL_MODEL_NOT_P",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
   },
   "GET /api/release/status": {
-   "body": "{\"contract\":\"RELEASE_STATUS v1\",\"generated_at\":\"2026-09-26T00:45:57.731793+00:00\",\"current_version\":\"9.0.14\",\"current_commit\":\"10aaac0f1b1b3ba8586a419e1dd557aca",
-   "needs_python": true,
-   "observed": [
-    "db"
-   ],
+   "body": "{\"contract\":\"RELEASE_STATUS v1\",\"generated_at\":\"2026-09-26T04:07:30.340830+00:00\",\"current_version\":\"9.0.14\",\"current_commit\":\"deffc24c0555a6c81842f2d9f229d289b",
+   "needs_python": false,
+   "observed": [],
    "status": 200,
-   "why": "observed:db"
+   "why": "stateless-2xx"
   },
   "GET /api/replay/decision": {
    "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"seq\"],\"msg\":\"Field required\",\"input\":null}]}",
@@ -1477,7 +1491,7 @@
    "why": "observed:db"
   },
   "GET /api/status": {
-   "body": "{\"state_version\":1,\"snapshot_timestamp\":\"2026-09-26T00:45:56.309161+00:00\",\"generated_at\":\"2026-09-26T00:45:56.309161+00:00\",\"engine_running\":false,\"symbol\":nul",
+   "body": "{\"state_version\":1,\"snapshot_timestamp\":\"2026-09-26T04:07:29.429461+00:00\",\"generated_at\":\"2026-09-26T04:07:29.429461+00:00\",\"engine_running\":false,\"symbol\":nul",
    "needs_python": true,
    "observed": [
     "db"
@@ -1507,28 +1521,28 @@
    "why": "stateless-2xx"
   },
   "GET /api/trace/integrity": {
-   "body": "{\"generated_at\":\"2026-09-26T00:46:21.499+00:00\",\"traces_scanned\":0,\"warnings\":[],\"truncated\":false}",
+   "body": "{\"generated_at\":\"2026-09-26T04:07:50.653+00:00\",\"traces_scanned\":0,\"warnings\":[],\"truncated\":false}",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
   },
   "GET /api/trace/latency": {
-   "body": "{\"generated_at\":\"2026-09-26T00:46:21.487+00:00\",\"min_sample_n\":30,\"stages\":{}}",
+   "body": "{\"generated_at\":\"2026-09-26T04:07:50.645+00:00\",\"min_sample_n\":30,\"stages\":{}}",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
   },
   "GET /api/trace/observer": {
-   "body": "{\"observer_id\":\"OBS-20260926-004552-2e291f\",\"status\":\"OFF\",\"session\":null,\"recent_sessions\":[],\"counters\":{\"events_emitted\":0,\"decisions_total\":0,\"unmapped_even",
+   "body": "{\"observer_id\":\"OBS-20260926-040726-16c02e\",\"status\":\"OFF\",\"session\":null,\"recent_sessions\":[],\"counters\":{\"events_emitted\":0,\"decisions_total\":0,\"unmapped_even",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
   },
   "GET /api/trace/topology": {
-   "body": "{\"generated_at\":\"2026-09-26T00:46:21.475+00:00\",\"observer_status\":\"OFF\",\"nodes\":[],\"edges\":[],\"counters\":{\"events_emitted\":0,\"decisions_total\":0,\"unmapped_event",
+   "body": "{\"generated_at\":\"2026-09-26T04:07:50.638+00:00\",\"observer_status\":\"OFF\",\"nodes\":[],\"edges\":[],\"counters\":{\"events_emitted\":0,\"decisions_total\":0,\"unmapped_event",
    "needs_python": false,
    "observed": [],
    "status": 200,
@@ -1542,14 +1556,14 @@
    "why": "non-2xx:404"
   },
   "GET /api/v1/audit/events": {
-   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_4223ee6a0b\",\"generated_at\":\"2026-09-26T00:47:04.151913+00:00\"}}",
-   "needs_python": false,
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_0a5eacd43f\",\"generated_at\":\"2026-09-26T04:08:09.264400+00:00\"}}",
+   "needs_python": true,
    "observed": [],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "empty-items-in-2xx"
   },
   "GET /api/v1/config": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_2c27659bb9\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_930292f308\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
@@ -1563,7 +1577,7 @@
    "why": "stateless-2xx"
   },
   "GET /api/v1/database/integrity": {
-   "body": "{\"error\":{\"code\":\"DEPENDENCY_UNAVAILABLE\",\"message\":\"audit database not readable\",\"details\":{},\"request_id\":\"req_03fed80c64\",\"retryable\":true}}",
+   "body": "{\"error\":{\"code\":\"DEPENDENCY_UNAVAILABLE\",\"message\":\"audit database not readable\",\"details\":{},\"request_id\":\"req_e5a9f15f23\",\"retryable\":true}}",
    "needs_python": true,
    "observed": [
     "db"
@@ -1572,14 +1586,14 @@
    "why": "observed:db"
   },
   "GET /api/v1/database/status": {
-   "body": "{\"data\":{\"filename\":\"nexusdb\",\"exists\":false,\"size_bytes\":null,\"probed_at\":\"2026-09-26T00:47:04.161912+00:00\",\"table_count\":null,\"integrity_endpoint\":\"/api/v1/d",
+   "body": "{\"data\":{\"filename\":\"nexusdb\",\"exists\":false,\"size_bytes\":null,\"probed_at\":\"2026-09-26T04:08:09.272949+00:00\",\"table_count\":null,\"integrity_endpoint\":\"/api/v1/d",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
   },
   "GET /api/v1/database/tables": {
-   "body": "{\"error\":{\"code\":\"DEPENDENCY_UNAVAILABLE\",\"message\":\"audit database not readable\",\"details\":{},\"request_id\":\"req_8418e08f25\",\"retryable\":true}}",
+   "body": "{\"error\":{\"code\":\"DEPENDENCY_UNAVAILABLE\",\"message\":\"audit database not readable\",\"details\":{},\"request_id\":\"req_33c9350871\",\"retryable\":true}}",
    "needs_python": true,
    "observed": [
     "db"
@@ -1588,77 +1602,77 @@
    "why": "observed:db"
   },
   "GET /api/v1/decisions": {
-   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_4f23d73c49\",\"generated_at\":\"2026-09-26T00:47:03.783384+00:00\"}}",
-   "needs_python": false,
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_97517e019c\",\"generated_at\":\"2026-09-26T04:08:08.936855+00:00\"}}",
+   "needs_python": true,
    "observed": [],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "empty-items-in-2xx"
   },
   "GET /api/v1/decisions/latest": {
-   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"no decisions recorded yet\",\"details\":{},\"request_id\":\"req_462f2fbfc9\",\"retryable\":false}}",
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"no decisions recorded yet\",\"details\":{},\"request_id\":\"req_67968873c4\",\"retryable\":false}}",
    "needs_python": true,
    "observed": [],
    "status": 404,
    "why": "non-2xx:404"
   },
   "GET /api/v1/decisions/no-trade": {
-   "body": "{\"data\":{\"total\":0,\"reasons\":[],\"latest\":null},\"meta\":{\"request_id\":\"req_1e8e3bb167\",\"generated_at\":\"2026-09-26T00:47:03.806409+00:00\"}}",
+   "body": "{\"data\":{\"total\":0,\"reasons\":[],\"latest\":null},\"meta\":{\"request_id\":\"req_df521235ba\",\"generated_at\":\"2026-09-26T04:08:08.958469+00:00\"}}",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
   },
   "GET /api/v1/decisions/no-trade/reasons": {
-   "body": "{\"data\":{\"total\":0,\"reasons\":{}},\"meta\":{\"request_id\":\"req_337caafe74\",\"generated_at\":\"2026-09-26T00:47:03.798408+00:00\"}}",
+   "body": "{\"data\":{\"total\":0,\"reasons\":{}},\"meta\":{\"request_id\":\"req_3f19bf2ac6\",\"generated_at\":\"2026-09-26T04:08:08.950372+00:00\"}}",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
   },
   "GET /api/v1/decisions/stats": {
-   "body": "{\"data\":{\"window_hours\":168,\"total\":0,\"by_action\":{},\"by_stage\":{}},\"meta\":{\"request_id\":\"req_fe189799a6\",\"generated_at\":\"2026-09-26T00:47:03.791386+00:00\"}}",
+   "body": "{\"data\":{\"window_hours\":168,\"total\":0,\"by_action\":{},\"by_stage\":{}},\"meta\":{\"request_id\":\"req_f6aebac106\",\"generated_at\":\"2026-09-26T04:08:08.944377+00:00\"}}",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
   },
   "GET /api/v1/decisions/{decision_id}": {
-   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"decision {decision_id} not found\",\"details\":{},\"request_id\":\"req_2a664e8228\",\"retryable\":false}}",
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"decision {decision_id} not found\",\"details\":{},\"request_id\":\"req_31d29af5ec\",\"retryable\":false}}",
    "needs_python": true,
    "observed": [],
    "status": 404,
    "why": "non-2xx:404"
   },
   "GET /api/v1/decisions/{decision_id}/evidence": {
-   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"decision {decision_id} not found\",\"details\":{},\"request_id\":\"req_890c7ee96f\",\"retryable\":false}}",
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"decision {decision_id} not found\",\"details\":{},\"request_id\":\"req_1ad7bb0e6e\",\"retryable\":false}}",
    "needs_python": true,
    "observed": [],
    "status": 404,
    "why": "non-2xx:404"
   },
   "GET /api/v1/decisions/{decision_id}/explanation": {
-   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"decision {decision_id} not found\",\"details\":{},\"request_id\":\"req_5cc0070ea5\",\"retryable\":false}}",
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"decision {decision_id} not found\",\"details\":{},\"request_id\":\"req_d80f7dcb79\",\"retryable\":false}}",
    "needs_python": true,
    "observed": [],
    "status": 404,
    "why": "non-2xx:404"
   },
   "GET /api/v1/decisions/{decision_id}/gates": {
-   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"decision {decision_id} not found\",\"details\":{},\"request_id\":\"req_def2ba69fe\",\"retryable\":false}}",
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"decision {decision_id} not found\",\"details\":{},\"request_id\":\"req_d0a56b34c0\",\"retryable\":false}}",
    "needs_python": true,
    "observed": [],
    "status": 404,
    "why": "non-2xx:404"
   },
   "GET /api/v1/execution/history": {
-   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_7746ed0781\",\"generated_at\":\"2026-09-26T00:47:03.884178+00:00\"}}",
-   "needs_python": false,
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_c277c6ddf0\",\"generated_at\":\"2026-09-26T04:08:09.026411+00:00\"}}",
+   "needs_python": true,
    "observed": [],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "empty-items-in-2xx"
   },
   "GET /api/v1/execution/status": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_9212f5143d\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_819d64cc21\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
@@ -1672,7 +1686,7 @@
    "why": "stateless-2xx"
   },
   "GET /api/v1/features/current": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_205e5e35d8\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_24c99ff33c\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
@@ -1686,112 +1700,120 @@
    "why": "stateless-2xx"
   },
   "GET /api/v1/features/status": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_34099d7a7f\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_296c9deaeb\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/incidents": {
-   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_a6a6f2712c\",\"generated_at\":\"2026-09-26T00:47:04.077379+00:00\"}}",
-   "needs_python": false,
-   "observed": [],
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_cfeca7d49b\",\"generated_at\":\"2026-09-26T04:08:09.200213+00:00\"}}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/v1/incidents/stats": {
    "body": "{\"data\":{\"counts\":{\"total\":0,\"open\":0,\"critical\":0,\"high\":0,\"medium\":0,\"low\":0,\"unknown\":0,\"recovered\":0,\"false_positive\":0},\"by_component\":[],\"recurring\":[]},\"",
-   "needs_python": false,
-   "observed": [],
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/v1/incidents/{incident_id}": {
-   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"incident {incident_id} not found\",\"details\":{},\"request_id\":\"req_7cff5e6018\",\"retryable\":false}}",
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"incident {incident_id} not found\",\"details\":{},\"request_id\":\"req_ae86d409b2\",\"retryable\":false}}",
    "needs_python": true,
-   "observed": [],
+   "observed": [
+    "db"
+   ],
    "status": 404,
-   "why": "non-2xx:404"
+   "why": "observed:db"
   },
   "GET /api/v1/incidents/{incident_id}/timeline": {
-   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"incident {incident_id} not found\",\"details\":{},\"request_id\":\"req_ab55f97dec\",\"retryable\":false}}",
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"incident {incident_id} not found\",\"details\":{},\"request_id\":\"req_94a711fdc4\",\"retryable\":false}}",
    "needs_python": true,
-   "observed": [],
+   "observed": [
+    "db"
+   ],
    "status": 404,
-   "why": "non-2xx:404"
+   "why": "observed:db"
   },
   "GET /api/v1/indicators": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_e8f34785b4\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_89d4a45f2d\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/indicators/gauges": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_1fd7a5bf6e\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_a9c3eab38f\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/indicators/moving-averages": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_82b8a90f48\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_666a0ddd6d\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/indicators/oscillators": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_4323c91aef\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_1c9cdacf08\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/indicators/pivots": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_d347736580\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_fd71eddb69\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/indicators/summary": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_0442b0b0d3\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_fc7af1b248\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/market/bars": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_58b21caf5f\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_d750c9b75e\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/market/quote": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_2cb3b1a92f\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_94a2263a7c\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/market/regime": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_6717dbde41\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_c2f2428b29\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/market/snapshot": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_14275e55cd\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_08d2b6fb6c\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/market/symbols": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_76ce64a072\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_2ed9417787\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
@@ -1799,55 +1821,67 @@
   },
   "GET /api/v1/marketplace/packs": {
    "body": "{\"data\":{\"packs\":[{\"id\":\"price_action\",\"name\":\"Price Action\",\"family\":\"PRICE_ACTION\",\"description\":\"Pure price-action entry variants: pullback, sweep reversal, ",
-   "needs_python": false,
-   "observed": [],
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/v1/marketplace/rankings": {
-   "body": "{\"data\":{\"items\":[],\"dimension\":\"OVERALL\",\"profile_id\":\"default\",\"has_more\":false},\"meta\":{\"request_id\":\"req_4391320ae2\",\"generated_at\":\"2026-09-26T00:47:04.777",
-   "needs_python": false,
-   "observed": [],
+   "body": "{\"data\":{\"items\":[{\"seed_id\":\"PRICE_ACTION-1.0.0-0000\",\"family\":\"TREND_FOLLOWING\",\"lifecycle\":\"RESEARCH_REJECTED\",\"total\":0.0467,\"verdict\":\"INCONCLUSIVE\",\"profi",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/v1/marketplace/repairs": {
-   "body": "{\"data\":{\"items\":[]},\"meta\":{\"request_id\":\"req_91046336a9\",\"generated_at\":\"2026-09-26T00:47:04.832927+00:00\"}}",
-   "needs_python": false,
-   "observed": [],
+   "body": "{\"data\":{\"items\":[]},\"meta\":{\"request_id\":\"req_7be6a6682c\",\"generated_at\":\"2026-09-26T04:08:09.812277+00:00\"}}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/v1/marketplace/runtime-snapshot": {
-   "body": "{\"data\":{\"version\":1,\"enabled_set\":[],\"created_at\":\"2026-09-26T00:47:02.815459+00:00\",\"source\":\"marketplace\"},\"meta\":{\"request_id\":\"req_c18e1e84fe\",\"generated_a",
+   "body": "{\"data\":{\"version\":1,\"enabled_set\":[],\"created_at\":\"2026-09-26T04:08:08.004406+00:00\",\"source\":\"marketplace\"},\"meta\":{\"request_id\":\"req_b1686d43f8\",\"generated_a",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
   },
   "GET /api/v1/marketplace/scores/{seed_id}/history": {
-   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"seed {seed_id} not found\",\"details\":{},\"request_id\":\"req_56689e2bdf\",\"retryable\":false}}",
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"seed {seed_id} not found\",\"details\":{},\"request_id\":\"req_87158afe98\",\"retryable\":false}}",
    "needs_python": true,
-   "observed": [],
+   "observed": [
+    "db"
+   ],
    "status": 404,
-   "why": "non-2xx:404"
+   "why": "observed:db"
   },
   "GET /api/v1/marketplace/seeds": {
-   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_b22529f9c5\",\"generated_at\":\"2026-09-26T00:47:04.314399+00:00\"}}",
-   "needs_python": false,
-   "observed": [],
+   "body": "{\"data\":{\"items\":[{\"seed_id\":\"PRICE_ACTION-1.0.0-0000\",\"version\":\"1.0.0\",\"pack_id\":\"price_action\",\"name\":\"Price Action #001\",\"family\":\"TREND_FOLLOWING\",\"author\"",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/v1/marketplace/seeds/{seed_id}": {
-   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"seed {seed_id} not found\",\"details\":{},\"request_id\":\"req_54cc8752c4\",\"retryable\":false}}",
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"seed {seed_id} not found\",\"details\":{},\"request_id\":\"req_63cfddca1b\",\"retryable\":false}}",
    "needs_python": true,
-   "observed": [],
+   "observed": [
+    "db"
+   ],
    "status": 404,
-   "why": "non-2xx:404"
+   "why": "observed:db"
   },
   "GET /api/v1/model/champion": {
-   "body": "{\"data\":{\"available\":false,\"reason\":\"engine not attached\"},\"meta\":{\"request_id\":\"req_53e0d3008f\",\"generated_at\":\"2026-09-26T00:47:03.916756+00:00\"}}",
+   "body": "{\"data\":{\"available\":false,\"reason\":\"engine not attached\"},\"meta\":{\"request_id\":\"req_f4fdb1f1d9\",\"generated_at\":\"2026-09-26T04:08:09.055702+00:00\"}}",
    "needs_python": true,
    "observed": [],
    "status": 200,
@@ -1861,35 +1895,35 @@
    "why": "stateless-2xx"
   },
   "GET /api/v1/model/identity": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_b17fd1ac14\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_be36d33619\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/model/status": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_df813ca0f0\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_4ee9f001c3\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/observability/events": {
-   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_5984d0d8b2\",\"generated_at\":\"2026-09-26T00:47:04.134760+00:00\"}}",
-   "needs_python": false,
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_f203695d72\",\"generated_at\":\"2026-09-26T04:08:09.247820+00:00\"}}",
+   "needs_python": true,
    "observed": [],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "empty-items-in-2xx"
   },
   "GET /api/v1/observability/metrics": {
-   "body": "{\"data\":{\"thread_count\":44,\"daemon_thread_count\":43,\"generated_at\":\"2026-09-26T00:47:04.145802+00:00\",\"resource_usage\":\"UNAVAILABLE\",\"sse\":{\"connection\":\"UNKNOW",
+   "body": "{\"data\":{\"thread_count\":44,\"daemon_thread_count\":43,\"generated_at\":\"2026-09-26T04:08:09.257899+00:00\",\"resource_usage\":\"UNAVAILABLE\",\"sse\":{\"connection\":\"UNKNOW",
    "needs_python": true,
    "observed": [],
    "status": 200,
    "why": "stub-in-2xx"
   },
   "GET /api/v1/positions": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_7aa3366ddd\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_b80cebc5bd\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
@@ -1910,70 +1944,70 @@
    "why": "non-2xx:422"
   },
   "GET /api/v1/research/datasets": {
-   "body": "{\"data\":{\"datasets\":[],\"distinct\":0,\"generated_at\":\"2026-09-26T00:47:04.013655+00:00\"},\"meta\":{\"request_id\":\"req_b473fd11c0\",\"generated_at\":\"2026-09-26T00:47:04",
+   "body": "{\"data\":{\"datasets\":[],\"distinct\":0,\"generated_at\":\"2026-09-26T04:08:09.135217+00:00\"},\"meta\":{\"request_id\":\"req_069f00d060\",\"generated_at\":\"2026-09-26T04:08:09",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
   },
   "GET /api/v1/research/runs": {
-   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_43b04930fc\",\"generated_at\":\"2026-09-26T00:47:04.001615+00:00\"}}",
-   "needs_python": false,
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_bfbd911955\",\"generated_at\":\"2026-09-26T04:08:09.128706+00:00\"}}",
+   "needs_python": true,
    "observed": [],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "empty-items-in-2xx"
   },
   "GET /api/v1/research/status": {
-   "body": "{\"data\":{\"available\":true,\"health\":{\"available\":false},\"registry\":{\"available\":false,\"total\":0,\"by_lifecycle\":{}},\"generated_at\":\"2026-09-26T00:47:03.979545+00:",
+   "body": "{\"data\":{\"available\":true,\"health\":{\"available\":false},\"registry\":{\"available\":false,\"total\":0,\"by_lifecycle\":{}},\"generated_at\":\"2026-09-26T04:08:09.106510+00:",
    "needs_python": true,
    "observed": [],
    "status": 200,
    "why": "stub-in-2xx"
   },
   "GET /api/v1/research/strategies": {
-   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_f715259618\",\"generated_at\":\"2026-09-26T00:47:03.985550+00:00\"}}",
-   "needs_python": false,
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_cf12b69d04\",\"generated_at\":\"2026-09-26T04:08:09.112527+00:00\"}}",
+   "needs_python": true,
    "observed": [],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "empty-items-in-2xx"
   },
   "GET /api/v1/research/strategies/{strategy_id}": {
-   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"strategy scalp_v1 not found\",\"details\":{},\"request_id\":\"req_06f8570cb3\",\"retryable\":false}}",
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"strategy scalp_v1 not found\",\"details\":{},\"request_id\":\"req_d831262fbd\",\"retryable\":false}}",
    "needs_python": true,
    "observed": [],
    "status": 404,
    "why": "non-2xx:404"
   },
   "GET /api/v1/risk/status": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_d33ee39f22\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_08ada3ca66\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/risk/summary": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_9d33cb59cb\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_9502566fde\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/runtime/freshness": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_30d9a0d298\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_e6fac41c89\",\"retryable\":t",
    "needs_python": true,
    "observed": [],
    "status": 503,
    "why": "non-2xx:503"
   },
   "GET /api/v1/runtime/mode": {
-   "body": "{\"data\":{\"mode\":null,\"effective_mode\":null,\"engine_attached\":false,\"replaying\":null},\"meta\":{\"request_id\":\"req_e4783a6da1\",\"generated_at\":\"2026-09-26T00:47:03.6",
+   "body": "{\"data\":{\"mode\":null,\"effective_mode\":null,\"engine_attached\":false,\"replaying\":null},\"meta\":{\"request_id\":\"req_3dd6426b9d\",\"generated_at\":\"2026-09-26T04:08:08.8",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
   },
   "GET /api/v1/runtime/shutdown": {
-   "body": "{\"data\":{\"engine_attached\":false,\"phase\":\"UNKNOWN\"},\"meta\":{\"request_id\":\"req_682a4a0e30\",\"generated_at\":\"2026-09-26T00:47:03.689394+00:00\"}}",
+   "body": "{\"data\":{\"engine_attached\":false,\"phase\":\"UNKNOWN\"},\"meta\":{\"request_id\":\"req_d77401d89a\",\"generated_at\":\"2026-09-26T04:08:08.848251+00:00\"}}",
    "needs_python": false,
    "observed": [],
    "status": 200,
@@ -1981,48 +2015,58 @@
   },
   "GET /api/v1/shadow/70d": {
    "body": "{\"data\":{\"summary\":{\"available\":true,\"observations\":0,\"agreements\":0,\"invalid\":0,\"events\":0},\"disagreement_counts\":{},\"drift_alerts\":[],\"feature_health\":[],\"gen",
-   "needs_python": false,
-   "observed": [],
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/v1/shadow/decisions": {
-   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_24573ee56d\",\"generated_at\":\"2026-09-26T00:47:04.051854+00:00\"}}",
-   "needs_python": false,
-   "observed": [],
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_e6b5ab4919\",\"generated_at\":\"2026-09-26T04:08:09.174670+00:00\"}}",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/v1/shadow/runs": {
-   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_f6890171d6\",\"generated_at\":\"2026-09-26T00:47:04.032757+00:00\"}}",
-   "needs_python": false,
-   "observed": [],
+   "body": "{\"data\":{\"items\":[{\"id\":2,\"run_id\":\"LANEB-SH-eb085ed7\",\"champion_model_id\":\"lane-b-probe\",\"champion_version\":\"1.0.0\",\"challenger_model_id\":\"challenger-probe\",\"c",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/v1/shadow/runs/{run_id}": {
-   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"shadow run 1 not found\",\"details\":{},\"request_id\":\"req_ad1cf82efb\",\"retryable\":false}}",
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"shadow run 1 not found\",\"details\":{},\"request_id\":\"req_3a63fc5bd5\",\"retryable\":false}}",
    "needs_python": true,
-   "observed": [],
+   "observed": [
+    "db"
+   ],
    "status": 404,
-   "why": "non-2xx:404"
+   "why": "observed:db"
   },
   "GET /api/v1/shadow/status": {
-   "body": "{\"data\":{\"shadow_60d\":{\"available\":true,\"runs\":{},\"decisions\":0,\"promotions\":0},\"shadow_70d\":{\"available\":true,\"observations\":0,\"agreements\":0,\"invalid\":0,\"even",
-   "needs_python": false,
-   "observed": [],
+   "body": "{\"data\":{\"shadow_60d\":{\"available\":true,\"runs\":{\"probe\":2},\"decisions\":0,\"promotions\":0},\"shadow_70d\":{\"available\":true,\"observations\":0,\"agreements\":0,\"invalid",
+   "needs_python": true,
+   "observed": [
+    "db"
+   ],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "observed:db"
   },
   "GET /api/v1/signals/history": {
-   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_96f9db827f\",\"generated_at\":\"2026-09-26T00:47:03.767652+00:00\"}}",
-   "needs_python": false,
+   "body": "{\"data\":{\"items\":[],\"page\":1,\"page_size\":50,\"has_more\":false},\"meta\":{\"request_id\":\"req_c02af35e4c\",\"generated_at\":\"2026-09-26T04:08:08.923824+00:00\"}}",
+   "needs_python": true,
    "observed": [],
    "status": 200,
-   "why": "stateless-2xx"
+   "why": "empty-items-in-2xx"
   },
   "GET /api/v1/signals/latest": {
-   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"no signals recorded yet\",\"details\":{},\"request_id\":\"req_d2893c96b6\",\"retryable\":false}}",
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"no signals recorded yet\",\"details\":{},\"request_id\":\"req_5b65a104b5\",\"retryable\":false}}",
    "needs_python": true,
    "observed": [],
    "status": 404,
@@ -2057,28 +2101,28 @@
    "why": "stateless-2xx"
   },
   "GET /api/v1/system/runtime": {
-   "body": "{\"data\":{\"engine_attached\":false,\"engine_running\":false,\"warmup_state\":null,\"inference_enabled\":false,\"freshness\":null},\"meta\":{\"request_id\":\"req_59308bf319\",\"g",
+   "body": "{\"data\":{\"engine_attached\":false,\"engine_running\":false,\"warmup_state\":null,\"inference_enabled\":false,\"freshness\":null},\"meta\":{\"request_id\":\"req_d341f66e25\",\"g",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
   },
   "GET /api/v1/system/status": {
-   "body": "{\"data\":{\"health_verdict\":\"DEGRADED\",\"critical_failures\":[\"DATA\"],\"version\":{\"product\":\"NexusScalpEngine\",\"version\":\"9.0.14\",\"commit\":\"10aaac0f1b1b3ba8586a419e1",
+   "body": "{\"data\":{\"health_verdict\":\"DEGRADED\",\"critical_failures\":[\"DATA\"],\"version\":{\"product\":\"NexusScalpEngine\",\"version\":\"9.0.14\",\"commit\":\"deffc24c0555a6c81842f2d9f",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
   },
   "GET /api/v1/system/version": {
-   "body": "{\"data\":{\"product\":\"NexusScalpEngine\",\"product_display\":\"Nexus Trading Forex Bot\",\"version\":\"9.0.14\",\"commit\":\"10aaac0f1b1b3ba8586a419e1dd557aca50966dc\",\"commit",
+   "body": "{\"data\":{\"product\":\"NexusScalpEngine\",\"product_display\":\"Nexus Trading Forex Bot\",\"version\":\"9.0.14\",\"commit\":\"deffc24c0555a6c81842f2d9f229d289b5767788\",\"commit",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
   },
   "GET /api/v1/system/workers": {
-   "body": "{\"data\":{\"workers\":[],\"engine_attached\":false},\"meta\":{\"request_id\":\"req_ae477bc0c8\",\"generated_at\":\"2026-09-26T00:47:03.486197+00:00\"}}",
+   "body": "{\"data\":{\"workers\":[],\"engine_attached\":false},\"meta\":{\"request_id\":\"req_44c0d0b332\",\"generated_at\":\"2026-09-26T04:08:08.652146+00:00\"}}",
    "needs_python": false,
    "observed": [],
    "status": 200,
@@ -2443,13 +2487,14 @@
    "why": "write:assumed"
   },
   "POST /api/ai-providers/export": {
-   "body": "{\"status\":\"OK\",\"exported_at\":\"2026-09-26T00:46:59.561693+00:00\",\"providers\":[],\"activation\":{\"primary_provider\":\"internal_nse_ml\",\"secondary_provider\":null,\"fal",
+   "body": "{\"status\":\"OK\",\"exported_at\":\"2026-09-26T04:08:05.364451+00:00\",\"providers\":[],\"activation\":{\"primary_provider\":\"internal_nse_ml\",\"secondary_provider\":null,\"fal",
    "needs_python": true,
    "observed": [
+    "db",
     "write:assumed"
    ],
    "status": 200,
-   "why": "write:assumed"
+   "why": "observed:db"
   },
   "POST /api/ai-providers/import": {
    "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
@@ -2473,28 +2518,31 @@
    "body": "{\"detail\":\"cannot disable provider\"}",
    "needs_python": true,
    "observed": [
+    "db",
     "write:assumed"
    ],
    "status": 400,
-   "why": "write:assumed"
+   "why": "observed:db"
   },
   "POST /api/ai-providers/providers/{provider_id}/enable": {
    "body": "{\"detail\":\"cannot enable provider\"}",
    "needs_python": true,
    "observed": [
+    "db",
     "write:assumed"
    ],
    "status": 400,
-   "why": "write:assumed"
+   "why": "observed:db"
   },
   "POST /api/ai-providers/providers/{provider_id}/test": {
    "body": "{\"status\":\"FAIL\",\"passed\":false,\"stage\":\"connection\",\"detail\":\"provider is disabled or not configured\",\"latency_ms\":null,\"raw_response\":\"\",\"normalized_response\"",
    "needs_python": true,
    "observed": [
+    "db",
     "write:assumed"
    ],
    "status": 200,
-   "why": "write:assumed"
+   "why": "observed:db"
   },
   "POST /api/ai-providers/reset": {
    "body": "{\"status\":\"OK\",\"removed_providers\":[],\"note\":\"Provider settings only. Models, datasets, trades and account history untouched.\"}",
@@ -2552,7 +2600,7 @@
    "why": "observed:db"
   },
   "POST /api/db/manage/backup": {
-   "body": "{\"success\":true,\"backup_path\":\"artifacts/backups/audit_backup_20260926-041600.db\"}",
+   "body": "{\"success\":true,\"backup_path\":\"artifacts/backups/audit_backup_20260926-073733.db\"}",
    "needs_python": true,
    "observed": [
     "db",
@@ -2634,7 +2682,7 @@
    "why": "write:assumed"
   },
   "POST /api/diagnostics/incidents/reconcile": {
-   "body": "{\"available\":true,\"audit_started\":\"2026-09-26T00:45:58.633261+00:00\",\"audit_scope\":[\"accounting\",\"timebase\",\"outcome\",\"learning\",\"split_fill\"],\"findings\":{\"acco",
+   "body": "{\"available\":true,\"audit_started\":\"2026-09-26T04:07:31.236660+00:00\",\"audit_scope\":[\"accounting\",\"timebase\",\"outcome\",\"learning\",\"split_fill\"],\"findings\":{\"acco",
    "needs_python": true,
    "observed": [
     "db",
@@ -2698,7 +2746,7 @@
    "why": "write:assumed"
   },
   "POST /api/factory/llm-config": {
-   "body": "{\"available\":true,\"success\":true,\"correlation_id\":\"factory_b7475bf805b8\",\"status\":{\"configured\":false,\"api_key_present\":false,\"masked_api_key\":\"\",\"base_url\":\"\",",
+   "body": "{\"available\":true,\"success\":true,\"correlation_id\":\"factory_7389bcaf9f53\",\"status\":{\"configured\":false,\"api_key_present\":false,\"masked_api_key\":\"\",\"base_url\":\"\",",
    "needs_python": true,
    "observed": [
     "db",
@@ -2794,10 +2842,11 @@
    "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
    "needs_python": true,
    "observed": [
+    "db",
     "write:assumed"
    ],
    "status": 422,
-   "why": "write:assumed"
+   "why": "observed:db"
   },
   "POST /api/model-studio/benchmark": {
    "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
@@ -3170,7 +3219,7 @@
    "why": "write:assumed"
   },
   "POST /api/news/auto-prune": {
-   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"NEWS_UNAVAILABLE\",\"message\":\"News subsystem not enabled\",\"request_id\":\"req_4bc6ae36e4\"}}",
+   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"NEWS_UNAVAILABLE\",\"message\":\"News subsystem not enabled\",\"request_id\":\"req_4c934b012e\"}}",
    "needs_python": true,
    "observed": [
     "write:assumed"
@@ -3179,7 +3228,7 @@
    "why": "write:assumed"
   },
   "POST /api/news/pro/analyze-all": {
-   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"NEWS_UNAVAILABLE\",\"message\":\"News subsystem not enabled\",\"request_id\":\"req_f717440ce5\"}}",
+   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"NEWS_UNAVAILABLE\",\"message\":\"News subsystem not enabled\",\"request_id\":\"req_37457a45cc\"}}",
    "needs_python": true,
    "observed": [
     "write:assumed"
@@ -3188,7 +3237,7 @@
    "why": "write:assumed"
   },
   "POST /api/news/pro/purge": {
-   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"NEWS_UNAVAILABLE\",\"message\":\"News subsystem not enabled\",\"request_id\":\"req_729045644b\"}}",
+   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"NEWS_UNAVAILABLE\",\"message\":\"News subsystem not enabled\",\"request_id\":\"req_459a5b2ff5\"}}",
    "needs_python": true,
    "observed": [
     "write:assumed"
@@ -3224,7 +3273,7 @@
    "why": "write:assumed"
   },
   "POST /api/news/{article_id}/restore": {
-   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"NEWS_UNAVAILABLE\",\"message\":\"News subsystem not enabled\",\"request_id\":\"req_e1c8a8fb66\"}}",
+   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"NEWS_UNAVAILABLE\",\"message\":\"News subsystem not enabled\",\"request_id\":\"req_646a35afaf\"}}",
    "needs_python": true,
    "observed": [
     "write:assumed"
@@ -3323,7 +3372,7 @@
    "why": "write:assumed"
   },
   "POST /api/provisioning/official": {
-   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"OFFICIAL_BUNDLE_REJECTED\",\"message\":\"official bundle failed verification \u2014 nothing was installed (run `nexus",
+   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"OFFICIAL_BUNDLE_REJECTED\",\"message\":\"Official model is not published yet. Train locally or retry after publi",
    "needs_python": true,
    "observed": [
     "write:assumed"
@@ -3341,7 +3390,7 @@
    "why": "write:assumed"
   },
   "POST /api/provisioning/train/start": {
-   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"TRAIN_INPUT_REJECTED\",\"message\":\"The server could not complete this request.\",\"request_id\":\"req_b504aa444a\"}",
+   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"TRAIN_INPUT_REJECTED\",\"message\":\"The server could not complete this request.\",\"request_id\":\"req_eeb450f071\"}",
    "needs_python": true,
    "observed": [
     "write:assumed"
@@ -3503,7 +3552,7 @@
    "why": "write:assumed"
   },
   "POST /api/telegram/test": {
-   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"NOTIFIER_UNAVAILABLE\",\"message\":\"Engine notifier is not available (engine not running).\",\"request_id\":\"req_a",
+   "body": "{\"available\":false,\"success\":false,\"error\":{\"code\":\"NOTIFIER_UNAVAILABLE\",\"message\":\"Engine notifier is not available (engine not running).\",\"request_id\":\"req_4",
    "needs_python": true,
    "observed": [
     "write:assumed"
@@ -3512,7 +3561,7 @@
    "why": "write:assumed"
   },
   "POST /api/trace/observer/start": {
-   "body": "{\"observer_id\":\"OBS-20260926-004552-2e291f\",\"session_id\":\"SES-20260926-004621-3e49d9\",\"started_at\":\"2026-09-26T00:46:21.453+00:00\",\"stopped_at\":null,\"status\":\"A",
+   "body": "{\"observer_id\":\"OBS-20260926-040726-16c02e\",\"session_id\":\"SES-20260926-040750-573b36\",\"started_at\":\"2026-09-26T04:07:50.625+00:00\",\"stopped_at\":null,\"status\":\"A",
    "needs_python": true,
    "observed": [
     "write:assumed"
@@ -3539,7 +3588,7 @@
    "why": "write:assumed"
   },
   "POST /api/v1/marketplace/packs/{pack_id}/install": {
-   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"pack {pack_id} not found\",\"details\":{},\"request_id\":\"req_acac1b89a5\",\"retryable\":false}}",
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"pack {pack_id} not found\",\"details\":{},\"request_id\":\"req_55cf97827a\",\"retryable\":false}}",
    "needs_python": true,
    "observed": [
     "write:assumed"
@@ -3548,13 +3597,14 @@
    "why": "write:assumed"
   },
   "POST /api/v1/marketplace/seeds/{seed_id}/disable": {
-   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"seed {seed_id} not found\",\"details\":{},\"request_id\":\"req_a93d4a1230\",\"retryable\":false}}",
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"seed {seed_id} not found\",\"details\":{},\"request_id\":\"req_f14dc78718\",\"retryable\":false}}",
    "needs_python": true,
    "observed": [
+    "db",
     "write:assumed"
    ],
    "status": 404,
-   "why": "write:assumed"
+   "why": "observed:db"
   },
   "POST /api/v1/marketplace/seeds/{seed_id}/enable": {
    "body": "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Request validation failed.\",\"details\":{\"errors\":[{\"field\":\"('body',)\",\"issue\":\"missing\",\"input_present\":false}]},",
@@ -3575,13 +3625,14 @@
    "why": "write:assumed"
   },
   "POST /api/v1/marketplace/seeds/{seed_id}/run-research": {
-   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"seed {seed_id} not found\",\"details\":{},\"request_id\":\"req_0f923cbf6f\",\"retryable\":false}}",
+   "body": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"seed {seed_id} not found\",\"details\":{},\"request_id\":\"req_100fcb5520\",\"retryable\":false}}",
    "needs_python": true,
    "observed": [
+    "db",
     "write:assumed"
    ],
    "status": 404,
-   "why": "write:assumed"
+   "why": "observed:db"
   },
   "POST /api/v1/runtime/mode/preview": {
    "body": "{\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"Request validation failed.\",\"details\":{\"errors\":[{\"field\":\"('body',)\",\"issue\":\"missing\",\"input_present\":false}]},",
@@ -3611,7 +3662,7 @@
    "why": "write:assumed"
   },
   "POST /api/v1/system/refresh": {
-   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_1bc8f6e711\",\"retryable\":t",
+   "body": "{\"error\":{\"code\":\"ENGINE_UNAVAILABLE\",\"message\":\"The trading engine is not attached to the API server.\",\"details\":{},\"request_id\":\"req_fb7828f3ab\",\"retryable\":t",
    "needs_python": true,
    "observed": [
     "write:assumed"

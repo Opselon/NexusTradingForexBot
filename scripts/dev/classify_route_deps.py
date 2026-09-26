@@ -88,7 +88,50 @@ def _is_failed_200(body: str) -> bool:
     return any(m.replace(" ", "") in b for m in FAILED_200_MARKERS)
 
 
-def classify(observed: list[str], status: int, method: str, body: str) -> tuple[bool, str]:
+# The route's own 200 body was a substantive envelope (not a bare []), but
+# the ITEMS were empty. This is the most dangerous masked class: the v1 read
+# layer funnels through readers guarded by ``if not repo._is_sqlite: return
+# []`` (124 such guards across the codebase). On a box whose persisted
+# provider is PostgreSQL the guard fires BEFORE the driver seam is touched,
+# so the profiler records observed=[] and the route looks perfectly
+# stateless - while the route is a live query that returns real rows the
+# moment the SQLite path is active. An empty-items envelope is therefore
+# treated as UNPROVEN, never as evidence of statelessness.
+EMPTY_ITEM_MARKERS = ('"items":[]', '"items": []', '"runs":[]', '"runs": []')
+
+
+def _is_empty_items(body: str) -> bool:
+    b = body.replace(" ", "")
+    return any(m.replace(" ", "") in b for m in EMPTY_ITEM_MARKERS)
+
+
+# CONDITIONALLY-DB ROUTES: handlers that read a store only when a runtime
+# precondition the probe cannot synthesise holds (an attached engine, a
+# present serving-model artifact). The profiler probes with the engine
+# disabled, so it legitimately records observed=[] and the body looks
+# substantive - but with an engine attached the same route runs a live
+# SELECT. Source is the only honest authority for these, so they are pinned
+# here: correctness over a clean-looking table.
+CONDITIONALLY_DB = {
+    "GET /api/experience/summary": (
+        "engine-gated: builds the summary only when app.state.engine has an "
+        "experience_engine, then SELECTs strategy_intelligence_registry over "
+        "engine.audit._db_path (debug_research_routes.py:861-885)"
+    ),
+    "GET /api/operator/calibration": (
+        "artifact-gated: joins audit_experiences to audit_experience_outcomes "
+        "only when the serving model fingerprint exists "
+        "(calibration_monitor.py:65-98)"
+    ),
+}
+
+
+def classify(
+    observed: list[str], status: int, method: str, body: str, key: str = ""
+) -> tuple[bool, str]:
+    if key in CONDITIONALLY_DB:
+        return True, f"conditionally-db:{CONDITIONALLY_DB[key].split(':')[0]}"
+
     for sub in PYTHON_ONLY:
         if sub in observed:
             return True, f"observed:{sub}"
@@ -112,6 +155,11 @@ def classify(observed: list[str], status: int, method: str, body: str) -> tuple[
         # not) answer under the probe, so its dependency is unproven.
         if _is_failed_200(body or ""):
             return True, "failed-in-2xx"
+        # A substantive envelope whose items/runs list is empty: the v1
+        # read layer short-circuits non-SQLite providers before the driver
+        # seam, so observed=[] here is not evidence of statelessness.
+        if _is_empty_items(body or ""):
+            return True, "empty-items-in-2xx"
         return False, "stateless-2xx"
 
     return True, f"non-2xx:{status}"
@@ -129,6 +177,7 @@ def main() -> int:
             rec.get("status", -1),
             method,
             rec.get("body", ""),
+            key,
         )
         rec["needs_python"] = needs
         rec["why"] = why
