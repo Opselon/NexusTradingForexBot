@@ -13,8 +13,17 @@
  *  - RiskChecks                  (/api/v1/risk/status -> risk_checks)
  *  - risk_config limits          (/api/v1/risk/status -> risk_config)
  *  - AccountState / exposure     (canonical snapshot, /api/v1/risk/summary)
+ *
+ * OWNER:    uiux-modern-20260926 lane 2 (components/pro) — future edits here.
+ * INVARIANTS: no I/O, no frontend verdict vocabulary, a missing limit renders
+ *           as an indeterminate hatch (never 0, never a satisfied bar), the
+ *           `rv-` prefix only, motion only under prefers-reduced-motion:
+ *           no-preference.
+ * EXTEND:   a new tile/bar takes a payload field plus its tone from
+ *           lib/riskVizMath helpers — never a word the backend did not send.
  */
 
+import { useMemo } from "react";
 import type { AccountState, RiskChecks, RuntimeRiskState } from "@/types/domain";
 import { formatNumber, formatPct } from "@/lib/format";
 import { useI18n } from "@/stores/i18nStore";
@@ -209,8 +218,12 @@ export function DrawdownBar({
             : t("ui.risk.limit_line", "limit {v} (max_account_drawdown_pct)", { v: formatPct(limitPct) })}
         </span>
       </div>
+      {/* Budget side: whenever `util` is null the backend sent no usable
+          limit, so the track is the indeterminate hatch — the value's own
+          tone still colours the number above it. A missing limit never draws
+          as a full or as a satisfied bar. */}
       <div
-        className={`rv-limit__track tone-${tone}`}
+        className={`rv-limit__track ${util === null ? "tone-unknown" : `tone-${tone}`}`}
         role="img"
         aria-label={`${lab}: ${hasActual ? formatPct(actualPct) : t("ui.word.unknown", "UNKNOWN")}${
           util !== null ? ` (${t("ui.risk.of_limit", "{p}% of backend limit", { p: (util * 100).toFixed(0) })})` : ""
@@ -269,7 +282,7 @@ export function MarginArc({
   const arcLen = CIRC * 0.75; // 270° dial
   const shown = sweep === null ? null : sweep * arcLen;
   return (
-    <section className={`rv-arc tone-${tone}`} aria-label={lab}>
+    <section className={`rv-arc tone-${tone}${sweep === null ? " is-indeterminate" : ""}`} aria-label={lab}>
       <svg viewBox="0 0 120 120" width={104} height={104} role="img">
         <path
           className="rv-arc__track"
@@ -338,7 +351,9 @@ export function GateFunnel({
   emptyMessage?: string;
 }) {
   const t = useI18n((s) => s.t);
-  const funnel = gateEvidence(checks);
+  // Pairing `checks` allocates rows/objects; memoizing keeps an unchanged
+  // payload from re-running it on every render of the risk page.
+  const funnel = useMemo(() => gateEvidence(checks), [checks]);
   if (funnel.total === 0)
     return (
       <p className="rv-funnel__empty">
@@ -382,12 +397,14 @@ export function GateFunnel({
  */
 export function BreakerTiles({ state }: { state: RuntimeRiskState | null | undefined }) {
   const t = useI18n((s) => s.t);
-  const counters: Array<{ k: string; field: string; v: number | null | undefined }> = [
+  // Labels come from `t`, values from `state`: one array per (state, t) pair
+  // instead of one per render of a live guardian payload.
+  const counters = useMemo<Array<{ k: string; field: string; v: number | null | undefined }>>(() => [
     { k: t("ui.risk.counter.telemetry_dropped", "Telemetry dropped"), field: "telemetry_dropped", v: state?.telemetry_dropped },
     { k: t("ui.risk.counter.audit_dead_letter_rows", "Audit dead-letter rows"), field: "audit_dead_letter_rows", v: state?.audit_dead_letter_rows },
     { k: t("ui.risk.counter.audit_batch_failures", "Audit batch failures"), field: "audit_batch_failures", v: state?.audit_batch_failures },
     { k: t("ui.risk.counter.financial_events_failed", "Financial events failed"), field: "financial_events_failed", v: state?.financial_events_failed },
-  ];
+  ], [state, t]);
   return (
     <div className="rv-breakers" aria-label={t("ui.risk.breakers_aria", "Circuit-breaker counters")}>
       {counters.map((c) => {
