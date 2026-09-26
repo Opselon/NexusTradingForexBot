@@ -59,6 +59,45 @@ DEFAULT_PG_PORT = 5432
 PG_SECRET_PLACEHOLDER = "__NSE_PG_SECRET__"
 
 
+#: The PostgreSQL pool-sizing knobs this model carries optionally.  A knob
+#: absent from a persisted row means "the fabric's own default applies" —
+#: never zero-filled (0 is a real, deliberate value for these).
+_POOL_OPTION_KEYS: tuple[str, ...] = (
+    "pool_min_size",
+    "pool_max_size",
+    "pool_idle_timeout_sec",
+    "pool_max_lifetime_sec",
+)
+
+
+def _opt_int(raw: dict[str, Any], key: str) -> int | None:
+    """Read an optional integer knob: absent/None stays None, never 0.
+
+    ``int(raw.get(key) or 0)`` — the shape every other knob uses — cannot
+    distinguish "operator set 0" from "operator never touched it", which for
+    pool sizing is the difference between "open lazily / never reap" and
+    "the running pool's default".  ``None`` means unset and lets the fabric
+    keep its own value.
+    """
+    if key not in raw:
+        return None
+    value = raw[key]
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise DatabaseConfigError(
+            f"PostgreSQL configuration key '{key}' must be a whole number, "
+            f"got {value!r}."
+        ) from exc
+    if parsed < 0:
+        raise DatabaseConfigError(
+            f"PostgreSQL configuration key '{key}' must not be negative, got {parsed}."
+        )
+    return parsed
+
+
 @dataclass
 class DatabaseConfig:
     """Full connection + behavior configuration for a persistence domain.
@@ -81,6 +120,15 @@ class DatabaseConfig:
         pooling_enabled: use connection pooling when the provider supports it
             (PostgreSQL pgbouncer-compatible URL when disabled).
         connect_timeout_sec: connection establishment timeout.
+        pool_min_size: minimum connections the PostgreSQL pool holds open.
+            Absent (None) means "the fabric's own default applies"; 0 means
+            "open lazily".  See :func:`provision_domain`.
+        pool_max_size: maximum connections the PostgreSQL pool will open.
+        pool_idle_timeout_sec: seconds an idle pooled connection may sit
+            unused before it is reaped.  0 = never reap (the pre-fix
+            behaviour: connections were held for process lifetime).
+        pool_max_lifetime_sec: maximum age of a pooled connection before it
+            is recycled.  0 = no limit.
     """
 
     provider: DatabaseProvider = DatabaseProvider.SQLITE
@@ -99,6 +147,14 @@ class DatabaseConfig:
     sqlite_path: str = ""
     #: Optional explicit file:// URI for SQLite (e.g. file::memory:?cache=shared).
     sqlite_uri: str = ""
+    #: PostgreSQL pool sizing.  ``None`` = "the fabric's own default applies"
+    #: (the value an operator never set); an explicit 0 is a real choice
+    #: (min_size 0 = open the pool lazily, idle/lifetime 0 = never reap).
+    #: See :func:`nexus_scalp.database.fabric.provision_domain`.
+    pool_min_size: int | None = None
+    pool_max_size: int | None = None
+    pool_idle_timeout_sec: int | None = None
+    pool_max_lifetime_sec: int | None = None
 
     # -- constructors -----------------------------------------------------
 
@@ -127,6 +183,10 @@ class DatabaseConfig:
         migrate_on_startup: bool = True,
         pooling_enabled: bool = True,
         connect_timeout_sec: int = 10,
+        pool_min_size: int | None = None,
+        pool_max_size: int | None = None,
+        pool_idle_timeout_sec: int | None = None,
+        pool_max_lifetime_sec: int | None = None,
     ) -> DatabaseConfig:
         return cls(
             provider=DatabaseProvider.POSTGRESQL,
@@ -141,6 +201,10 @@ class DatabaseConfig:
             migrate_on_startup=migrate_on_startup,
             pooling_enabled=pooling_enabled,
             connect_timeout_sec=connect_timeout_sec,
+            pool_min_size=pool_min_size,
+            pool_max_size=pool_max_size,
+            pool_idle_timeout_sec=pool_idle_timeout_sec,
+            pool_max_lifetime_sec=pool_max_lifetime_sec,
         )
 
     # -- accessors --------------------------------------------------------
@@ -232,6 +296,12 @@ class DatabaseConfig:
             "sqlite_path": self.sqlite_path,
             "sqlite_uri": self.sqlite_uri,
         }
+        # Pool sizing is optional on the row: a knob never set stays absent so
+        # a reader can tell "unset" from a deliberate 0 (open-lazy / never reap).
+        for key in _POOL_OPTION_KEYS:
+            value = getattr(self, key)
+            if value is not None:
+                out[key] = value
         if include_secret_ref:
             out["password_secret"] = self.password_secret
         return out
@@ -264,6 +334,10 @@ class DatabaseConfig:
                 connect_timeout_sec=int(raw.get("connect_timeout_sec") or 10),
                 sqlite_path=str(raw.get("sqlite_path") or ""),
                 sqlite_uri=str(raw.get("sqlite_uri") or ""),
+                pool_min_size=_opt_int(raw, "pool_min_size"),
+                pool_max_size=_opt_int(raw, "pool_max_size"),
+                pool_idle_timeout_sec=_opt_int(raw, "pool_idle_timeout_sec"),
+                pool_max_lifetime_sec=_opt_int(raw, "pool_max_lifetime_sec"),
             )
         except (TypeError, ValueError) as exc:
             raise DatabaseConfigError(
