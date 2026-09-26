@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -129,14 +130,127 @@ def translate_ddl(statement: str) -> str:
 # --- execution ---------------------------------------------------------------
 
 
+#: Columns the engine's own history table carries (engine._record_migration).
+#: Kept in sync with ``_HISTORY_TABLE_DDL`` rather than copied so a new column
+#: added there surfaces here as a compile-time import error instead of a silent
+#: drift between the recorded row shapes.
+_HISTORY_COLUMNS = (
+    "migration_id",
+    "domain",
+    "version",
+    "description",
+    "checksum",
+    "applied_at",
+    "application_version",
+    "git_commit",
+    "execution_ms",
+    "status",
+)
+
+
+def record_applied_migrations(
+    domain: str,
+    migrations,
+    execute,
+    *,
+    application_version: str = "",
+    git_commit: str = "",
+) -> int:
+    """Record the applied migration chain for ``domain`` on a PostgreSQL db.
+
+    ``execute(sql, args)`` runs one parameterized statement. This mirrors what
+    the SQLite engine's ``_record_migration`` does per migration, in PG dialect
+    (``INSERT ... ON CONFLICT DO UPDATE``; PG has no ``INSERT OR REPLACE``).
+    The migration's DDL is *not* replayed here — the provisioner's own statement
+    list already created every object the chain owns; only the ledger row is
+    missing, and re-running DDL out of order could fight the IF NOT EXISTS replay.
+
+    Idempotent: re-running over a recorded chain refreshes the checksum row.
+    Returns the number of rows written.
+    """
+    from nexus_scalp.database.models import DatabaseDomain
+
+    try:
+        domain_enum = DatabaseDomain(domain)
+        domain_value = domain_enum.value
+    except ValueError:
+        domain_value = domain  # an ops domain (ops_shadow / ops_hygiene)
+
+    placeholders = ", ".join("%s" for _ in _HISTORY_COLUMNS)
+    column_list = ", ".join(_HISTORY_COLUMNS)
+    updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in _HISTORY_COLUMNS if c != "migration_id")
+    sql = (
+        f"INSERT INTO schema_migrations ({column_list}) VALUES ({placeholders}) "
+        f"ON CONFLICT (migration_id) DO UPDATE SET {updates}"
+    )
+    written = 0
+    for mig in migrations:
+        try:
+            checksum = mig.checksum() if callable(mig.checksum) else str(mig.checksum)
+        except Exception:
+            checksum = ""
+        args = (
+            mig.migration_id,
+            domain_value,
+            int(mig.to_version),
+            mig.description,
+            checksum,
+            datetime.now(UTC).isoformat(),
+            application_version,
+            git_commit,
+            0,
+            "applied",
+        )
+        try:
+            execute(sql, args)
+            written += 1
+        except Exception as exc:
+            # Recording must never mask the schema work itself, but a silent
+            # no-op here is exactly the empty-ledger defect this fixes, so the
+            # failure is logged loudly rather than swallowed.
+            logger.error(
+                "[DB-MIGRATE] failed to record migration %s on domain %s: %s",
+                mig.migration_id,
+                domain_value,
+                exc,
+            )
+    if written:
+        logger.info(
+            "[DB-MIGRATE] recorded %d applied migration(s) for domain %s",
+            written,
+            domain_value,
+        )
+    return written
+
+
+def _recorded_domain_migrations(domain: str):
+    """The migration registry's chain for a domain, or None when it has none."""
+    from nexus_scalp.database.models import DatabaseDomain
+    from nexus_scalp.database.registry import migrations_for
+
+    try:
+        domain_enum = DatabaseDomain(domain)
+    except ValueError:
+        return None  # ops domain: no governed registry chain
+    try:
+        return migrations_for(domain_enum)
+    except KeyError:
+        return None
+
+
 def apply_schema(
-    statements: list[str], execute, *, stop_on_error: bool = False
+    statements: list[str], execute, *, stop_on_error: bool = False, domain: str = ""
 ) -> dict[str, object]:
     """Translate + apply a schema on a PostgreSQL connection.
 
     ``execute`` is any callable running one SQL string (a psycopg cursor or a
     thin wrapper). Returns an audit record of what happened — the migration is
     observable by design, never a silent best-effort.
+
+    When ``domain`` names a governed registry domain, the applied migration
+    chain is recorded into ``schema_migrations`` after the DDL lands. Without
+    that step a freshly provisioned PostgreSQL database has every table but an
+    EMPTY ledger, so every version/convergence check reports "never migrated".
     """
     applied: list[str] = []
     skipped: list[str] = []
@@ -176,16 +290,36 @@ def apply_schema(
                 break
             if stop_on_error:
                 break
+    migrations_recorded = 0
+    if domain:
+        chain = _recorded_domain_migrations(domain)
+        if chain:
+            try:
+                migrations_recorded = record_applied_migrations(domain, chain, execute)
+            except Exception as exc:  # never let recording abort provisioning
+                logger.error(
+                    "[DB-MIGRATE] migration recording failed for domain %s: %s",
+                    domain,
+                    exc,
+                )
+                errors.append(
+                    {
+                        "statement": "record_applied_migrations",
+                        "error": f"record: {type(exc).__name__}: {exc}",
+                    }
+                )
     result: dict[str, object] = {
         "applied": applied,
         "applied_count": len(applied),
         "skipped_count": len(skipped),
         "error_count": len(errors),
         "errors": errors,
+        "migrations_recorded": migrations_recorded,
     }
     logger.info(
-        "[DB-MIGRATE] schema applied=%d errors=%d",
+        "[DB-MIGRATE] schema applied=%d errors=%d migrations_recorded=%d",
         len(applied),
         len(errors),
+        migrations_recorded,
     )
     return result

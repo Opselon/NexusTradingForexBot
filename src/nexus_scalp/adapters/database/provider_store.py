@@ -152,6 +152,15 @@ def _read_backend(repo: Any, domain: str = AUDIT_DOMAIN) -> Any:
     read-only pool (``SET default_transaction_read_only = on``). A
     write-shaped backend is refused outright, exactly like the audit
     repository's own read guard.
+
+    A domain whose read plane is not registered yet is BOOTSTRAPPED here: a
+    process that only reads (a diagnostics route, a maintenance worker, a CLI
+    probe) never runs the write-plane provisioning that would have registered
+    it, so without this step its first read finds an empty registry and
+    degrades to a documented default while the data sits on the server — the
+    repeated "no read plane registered" warning on the live cluster. A
+    read-only process must still resolve a read plane; it must never
+    provision the write path.
     """
     try:
         from nexus_scalp.database.fabric import get_domain_backend
@@ -159,6 +168,28 @@ def _read_backend(repo: Any, domain: str = AUDIT_DOMAIN) -> Any:
         backend = get_domain_backend(domain, readonly=True)
     except Exception as exc:  # pragma: no cover - fabric import failure
         logger.warning("[DB-FABRIC] %s read backend resolve failed: %s", domain, type(exc).__name__)
+        return None
+    if backend is not None:
+        if hasattr(backend, "execute") or not hasattr(backend, "query"):
+            return None
+        return backend
+    # Nothing registered for this process yet. Only the READ side may be
+    # bootstrapped from a read path — provisioning the write plane here could
+    # close a pool a concurrent writer is using.
+    try:
+        from nexus_scalp.database.ops_provider import ensure_read_plane
+
+        # A repository that already resolved its own DSN (its _db_url) is the
+        # authoritative source: the persisted settings lookup can disagree with
+        # the URL the repository actually reads through (an env-overridden test
+        # instance, a box mid-switch), and opening a pool against the wrong one
+        # silently degrades every read after it.
+        resolved_dsn = getattr(repo, "_db_url", "")
+        if not resolved_dsn or not str(resolved_dsn).startswith(("postgresql:", "postgres:")):
+            resolved_dsn = None
+        backend = ensure_read_plane(domain, dsn=resolved_dsn)
+    except Exception as exc:  # pragma: no cover - ops import failure
+        logger.warning("[DB-FABRIC] %s read plane bootstrap failed: %s", domain, type(exc).__name__)
         return None
     if backend is None:
         return None
