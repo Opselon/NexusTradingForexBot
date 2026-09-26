@@ -100,7 +100,9 @@ def check_registry() -> None:
             if not m.description:
                 _record(f"{m.migration_id}: empty description (checksum identity input)")
         versions = sorted(chain)
-        if versions != list(range(versions[0], versions[0] + len(versions))):
+        if not versions:
+            _record(f"{domain.value}: version chain is EMPTY (no migrations registered)")
+        elif versions != list(range(versions[0], versions[0] + len(versions))):
             _record(f"{domain.value}: version chain has gaps: {versions}")
 
 
