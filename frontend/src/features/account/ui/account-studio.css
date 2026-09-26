@@ -137,8 +137,8 @@
     repeating-linear-gradient(0deg, transparent 0 23px, rgba(255, 255, 255, 0.022) 23px 24px),
     repeating-linear-gradient(90deg, transparent 0 23px, rgba(255, 255, 255, 0.022) 23px 24px),
     var(--bg-inset);
-  padding-block: 10px 8px;
-  padding-inline: 12px;
+  /* --card-pad, not literals: the dense theme switch overrides it */
+  padding: var(--card-pad);
   min-inline-size: 0;
 }
 /* corner ticks — the "instrument" affordance, pure decoration */
@@ -257,7 +257,7 @@
 }
 .acc-dist-fill.pos { background: linear-gradient(90deg, var(--green-dim), var(--green)); }
 .acc-dist-fill.neg { background: linear-gradient(90deg, var(--red-dim), var(--red)); }
-.acc-dist-fill.dim { background: linear-gradient(90deg, rgba(131, 152, 173, 0.3), var(--text-dim)); }
+.acc-dist-fill.dim { background: linear-gradient(90deg, color-mix(in srgb, var(--text-dim) 30%, transparent), var(--text-dim)); }
 .acc-dist-fill.warn { background: linear-gradient(90deg, var(--amber-dim), var(--amber)); }
 .acc-dist-track.unknown {
   background: repeating-linear-gradient(45deg, transparent 0 5px, rgba(255, 255, 255, 0.05) 5px 10px);

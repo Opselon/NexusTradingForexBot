@@ -4,7 +4,7 @@
 
 .acct-hero { display: flex; flex-wrap: wrap; gap: 16px 26px; align-items: baseline; padding: 4px 2px 10px; }
 .acct-hero .big { font-family: var(--mono); font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.acct-hero .big.pos { color: var(--green); text-shadow: 0 0 18px rgba(62, 207, 142, 0.3); }
+.acct-hero .big.pos { color: var(--green); text-shadow: 0 0 18px color-mix(in srgb, var(--green) 30%, transparent); }
 .acct-hero .big.neg { color: var(--red); }
 .acct-hero .split { display: flex; block-size: 6px; border-radius: 4px; overflow: hidden; inline-size: 220px; border: 1px solid var(--border); }
 .acct-hero .split i.gp { background: var(--green); }
@@ -15,9 +15,9 @@
   text-transform: uppercase; border: 1px solid var(--border-strong); border-radius: 999px;
   padding: 2px 9px; color: var(--text-dim); background: var(--bg-inset);
 }
-.acct-chip.pos { color: var(--green); border-color: rgba(62, 207, 142, 0.4); }
-.acct-chip.neg { color: color-mix(in srgb, var(--red) 72%, var(--text)); border-color: rgba(242, 86, 77, 0.45); }
-.acct-chip.warn { color: var(--amber); border-color: rgba(235, 161, 63, 0.45); }
+.acct-chip.pos { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
+.acct-chip.neg { color: color-mix(in srgb, var(--red) 72%, var(--text)); border-color: color-mix(in srgb, var(--red) 45%, transparent); }
+.acct-chip.warn { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
 
 .acct-grid-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 8px; }
 .acct-stat { border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; background: var(--bg-inset); }

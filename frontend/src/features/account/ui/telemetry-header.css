@@ -33,8 +33,8 @@
   letter-spacing: 0.09em;
   background: var(--bg-inset);
 }
-.th-pill.th-live { border-color: rgba(62, 207, 142, 0.45); background: var(--green-dim); }
-.th-pill.th-down { border-color: rgba(242, 86, 77, 0.5); background: var(--red-dim); }
+.th-pill.th-live { border-color: color-mix(in srgb, var(--green) 45%, transparent); background: var(--green-dim); }
+.th-pill.th-down { border-color: color-mix(in srgb, var(--red) 50%, transparent); background: var(--red-dim); }
 
 .th-dot {
   inline-size: 8px;
@@ -72,7 +72,7 @@
   letter-spacing: 0.08em;
   color: var(--accent);
   background: var(--paper-blue-bg);
-  border: 1px solid rgba(65, 166, 242, 0.32);
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
   border-radius: 6px;
   padding: 3px 8px;
 }
@@ -102,7 +102,7 @@
   letter-spacing: 0.08em;
   color: var(--amber);
   background: var(--amber-dim);
-  border: 1px solid rgba(235, 161, 63, 0.4);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
   border-radius: 6px;
   padding: 3px 8px;
 }
@@ -147,5 +147,5 @@
 @media (prefers-reduced-motion: reduce) {
   .th-dot,
   .th-warn-dot { animation: none; }
-  .th-live .th-dot { box-shadow: 0 0 6px rgba(62, 207, 142, 0.7); }
+  .th-live .th-dot { box-shadow: 0 0 6px color-mix(in srgb, var(--green) 70%, transparent); }
 }
