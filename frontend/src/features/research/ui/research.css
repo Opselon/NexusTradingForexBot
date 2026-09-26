@@ -102,8 +102,8 @@
   border-radius: 12px;
   background:
     radial-gradient(1100px 240px at 8% -40%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 62%),
-    radial-gradient(700px 220px at 92% 140%, color-mix(in srgb, var(--green, #37d67a) 8%, transparent), transparent 60%),
-    var(--panel, var(--bg));
+    radial-gradient(700px 220px at 92% 140%, color-mix(in srgb, var(--green) 8%, transparent), transparent 60%),
+    var(--bg-panel);
   animation: rsFadeUp 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
@@ -144,7 +144,7 @@
 
 .rs-hero-sub {
   margin-top: 6px;
-  color: var(--muted);
+  color: var(--text-dim);
   font-size: 12.5px;
   position: relative;
   z-index: 1;
@@ -169,7 +169,7 @@
   border: 1px solid var(--border);
   border-radius: 999px;
   background: color-mix(in srgb, var(--bg) 65%, transparent);
-  color: var(--muted);
+  color: var(--text-dim);
   font-size: 11px;
   letter-spacing: 0.2px;
   animation: rsFadeUp 0.5s ease both;
@@ -194,7 +194,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--green, #37d67a);
+  background: var(--green);
   animation: rsPulse 2.2s ease-in-out infinite;
 }
 
@@ -205,7 +205,7 @@
   background: var(--red);
 }
 .rs-live-dot.idle {
-  background: var(--muted);
+  background: var(--text-dim);
   animation: none;
 }
 
@@ -234,14 +234,14 @@
 }
 
 .rs-pipe-node + .rs-pipe-node {
-  margin-left: 26px;
+  margin-inline-start: 26px;
 }
 
 /* directed connector with a travelling pulse */
 .rs-pipe-node + .rs-pipe-node::before {
   content: "";
   position: absolute;
-  left: -26px;
+  inset-inline-start: -26px;
   top: 50%;
   width: 26px;
   height: 1px;
@@ -251,7 +251,7 @@
 .rs-pipe-node + .rs-pipe-node::after {
   content: "";
   position: absolute;
-  left: -24px;
+  inset-inline-start: -24px;
   top: calc(50% - 2px);
   width: 7px;
   height: 5px;
@@ -272,15 +272,15 @@
 .rs-pipe-meta {
   margin-top: 3px;
   font-size: 10.5px;
-  color: var(--muted);
+  color: var(--text-dim);
 }
 
 .rs-pipe-idx {
   position: absolute;
   top: 7px;
-  right: 8px;
+  inset-inline-end: 8px;
   font-size: 9.5px;
-  color: var(--muted);
+  color: var(--text-dim);
   opacity: 0.8;
   font-family: var(--mono, monospace);
 }
@@ -330,7 +330,7 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--bg) 70%, transparent);
-  color: var(--muted);
+  color: var(--text-dim);
   font-size: 11.5px;
   cursor: pointer;
   transition: border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
@@ -389,12 +389,12 @@
   padding: 2px 7px;
   border-radius: 5px;
   border: 1px solid var(--border);
-  color: var(--muted);
+  color: var(--text-dim);
   background: color-mix(in srgb, var(--bg) 70%, transparent);
 }
 
 .rs-rail-drawer .rs-step.passed {
-  border-color: color-mix(in srgb, var(--green, #37d67a) 55%, var(--border));
+  border-color: color-mix(in srgb, var(--green) 55%, var(--border));
   color: var(--text);
 }
 
@@ -410,7 +410,7 @@
 }
 
 .rs-rail-arrow {
-  color: var(--muted);
+  color: var(--text-dim);
   font-size: 9px;
   opacity: 0.7;
 }
