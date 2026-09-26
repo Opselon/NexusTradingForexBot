@@ -652,6 +652,94 @@ def make_db_app(
         print(f"Migration template written: {out}")
         print("Review, register in nexus_scalp/database/registry.py, then test.")
 
+    @app.command("migrate-sqlite-to-pg")
+    def db_migrate_sqlite_to_pg(
+        sqlite_dir: str = typer.Option(
+            ...,
+            "--sqlite-dir",
+            help="Directory holding the SQLite source databases (artifacts/).",
+        ),
+        pg_url: str = typer.Option(
+            ...,
+            "--pg-url",
+            help=(
+                "Target PostgreSQL connection URL "
+                "(postgresql://user:***@host:port/database). NEVER the live cluster."
+            ),
+        ),
+        dry_run: bool = typer.Option(
+            False, "--dry-run", help="Report what would copy without writing anything."
+        ),
+        batch_size: int = typer.Option(
+            1000, "--batch-size", help="Rows copied per executemany batch."
+        ),
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+    ) -> None:
+        """Copy SQLite history into a PostgreSQL database (provider switch).
+
+        READS the SQLite sources (read-only URI mode — a live engine is never
+        disturbed) and WRITES only the target given by ``--pg-url``. Idempotent:
+        a re-run converges to the same state (``ON CONFLICT DO NOTHING``) and
+        advances the PG sequences past the copied ``max(id)``. Rows that fail
+        type validation are quarantined and reported, never silently dropped,
+        and make the command exit non-zero.
+        """
+        from nexus_scalp.database.migration.sqlite_to_pg import (
+            migrate_sqlite_to_pg,
+        )
+
+        try:
+            result = migrate_sqlite_to_pg(
+                sqlite_dir,
+                pg_url,
+                dry_run=dry_run,
+                batch_size=batch_size,
+            )
+        except FileNotFoundError as exc:
+            _print_error(str(exc))
+        payload = result.to_dict()
+        if not json_mode:
+            mode = "DRY RUN (nothing written)" if dry_run else "COPY"
+            print(f"SQLITE -> POSTGRESQL {mode}")
+            print(f"  source: {payload['sqlite_dir']}")
+            print(f"  target: {payload['pg_url']}")
+            for t in payload["tables"]:
+                status = "error" if t["error"] else ("dry-run" if t["dry_run"] else "copied")
+                print(
+                    f"  {t['database']:16} {t['table']:34} "
+                    f"rows={t['rows_copied']:>8} quarantined={t['rows_quarantined']} "
+                    f"[{status}]"
+                )
+            if payload["quarantine"]:
+                print(f"  QUARANTINED ROWS: {len(payload['quarantine'])}")
+                for q in payload["quarantine"][:20]:
+                    print(
+                        f"    {q['database']}.{q['table']} row_id={q['row_id']!r} "
+                        f"column={q['column']}: {q['reason']}"
+                    )
+            if payload["sequences_fixed"]:
+                print(f"  SEQUENCES FIXED: {len(payload['sequences_fixed'])}")
+                for s in payload["sequences_fixed"][:20]:
+                    print(f"    {s}")
+            if payload["schema_drift"]:
+                print(f"  SCHEMA DRIFT: {len(payload['schema_drift'])} column difference(s)")
+            if payload["schema_errors"]:
+                print(f"  SCHEMA ERRORS: {len(payload['schema_errors'])}")
+                for e in payload["schema_errors"][:20]:
+                    print(f"    {e.get('statement', '')}: {e.get('error', '')}")
+            print(
+                f"  TOTAL rows={payload['rows_copied']} "
+                f"tables={payload['tables_migrated']} "
+                f"quarantined={payload['rows_quarantined']} "
+                f"ok={payload['ok']} ({payload['duration_ms']} ms)"
+            )
+        else:
+            print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+        if not payload["ok"]:
+            # A quarantined or failed row is a lost row: the operator must see
+            # a non-zero exit, never a silent partial success.
+            raise typer.Exit(1)
+
     return app
 
 
