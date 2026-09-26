@@ -160,16 +160,15 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
 
   return (
     <Drawer title={`Strategy trace — ${strategyId}`} onClose={onClose}>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-        {tabs.map(([id, label]) => (
-          <button key={id} className={`btn small ${tab === id ? "primary" : "ghost"}`} aria-pressed={tab === id} onClick={() => setTab(id)}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <CommandResultLine state={cmd.state} />
-
       <div className="rs-drawer">
+        <div className="rs-drawer-tabs" role="group" aria-label="Strategy trace sections">
+          {tabs.map(([id, label]) => (
+            <button key={id} className={`btn small ${tab === id ? "primary" : "ghost"}`} aria-pressed={tab === id} onClick={() => setTab(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <CommandResultLine state={cmd.state} />
 
       {tab === "trace" &&
         (detailQ.isPending ? (
@@ -182,7 +181,7 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
         ) : detailQ.data?.available === false ? (
           <EmptyState message="Research subsystem unavailable" hint={detailQ.data.reason ?? "backend answered available:false"} />
         ) : (
-          <div style={{ display: "grid", gap: 10 }}>
+          <div className="rs-drawer-grid">
             <div className="grid cols-3">
               <MetricCard label="Lifecycle" value={<StatusBadge status={str(trace?.lifecycle)} />} sub={str(trace?.blocked_reason) ?? undefined} />
               <MetricCard label="Gate records" value={String(gates.length)} tone="dim" sub="from /api/research/gates" />
@@ -194,7 +193,7 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
             </div>
             <div className="rs-rail-drawer" aria-label="Gate chain position">
               {GATE_CHAIN.map((g, i) => (
-                <span key={g} style={{ display: "contents" }}>
+                <span key={g} className="rs-contents">
                   {i > 0 && <span className="rs-rail-arrow" aria-hidden="true">→</span>}
                   <span className={`rs-step ${chainClass(g)}`} title={`chain step ${i + 1}: ${g}`}>
                     {i + 1}. {g}
@@ -243,7 +242,7 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
                     <StatusPill status={g.status} />
                   </td>
                   <td className="tiny muted">{g.failureClass ?? "—"}</td>
-                  <td className="tiny" style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }} title={g.reason ?? ""}>
+                  <td className="tiny rs-cell-clip" title={g.reason ?? ""}>
                     {g.reason ?? "—"}
                   </td>
                   <td className="tiny num">{g.durationMs === null ? "—" : formatNumber(g.durationMs, 0)}</td>
@@ -284,14 +283,14 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
           {evidence.length === 0 ? (
             evidenceQ.isPending ? <Skeleton /> : (failed(evidenceQ) ?? <EmptyState message="No evidence rows returned." />)
           ) : (
-            <div style={{ display: "grid", gap: 8 }}>
+            <div className="rs-drawer-grid tight">
               {evidence.slice(0, 25).map((e: Row, i: number) => (
-                <details key={i} style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "6px 10px" }}>
+                <details key={i} className="rs-drawer-details">
                   <summary className="small">
                     {str(e.evidence_id)?.slice(0, 14) ?? "evidence"} · {str(e.kind) ?? str(e.evidence_type) ?? "—"} ·{" "}
                     <span className="muted">{formatDateTime(str(e.created_at))}</span>
                   </summary>
-                  <div style={{ marginTop: 6 }}>
+                  <div className="rs-drawer-foot">
                     <JsonBlock value={e.payload ?? e.data ?? e} maxChars={2500} />
                   </div>
                 </details>

@@ -226,7 +226,7 @@
 .rs-rail-chip::after {
   content: "";
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   bottom: 0;
   height: 2px;
   width: var(--pct, 0%);
@@ -289,6 +289,50 @@
   color: var(--text-dim);
   font-size: 9px;
   opacity: 0.7;
+}
+
+/* drawer shell --------------------------------------------------------- */
+/* rhythm + tab strip for StrategyDrawer — the inline spacing styles these
+   replace are gone from the TSX, so the rules and the markup are one place. */
+
+.rs-drawer {
+  display: grid;
+  gap: 10px;
+}
+
+.rs-drawer-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rs-drawer-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.rs-drawer-grid.tight {
+  gap: 8px;
+}
+
+.rs-drawer-details {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.rs-drawer-foot {
+  margin-top: 6px;
+}
+
+.rs-contents {
+  display: contents;
+}
+
+.rs-cell-clip {
+  max-inline-size: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Sortable research tables (.rs-table) ---------------------------------- */

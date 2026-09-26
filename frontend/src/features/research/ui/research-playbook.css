@@ -126,6 +126,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* entry list column (the stagger wrapper doubles as the grid) */
+.rs-pb-list {
+  display: grid;
+  gap: 0;
+}
+
 .rs-pb-section-label {
   font-size: 11px;
   text-transform: uppercase;
@@ -189,6 +195,7 @@
 }
 
 .rs-pb-sub {
+  display: block;
   font-size: 11.5px;
   color: var(--text-dim);
   margin-top: 2px;
@@ -239,6 +246,8 @@
 .rs-pb-inner p {
   font-size: 12.5px;
   line-height: 1.62;
+  /* reading measure — prose stops at ~84ch, tables keep the full card */
+  max-inline-size: 84ch;
   color: color-mix(in srgb, var(--text) 88%, var(--text-dim));
   margin: 0 0 8px;
 }
@@ -295,6 +304,10 @@
   border-bottom: 1px color-mix(in srgb, var(--border) 55%, transparent) dashed;
   vertical-align: top;
   line-height: 1.5;
+}
+
+.rs-params tbody tr:hover td {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .rs-params td:nth-child(1) {
@@ -355,8 +368,13 @@
 .rs-faq-a {
   font-size: 12.5px;
   line-height: 1.6;
+  max-inline-size: 84ch;
   color: color-mix(in srgb, var(--text) 84%, var(--text-dim));
   margin-top: 5px;
+}
+
+.rs-seealso-label {
+  align-self: center;
 }
 
 .rs-seealso {

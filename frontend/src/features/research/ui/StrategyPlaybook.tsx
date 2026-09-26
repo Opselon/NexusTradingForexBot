@@ -115,7 +115,7 @@ export default function StrategyPlaybook({ focusId, compact }: Props) {
           groups.map((g) => (
             <div key={g.key}>
               <div className="rs-pb-section-label">{t(g.labelKey, g.label)}</div>
-              <div className="rs-stagger" style={{ display: "grid", gap: 0 }}>
+              <div className="rs-stagger rs-pb-list">
                 {g.entries.map((e) => (
                   <EntryCard
                     key={e.id}
@@ -156,7 +156,7 @@ function EntryCard({
         {entry.badge && <span className="rs-pb-badge">{entry.badge}</span>}
         <span>
           <span className="rs-pb-title">{entry.title}</span>
-          <span className="rs-pb-sub" style={{ display: "block" }}>
+          <span className="rs-pb-sub">
             {entry.subtitle}
           </span>
         </span>
@@ -228,7 +228,7 @@ function EntryCard({
 
             {entry.seeAlso && entry.seeAlso.length > 0 && (
               <div className="rs-seealso">
-                <span className="tiny muted" style={{ alignSelf: "center" }}>
+                <span className="tiny muted rs-seealso-label">
                   see also →
                 </span>
                 {entry.seeAlso.map((id) => (
