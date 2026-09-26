@@ -17,7 +17,7 @@
  * feature is self-contained — no other page loads them.
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { ShellPageProps } from "@/app/featureModule";
 import { StatusBadge } from "@/components/primitives";
 import { useI18n } from "@/stores/i18nStore";
@@ -213,11 +213,13 @@ export default function DebugPage(props: ShellPageProps) {
   const [cmpA, setCmpA] = useState<string | null>(null);
   const [cmpB, setCmpB] = useState<string | null>(null);
 
-  const sendToCompare = (id: string, slot: "a" | "b") => {
+  // stable identity: the Snapshots tab (its only consumer) is not re-rendered
+  // by every DebugPage render, only by its own query state
+  const sendToCompare = useCallback((id: string, slot: "a" | "b") => {
     if (slot === "a") setCmpA(id);
     else setCmpB(id);
     setTab("compare");
-  };
+  }, []);
 
   return (
     <div className="dbg-page l3-wrap">
