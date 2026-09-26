@@ -7,7 +7,7 @@
  * refetched feed decide what to show (server owns the state).
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type KeyboardEvent } from "react";
 import { useI18n } from "@/stores/i18nStore";
 import { ConfirmModal, EmptyState, ErrorState, Panel, Segmented, Skeleton, StatusBadge } from "@/components/primitives";
 import { formatDateTime } from "@/lib/format";
@@ -224,8 +224,16 @@ export function ArticleRow({
   const rel = xauusdRelPct(a);
   const status = (a.article_status ?? "ACTIVE").toUpperCase();
   const aiDone = !!(a.ai_analysis && (a.ai_analysis.summary || a.ai_analysis.analysis_status === "failed"));
+  // keyboard parity for the clickable row: Enter/Space opens the same drawer the
+  // pointer click opens (presentation only — no data, wording or fetch changes).
+  const activate = (e: KeyboardEvent): void => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    if (e.target !== e.currentTarget) return;
+    e.preventDefault();
+    onSelect();
+  };
   return (
-    <article className={`news-item ${selected ? "selected" : ""}`} onClick={onSelect}>
+    <article className={`news-item ${selected ? "selected" : ""}`} onClick={onSelect} onKeyDown={activate} tabIndex={0} aria-current={selected || undefined}>
       <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
         <span className="title" style={{ flex: 1, minWidth: 0 }}>
           {a.title}
