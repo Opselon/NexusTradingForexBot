@@ -16,13 +16,14 @@
  * playbook is documentation; queries above are the data.
  */
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ShellPageProps } from "@/app/featureModule";
 import {
   DataTable,
   EmptyState,
+  ErrorState,
   MetricCard,
   Panel,
   Segmented,
@@ -231,7 +232,22 @@ export default function ResearchPage(props: ShellPageProps) {
       <EmptyState message="Research subsystem unavailable" hint={data?.reason ?? "backend answered without availability — nothing to show"} />
     ) : null;
 
+  /**
+   * §9 error presentation: a read that FAILED renders the shared error
+   * surface with the backend's own message instead of collapsing into the
+   * "subsystem unavailable" empty state, which would misreport a transport
+   * failure as an intentional absence. Read-only — no refetch/retry wiring,
+   * no query option, key or interval touched.
+   */
+  const failed = (q: { isError: boolean; error: unknown }): ReactNode =>
+    q.isError ? (
+      <ErrorState message={q.error instanceof Error ? q.error.message : "backend request failed"} />
+    ) : null;
+
   const summaryUnavailable = rows?.available === false;
+  /** summary read failed with nothing ever fetched — the KPIs must not show
+   *  a zero the backend never sent (§9). */
+  const summaryLost = summaryQ.isError && summary === undefined;
 
   return (
     <div className="rs-page">
@@ -309,15 +325,31 @@ export default function ResearchPage(props: ShellPageProps) {
           <MetricCard
             label="Registry total"
             value={
-              summaryQ.isPending ? "…" : summaryUnavailable ? "n/a" : <AnimatedNumber value={Number(summary?.total ?? 0)} />
+              summaryQ.isPending ? (
+                "…"
+              ) : summaryUnavailable ? (
+                "n/a"
+              ) : summaryLost ? (
+                "—"
+              ) : (
+                <AnimatedNumber value={Number(summary?.total ?? 0)} />
+              )
             }
-            sub={summaryUnavailable ? (rows?.reason ?? "unavailable") : "strategy_intelligence_registry"}
+            sub={
+              summaryLost
+                ? summaryQ.error instanceof Error
+                  ? summaryQ.error.message
+                  : "summary request failed"
+                : summaryUnavailable
+                  ? (rows?.reason ?? "unavailable")
+                  : "strategy_intelligence_registry"
+            }
           />
         </div>
         <div className="rs-kpi">
           <MetricCard
             label="Validated"
-            value={summaryQ.isPending ? "…" : <AnimatedNumber value={Number(summary?.by_lifecycle?.VALIDATED ?? 0)} />}
+            value={summaryQ.isPending ? "…" : summaryLost ? "—" : <AnimatedNumber value={Number(summary?.by_lifecycle?.VALIDATED ?? 0)} />}
             tone={summary?.by_lifecycle?.VALIDATED ? "pos" : "dim"}
             sub="lifecycle census"
           />
@@ -325,7 +357,7 @@ export default function ResearchPage(props: ShellPageProps) {
         <div className="rs-kpi">
           <MetricCard
             label="Active strategies"
-            value={summaryQ.isPending ? "…" : <AnimatedNumber value={Number(summary?.by_lifecycle?.ACTIVE ?? 0)} />}
+            value={summaryQ.isPending ? "…" : summaryLost ? "—" : <AnimatedNumber value={Number(summary?.by_lifecycle?.ACTIVE ?? 0)} />}
             tone={summary?.by_lifecycle?.ACTIVE ? "pos" : "dim"}
             sub="backend lifecycle counts"
           />
@@ -352,36 +384,38 @@ export default function ResearchPage(props: ShellPageProps) {
         {summaryQ.isPending ? (
           <Skeleton count={2} />
         ) : (
-          <div className="rs-rail" role="group" aria-label="Filter registry by lifecycle state">
-            {counters.length === 0 ? (
-              <span className="muted small">no lifecycle rows reported</span>
-            ) : (
-              counters.map((c) => {
-                const pct = Math.round((Number(c.value) / registryTotal) * 100);
-                return (
-                  <button
-                    key={c.label}
-                    type="button"
-                    className={`rs-rail-chip ${lifecycle === c.label ? "active" : ""}`}
-                    style={{ ["--pct" as string]: `${pct}%` } as CSSProperties}
-                    aria-pressed={lifecycle === c.label}
-                    title={
-                      lifecycle === c.label
-                        ? "filter: clear"
-                        : `filter registry by ${c.label} · ${c.value} of ${summary?.total ?? 0} rows (${pct}%)`
-                    }
-                    onClick={() => {
-                      setLifecycle(lifecycle === c.label ? undefined : c.label);
-                      void queryClient.invalidateQueries({ queryKey: ["research", "registry"] });
-                    }}
-                  >
-                    <span className="rs-rail-count">{Number(c.value) || 0}</span>
-                    {c.label}
-                  </button>
-                );
-              })
-            )}
-          </div>
+          failed(summaryQ) ?? (
+            <div className="rs-rail" role="group" aria-label="Filter registry by lifecycle state">
+              {counters.length === 0 ? (
+                <span className="muted small">no lifecycle rows reported</span>
+              ) : (
+                counters.map((c) => {
+                  const pct = Math.round((Number(c.value) / registryTotal) * 100);
+                  return (
+                    <button
+                      key={c.label}
+                      type="button"
+                      className={`rs-rail-chip ${lifecycle === c.label ? "active" : ""}`}
+                      style={{ ["--pct" as string]: `${pct}%` } as CSSProperties}
+                      aria-pressed={lifecycle === c.label}
+                      title={
+                        lifecycle === c.label
+                          ? "filter: clear"
+                          : `filter registry by ${c.label} · ${c.value} of ${summary?.total ?? 0} rows (${pct}%)`
+                      }
+                      onClick={() => {
+                        setLifecycle(lifecycle === c.label ? undefined : c.label);
+                        void queryClient.invalidateQueries({ queryKey: ["research", "registry"] });
+                      }}
+                    >
+                      <span className="rs-rail-count">{Number(c.value) || 0}</span>
+                      {c.label}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )
         )}
       </Panel>
 
@@ -409,7 +443,7 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title={`Registry list ${lifecycle ? `· ${lifecycle}` : ""}`} right={<span className="tiny muted">{PAGE_SIZE_HINT}</span>} tight>
             {registryQ.isPending ? (
               <Skeleton count={4} />
-            ) : unavailable(registryQ.data) ?? (
+            ) : failed(registryQ) ?? unavailable(registryQ.data) ?? (
               <>
                 {registry.length === 0 ? (
                   <EmptyState message="Registry is empty for this filter." hint="/api/research/health explains WHY (source trades, rejections, attempts)." />
@@ -455,7 +489,7 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title="Gate queue census" right={<FreshnessCaption timestamp={null} isFetching={queueQ.isFetching} error={queueQ.isError} />} tight>
             {queueQ.isPending ? (
               <Skeleton count={3} />
-            ) : unavailable(queueQ.data) ?? (
+            ) : failed(queueQ) ?? unavailable(queueQ.data) ?? (
               <div className="grid cols-2">
                 <div>
                   <div className="section-title">queued / running by gate type</div>
@@ -488,7 +522,7 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title="Worker heartbeat + diagnostics" right={<FreshnessCaption timestamp={null} isFetching={workerQ.isFetching || !workerQ.isFetched} error={workerQ.isError} />} tight>
             {workerQ.isPending ? (
               <Skeleton count={3} />
-            ) : unavailable(workerQ.data) ?? (
+            ) : failed(workerQ) ?? unavailable(workerQ.data) ?? (
               <div className="grid cols-2">
                 <div>
                   <dl className="kv">
@@ -509,7 +543,7 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title="Failure heatmap + families" right={<FreshnessCaption timestamp={null} isFetching={analyticsQ.isFetching} error={analyticsQ.isError} />} tight>
             {analyticsQ.isPending ? (
               <Skeleton count={3} />
-            ) : unavailable(analyticsQ.data) ?? (
+            ) : failed(analyticsQ) ?? unavailable(analyticsQ.data) ?? (
               <div className="grid cols-2">
                 <div>
                   <div className="section-title">failed gates (total: {String(heatmap.total_failures ?? 0)})</div>
@@ -528,7 +562,7 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title="Retention (live vs archive — archive-only contract)" tight>
             {historyQ.isPending ? (
               <Skeleton count={2} />
-            ) : unavailable(historyQ.data) ?? (
+            ) : failed(historyQ) ?? unavailable(historyQ.data) ?? (
               <dl className="kv">
                 {Object.entries(obj(historyQ.data?.retention)).map(([k, v]) => (
                   <InfoRow key={k} label={k} value={formatNumber(Number(v) || 0, 0)} />
@@ -542,21 +576,19 @@ export default function ResearchPage(props: ShellPageProps) {
           <Panel title="v1 datasets (provenance from real runs)" right={<span className="tiny muted">/api/v1/research/datasets</span>} tight>
             {datasetsQ.isPending ? (
               <Skeleton count={3} />
-            ) : datasetsQ.isError ? (
-              <div className="small tx-bad">
-                {datasetsQ.error instanceof Error ? datasetsQ.error.message : "request failed"}
-              </div>
-            ) : (datasetsQ.data?.datasets ?? []).length === 0 ? (
-              <EmptyState message="No datasets derived from runs yet." />
-            ) : (
-              <DataTable headers={[{ label: "dataset_id" }, { label: "runs", num: true }]}>
-                {(datasetsQ.data?.datasets ?? []).map((d, i) => (
-                  <tr key={i}>
-                    <td className="inline-mono tiny">{d.dataset_id ?? "—"}</td>
-                    <td className="num tiny">{d.run_count ?? 0}</td>
-                  </tr>
-                ))}
-              </DataTable>
+            ) : failed(datasetsQ) ?? (
+              (datasetsQ.data?.datasets ?? []).length === 0 ? (
+                <EmptyState message="No datasets derived from runs yet." />
+              ) : (
+                <DataTable headers={[{ label: "dataset_id" }, { label: "runs", num: true }]}>
+                  {(datasetsQ.data?.datasets ?? []).map((d, i) => (
+                    <tr key={i}>
+                      <td className="inline-mono tiny">{d.dataset_id ?? "—"}</td>
+                      <td className="num tiny">{d.run_count ?? 0}</td>
+                    </tr>
+                  ))}
+                </DataTable>
+              )
             )}
           </Panel>
         )}
@@ -601,6 +633,8 @@ function ResearchDiagMini() {
       <div className="section-title">blocked / failed gates (diagnostics)</div>
       {diagQ.isPending ? (
         <Skeleton count={2} />
+      ) : diagQ.isError ? (
+        <ErrorState message={diagQ.error instanceof Error ? diagQ.error.message : "diagnostics request failed"} />
       ) : gateRows.length === 0 ? (
         <EmptyState message="No blocked gates reported." />
       ) : (

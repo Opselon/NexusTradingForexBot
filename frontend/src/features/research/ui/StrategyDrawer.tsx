@@ -5,7 +5,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ConfirmModal, DataTable, EmptyState, ErrorState, MetricCard, Panel, Skeleton, StatusBadge } from "@/components/primitives";
 import { useMutationFeedback } from "@/hooks/useMutationFeedback";
@@ -108,6 +108,17 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
     [gates, cmd.state.running],
   );
 
+  /**
+   * §9 error presentation: a failed detail read renders the backend's own
+   * error message through the shared ErrorState instead of reading as "the
+   * backend returned no rows". Read-only — no refetch/retry wiring, no
+   * query option, key or interval touched.
+   */
+  const failed = (q: { isError: boolean; error: unknown }): ReactNode =>
+    q.isError ? (
+      <ErrorState message={q.error instanceof Error ? q.error.message : "backend request failed"} />
+    ) : null;
+
   const tabs: Array<[typeof tab, string]> = [
     ["trace", "Trace"],
     ["gates", `Gates (${gates.length})`],
@@ -165,7 +176,7 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
             </Panel>
             <Panel title="Validation runs (reproducibility lineage)" tight>
               {runs.length === 0 ? (
-                runsQ.isPending ? <Skeleton /> : <EmptyState message="No research runs recorded for this strategy." />
+                runsQ.isPending ? <Skeleton /> : (failed(runsQ) ?? <EmptyState message="No research runs recorded for this strategy." />)
               ) : (
                 <DataTable headers={[{ label: "run" }, { label: "dataset" }, { label: "executed" }, { label: "result" }, { label: "" }]}>
                   {runs.slice(0, 12).map((r: Row, i: number) => (
@@ -190,7 +201,7 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
       {tab === "gates" && (
         <Panel title="Gate ledger" tight>
           {gates.length === 0 ? (
-            gatesQ.isPending ? <Skeleton /> : <EmptyState message="No gate records returned." />
+            gatesQ.isPending ? <Skeleton /> : (failed(gatesQ) ?? <EmptyState message="No gate records returned." />)
           ) : (
             <DataTable headers={[{ label: "gate" }, { label: "status" }, { label: "class" }, { label: "reason" }, { label: "ms", num: true }, { label: "" }]}>
               {gates.map((g, i) => (
@@ -221,7 +232,7 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
       {tab === "events" && (
         <Panel title="Persisted gate timeline" tight>
           {events.length === 0 ? (
-            eventsQ.isPending ? <Skeleton /> : <EmptyState message="No archived/live events for this strategy." />
+            eventsQ.isPending ? <Skeleton /> : (failed(eventsQ) ?? <EmptyState message="No archived/live events for this strategy." />)
           ) : (
             <DataTable headers={[{ label: "at" }, { label: "event" }, { label: "detail" }]}>
               {events.slice(0, 100).map((e: Row, i: number) => (
@@ -239,7 +250,7 @@ export default function StrategyDrawer({ strategyId, onClose }: { strategyId: st
       {tab === "evidence" && (
         <Panel title="Immutable evidence vault" tight>
           {evidence.length === 0 ? (
-            evidenceQ.isPending ? <Skeleton /> : <EmptyState message="No evidence rows returned." />
+            evidenceQ.isPending ? <Skeleton /> : (failed(evidenceQ) ?? <EmptyState message="No evidence rows returned." />)
           ) : (
             <div style={{ display: "grid", gap: 8 }}>
               {evidence.slice(0, 25).map((e: Row, i: number) => (
