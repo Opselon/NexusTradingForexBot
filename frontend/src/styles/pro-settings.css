@@ -14,7 +14,7 @@
   color: var(--text-dim);
   background: var(--bg-inset);
   border: 1px solid var(--border);
-  border-left: 2px solid var(--amber);
+  border-inline-start: 2px solid var(--amber);
   border-radius: 6px;
   padding: 7px 10px;
   line-height: 1.5;

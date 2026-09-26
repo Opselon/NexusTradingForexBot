@@ -173,12 +173,14 @@ body {
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 .switch::after {
-  content: ""; position: absolute; top: 1px; left: 1px; width: 12px; height: 12px;
+  content: ""; position: absolute; top: 1px; inset-inline-start: 1px; width: 12px; height: 12px;
   border-radius: 50%; background: var(--text-faint);
   transition: transform 0.12s ease, background 0.12s ease;
 }
 .switch.on { background: rgba(65, 166, 242, 0.25); border-color: var(--accent); }
 .switch.on::after { transform: translateX(14px); background: var(--accent-strong); }
+/* RTL: the knob travels to the END edge (left), not to the right */
+:root[dir="rtl"] .switch.on::after { transform: translateX(-14px); }
 
 /* ------------------------------ Main column ------------------------------ */
 .main-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -187,10 +189,16 @@ body {
   display: flex; align-items: center; gap: 14px;
   padding: 8px 16px;
   background: rgba(13, 19, 27, 0.88);
-  backdrop-filter: blur(8px);
+  /* backdrop-filter removed (uiux-modern-20260926, IM1): this bar sits over
+     the scrolling page, so the blur re-composited every frame while a live
+     dashboard scrolled (R1 evidence §5.2 names it the shell's hot path).
+     shell-chrome.css paints this bar at 97% opacity, so under that layer the
+     8px blur was blending only that last 3% — below the noise floor. If the
+     chrome layer is ever removed, restore a filter here before judging the
+     bar naked. */
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
-  z-index: 5;
+  z-index: var(--z-topbar);
 }
 .topbar .spacer { flex: 1; }
 
@@ -305,13 +313,13 @@ body {
 /* row wrapper inside .kv — dissolves so dt/dd become the grid's own items */
 .kv-row { display: contents; }
 .kv dt { color: var(--text-dim); }
-.kv dd { margin: 0; font-family: var(--mono); text-align: right; }
+.kv dd { margin: 0; font-family: var(--mono); text-align: end; }
 
 /* ------------------------------ Tables ------------------------------ */
 .table-wrap { overflow-x: auto; overflow-y: auto; max-height: min(64vh, 620px); }
 .data-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
 .data-table th {
-  text-align: left; padding: 8px 12px;
+  text-align: start; padding: 8px 12px;
   font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--text-faint); border-bottom: 1px solid var(--border-strong);
   position: sticky; top: 0; z-index: 1;
@@ -323,7 +331,7 @@ body {
 }
 .data-table tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.015); }
 .data-table tbody tr:hover td { background: var(--bg-panel-2); }
-.data-table td.num, .data-table th.num { text-align: right; }
+.data-table td.num, .data-table th.num { text-align: end; }
 .data-table tr.is-new { animation: rowFlash 1.2s ease-out 1; }
 @keyframes rowFlash { from { background: rgba(65, 166, 242, 0.14); } to { background: transparent; } }
 .pnl-pos { color: var(--green); }
@@ -346,7 +354,7 @@ body {
 .probbar { display: grid; gap: 6px; }
 .probbar .row { display: grid; grid-template-columns: 84px 1fr 56px; align-items: center; gap: 10px; font-family: var(--mono); font-size: 11px; }
 .probbar .row .lab { color: var(--text-dim); letter-spacing: 0.08em; text-transform: uppercase; font-size: 10px; }
-.probbar .row .val { text-align: right; }
+.probbar .row .val { text-align: end; }
 .probbar .track { height: 6px; border-radius: 4px; background: var(--bg-inset); border: 1px solid var(--border); overflow: hidden; }
 .probbar .track i { display: block; height: 100%; border-radius: 3px; transition: width 0.4s ease; }
 .probbar .track i.buy { background: linear-gradient(90deg, rgba(62, 207, 142, 0.5), var(--green)); }
@@ -412,7 +420,7 @@ body {
 .banner.info { background: rgba(65, 166, 242, 0.10); color: var(--accent-strong); border-color: rgba(65, 166, 242, 0.35); }
 .banner.good { background: rgba(62, 207, 142, 0.10); color: var(--green); border-color: rgba(62, 207, 142, 0.35); }
 .banner .retry-btn {
-  margin-left: auto; background: transparent; color: inherit;
+  margin-inline-start: auto; background: transparent; color: inherit;
   border: 1px solid currentColor; border-radius: 6px;
   padding: 3px 10px; cursor: pointer; font-size: 11px; font-weight: 700;
 }
@@ -440,7 +448,14 @@ body {
 .btn.ghost { background: transparent; border-color: var(--border); color: var(--text-dim); }
 .btn.ghost:hover:not(:disabled) { color: var(--text); }
 
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
+/* Focus ring (IM1, wave uiux-modern-20260926): tokenized width/offset/colour.
+   The previous declaration also forced `border-radius: 4px`, which snapped a
+   4px corner onto every focused element that carries its own radius (nav
+   items and buttons are 6px) — the ring visibly jumped on keyboard focus.
+   Modern outline already follows the element's own border-radius, and the
+   box-shadow ring tokens (--focus-ring / --focus-ring-soft) stay available
+   for surfaces that need a halo instead of an outline. */
+:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
 
 .select, .input {
   background: var(--bg-inset); color: var(--text);
@@ -458,7 +473,7 @@ kbd {
 
 /* ------------------------------ Toasts ------------------------------ */
 .toast-stack {
-  position: fixed; bottom: 18px; right: 18px; z-index: 100;
+  position: fixed; bottom: 18px; inset-inline-end: 18px; z-index: var(--z-toast);
   display: flex; flex-direction: column; gap: 8px; max-width: 440px;
 }
 .toast {
@@ -483,7 +498,7 @@ kbd {
 
 /* ------------------------------ Modal confirm ------------------------------ */
 .modal-overlay {
-  position: fixed; inset: 0; z-index: 90;
+  position: fixed; inset: 0; z-index: var(--z-modal);
   background: rgba(4, 7, 11, 0.72);
   backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
@@ -626,10 +641,10 @@ kbd {
 .freshness-chip { gap: 10px; }
 .start-8 { margin-inline-start: 8px; }
 /* help-modal key/value list: descriptions read left-aligned */
-.kv.left dd { text-align: left; }
+.kv.left dd { text-align: start; }
 /* keyboard skip link — first tab stop, hidden until focused */
 .skip-link {
-  position: fixed; top: -48px; inset-inline-start: 8px; z-index: 200;
+  position: fixed; top: -48px; inset-inline-start: 8px; z-index: var(--z-skip);
   background: var(--bg-panel-2); color: var(--text);
   border: 1px solid var(--accent); border-radius: 6px;
   padding: 8px 14px; font-size: 12px; text-decoration: none;
@@ -667,3 +682,122 @@ kbd {
   .topbar { overflow-x: auto; overflow-y: hidden; }
   .page { padding: 12px 12px 32px; }
 }
+
+/* ==========================================================================
+   Lane IM1 (design shell) — wave uiux-modern-20260926: ADDITIVE token layer.
+
+   APPENDED ONLY: not one token, keyframe or selector above was renamed or
+   removed — a CSS-var rename never fails tsc/vite/jstests, it silently
+   unstyles all 22 feature pages while the gate stays green. Everything in
+   this block is new and is consumed by components/shell.css + app/AppShell
+   (other lanes may opt rules in one declaration at a time).
+
+   Derivation law: every color below is a color-mix()/rgba() composition of
+   an EXISTING token — no new literal hue enters the system, so a future
+   theme swap, a palette tune-up of the base tokens, or `body.dense` still
+   cascades into the shell untouched. Raw hex appears only inside rgba() /
+   color-mix() / gradients, as the styling law requires.
+
+   Density law: `body.dense` keeps meaning "padding only" — this scale is
+   NOT overridden there, so compact mode can never hide data.
+   ========================================================================== */
+:root {
+  /* ---- radius scale (sharp → soft; pills keep the 999px convention) ---- */
+  --r-xs: 3px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-pill: 999px;
+
+  /* ---- spacing / rhythm scale (4px base unit, matches --panel-gap 14px
+         neighbourhood and the 7/10/12 paddings already in use) ---- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 40px;
+
+  /* ---- motion: durations + easings (decoration only; the global
+         prefers-reduced-motion rule above already neutralises all of it) ---- */
+  --dur-1: 90ms;
+  --dur-2: 150ms;
+  --dur-3: 240ms;
+  --dur-4: 380ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-emph: cubic-bezier(0.2, 0.9, 0.3, 1.18);
+  --motion-fast: var(--dur-1) var(--ease-out);
+  --motion-base: var(--dur-2) var(--ease-out);
+  --motion-slow: var(--dur-3) var(--ease-in-out);
+
+  /* ---- focus ring: one definition every :focus-visible rule can reuse ---- */
+  --focus-w: 2px;
+  --focus-offset: 2px;
+  --focus-ring-color: var(--accent-strong);
+  --focus-outline: var(--focus-w) solid var(--focus-ring-color);
+  --focus-ring: 0 0 0 var(--focus-w) color-mix(in srgb, var(--accent) 60%, transparent);
+  --focus-ring-soft: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+
+  /* ---- derived surfaces (hover / pressed / sunken states) ---- */
+  --surface-hover: color-mix(in srgb, var(--accent) 7%, transparent);
+  --surface-active: color-mix(in srgb, var(--accent) 14%, transparent);
+  --surface-sunken: color-mix(in srgb, var(--bg-inset) 80%, var(--bg) 20%);
+  --hairline: color-mix(in srgb, var(--border-strong) 55%, transparent);
+
+  /* ---- elevation refinements: compose the existing --elev-* scale ---- */
+  --elev-inset: inset 0 1px 0 var(--elevate-hi), inset 0 -1px 0 var(--elevate-lo);
+  --elev-chrome: var(--elev-2), inset 0 1px 0 var(--elevate-hi);
+  --elev-float: var(--elev-pop), inset 0 1px 0 var(--elevate-hi);
+  --elev-edge: 0 0 0 1px color-mix(in srgb, var(--border-strong) 65%, transparent);
+
+  /* ---- glow refinements: soft halos for chrome state, never for data ---- */
+  --glow-ring-accent: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+  --glow-ring-red: 0 0 0 3px color-mix(in srgb, var(--red) 22%, transparent);
+  --glow-edge-accent: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+  --glow-bloom-accent: 0 0 20px color-mix(in srgb, var(--accent) 26%, transparent);
+
+  /* ---- letter-spacing scale for uppercase micro-labels ---- */
+  --ls-wide: 0.08em;
+  --ls-wider: 0.16em;
+
+  /* ---- z additions (IM1 owns the scale; existing --z-* values untouched) ---- */
+  --z-topbar: 5;
+  --z-modal: 90;
+  --z-toast: 100;
+  --z-skip: 200;
+}
+
+/* ==========================================================================
+   Shared-primitive state polish (IM1, uiux-modern-20260926).
+   Additive only: no selector, class or token above is renamed or removed —
+   these rules add the interaction states the primitives were missing (the
+   global :focus-visible and reduced-motion rules above already cover focus
+   and motion-off for every one of them).
+   ========================================================================== */
+.btn,
+.segmented button,
+.toast {
+  transition:
+    color var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out),
+    opacity var(--dur-1) var(--ease-out);
+}
+/* Hover halo, scoped so it can never cover a focus ring (.btn.primary:focus-
+   visible keeps its own box-shadow) and never paints accent on a danger verb. */
+.btn:hover:not(:disabled):not(:focus-visible):not(.danger) {
+  box-shadow: var(--glow-ring-accent);
+}
+.btn.danger:hover:not(:disabled):not(:focus-visible) {
+  box-shadow: var(--glow-ring-red);
+}
+.segmented button:hover:not(.active) { background-color: var(--surface-hover); }
+.segmented button:active:not(.active) { background-color: var(--surface-active); }
+/* Toasts are click-to-dismiss — the affordance should be visible. */
+.toast { cursor: pointer; }
+.toast:hover { border-color: var(--border-strong); }

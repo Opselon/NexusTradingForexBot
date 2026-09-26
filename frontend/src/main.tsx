@@ -1,12 +1,22 @@
 // Register every scope's i18n messages before any component renders
 // (module side effects run in import order — this must stay first).
 import "@/lib/i18nMessages";
+// Base stylesheet BEFORE the component stylesheets. CSS is emitted in module
+// graph order, so theme.css has to precede AppShell's `./shell.css` imports:
+// otherwise every equal-specificity tie (`.conn-chip`, `.palette-item
+// .selected`, `.mode-badge.live`) is won by theme.css and the shell polish
+// layer silently never applies. Presentation only — no runtime behaviour.
+import "@/styles/theme.css";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppShell } from "@/app/AppShell";
-import "@/styles/theme.css";
+// Shell chrome LAST: same ordering law as theme.css above — the sidebar /
+// topbar / nav / palette presentation layer has to come after both
+// theme.css and the component stylesheets, or it loses its cascade ties and
+// silently never applies. Presentation only.
+import "@/styles/shell-chrome.css";
 
 // Global runtime configuration for the API layer.
 // The backend origin is same-origin in production (static bundle served by the
