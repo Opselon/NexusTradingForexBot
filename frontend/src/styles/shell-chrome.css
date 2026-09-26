@@ -1,0 +1,413 @@
+/**
+ * PURPOSE:  App-shell chrome presentation — sidebar, brand block, nav, topbar,
+ *           status glows, attention strip, command palette and focus/motion
+ *           polish for the Nexus console shell.
+ * OWNER:    uiux-modern-20260926 lane 1 (IM1 design-shell) — future edits go here.
+ * CONSUMES: tokens from styles/theme.css (--r-*, --sp-*, --dur-*, --ease-*,
+ *           --focus-*, --surface-*, --hairline, --elev-*, --glow-*, --ls-*,
+ *           --z-*) and the shell's own classes (.app-shell .sidebar/.brand/
+ *           .nav/.topbar/.page, .cp-*, .banner.attention-*, .conn-dot).
+ * PROVIDES: no exports — pure CSS, loaded once from src/main.tsx AFTER
+ *           theme.css and after the component stylesheets so it wins every
+ *           equal-specificity tie without relying on cascade luck.
+ * INVIANTS: additive and scoped under `.app-shell` (never a feature page);
+ *           no token/keyframe/selector from theme.css renamed or removed;
+ *           colour only as color-mix()/rgba() of EXISTING tokens (no bare
+ *           hex, no new hue); logical properties throughout with explicit
+ *           :root[dir="rtl"] flips for physical gradients; presentation
+ *           only — no markup contract, no data, no behaviour.
+ * EXTEND:   add a rule scoped under `.app-shell` + the new token it needs;
+ *           add the token to styles/theme.css first (append-only block at
+ *           the bottom of that file).
+ */
+
+/* ==========================================================================
+   Lane IM1 (design shell) — wave uiux-modern-20260926: app shell chrome.
+   Modern sidebar / brand / nav / topbar / palette / attention presentation.
+   -----------------------------------------------------------------------
+   Additive AND scoped: every selector below is anchored on `.app-shell` (or
+   on an existing shell-only class), so it can only reach the chrome — never a
+   feature page — while outranking the same selector in theme.css regardless
+   of stylesheet order (no cascade-order dependency).
+
+   Discipline: new tokens only (radius / spacing / motion / focus / elevation
+   / glow scale in styles/theme.css); colour only as color-mix()/rgba() of
+   EXISTING tokens; logical properties throughout; the few physical gradients
+   get an explicit :root[dir="rtl"] flip; one :focus-visible block and one
+   reduced-motion guard for this file, not one per rule.
+   Presentation only: no markup contract, no data, no behaviour.
+   ========================================================================== */
+
+/* ------------------------------- App frame -------------------------------- */
+/* More deliberate page rhythm; `scrollbar-gutter: stable` stops the content
+   hopping sideways when a route swaps a short page for a scrolling one. */
+.app-shell .page {
+  padding: var(--sp-5) var(--sp-6) var(--sp-8);
+  scrollbar-gutter: stable;
+}
+/* Dense = padding only (never hides data) — same contract as --row-pad. */
+body.dense .app-shell .page { padding: var(--sp-4) var(--sp-4) var(--sp-7); }
+@media (max-width: 760px) {
+  .app-shell .page { padding: var(--sp-3) var(--sp-3) var(--sp-7); }
+  .app-shell .sidebar:not(.collapsed) .brand { padding-inline: var(--sp-2); }
+}
+
+/* -------------------------------- Sidebar --------------------------------- */
+/* Flat surface so the sticky .nav-section backdrop (theme.css) matches it
+   pixel for pixel while scrolling; depth comes from the hairline + brand. */
+.app-shell .sidebar {
+  position: relative;
+  background: var(--bg-panel);
+}
+/* Accent hairline on the rail's content edge: violet→accent fading down, so
+   the sidebar reads as a layer sitting above the page, not a flat strip. */
+.app-shell .sidebar::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: 1px;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 65%, transparent),
+    color-mix(in srgb, var(--violet) 45%, transparent) 18%,
+    transparent 52%
+  );
+}
+/* The hairline gradient runs vertically, so it mirrors as-is in RTL. */
+
+/* -------------------------------- Brand ----------------------------------- */
+.app-shell .brand {
+  position: relative;
+  gap: var(--sp-3);
+  padding: 14px var(--sp-4) 13px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 7%, transparent),
+    transparent 120%
+  );
+}
+/* Accent→violet hairline closing the brand block (rides above the neutral
+   border-bottom from theme.css). */
+.app-shell .brand::after {
+  content: "";
+  position: absolute;
+  inset-inline: var(--sp-3);
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 75%, transparent),
+    color-mix(in srgb, var(--violet) 55%, transparent) 55%,
+    transparent
+  );
+}
+:root[dir="rtl"] .app-shell .brand::after {
+  background: linear-gradient(
+    270deg,
+    color-mix(in srgb, var(--accent) 75%, transparent),
+    color-mix(in srgb, var(--violet) 55%, transparent) 55%,
+    transparent
+  );
+}
+.app-shell .brand-logo {
+  border-radius: var(--r-md);
+  font-size: 11.5px;
+  box-shadow:
+    0 2px 12px color-mix(in srgb, var(--accent) 38%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.app-shell .brand-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  line-height: 1.25;
+}
+.app-shell .brand-text .sub {
+  margin-top: 2px;
+  font-size: 8.5px;
+  letter-spacing: var(--ls-wider);
+  color: var(--text-faint);
+}
+/* collapsed rail: 56px − 32px padding can no longer seat a 30px logo */
+.sidebar.collapsed .brand { padding-inline: var(--sp-2); }
+
+/* --------------------------------- Nav ------------------------------------ */
+.app-shell .nav { padding: var(--sp-2) 6px var(--sp-3); }
+/* Section label: micro-caps + a fading rule so the groups read as groups. */
+.app-shell .nav-section {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-2) var(--sp-1);
+  letter-spacing: var(--ls-wider);
+  color: var(--text-faint);
+}
+.app-shell .nav-section::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--hairline), transparent);
+}
+:root[dir="rtl"] .app-shell .nav-section::after {
+  background: linear-gradient(270deg, var(--hairline), transparent);
+}
+
+/* Item: an accent sweep wipes in from the start edge on hover/focus and stays
+   lit on the active route. background-size (not a pseudo-element) so nothing
+   is painted over the label. */
+.app-shell .nav-item {
+  gap: var(--sp-2);
+  border-radius: var(--r-sm);
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 20%, transparent),
+    color-mix(in srgb, var(--accent) 6%, transparent) 55%,
+    transparent
+  );
+  background-repeat: no-repeat;
+  background-size: 0% 100%;
+  transition:
+    background-size var(--dur-2) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out);
+}
+.app-shell .nav-item:hover,
+.app-shell .nav-item:focus-visible {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 20%, transparent),
+    color-mix(in srgb, var(--accent) 6%, transparent) 55%,
+    transparent
+  );
+  background-size: 100% 100%;
+  background-color: var(--bg-panel-2);
+  border-color: var(--hairline);
+  color: var(--text);
+}
+.app-shell .nav-item.active {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 26%, transparent),
+    color-mix(in srgb, var(--violet) 10%, transparent) 60%,
+    transparent
+  );
+  background-size: 100% 100%;
+  background-color: var(--bg-panel-2);
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border-strong));
+  color: var(--text);
+}
+:root[dir="rtl"] .app-shell .nav-item,
+:root[dir="rtl"] .app-shell .nav-item:hover,
+:root[dir="rtl"] .app-shell .nav-item:focus-visible,
+:root[dir="rtl"] .app-shell .nav-item.active { background-image: none; }
+:root[dir="rtl"] .app-shell .nav-item { background-image: linear-gradient(270deg, color-mix(in srgb, var(--accent) 20%, transparent), color-mix(in srgb, var(--accent) 6%, transparent) 55%, transparent); }
+:root[dir="rtl"] .app-shell .nav-item:hover,
+:root[dir="rtl"] .app-shell .nav-item:focus-visible { background-image: linear-gradient(270deg, color-mix(in srgb, var(--accent) 20%, transparent), color-mix(in srgb, var(--accent) 6%, transparent) 55%, transparent); }
+:root[dir="rtl"] .app-shell .nav-item.active { background-image: linear-gradient(270deg, color-mix(in srgb, var(--accent) 26%, transparent), color-mix(in srgb, var(--violet) 10%, transparent) 60%, transparent); }
+
+/* Active rail: grows in instead of appearing (and lands flush with the rail
+   edge instead of 1px outside the nav's overflow clip, which is where the
+   old -7px inset put it). */
+.app-shell .nav .nav-item::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -6px;
+  top: 22%;
+  bottom: 22%;
+  width: 3px;
+  border-radius: var(--r-xs);
+  background: linear-gradient(180deg, var(--accent), var(--violet));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 55%, transparent);
+  opacity: 0;
+  transform: scaleY(0.35);
+  transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-3) var(--ease-out);
+}
+.app-shell .nav-item:hover::before { opacity: 0.5; transform: none; }
+.app-shell .nav-item.active::before { opacity: 1; transform: none; }
+.app-shell .nav-item .icon {
+  transition: color var(--dur-2) var(--ease-out), transform var(--dur-3) var(--ease-out);
+}
+.app-shell .nav-item:hover .icon { transform: translateX(1px); }
+:root[dir="rtl"] .app-shell .nav-item:hover .icon { transform: translateX(-1px); }
+
+/* ----------------------------- Sidebar foot ------------------------------- */
+.app-shell .sidebar-foot {
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--bg-inset) 70%, transparent));
+}
+.app-shell .sidebar-toggle {
+  border-radius: var(--r-sm);
+  letter-spacing: 0.08em;
+  transition:
+    color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out),
+    background var(--dur-1) var(--ease-out);
+}
+.app-shell .sidebar-toggle:hover {
+  background: var(--surface-hover);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text);
+}
+.app-shell .side-row {
+  border-radius: var(--r-sm);
+  transition: background var(--dur-1) var(--ease-out);
+}
+.app-shell .side-row:hover { background: color-mix(in srgb, var(--bg-panel-2) 75%, transparent); }
+.app-shell .switch {
+  transition:
+    background var(--dur-2) var(--ease-out),
+    border-color var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out);
+}
+.app-shell .switch::after { transition: transform var(--dur-3) var(--ease-emph), background var(--dur-2) var(--ease-out); }
+.app-shell .switch.on {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  border-color: var(--accent);
+  box-shadow: var(--glow-ring-accent);
+}
+
+/* -------------------------------- Topbar ---------------------------------- */
+.app-shell .topbar {
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  z-index: var(--z-topbar);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-panel) 94%, transparent),
+    color-mix(in srgb, var(--bg-inset) 90%, transparent)
+  );
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  box-shadow: 0 1px 0 var(--elevate-hi), var(--elev-1);
+}
+/* Two visual groups: status (left) and clock + feed (right), divided so the
+   bar parses as regions instead of one undifferentiated row of pills. */
+.app-shell .topbar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.app-shell .topbar-end {
+  padding-inline-start: var(--sp-3);
+  border-inline-start: 1px solid var(--border);
+}
+.app-shell .topbar .conn-chip {
+  gap: var(--sp-2);
+  padding: 3px var(--sp-2);
+  border-color: var(--hairline);
+  background: linear-gradient(180deg, var(--elevate-hi), transparent 60%),
+    color-mix(in srgb, var(--bg-inset) 88%, transparent);
+  transition: border-color var(--dur-2) var(--ease-out), background var(--dur-2) var(--ease-out);
+}
+.app-shell .topbar .conn-chip:hover { border-color: var(--border-strong); }
+.app-shell .freshness-chip {
+  gap: var(--sp-3);
+  padding-inline: var(--sp-3);
+}
+.app-shell .topbar .timestamp-note {
+  padding: 3px var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  color: var(--text-faint);
+}
+
+/* --------------------------- Status glows (chrome) ------------------------ */
+/* A status dot gets a soft ring of its own colour so "connected" vs
+   "reconnecting" reads without squinting at the word beside it. */
+.app-shell .conn-dot.connected {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--green) 16%, transparent),
+    0 0 8px color-mix(in srgb, var(--green) 55%, transparent);
+}
+.app-shell .conn-dot.reconnecting {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 16%, transparent);
+}
+.app-shell .conn-dot.disconnected,
+.app-shell .conn-dot.failed {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--red) 16%, transparent),
+    0 0 8px color-mix(in srgb, var(--red) 55%, transparent);
+}
+
+/* --------------------------- Attention strip ------------------------------ */
+/* Start-edge severity rail: the tone is already in the words — the rail only
+   makes it findable at a glance. Rails are 3px of the EXISTING tone tokens. */
+.app-shell .banner.attention-calm {
+  border-inline-start: 3px solid var(--green);
+}
+.app-shell .banner.attention-action {
+  border-inline-start: 3px solid var(--amber);
+}
+.app-shell .banner.attention-critical {
+  border-inline-start: 3px solid var(--red);
+}
+.app-shell .banner.attention-critical .attention-tag {
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--red) 25%, transparent);
+}
+
+/* --------------------------- Command palette ------------------------------ */
+.modal.cp-modal { border-radius: var(--r-lg); }
+/* Focus line under the search row: a 2px accent→violet rule wipes across as
+   soon as the input has focus, so the caret always has a visible home. */
+.cp-searchrow { position: relative; }
+.cp-searchrow::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--violet));
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--dur-3) var(--ease-out);
+}
+:root[dir="rtl"] .cp-searchrow::after {
+  background: linear-gradient(270deg, var(--accent), var(--violet));
+  transform-origin: right center;
+}
+.cp-searchrow:focus-within::after { transform: scaleX(1); }
+.palette-list.cp-list { max-height: min(60vh, 420px); }
+.palette-foot.cp-foot { border-end-start-radius: var(--r-lg); border-end-end-radius: var(--r-lg); }
+
+/* ------------------------------ Focus ring -------------------------------- */
+/* One :focus-visible block for the shell (theme.css owns the global ring;
+   this only re-states it for the chrome and lifts the sweep onto focus). */
+.app-shell .nav-item:focus-visible,
+.app-shell .sidebar-toggle:focus-visible,
+.app-shell .switch:focus-visible,
+.app-shell .lang-select:focus-visible,
+.app-shell .topbar .conn-chip:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-offset);
+}
+
+/* ---------------------------- Reduced motion ------------------------------ */
+/* Motion is decoration: everything above is fully usable at 0ms. One guard
+   for this stylesheet (theme.css already neutralises the global set). */
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .nav-item,
+  .app-shell .nav-item::before,
+  .app-shell .nav-item .icon,
+  .app-shell .switch,
+  .app-shell .switch::after,
+  .app-shell .sidebar-toggle,
+  .app-shell .side-row,
+  .app-shell .topbar .conn-chip,
+  .app-shell .page,
+  .cp-item,
+  .cp-searchrow::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

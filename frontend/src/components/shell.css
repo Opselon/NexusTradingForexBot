@@ -1,6 +1,11 @@
 /* Shell chrome (Lane P): command palette glass modal, connection/mode/attention
    token polish. Additive classes only (cp-, conn-, mode-, banner- extensions);
-   existing theme.css rules stay untouched and keep their semantics. */
+   existing theme.css rules stay untouched and keep their semantics.
+
+   IM1 (uiux-modern-20260926): the newer sidebar/brand/nav/topbar/palette
+   presentation pass lives in src/styles/shell-chrome.css (this file stays
+   under 500 lines); import order in src/main.tsx is theme.css -> this file ->
+   shell-chrome.css, so the chrome layer wins every equal-specificity tie. */
 
 /* ------------------------------ Command palette ------------------------------ */
 .cp-overlay {
@@ -44,13 +49,19 @@
 }
 /* RTL: the line starts (strong end) at the right */
 :root[dir="rtl"] .cp-group::after { background: linear-gradient(270deg, var(--border-strong), transparent); }
-.cp-item { position: relative; gap: 10px; border-radius: 7px; margin-inline: 5px; padding-inline: 11px; }
+.cp-item { position: relative; gap: 10px; border-radius: 7px; margin-inline: 5px; padding-inline: 11px; transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out); }
+/* hover BEFORE .selected so the selected-row gradient always outranks it */
+.cp-item:hover { background: var(--surface-hover); color: var(--text); }
 .cp-item.selected {
   background: linear-gradient(90deg, rgba(65, 166, 242, 0.16), rgba(65, 166, 242, 0.06));
   box-shadow: inset 0 0 0 1px rgba(65, 166, 242, 0.35);
 }
+.cp-item.selected:hover {
+  background: linear-gradient(90deg, rgba(65, 166, 242, 0.2), rgba(65, 166, 242, 0.08));
+}
 /* RTL: selected-row highlight starts at the right edge */
 :root[dir="rtl"] .cp-item.selected { background: linear-gradient(270deg, rgba(65, 166, 242, 0.16), rgba(65, 166, 242, 0.06)); }
+:root[dir="rtl"] .cp-item.selected:hover { background: linear-gradient(270deg, rgba(65, 166, 242, 0.2), rgba(65, 166, 242, 0.08)); }
 /* translated labels may run long (de/es) — wrap instead of clipping */
 .cp-item .cp-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .cp-section {
