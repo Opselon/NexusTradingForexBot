@@ -101,6 +101,146 @@ def _db_file_size(path: str | Path) -> int | None:
         return None
 
 
+#: The one-round-trip server-side object inventory (Lane H diagnostics).
+#:
+#: Fixed literal SQL (no user-controlled text — the console's /query guard
+#: never sees it) reading the catalog views any CONNECT role can read. The
+#: ``reltuples = -1`` row counts tables the planner has never ANALYZEd, which
+#: is the exact condition AUDIT-0012 exists to clear; ``n_dead_tup`` is the
+#: bloat signal AUDIT-0013 vacuums above its threshold. The bloat entry is
+#: reported per-table only for tables that actually have dead tuples, so a
+#: healthy cluster answers an empty list.
+_OBJECT_INVENTORY_SQL = """
+SELECT
+    (SELECT count(*) FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_type = 'BASE TABLE')        AS tables,
+    (SELECT count(*) FROM information_schema.views
+       WHERE table_schema = 'public')                                       AS views,
+    (SELECT count(*) FROM pg_proc p
+       JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public')                                          AS functions,
+    (SELECT count(*) FROM pg_trigger t
+       JOIN pg_class c ON c.oid = t.tgrelid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public' AND NOT t.tgisinternal)                   AS triggers,
+    (SELECT count(*) FROM pg_indexes WHERE schemaname = 'public')           AS indexes,
+    (SELECT count(*) FROM pg_class
+       WHERE relkind = 'r'
+         AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')
+         AND reltuples = -1)                                                AS never_analyzed
+"""
+
+_BLOAT_SQL = """
+SELECT relname, n_live_tup, n_dead_tup
+FROM pg_stat_user_tables
+WHERE n_dead_tup > 0
+ORDER BY n_dead_tup DESC, n_live_tup DESC
+LIMIT 20
+"""
+
+
+def pg_object_inventory(driver: Any) -> dict[str, Any]:
+    """Live server-side object counts + ANALYZE/bloat state (read-only).
+
+    ``driver`` is the console's provider-abstracted driver (see
+    :func:`nexus_scalp.database.drivers.get_driver`). Never raises: a catalog
+    the connected role cannot read degrades to ``null`` counts, not a dead
+    diagnostics page. The DBA layer's own objects are named explicitly so the
+    operator can see they landed: the trigger function, the per-table triggers
+    it owns and the missing-index layer's indexes.
+    """
+    from nexus_scalp.database.migration import indexes as indexes_mod
+    from nexus_scalp.database.migration import triggers as triggers_mod
+
+    out: dict[str, Any] = {
+        "objects": {
+            "tables": None,
+            "views": None,
+            "functions": None,
+            "triggers": None,
+            "indexes": None,
+            "never_analyzed": None,
+        },
+        "dba_layer": {
+            "trigger_function": None,
+            "updated_at_triggers": None,
+            "missing_indexes": None,
+        },
+        "bloat": [],
+    }
+    try:
+        row = driver.query_readonly(_OBJECT_INVENTORY_SQL)
+        if row:
+            r = row[0]
+            out["objects"] = {
+                "tables": int(r["tables"] or 0),
+                "views": int(r["views"] or 0),
+                "functions": int(r["functions"] or 0),
+                "triggers": int(r["triggers"] or 0),
+                "indexes": int(r["indexes"] or 0),
+                "never_analyzed": int(r["never_analyzed"] or 0),
+            }
+    except Exception as exc:
+        logger.debug("object inventory unavailable: %s", exc)
+
+    # The DBA layer's own objects, by name: 1 function, one trigger per wired
+    # table, one index per seq-scan-pressure table. Anything else is not this
+    # layer's and is not reported as if it were.
+    fn_name = triggers_mod.UPDATED_AT_FUNCTION_NAME
+    try:
+        rows = driver.query_readonly(
+            "SELECT count(*) AS n FROM pg_proc p"
+            " JOIN pg_namespace n ON n.oid = p.pronamespace"
+            " WHERE n.nspname = 'public' AND p.proname = ?",
+            (fn_name,),
+        )
+        if rows:
+            out["dba_layer"]["trigger_function"] = int(rows[0]["n"] or 0)
+    except Exception as exc:
+        logger.debug("trigger-function probe unavailable: %s", exc)
+
+    try:
+        placeholders = ", ".join("?" * len(triggers_mod.TRIGGER_TARGETS))
+        rows = driver.query_readonly(
+            "SELECT count(*) AS n FROM pg_trigger t"
+            " JOIN pg_class c ON c.oid = t.tgrelid"
+            " JOIN pg_namespace n ON n.oid = c.relnamespace"
+            " WHERE n.nspname = 'public' AND NOT t.tgisinternal"
+            f" AND t.tgname IN ({placeholders})",
+            tuple(triggers_mod.trigger_name_for(t) for t in triggers_mod.TRIGGER_TARGETS),
+        )
+        if rows:
+            out["dba_layer"]["updated_at_triggers"] = int(rows[0]["n"] or 0)
+    except Exception as exc:
+        logger.debug("updated_at trigger probe unavailable: %s", exc)
+
+    try:
+        placeholders = ", ".join("?" * len(indexes_mod.MISSING_INDEXES))
+        rows = driver.query_readonly(
+            "SELECT count(*) AS n FROM pg_indexes"
+            f" WHERE schemaname = 'public' AND indexname IN ({placeholders})",
+            tuple(indexes_mod.index_names()),
+        )
+        if rows:
+            out["dba_layer"]["missing_indexes"] = int(rows[0]["n"] or 0)
+    except Exception as exc:
+        logger.debug("missing-index probe unavailable: %s", exc)
+
+    try:
+        rows = driver.query_readonly(_BLOAT_SQL)
+        out["bloat"] = [
+            {
+                "table": str(r["relname"]),
+                "live_tuples": int(r["n_live_tup"] or 0),
+                "dead_tuples": int(r["n_dead_tup"] or 0),
+            }
+            for r in rows
+        ]
+    except Exception as exc:
+        logger.debug("bloat report unavailable: %s", exc)
+    return out
+
+
 def _list_databases() -> list[dict[str, Any]]:
     """Enumerate every domain DB + the settings DB (provider-abstracted)."""
     out: list[dict[str, Any]] = []
@@ -275,6 +415,17 @@ def _fail(exc: BaseException, action: str, cfg: DatabaseConfig | None = None) ->
     `action` is the operator-facing verb ("reading rows from ...").  Keeps the
     UI's `error: string` contract and adds `code` (+ `hint` when the fix is
     knowable here) so the page can render guidance instead of a type name.
+
+    Classification by exception TYPE, not by module prefix: a SQL-level error
+    (bad table, bad column, arity mismatch) comes out of psycopg's
+    ``errors`` module too, and answering it with ``DB_UNREACHABLE`` sends an
+    operator to restart a perfectly healthy server — observed live against
+    nexusdb (2026-09-26) where ``SELECT * FROM <missing table>`` told the
+    operator to "start the PostgreSQL server". psycopg's own error hierarchy
+    carries the distinction natively: ``OperationalError`` is connection /
+    server state, ``ProgrammingError`` is the statement itself. The probe
+    below is a second safety net for drivers that raise a plain
+    ``OperationalError`` without the ``diag`` attribute.
     """
     if _psycopg_missing(exc):
         return {
@@ -282,6 +433,21 @@ def _fail(exc: BaseException, action: str, cfg: DatabaseConfig | None = None) ->
             "code": "PG_DRIVER_MISSING",
             "error": f"{action} needs PostgreSQL, but psycopg is not installed here.",
             "hint": _PG_INSTALL_HINT,
+        }
+    if _is_statement_error(exc):
+        # The server was reached and it rejected the STATEMENT: a missing
+        # relation, an unknown column, a permission denial on the query.
+        # Nothing here suggests the server is down; the operator's next step
+        # is to fix the SQL, not to restart the database.
+        return {
+            "success": False,
+            "code": "DB_QUERY_ERROR",
+            "error": (
+                f"The database rejected the statement: {action} stopped "
+                "before reading any data."
+            ),
+            "hint": "Check the table/column names and permissions; the server "
+            "itself is reachable (see the masked statement in the server log).",
         }
     module = type(exc).__module__ or ""
     if module.startswith("psycopg") or isinstance(exc, (ConnectionError, TimeoutError)):
@@ -302,6 +468,61 @@ def _fail(exc: BaseException, action: str, cfg: DatabaseConfig | None = None) ->
         "code": "DB_CONSOLE_ERROR",
         "error": f"{action} failed ({type(exc).__name__}); details are in the server log.",
     }
+
+
+def _is_statement_error(exc: BaseException) -> bool:
+    """A statement-level rejection, as opposed to a connection failure.
+
+    psycopg v3 raises ``errors.UndefinedTable`` / ``UndefinedColumn`` /
+    ``ProgrammingError`` for SQL the server rejected. Its connection
+    conditions (``OperationalError`` and its subclasses —
+    ``CannotConnectNowError``, ``ConnectionFailure``, ``TooManyConnections``,
+    …) ALSO carry a ``diag`` and a SQLSTATE, so the presence of ``diag`` alone
+    is not proof the statement was at fault. OperationalError is excluded by
+    base type first, then the statement classes are recognised by name and by
+    a SQLSTATE-bearing diag on a non-OperationalError error.
+    """
+    try:
+        name = type(exc).__name__
+        # psycopg's connection/server-condition family: excluded outright so a
+        # dead server is never reported as a bad statement (and vice versa).
+        try:
+            import psycopg.errors as _pg_errors
+
+            if isinstance(exc, _pg_errors.OperationalError):
+                return False
+        except ImportError:
+            pass
+        if name in {
+            "UndefinedTable",
+            "UndefinedColumn",
+            "DuplicateColumn",
+            "DuplicateTable",
+            "ProgrammingError",
+            "SyntaxError",
+            "InvalidColumnReference",
+            "WrongObjectType",
+            "InsufficientPrivilege",
+            "GroupingError",
+            "DatatypeMismatch",
+            "InvalidTextRepresentation",
+            "ForeignKeyViolation",
+            "UniqueViolation",
+            "CheckViolation",
+            "NotNullViolation",
+            "ExclusionViolation",
+        }:
+            return True
+        # ``diag`` is present whenever the server answered with a SQLSTATE;
+        # combined with the OperationalError exclusion above, this is a
+        # statement rejection from a server that was reached.
+        if getattr(exc, "diag", None) is not None:
+            return True
+        if getattr(exc, "sqlstate", None):
+            return True
+    except Exception:
+        return False
+    return False
 
 
 def _mask_secret_name(name: str) -> str:
@@ -418,6 +639,66 @@ def console_tables(database: str = "audit") -> dict[str, Any]:
     except Exception as exc:
         logger.warning("db_console error", exc_info=exc)
         return _fail(exc, f"listing tables in '{database}'", cfg)
+
+
+@router.get("/objects")
+def console_objects(database: str = "audit") -> dict[str, Any]:
+    """Live server-side object inventory for a database (PostgreSQL only).
+
+    The diagnostics surface for the DBA layer (Lane H): reports the counts the
+    operator needs to SEE that the server-side query layer landed — functions,
+    triggers, indexes, views — plus the ANALYZE/bloat state the maintenance
+    entries own. Before this, the console could only count TABLES, so a cluster
+    with zero functions/triggers looked identical to one with the full layer.
+
+    Read-only, one round trip, no user-controlled SQL text: the query is a
+    fixed literal. SQLite has no server-side objects (the DBA layer is a
+    PostgreSQL-only concern), so the endpoint answers ``available: False``
+    there rather than faking a zero-row inventory.
+    """
+    cfg: DatabaseConfig | None = None
+    driver = None
+    try:
+        driver, cfg = _driver_for(database)
+        if driver is None:
+            return {"success": False, "error": f"unknown database '{database}'"}
+        if cfg is None or not cfg.is_postgresql:
+            return {
+                "success": True,
+                "available": False,
+                "database": database,
+                "provider": cfg.provider.value if cfg else "",
+                "reason": "server-side objects are a PostgreSQL-only concern",
+                "timestamp": _utc_now(),
+            }
+        try:
+            if not driver.ping():
+                out: dict[str, Any] = {
+                    "success": False,
+                    "code": "DB_UNREACHABLE",
+                    "error": (f"'{database}' is not reachable ({_server_target(cfg, database)})."),
+                }
+                hint = _connection_hint(cfg)
+                if hint:
+                    out["hint"] = hint
+                return out
+            inventory = pg_object_inventory(driver)
+            inventory.update(
+                {
+                    "success": True,
+                    "available": True,
+                    "database": database,
+                    "provider": cfg.provider.value,
+                    "server": _server_target(cfg, database),
+                    "timestamp": _utc_now(),
+                }
+            )
+            return inventory
+        finally:
+            driver.close()
+    except Exception as exc:
+        logger.warning("db_console objects error", exc_info=exc)
+        return _fail(exc, f"reading the object inventory of '{database}'", cfg)
 
 
 @router.get("/columns")
@@ -574,6 +855,32 @@ def console_query(payload: dict[str, Any]) -> dict[str, Any]:
     database.  Results are capped at QUERY_LIMIT rows and the connection
     runs under a bounded timeout.
     """
+    counts: dict[str, Any] = {}
+
+    def _load_counts() -> None:
+        # Read the process-global counters FRESH on every render: the failed
+        # query below increments them during the call, so a snapshot taken at
+        # the top of this function would always report the PRE-call total and
+        # the UI would show query_errors one failure behind reality.
+        nonlocal counts
+        try:
+            from nexus_scalp.database.query_logging import query_observability_snapshot
+
+            counts = query_observability_snapshot() or {}
+        except Exception:
+            counts = {}
+
+    def _with_counts(payload: dict[str, Any]) -> dict[str, Any]:
+        # Attach the process-global query ERROR/WARNING counts so the UI can
+        # show the measured outcome alongside its own success/failure verdict.
+        # On a failed query these are the proof the DB-layer ERROR actually
+        # fired; on a slow one they explain why a 200 was still a warning.
+        _load_counts()
+        payload["query_errors"] = int(counts.get("query_errors") or 0)
+        payload["query_warnings"] = int(counts.get("query_warnings") or 0)
+        payload["slow_queries"] = int(counts.get("slow_queries") or 0)
+        return payload
+
     try:
         database = str(payload.get("database") or "audit")
         cfg: DatabaseConfig | None = None
@@ -637,25 +944,50 @@ def console_query(payload: dict[str, Any]) -> dict[str, Any]:
             truncated = len(fetched) > QUERY_LIMIT
             rows = fetched[:QUERY_LIMIT]
             columns = list(rows[0].keys()) if rows else []
-            return {
-                "success": True,
-                "database": database,
-                "provider": provider,
-                "columns": columns,
-                "rows": rows,
-                "truncated": truncated,
-                "rows_returned": len(rows),
-                "cap": QUERY_LIMIT,
-                "timestamp": _utc_now(),
-            }
+            return _with_counts(
+                {
+                    "success": True,
+                    "database": database,
+                    "provider": provider,
+                    "columns": columns,
+                    "rows": rows,
+                    "truncated": truncated,
+                    "rows_returned": len(rows),
+                    "cap": QUERY_LIMIT,
+                    "timestamp": _utc_now(),
+                }
+            )
         except Exception as exc:
             logger.warning("db_console query failed", exc_info=exc)
-            return _fail(exc, "running the console query", cfg)
+            return _with_counts(_fail(exc, "running the console query", cfg))
         finally:
             driver.close()
     except Exception as exc:
         logger.warning("db_console error", exc_info=exc)
-        return _fail(exc, "running the console query", cfg)
+        return _with_counts(_fail(exc, "running the console query", cfg))
+
+
+@router.get("/query-stats")
+def console_query_stats() -> dict[str, Any]:
+    """Query-observability surface for the DATABASE MANAGEMENT tab.
+
+    The provider badge on that tab answers "can we reach PostgreSQL"; this
+    answers the question the operator actually asks: "are PostgreSQL queries
+    working". A server that answers a connection probe while every query
+    fails is not healthy, and before this surface the UI had no way to show
+    the difference. Counts are process-global and monotonic, so a nonzero
+    ``query_errors`` after a real failure is proof the logging path fired.
+    """
+    from nexus_scalp.database.query_logging import query_observability_snapshot
+
+    try:
+        snapshot = query_observability_snapshot()
+    except Exception as exc:  # pragma: no cover - a health surface never dies
+        logger.warning("db_console query-stats failed", exc_info=exc)
+        return {"available": False, "error": type(exc).__name__}
+    if not isinstance(snapshot, dict):
+        return {"available": False, "error": "unexpected snapshot type"}
+    return {"available": True, **snapshot}
 
 
 @router.get("/quick")

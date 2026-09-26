@@ -314,10 +314,60 @@ def resolve_read_backend(domain: str) -> Any:
     ``None`` is the observable-degradation signal the audit read guard
     documents: the caller returns its declared default rather than inventing
     an ad-hoc connection path.
+
+    The backend is only *looked up* here — never provisioned. Provisioning a
+    pool is the write plane's job (it owns the schema bootstrap that has to
+    land before a read pool can serve), and doing it on a read would
+    double-provision against a concurrent writer and close a pool in use.
     """
     from nexus_scalp.database.fabric import get_domain_backend
 
     return get_domain_backend(domain, readonly=True)
+
+
+def ensure_read_plane(domain: str = AUDIT_DOMAIN, dsn: str | None = None) -> Any:
+    """Resolve the audit READ plane, bootstrapping it when nothing is registered.
+
+    On a PostgreSQL box ``provision_domain`` registers the read plane alongside
+    the write backend — but only from the process that ran it. Every OTHER
+    process on that box (a CLI probe, a diagnostics route, a maintenance worker
+    that only READS) starts with an empty registry: its very first audit read
+    finds ``get_domain_backend('audit', readonly=True) is None`` and degrades
+    to a documented default while the data sits on the server. That is the
+    "no read plane registered for domain 'audit'" warning the live log repeats
+    hundreds of times.
+
+    This is the read-side mirror of the write path's documented
+    auto-provision: resolve first, and only when the slot is genuinely empty
+    build a read plane for the resolved DSN and register it. A registered write
+    backend is left untouched (the two slots are independent by construction),
+    and an already-registered read plane is returned as-is, so this is safe to
+    call on every read.
+    """
+    from nexus_scalp.database.fabric import (
+        get_domain_backend,
+        register_domain_read_backend,
+    )
+
+    existing = get_domain_backend(domain, readonly=True)
+    if existing is not None:
+        return existing
+    if not dsn:
+        try:
+            dsn = domain_dsn(domain)
+        except Exception:
+            return None
+    try:
+        from nexus_scalp.database.fabric.pg_planes import PgReadPlane, PoolLimits
+
+        plane = PgReadPlane(dsn, PoolLimits(min_size=1, max_size=4))
+        plane.open()
+    except Exception as exc:
+        logger.warning("[DB-FABRIC] %s read plane bootstrap failed: %s", domain, type(exc).__name__)
+        return None
+    register_domain_read_backend(domain, plane)
+    logger.info("[DB-FABRIC] %s read plane registered", domain)
+    return plane
 
 
 __all__ = [
@@ -333,6 +383,7 @@ __all__ = [
     "domain_dsn",
     "domain_for_table",
     "domain_for_tables",
+    "ensure_read_plane",
     "resolve_audit_db_url",
     "resolve_pooled_backend",
     "resolve_read_backend",

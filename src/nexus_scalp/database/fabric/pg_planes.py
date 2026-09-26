@@ -19,7 +19,6 @@ always closed (``with conn.cursor()``).
 
 from __future__ import annotations
 
-import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -191,6 +190,11 @@ class PgPool:
 
     # -- health check -----------------------------------------------------
 
+    @property
+    def name(self) -> str:
+        """Pool identity for logs/metrics (never the DSN)."""
+        return self._name
+
     @staticmethod
     def _pool_check(conn: Any) -> None:
         """Readiness probe: raise if the connection is dead.
@@ -220,11 +224,40 @@ class PgPool:
 
     @contextmanager
     def connection(self) -> Iterator[Any]:
-        """Check out a configured connection; always returned to the pool."""
+        """Check out a configured connection; always returned to the pool.
+
+        A checkout failure is classified and logged here (pool name, the
+        failure class — checkout timeout vs server-side — and the pool stats)
+        so a dead pooled backend is traceable instead of surfacing as a
+        generic exception. Re-raises: observability never changes the
+        failure contract.
+        """
+        from nexus_scalp.database.query_logging import log_pool_failure
+
         if self._pool is None:
-            raise RuntimeError(f"pg pool {self._name!r} is not open")
-        time.perf_counter()
-        conn = self._pool.getconn()
+            # Not-open is a programming/ordering error, not a pool condition:
+            # classify and log it the same way so it is traceable in the log
+            # instead of appearing as a bare RuntimeError to the caller.
+            err = RuntimeError(f"pg pool {self._name!r} is not open")
+            with contextlib_suppress():
+                log_pool_failure(
+                    pool_name=self._name,
+                    operation="checkout",
+                    exc=err,
+                    stats=self.stats(),
+                )
+            raise err
+        try:
+            conn = self._pool.getconn()
+        except BaseException as exc:
+            with contextlib_suppress():
+                log_pool_failure(
+                    pool_name=self._name,
+                    operation="checkout",
+                    exc=exc,
+                    stats=self.stats(),
+                )
+            raise
         try:
             yield conn
         finally:
@@ -235,12 +268,37 @@ class PgPool:
 
     def query(self, sql: str, args: Sequence[Any] = ()) -> list[dict[str, Any]]:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+        from nexus_scalp.database.query_logging import pool_failure_guard, query_timer
 
-        translated = PostgreSQLDriver.translate_sql(sql)
-        with self.connection() as conn, conn.cursor() as cur:
-            cur.execute(translated, tuple(args))
-            cols = [d.name for d in cur.description] if cur.description else []
-            return [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
+        rows: list[dict[str, Any]] = []
+
+        def _run() -> list[dict[str, Any]]:
+            with (
+                query_timer("query", sql, domain=self._name) as timer,
+                self.connection() as conn,
+                conn.cursor() as cur,
+            ):
+                # The execution seam needs the connection to resolve the
+                # ON CONFLICT target from the catalog; the pure
+                # translate_sql() it replaces left INSERT OR REPLACE and
+                # :name placeholders untouched on the pooled write path.
+                translated = PostgreSQLDriver.translate_sql_for_execution(sql, conn)
+                cur.execute(translated, tuple(args))
+                cols = [d.name for d in cur.description] if cur.description else []
+                rows[:] = [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
+                # Row count set INSIDE the block: the timer renders it on __exit__.
+                timer.rows = len(rows)
+            return rows
+
+        return pool_failure_guard(
+            _run,
+            pool_name=self._name,
+            operation="query",
+            domain=self._name,
+            stats=self.stats,
+            sql=sql,
+            args=args,
+        )
 
     def query_one(self, sql: str, args: Sequence[Any] = ()) -> dict[str, Any] | None:
         rows = self.query(sql, args)
@@ -248,12 +306,36 @@ class PgPool:
 
     def scalar(self, sql: str, args: Sequence[Any] = ()) -> Any:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+        from nexus_scalp.database.query_logging import pool_failure_guard, query_timer
 
-        translated = PostgreSQLDriver.translate_sql(sql)
-        with self.connection() as conn, conn.cursor() as cur:
-            cur.execute(translated, tuple(args))
-            row = cur.fetchone()
-            return row[0] if row is not None else None
+        translated_holder: list[str] = []
+        holder: list[Any] = []
+
+        def _run() -> Any:
+            with (
+                query_timer("scalar", sql, domain=self._name),
+                self.connection() as conn,
+                conn.cursor() as cur,
+            ):
+                # Resolve at the execution seam: the connection is needed to
+                # resolve the ON CONFLICT target from the catalog.
+                translated_holder.append(
+                    PostgreSQLDriver.translate_sql_for_execution(sql, conn)
+                )
+                cur.execute(translated_holder[-1], tuple(args))
+                row = cur.fetchone()
+                holder.append(row[0] if row is not None else None)
+            return holder[0] if holder else None
+
+        return pool_failure_guard(
+            _run,
+            pool_name=self._name,
+            operation="scalar",
+            domain=self._name,
+            stats=self.stats,
+            sql=sql,
+            args=args,
+        )
 
     # -- stats ------------------------------------------------------------
 
@@ -375,10 +457,27 @@ class PgWritePlane:
             yield conn
 
     def execute(self, sql: str, args: Sequence[Any] = ()) -> None:
+        from nexus_scalp.database.query_logging import pool_failure_guard
+
+        pool_failure_guard(
+            lambda: self._execute_translated(sql, args),
+            pool_name=self._pool.name,
+            operation="execute",
+            domain=self._pool.name,
+            stats=self._pool.stats,
+            sql=sql,
+            args=args,
+        )
+
+    def _execute_translated(self, sql: str, args: Sequence[Any]) -> None:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
 
-        translated = PostgreSQLDriver.translate_sql(sql)
         with self._pool.connection() as conn, conn.cursor() as cur:
+            # Resolve at the execution seam: it needs the connection to look
+            # up the ON CONFLICT target in the catalog, which the pure
+            # translate_sql() cannot do (it left INSERT OR REPLACE and
+            # :name placeholders untouched on this pooled write path).
+            translated = PostgreSQLDriver.translate_sql_for_execution(sql, conn)
             cur.execute(translated, tuple(args))
             # The pool lends connections with autocommit OFF (the psycopg
             # default); without an explicit commit the write is discarded when
@@ -394,16 +493,45 @@ class PgWritePlane:
         back so the caller's row-level salvage starts from a clean slate.
         """
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+        from nexus_scalp.database.query_logging import pool_failure_guard
+
+        translated = [
+            # The tuple's third element is the pre-translated statement; the
+            # execution seam needs a live connection to resolve the ON
+            # CONFLICT target, so it is applied inside _apply_batch.
+            (query, rows, query)
+            for query, rows in statements
+        ]
+        pool_failure_guard(
+            lambda: self._apply_batch(translated),
+            pool_name=self._pool.name,
+            operation="execute_batch",
+            domain=self._pool.name,
+            stats=self._pool.stats,
+            sql="; ".join(q for q, _r, _t in translated),
+            args=[rows for _q, rows, _t in translated],
+        )
+
+    def _apply_batch(
+        self,
+        statements: Sequence[tuple[str, Sequence[Sequence[Any]], str]],
+    ) -> None:
+        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
 
         with self._pool.connection() as conn:
             try:
-                for query, rows in statements:
-                    translated = PostgreSQLDriver.translate_sql(query)
+                for _query, rows, translated in statements:
                     with conn.cursor() as cur:
+                        # Resolve at the execution seam (the connection is
+                        # in hand); the caller passes the untranslated query
+                        # as the third tuple element.
+                        resolved = PostgreSQLDriver.translate_sql_for_execution(
+                            translated, conn
+                        )
                         if len(rows) == 1:
-                            cur.execute(translated, tuple(rows[0]))
+                            cur.execute(resolved, tuple(rows[0]))
                         else:
-                            cur.executemany(translated, [tuple(r) for r in rows])
+                            cur.executemany(resolved, [tuple(r) for r in rows])
                 conn.commit()
             except Exception:
                 with contextlib_suppress():
@@ -411,12 +539,29 @@ class PgWritePlane:
                 raise
 
     def execute_one(self, query: str, args: Sequence[Any]) -> None:
+        from nexus_scalp.database.query_logging import pool_failure_guard
+
+        pool_failure_guard(
+            lambda: self._apply_one(query, args),
+            pool_name=self._pool.name,
+            operation="execute_one",
+            domain=self._pool.name,
+            stats=self._pool.stats,
+            sql=query,
+            args=args,
+        )
+
+    def _apply_one(self, query: str, args: Sequence[Any]) -> None:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
 
-        translated = PostgreSQLDriver.translate_sql(query)
         with self._pool.connection() as conn:
             try:
                 with conn.cursor() as cur:
+                    # Resolve at the execution seam: the connection is needed
+                    # to resolve the ON CONFLICT target from the catalog.
+                    translated = PostgreSQLDriver.translate_sql_for_execution(
+                        query, conn
+                    )
                     cur.execute(translated, tuple(args))
                 conn.commit()
             except Exception:
@@ -425,10 +570,25 @@ class PgWritePlane:
                 raise
 
     def executemany(self, sql: str, seq: Sequence[Sequence[Any]]) -> None:
+        from nexus_scalp.database.query_logging import pool_failure_guard
+
+        pool_failure_guard(
+            lambda: self._apply_many(sql, seq),
+            pool_name=self._pool.name,
+            operation="executemany",
+            domain=self._pool.name,
+            stats=self._pool.stats,
+            sql=sql,
+            args=seq,
+        )
+
+    def _apply_many(self, sql: str, seq: Sequence[Sequence[Any]]) -> None:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
 
-        translated = PostgreSQLDriver.translate_sql(sql)
         with self._pool.connection() as conn, conn.cursor() as cur:
+            # Resolve at the execution seam: the connection is needed to
+            # resolve the ON CONFLICT target from the catalog.
+            translated = PostgreSQLDriver.translate_sql_for_execution(sql, conn)
             cur.executemany(translated, [tuple(a) for a in seq])
             conn.commit()
 

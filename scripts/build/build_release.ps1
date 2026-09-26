@@ -191,6 +191,19 @@ if (-not (Test-Path $VersionInfoPath)) {
 $PyInstaller = Join-Path $Root ".venv\Scripts\pyinstaller.exe"
 if (-not (Test-Path $PyInstaller)) { Fail "pyinstaller not found — install with: .venv\Scripts\python -m pip install pyinstaller" }
 
+# PG-BOOT-001: the released EXE must import psycopg / psycopg_pool at first
+# boot. A provider=postgresql install that cannot import psycopg_pool dies at
+# boot with RuntimeError('PostgreSQL pooling requires psycopg_pool'), so the
+# driver/pool packages are build-time requirements — PyInstaller cannot freeze
+# what was never installed, and the runtime-only try/except imports in
+# pg_planes.py / postgres_driver.py are invisible to its static analysis.
+& $Py -m pip install --disable-pip-version-check "psycopg[binary]>=3.1,<4.0" "psycopg-pool>=3.1,<4.0"
+if ($LASTEXITCODE -ne 0) { Fail "postgres extra install failed — the release bundle would be unable to import psycopg_pool" }
+if (-not (& $Py -c "import psycopg, psycopg_pool" 2>$null)) {
+    Fail "psycopg/psycopg_pool not importable after install — the release bundle would die on a provider=postgresql boot"
+}
+Pass "postgres driver + pool importable (bundled by PyInstaller below)"
+
 # GO-API-SHIP: the release build compiles the Go API plane ONCE here and bakes
 # it into the onedir. The end user has NO Go toolchain and never installs one,
 # so a release without this binary ships a broken API plane. This is the
@@ -274,9 +287,15 @@ $buildInfo = @{
     --collect-submodules "uvicorn" `
     --collect-submodules "fastapi" `
     --collect-submodules "feedparser" `
+    --collect-submodules "psycopg" `
+    --collect-submodules "psycopg_pool" `
     --hidden-import "MetaTrader5" `
     --hidden-import "torch" `
     --hidden-import "polars" `
+    --hidden-import "psycopg" `
+    --hidden-import "psycopg.rows" `
+    --hidden-import "psycopg_pool" `
+    --hidden-import "psycopg_pool.pool" `
     --hidden-import "uvicorn.logging" `
     --hidden-import "uvicorn.loops" `
     --hidden-import "uvicorn.loops.auto" `
@@ -306,6 +325,12 @@ Pass "onedir build: $BuildDir\onedir\NexusScalpEngine\NexusScalpEngine.exe"
     --onefile --name "NexusScalpEngine-CLI" `
     --icon $IconPath `
     --version-file $VersionInfoPath `
+    --collect-submodules "psycopg" `
+    --collect-submodules "psycopg_pool" `
+    --hidden-import "psycopg" `
+    --hidden-import "psycopg.rows" `
+    --hidden-import "psycopg_pool" `
+    --hidden-import "psycopg_pool.pool" `
     --exclude-module "torch" `
     --exclude-module "polars" `
     --exclude-module "numpy" `

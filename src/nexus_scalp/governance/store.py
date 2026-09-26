@@ -36,6 +36,7 @@ from nexus_scalp.adapters.database.provider_store import (
     query_rows,
     queue_write,
 )
+from nexus_scalp.database.upsert import build_upsert_sql
 from nexus_scalp.governance.models import (
     GovernanceEvent,
     GovernanceStage,
@@ -99,6 +100,148 @@ _INSERT_ROLLBACK_AUDIT_SQL = """
         previous_schema_id, actor, reason, rollback_kind, status, recorded_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 """
+
+#: Lane B (PG upsert parity, PR #480 pattern): each SQLite statement stays
+#: byte-identical (SQLite remains a first-class provider — INSERT OR REPLACE
+#: is untouched, and the SQLite write route is unchanged). The PostgreSQL
+#: branch gets ``INSERT INTO ... ON CONFLICT (...) DO UPDATE SET``, because
+#: ``INSERT OR REPLACE`` is SQLite-only syntax and the pooled write backend
+#: hands the statement to the server verbatim apart from the ``?``->``%s``
+#: placeholder translation — so it lands as
+#: ``syntax error at or near "OR"`` (live engine log, op=governance.record_event
+#: / governance.save_health).
+#:
+#: The ON CONFLICT target is resolved AND re-validated against the table's real
+#: DDL by ``build_upsert_sql`` (see nexus_scalp/database/upsert.py): a column
+#: that has no covering UNIQUE/PRIMARY KEY constraint would make the statement
+#: invalid under PostgreSQL, and the helper raises rather than emit one.
+_EVENT_COLUMNS = [
+    "event_id",
+    "event",
+    "stage",
+    "model_id",
+    "model_version",
+    "schema_id",
+    "correlation_id",
+    "error_code",
+    "error_type",
+    "duration_ms",
+    "actor",
+    "previous_state",
+    "new_state",
+    "reason",
+    "payload",
+    "timestamp",
+]
+_STATE_COLUMNS = ["model_id", "model_version", "lifecycle_state", "updated_at", "evidence"]
+_COMPARISON_COLUMNS = [
+    "comparison_id",
+    "run_id",
+    "timestamp",
+    "symbol",
+    "champion_model_id",
+    "champion_version",
+    "challenger_model_id",
+    "challenger_version",
+    "champion_action",
+    "challenger_action",
+    "agreement",
+    "champion_probabilities",
+    "challenger_probabilities",
+    "feature_context_id",
+    "news_context_id",
+    "feature_schema_id",
+    "feature_parity_max_abs",
+    "feature_parity_mean_abs",
+    "feature_parity_mismatch",
+    "alignment",
+    "latency_champion_ms",
+    "latency_challenger_ms",
+    "regime",
+    "session",
+    "simulated",
+    "payload",
+]
+_HEALTH_COLUMNS = [
+    "checked_at",
+    "champion_id",
+    "champion_version",
+    "champion_schema",
+    "champion_healthy",
+    "challenger_id",
+    "challenger_version",
+    "challenger_state",
+    "shadow_running",
+    "shadow_comparisons",
+    "shadow_errors",
+    "shadow_dropped",
+    "last_update",
+    "payload",
+]
+_PROMOTION_AUDIT_COLUMNS = [
+    "promotion_id",
+    "old_champion_model_id",
+    "old_champion_version",
+    "old_champion_hash",
+    "old_champion_schema",
+    "new_champion_model_id",
+    "new_champion_version",
+    "new_champion_hash",
+    "new_champion_schema",
+    "candidate_hash",
+    "schema_id",
+    "approval_actor",
+    "approval_reason",
+    "approval_token",
+    "rollback_target",
+    "status",
+    "recorded_at",
+]
+_ROLLBACK_AUDIT_COLUMNS = [
+    "rollback_id",
+    "failed_model_id",
+    "failed_version",
+    "previous_model_id",
+    "previous_version",
+    "previous_artifact_hash",
+    "previous_manifest_hash",
+    "previous_schema_id",
+    "actor",
+    "reason",
+    "rollback_kind",
+    "status",
+    "recorded_at",
+]
+
+_SQLITE_EVENT_SQL, _PG_EVENT_SQL = build_upsert_sql(
+    "model_governance_events", _EVENT_COLUMNS, sqlite_sql=_INSERT_EVENT_SQL
+)
+_SQLITE_STATE_SQL, _PG_STATE_SQL = build_upsert_sql(
+    "model_governance_state", _STATE_COLUMNS, sqlite_sql=_UPSERT_STATE_SQL
+)
+_SQLITE_COMPARISON_SQL, _PG_COMPARISON_SQL = build_upsert_sql(
+    "model_shadow_comparisons", _COMPARISON_COLUMNS, sqlite_sql=_INSERT_COMPARISON_SQL
+)
+_SQLITE_HEALTH_SQL, _PG_HEALTH_SQL = build_upsert_sql(
+    "model_runtime_health", _HEALTH_COLUMNS, sqlite_sql=_INSERT_HEALTH_SQL
+)
+_SQLITE_PROMOTION_AUDIT_SQL, _PG_PROMOTION_AUDIT_SQL = build_upsert_sql(
+    "model_promotion_audit", _PROMOTION_AUDIT_COLUMNS, sqlite_sql=_INSERT_PROMOTION_AUDIT_SQL
+)
+_SQLITE_ROLLBACK_AUDIT_SQL, _PG_ROLLBACK_AUDIT_SQL = build_upsert_sql(
+    "model_rollback_audit", _ROLLBACK_AUDIT_COLUMNS, sqlite_sql=_INSERT_ROLLBACK_AUDIT_SQL
+)
+
+
+def _sql_for(repo: AuditRepository, sqlite_sql: str, pg_sql: str) -> str:
+    """Pick the dialect-correct statement for the ACTIVE provider.
+
+    Mirrors the split PR #480 landed for the incidents store: SQLite keeps the
+    historical ``INSERT OR REPLACE`` (a first-class provider — its statement is
+    untouched), PostgreSQL runs the ``ON CONFLICT ... DO UPDATE`` form the
+    pooled write backend can execute.
+    """
+    return sqlite_sql if getattr(repo, "_is_sqlite", False) else pg_sql
 
 
 class GovernanceStore:
@@ -264,6 +407,16 @@ class GovernanceStore:
                     "CREATE INDEX IF NOT EXISTS idx_gov_events_model ON model_governance_events(model_id, event);",
                     "CREATE INDEX IF NOT EXISTS idx_gov_state_model ON model_governance_state(model_id, model_version);",
                     "CREATE INDEX IF NOT EXISTS idx_gov_comp_ts ON model_shadow_comparisons(timestamp);",
+                    # Lane B (PG upsert parity): the ON CONFLICT target the
+                    # PostgreSQL branch uses must be a real constraint under
+                    # PostgreSQL too. SQLite's INSERT OR REPLACE keys on these
+                    # columns implicitly; the explicit UNIQUE INDEX makes the
+                    # constraint visible to both providers. Kept identical to
+                    # the domain DDL in nexus_scalp/shadow/schema.py.
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_gov_state_key "
+                    "ON model_governance_state(model_id, model_version);",
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_gov_health_checked_at "
+                    "ON model_runtime_health(checked_at);",
                 ):
                     conn.execute(idx)
                 conn.commit()
@@ -302,7 +455,7 @@ class GovernanceStore:
         return ops_queue_write(
             self.audit_repo,
             OPS_SHADOW_DOMAIN,
-            _INSERT_EVENT_SQL,
+            _sql_for(self.audit_repo, _SQLITE_EVENT_SQL, _PG_EVENT_SQL),
             args,
             operation="governance.record_event",
         )
@@ -351,7 +504,7 @@ class GovernanceStore:
         return ops_queue_write(
             self.audit_repo,
             OPS_SHADOW_DOMAIN,
-            _UPSERT_STATE_SQL,
+            _sql_for(self.audit_repo, _SQLITE_STATE_SQL, _PG_STATE_SQL),
             args,
             operation="governance.set_state",
         )
@@ -394,7 +547,7 @@ class GovernanceStore:
         return ops_queue_write(
             self.audit_repo,
             OPS_SHADOW_DOMAIN,
-            _INSERT_COMPARISON_SQL,
+            _sql_for(self.audit_repo, _SQLITE_COMPARISON_SQL, _PG_COMPARISON_SQL),
             args,
             operation="governance.save_shadow_comparison",
         )
@@ -424,7 +577,7 @@ class GovernanceStore:
         return ops_queue_write(
             self.audit_repo,
             OPS_SHADOW_DOMAIN,
-            _INSERT_HEALTH_SQL,
+            _sql_for(self.audit_repo, _SQLITE_HEALTH_SQL, _PG_HEALTH_SQL),
             args,
             operation="governance.save_health",
         )
@@ -544,7 +697,7 @@ class GovernanceStore:
         )
         return queue_write(
             self.audit_repo,
-            _INSERT_PROMOTION_AUDIT_SQL,
+            _sql_for(self.audit_repo, _SQLITE_PROMOTION_AUDIT_SQL, _PG_PROMOTION_AUDIT_SQL),
             args,
             operation="governance.record_promotion_audit",
         )
@@ -573,7 +726,7 @@ class GovernanceStore:
         )
         return queue_write(
             self.audit_repo,
-            _INSERT_ROLLBACK_AUDIT_SQL,
+            _sql_for(self.audit_repo, _SQLITE_ROLLBACK_AUDIT_SQL, _PG_ROLLBACK_AUDIT_SQL),
             args,
             operation="governance.record_rollback_audit",
         )

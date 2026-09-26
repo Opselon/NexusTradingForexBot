@@ -37,6 +37,7 @@ import contextlib
 import json
 import logging
 import queue as _stdlib_queue
+import re
 import threading
 import time
 from collections.abc import Callable, Sequence
@@ -55,38 +56,189 @@ _SQLITE_ONLY_PATTERNS: Final = (
     "INSERT OR IGNORE INTO ",
 )
 
+#: The ON CONFLICT target for each table the audit producers emit an
+#: ``INSERT OR REPLACE``/``INSERT OR IGNORE`` for.
+#:
+#: SOURCE OF TRUTH: the audit schema's own UNIQUE/PK declarations, which the
+#: SQLite bootstrap (``AuditRepository._create_sqlite_tables`` and the sibling
+#: bootstrap modules) and the PostgreSQL provisioning replay
+#: (:func:`nexus_scalp.database.migration.schema_snapshot.audit_schema_statements`)
+#: both create.  It is read here rather than resolved live against
+#: ``information_schema`` because the replay is the authority for both providers
+#: and because a live lookup would need a connection the enqueue path must
+#: never wait on (it runs on the tick path).  When a table is unknown the
+#: rewrite falls back to ``ON CONFLICT DO NOTHING`` — never to a bare
+#: ``ON CONFLICT``, which PostgreSQL rejects as a syntax error.
+_CONFLICT_TARGETS: Final[dict[str, tuple[str, ...]]] = {
+    # PK columns (``CREATE TABLE ... PRIMARY KEY``) and the unique index
+    # ``idx_paper_exec_identity`` the bootstrap declares for this table.
+    "audit_paper_executions": ("ts", "ticket", "order_type", "requested_price"),
+    # PK declared in the CREATE TABLE (``rule_name TEXT PRIMARY KEY``).
+    "trading_rules_config": ("rule_name",),
+    # PK declared in the CREATE TABLE (``id ... CHECK (id = 1)``).
+    "runtime_risk_state": ("id",),
+}
+
+_INSERT_OR_RE = re.compile(r'(?is)^\s*INSERT\s+OR\s+(REPLACE|IGNORE)\s+INTO\s+("?\w+"?)\b')
+_COLUMN_LIST_RE = re.compile(r"(?is)\((.*?)\)\s*VALUES\b")
+
+
+def _qualified_conflict_target(table: str, columns: Sequence[str]) -> tuple[str, ...] | None:
+    """The conflict columns the rewrite should target for ``table``.
+
+    Prefers the table's declared conflict target.  Falls back to the declared
+    columns that actually carry a UNIQUE/PK constraint, so a statement whose
+    column list only partially covers a composite target still resolves
+    (PostgreSQL requires the ON CONFLICT columns to match a constraint exactly,
+    while SQLite is lenient).  ``None`` when nothing resolves — the caller
+    then uses ``DO NOTHING`` with no target.
+    """
+    declared = _CONFLICT_TARGETS.get(table)
+    if declared:
+        present = [c for c in declared if c in columns]
+        # A partial match would raise "ON CONFLICT clause does not match any
+        # constraint" on PostgreSQL; only emit the target when it is complete.
+        if len(present) == len(declared):
+            return tuple(declared)
+        return None
+    return None
+
 
 def translate_sql(sql: str) -> str:
     """Normalise a producer statement to portable SQL.
 
     The audit producers write ``INSERT OR REPLACE``/``INSERT OR IGNORE``
-    (SQLite dialect).  Both map onto the standard upsert shape every other
-    provider accepts, and the audit schema declares the UNIQUE targets both
-    rely on, so the rewrite is semantic-preserving and not a convenience
-    coercion: the conflict resolution contract is identical.
+    (SQLite dialect).  On PostgreSQL a bare ``INSERT`` raises a duplicate-key
+    violation instead of replacing, so the rewrite emits a real standard
+    upsert: ``INSERT INTO <t> ... ON CONFLICT (<target>) DO UPDATE SET`` (for
+    REPLACE) or ``... DO NOTHING`` (for IGNORE), with the conflict target
+    taken from the table's declared UNIQUE/PK constraint.
+
+    The rewrite is applied unconditionally: the SQLite branch keeps the
+    statement verbatim (it is already valid SQLite and the SQLite backend
+    never calls this function — :meth:`AuditWritePlane.enqueue_financial` /
+    :meth:`AuditWritePlane.enqueue_telemetry` are the only callers, and the
+    SQLite path reaches them too, so the emitted shape must stay valid on
+    SQLite).  SQLite accepts ``ON CONFLICT (cols) DO UPDATE SET`` natively,
+    and the target columns are the ones its own UNIQUE index declares, so the
+    semantics are identical to ``INSERT OR REPLACE``/``IGNORE`` on both
+    providers — the contract is preserved, not approximated.
 
     ``?`` placeholders are left alone — the driver layer already translates
     them to its own style at the boundary, so this function must not touch
     them (double-translating would corrupt a statement that contains a
     literal ``?`` inside a JSON string argument).
     """
-    upper = sql.lstrip().upper()
-    for pat in _SQLITE_ONLY_PATTERNS:
-        if upper.startswith(pat):
-            # "INSERT OR REPLACE/IGNORE INTO <t> ..." -> "INSERT INTO <t> ..."
-            # The OR-verb is SQLite dialect; the standard statement carries an
-            # ON CONFLICT clause for the same behaviour. Producers that emit
-            # the bare form rely on the table's declared UNIQUE/PK, so the
-            # rewrite preserves the conflict semantics exactly. Only the
-            # OR-verb is removed: INTO and everything after it is untouched.
-            stripped = sql.lstrip()
-            verb_end = len("INSERT OR IGNORE")
-            if upper.startswith("INSERT OR IGNORE"):
-                verb_end = len("INSERT OR IGNORE")
-            elif upper.startswith("INSERT OR REPLACE"):
-                verb_end = len("INSERT OR REPLACE")
-            return "INSERT" + stripped[verb_end:]
-    return sql
+    matched = _INSERT_OR_RE.match(sql)
+    if not matched:
+        return sql
+    verb = matched.group(1).upper()
+    table = matched.group(2)
+    # A trailing semicolon terminates the statement BEFORE the ON CONFLICT
+    # clause this rewrite appends, so strip it first (providers that parse
+    # strictly raise a syntax error at the ``ON`` keyword). Replayed overflow
+    # files may carry a producer's original text, so the strip is unconditional.
+    body = sql[matched.end() :]
+    trailing_semicolon = ""
+    stripped = body.rstrip()
+    if stripped.endswith(";"):
+        body = stripped[:-1]
+        trailing_semicolon = ";"
+
+    columns: list[str] = []
+    cols_match = _COLUMN_LIST_RE.match(body.strip())
+    if cols_match:
+        columns = [
+            c.strip().strip('"').strip("`").strip("[]") for c in cols_match.group(1).split(",")
+        ]
+
+    target = _qualified_conflict_target(table, columns)
+    head = f"INSERT INTO {table}{body}"
+    if target is None:
+        # Unresolvable: keep the INSERT idempotent rather than letting a
+        # duplicate-key violation reach the provider.  A bare ``ON CONFLICT``
+        # with no target is a PostgreSQL SYNTAX ERROR, so the target is
+        # omitted only together with DO NOTHING.
+        return f"{head} ON CONFLICT DO NOTHING{trailing_semicolon}"
+    target_sql = ", ".join(target)
+    if verb == "IGNORE":
+        return f"{head} ON CONFLICT ({target_sql}) DO NOTHING{trailing_semicolon}"
+    # REPLACE: update every column the row carries except the conflict target
+    # itself (assigning the PK/unique key its own value is legal but useless,
+    # and some providers reject it as a no-op update on the identity columns).
+    updates = [c for c in columns if c not in target]
+    if not updates:
+        return f"{head} ON CONFLICT ({target_sql}) DO NOTHING{trailing_semicolon}"
+    set_sql = ", ".join(f"{c} = excluded.{c}" for c in updates)
+    return f"{head} ON CONFLICT ({target_sql}) DO UPDATE SET {set_sql}{trailing_semicolon}"
+
+
+def _count_placeholders(sql: str) -> int:
+    """Count ``?`` qmark placeholders in ``sql``.
+
+    Mirrors :func:`nexus_scalp.database.drivers.postgres_driver._translate_placeholders`
+    token-for-token: ``?`` is only a placeholder OUTSIDE single-quoted literals
+    (JSON text, URLs) and double-quoted identifiers.  Counting with a plain
+    ``sql.count("?")`` would miscount any statement carrying a literal ``?`` in
+    a string argument — the same corruption the driver's translator exists to
+    prevent.
+    """
+    out = 0
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch == "'":
+            j = i + 1
+            while j < n:
+                if sql[j] == "'":
+                    if j + 1 < n and sql[j + 1] == "'":  # '' escape
+                        j += 2
+                        continue
+                    break
+                j += 1
+            i = j + 1
+        elif ch == '"':
+            j = sql.find('"', i + 1)
+            j = n - 1 if j == -1 else j
+            i = j + 1
+        elif ch == "?":
+            out += 1
+            i += 1
+        else:
+            i += 1
+    return out
+
+
+class ArityMismatchError(ValueError):
+    """A producer's argument count does not match its statement.
+
+    Subclass of :class:`ValueError` so the existing ``except Exception`` guards
+    around enqueue keep treating it as a recoverable producer defect (the row
+    is dead-lettered, never raised into the tick path).
+    """
+
+
+def assert_arity(sql: str, args: Sequence[Any]) -> None:
+    """Verify a producer's ``args`` satisfy its statement's placeholder count.
+
+    Live evidence (the audit_dead_letter probe of the deployed cluster): an
+    arity mismatch is a real producer defect class —
+    ``the query has 0 placeholders but 32 parameters were passed`` — and it
+    is otherwise only visible after the row travels the whole queue, the
+    batch, the rollback and the salvage pass.  Catching it at enqueue turns
+    18,000 dead-lettered rows into one loud CRITICAL log line at the producer.
+
+    Raises :class:`ArityMismatchError`; the caller decides whether to
+    dead-letter (financial) or drop (telemetry).
+    """
+    expected = _count_placeholders(sql)
+    got = len(args)
+    if expected != got:
+        raise ArityMismatchError(
+            f"placeholder/argument mismatch: statement has {expected} "
+            f"placeholder(s) but {got} argument(s) were passed"
+        )
 
 
 class AuditWriteBackend(abc.ABC):
@@ -356,10 +508,34 @@ class AuditWritePlane:
     def enqueue_financial(self, query: str, args: tuple) -> None:
         """Enqueue a CRITICAL financial row. Never silently drops.
 
-        Order of defense: bounded blocking put -> durable overflow file ->
-        dead-letter + CRITICAL log.
+        Order of defense: arity guard -> bounded blocking put -> durable
+        overflow file -> dead-letter + CRITICAL log.
         """
         query = translate_sql(query)
+        # ARITY GUARD: a producer whose args do not match its placeholders is
+        # a real defect (live evidence: 18 rows dead-lettered with "the query
+        # has 0 placeholders but 32 parameters were passed"). Catch it HERE,
+        # at the producer, instead of after the row has travelled the queue,
+        # the batch and the rollback — the row is dead-lettered with a named
+        # reason and the tick path is never raised into.
+        try:
+            assert_arity(query, args)
+        except Exception as arity_err:
+            self.financial_events_failed += 1
+            logger.error(
+                "Financial audit producer ARITY MISMATCH (row refused before "
+                "the write path): %s; query=%s",
+                arity_err,
+                (query or "")[:200],
+            )
+            self._dead_letter_store.record(
+                query=query,
+                args=args,
+                error=arity_err,
+                payload_note="enqueue arity guard: placeholder count != len(args)",
+            )
+            self._report_metrics()
+            return
         backpressured = False
         if self._effective_queue().qsize() >= self.QUEUE_SOFT_WATERMARK:
             self.financial_queue_backpressure += 1
@@ -400,7 +576,24 @@ class AuditWritePlane:
     def enqueue_telemetry(self, query: str, args: tuple) -> None:
         """Enqueue a NON-CRITICAL telemetry row: dropable, counted."""
         try:
-            self._effective_queue().put_nowait((translate_sql(query), args))
+            translated = translate_sql(query)
+            # ARITY GUARD (same contract as the financial path, dropable here):
+            # a mismatched telemetry row is counted and dropped rather than
+            # dead-lettered — telemetry is explicitly lossy by design, and the
+            # guard keeps the producer's defect observable without spending a
+            # dead-letter row on it.
+            try:
+                assert_arity(translated, args)
+            except Exception as arity_err:
+                self.telemetry_dropped += 1
+                logger.error(
+                    "Audit telemetry producer ARITY MISMATCH (row dropped): %s; query=%s",
+                    arity_err,
+                    (translated or "")[:200],
+                )
+                self._report_metrics()
+                return
+            self._effective_queue().put_nowait((translated, args))
             self._report_metrics()
             return
         except _stdlib_queue.Full:
@@ -468,11 +661,20 @@ class AuditWritePlane:
                 continue
 
             try:
+                # GROUPING: consecutive identical statements are collapsed into
+                # one executemany call (one round trip per distinct statement).
+                # itertools.groupby only groups RUNS of equal keys, so the batch
+                # is sorted by statement text first — without the sort an
+                # interleaved batch emits N separate single-row calls and, far
+                # worse, a producer that repeats the same statement down the
+                # queue gets its rows split across groups.  Sorting is stable,
+                # so rows for one statement keep their enqueue order exactly.
                 import itertools
 
+                ordered = sorted(batch, key=lambda item: item[0])
                 grouped = [
                     (q_text, [item[1] for item in group])
-                    for q_text, group in itertools.groupby(batch, key=lambda x: x[0])
+                    for q_text, group in itertools.groupby(ordered, key=lambda x: x[0])
                 ]
                 backend.execute_batch(grouped)
                 for _ in batch:
@@ -499,6 +701,28 @@ class AuditWritePlane:
                             payload_note="audit worker batch-retry failure",
                         )
                 self.audit_salvaged_rows += salvaged
+                # Full context (see the sibling site above): the masked
+                # statement + arity + the UNTRUNCATED error, so the live
+                # "query has 0 placeholders but 32 parameters" class is
+                # traceable to a query.
+                try:
+                    from nexus_scalp.database.query_logging import log_query_failure
+
+                    log_query_failure(
+                        operation="audit_batch_insert",
+                        exc=e,
+                        sql=batch[0][0] if batch else "",
+                        args=batch[0][1] if batch else (),
+                        domain="audit",
+                        kind="batch_write",
+                        extra={
+                            "batch_size": len(batch),
+                            "salvaged": salvaged,
+                            "dead_lettered": dead_lettered,
+                        },
+                    )
+                except Exception:
+                    pass
                 logger.error(
                     "Audit batch insert failed; recovery applied "
                     "batch=%d salvaged=%d dead_lettered=%d error_type=%s error=%s",

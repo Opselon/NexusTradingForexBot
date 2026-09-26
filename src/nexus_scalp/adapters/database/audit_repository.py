@@ -1252,14 +1252,16 @@ class AuditRepository:
             # _connect_sqlite() under PostgreSQL writes to a throwaway temp
             # DB. The two statements run in ONE backend transaction so the
             # anchor row can never exist without its canonical parent row.
-            # ``INSERT OR IGNORE`` is SQLite dialect: the pooled backend does
-            # not translate on the execute_batch path, so the portable shape
-            # is produced here (the ON CONFLICT target is the row PK id=1).
+            # ``INSERT OR IGNORE`` is SQLite dialect: the pooled write backend
+            # translates it (ON CONFLICT on the row PK id=1) at the boundary,
+            # so the SQLite branch's statement text is reused verbatim — one
+            # statement shape for both providers, matching the parity contract
+            # the rest of the repository already uses.
             return self._provider_execute_write(
                 [
                     (
-                        "INSERT INTO runtime_risk_state (id, state) "
-                        "VALUES (1, 'RUNNING') ON CONFLICT (id) DO NOTHING",
+                        "INSERT OR IGNORE INTO runtime_risk_state (id, state) "
+                        "VALUES (1, 'RUNNING')",
                         (),
                     ),
                     (
@@ -2619,6 +2621,13 @@ class AuditRepository:
         rolls back). Returns True only when the backend reports success; a
         missing backend or a raised error is logged and returns False — a
         safety write never silently succeeds (the mission's fail-closed rule).
+
+        Statements are normalised with the write plane's :func:`translate_sql`
+        before they reach the backend: the safety writers emit the same
+        SQLite-dialect text the SQLite branch uses (``INSERT OR IGNORE``), and
+        the pooled backend would otherwise reject the bare INSERT with a
+        duplicate-key violation instead of ignoring. ``?`` placeholders are
+        left untouched for the driver to translate.
         """
         backend = self._provider_write_backend()
         if backend is None:
@@ -2631,7 +2640,9 @@ class AuditRepository:
         # of ROWS (each row the arg tuple for one execution of the query).
         # Every caller here is a single-row statement, so the arg tuple is
         # wrapped as the one and only row.
-        batch = [(query, [tuple(args)]) for query, args in statements]
+        from nexus_scalp.adapters.database.audit_write_plane import translate_sql
+
+        batch = [(translate_sql(query), [tuple(args)]) for query, args in statements]
         try:
             backend.execute_batch(batch)
             return True
@@ -2833,7 +2844,31 @@ class AuditRepository:
         occurrences: int,
         total: int,
     ) -> None:
-        """One structured warning per operation; repeats rate-limited."""
+        """One structured warning per operation; repeats rate-limited.
+
+        The 368-identical-warning flood (2026-09-25 23:44-23:47) is the
+        failure mode this method exists to prevent. Two dedupe layers:
+          * the process-global ``(domain, reason)`` tracker (dedup + a
+            cumulative counter + escalation to ERROR after
+            ``PG_DEGRADED_ESCALATION_AFTER`` consecutive degradations — a
+            persistent condition is an incident, not a warning);
+          * this repository's legacy per-operation rate limit, kept for the
+            tooling that reads the stream by operation name.
+        """
+        # First, the cross-store tracker: one WARNING the first time a
+        # (domain, reason) pair degrades, DEBUG thereafter with a cumulative
+        # counter, ERROR once the degradation proves persistent.
+        try:
+            from nexus_scalp.database.query_logging import note_degraded_read
+
+            note_degraded_read(
+                domain="audit",
+                reason=kind or "read_not_provisioned",
+                operation=operation,
+                detail="no read plane registered for domain 'audit'",
+            )
+        except Exception:
+            pass
         state = getattr(self, "_provider_read_guard_state", None)
         if not isinstance(state, dict):
             state = {}
@@ -3183,6 +3218,29 @@ class AuditRepository:
                                 payload_note="audit worker batch-retry failure",
                             )
                     self.audit_salvaged_rows += salvaged
+                    # The failing QUERY is what makes the failure traceable:
+                    # the live log carried only a truncated error string and
+                    # the "0 placeholders but 32 parameters" mismatch was
+                    # invisible. Log the full error (no truncation) plus the
+                    # masked statement and the arity.
+                    try:
+                        from nexus_scalp.database.query_logging import log_query_failure
+
+                        log_query_failure(
+                            operation="audit_batch_insert",
+                            exc=e,
+                            sql=batch[0][0] if batch else "",
+                            args=batch[0][1] if batch else (),
+                            domain="audit",
+                            kind="batch_write",
+                            extra={
+                                "batch_size": len(batch),
+                                "salvaged": salvaged,
+                                "dead_lettered": dead_lettered,
+                            },
+                        )
+                    except Exception:
+                        pass
                     logger.error(
                         "Audit batch insert failed; recovery applied "
                         "batch=%d salvaged=%d dead_lettered=%d error_type=%s error=%s",
@@ -3684,6 +3742,13 @@ class AuditRepository:
         window keeps "how often / when / for which symbol / why" answerable.
         """
         window = proposal.generated_at.replace(second=0, microsecond=0).isoformat()
+        # RT-003 / PG portability: the unqualified ``count`` in DO UPDATE SET
+        # is AMBIGUOUS on PostgreSQL (it resolves against both the target row
+        # and EXCLUDED) while SQLite silently picks the target row — this one
+        # statement was 99.9% of every failed write on the live cluster.
+        # Qualifying with the INSERT's declared alias ``t`` is valid on BOTH
+        # providers (SQLite resolves the alias declared in the INSERT), so the
+        # statement string stays identical for every provider.
         query = """
             INSERT INTO audit_guard_telemetry AS t (window_start, symbol, reason_code, count)
             VALUES (?, ?, ?, 1)
@@ -3955,9 +4020,48 @@ class AuditRepository:
         False (never raises — parity persistence must not disturb trading).
         """
         if not self._is_sqlite:
-            return self._provider_read_guard(
-                "record_paper_execution",
-                lambda: False,
+            # RT-004 / PG portability: this is a WRITE, not a read. The
+            # ``_provider_read_guard`` it used to return silently swallowed
+            # every paper-execution row on a pooled provider (returning the
+            # documented default False), so the table stayed empty on
+            # PostgreSQL while the SQLite side accumulated rows — exactly the
+            # split the domain must not have. Route it through the pooled
+            # WRITE backend instead: the statement is SQLite dialect, so the
+            # write plane's ``translate_sql`` rewrites the ``INSERT OR IGNORE``
+            # into a real upsert targeting the table's declared unique index
+            # before it reaches the provider (``?`` placeholders stay for the
+            # driver). Synchronous, like every other parity write here: the
+            # caller's contract is a durability bool, not a queue hint.
+            return self._provider_execute_write(
+                [
+                    (
+                        """
+                        INSERT OR IGNORE INTO audit_paper_executions
+                            (ts, symbol, order_type, volume, requested_price,
+                             bid_at_request, ask_at_request, spread, fill_price,
+                             slippage, rejection_reason, ticket, latency_ticks,
+                             status, source)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            ts,
+                            symbol,
+                            order_type,
+                            float(volume or 0.0),
+                            float(requested_price or 0.0),
+                            float(bid_at_request or 0.0),
+                            float(ask_at_request or 0.0),
+                            float(spread or 0.0),
+                            fill_price,
+                            slippage,
+                            rejection_reason,
+                            int(ticket or 0),
+                            int(latency_ticks or 0),
+                            status,
+                            source,
+                        ),
+                    )
+                ]
             )
         try:
             with self._connect_sqlite(5.0) as conn:
@@ -4615,10 +4719,13 @@ class AuditRepository:
 
     def _seed_trading_rules(self, conn: sqlite3.Connection) -> None:
         """Seeds the trading_rules_config table with all 30+ rules, disabled by default."""
+        # No trailing ``;``: the write path's SQLite-dialect rewrite appends an
+        # ``ON CONFLICT`` clause to this statement, and a semicolon terminates
+        # the statement before that clause on providers that parse strictly.
         conn.executemany(
             """
             INSERT OR IGNORE INTO trading_rules_config (rule_name, is_enabled, category, parameters)
-            VALUES (?, 0, ?, ?);
+            VALUES (?, 0, ?, ?)
             """,
             DEFAULT_TRADING_RULES,
         )
