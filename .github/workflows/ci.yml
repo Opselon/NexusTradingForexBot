@@ -153,15 +153,21 @@ jobs:
       # throwaway CI-only credential for a container that lives for one job,
       # never a real secret - a literal is required here because the suite
       # connects with it directly.
-      NSE_PG_TEST_URL: "postgresql://pgarm:pgarm@localhost:5432/nse_pgarm"
-      NSE_TEST_PG_DSN: "postgresql://pgarm:pgarm@localhost:5432/nse_pgarm"
+      NSE_PG_TEST_URL: "postgresql://nse_user:nse_password_dev@localhost:5432/nse_audit"
+      NSE_TEST_PG_DSN: "postgresql://nse_user:nse_password_dev@localhost:5432/nse_audit"
     services:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: nse_pgarm
-          POSTGRES_USER: pgarm
-          POSTGRES_PASSWORD: pgarm
+          # The PG arm hardcodes localhost/nse_audit with user nse_user
+          # (test_database_portability.TestPostgresCrud._cfg, and the
+          # DatabaseConfig.for_postgres calls in TestPostgresIntegration),
+          # and reads the password from the OS secret store. The service
+          # must therefore match THAT shape: a different db/user makes
+          # every arm fail to authenticate, which is what the first run did.
+          POSTGRES_DB: nse_audit
+          POSTGRES_USER: nse_user
+          POSTGRES_PASSWORD: nse_password_dev
           # The PG arm creates and drops its own scratch DATABASES
           # (test_pg_safety_persistence / test_rtf001_real_postgresql_schema)
           # and needs CREATEDB to do it. The postgres image's POSTGRES_USER is
@@ -170,7 +176,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U pgarm -d nse_pgarm"
+          --health-cmd "pg_isready -U nse_user -d nse_audit"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
