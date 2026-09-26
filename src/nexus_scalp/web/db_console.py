@@ -415,6 +415,17 @@ def _fail(exc: BaseException, action: str, cfg: DatabaseConfig | None = None) ->
     `action` is the operator-facing verb ("reading rows from ...").  Keeps the
     UI's `error: string` contract and adds `code` (+ `hint` when the fix is
     knowable here) so the page can render guidance instead of a type name.
+
+    Classification by exception TYPE, not by module prefix: a SQL-level error
+    (bad table, bad column, arity mismatch) comes out of psycopg's
+    ``errors`` module too, and answering it with ``DB_UNREACHABLE`` sends an
+    operator to restart a perfectly healthy server — observed live against
+    nexusdb (2026-09-26) where ``SELECT * FROM <missing table>`` told the
+    operator to "start the PostgreSQL server". psycopg's own error hierarchy
+    carries the distinction natively: ``OperationalError`` is connection /
+    server state, ``ProgrammingError`` is the statement itself. The probe
+    below is a second safety net for drivers that raise a plain
+    ``OperationalError`` without the ``diag`` attribute.
     """
     if _psycopg_missing(exc):
         return {
@@ -422,6 +433,21 @@ def _fail(exc: BaseException, action: str, cfg: DatabaseConfig | None = None) ->
             "code": "PG_DRIVER_MISSING",
             "error": f"{action} needs PostgreSQL, but psycopg is not installed here.",
             "hint": _PG_INSTALL_HINT,
+        }
+    if _is_statement_error(exc):
+        # The server was reached and it rejected the STATEMENT: a missing
+        # relation, an unknown column, a permission denial on the query.
+        # Nothing here suggests the server is down; the operator's next step
+        # is to fix the SQL, not to restart the database.
+        return {
+            "success": False,
+            "code": "DB_QUERY_ERROR",
+            "error": (
+                f"The database rejected the statement: {action} stopped "
+                "before reading any data."
+            ),
+            "hint": "Check the table/column names and permissions; the server "
+            "itself is reachable (see the masked statement in the server log).",
         }
     module = type(exc).__module__ or ""
     if module.startswith("psycopg") or isinstance(exc, (ConnectionError, TimeoutError)):
@@ -442,6 +468,61 @@ def _fail(exc: BaseException, action: str, cfg: DatabaseConfig | None = None) ->
         "code": "DB_CONSOLE_ERROR",
         "error": f"{action} failed ({type(exc).__name__}); details are in the server log.",
     }
+
+
+def _is_statement_error(exc: BaseException) -> bool:
+    """A statement-level rejection, as opposed to a connection failure.
+
+    psycopg v3 raises ``errors.UndefinedTable`` / ``UndefinedColumn`` /
+    ``ProgrammingError`` for SQL the server rejected. Its connection
+    conditions (``OperationalError`` and its subclasses —
+    ``CannotConnectNowError``, ``ConnectionFailure``, ``TooManyConnections``,
+    …) ALSO carry a ``diag`` and a SQLSTATE, so the presence of ``diag`` alone
+    is not proof the statement was at fault. OperationalError is excluded by
+    base type first, then the statement classes are recognised by name and by
+    a SQLSTATE-bearing diag on a non-OperationalError error.
+    """
+    try:
+        name = type(exc).__name__
+        # psycopg's connection/server-condition family: excluded outright so a
+        # dead server is never reported as a bad statement (and vice versa).
+        try:
+            import psycopg.errors as _pg_errors
+
+            if isinstance(exc, _pg_errors.OperationalError):
+                return False
+        except ImportError:
+            pass
+        if name in {
+            "UndefinedTable",
+            "UndefinedColumn",
+            "DuplicateColumn",
+            "DuplicateTable",
+            "ProgrammingError",
+            "SyntaxError",
+            "InvalidColumnReference",
+            "WrongObjectType",
+            "InsufficientPrivilege",
+            "GroupingError",
+            "DatatypeMismatch",
+            "InvalidTextRepresentation",
+            "ForeignKeyViolation",
+            "UniqueViolation",
+            "CheckViolation",
+            "NotNullViolation",
+            "ExclusionViolation",
+        }:
+            return True
+        # ``diag`` is present whenever the server answered with a SQLSTATE;
+        # combined with the OperationalError exclusion above, this is a
+        # statement rejection from a server that was reached.
+        if getattr(exc, "diag", None) is not None:
+            return True
+        if getattr(exc, "sqlstate", None):
+            return True
+    except Exception:
+        return False
+    return False
 
 
 def _mask_secret_name(name: str) -> str:
@@ -774,6 +855,32 @@ def console_query(payload: dict[str, Any]) -> dict[str, Any]:
     database.  Results are capped at QUERY_LIMIT rows and the connection
     runs under a bounded timeout.
     """
+    counts: dict[str, Any] = {}
+
+    def _load_counts() -> None:
+        # Read the process-global counters FRESH on every render: the failed
+        # query below increments them during the call, so a snapshot taken at
+        # the top of this function would always report the PRE-call total and
+        # the UI would show query_errors one failure behind reality.
+        nonlocal counts
+        try:
+            from nexus_scalp.database.query_logging import query_observability_snapshot
+
+            counts = query_observability_snapshot() or {}
+        except Exception:
+            counts = {}
+
+    def _with_counts(payload: dict[str, Any]) -> dict[str, Any]:
+        # Attach the process-global query ERROR/WARNING counts so the UI can
+        # show the measured outcome alongside its own success/failure verdict.
+        # On a failed query these are the proof the DB-layer ERROR actually
+        # fired; on a slow one they explain why a 200 was still a warning.
+        _load_counts()
+        payload["query_errors"] = int(counts.get("query_errors") or 0)
+        payload["query_warnings"] = int(counts.get("query_warnings") or 0)
+        payload["slow_queries"] = int(counts.get("slow_queries") or 0)
+        return payload
+
     try:
         database = str(payload.get("database") or "audit")
         cfg: DatabaseConfig | None = None
@@ -837,25 +944,50 @@ def console_query(payload: dict[str, Any]) -> dict[str, Any]:
             truncated = len(fetched) > QUERY_LIMIT
             rows = fetched[:QUERY_LIMIT]
             columns = list(rows[0].keys()) if rows else []
-            return {
-                "success": True,
-                "database": database,
-                "provider": provider,
-                "columns": columns,
-                "rows": rows,
-                "truncated": truncated,
-                "rows_returned": len(rows),
-                "cap": QUERY_LIMIT,
-                "timestamp": _utc_now(),
-            }
+            return _with_counts(
+                {
+                    "success": True,
+                    "database": database,
+                    "provider": provider,
+                    "columns": columns,
+                    "rows": rows,
+                    "truncated": truncated,
+                    "rows_returned": len(rows),
+                    "cap": QUERY_LIMIT,
+                    "timestamp": _utc_now(),
+                }
+            )
         except Exception as exc:
             logger.warning("db_console query failed", exc_info=exc)
-            return _fail(exc, "running the console query", cfg)
+            return _with_counts(_fail(exc, "running the console query", cfg))
         finally:
             driver.close()
     except Exception as exc:
         logger.warning("db_console error", exc_info=exc)
-        return _fail(exc, "running the console query", cfg)
+        return _with_counts(_fail(exc, "running the console query", cfg))
+
+
+@router.get("/query-stats")
+def console_query_stats() -> dict[str, Any]:
+    """Query-observability surface for the DATABASE MANAGEMENT tab.
+
+    The provider badge on that tab answers "can we reach PostgreSQL"; this
+    answers the question the operator actually asks: "are PostgreSQL queries
+    working". A server that answers a connection probe while every query
+    fails is not healthy, and before this surface the UI had no way to show
+    the difference. Counts are process-global and monotonic, so a nonzero
+    ``query_errors`` after a real failure is proof the logging path fired.
+    """
+    from nexus_scalp.database.query_logging import query_observability_snapshot
+
+    try:
+        snapshot = query_observability_snapshot()
+    except Exception as exc:  # pragma: no cover - a health surface never dies
+        logger.warning("db_console query-stats failed", exc_info=exc)
+        return {"available": False, "error": type(exc).__name__}
+    if not isinstance(snapshot, dict):
+        return {"available": False, "error": "unexpected snapshot type"}
+    return {"available": True, **snapshot}
 
 
 @router.get("/quick")

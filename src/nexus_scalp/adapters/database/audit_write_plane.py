@@ -701,6 +701,28 @@ class AuditWritePlane:
                             payload_note="audit worker batch-retry failure",
                         )
                 self.audit_salvaged_rows += salvaged
+                # Full context (see the sibling site above): the masked
+                # statement + arity + the UNTRUNCATED error, so the live
+                # "query has 0 placeholders but 32 parameters" class is
+                # traceable to a query.
+                try:
+                    from nexus_scalp.database.query_logging import log_query_failure
+
+                    log_query_failure(
+                        operation="audit_batch_insert",
+                        exc=e,
+                        sql=batch[0][0] if batch else "",
+                        args=batch[0][1] if batch else (),
+                        domain="audit",
+                        kind="batch_write",
+                        extra={
+                            "batch_size": len(batch),
+                            "salvaged": salvaged,
+                            "dead_lettered": dead_lettered,
+                        },
+                    )
+                except Exception:
+                    pass
                 logger.error(
                     "Audit batch insert failed; recovery applied "
                     "batch=%d salvaged=%d dead_lettered=%d error_type=%s error=%s",
