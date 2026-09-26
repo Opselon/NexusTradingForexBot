@@ -364,12 +364,6 @@ def _split_top_level(body: str, sep: str = ",") -> list[str]:
 #: statement longer than _MAX_SHAPE_CHARS falls through to the unmodified
 #: pass-through path before this ever matches.
 _MAX_SHAPE_CHARS = 16_384
-_INSERT_SHAPE_PATTERN = re.compile(
-    r"^(?:INSERT\s+)?INTO\s+(?P<table>\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s*"
-    r"\((?P<cols>[^()]*)\)\s*"
-    r"VALUES\s*\((?P<vals>[^()]*)\)\s*(?P<tail>[^()]*)$",
-    re.IGNORECASE | re.DOTALL,
-)
 
 
 def _parse_insert_shape(remainder: str) -> dict[str, Any] | None:
@@ -378,37 +372,121 @@ def _parse_insert_shape(remainder: str) -> dict[str, Any] | None:
     Returns a dict with table/columns/values/tail, or ``None`` when the shape
     is anything but the single-row VALUES form: those statements pass through
     unchanged rather than risk malformed SQL.
+
+    SEC (py/redos / CodeQL #108): parsed by hand, not by regex. The previous
+    implementation compiled one pattern with several ``[^()]*`` classes over
+    the statement text, which CodeQL's polynomial-backtracking query flags on
+    any uncontrolled input. This scanner is strictly linear (single pass,
+    no backtracking, no nested quantifiers) and bounded by
+    :data:`_MAX_SHAPE_CHARS` first, so there is no path on which the work
+    scales super-linearly with the input.
     """
-    if len(remainder) > _MAX_SHAPE_CHARS:
-        # SEC (py/redos / CodeQL #108): bounds the work this regex can be asked
-        # to do. Past this length the statement is not the single-row shape we
-        # rewrite anyway, so it passes through untouched (fail-open).
+    body = remainder.strip()
+    if not body or len(body) > _MAX_SHAPE_CHARS:
+        # Oversized statements are not the single-row shape we rewrite; they
+        # pass through untouched (fail-open).
         return None
-    m = _INSERT_SHAPE_PATTERN.match(remainder.strip())
-    if m is None:
+
+    # ``INSERT INTO ...`` (the optional leading verb) — tolerate it so the
+    # helper stays usable on full statements.
+    if body[:7].upper() == "INSERT ":
+        body = body[6:].lstrip()
+    if body[:4].upper() != "INTO" or (len(body) > 4 and body[4].isspace() is False):
         return None
-    cols = [c.strip().strip('"') for c in _split_top_level(m.group("cols"))]
+    rest = body[4:].lstrip()
+
+    # table: either a double-quoted identifier or a bare one
+    if rest[:1] == '"':
+        end = rest.find('"', 1)
+        if end < 1:
+            return None
+        table = rest[1:end]
+        raw_table = rest[: end + 1]
+        rest = rest[end + 1 :].lstrip()
+    else:
+        m = _BARE_IDENT.match(rest)
+        if m is None:
+            return None
+        table = m.group(0)
+        raw_table = table
+        rest = rest[m.end() :].lstrip()
+
+    # (<cols>)
+    if not rest.startswith("("):
+        return None
+    close = _find_matching_paren(rest, 0)
+    if close < 0:
+        return None
+    cols_text = rest[1:close]
+    rest = rest[close + 1 :].lstrip()
+
+    # VALUES (<vals>) [tail]
+    if rest[:6].upper() != "VALUES" or (len(rest) > 6 and rest[6].isspace() is False):
+        return None
+    rest = rest[6:].lstrip()
+    if not rest.startswith("("):
+        return None
+    close = _find_matching_paren(rest, 0)
+    if close < 0:
+        return None
+    vals_text = rest[1:close]
+    tail = rest[close + 1 :].strip()
+
+    cols = [c.strip().strip('"') for c in _split_top_level(cols_text)]
     if not cols or any(not c for c in cols):
         return None
     # ``VALUES (..),(..)`` is a multi-row list: the conflict target of ONE
     # row cannot be resolved for a batch, and the rewritten clause would be
     # wrong for every row but the first.  Leave it to the caller.
-    if m.group("tail").lstrip().startswith(","):
+    if tail.lstrip().startswith(","):
         return None
-    # The table name reaches the catalog queries as a bound PARAMETER, so it
-    # must be the bare name: a quoted ``"order"`` would look up a table whose
-    # name literally contains the quotes and never match a constraint.  The
-    # original text is kept separately for the output, so a quoted identifier
-    # stays quoted (``_quote_ident`` re-quotes only the conflict target).
-    table = m.group("table").strip('"')
     return {
         "table": table,
-        "raw_table": m.group("table"),
+        "raw_table": raw_table,
         "cols": cols,
-        "raw_cols": m.group("cols"),
-        "vals": m.group("vals"),
-        "tail": m.group("tail").strip(),
+        "raw_cols": cols_text,
+        "vals": vals_text,
+        "tail": tail,
     }
+
+
+#: Bare (unquoted) SQL identifier — the ONLY regular expression this parser
+#: still applies to statement text, and it cannot backtrack: a single class
+#: over a fixed prefix, anchored at the start of a string that was already
+#: length-bounded by :data:`_MAX_SHAPE_CHARS`.
+_BARE_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _find_matching_paren(text: str, open_idx: int) -> int:
+    """Return the index closing the paren at ``open_idx``, or -1 if unbalanced.
+
+    Quotes are respected so a ``)`` inside a string literal cannot fool the
+    depth counter. Single pass, no backtracking.
+    """
+    depth = 0
+    i = open_idx
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch in "'\"":
+            j = i + 1
+            while j < n:
+                if text[j] == ch:
+                    if j + 1 < n and text[j + 1] == ch:
+                        j += 2
+                        continue
+                    break
+                j += 1
+            i = j + 1
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return -1
 
 
 def _resolve_conflict_target(
