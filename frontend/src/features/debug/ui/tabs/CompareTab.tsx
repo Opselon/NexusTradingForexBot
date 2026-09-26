@@ -12,7 +12,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { EmptyState, Skeleton, StatusBadge, Panel } from "@/components/primitives";
+import { EmptyState, ErrorState, Skeleton, StatusBadge, Panel } from "@/components/primitives";
 import { useI18n } from "@/stores/i18nStore";
 import { MonoValue } from "@/features/config/ui/kit";
 import type { CompareResult, DebugState } from "../../api";
@@ -89,6 +89,13 @@ export function CompareTab({ a, b, setA, setB }: { a: string | null; b: string |
         <>
           {serverDiff.isPending ? (
             <Skeleton count={2} />
+          ) : serverDiff.isError ? (
+            /* honest failure: a failed GET /api/debug/compare is shown as the
+               backend's own message, never collapsed into "no differences" */
+            <ErrorState
+              message={serverDiff.error instanceof Error ? serverDiff.error.message : t("debug.compare.read_failed", "server diff read failed")}
+              onRetry={() => void serverDiff.refetch()}
+            />
           ) : serverDiff.data && serverDiff.data.available === false ? (
             <div className="l3-note warn">{t("debug.compare.server_diff", "server diff: {reason}", { reason: String(serverDiff.data.reason ?? t("debug.compare.unavailable", "unavailable")) })}</div>
           ) : serverDiff.data ? (

@@ -290,6 +290,17 @@
   color: var(--text-dim);
 }
 
+/* error marker beside an absent rail value: the query failed, so the value
+   stays "—" and the cell carries the backend's own message (title/aria) */
+.dbg-rail-err {
+  display: inline-block;
+  margin-inline-start: 5px;
+  font-weight: 800;
+  color: var(--red);
+  text-shadow: 0 0 10px rgba(242, 86, 77, 0.65);
+  cursor: help;
+}
+
 @keyframes dbgLiveGlow {
   0%,
   100% {
