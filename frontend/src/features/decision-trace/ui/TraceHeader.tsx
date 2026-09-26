@@ -1,20 +1,46 @@
 /**
- * TraceHeader — runtime identity strip (§01/§38, RUNTIME TOPOLOGY OBSERVABILITY).
+ * TraceHeader — hero header for the decision-trace page (§01/§38, RUNTIME
+ * TOPOLOGY OBSERVABILITY).
  *
- * ENGINE · MODE · MT5 · SYMBOL · TF · MODEL · REGIME — every value is a
- * verbatim field from the shell's EngineSnapshot or the observer status.
- * Missing data renders `UNKNOWN`/`—`, never a synthesized value.
+ * Structure follows the wave's merged heroes (kicker → glyph + gradient
+ * title → description + endpoint provenance chips | status side), then the
+ * runtime identity rail: ENGINE · MODE · MT5 · SYMBOL · TF · MODEL · REGIME ·
+ * OBSERVER · SCHEMA — every value is a verbatim field from the shell's
+ * EngineSnapshot or the observer status. Missing data renders `UNKNOWN`/`—`,
+ * never a synthesized value.
  *
  * Status/mode/regime tokens shown as UI TEXT go through localized
  * enum→label maps (data tokens stay verbatim in payloads/comparisons);
- * technical identifiers (MT5, symbols, model ids, schema versions) render
- * verbatim in every language.
+ * technical identifiers (MT5, symbols, model ids, schema versions, endpoint
+ * paths) render verbatim in every language.
+ *
+ * OWNER:    uiux-modern-20260926 lane 6 (decision-trace).
+ * CONSUMES: EngineSnapshot props, observer status token, i18n.
+ * PROVIDES: <header class="dt-header"> hero + identity rail.
+ * INVARIANTS: presentation only — no query, no fetch, no changed value or
+ *           wording; endpoint paths are provenance FACTS copied from
+ *           api.ts's own endpoint list, never inferred here; class prefix
+ *           `dt` (contract §3).
+ * EXTEND:   new hero visuals go in decision-trace-hero.css, never a global.
  */
 
 import { useI18n } from "@/stores/i18nStore";
 import type { EngineSnapshot } from "@/types/domain";
 
 type T = (key: string, fallback: string) => string;
+
+/** Backend endpoints this page reads — verbatim from api.ts:5-17 (provenance). */
+const ENDPOINTS: readonly string[] = [
+  "/api/trace/observer",
+  "/api/trace/topology",
+  "/api/trace/latency",
+  "/api/trace/integrity",
+  "/api/trace/decisions",
+  "/api/trace/events",
+  "/api/trace/why/{event_id}",
+  "/api/trace/bundle/{key}",
+  "/api/trace/stream?last_seq=",
+];
 
 function val(v: unknown): string {
   if (v === null || v === undefined || v === "") return "UNKNOWN";
@@ -54,6 +80,16 @@ function observerLabel(t: T, status: string): string {
   }
 }
 
+/** Colour only — the displayed word is never changed by this map. */
+function toneOf(token: string | null | undefined): string {
+  const w = (token ?? "").toUpperCase();
+  if (!w || w === "UNKNOWN" || w === "—") return "unknown";
+  if (w === "ACTIVE" || w === "RUNNING") return "ok";
+  if (w === "ERROR" || w === "FAILED") return "fail";
+  if (w === "STARTING" || w === "STOPPING" || w === "OFF" || w === "RECONNECTING") return "warn";
+  return "neutral";
+}
+
 function RailItem({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   const unknown = value === "UNKNOWN" || value === "—";
   return (
@@ -89,37 +125,74 @@ export function TraceHeader({
 
   return (
     <header className="dt-header" role="banner">
-      <div className="dt-header-left">
-        <span className="dt-eyebrow">{t("trace.header.eyebrow", "RUNTIME TOPOLOGY OBSERVABILITY")}</span>
-        <h1 className="dt-title">{t("trace.header.title", "Decision Trace")}</h1>
+      <div className="dt-hero">
+        <span className="dt-hero-mesh" aria-hidden="true" />
+
+        <div className="dt-hero-main">
+          <div className="dt-eyebrow">
+            <span className="dt-eyebrow-dot" aria-hidden="true" />
+            {t("trace.header.eyebrow", "RUNTIME TOPOLOGY OBSERVABILITY")}
+            <span className="dt-eyebrow-rule" aria-hidden="true" />
+          </div>
+          <div className="dt-title-row">
+            <span className="dt-hero-glyph" aria-hidden="true">⌁</span>
+            <h1 className="dt-title">{t("trace.header.title", "Decision Trace")}</h1>
+          </div>
+          <p className="dt-hero-desc">
+            {t("trace.header.note", "Observability window into the live engine — the runtime is the only source of truth.")}
+          </p>
+          <div
+            className="dt-hero-endpoints"
+            aria-label={t("trace.header.endpoints", "backend endpoints this page reads")}
+          >
+            {ENDPOINTS.map((ep) => (
+              <span
+                className="dt-ep"
+                key={ep}
+                title={t(
+                  "trace.header.endpoint_title",
+                  "Provenance — backend endpoint {ep}: every figure on this page is read from it, never inferred here",
+                  { ep },
+                )}
+              >
+                <span className="dt-ep-dot" aria-hidden="true" />
+                {ep}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Status side — mirrors the page's OWN inputs (EngineSnapshot +
+         * observer query); it never polls anything of its own. */}
+        <div className="dt-hero-side">
+          <div
+            className={`dt-status-pill ${engineTone === "run" ? "ok" : "fail"}`}
+            title={
+              engine?.engine_running
+                ? t("trace.header.engine_running", "engine running")
+                : t("trace.header.engine_stopped", "engine stopped")
+            }
+          >
+            <span className="dt-status-dot" aria-hidden="true" />
+            <span className="dt-status-label">{t("trace.header.engine", "ENGINE")}</span>
+            <span className="dt-status-value">{engineStatus}</span>
+          </div>
+          <div className={`dt-status-pill ${toneOf(observerStatus)}`} title={`${t("trace.header.observer", "OBSERVER")}: ${observer}`}>
+            <span className="dt-status-dot" aria-hidden="true" />
+            <span className="dt-status-label">{t("trace.header.observer", "OBSERVER")}</span>
+            <span className="dt-status-value">{observerLabel(t, observer)}</span>
+          </div>
+        </div>
       </div>
 
       <div className="dt-header-rail" role="list" aria-label={t("trace.header.identity", "Runtime identity")}>
-        <div
-          className={`dt-rail-item engine ${engineTone}`}
-          title={
-            engine?.engine_running
-              ? t("trace.header.engine_running", "engine running")
-              : t("trace.header.engine_stopped", "engine stopped")
-          }
-        >
-          <span className="dt-rail-label">{t("trace.header.engine", "ENGINE")}</span>
-          <span className="dt-rail-value">{engineStatus}</span>
-        </div>
         <RailItem label={t("trace.header.mode", "MODE")} value={modeLabel(t, mode)} mono />
         <RailItem label="MT5" value={val(engine?.adapter_class)} mono />
         <RailItem label={t("trace.header.symbol", "SYMBOL")} value={val(engine?.symbol)} mono />
         <RailItem label={t("trace.header.tf", "TF")} value={val(engine?.data_source)} mono />
         <RailItem label={t("trace.header.model", "MODEL")} value={val(engine?.model?.model_id)} mono />
         <RailItem label={t("trace.header.regime", "REGIME")} value={regimeLabel(t, regime)} mono />
-        <RailItem label={t("trace.header.observer", "OBSERVER")} value={observerLabel(t, observer)} mono />
         <RailItem label={t("trace.header.schema", "SCHEMA")} value={schemaVersion ? `v${schemaVersion}` : "UNKNOWN"} mono />
-      </div>
-
-      <div className="dt-header-right">
-        <span className="dt-header-note">
-          {t("trace.header.note", "Observability window into the live engine — the runtime is the only source of truth.")}
-        </span>
       </div>
     </header>
   );

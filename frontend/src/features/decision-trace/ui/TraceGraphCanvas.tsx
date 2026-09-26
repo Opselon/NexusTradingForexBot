@@ -100,6 +100,20 @@ const NodeView = memo(function NodeView({
       tabIndex={0}
       aria-label={t("trace.canvas.node_aria", "stage {stage}, {count} events", { stage: v.node.stage, count: v.node.count }) + (v.node.terminal ? `, ${t("trace.canvas.terminal", "terminal")}` : "") + (v.node.provenanceGap ? `, ${t("trace.canvas.provenance_gap", "provenance gap")}` : "")}
     >
+      {/* Glow ring behind the node body. Lane 6: replaces the old animated
+       * `filter: drop-shadow` — the halo's only animated property is
+       * opacity (see decision-trace-graph.css). Painted for both the
+       * selected node and an in-flight (pulsing) node; static otherwise. */}
+      {v.pulse || selected ? (
+        <rect
+          x={-3}
+          y={-3}
+          width={v.width + 6}
+          height={v.height + 6}
+          rx={11}
+          className="dt-node-halo"
+        />
+      ) : null}
       <rect width={v.width} height={v.height} rx={8} className="dt-node-body" />
       {v.extCls ? <rect width={v.width} height={v.height} rx={8} className={`dt-ext ${v.extCls}`} /> : null}
       <text x={v.width / 2} y={17} textAnchor="middle" className="dt-node-label">

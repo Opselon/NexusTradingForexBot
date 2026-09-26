@@ -7,8 +7,8 @@
  * Double-click stages a row for the A/B compare (§37).
  */
 
-import { memo } from "react";
-import { EmptyState, LoadingState, Segmented } from "@/components/primitives";
+import { memo, useCallback, useMemo } from "react";
+import { EmptyState, ErrorState, LoadingState, Segmented } from "@/components/primitives";
 import { useI18n } from "@/stores/i18nStore";
 import type { DecisionRow } from "../types";
 import type { TraceFilter } from "../store";
@@ -24,6 +24,10 @@ interface Props {
   onSelect: (row: DecisionRow) => void;
   selectedId: string | null;
   onComparePair?: (pair: [DecisionRow, DecisionRow] | null) => void;
+  /** Backend's own words for a failed /decisions fetch (never "no decisions"). */
+  error?: string | null;
+  /** request_id the backend attached to that failure — audit trail. */
+  requestId?: string | null;
 }
 
 const FILTERS: Array<{ id: TraceFilter; label: string }> = [
@@ -130,8 +134,22 @@ export function TraceDecisions({
   onSelect,
   selectedId,
   onComparePair,
+  error,
+  requestId,
 }: Props) {
   const t = useI18n((s) => s.t);
+  /** Stable identity so memo(Row) is not defeated by a fresh closure per row. */
+  const handleCompare = useCallback(
+    (row: DecisionRow) => {
+      onComparePair?.([row, row]);
+    },
+    [onComparePair],
+  );
+  /** Filter labels re-localize only when the locale changes, not per render. */
+  const filterOptions = useMemo(
+    () => FILTERS.map((f) => ({ id: f.id, label: filterLabel(t, f.id) })),
+    [t],
+  );
   return (
     <section className="dt-decisions" aria-label={t("trace.decisions.region", "Decision feed")}>
       <header className="dt-dec-head">
@@ -145,11 +163,13 @@ export function TraceDecisions({
           onChange={(e) => onSearch(e.target.value)}
         />
         <div className="dt-dec-filter">
-          <Segmented options={FILTERS.map((f) => ({ id: f.id, label: filterLabel(t, f.id) }))} value={filter} onChange={(f) => onFilter(f)} />
+          <Segmented options={filterOptions} value={filter} onChange={(f) => onFilter(f)} />
         </div>
       </header>
       {loading ? (
         <LoadingState label={t("trace.decisions.loading", "Loading recorded decisions…")} />
+      ) : error ? (
+        <ErrorState message={error} requestId={requestId} />
       ) : !rows.length ? (
         <EmptyState
           message={t("trace.decisions.empty_message", "No decisions recorded in this session.")}
@@ -157,16 +177,13 @@ export function TraceDecisions({
         />
       ) : (
         <div className="dt-d-list">
-          {rows.map((row) => (
+          {rows.map((row, i) => (
             <Row
-              key={row.decision_id ?? row.trace_id ?? Math.random()}
+              key={row.decision_id ?? row.trace_id ?? `${row.recorded_at ?? "row"}-${i}`}
               row={row}
               selected={selectedId === row.decision_id}
               onSelect={onSelect}
-              onDouble={(r) => {
-                if (!onComparePair) return;
-                onComparePair([r, r]);
-              }}
+              onDouble={handleCompare}
             />
           ))}
         </div>

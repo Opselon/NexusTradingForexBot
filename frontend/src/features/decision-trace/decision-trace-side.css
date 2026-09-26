@@ -1,0 +1,240 @@
+/* ============================================================
+   Decision Trace — inspector / replay / compare / footer
+   (namespace `dt-`). Split from decision-trace.css to keep every
+   stylesheet under 500 lines. Imported by ui/DecisionTracePage.tsx.
+   ============================================================ */
+
+/* --------------------------------------------------- inspector */
+.dt-inspector {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  padding: 10px 12px;
+  min-height: 200px;
+}
+.dt-insp-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.dt-insp-title {
+  font-weight: 700;
+  font-size: 13px;
+}
+.dt-src-badge {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+}
+.dt-src-badge.live { color: var(--green); border-color: var(--green); }
+.dt-src-badge.replay { color: var(--violet); border-color: var(--violet); }
+.dt-src-badge.historical { color: var(--accent); border-color: var(--accent); }
+.dt-insp-close {
+  margin-inline-start: auto;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 13px;
+}
+.dt-insp-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  margin-bottom: 8px;
+}
+.dt-insp-id code {
+  font-size: 11px;
+  color: var(--accent-strong);
+}
+.dt-insp-id-label {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+}
+.dt-insp-empty,
+.dt-stage-panel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  padding: 10px 12px;
+}
+.dt-insp-empty-title,
+.dt-insp-sec-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.dt-insp-empty-sub {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 6px;
+}
+.dt-insp-sec {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-top: 8px;
+}
+.dt-insp-sec-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 5px;
+}
+.dt-field {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+}
+.dt-field-label {
+  flex: 0 0 124px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.dt-field-value {
+  color: var(--text);
+  word-break: break-all;
+}
+.dt-field.unknown .dt-field-value {
+  color: var(--amber);
+  font-style: italic;
+}
+.dt-why {
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--bg-inset);
+}
+.dt-why.reject { border-color: var(--red); background: var(--red-dim); }
+.dt-why.pass { border-color: var(--green); background: var(--green-dim); }
+.dt-why-status {
+  font-weight: 700;
+  font-size: 12px;
+}
+.dt-why-list {
+  margin: 6px 0 0;
+  padding-inline-start: 18px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.dt-notreached-row {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  padding: 3px 0;
+}
+.dt-notreached-row span { color: var(--text-faint); }
+.dt-stage-meta { font-size: 11px; color: var(--text-dim); }
+.dt-stage-list {
+  margin: 6px 0 0;
+  padding-inline-start: 16px;
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--text-faint);
+}
+.dt-source {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+
+/* ------------------------------------------------------ replay */
+.dt-replay {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.dt-replay.active {
+  border-color: var(--violet);
+}
+.dt-replay-btn {
+  min-width: 28px;
+  height: 24px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+}
+.dt-replay-btn:disabled { opacity: 0.4; cursor: default; }
+.dt-replay-pos {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.dt-replay-speeds {
+  display: flex;
+  gap: 3px;
+}
+.dt-replay-speed {
+  min-width: 30px;
+  height: 22px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 10px;
+  font-family: var(--mono);
+}
+.dt-replay-speed.active {
+  color: var(--violet);
+  border-color: var(--violet);
+}
+.dt-replay-btn.exit { color: var(--red); }
+
+/* ------------------------------------------------------ compare */
+.dt-compare {
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  padding: 10px 12px;
+}
+.dt-compare-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.dt-compare-cols,
+.dt-compare-rows {
+  display: grid;
+  grid-template-columns: 1fr 110px 1fr;
+  gap: 4px;
+}
+.dt-compare-col-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent-strong);
+}
+.dt-compare-label {
+  font-size: 10px;
+  color: var(--text-faint);
+  text-align: center;
+  font-family: var(--mono);
+}
+.dt-compare-val {
+  font-size: 11px;
+  color: var(--text);
+  word-break: break-all;
+}
+.dt-compare-row.diff .dt-compare-val {
+  color: var(--amber);
+}
