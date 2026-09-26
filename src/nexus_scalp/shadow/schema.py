@@ -358,6 +358,14 @@ _STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_gov_events_model ON model_governance_events(model_id, timestamp);",
     "CREATE INDEX IF NOT EXISTS idx_gov_state_model ON model_governance_state(model_id);",
     "CREATE INDEX IF NOT EXISTS idx_gov_comp_ts ON model_shadow_comparisons(timestamp);",
+    # Lane B (PG upsert parity): INSERT OR REPLACE keyed on the natural key
+    # needs a covering constraint for the PostgreSQL ON CONFLICT target. SQLite
+    # treats the auto-index as an implementation detail; PostgreSQL requires it
+    # to exist, so both DDL locations declare it (see governance/store.py).
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_gov_state_key "
+    "ON model_governance_state(model_id, model_version);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_gov_health_checked_at "
+    "ON model_runtime_health(checked_at);",
 )
 
 #: The tables this domain provisions (the fabric's ``verify_domain_schema``
