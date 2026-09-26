@@ -45,7 +45,7 @@
 }
 .l4-chip.bad {
   border-color: rgba(242, 86, 77, 0.45);
-  color: #ff8f89;
+  color: rgba(255, 143, 137, 1);
 }
 .l4-chip.warn {
   border-color: rgba(235, 161, 63, 0.45);

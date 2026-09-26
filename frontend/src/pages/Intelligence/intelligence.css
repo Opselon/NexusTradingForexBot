@@ -174,7 +174,7 @@
 .ix-livechip.bad {
   border-color: rgba(242, 86, 77, 0.45);
   background: rgba(242, 86, 77, 0.08);
-  color: #ff8f89;
+  color: rgba(255, 143, 137, 1);
 }
 .ix-livechip.dim {
   color: var(--text-dim);

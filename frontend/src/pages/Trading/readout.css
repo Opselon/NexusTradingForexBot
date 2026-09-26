@@ -142,7 +142,7 @@
   background: var(--bg-panel-2);
 }
 .tr-side-buy { color: var(--green); border-color: rgba(62, 207, 142, 0.4); background: var(--green-dim); }
-.tr-side-sell { color: #ff8f89; border-color: rgba(242, 86, 77, 0.45); background: var(--red-dim); }
+.tr-side-sell { color: rgba(255, 143, 137, 1); border-color: rgba(242, 86, 77, 0.45); background: var(--red-dim); }
 
 .tr-tone-badge {
   display: inline-flex; align-items: center; gap: 5px;
@@ -295,7 +295,7 @@
 }
 .tr-chip:hover { transform: translateY(-1px); border-color: var(--accent); }
 .tr-chip-good { color: var(--green); border-color: rgba(62, 207, 142, 0.42); background: var(--green-dim); }
-.tr-chip-bad { color: #ff8f89; border-color: rgba(242, 86, 77, 0.45); background: var(--red-dim); }
+.tr-chip-bad { color: rgba(255, 143, 137, 1); border-color: rgba(242, 86, 77, 0.45); background: var(--red-dim); }
 .tr-chip-warn { color: var(--amber); border-color: rgba(235, 161, 63, 0.42); background: var(--amber-dim); }
 .tr-chip-mid { color: var(--violet); border-color: rgba(157, 123, 240, 0.42); background: rgba(157, 123, 240, 0.12); }
 .tr-struct-none { color: var(--text-faint); font-family: var(--mono); font-size: 11px; }
