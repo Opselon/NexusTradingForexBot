@@ -158,6 +158,11 @@ jobs:
           POSTGRES_DB: nse_pgarm
           POSTGRES_USER: pgarm
           POSTGRES_PASSWORD: pgarm
+          # The PG arm creates and drops its own scratch DATABASES
+          # (test_pg_safety_persistence / test_rtf001_real_postgresql_schema)
+          # and needs CREATEDB to do it. The postgres image's POSTGRES_USER is
+          # a superuser by default, so this is belt-and-braces documentation:
+          # the gate cannot pass against a non-privileged user.
         ports:
           - 5432:5432
         options: >-

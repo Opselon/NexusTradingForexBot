@@ -525,13 +525,21 @@ def test_provider_db_path_falls_back_to_the_workspace_for_a_bare_dsn() -> None:
 
 
 @pytest.fixture()
-def pg_repo() -> Generator[AuditRepository, None, None]:
+def pg_repo(pg_registry: None) -> Generator[AuditRepository, None, None]:
     """A repository on a scratch database, isolated from the live one.
 
     The connection URL comes from ``NSE_PG_TEST_URL`` and the password from
     the OS-backed secret store (never from this file or any log line) — the
     suite's established PostgreSQL arm convention
     (``tests/unit/test_rtf001_real_postgresql_schema.py``).
+
+    REGR-012: this fixture takes ``pg_registry`` so the process-global fabric
+    registry is CLEARED around every live test. Without it, an earlier test's
+    provisioning (pointing at the live database, then closed with the
+    connection) stayed registered, and this fixture's repository resolved
+    that stale closed pool instead of its own scratch database — every
+    synchronous safety write then failed with "pg pool is not open" while the
+    same call succeeded in isolation.
     """
     assert PG_URL, "NSE_PG_TEST_URL must be set"
     scratch_name = "nse_laneb_test"
@@ -575,12 +583,45 @@ def pg_repo() -> Generator[AuditRepository, None, None]:
         _admin(f'CREATE DATABASE "{scratch_name}"')
 
     _reset_scratch()
+
+    # REGR-009: the scratch database was created EMPTY. The safety writers
+    # expect their tables to exist (the schema bootstrap they were written
+    # against is SQLite-only — it emits AUTOINCREMENT and runs over a SQLite
+    # connection), so on a fresh PostgreSQL database every write failed with
+    # 'pg pool is not open' / 'relation does not exist'. This provisions the
+    # scratch database the same way the sibling RTF-001 test does: apply the
+    # translated schema replay. The live domain gets this from the boot replay;
+    # a scratch database does not.
+    from nexus_scalp.database.migration import sqlite_ddl_statements
+    from nexus_scalp.database.migration.pg_schema import translate_ddl
+
+    with psycopg.connect(url, connect_timeout=10, autocommit=False) as conn:
+        for stmt in sqlite_ddl_statements():
+            with conn.cursor() as cur:
+                cur.execute(translate_ddl(stmt))
+        conn.commit()
+
     repo = AuditRepository(db_url=url)
     try:
         yield repo
     finally:
         repo.close()
         _reset_scratch()
+
+
+@pytest.fixture()
+def pg_repo_url(pg_repo: AuditRepository) -> str:
+    """The scratch database URL ``pg_repo`` writes to.
+
+    REGR-011: the breaker-anchor tests verify the persisted row by opening
+    their OWN connection, and that connection must point at the same scratch
+    database the repository writes to. It previously split the LIVE
+    ``PG_URL``, so the verification read a row the test never wrote — a stale
+    value left by an earlier run made the assertion compare against the wrong
+    number (10100.0 vs the 101_000.0 just written), and on a clean run the
+    row was absent entirely.
+    """
+    return pg_repo._db_url
 
 
 @needs_postgres
@@ -605,7 +646,9 @@ def test_postgresql_safety_state_round_trip(pg_repo: AuditRepository) -> None:
 
 
 @needs_postgres
-def test_postgresql_breaker_anchors_survive_a_restart(pg_repo: AuditRepository) -> None:
+def test_postgresql_breaker_anchors_survive_a_restart(
+    pg_repo: AuditRepository, pg_repo_url: str
+) -> None:
     """D3/BUG-259: anchors written by 'process 1' must be readable on boot.
 
     This is the capital-protection invariant: a loss taken before a restart
@@ -627,9 +670,11 @@ def test_postgresql_breaker_anchors_survive_a_restart(pg_repo: AuditRepository) 
 
     # Same psycopg v3 caveat as the fixture: the password must be a separate
     # connection kwarg, not embedded in the libpq keyword DSN string.
+    # REGR-011: verify against the SCRATCH database the repo writes to
+    # (pg_repo_url), never the live PG_URL.
     from nexus_scalp.database.fabric.pg_planes import _split_dsn_secret
 
-    _verify_conninfo, _verify_kwargs = _split_dsn_secret(PG_URL)
+    _verify_conninfo, _verify_kwargs = _split_dsn_secret(pg_repo_url)
     with psycopg.connect(_verify_conninfo, **_verify_kwargs) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT breaker_day_anchor, breaker_day_utc, breaker_week_anchor, "

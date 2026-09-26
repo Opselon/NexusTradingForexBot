@@ -1257,6 +1257,10 @@ class AuditRepository:
             # so the SQLite branch's statement text is reused verbatim — one
             # statement shape for both providers, matching the parity contract
             # the rest of the repository already uses.
+            # The SQLite statement text is reused verbatim for the parity
+            # contract; the write plane's translate_sql converts the OR-verb
+            # for the pooled backend, and the driver translates ? -> %s at the
+            # execution boundary.
             return self._provider_execute_write(
                 [
                     (
@@ -2602,13 +2606,29 @@ class AuditRepository:
         ``_build_write_plane`` on the first non-SQLite boot, so a value fixed
         at construction would permanently observe ``None`` on a fresh process
         — the RTF-002 class of bug.
+
+        REGR-010: a bare ``AuditRepository()`` on an UNPROVISIONED domain
+        (every fresh process, and every test that points at a scratch database
+        nothing else has touched) used to resolve ``None`` here and silently
+        fail every synchronous safety write with "no pooled write backend" —
+        reported as a caller-visible False. The same auto-provisioning
+        ``_build_pooled_write_backend`` already implements applies here: if
+        the domain is not yet registered, bootstrap it from this instance's
+        resolved DSN. A safety write must never fail because nobody booted
+        first.
         """
         if self._is_sqlite:
             return None
         try:
             from nexus_scalp.database.fabric import get_domain_backend
 
-            return get_domain_backend("audit", readonly=False)
+            backend = get_domain_backend("audit", readonly=False)
+            if backend is not None:
+                return backend
+            # Nothing provisioned this domain yet (fresh process, or a scratch
+            # database only this instance knows about). Bootstrap it from the
+            # resolved DSN rather than reporting a failure to the caller.
+            return self._build_pooled_write_backend()
         except Exception as exc:
             logger.error("[DB-FABRIC] audit write backend unavailable: %s", exc)
             return None

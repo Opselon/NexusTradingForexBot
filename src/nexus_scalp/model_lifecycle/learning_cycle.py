@@ -462,7 +462,17 @@ class _SqlitePathShim:
 
     def _connect_sqlite(self, timeout: float = 5.0) -> sqlite3.Connection:
         uri = self._db_path.startswith("file:")
-        return sqlite3.connect(self._db_path, timeout=timeout, uri=uri)
+        conn = sqlite3.connect(self._db_path, timeout=timeout, uri=uri)
+        # REGR-014: the shared provider helpers do ``dict(row)`` on every row
+        # (provider_store._sqlite_rows) and index rows as ``row["col"]`` —
+        # both need sqlite3.Row. A raw connection yields plain tuples here:
+        # dict(row) raises "dictionary update sequence element #0 has length
+        # 15; 2 is required", the read degrades to [], and get_cycle() returns
+        # None for a row that exists. Latent until the store took the SQLite
+        # path (the pooled registry deciding otherwise), which is exactly when
+        # this shim is the connection it uses.
+        conn.row_factory = sqlite3.Row
+        return conn
 
 
 class _PooledRepoShim:
