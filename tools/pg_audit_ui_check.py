@@ -32,7 +32,6 @@ DSN = os.environ["NEXUS_AUDIT_DB"]
 
 
 def main() -> int:
-    app = type("App", (), {})()  # throwaway namespace
     from fastapi import FastAPI
 
     api = FastAPI()
@@ -63,9 +62,7 @@ def main() -> int:
             got = counts.get(want_table)
             print(f"  {want_table}: rows={got}")
             if got != want_rows:
-                failures.append(
-                    f"console/tables {want_table}: expected {want_rows}, got {got}"
-                )
+                failures.append(f"console/tables {want_table}: expected {want_rows}, got {got}")
         # A table that reports None means the count failed -> degraded read.
         none_tables = [t for t, r in counts.items() if r is None]
         if none_tables:

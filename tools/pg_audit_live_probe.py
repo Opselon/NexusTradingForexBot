@@ -45,9 +45,7 @@ def main() -> int:
         repo._log_guard_telemetry(_DummyProposal(), "GUARD_OTHER")
 
     # --- set_runtime_risk_state (synchronous safety write) ------------------
-    repo.set_runtime_risk_state(
-        state="HALTED", reason="lane-a-live-probe", source="pg-mig-audit"
-    )
+    repo.set_runtime_risk_state(state="HALTED", reason="lane-a-live-probe", source="pg-mig-audit")
     repo.set_runtime_risk_state(state="RUNNING", reason="released", source="probe")
 
     # --- the financial producers -------------------------------------------
@@ -205,17 +203,12 @@ def main() -> int:
                 if got != want:
                     failures.append(f"{table}: expected {want}, got {got}")
             # The accumulator contract: 5 GUARD_OK -> count 5, 3 GUARD_OTHER -> 3.
-            cur.execute(
-                "SELECT reason_code, count FROM audit_guard_telemetry "
-                "ORDER BY reason_code"
-            )
+            cur.execute("SELECT reason_code, count FROM audit_guard_telemetry ORDER BY reason_code")
             for reason_code, count in cur.fetchall():
                 print(f"  guard {reason_code} -> {count}")
                 want = 5 if reason_code == "GUARD_OK" else 3
                 if count != want:
-                    failures.append(
-                        f"guard telemetry {reason_code}: expected {want}, got {count}"
-                    )
+                    failures.append(f"guard telemetry {reason_code}: expected {want}, got {count}")
             cur.execute("SELECT state FROM runtime_risk_state WHERE id=1")
             print("  runtime_risk_state ->", cur.fetchone())
             cur.execute("SELECT count(*) FROM audit_dead_letter")

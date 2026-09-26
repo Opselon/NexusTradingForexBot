@@ -347,9 +347,8 @@ def run_infrastructure_doctor(config_path: Path) -> bool:
                     "`nexus db-portability switch sqlite`."
                 )
             else:
-                db_detail = (
-                    f"Provider {db_provider_name}"
-                    + (f" · {db_cfg.host}:{db_cfg.port}" if db_cfg.is_postgresql else "")
+                db_detail = f"Provider {db_provider_name}" + (
+                    f" · {db_cfg.host}:{db_cfg.port}" if db_cfg.is_postgresql else ""
                 )
         except Exception as err:
             # Read-only diagnostics: never fail the launch on a settings-DB
