@@ -31,6 +31,13 @@ export interface SignedBucketChartProps {
 
 const W = 640;
 
+/** Bucket axis/tooltip number format — module-level, one shared closure. */
+const fmtBucket = (v: number): string => fmtCompact(v, 2);
+
+/** Default bucket caption from the backend timestamp; "" when it is absent. */
+const defaultBucketLabel = (b: SignedBucket): string =>
+  b.bucket_start ? new Date(b.bucket_start).toLocaleString("en-GB", { hour12: false }) : "";
+
 export function SignedBucketChart({ buckets, height = 180, emptyHint, bucketLabel }: SignedBucketChartProps) {
   const t = useI18n((s) => s.t);
   const emptyHintText = emptyHint ?? t("ui.viz.sb_empty", "no timeline buckets from the backend");
@@ -54,8 +61,8 @@ export function SignedBucketChart({ buckets, height = 180, emptyHint, bucketLabe
 
   if (geo === null) return <div className="viz-empty">{emptyHintText}</div>;
   const { toY, step, barW } = geo;
-  const fmt = (v: number) => fmtCompact(v, 2);
-  const label = bucketLabel ?? ((b: SignedBucket) => (b.bucket_start ? new Date(b.bucket_start).toLocaleString("en-GB", { hour12: false }) : ""));
+  const fmt = fmtBucket;
+  const label = bucketLabel ?? defaultBucketLabel;
   return (
     <div className="viz-frame">
       <svg className="viz" viewBox={`0 0 ${W} ${height}`} role="img" aria-label={t("ui.viz.sb_aria", "impact timeline, {n} buckets", { n: buckets.length })}>

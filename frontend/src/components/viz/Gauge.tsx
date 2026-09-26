@@ -50,7 +50,15 @@ export function Gauge({ label, value, min = 0, max = 1, format, tone, verdict, s
           : value.toFixed(2);
   return (
     <svg className="viz" viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${label}: ${readout}`}>
-      <path className="gauge-track" d={arcPath(cx, cy, r, START, START + SWEEP)} fill="none" strokeWidth={7} strokeLinecap="round" />
+      {/* No backend value -> dashed indeterminate track (see viz.css
+          `.gauge-track.unknown`); the arc is simply never drawn. */}
+      <path
+        className={`gauge-track${ratio === null ? " unknown" : ""}`}
+        d={arcPath(cx, cy, r, START, START + SWEEP)}
+        fill="none"
+        strokeWidth={7}
+        strokeLinecap="round"
+      />
       {ratio !== null && <path className={`gauge-value ${cls}`} d={arcPath(cx, cy, r, START, angle)} fill="none" />}
       <text className="gauge-center" x={cx} y={cy + 2} textAnchor="middle" fontSize={size * 0.17}>
         {readout}

@@ -1,51 +1,134 @@
 /* Shared SVG visualization kit — tokens only, RTL-safe (logical props).
-   Charts never hardcode colors; series map to semantic tokens. */
+   Charts never hardcode colors; series map to semantic tokens.
+   OWNER: uiux-modern-20260926 lane 2 (components/viz) — future edits go here.
+   INVARIANTS: colour only from theme tokens (ramps are color-mix() over
+   --green/--red/--amber/--accent), a null sample is a gap or an explicit
+   UNKNOWN, motion only inside prefers-reduced-motion: no-preference. */
 
+/* ---- chart canvas -------------------------------------------------------- */
 .viz {
   display: block;
-  width: 100%;
-  height: auto;
+  inline-size: 100%;
+  block-size: auto;
   overflow: visible;
 }
 .viz-frame {
   position: relative;
   inline-size: 100%;
 }
+
+/* ---- axis captions ------------------------------------------------------- */
+/* A 2px panel-coloured halo (paint-order, not a filter) keeps a caption
+   readable where it crosses a gridline or the series itself. Tabular figures
+   come from the global rule; letter-spacing here is display-only. */
 .viz-axis {
   font-family: var(--mono);
-  font-size: 9px;
-  fill: var(--text-faint);
+  font-size: 10px;
+  fill: var(--text-dim);
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  stroke: color-mix(in srgb, var(--bg-panel) 80%, transparent);
+  stroke-width: 2.4px;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
 }
-.viz-grid { stroke: var(--border); stroke-width: 1; }
-.viz-zero { stroke: var(--border-strong); stroke-width: 1; }
-.viz-line { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+
+/* ---- gridlines ----------------------------------------------------------- */
+/* Hairlines sit behind the data: --border at reduced opacity + crispEdges so
+   a 1px rule never renders as a 2px blur on fractional viewBox scales. */
+.viz-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  opacity: 0.55;
+  shape-rendering: crispEdges;
+}
+.viz-zero {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  opacity: 0.9;
+  shape-rendering: crispEdges;
+}
+
+/* ---- series -------------------------------------------------------------- */
+.viz-line {
+  fill: none;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
 .viz-line.pos { stroke: var(--green); }
 .viz-line.neg { stroke: var(--red); }
 .viz-line.neu { stroke: var(--accent); }
+/* `.dim` stays solid: a caller (e.g. a dim sparkline) may want a quiet but
+   unbroken trace — the peak reference owns its own dash pattern inline. */
 .viz-line.dim { stroke: var(--text-faint); }
-.viz-area.pos { fill: var(--green-dim); }
-.viz-area.neg { fill: var(--red-dim); }
-.viz-area.neu { fill: rgba(65, 166, 242, 0.10); }
+
+/* Area fills: token ramps (transparent -> semantic), never a raw hex. */
+.viz-area.pos { fill: color-mix(in srgb, var(--green) 16%, transparent); }
+.viz-area.neg { fill: color-mix(in srgb, var(--red) 18%, transparent); }
+.viz-area.neu { fill: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+/* Bars keep the full-strength token; the hairline edge is what separates two
+   neighbouring bars on the same panel without adding per-bar geometry. */
+.viz-bar {
+  stroke: color-mix(in srgb, var(--bg-panel) 55%, transparent);
+  stroke-width: 0.75;
+}
 .viz-bar.pos { fill: var(--green); }
 .viz-bar.neg { fill: var(--red); }
 .viz-bar.neu { fill: var(--text-faint); }
-.viz-dot { stroke: var(--bg-panel); stroke-width: 1; }
-.viz-empty {
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  min-block-size: 72px; color: var(--text-faint); font-size: 11px; font-family: var(--mono);
-  border: 1px dashed var(--border); border-radius: 8px;
-  background: var(--bg-inset);
-  padding-inline: 12px; text-align: center; overflow-wrap: break-word;
+
+/* Endpoint dot: panel-coloured halo, no filter. */
+.viz-dot {
+  stroke: var(--bg-panel);
+  stroke-width: 2;
+  paint-order: stroke;
 }
+
+/* ---- empty / loading surface -------------------------------------------- */
+/* Shared by the kit's own empty hints AND by feature panels that reuse the
+   class for their loading copy — it must read as an inset, not as a value. */
+.viz-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-block-size: 72px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-family: var(--mono);
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, var(--elevate-hi), transparent 55%),
+    var(--bg-inset);
+  box-shadow: var(--elev-1);
+  padding-inline: 12px;
+  text-align: center;
+  overflow-wrap: break-word;
+}
+
+/* ---- legend -------------------------------------------------------------- */
 .viz-legend {
-  display: flex; flex-wrap: wrap; gap: 4px 14px;
-  margin-block-start: 6px; font-family: var(--mono); font-size: 10px; color: var(--text-dim);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-block-start: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.03em;
   overflow-wrap: anywhere;
 }
 .viz-legend .sw {
-  display: inline-block; inline-size: 8px; block-size: 8px; border-radius: 2px;
-  margin-inline-end: 5px; vertical-align: middle;
+  display: inline-block;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 2px;
+  margin-inline-end: 5px;
+  vertical-align: middle;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bg) 45%, transparent);
 }
 .viz-legend .sw.pos { background: var(--green); }
 .viz-legend .sw.neg { background: var(--red); }
@@ -53,43 +136,119 @@
 .viz-legend .sw.warn { background: var(--amber); }
 .viz-legend .sw.flat { background: var(--text-faint); }
 
-/* gauge */
-.gauge-track { stroke: var(--bg-panel-2); }
+/* ---- arc gauge ------------------------------------------------------------ */
+/* Track = recessed groove. `.unknown` is the indeterminate treatment: the
+   backend sent no value, so the ring is dashed and sweeps nothing. */
+.gauge-track { stroke: color-mix(in srgb, var(--border) 62%, var(--bg-inset)); }
+.gauge-track.unknown { stroke-dasharray: 4 6; }
 .gauge-value { stroke-width: 7; stroke-linecap: round; }
 .gauge-value.pos { stroke: var(--green); }
 .gauge-value.warn { stroke: var(--amber); }
 .gauge-value.bad { stroke: var(--red); }
 .gauge-value.neu { stroke: var(--accent); }
 .gauge-center {
-  font-family: var(--mono); font-weight: 700; fill: var(--text);
+  font-family: var(--mono);
+  font-weight: 700;
+  fill: var(--text);
   font-variant-numeric: tabular-nums;
 }
-.gauge-label { font-family: var(--mono); font-size: 8.5px; fill: var(--text-faint); letter-spacing: 0.12em; }
+.gauge-label {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  fill: var(--text-faint);
+  letter-spacing: 0.12em;
+}
 
-/* heat bar */
+/* ---- heat bar ------------------------------------------------------------- */
 .heatbar { display: grid; gap: 3px; }
 /* minmax(0,...) lets both side columns shrink when translated labels/captions
    are wider than the row; the label cell may then wrap instead of overflowing */
-.heatbar .row { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr) minmax(0, max-content); align-items: center; gap: 10px; }
-.heatbar .lab { font-size: 10px; color: var(--text-dim); font-family: var(--mono); letter-spacing: 0.06em; text-transform: uppercase; overflow-wrap: anywhere; }
-.heatbar .track { height: 14px; border-radius: 4px; background: var(--bg-inset); border: 1px solid var(--border); overflow: hidden; display: flex; }
-.heatbar .cell { block-size: 100%; }
-.heatbar .val { font-size: 10px; color: var(--text-dim); font-family: var(--mono); min-inline-size: 42px; text-align: end; overflow-wrap: anywhere; }
+.heatbar .row {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr) minmax(0, max-content);
+  align-items: center;
+  gap: 10px;
+  border-radius: 6px;
+}
+.heatbar .lab {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.heatbar .track {
+  block-size: 14px;
+  border-radius: 5px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 55%, transparent), transparent 60%),
+    var(--bg-inset);
+  border: 1px solid var(--border);
+  box-shadow: var(--elev-1);
+  overflow: hidden;
+  display: flex;
+}
+.heatbar .row:hover .track { border-color: var(--border-strong); }
+/* Unknown row (no backend ratio): dashed rail, never a filled zero. */
+.heatbar .row.unknown .track {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background:
+    repeating-linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--border) 55%, transparent) 0 4px,
+      transparent 4px 8px
+    ),
+    var(--bg-inset);
+}
+.heatbar .val {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  min-inline-size: 42px;
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+.heatbar .row.unknown .val { color: var(--text-faint); }
 /* RTL: mirror the segment strip so cell 0 sits at the start edge (right),
    matching the scale labels below, which flex-order with direction */
 :root[dir="rtl"] .heatbar .row .viz { transform: scaleX(-1); }
 .heatbar-scale {
-  display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9px;
-  color: var(--text-faint); margin-block-start: 4px;
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-faint);
+  margin-block-start: 4px;
 }
 
-/* waterfall connector */
-.viz-step-label { font-family: var(--mono); font-size: 8.5px; fill: var(--text-faint); }
-.viz-step-value { font-family: var(--mono); font-size: 9.5px; font-variant-numeric: tabular-nums; }
+/* ---- waterfall captions --------------------------------------------------- */
+.viz-step-label {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  fill: var(--text-faint);
+  letter-spacing: 0.04em;
+}
+.viz-step-value {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  stroke: color-mix(in srgb, var(--bg-panel) 80%, transparent);
+  stroke-width: 2.4px;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
+}
 .viz-step-value.pos { fill: var(--green); }
 .viz-step-value.neg { fill: var(--red); }
 .viz-step-value.neu { fill: var(--text-dim); }
 
-/* sparkline inline cell */
+/* ---- sparkline inline cell ------------------------------------------------ */
 .spark-cell { display: flex; align-items: center; gap: 8px; }
 .spark-cell .viz { inline-size: 96px; block-size: 22px; flex: 0 0 auto; }
+
+/* ---- motion (decoration only; everything reads with motion off) ----------- */
+@media (prefers-reduced-motion: no-preference) {
+  .heatbar .track { transition: border-color 0.15s ease; }
+  .viz-empty { transition: border-color 0.15s ease; }
+}
