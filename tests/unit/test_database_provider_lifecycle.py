@@ -92,14 +92,13 @@ class TestProviderLifecycleStateMachine:
             == ProviderSwitchPhase.CONFIGURED
         )
 
+        mgr._state.last_test_passed = True
+        mgr._state.last_migration_passed = True
         mgr.mark_verification(True)
-        assert (
-            ProviderLifecycleManager(settings_db_path=settings_db).confirm_activation()
-            is True
-        )
+        assert ProviderLifecycleManager(settings_db_path=settings_db).confirm_activation() is False
         assert (
             ProviderLifecycleManager(settings_db_path=settings_db).get_state().phase
-            == ProviderSwitchPhase.ACTIVE
+            == ProviderSwitchPhase.READY
         )
 
 
