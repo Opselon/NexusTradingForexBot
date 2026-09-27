@@ -165,7 +165,15 @@ class Reporter:
         stop_event: Any = None,
         local_python: str = "",
     ) -> ReportResult:
-        """Spec §19 watch loop. Terminates on timeout, stop event, or PASS."""
+        """Spec §19 watch loop. Terminates on timeout, stop event, or a settled verdict.
+
+        The loop's job is to land a FINAL report, so it stops as soon as the
+        evidence has settled — every collected check has a conclusion, so
+        ``FAIL`` is as terminal as ``PASS``. Waiting only for ``PASS`` would
+        keep re-collecting a stable red PR until the timeout, while stopping at
+        the first cycle freezes ``IN_PROGRESS`` on the comment. Neither is a
+        verdict.
+        """
         deadline = time.monotonic() + max(timeout_sec, 1)
         last: ReportResult | None = None
         iteration = 0
@@ -179,7 +187,8 @@ class Reporter:
             if on_cycle is not None:
                 on_cycle(result)
             last = result
-            if result.status == Status.PASS:
+            collection = result.collection
+            if collection is not None and collection.settled:
                 break
             if time.monotonic() + poll_sec > deadline:
                 break
