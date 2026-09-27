@@ -53,6 +53,7 @@ logger = get_logger("nexus_scalp.web.db_provider_routes")
 
 def _lifecycle_manager() -> Any:
     from nexus_scalp.database.provider_lifecycle import ProviderLifecycleManager
+
     return ProviderLifecycleManager()
 
 
@@ -278,16 +279,24 @@ def transition_migrate(payload: dict[str, Any], request: Request) -> dict[str, A
         source = load_database_config("audit")
         target = DatabaseConfig.for_postgres("audit")
         if not source.is_sqlite:
-            return _err("DB_TRANSITION_MIGRATE_INVALID", "Migration requires SQLite as the source.", request_id)
+            return _err(
+                "DB_TRANSITION_MIGRATE_INVALID",
+                "Migration requires SQLite as the source.",
+                request_id,
+            )
         report = SqliteToPostgresMigrator(
-            source, target, MigrationOptions(batch_size=int((payload or {}).get("batch_size") or 2000))
+            source,
+            target,
+            MigrationOptions(batch_size=int((payload or {}).get("batch_size") or 2000)),
         ).run()
         passed = report.status == "SUCCESS"
         mgr.mark_migration(passed, "Migration failed" if not passed else "")
         return {"success": passed, "report": report.to_dict(), "state": mgr.get_state().to_dict()}
     except Exception as exc:
         log_web_error(logger, "/api/db/manage/transition/migrate", request_id, exc)
-        return _err("DB_TRANSITION_MIGRATE_FAILED", "Could not migrate to target provider.", request_id)
+        return _err(
+            "DB_TRANSITION_MIGRATE_FAILED", "Could not migrate to target provider.", request_id
+        )
 
 
 @router.post("/transition/verify")
@@ -300,7 +309,9 @@ def transition_verify(payload: dict[str, Any], request: Request) -> dict[str, An
         return {"success": passed, "state": mgr.get_state().to_dict()}
     except Exception as exc:
         log_web_error(logger, "/api/db/manage/transition/verify", request_id, exc)
-        return _err("DB_TRANSITION_VERIFY_FAILED", "Could not record provider verification.", request_id)
+        return _err(
+            "DB_TRANSITION_VERIFY_FAILED", "Could not record provider verification.", request_id
+        )
 
 
 @router.post("/transition/activate")
@@ -312,7 +323,9 @@ def transition_activate(request: Request) -> dict[str, Any]:
         return {"success": activated, "activated": activated, "state": mgr.get_state().to_dict()}
     except Exception as exc:
         log_web_error(logger, "/api/db/manage/transition/activate", request_id, exc)
-        return _err("DB_TRANSITION_ACTIVATE_FAILED", "Provider activation was not confirmed.", request_id)
+        return _err(
+            "DB_TRANSITION_ACTIVATE_FAILED", "Provider activation was not confirmed.", request_id
+        )
 
 
 @router.post("/transition/divergence")

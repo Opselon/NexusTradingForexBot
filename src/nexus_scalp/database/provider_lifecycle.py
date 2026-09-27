@@ -94,7 +94,12 @@ class ProviderLifecycleManager:
 
     def _settings(self) -> Any:
         from nexus_scalp.settings.service import SettingsDatabase
-        return SettingsDatabase(db_path=Path(self.settings_db_path)) if self.settings_db_path else SettingsDatabase()
+
+        return (
+            SettingsDatabase(db_path=Path(self.settings_db_path))
+            if self.settings_db_path
+            else SettingsDatabase()
+        )
 
     def _load_state(self) -> ProviderTransitionState:
         active = self.get_active_provider()
@@ -108,13 +113,17 @@ class ProviderLifecycleManager:
                 return ProviderTransitionState(
                     active_provider=str(raw.get("active_provider") or active),
                     target_provider=str(raw.get("target_provider") or active),
-                    phase=ProviderSwitchPhase(str(raw.get("phase") or ProviderSwitchPhase.ACTIVE.value)),
+                    phase=ProviderSwitchPhase(
+                        str(raw.get("phase") or ProviderSwitchPhase.ACTIVE.value)
+                    ),
                     updated_at=float(raw.get("updated_at") or time.time()),
                     last_test_passed=bool(raw.get("last_test_passed", False)),
                     last_migration_passed=bool(raw.get("last_migration_passed", False)),
                     last_verification_passed=bool(raw.get("last_verification_passed", False)),
                     error=str(raw.get("error") or ""),
-                    divergence=DivergenceCheckResult(**divergence) if isinstance(divergence, dict) else None,
+                    divergence=DivergenceCheckResult(**divergence)
+                    if isinstance(divergence, dict)
+                    else None,
                 )
         except Exception as exc:
             logger.warning("Could not load persisted provider transition state: %s", exc)
@@ -123,7 +132,13 @@ class ProviderLifecycleManager:
     def _persist_state(self) -> None:
         db = self._settings()
         try:
-            db.set(self._STATE_KEY, self._state.to_dict(), value_type="json", source="USER_SETTINGS", actor="web")
+            db.set(
+                self._STATE_KEY,
+                self._state.to_dict(),
+                value_type="json",
+                source="USER_SETTINGS",
+                actor="web",
+            )
         finally:
             db.close()
 

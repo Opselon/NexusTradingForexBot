@@ -87,11 +87,21 @@ class TestProviderLifecycleStateMachine:
         mgr.start_transition("postgresql")
 
         assert mgr.confirm_activation(force=False) is False
-        assert ProviderLifecycleManager(settings_db_path=settings_db).get_state().phase == ProviderSwitchPhase.CONFIGURED
+        assert (
+            ProviderLifecycleManager(settings_db_path=settings_db).get_state().phase
+            == ProviderSwitchPhase.CONFIGURED
+        )
 
         mgr.mark_verification(True)
-        assert ProviderLifecycleManager(settings_db_path=settings_db).confirm_activation(force=False) is True
-        assert ProviderLifecycleManager(settings_db_path=settings_db).get_state().phase == ProviderSwitchPhase.ACTIVE
+        assert (
+            ProviderLifecycleManager(settings_db_path=settings_db).confirm_activation(force=False)
+            is True
+        )
+        assert (
+            ProviderLifecycleManager(settings_db_path=settings_db).get_state().phase
+            == ProviderSwitchPhase.ACTIVE
+        )
+
 
 class TestPostgresToSqliteMigrator:
     """Verifies streaming batch migration from PostgreSQL to SQLite."""
