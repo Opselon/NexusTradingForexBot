@@ -1,0 +1,102 @@
+name: PR Evidence Report
+
+# The NSE Evidence Reporter must land its verdict AFTER the checks it reports
+# on. The reporter runs as a job inside CI, which means it publishes while
+# sibling jobs are still running — leaving the PR comment frozen at
+# IN_PROGRESS even after every gate has settled.
+#
+# workflow_run fires when each watched workflow COMPLETES, so this job re-runs
+# the reporter against the finished evidence set and EDITS the existing
+# `<!-- NSE-EVIDENCE-REPORT -->` comment in place (the reporter never creates
+# a second one). Advisory by construction: it never fails CI, and it degrades
+# to the annotations+summary surface when the API is unreachable.
+
+on:
+  workflow_run:
+    workflows:
+      - "CI"
+      - "Security"
+      - "Tests (OS Matrix)"
+      - "JS Tests"
+      - "Docs"
+      - "Dependency Lock & Migration Safety"
+      - "Lockfile Diff"
+      - "OSV Dependency Scan"
+      - "Go API"
+      - "QA Deep Assurance"
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+  pull-requests: write
+  statuses: read
+
+concurrency:
+  # One reporter per PR: a newer completion supersedes one still queued or
+  # running, so N workflow completions converge on the newest evidence instead
+  # of queueing N full runs. The last completion always runs to the end.
+  group: pr-evidence-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  publish:
+    name: Publish / refresh PR evidence report
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: ${{ github.event.workflow_run.pull_requests[0].number != null }}
+
+    steps:
+      - name: Checkout the PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "${{ env.PYTHON_VERSION }}"
+          cache: "pip"
+
+      - name: Install package
+        run: pip install -e ".[dev]"
+
+      - name: Re-collect evidence and edit the single report comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          set +e
+          nexus pr report --pr "$PR_NUMBER" --refresh --json > pr-evidence.json
+          status=$?
+          echo "nse pr report exit: $status (advisory — never fails this job)"
+          # Surface the verdict in the job summary for humans scanning the run.
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY" || true
+          import json
+          try:
+              data = json.load(open("pr-evidence.json", encoding="utf-8"))
+          except Exception as exc:
+              print(f"evidence report unreadable: {exc}")
+              raise SystemExit(0)
+          print("## PR Evidence Report")
+          print()
+          print(f"- PR: #{data.get('pr')}")
+          print(f"- Status: {data.get('status')}")
+          print(f"- Failures: {data.get('failure_count')}")
+          print(f"- Comment: {data.get('comment_action')} (id {data.get('comment_id')})")
+          for path in (data.get("affected_files") or [])[:10]:
+              print(f"- Affected: `{path}`")
+          PY
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-evidence-report-${{ github.event.workflow_run.id }}
+          path: pr-evidence.json
+          retention-days: 14
+          if-no-files-found: ignore

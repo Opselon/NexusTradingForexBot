@@ -153,3 +153,94 @@ class TestUnknownPathNeverCarriesALine:
         )
         paths = [p for f in evidence.all_failures() for p in f.affected_paths()]
         assert UNKNOWN not in paths
+
+
+class TestWorkflowResolution:
+    """Check-run payloads carry no ``workflow_name``.
+
+    The owning workflow name lives on the Actions run referenced by
+    ``details_url``. Rendering ``unknown`` for it published a fact the evidence
+    DID support, so the collector must resolve it — and degrade to ``unknown``
+    (never raise) when the lookup fails.
+    """
+
+    def _payloads(self, details_url: str, run_payload: Any) -> dict[str, Any]:
+        return {
+            "pulls/999": {"number": 999, "head": {"sha": _SHA}, "base": {"ref": "main"}},
+            f"commits/{_SHA}/check-runs": {
+                "check_runs": [
+                    {
+                        "id": 7,
+                        "name": "Code Quality & Tests",
+                        "status": "completed",
+                        "conclusion": "success",
+                        "html_url": details_url,
+                        "details_url": details_url,
+                        "output": {"annotations_count": 0},
+                        "head_sha": _SHA,
+                    }
+                ]
+            },
+            "code-scanning/alerts": [],
+            "pulls/999/reviews": [],
+            "actions/runs/12345": run_payload,
+        }
+
+    def test_workflow_name_resolved_from_actions_run(self) -> None:
+        url = "https://github.com/o/r/actions/runs/12345/job/67890"
+        client = GitHubClient(_REPO, FakeTransport(responses=self._payloads(url, {"name": "CI"})))
+        evidence = collect_evidence(
+            client=client,
+            repo=_REPO,
+            pr=999,
+            options=EvidenceOptions(reviews=False),
+            repo_root=None,
+        )
+        assert [c.workflow for c in evidence.checks] == ["CI"]
+
+    def test_workflow_lookup_failure_degrades_to_unknown(self) -> None:
+        url = "https://github.com/o/r/actions/runs/12345/job/67890"
+        # No ``actions/runs/12345`` entry: the transport reports a gap and the
+        # report must still render, with the unresolved field marked unknown.
+        payloads = self._payloads(url, {"name": "CI"})
+        del payloads["actions/runs/12345"]
+        client = GitHubClient(_REPO, FakeTransport(responses=payloads))
+        evidence = collect_evidence(
+            client=client,
+            repo=_REPO,
+            pr=999,
+            options=EvidenceOptions(reviews=False),
+            repo_root=None,
+        )
+        assert [c.workflow for c in evidence.checks] == [UNKNOWN]
+
+    def test_app_name_is_the_fallback_for_non_actions_checks(self) -> None:
+        # Non-Actions checks (e.g. the code-scanning CodeQL run) have no
+        # ``details_url`` Actions run; the owning app is the only signal.
+        payloads = self._payloads("https://gh/1", {"name": "CI"})
+        payloads[f"commits/{_SHA}/check-runs"]["check_runs"][0]["app"] = {
+            "name": "GitHub Advanced Security"
+        }
+        client = GitHubClient(_REPO, FakeTransport(responses=payloads))
+        evidence = collect_evidence(
+            client=client,
+            repo=_REPO,
+            pr=999,
+            options=EvidenceOptions(reviews=False),
+            repo_root=None,
+        )
+        assert [c.workflow for c in evidence.checks] == ["GitHub Advanced Security"]
+
+    def test_details_url_without_run_id_is_unknown(self) -> None:
+        client = GitHubClient(
+            _REPO,
+            FakeTransport(responses=self._payloads("https://gh/1", {"name": "CI"})),
+        )
+        evidence = collect_evidence(
+            client=client,
+            repo=_REPO,
+            pr=999,
+            options=EvidenceOptions(reviews=False),
+            repo_root=None,
+        )
+        assert [c.workflow for c in evidence.checks] == [UNKNOWN]
