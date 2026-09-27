@@ -626,7 +626,10 @@ class AuditRepository:
                 for rule in DEFAULT_TRADING_RULES
             ]
             backend.execute_batch(batch)
-            logger.info("Seeded default trading rules into PostgreSQL (rules=%d)", len(DEFAULT_TRADING_RULES))
+            logger.info(
+                "Seeded default trading rules into PostgreSQL (rules=%d)",
+                len(DEFAULT_TRADING_RULES),
+            )
         except Exception as e:
             logger.warning("Failed to seed default trading rules into provider: %s", e)
 
@@ -1772,7 +1775,7 @@ class AuditRepository:
                     f"{where} ORDER BY COALESCE(NULLIF(exit_time,''), '') DESC "
                     "LIMIT ? OFFSET ?"
                 ),
-                args=tuple(args + [int(limit), int(offset)]),
+                args=[*args, int(limit), int(offset)],
                 kind="rows",
             )
         clauses: list[str] = []
@@ -4718,12 +4721,10 @@ class AuditRepository:
                 peak = 0.0
                 for r_snap in snap_rows:
                     eq = float(r_snap["equity"] or 0.0)
-                    if eq > peak:
-                        peak = eq
+                    peak = max(peak, eq)
                     if peak > 0:
                         dd = ((peak - eq) / peak) * 100.0
-                        if dd > max_drawdown:
-                            max_drawdown = dd
+                        max_drawdown = max(max_drawdown, dd)
 
                 return {
                     "total_trades": total_trades,
@@ -4733,7 +4734,9 @@ class AuditRepository:
                     "avg_duration": round(avg_duration, 1),
                 }
             except Exception as e:
-                logger.error("Failed to calculate account performance metrics (provider)", error=str(e))
+                logger.error(
+                    "Failed to calculate account performance metrics (provider)", error=str(e)
+                )
                 return {
                     "total_trades": 0,
                     "win_rate": 0.0,

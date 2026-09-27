@@ -179,10 +179,7 @@ def iter_table_batches(
             cursor = conn.execute(sql, [start_after])
         else:
             # Non-integer cursor: OFFSET pagination (tables are small).
-            sql = (
-                f'SELECT {col_list} FROM "{table}" ORDER BY "{order_col}" ASC '
-                "LIMIT ? OFFSET ?"
-            )
+            sql = f'SELECT {col_list} FROM "{table}" ORDER BY "{order_col}" ASC LIMIT ? OFFSET ?'
             cursor = conn.execute(sql, [batch_size, start_after])
         while True:
             rows = cursor.fetchmany(batch_size)
@@ -345,7 +342,9 @@ def copy_table(
                 with conn.cursor() as cur:
                     cur.executemany(insert_sql, [tuple(r.get(c) for c in col_names) for r in batch])
                 conn.commit()
-            batch_last = last_rowid_of_batch(batch, order_col) if order_is_int else last_rowid + len(batch)
+            batch_last = (
+                last_rowid_of_batch(batch, order_col) if order_is_int else last_rowid + len(batch)
+            )
             last_rowid = max(last_rowid, batch_last)
             rows_copied += len(batch)
             chk = _checksum_for(batch)
@@ -398,7 +397,7 @@ def copy_table(
                     seq_name = seq_row[0]
                     cur.execute(f'SELECT COALESCE(MAX("{order_col}"), 1) FROM "{table}"')
                     max_val = cur.fetchone()[0]
-                    cur.execute(f"SELECT setval(%s, %s)", (seq_name, max_val))
+                    cur.execute("SELECT setval(%s, %s)", (seq_name, max_val))
             conn.commit()
     return {
         "table": table,

@@ -124,7 +124,7 @@ def _repo_handle():
 
     try:
         return AuditRepository(config=load_database_config("audit"))
-    except Exception as exc:  # noqa: BLE001 - must never block the operator CLI
+    except Exception as exc:
         # D9 (PG-CLI-001): log the real cause before degrading. A silent
         # fallback to the default SQLite path made the CLI report a stale
         # local file while the engine was running on PostgreSQL.
