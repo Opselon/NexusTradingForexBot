@@ -57,7 +57,7 @@ class TestReportStructure:
     def test_required_sections_present(self) -> None:
         out = render_report(_collection([_failure()]))
         assert "## 🔴 Affected Files" in out
-        assert "## 🔴 Failed Tests" in out
+        assert "## 🔴 What Failed and Why" in out
         assert "## 🔗 Revision" in out
         assert "## Overall" in out
         assert "## 🧪 Test Matrix" in out or "## 🏗️ CI Jobs" in out
@@ -66,6 +66,36 @@ class TestReportStructure:
         out = render_report(_collection([_failure()]))
         assert "tests/db/test_pg_pool_config.py:184" in out
         assert "src/nse/db/postgres.py:214" in out
+
+    def test_ci_security_finding_is_rendered_even_without_a_test_id(self) -> None:
+        """Regression: annotation/security findings carry no test id.
+
+        They were silently dropped by a test-id filter, so a red PR published
+        with no explanation of what failed. Any failure must be explained.
+        """
+        finding = _failure(test=UNKNOWN, error_type="py/sql-injection")
+        out = render_report(_collection([finding]))
+        assert "## 🔴 What Failed and Why" in out
+        assert "py/sql-injection" in out
+        assert "**Where:**" in out
+
+    def test_scanner_remediation_text_is_quoted_not_invented(self) -> None:
+        finding = _failure(
+            test=UNKNOWN,
+            error_type="py/sql-injection",
+            severity="high",
+            remediation="Building a SQL query from user-controlled sources is vulnerable.",
+            rule_url="https://example.invalid/security/code-scanning/1",
+        )
+        out = render_report(_collection([finding]))
+        assert "**Severity:** high" in out
+        assert "How to fix (the scanner" in out
+        assert "user-controlled sources is vulnerable." in out
+        assert "security/code-scanning/1" in out
+
+    def test_missing_remediation_is_omitted_not_fabricated(self) -> None:
+        out = render_report(_collection([_failure(test=UNKNOWN, error_type="X")]))
+        assert "How to fix" not in out
 
     def test_test_vs_production_distinct(self) -> None:
         """Spec §6: never claim the test file caused the failure."""

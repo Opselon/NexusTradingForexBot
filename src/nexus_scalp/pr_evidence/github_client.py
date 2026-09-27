@@ -463,6 +463,20 @@ class GitHubClient:
             return payload
         return []
 
+    def get_branch_protection(self, branch: str) -> dict[str, Any]:
+        """Branch-protection rules for ``branch`` (merge preconditions).
+
+        Returns ``{}`` when protection is unreadable — an unprotected branch
+        and an unreadable one must not be conflated, so the caller records a
+        gap rather than assuming nothing is required.
+        """
+        if not branch or branch == UNKNOWN:
+            return {}
+        payload = self._get(f"/repos/{self._repo}/branches/{branch}/protection")
+        if isinstance(payload, dict) and not _error_of(payload):
+            return payload
+        return {}
+
     def get_check_suites(self, sha: str) -> list[dict[str, Any]]:
         payload = self._get(f"/repos/{self._repo}/commits/{sha}/check-suites")
         if isinstance(payload, dict):
@@ -498,18 +512,35 @@ class GitHubClient:
             url = f"/repos/{self._repo}/commits/{sha}/check-runs?per_page=100&page={page}"
         return all_runs
 
-    def get_code_scanning_alerts(self, sha: str, *, state: str = "open") -> list[dict[str, Any]]:
-        """CodeQL / code-scanning alerts for a ref (spec §11).
+    def get_code_scanning_alerts(
+        self, sha: str, *, state: str = "open", pr: int | None = None
+    ) -> list[dict[str, Any]]:
+        """CodeQL / code-scanning alerts relevant to a PR (spec §11).
 
-        The alerts API carries structured locations; when unreachable the caller
-        falls back to check-run annotations.
+        PR-block alerts are indexed under the PR's MERGE ref, not the head SHA:
+        CodeQL analyses the merged result, so `?ref=<head sha>` returns an empty
+        list for exactly the findings that are failing the PR's gate. Query the
+        head SHA and the PR merge ref and union them by alert number so neither
+        source of findings is missed. The alerts API carries structured
+        locations; when unreachable the caller falls back to annotations.
         """
-        payload = self._get(
-            f"/repos/{self._repo}/code-scanning/alerts", params={"ref": sha, "state": state}
-        )
-        if isinstance(payload, list):
-            return payload
-        return []
+        found: dict[Any, dict[str, Any]] = {}
+        refs = [sha]
+        if pr:
+            refs.append(f"refs/pull/{pr}/merge")
+        for ref in refs:
+            if not ref or ref == UNKNOWN:
+                continue
+            payload = self._get(
+                f"/repos/{self._repo}/code-scanning/alerts", params={"ref": ref, "state": state}
+            )
+            if isinstance(payload, list):
+                for alert in payload:
+                    if not isinstance(alert, dict):
+                        continue
+                    key = alert.get("number") or alert.get("html_url") or id(alert)
+                    found[key] = alert
+        return list(found.values())
 
     def get_annotations(self, check_run_id: int) -> list[dict[str, Any]]:
         """Annotations for one check run — file/line/column evidence (spec §4/§11)."""

@@ -22,6 +22,7 @@ from nexus_scalp.pr_evidence.models import (
     CheckResult,
     EvidenceCollection,
     Failure,
+    FailureCategory,
     ReportMeta,
     SkippedTest,
     Status,
@@ -96,6 +97,7 @@ def render_report(evidence: EvidenceCollection, *, marker: str = REPORT_MARKER) 
             _checks(evidence.checks),
             _local_vs_ci(evidence),
             _gaps(evidence),
+            _merge_verdict(evidence),
             _legend(),
         )
         if part
@@ -108,14 +110,72 @@ def render_report(evidence: EvidenceCollection, *, marker: str = REPORT_MARKER) 
 
 
 def _truncate(out: str) -> str:
-    cut = out[: MAX_MESSAGE_CHARS - 200]
+    """Trim to the comment limit WITHOUT losing the final verdict.
+
+    The merge verdict is rendered last, so a naive tail-cut would delete the
+    one line the reader came for. Cut the detail sections instead and re-append
+    the verdict block.
+    """
+    budget = MAX_MESSAGE_CHARS - 200
+    if len(out) <= budget:
+        return out
+    tail_start = out.rfind("Final Verdict")
+    tail_start = out.rfind("\n##", 0, tail_start) if tail_start > 0 else -1
+    tail = out[tail_start:] if tail_start > 0 else ""
+    cut = out[: budget - len(tail) - 120]
     last_fence = cut.rfind("\n```")
     if last_fence > 1000:
         cut = cut[:last_fence]
-    return (
-        f"{cut}\n\n> ... truncated — see the linked CI checks for full logs "
-        f"(spec §20: the report stays small)."
-    )
+    note = "\n\n> ... truncated — see the linked CI checks for full logs (spec §20).\n"
+    return f"{cut}{note}{tail}"
+
+
+def _merge_verdict(evidence: EvidenceCollection) -> str:
+    """The FINAL stage: "Merge? Yes/No" with the evidence behind the answer.
+
+    Rendered last on purpose — it is the report's conclusion, and everything
+    above it (checks, failures, affected files) is the evidence for it.
+
+    Deterministic: every line cites an observed fact, and anything that could
+    not be read is listed as a gap rather than assumed satisfied.
+    """
+    verdict = evidence.merge_verdict()
+    lines = [f"## {verdict.dot} Final Verdict — Merge? {verdict.headline}", ""]
+
+    blockers = verdict.blockers
+    if verdict.state == "NO":
+        lines.append(f"**{len(blockers)} blocker(s) prevent this merge:**")
+        lines.append("")
+        lines.extend(f"{i}. {r.detail}" for i, r in enumerate(blockers, 1))
+        advisory = [r for r in verdict.reasons if not r.blocking]
+        if advisory:
+            lines.append("")
+            lines.extend(f"- {r.detail}" for r in advisory)
+    elif verdict.state == "YES":
+        lines.append("Every merge precondition observed is satisfied:")
+        lines.append("")
+        lines.extend(f"- {r.detail}" for r in verdict.reasons)
+    elif verdict.state == "MERGED":
+        lines.append("Already merged — mergeability is history, not a question:")
+        lines.append("")
+        lines.extend(f"- {r.detail}" for r in verdict.reasons)
+    else:
+        lines.append("No blocking evidence was found, but some preconditions could not be read:")
+        lines.append("")
+        lines.extend(f"- {r.detail}" for r in verdict.reasons)
+
+    # Base-branch protection summary: what the verdict was measured against.
+    if evidence.required_checks:
+        lines.append("")
+        lines.append(
+            f"_Base branch requires {len(evidence.required_checks)} check(s)_"
+            + (
+                f" _and {evidence.required_reviews} approving review(s)._"
+                if evidence.required_reviews
+                else "."
+            )
+        )
+    return "\n".join(lines)
 
 
 def _header(status: Status, meta: ReportMeta) -> str:
@@ -296,24 +356,51 @@ def _affected_bullet(f: Failure, path: str) -> str:
 
 
 def _failed_tests(failures: list[Failure]) -> str:
-    """Spec §13: every failed test has a navigable file reference."""
-    tests = [f for f in failures if f.test != UNKNOWN]
-    if not tests:
+    """Where it failed and why — for EVERY failure, not only pytest ones.
+
+    The previous shape filtered to failures with a test id, which silently
+    dropped every CI/annotation/security finding (they carry no test name), so
+    a red PR could publish with no explanation of what failed. Each entry now
+    states: location (file:line:col), the gate that produced it, the tool's own
+    error/why text, and GitHub's remediation wording when the scanner supplied
+    one. Nothing here is invented — a field the evidence lacks says so.
+    """
+    if not failures:
         return ""
-    lines = ["## 🔴 Failed Tests"]
-    for i, f in enumerate(tests, start=1):
-        lines.append(f"\n### {i}. `{f.test}`\n")
-        lines.append(f"**Test file:** `{f.location.rendered()}`\n")
+    lines = ["## 🔴 What Failed and Why"]
+    for i, f in enumerate(failures, start=1):
+        title = (
+            f.test if f.test != UNKNOWN else (f.error_type if f.error_type != UNKNOWN else f.check)
+        )
+        lines.append(f"\n### {i}. `{title}`\n")
+        if f.severity != UNKNOWN:
+            lines.append(f"**Severity:** {f.severity}\n")
+        lines.append(f"**Where:** `{f.location.rendered()}`\n")
         if f.production_location is not None and f.production_location.path != UNKNOWN:
             lines.append(f"**Implementation file:** `{f.production_location.rendered()}`\n")
-        else:
+        elif f.test != UNKNOWN:
+            # Spec §6: say so explicitly, so a test-file location is never
+            # silently read as the cause of the failure.
             lines.append("**Implementation file:** Not determined from available evidence\n")
         if f.location.function != UNKNOWN:
             lines.append(f"**Function:** `{f.location.function}()`\n")
-        lines.append(f"**Error type:** `{f.error_type}`\n")
-        lines.append(f"**Message:**\n\n```text\n{sanitize(f.message[:_MAX_MSG])}\n```\n")
+        if f.category != FailureCategory.UNKNOWN:
+            lines.append(f"**Kind:** {f.category}\n")
+        if f.error_type != UNKNOWN:
+            lines.append(f"**Error / rule:** `{f.error_type}`\n")
+        if f.message != UNKNOWN:
+            lines.append(f"**Why:**\n\n```text\n{sanitize(f.message[:_MAX_MSG])}\n```\n")
+        if f.remediation != UNKNOWN:
+            lines.append(f"**How to fix (the scanner's own wording):** {sanitize(f.remediation)}\n")
+        if f.rule_url != UNKNOWN:
+            lines.append(f"**Finding:** {f.rule_url}\n")
         if f.check != UNKNOWN:
-            lines.append(f"**CI:** `{f.check}`\n")
+            where = f"**CI:** `{f.check}`"
+            if f.check_url != UNKNOWN:
+                where += f" ([logs]({f.check_url}))"
+            lines.append(where + "\n")
+        if f.source != UNKNOWN or f.evidence_source != UNKNOWN:
+            lines.append(f"**Evidence:** source `{f.source}`, via `{f.evidence_source}`\n")
         if f.commit != UNKNOWN:
             lines.append(f"**Commit:** `{_short(f.commit)}`\n")
     return "\n".join(lines)

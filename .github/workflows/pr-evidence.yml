@@ -32,6 +32,10 @@ permissions:
   checks: read
   pull-requests: write
   statuses: read
+  # The merge verdict and the security-detail stage read these APIs. Missing
+  # scopes degrade gracefully (gaps are disclosed), but granting them lets the
+  # report explain findings instead of reporting "unknown".
+  security-events: read
 
 concurrency:
   # One reporter per PR: a newer completion supersedes one still queued or

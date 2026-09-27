@@ -362,15 +362,9 @@ class CodeQLCollector:
     repo_root: str | None = None
 
     def collect(self, pr: int, sha: str) -> tuple[list[Failure], list[dict[str, Any]]]:
-        alerts = self._alerts_for_ref(sha)
+        alerts = self.client.get_code_scanning_alerts(sha, pr=pr)
         failures: list[Failure] = [self._failure(a) for a in alerts if self._is_open(a)]
         return failures, alerts
-
-    def _alerts_for_ref(self, sha: str) -> list[dict[str, Any]]:
-        payload = self.client.get_code_scanning_alerts(sha)
-        if isinstance(payload, list):
-            return [a for a in payload if isinstance(a, dict)]
-        return []
 
     def _is_open(self, alert: dict[str, Any]) -> bool:
         state = _text(alert.get("state")).lower()
@@ -380,6 +374,10 @@ class CodeQLCollector:
         rule = alert.get("rule") or {}
         most_severe = alert.get("most_recent_instance") or {}
         location = most_severe.get("location") or {}
+        raw_message = most_severe.get("message")
+        instance_text = (
+            _text(raw_message.get("text")) if isinstance(raw_message, dict) else _text(raw_message)
+        )
         path = normalize_or_unknown(_text(location.get("path")), self.repo_root)
         start = location.get("start_line")
         start_col = location.get("start_column")
@@ -393,12 +391,17 @@ class CodeQLCollector:
                 int(start_col) if isinstance(start_col, int) else None,
             ),
             error_type=_text(rule.get("id")) or UNKNOWN,
-            message=(_text(rule.get("description")) or _text(most_severe.get("message")))[:300],
+            message=(instance_text or _text(rule.get("description")))[:300],
             category=FailureCategory.CODEQL_FINDING,
             workflow="code-scanning",
             job="codeql",
             check="CodeQL Analysis",
             evidence_source="code-scanning-alerts",
+            # GitHub's own words for WHY this is a finding and HOW to fix it —
+            # quoted, not paraphrased, so the report never invents advice.
+            severity=_text(rule.get("security_severity_level")),
+            remediation=_text(rule.get("full_description"))[:400],
+            rule_url=_text(alert.get("html_url")),
         )
 
 
@@ -426,6 +429,41 @@ class ReviewCollector:
                 }
             )
         return out
+
+
+@dataclass
+class MergePreconditionCollector:
+    """Base-branch protection rules → merge preconditions (merge verdict).
+
+    Protection is advisory evidence: unreadable/unprotected branches yield
+    empty results so the verdict records a gap instead of asserting that
+    nothing is required.
+    """
+
+    client: GitHubClient
+    base_branch: str
+
+    def collect(self) -> tuple[list[str], int | None, bool | None]:
+        """Return ``(required_checks, required_reviews, strict)``.
+
+        ``strict`` is the base's "require branches to be up to date" rule — the
+        only thing that makes a merely-behind branch a merge blocker, so a
+        verdict must not guess it.
+        """
+        protection = self.client.get_branch_protection(self.base_branch)
+        if not protection:
+            # ``None`` = never observed (distinct from 0 = nothing required).
+            return [], None, None
+        status_block = protection.get("required_status_checks") or {}
+        required = [_text(c) for c in (status_block.get("contexts") or []) if _text(c)]
+        reviews_block = protection.get("required_pull_request_reviews") or {}
+        raw_count = reviews_block.get("required_approving_review_count")
+        try:
+            count = int(raw_count)
+        except (TypeError, ValueError):
+            count = 0
+        strict = status_block.get("strict")
+        return required, count, strict if isinstance(strict, bool) else None
 
 
 @dataclass
@@ -573,6 +611,8 @@ class EvidenceOptions:
     reviews: bool = True
     fetch_logs: bool = False
     log_max_bytes: int = 6000
+    #: Read base-branch protection → the merge verdict's required gates.
+    fetch_merge_preconditions: bool = True
 
 
 def collect_evidence(
@@ -633,6 +673,15 @@ def collect_evidence(
         branch=_text(pr_payload.get("head", {}).get("ref")) or UNKNOWN,
         base_branch=_text(pr_payload.get("base", {}).get("ref")) or UNKNOWN,
         author=_text((pr_payload.get("user") or {}).get("login")) or UNKNOWN,
+        pr_state=_text(pr_payload.get("state")) or UNKNOWN,
+        merged=pr_payload.get("merged") if isinstance(pr_payload.get("merged"), bool) else None,
+        merged_at=_text(pr_payload.get("merged_at")) or UNKNOWN,
+        mergeable=(
+            pr_payload.get("mergeable") if isinstance(pr_payload.get("mergeable"), bool) else None
+        ),
+        mergeable_state=_text(pr_payload.get("mergeable_state")) or UNKNOWN,
+        draft=pr_payload.get("draft") if isinstance(pr_payload.get("draft"), bool) else None,
+        base_sha=_text(pr_payload.get("base", {}).get("sha")) or UNKNOWN,
     )
 
     codeql_failures: list[Failure] = []
@@ -644,6 +693,24 @@ def collect_evidence(
             raw["codeql_alerts"] = raw_alerts
         except Exception as exc:
             errors.append(f"CodeQL collection failed: {type(exc).__name__}: {exc}")
+        # A code-scanning finding arrives twice when both sources are read:
+        # once as a check-run annotation (path/line/message) and once as an
+        # alert (same location PLUS rule id, severity, remediation text and a
+        # link). The alert strictly contains the annotation, so prefer it and
+        # drop the duplicate annotation row at the same location.
+        alert_spans = {
+            (f.location.path, f.location.line)
+            for f in codeql_failures
+            if f.location.path != UNKNOWN
+        }
+        failures = [
+            f
+            for f in failures
+            if not (
+                f.category is FailureCategory.CODEQL_FINDING
+                and (f.location.path, f.location.line) in alert_spans
+            )
+        ]
         failures.extend(codeql_failures)
 
     reviews: list[dict[str, Any]] = []
@@ -653,6 +720,18 @@ def collect_evidence(
             raw["reviews"] = reviews
         except Exception as exc:
             errors.append(f"Review collection failed: {type(exc).__name__}: {exc}")
+
+    required_checks: list[str] = []
+    required_reviews: int | None = None
+    require_up_to_date: bool | None = None
+    if options.fetch_merge_preconditions:
+        try:
+            required_checks, required_reviews, require_up_to_date = MergePreconditionCollector(
+                client=client, base_branch=meta.base_branch
+            ).collect()
+            raw["required_checks"] = required_checks
+        except Exception as exc:
+            errors.append(f"Branch-protection collection failed: {type(exc).__name__}: {exc}")
 
     local_failures: list[Failure] = []
     skipped: list[SkippedTest] = []
@@ -677,6 +756,10 @@ def collect_evidence(
         warnings=warnings,
         errors=errors,
         raw=raw,
+        reviews=reviews,
+        required_checks=required_checks,
+        required_reviews=required_reviews,
+        require_up_to_date=require_up_to_date,
     )
 
 
