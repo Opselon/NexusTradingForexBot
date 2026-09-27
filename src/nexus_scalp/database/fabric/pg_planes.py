@@ -273,21 +273,18 @@ class PgPool:
         rows: list[dict[str, Any]] = []
 
         def _run() -> list[dict[str, Any]]:
-            with (
-                query_timer("query", sql, domain=self._name) as timer,
-                self.connection() as conn,
-                conn.cursor() as cur,
-            ):
-                # The execution seam needs the connection to resolve the
-                # ON CONFLICT target from the catalog; the pure
-                # translate_sql() it replaces left INSERT OR REPLACE and
-                # :name placeholders untouched on the pooled write path.
-                translated = PostgreSQLDriver.translate_sql_for_execution(sql, conn)
-                cur.execute(translated, tuple(args))
-                cols = [d.name for d in cur.description] if cur.description else []
-                rows[:] = [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
-                # Row count set INSIDE the block: the timer renders it on __exit__.
-                timer.rows = len(rows)
+            with self.connection() as conn, conn.cursor() as cur:
+                with query_timer("query", sql, domain=self._name) as timer:
+                    # The execution seam needs the connection to resolve the
+                    # ON CONFLICT target from the catalog; the pure
+                    # translate_sql() it replaces left INSERT OR REPLACE and
+                    # :name placeholders untouched on the pooled write path.
+                    translated = PostgreSQLDriver.translate_sql_for_execution(sql, conn)
+                    cur.execute(translated, tuple(args))
+                    cols = [d.name for d in cur.description] if cur.description else []
+                    rows[:] = [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
+                    # Row count set INSIDE the block: the timer renders it on __exit__.
+                    timer.rows = len(rows)
             return rows
 
         return pool_failure_guard(
@@ -312,17 +309,16 @@ class PgPool:
         holder: list[Any] = []
 
         def _run() -> Any:
-            with (
-                query_timer("scalar", sql, domain=self._name),
-                self.connection() as conn,
-                conn.cursor() as cur,
-            ):
-                # Resolve at the execution seam: the connection is needed to
-                # resolve the ON CONFLICT target from the catalog.
-                translated_holder.append(PostgreSQLDriver.translate_sql_for_execution(sql, conn))
-                cur.execute(translated_holder[-1], tuple(args))
-                row = cur.fetchone()
-                holder.append(row[0] if row is not None else None)
+            with self.connection() as conn, conn.cursor() as cur:
+                with query_timer("scalar", sql, domain=self._name):
+                    # Resolve at the execution seam: the connection is needed to
+                    # resolve the ON CONFLICT target from the catalog.
+                    translated_holder.append(
+                        PostgreSQLDriver.translate_sql_for_execution(sql, conn)
+                    )
+                    cur.execute(translated_holder[-1], tuple(args))
+                    row = cur.fetchone()
+                    holder.append(row[0] if row is not None else None)
             return holder[0] if holder else None
 
         return pool_failure_guard(
@@ -508,6 +504,55 @@ class PgWritePlane:
             sql="; ".join(q for q, _r, _t in translated),
             args=[rows for _q, rows, _t in translated],
         )
+
+    def execute_batch_counted(
+        self, statements: Sequence[tuple[str, Sequence[Sequence[Any]]]]
+    ) -> list[int]:
+        """Atomic batch that also reports each statement's DB-API rowcount.
+
+        psycopg reports ``rowcount == 0`` for a row suppressed by an
+        ``ON CONFLICT ... DO NOTHING`` clause, which is exactly the
+        inserted-vs-duplicate signal the idempotent broker-history sync needs
+        to reproduce the SQLite path's telemetry.
+        """
+        from nexus_scalp.database.query_logging import pool_failure_guard
+
+        translated = [(query, rows, query) for query, rows in statements]
+        counts: list[list[int]] = []
+        pool_failure_guard(
+            lambda: counts.append(self._apply_batch_counted(translated)),
+            pool_name=self._pool.name,
+            operation="execute_batch_counted",
+            domain=self._pool.name,
+            stats=self._pool.stats,
+            sql="; ".join(q for q, _r, _t in translated),
+            args=[rows for _q, rows, _t in translated],
+        )
+        return counts[0] if counts else [-1] * len(statements)
+
+    def _apply_batch_counted(
+        self,
+        statements: Sequence[tuple[str, Sequence[Sequence[Any]], str]],
+    ) -> list[int]:
+        from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+
+        with self._pool.connection() as conn:
+            try:
+                rowcounts: list[int] = []
+                for _query, rows, translated in statements:
+                    with conn.cursor() as cur:
+                        resolved = PostgreSQLDriver.translate_sql_for_execution(translated, conn)
+                        if len(rows) == 1:
+                            cur.execute(resolved, tuple(rows[0]))
+                        else:
+                            cur.executemany(resolved, [tuple(r) for r in rows])
+                        rowcounts.append(int(cur.rowcount or 0))
+                conn.commit()
+                return rowcounts
+            except Exception:
+                with contextlib_suppress():
+                    conn.rollback()
+                raise
 
     def _apply_batch(
         self,

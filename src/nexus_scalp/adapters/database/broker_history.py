@@ -573,21 +573,67 @@ def create_history_tables(conn: sqlite3.Connection) -> None:
                 conn.execute(trimmed)
 
 
-def _sync_orders(
-    conn: sqlite3.Connection,
+#: Broker-history INSERT text, defined ONCE so the SQLite path and the pooled
+#: (write-backend) path can never drift.  The SQLite path executes these on the
+#: worker's writer connection; the pooled path hands the same text to the write
+#: backend, whose execution seam rewrites ``INSERT OR IGNORE`` into a real
+#: ``ON CONFLICT ... DO NOTHING`` upsert before the driver sees it.
+_ORDERS_INSERT_SQL = (
+    "INSERT OR IGNORE INTO audit_broker_orders (ticket, position_id, symbol, "
+    "type, magic, state, volume_initial, volume_current, price_open, "
+    "price_current, price_stop_limit, sl, tp, time_setup, time_done, "
+    "time_expiration, reason, comment, external_id, synced_at) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+_DEALS_INSERT_SQL = (
+    'INSERT OR IGNORE INTO audit_broker_deals (ticket, "order", position_id, '
+    "symbol, type, entry, magic, time, reason, volume, price, profit, fee, "
+    "swap, commission, net_result, comment, external_id, synced_at) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+_TRADES_INSERT_SQL = (
+    "INSERT OR IGNORE INTO audit_broker_trades (trade_id, position_id, symbol, "
+    "direction, entry_time, exit_time, entry_price, exit_price, volume, "
+    "gross_pnl, commission, swap, fee, net_pnl, deal_ids, order_ids, "
+    "master_order_id, magic, exit_reason, exit_comment, duration_sec, "
+    "source, synced_at) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+_HISTORY_META_SQL = (
+    "INSERT INTO audit_broker_history_meta (id, symbol, last_sync_from, "
+    "last_sync_to, last_synced_at, last_orders, last_deals, last_trades) "
+    "VALUES (1, ?, ?, ?, ?, ?, ?, ?) "
+    # NOTE: SQLite's 2-arg ``MIN(a, b)`` is a SCALAR alias of LEAST and does NOT
+    # exist on PostgreSQL (``function min(text, text) does not exist``). The
+    # NULL-safe CASE below is plain ANSI SQL and parses identically on both.
+    "ON CONFLICT(id) DO UPDATE SET symbol=excluded.symbol, "
+    "last_sync_from=CASE "
+    "WHEN audit_broker_history_meta.last_sync_from IS NULL THEN excluded.last_sync_from "
+    "WHEN excluded.last_sync_from IS NULL THEN audit_broker_history_meta.last_sync_from "
+    "WHEN audit_broker_history_meta.last_sync_from < excluded.last_sync_from "
+    "THEN audit_broker_history_meta.last_sync_from "
+    "ELSE excluded.last_sync_from END, "
+    "last_sync_to=excluded.last_sync_to, "
+    "last_synced_at=excluded.last_synced_at, last_orders=excluded.last_orders, "
+    "last_deals=excluded.last_deals, last_trades=excluded.last_trades"
+)
+
+
+def order_statements(
     orders: list[dict[str, Any]],
     synced_at: str,
-) -> int:
-    orders_sorted = sorted(orders, key=lambda o: _i(o.get("ticket")))
-    orders_dup = 0
-    for o in orders_sorted:
-        row = normalize_order_row(o)
-        cur = conn.execute(
-            "INSERT OR IGNORE INTO audit_broker_orders (ticket, position_id, symbol, "
-            "type, magic, state, volume_initial, volume_current, price_open, "
-            "price_current, price_stop_limit, sl, tp, time_setup, time_done, "
-            "time_expiration, reason, comment, external_id, synced_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+) -> list[tuple[str, tuple[Any, ...]]]:
+    """Ordered ``(sql, args)`` inserts for the normalized broker-order rows.
+
+    Sorted by broker ticket so both providers apply the rows in the same order
+    (deterministic, and identical to the historical SQLite sequence).
+    """
+    return [
+        (
+            _ORDERS_INSERT_SQL,
             (
                 row["ticket"],
                 row["position_id"],
@@ -611,25 +657,20 @@ def _sync_orders(
                 synced_at,
             ),
         )
-        if cur.rowcount == 0:
-            orders_dup += 1
-    return orders_dup
+        for row in (
+            normalize_order_row(o) for o in sorted(orders, key=lambda o: _i(o.get("ticket")))
+        )
+    ]
 
 
-def _sync_deals(
-    conn: sqlite3.Connection,
+def deal_statements(
     deals: list[dict[str, Any]],
     synced_at: str,
-) -> int:
-    deals_sorted = sorted(deals, key=lambda d: _i(d.get("ticket")))
-    deals_dup = 0
-    for d in deals_sorted:
-        row = normalize_deal_row(d)
-        cur = conn.execute(
-            'INSERT OR IGNORE INTO audit_broker_deals (ticket, "order", position_id, '
-            "symbol, type, entry, magic, time, reason, volume, price, profit, fee, "
-            "swap, commission, net_result, comment, external_id, synced_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+) -> list[tuple[str, tuple[Any, ...]]]:
+    """Ordered ``(sql, args)`` inserts for the normalized broker-deal rows."""
+    return [
+        (
+            _DEALS_INSERT_SQL,
             (
                 row["ticket"],
                 row["order"],
@@ -652,7 +693,109 @@ def _sync_deals(
                 synced_at,
             ),
         )
-        if cur.rowcount == 0:
+        for row in (normalize_deal_row(d) for d in sorted(deals, key=lambda d: _i(d.get("ticket"))))
+    ]
+
+
+def trade_statements(
+    trades: list[LogicalTrade],
+    synced_at: str,
+) -> tuple[list[tuple[str, tuple[Any, ...]]], int]:
+    """``(statements, still_open)`` for the reconstructed logical trades.
+
+    A position with no OUT-deal inside the fetched window is still OPEN at the
+    broker; the deal stream has no realized result for it. Persisting it as a
+    closed trade with a zeroed outcome would be a silent fake — skip it (it
+    will surface once the broker closes it).
+    """
+    statements: list[tuple[str, tuple[Any, ...]]] = []
+    still_open = 0
+    for t in trades:
+        if t.exit_time is None:
+            still_open += 1
+            logger.debug(
+                "[ACCOUNT_HISTORY] open position skipped (no OUT deal in window)",
+                position_id=t.position_id,
+            )
+            continue
+        statements.append(
+            (
+                _TRADES_INSERT_SQL,
+                (
+                    t.trade_id,
+                    t.position_id,
+                    t.symbol,
+                    t.direction,
+                    t.entry_time.isoformat() if t.entry_time else None,
+                    t.exit_time.isoformat() if t.exit_time else None,
+                    t.entry_price,
+                    t.exit_price,
+                    t.volume,
+                    t.gross_pnl,
+                    t.commission,
+                    t.swap,
+                    t.fee,
+                    t.net_pnl,
+                    ",".join(str(x) for x in t.deal_ids),
+                    ",".join(str(x) for x in sorted(set(t.order_ids))),
+                    t.master_order_id,
+                    t.magic,
+                    t.exit_reason,
+                    t.exit_comment,
+                    t.duration_sec,
+                    t.source,
+                    synced_at,
+                ),
+            )
+        )
+    return statements, still_open
+
+
+def history_meta_statement(
+    *,
+    symbol: str,
+    sync_from: datetime | None,
+    sync_to: datetime | None,
+    synced_at: str,
+    num_orders: int,
+    num_deals: int,
+    num_trades: int,
+) -> tuple[str, tuple[Any, ...]]:
+    """The single watermark upsert for ``audit_broker_history_meta``."""
+    return (
+        _HISTORY_META_SQL,
+        (
+            symbol,
+            sync_from.isoformat() if sync_from else None,
+            sync_to.isoformat() if sync_to else None,
+            synced_at,
+            num_orders,
+            num_deals,
+            num_trades,
+        ),
+    )
+
+
+def _sync_orders(
+    conn: sqlite3.Connection,
+    orders: list[dict[str, Any]],
+    synced_at: str,
+) -> int:
+    orders_dup = 0
+    for sql, args in order_statements(orders, synced_at):
+        if conn.execute(sql, args).rowcount == 0:
+            orders_dup += 1
+    return orders_dup
+
+
+def _sync_deals(
+    conn: sqlite3.Connection,
+    deals: list[dict[str, Any]],
+    synced_at: str,
+) -> int:
+    deals_dup = 0
+    for sql, args in deal_statements(deals, synced_at):
+        if conn.execute(sql, args).rowcount == 0:
             deals_dup += 1
     return deals_dup
 
@@ -663,53 +806,9 @@ def _sync_trades(
     synced_at: str,
 ) -> tuple[int, int]:
     trades_dup = 0
-    still_open = 0
-    for t in trades:
-        # A position with no OUT-deal inside the fetched window is still OPEN at
-        # the broker; the deal stream has no realized result for it. Persisting
-        # it as a closed trade with a zeroed outcome would be a silent fake —
-        # skip it (it will surface once the broker closes it).
-        if t.exit_time is None:
-            still_open += 1
-            logger.debug(
-                "[ACCOUNT_HISTORY] open position skipped (no OUT deal in window)",
-                position_id=t.position_id,
-            )
-            continue
-        cur = conn.execute(
-            "INSERT OR IGNORE INTO audit_broker_trades (trade_id, position_id, symbol, "
-            "direction, entry_time, exit_time, entry_price, exit_price, volume, "
-            "gross_pnl, commission, swap, fee, net_pnl, deal_ids, order_ids, "
-            "master_order_id, magic, exit_reason, exit_comment, duration_sec, "
-            "source, synced_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                t.trade_id,
-                t.position_id,
-                t.symbol,
-                t.direction,
-                t.entry_time.isoformat() if t.entry_time else None,
-                t.exit_time.isoformat() if t.exit_time else None,
-                t.entry_price,
-                t.exit_price,
-                t.volume,
-                t.gross_pnl,
-                t.commission,
-                t.swap,
-                t.fee,
-                t.net_pnl,
-                ",".join(str(x) for x in t.deal_ids),
-                ",".join(str(x) for x in sorted(set(t.order_ids))),
-                t.master_order_id,
-                t.magic,
-                t.exit_reason,
-                t.exit_comment,
-                t.duration_sec,
-                t.source,
-                synced_at,
-            ),
-        )
-        if cur.rowcount == 0:
+    statements, still_open = trade_statements(trades, synced_at)
+    for sql, args in statements:
+        if conn.execute(sql, args).rowcount == 0:
             trades_dup += 1
     return trades_dup, still_open
 
@@ -726,24 +825,57 @@ def _update_history_meta(
     num_trades: int,
 ) -> None:
     conn.execute(
-        "INSERT INTO audit_broker_history_meta (id, symbol, last_sync_from, "
-        "last_sync_to, last_synced_at, last_orders, last_deals, last_trades) "
-        "VALUES (1, ?, ?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(id) DO UPDATE SET symbol=excluded.symbol, "
-        "last_sync_from=MIN(audit_broker_history_meta.last_sync_from, "
-        "excluded.last_sync_from), last_sync_to=excluded.last_sync_to, "
-        "last_synced_at=excluded.last_synced_at, last_orders=excluded.last_orders, "
-        "last_deals=excluded.last_deals, last_trades=excluded.last_trades",
-        (
-            symbol,
-            sync_from.isoformat() if sync_from else None,
-            sync_to.isoformat() if sync_to else None,
-            synced_at,
-            num_orders,
-            num_deals,
-            num_trades,
-        ),
+        *history_meta_statement(
+            symbol=symbol,
+            sync_from=sync_from,
+            sync_to=sync_to,
+            synced_at=synced_at,
+            num_orders=num_orders,
+            num_deals=num_deals,
+            num_trades=num_trades,
+        )
     )
+
+
+def sync_broker_history_pg(
+    *,
+    orders: list[dict[str, Any]],
+    deals: list[dict[str, Any]],
+    symbol: str,
+    sync_from: datetime | None = None,
+    sync_to: datetime | None = None,
+) -> tuple[list[tuple[str, tuple[Any, ...]]], int, int, int]:
+    """Build the broker-history write batch for a POOLED provider.
+
+    The pooled write backend rewrites ``INSERT OR IGNORE`` into a real
+    ``ON CONFLICT ... DO NOTHING`` upsert at its execution seam, so this returns
+    the SAME statements the SQLite path executes — one source of truth, no
+    provider-specific SQL — as a flat ordered list plus the counts the caller's
+    telemetry needs:
+
+    ``(statements, n_orders, n_deals, n_trades_total)``
+    """
+    now_iso = datetime.now(UTC).isoformat()
+    order_stmts = order_statements(orders, now_iso)
+    deal_stmts = deal_statements(deals, now_iso)
+    trades = reconstruct_trades(orders=orders, deals=deals, symbol=symbol)
+    trade_stmts, still_open = trade_statements(trades, now_iso)
+    meta_stmt = history_meta_statement(
+        symbol=symbol,
+        sync_from=sync_from,
+        sync_to=sync_to,
+        synced_at=now_iso,
+        num_orders=len(orders),
+        num_deals=len(deals),
+        num_trades=len(trades),
+    )
+    statements: list[tuple[str, tuple[Any, ...]]] = [
+        *order_stmts,
+        *deal_stmts,
+        *trade_stmts,
+        meta_stmt,
+    ]
+    return statements, still_open, len(order_stmts), len(trades)
 
 
 def sync_broker_history(

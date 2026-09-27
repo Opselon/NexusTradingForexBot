@@ -1702,23 +1702,95 @@ class AuditRepository:
         no-op (UNIQUE(ticket) / UNIQUE(position_id) insert-or-ignore).
         """
         if not self._is_sqlite:
-            return self._provider_read_guard(
-                "sync_broker_history",
-                lambda: (
-                    {
-                        "orders_total": len(orders or []),
-                        "orders_inserted": 0,
-                        "orders_duplicates": len(orders or []),
-                        "deals_total": len(deals or []),
-                        "deals_inserted": 0,
-                        "deals_duplicates": len(deals or []),
-                        "trades_total": 0,
-                        "trades_inserted": 0,
-                        "trades_duplicates": 0,
-                        "duration_ms": 0.0,
-                    }
-                ),
+            # PG-READ-PLANE-002 (2026-09-27): this is a WRITE, and routing it
+            # through ``_provider_read_guard`` was doubly wrong — the guard has
+            # no query to declare, so it returned its documented default
+            # (``orders_inserted: 0``, ``trades_total: 0``, ...) and logged
+            # "no read plane registered for domain 'audit'" while the broker
+            # copy stayed empty on PostgreSQL. Silent data loss + fake success,
+            # the exact pair the mission forbids.  Build the SAME statements the
+            # SQLite branch runs and apply them atomically on the pooled WRITE
+            # backend; the write seam rewrites ``INSERT OR IGNORE`` into a real
+            # ``ON CONFLICT ... DO NOTHING``.
+            from datetime import UTC as _UTC
+            from datetime import datetime as _dt
+
+            from nexus_scalp.adapters.database.broker_history import (
+                sync_broker_history_pg,
             )
+
+            sync_from_dt = (
+                sync_from.astimezone(_UTC)
+                if isinstance(sync_from, _dt)
+                else normalize_history_dt(sync_from)
+            )
+            sync_to_dt = (
+                sync_to.astimezone(_UTC)
+                if isinstance(sync_to, _dt)
+                else normalize_history_dt(sync_to)
+            )
+            started = time.perf_counter()
+            statements, still_open, n_orders, n_trades = sync_broker_history_pg(
+                orders=orders or [],
+                deals=deals or [],
+                symbol=symbol or "",
+                sync_from=sync_from_dt,
+                sync_to=sync_to_dt,
+            )
+            counts = self._provider_execute_write_counted(statements)
+            if counts is None:
+                # Fail LOUD: reporting zeroes here would look like a clean sync
+                # that persisted nothing (the bug this fix removes).
+                logger.error(
+                    "[ACCOUNT_HISTORY] event=SYNC_FAILED reason=provider_write_unavailable"
+                )
+                return {
+                    "orders_total": len(orders or []),
+                    "orders_inserted": 0,
+                    "orders_duplicates": 0,
+                    "deals_total": len(deals or []),
+                    "deals_inserted": 0,
+                    "deals_duplicates": 0,
+                    "trades_total": n_trades,
+                    "trades_inserted": 0,
+                    "trades_duplicates": 0,
+                    "duration_ms": round((time.perf_counter() - started) * 1000.0, 1),
+                    "error": "provider write backend unavailable",
+                }
+            # Statement order is: orders, deals, trades, meta (see
+            # sync_broker_history_pg). A rowcount of 0 means the row already
+            # existed (ON CONFLICT DO NOTHING), i.e. an exact duplicate.
+            n_deals = len(deals or [])
+            order_counts = counts[:n_orders]
+            deal_counts = counts[n_orders : n_orders + n_deals]
+            trade_counts = counts[n_orders + n_deals : len(counts) - 1]
+            orders_dup = sum(1 for c in order_counts if c == 0)
+            deals_dup = sum(1 for c in deal_counts if c == 0)
+            trades_dup = sum(1 for c in trade_counts if c == 0)
+            taken_ms = round((time.perf_counter() - started) * 1000.0, 1)
+            logger.info(
+                "[ACCOUNT_HISTORY] event=SYNC_COMPLETE",
+                orders=len(orders or []),
+                deals=len(deals or []),
+                trades=n_trades,
+                inserted=sum(order_counts) + sum(deal_counts),
+                duplicates=orders_dup + deals_dup,
+                duration_ms=taken_ms,
+            )
+            return {
+                "orders_total": len(orders or []),
+                "orders_inserted": max(0, n_orders - orders_dup),
+                "orders_duplicates": orders_dup,
+                "deals_total": n_deals,
+                "deals_inserted": max(0, n_deals - deals_dup),
+                "deals_duplicates": deals_dup,
+                "trades_total": n_trades,
+                "trades_open_skipped": still_open,
+                "trades_inserted": max(0, len(trade_counts) - trades_dup),
+                "trades_duplicates": trades_dup,
+                "trades_persisted": len(trade_counts),
+                "duration_ms": taken_ms,
+            }
         from datetime import UTC as _UTC
         from datetime import datetime as _dt
 
@@ -2769,6 +2841,38 @@ class AuditRepository:
             logger.error("audit provider write FAILED error=%s", exc)
             return False
 
+    def _provider_execute_write_counted(
+        self,
+        statements: Sequence[tuple[str, Sequence[Any]]],
+    ) -> list[int] | None:
+        """Run one atomic non-SQLite write and report per-statement rowcounts.
+
+        Used by the idempotent broker-history sync, whose telemetry must
+        distinguish inserted rows from duplicates exactly like the SQLite path
+        (an ``ON CONFLICT ... DO NOTHING`` reports rowcount 0).  Returns ``None``
+        when the write backend is unavailable or the batch raised — the failure
+        is logged loudly here and callers MUST report it rather than inventing
+        fake success telemetry.
+        """
+        backend = self._provider_write_backend()
+        if backend is None:
+            logger.error(
+                "audit provider counted write FAILED (no pooled write backend for the audit domain)"
+            )
+            return None
+        from nexus_scalp.adapters.database.audit_write_plane import translate_sql
+
+        batch = [(translate_sql(query), [tuple(args)]) for query, args in statements]
+        try:
+            counted_fn = getattr(backend, "execute_batch_counted", None)
+            if callable(counted_fn):
+                return counted_fn(batch)
+            backend.execute_batch(batch)
+            return [-1] * len(statements)
+        except Exception as exc:
+            logger.error("audit provider counted write FAILED error=%s", exc)
+            return None
+
     def _provider_db_path(self) -> str:
         """A real, non-empty location string for a non-SQLite provider.
 
@@ -3692,12 +3796,16 @@ class AuditRepository:
 
     def overflow_pending_count(self) -> int:
         """Public recovery surface: how many stranded overflow rows are
-        still waiting on disk right now (BUG-285). -1 = unreadable."""
-        if not self._is_sqlite:
-            return self._provider_read_guard(
-                "overflow_pending_count",
-                lambda: 0,
-            )
+        still waiting on disk right now (BUG-285). -1 = unreadable.
+
+        PG-READ-PLANE-002: this is a FILESYSTEM count of the overflow
+        spool directory, not a database read. Both providers share the same
+        write-plane overflow mechanism (see ``_build_write_plane``), so the
+        per-provider gate that used to short-circuit to ``0`` here was a false
+        negative on PostgreSQL — it reported "nothing stranded" while real
+        overflow files sat on disk, and emitted a bogus
+        "no read plane registered for domain 'audit'" warning.
+        """
         try:
             d = self._overflow_dir()
             if not d.is_dir():
@@ -4640,8 +4748,19 @@ class AuditRepository:
         Calculates precise WinRate, Profit Factor, Drawdown, and historical trade metrics from the ledger.
         """
         if not self._is_sqlite:
-            plane = self._registered_audit_read_plane()
-            if plane is None:
+            # PG-READ-PLANE-002: this read used to bypass the guard entirely —
+            # with no plane it returned fabricated zeros while raising NO
+            # counter and NO warning, i.e. a healthy-looking dashboard on a
+            # dead read path. Declared through the guard now: the degraded
+            # case is counted and warned, then the documented default returns.
+            rows = self._provider_read_guard(
+                "get_account_performance_metrics",
+                lambda: None,
+                sql="SELECT pnl, commission, swap, duration_sec FROM audit_ledger "
+                "WHERE status != 'OPENED'",
+                kind="rows",
+            )
+            if rows is None:
                 return {
                     "total_trades": 0,
                     "win_rate": 0.0,
@@ -4650,9 +4769,6 @@ class AuditRepository:
                     "avg_duration": 0.0,
                 }
             try:
-                rows = plane.query(
-                    "SELECT pnl, commission, swap, duration_sec FROM audit_ledger WHERE status != 'OPENED'"
-                )
                 total_trades = len(rows)
                 if total_trades == 0:
                     return {
@@ -4689,9 +4805,17 @@ class AuditRepository:
                 )
                 avg_duration = total_duration / total_trades
 
-                snap_rows = plane.query(
-                    "SELECT balance, equity FROM audit_account_snapshots ORDER BY id ASC"
+                snap_rows = self._provider_read_guard(
+                    "get_account_performance_metrics_snapshots",
+                    lambda: None,
+                    sql="SELECT balance, equity FROM audit_account_snapshots ORDER BY id ASC",
+                    kind="rows",
                 )
+                if snap_rows is None:
+                    # Drawdown needs the snapshot series; without it the
+                    # number would be fabricated — skip the metric instead
+                    # (the degradation is already counted/warned above).
+                    snap_rows = []
                 max_drawdown = 0.0
                 peak = 0.0
                 for r_snap in snap_rows:
@@ -5067,10 +5191,28 @@ class AuditRepository:
     ) -> bool:
         """Toggles the enablement of a trading rule and optionally updates its parameters."""
         if not self._is_sqlite:
-            return self._provider_read_guard(
-                "toggle_trading_rule",
-                lambda: False,
-            )
+            # PG-READ-PLANE-002: a WRITE (UPDATE trading_rules_config) routed
+            # through the READ guard — no query declared, so it always returned
+            # the documented `False` and every toggle from the web UI was
+            # silently discarded on PostgreSQL while the log claimed the read
+            # plane was missing. Route it through the pooled WRITE backend.
+            if parameters_json is not None:
+                sql = (
+                    "UPDATE trading_rules_config "
+                    "SET is_enabled = ?, parameters = ? "
+                    "WHERE rule_name = ?"
+                )
+                args: tuple[Any, ...] = (1 if is_enabled else 0, parameters_json, rule_name)
+            else:
+                sql = "UPDATE trading_rules_config SET is_enabled = ? WHERE rule_name = ?"
+                args = (1 if is_enabled else 0, rule_name)
+            if not self._provider_execute_write([(sql, args)]):
+                logger.error(
+                    "Failed to toggle/update trading rule on the pooled provider",
+                    rule_name=rule_name,
+                )
+                return False
+            return True
         try:
             # Execute synchronously to avoid thread-safety mismatch with web thread toggles
             with self._connect_sqlite(5.0) as conn:
@@ -5123,10 +5265,89 @@ class AuditRepository:
         from datetime import UTC, datetime, timedelta
 
         if not self._is_sqlite:
-            return self._provider_read_guard(
-                "purge_old_audit_data",
-                lambda: ({"error": "not sqlite"}),
+            # PG-READ-PLANE-002: this is a WRITE (retention DELETEs) that was
+            # routed through the READ guard and returned {"error": "not
+            # sqlite"} — the purge silently never ran on PostgreSQL, so
+            # audit_signals grew without bound. Run the SAME bounded batches on
+            # the pooled WRITE backend. The ``rowid`` anchor below is
+            # SQLite-specific; PostgreSQL has no ``rowid`` column, so the batch
+            # anchor there is ``ctid`` (its equivalent hidden physical id) for
+            # the id-less telemetry table.
+            sig_days = float(
+                signal_retention_days
+                if signal_retention_days is not None
+                else self._signal_retention_days
             )
+            mov_days = float(
+                moving_retention_days
+                if moving_retention_days is not None
+                else self._moving_retention_days
+            )
+            tel_days = float(
+                telemetry_retention_days
+                if telemetry_retention_days is not None
+                else self._telemetry_retention_days
+            )
+            bsize = int(batch_size if batch_size is not None else self._purge_batch_size)
+
+            now = datetime.now(UTC)
+            cutoffs = {
+                "audit_signals": (now - timedelta(days=sig_days)).isoformat(),
+                "position_moving": (now - timedelta(days=mov_days)).isoformat(),
+                "guard_telemetry": (now - timedelta(days=tel_days)).isoformat(),
+            }
+            purge_plans: dict[str, tuple[str, tuple[Any, ...]]] = {
+                "audit_signals": (
+                    "DELETE FROM audit_signals WHERE id IN "
+                    "(SELECT id FROM audit_signals WHERE generated_at < ? ORDER BY id LIMIT ?)",
+                    (cutoffs["audit_signals"], bsize),
+                ),
+                "position_moving": (
+                    "DELETE FROM position_lifecycle_events WHERE id IN "
+                    "(SELECT id FROM position_lifecycle_events "
+                    "WHERE event_type = 'POSITION_MOVING' AND event_timestamp < ? "
+                    "ORDER BY id LIMIT ?)",
+                    (cutoffs["position_moving"], bsize),
+                ),
+                "guard_telemetry": (
+                    "DELETE FROM audit_guard_telemetry WHERE ctid IN "
+                    "(SELECT ctid FROM audit_guard_telemetry WHERE window_start < ? "
+                    "ORDER BY ctid LIMIT ?)",
+                    (cutoffs["guard_telemetry"], bsize),
+                ),
+            }
+            purge_result: dict[str, Any] = {
+                "started_at": now.isoformat(),
+                "signal_retention_days": sig_days,
+                "moving_retention_days": mov_days,
+                "telemetry_retention_days": tel_days,
+                "deleted": {},
+            }
+            start = time.monotonic()
+            for label, (sql, args) in purge_plans.items():
+                total = 0
+                while True:
+                    counts = self._provider_execute_write_counted([(sql, args)])
+                    if not counts:
+                        purge_result["error"] = f"pooled write backend unavailable ({label})"
+                        logger.error(
+                            "Audit retention purge failed on the pooled provider table=%s error=%s",
+                            label,
+                            purge_result["error"],
+                        )
+                        break
+                    deleted = int(counts[0] or 0)
+                    total += deleted
+                    if deleted < bsize:
+                        break
+                purge_result["deleted"][label] = total
+            purge_result["duration_ms"] = round((time.monotonic() - start) * 1000.0, 1)
+            logger.info(
+                "Audit retention purge complete (pooled provider)",
+                deleted=purge_result["deleted"],
+                duration_ms=purge_result["duration_ms"],
+            )
+            return purge_result
 
         sig_days = float(
             signal_retention_days
