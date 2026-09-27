@@ -28,14 +28,18 @@ permissions:
 env:
   PYTHON_VERSION: "3.11"
 
-  # Throwaway PostgreSQL service container for the PG test arm
-  # (check_pg_arm.py). CI provisions this on every run so the PostgreSQL
-  # integration arms RUN instead of silently skipping without
-  # NSE_PG_TEST_URL — that skip is how the empty live tables hid behind a
-  # green suite (PG_VERIFIED_STATE.md). Both env vars are exported: the
-  # suite has two conventions (URL + libpq DSN).
-  PG_TEST_URL: "postgresql://pgarm:pgarm@localhost:5432/nse_pgarm"
-  PG_TEST_DSN: "postgresql://pgarm:pgarm@localhost:5432/nse_pgarm"
+  # PostgreSQL test arms: NOT run on GitHub CI. They require a MIGRATED
+  # server (scratch databases, a provisioned nexusdb, credentials in the
+  # OS secret store); a throwaway container cannot supply one, and standing
+  # it up made the quality job 45 minutes long while STILL not producing a
+  # verdict. They run in the LOCAL gate against a real server:
+  #     python scripts/ci/check_local.py --pg
+  # On CI those tests skip, and the quality job REPORTS the skip as a
+  # status line rather than counting it as a pass - a skip is not a pass.
+  #
+  # NOTE: PG_TEST_URL / PG_TEST_DSN used to sit here and were read by
+  # nothing (the suite keys off NSE_PG_TEST_URL / NSE_TEST_PG_DSN), so
+  # their presence proved only that someone had written a variable down.
 
   # Canonical per-run results directory. Every check writes ONLY into its own
   # subdirectory; the tree is wiped and recreated at the start of every run so
@@ -137,50 +141,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    # REGR-CI-001 (review: the PG-arm gate never runs): the quality job runs
-    # the main pytest arm but had NO PostgreSQL service and did not export
-    # NSE_PG_TEST_URL - the var every PG arm actually keys off (PG_TEST_URL /
-    # PG_TEST_DSN at the workflow env level are read by nobody). The arms
-    # therefore skipped here, which is exactly the silent-skip defect class
-    # this PR exists to eliminate. Provisioning the service here AND exporting
-    # the var the suite reads makes the PG arms execute on the quality job too.
-    env:
-      # The suite has TWO PG env-var conventions and both must be exported or
-      # part of the arm skips: NSE_PG_TEST_URL (67 test sites) and
-      # NSE_TEST_PG_DSN (test_fabric_guards). Pointed at the service
-      # container provisioned below.
-      # Password is the service container's POSTGRES_PASSWORD below. It is a
-      # throwaway CI-only credential for a container that lives for one job,
-      # never a real secret - a literal is required here because the suite
-      # connects with it directly.
-      NSE_PG_TEST_URL: "postgresql://nse_user:nse_password_dev@localhost:5432/nse_audit"
-      NSE_TEST_PG_DSN: "postgresql://nse_user:nse_password_dev@localhost:5432/nse_audit"
-      PG_DB: "nse_audit"
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          # The PG arm hardcodes localhost/nse_audit with user nse_user
-          # (test_database_portability.TestPostgresCrud._cfg, and the
-          # DatabaseConfig.for_postgres calls in TestPostgresIntegration),
-          # and reads the password from the OS secret store. The service
-          # must therefore match THAT shape: a different db/user makes
-          # every arm fail to authenticate, which is what the first run did.
-          POSTGRES_DB: nse_audit
-          POSTGRES_USER: nse_user
-          POSTGRES_PASSWORD: nse_password_dev
-          # The PG arm creates and drops its own scratch DATABASES
-          # (test_pg_safety_persistence / test_rtf001_real_postgresql_schema)
-          # and needs CREATEDB to do it. The postgres image's POSTGRES_USER is
-          # a superuser by default, so this is belt-and-braces documentation:
-          # the gate cannot pass against a non-privileged user.
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U nse_user -d nse_audit"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+    # No PostgreSQL service container here, by operator decision. The
+    # database-backed arms need a MIGRATED server (scratch databases, a
+    # provisioned nexusdb, credentials in the OS secret store) and a
+    # throwaway container cannot supply one: standing one up turned a
+    # 20-second quality job into a 45-minute one that STILL could not
+    # produce a verdict. GitHub CI therefore runs the database-FREE gates
+    # below; the database arms run in the LOCAL gate, against a real
+    # server, via `python scripts/ci/check_local.py --pg`.
+    #
+    # Without NSE_PG_TEST_URL those arms skip here. That skip is REPORTED
+    # as a status line rather than silently counted as a pass - a skip is
+    # not a pass.
 
     steps:
       - name: Checkout repository
@@ -462,23 +434,18 @@ jobs:
       # job -- fail-closed is preserved -- but only after the results it
       # must not mask have been produced.
       # ------------------------------------------------------------------
-      # The arm asserts a schema-convergence property that is only
-      # meaningful against a MIGRATED database named nexusdb. A developer
-      # box has one from months of running the app; the service container
-      # above creates a bare database and nothing produces nexusdb, so the
-      # comparison had no target and could never pass here. Materialize it
-      # through the application's OWN provisioning path (never a
-      # hand-written schema) so the comparison stays a real check of the
-      # shipped provisioner. Also provisions the URL's own database, which
-      # the portability and store-level arms connect to.
-      - name: Materialize the PostgreSQL arm fixture
+      # The PostgreSQL arms do NOT run here: they need a migrated server
+      # this runner does not have (see the job note above). Record that as
+      # an explicit status instead of letting a silent skip read as a pass.
+      - name: PostgreSQL arms - not run on this runner (reported)
         run: |
-          python scripts/ci/make_pg_fixture.py --database nexusdb --also "$PG_DB"
-
-
-      - name: PG arm gate (fail on skip)
-        run: |
-          python scripts/ci/check_pg_arm.py --junit "$CI_RESULTS_DIR/pg_arm/junit.xml"
+          {
+            echo '### PostgreSQL arms'
+            echo ''
+            echo '- Status: **NOT RUN** on GitHub CI - no migrated server on the runner.'
+            echo '- They run in the local gate: `python scripts/ci/check_local.py --pg`'
+            echo '- A skip here is NOT a pass and is not counted as one.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: OR-verb portability gate
         run: |
@@ -810,25 +777,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [integration, e2e, database-provider, research-backtest, model-validation]
+        suite: [integration, e2e, research-backtest, model-validation]
 
     env:
       CI_RESULTS_DIR: ci-results
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: nse_audit
-          POSTGRES_USER: nse_user
-          POSTGRES_PASSWORD: nse_password_dev
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U nse_user -d nse_audit"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
 
     steps:
       - name: Checkout repository
@@ -867,13 +819,6 @@ jobs:
               pip install playwright
               python -m playwright install --with-deps chromium
               pytest tests/integration/test_playwright_e2e.py \
-                --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
-              ;;
-            database-provider)
-              # DATABASE PORTABILITY: provider matrix suite against a REAL
-              # PostgreSQL service (SQLite always; PG via NSE_PG_TEST_URL).
-              NSE_PG_TEST_URL="postgresql://nse_user:nse_password_dev@localhost:5432/nse_audit" \
-                pytest tests/unit/test_database_portability.py \
                 --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
               ;;
             research-backtest)
