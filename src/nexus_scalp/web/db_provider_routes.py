@@ -169,6 +169,188 @@ def post_options(payload: dict[str, Any], request: Request) -> dict[str, Any]:
         )
 
 
+@router.get("/dashboard")
+def get_dashboard(request: Request) -> dict[str, Any]:
+    """Real runtime database dashboard with sizes, pool, and latency."""
+    request_id = request_id_from_request(request)
+    try:
+        from nexus_scalp.database.health import DatabaseHealthService
+
+        svc = DatabaseHealthService()
+        return {"success": True, "dashboard": svc.dashboard_snapshot()}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/dashboard", request_id, exc)
+        return _err(
+            "DB_DASHBOARD_FAILED",
+            "Could not load database dashboard.",
+            request_id,
+        )
+
+
+@router.get("/provider-state")
+def get_provider_state(request: Request) -> dict[str, Any]:
+    """Lifecycle transition state for provider switching."""
+    request_id = request_id_from_request(request)
+    try:
+        from nexus_scalp.database.provider_lifecycle import ProviderLifecycleManager
+
+        mgr = ProviderLifecycleManager()
+        return {"success": True, "state": mgr.get_state().to_dict()}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/provider-state", request_id, exc)
+        return _err(
+            "DB_PROVIDER_STATE_FAILED",
+            "Could not read provider state.",
+            request_id,
+        )
+
+
+@router.post("/transition/start")
+def transition_start(payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    """Initiate a multi-step transition toward a target provider."""
+    request_id = request_id_from_request(request)
+    try:
+        target = str((payload or {}).get("target_provider") or "sqlite")
+        from nexus_scalp.database.provider_lifecycle import ProviderLifecycleManager
+
+        mgr = ProviderLifecycleManager()
+        st = mgr.start_transition(target)
+        return {"success": True, "state": st.to_dict()}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/transition/start", request_id, exc)
+        return _err(
+            "DB_TRANSITION_START_FAILED",
+            "Could not initiate provider transition.",
+            request_id,
+        )
+
+
+@router.post("/transition/divergence")
+def transition_divergence(request: Request) -> dict[str, Any]:
+    """Check for unmigrated operational rows before switching providers."""
+    request_id = request_id_from_request(request)
+    try:
+        from nexus_scalp.database.provider_lifecycle import ProviderLifecycleManager
+
+        mgr = ProviderLifecycleManager()
+        res = mgr.check_divergence()
+        return {"success": True, "divergence": res.to_dict()}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/transition/divergence", request_id, exc)
+        return _err(
+            "DB_DIVERGENCE_CHECK_FAILED",
+            "Could not complete divergence check.",
+            request_id,
+        )
+
+
+@router.post("/reverse-migrate")
+def reverse_migrate(payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    """Stream operational data from PostgreSQL back to SQLite."""
+    request_id = request_id_from_request(request)
+    try:
+        from nexus_scalp.database.config import DatabaseConfig, load_database_config
+        from nexus_scalp.database.migrate_engine import MigrationOptions
+        from nexus_scalp.database.migrate_reverse import PostgresToSqliteMigrator
+
+        src = load_database_config("audit")
+        if not src.is_postgresql:
+            src = DatabaseConfig.for_postgres("audit")
+        dst = DatabaseConfig.for_sqlite("audit")
+
+        opts = MigrationOptions(
+            batch_size=int((payload or {}).get("batch_size") or 2000),
+            validate_checksums=True,
+        )
+        mig = PostgresToSqliteMigrator(src, dst, opts)
+        report = mig.run()
+        return {"success": report.status == "SUCCESS", "report": report.to_dict()}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/reverse-migrate", request_id, exc)
+        return _err(
+            "DB_REVERSE_MIGRATE_FAILED",
+            "Reverse migration from PostgreSQL to SQLite failed.",
+            request_id,
+        )
+
+
+@router.get("/purge/policies")
+def get_purge_policies(request: Request) -> dict[str, Any]:
+    """Get domain-aware data lifecycle policies."""
+    request_id = request_id_from_request(request)
+    try:
+        from nexus_scalp.database.lifecycle import DatabaseLifecycleManager
+
+        mgr = DatabaseLifecycleManager()
+        return {"success": True, "policies": mgr.get_policies()}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/purge/policies", request_id, exc)
+        return _err(
+            "DB_PURGE_POLICIES_FAILED",
+            "Could not load purge policies.",
+            request_id,
+        )
+
+
+@router.post("/purge/preview")
+def preview_purge(request: Request) -> dict[str, Any]:
+    """Estimate purgeable rows across policies without deleting."""
+    request_id = request_id_from_request(request)
+    try:
+        from nexus_scalp.database.lifecycle import DatabaseLifecycleManager
+
+        mgr = DatabaseLifecycleManager()
+        items = mgr.preview_purge()
+        return {"success": True, "preview": [item.__dict__ for item in items]}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/purge/preview", request_id, exc)
+        return _err(
+            "DB_PURGE_PREVIEW_FAILED",
+            "Could not generate purge preview.",
+            request_id,
+        )
+
+
+@router.post("/purge/run")
+def run_purge(payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    """Execute domain-aware batched purging of expired rows."""
+    request_id = request_id_from_request(request)
+    try:
+        from nexus_scalp.database.lifecycle import DatabaseLifecycleManager
+
+        mgr = DatabaseLifecycleManager()
+        batch_size = int((payload or {}).get("batch_size") or 2000)
+        maintenance = bool((payload or {}).get("run_maintenance", True))
+        res = mgr.run_purge(batch_size=batch_size, run_maintenance=maintenance)
+        return {"success": not res.errors, "result": res.to_dict()}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/purge/run", request_id, exc)
+        return _err(
+            "DB_PURGE_RUN_FAILED",
+            "Data lifecycle purge failed.",
+            request_id,
+        )
+
+
+@router.post("/maintenance")
+def run_maintenance(request: Request) -> dict[str, Any]:
+    """Run database-specific routine maintenance."""
+    request_id = request_id_from_request(request)
+    try:
+        from nexus_scalp.database.lifecycle import DatabaseLifecycleManager
+
+        mgr = DatabaseLifecycleManager()
+        report = mgr.run_maintenance()
+        return {"success": True, "maintenance": report}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/maintenance", request_id, exc)
+        return _err(
+            "DB_MAINTENANCE_FAILED",
+            "Database maintenance routine failed.",
+            request_id,
+        )
+
+
 def register_db_provider_routes(app: Any) -> None:
     """Mount this router (called from register_diagnostics_state_routes)."""
     app.include_router(router)

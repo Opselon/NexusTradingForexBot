@@ -210,10 +210,14 @@ class DatabaseConfig:
 
     @property
     def is_sqlite(self) -> bool:
+        if isinstance(self.provider, str):
+            return self.provider.lower() in {"sqlite", "sqlite3"}
         return self.provider.is_sqlite
 
     @property
     def is_postgresql(self) -> bool:
+        if isinstance(self.provider, str):
+            return self.provider.lower() in {"postgresql", "postgres", "pg"}
         return self.provider.is_postgresql
 
     def validate(self) -> None:

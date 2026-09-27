@@ -140,6 +140,68 @@ class DatabaseHealthService:
             "timestamp_utc": _utc_now(),
         }
 
+    def dashboard_snapshot(self) -> dict[str, Any]:
+        """Comprehensive real runtime database dashboard per Section 15."""
+        base = self.snapshot()
+        audit_domain = self.check_domain("audit")
+        cfg = self.resolve_config("audit")
+
+        pool_stats: dict[str, Any] = {"active": 0, "idle": 0, "waiting": 0}
+        dead_tuples: int = 0
+        index_count: int = 0
+        largest_tables: list[dict[str, Any]] = []
+
+        try:
+            driver = get_driver(cfg)
+            try:
+                if cfg.is_postgresql:
+                    # Index count on PG
+                    index_count = int(
+                        driver.scalar("SELECT COUNT(*) FROM pg_indexes WHERE schemaname = 'public'")
+                        or 0
+                    )
+                    # Dead tuples estimate
+                    dead_tuples = int(
+                        driver.scalar(
+                            "SELECT COALESCE(SUM(n_dead_tup), 0) FROM pg_stat_user_tables"
+                        )
+                        or 0
+                    )
+                    # Largest tables
+                    rows = driver.query(
+                        "SELECT relname as table_name, n_live_tup as row_count "
+                        "FROM pg_stat_user_tables ORDER BY n_live_tup DESC LIMIT 5"
+                    )
+                    largest_tables = [
+                        {"table": r.get("table_name"), "rows": r.get("row_count")} for r in rows
+                    ]
+                else:
+                    # SQLite index count
+                    index_count = int(
+                        driver.scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index'")
+                        or 0
+                    )
+            finally:
+                driver.close()
+        except Exception:
+            pass
+
+        return {
+            "provider": base["active_provider"],
+            "overall_health": base["overall"],
+            "connected": audit_domain.get("connected", False),
+            "latency_ms": audit_domain.get("latency_ms"),
+            "database_size_bytes": audit_domain.get("size_bytes"),
+            "table_count": audit_domain.get("table_count", 0),
+            "index_count": index_count,
+            "dead_tuples": dead_tuples,
+            "largest_tables": largest_tables,
+            "pool": pool_stats,
+            "schema_version": audit_domain.get("schema_version"),
+            "critical_tables": audit_domain.get("critical_tables", {}),
+            "timestamp_utc": _utc_now(),
+        }
+
 
 def _engine_path_for(cfg: DatabaseConfig) -> str:
     """TASK-10 migration engine still keys on a filesystem path; for

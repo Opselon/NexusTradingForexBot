@@ -144,6 +144,10 @@ class DatabaseDriver(ABC):
     def table_columns(self, table: str, conn: Any = None) -> list[dict[str, Any]]:
         """Column layout: [{name, type, notnull, pk, dflt_value}, ...]."""
 
+    def get_columns(self, table: str, conn: Any = None) -> list[str]:
+        """Convenience method returning a list of column names for a table."""
+        return [c["name"] for c in self.table_columns(table, conn=conn)]
+
     @abstractmethod
     def table_exists(self, table: str, conn: Any = None) -> bool:
         """True when the table exists."""
