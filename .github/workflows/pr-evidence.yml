@@ -47,7 +47,7 @@ jobs:
   publish:
     name: Publish / refresh PR evidence report
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     if: ${{ github.event.workflow_run.pull_requests[0].number != null }}
 
     steps:
@@ -76,7 +76,12 @@ jobs:
           PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
         run: |
           set +e
-          nexus pr report --pr "$PR_NUMBER" --refresh --json > pr-evidence.json
+          # --watch polls until the evidence has SETTLED (every check concluded),
+          # so the comment lands on a final verdict instead of a mid-flight
+          # IN_PROGRESS snapshot. Bounded well under the job timeout; each cycle
+          # edits the SAME `<!-- NSE-EVIDENCE-REPORT -->` comment.
+          nexus pr report --pr "$PR_NUMBER" --refresh --watch \
+            --poll-sec 60 --timeout-sec 780 --json > pr-evidence.json
           status=$?
           echo "nse pr report exit: $status (advisory — never fails this job)"
           # Surface the verdict in the job summary for humans scanning the run.

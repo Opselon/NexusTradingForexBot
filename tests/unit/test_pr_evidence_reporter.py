@@ -14,8 +14,14 @@ from nexus_scalp.pr_evidence.github_client import (
     FakeTransport,
     GitHubClient,
 )
-from nexus_scalp.pr_evidence.models import Status
-from nexus_scalp.pr_evidence.reporter import Reporter
+from nexus_scalp.pr_evidence.models import (
+    UNKNOWN,
+    CheckResult,
+    EvidenceCollection,
+    ReportMeta,
+    Status,
+)
+from nexus_scalp.pr_evidence.reporter import Reporter, ReportResult
 
 _REPO = "Opselon/NexusTradingForexBot"
 _PR = 999
@@ -82,6 +88,42 @@ def _reporter(payloads: dict[str, Any] | None = None) -> tuple[Reporter, FakeTra
     client = GitHubClient(_REPO, transport)
     reporter = Reporter(client, repo_root="/repo", options=EvidenceOptions(reviews=False))
     return reporter, transport
+
+
+def _check(**kw: Any) -> CheckResult:
+    """A generic check run — no PR/check specifics."""
+    base: dict[str, Any] = {
+        "name": "Some Gate",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "workflow": "CI",
+        "job": "some-gate",
+        "url": "https://gh/1",
+        "head_sha": _SHA,
+    }
+    return CheckResult(**{**base, **kw})
+
+
+def _meta() -> ReportMeta:
+    """Minimal report metadata for hand-built collections."""
+    return ReportMeta(pr=_PR, pr_head_sha=_SHA)
+
+
+def _reporter_for_watch(results: list[ReportResult]) -> Reporter:
+    """A Reporter whose ``report_once`` yields scripted results in order.
+
+    Exercises the watch loop's termination logic without any network I/O; the
+    last scripted result repeats once exhausted so a non-terminating loop fails
+    on the timeout rather than on an index error.
+    """
+    reporter, _ = _reporter()
+    queue = list(results)
+
+    def _next(pr: int, **kwargs: Any) -> ReportResult:
+        return queue.pop(0) if len(queue) > 1 else queue[0]
+
+    reporter.report_once = _next  # type: ignore[method-assign]
+    return reporter
 
 
 class TestSingleComment:
@@ -224,6 +266,54 @@ class TestStatusCalculation:
         run["conclusion"] = None
         reporter, _ = _reporter(payloads)
         assert reporter.report_once(_PR).status == Status.IN_PROGRESS
+
+
+class TestSettledContract:
+    """A report is only a verdict once nothing is still running.
+
+    Publishing mid-flight and stopping froze ``IN_PROGRESS`` on the PR forever;
+    a settled FAIL is as terminal as a PASS, so the watch loop must stop on
+    either.
+    """
+
+    def test_in_progress_check_means_not_settled(self) -> None:
+        evidence = EvidenceCollection(
+            meta=_meta(), checks=(_check(status="IN_PROGRESS", conclusion=UNKNOWN),)
+        )
+        assert evidence.settled is False
+        assert evidence.status == Status.IN_PROGRESS
+
+    def test_failed_check_is_settled(self) -> None:
+        evidence = EvidenceCollection(meta=_meta(), checks=(_check(conclusion="FAILURE"),))
+        assert evidence.settled is True
+        assert evidence.status == Status.FAIL
+
+    def test_passing_checks_are_settled(self) -> None:
+        evidence = EvidenceCollection(meta=_meta(), checks=(_check(conclusion="SUCCESS"),))
+        assert evidence.settled is True
+        assert evidence.status == Status.PASS
+
+    def test_watch_stops_once_the_verdict_settles(self) -> None:
+        # First cycle still running, second settled: the loop must exit on the
+        # second and return the settled verdict, not spin until the timeout.
+        running = ReportResult(
+            pr=7,
+            status=Status.IN_PROGRESS,
+            failure_count=0,
+            collection=EvidenceCollection(
+                meta=_meta(), checks=(_check(status="IN_PROGRESS", conclusion=UNKNOWN),)
+            ),
+        )
+        settled = ReportResult(
+            pr=7,
+            status=Status.FAIL,
+            failure_count=1,
+            collection=EvidenceCollection(meta=_meta(), checks=(_check(conclusion="FAILURE"),)),
+        )
+        reporter = _reporter_for_watch([running, settled])
+        result = reporter.watch(7, poll_sec=0, timeout_sec=30)
+        assert result is settled
+        assert result.status == Status.FAIL
 
 
 class TestHeadVerification:

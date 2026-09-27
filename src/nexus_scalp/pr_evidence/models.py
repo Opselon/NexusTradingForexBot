@@ -289,6 +289,18 @@ class EvidenceCollection:
         return [*self.failures, *self.local_failures]
 
     @property
+    def settled(self) -> bool:
+        """True when no collected check is still running (spec §17).
+
+        A report published while checks are in flight is a snapshot, not a
+        verdict: publishing one and stopping leaves ``IN_PROGRESS`` frozen on
+        the PR even after every gate finishes. Callers that must land a FINAL
+        state wait for ``settled``, which is evidence-based (every check has a
+        conclusion) and therefore works for any PR shape.
+        """
+        return not any(c.in_progress for c in self.checks)
+
+    @property
     def status(self) -> Status:
         """Deterministic overall status (spec §17) — evidence, not opinion.
 
@@ -297,7 +309,7 @@ class EvidenceCollection:
         """
         if not self.checks and not self.all_failures():
             return Status.UNKNOWN
-        if any(c.in_progress for c in self.checks):
+        if not self.settled:
             return Status.IN_PROGRESS
         if any(c.is_failure for c in self.checks) or any(
             f.category != FailureCategory.ENVIRONMENT_FAILURE for f in self.all_failures()
