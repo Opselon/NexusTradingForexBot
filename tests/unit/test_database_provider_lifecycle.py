@@ -47,18 +47,59 @@ class TestProviderLifecycleStateMachine:
         mgr = ProviderLifecycleManager()
         mgr.start_transition("postgresql")
         # In CONFIGURED phase, activation without force must be rejected
-        ok = mgr.confirm_activation(force=False)
+        ok = mgr.confirm_activation()
         assert ok is False
         assert mgr.get_state().phase != ProviderSwitchPhase.ACTIVE
 
-    def test_forced_activation_transition(self) -> None:
-        """Forced activation transitions to ACTIVE."""
+    def test_activation_bypass_is_rejected(self) -> None:
+        """Activation cannot bypass target testing, migration, and verification."""
         mgr = ProviderLifecycleManager()
         mgr.start_transition("sqlite")
-        ok = mgr.confirm_activation(force=True)
-        assert ok is True
-        assert mgr.get_state().phase == ProviderSwitchPhase.ACTIVE
-        assert mgr.get_state().active_provider == "sqlite"
+        assert mgr.confirm_activation() is False
+        assert mgr.get_state().phase != ProviderSwitchPhase.ACTIVE
+
+    def test_activation_requires_non_divergent_evidence(self) -> None:
+        mgr = ProviderLifecycleManager()
+        mgr.start_transition("sqlite")
+        mgr._state.last_test_passed = True
+        mgr._state.last_migration_passed = True
+        mgr._state.last_verification_passed = True
+        mgr.mark_verification(True)
+        mgr._state.divergence = None
+        assert mgr.confirm_activation() is False
+
+    def test_transition_state_is_shared_between_manager_instances(self, tmp_path: Path) -> None:
+        """A new request manager must observe the persisted transition state."""
+        settings_db = str(tmp_path / "settings.db")
+        first = ProviderLifecycleManager(settings_db_path=settings_db)
+        first.start_transition("postgresql")
+
+        second = ProviderLifecycleManager(settings_db_path=settings_db)
+        state = second.get_state()
+
+        assert state.target_provider == "postgresql"
+        assert state.phase == ProviderSwitchPhase.CONFIGURED
+
+    def test_activation_route_contract_requires_ready_state(self, tmp_path: Path) -> None:
+        """Persisted state cannot be activated until verification reaches READY."""
+        settings_db = str(tmp_path / "settings.db")
+        mgr = ProviderLifecycleManager(settings_db_path=settings_db)
+        mgr.start_transition("postgresql")
+
+        assert mgr.confirm_activation() is False
+        assert (
+            ProviderLifecycleManager(settings_db_path=settings_db).get_state().phase
+            == ProviderSwitchPhase.CONFIGURED
+        )
+
+        mgr._state.last_test_passed = True
+        mgr._state.last_migration_passed = True
+        mgr.mark_verification(True)
+        assert ProviderLifecycleManager(settings_db_path=settings_db).confirm_activation() is False
+        assert (
+            ProviderLifecycleManager(settings_db_path=settings_db).get_state().phase
+            == ProviderSwitchPhase.READY
+        )
 
 
 class TestPostgresToSqliteMigrator:

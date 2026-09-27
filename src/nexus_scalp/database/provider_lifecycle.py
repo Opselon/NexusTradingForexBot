@@ -16,6 +16,7 @@ from __future__ import annotations
 import enum
 import time
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig, load_database_config
@@ -84,30 +85,71 @@ class ProviderLifecycleManager:
         "audit_account_snapshots",
     )
 
+    _STATE_KEY = "database.provider_transition_state"
+
     def __init__(self, workspace: str | None = None, settings_db_path: str | None = None) -> None:
         self.workspace = workspace
         self.settings_db_path = settings_db_path
-        self._state: ProviderTransitionState = self._initialize_state()
+        self._state: ProviderTransitionState = self._load_state()
 
-    def _initialize_state(self) -> ProviderTransitionState:
-        active = self.get_active_provider()
-        return ProviderTransitionState(
-            active_provider=active,
-            target_provider=active,
-            phase=ProviderSwitchPhase.ACTIVE,
-            updated_at=time.time(),
+    def _settings(self) -> Any:
+        from nexus_scalp.settings.service import SettingsDatabase
+
+        return (
+            SettingsDatabase(db_path=Path(self.settings_db_path))
+            if self.settings_db_path
+            else SettingsDatabase()
         )
 
-    def get_active_provider(self) -> str:
-        """Resolve the currently authoritative database provider."""
+    def _load_state(self) -> ProviderTransitionState:
+        active = self.get_active_provider()
         try:
-            cfg = load_database_config("audit", settings_db_path=self.settings_db_path)
-            return cfg.provider.value
-        except Exception:
-            return DatabaseProvider.SQLITE.value
+            db = self._settings()
+            row = db.get(self._STATE_KEY)
+            db.close()
+            if row and isinstance(row.value, dict):
+                raw = row.value
+                divergence = raw.get("divergence")
+                return ProviderTransitionState(
+                    active_provider=str(raw.get("active_provider") or active),
+                    target_provider=str(raw.get("target_provider") or active),
+                    phase=ProviderSwitchPhase(
+                        str(raw.get("phase") or ProviderSwitchPhase.ACTIVE.value)
+                    ),
+                    updated_at=float(raw.get("updated_at") or time.time()),
+                    last_test_passed=bool(raw.get("last_test_passed", False)),
+                    last_migration_passed=bool(raw.get("last_migration_passed", False)),
+                    last_verification_passed=bool(raw.get("last_verification_passed", False)),
+                    error=str(raw.get("error") or ""),
+                    divergence=DivergenceCheckResult(**divergence)
+                    if isinstance(divergence, dict)
+                    else None,
+                )
+        except Exception as exc:
+            logger.warning("Could not load persisted provider transition state: %s", exc)
+        return ProviderTransitionState(active, active, ProviderSwitchPhase.ACTIVE, time.time())
+
+    def _persist_state(self) -> None:
+        db = self._settings()
+        try:
+            db.set(
+                self._STATE_KEY,
+                self._state.to_dict(),
+                value_type="json",
+                source="USER_SETTINGS",
+                actor="web",
+            )
+        finally:
+            db.close()
+
+    def get_active_provider(self) -> str:
+        """Resolve the authoritative provider; configuration errors propagate."""
+        cfg = load_database_config("audit", settings_db_path=self.settings_db_path)
+        return cfg.provider.value
 
     def get_state(self) -> ProviderTransitionState:
         """Get the current transition state."""
+        self._state = self._load_state()
         return self._state
 
     def start_transition(self, target_provider: str) -> ProviderTransitionState:
@@ -125,10 +167,12 @@ class ProviderLifecycleManager:
             active,
             target,
         )
+        self._persist_state()
         return self._state
 
     def test_target_connection(self, config_overrides: dict[str, Any] | None = None) -> bool:
         """Test target provider connection and update transition state."""
+        self._state = self._load_state()
         self._state.phase = ProviderSwitchPhase.TESTING
         self._state.updated_at = time.time()
         target = self._state.target_provider
@@ -152,17 +196,28 @@ class ProviderLifecycleManager:
             else:
                 self._state.phase = ProviderSwitchPhase.FAILED
                 self._state.error = f"Connection test failed for target provider {target}"
+            self._persist_state()
             return ok
         except Exception as exc:
             self._state.phase = ProviderSwitchPhase.FAILED
             self._state.error = f"Target connection test raised: {exc}"
             self._state.last_test_passed = False
+            self._persist_state()
             return False
 
     def mark_migrating(self) -> None:
         """Set phase to MIGRATING during data transfer."""
         self._state.phase = ProviderSwitchPhase.MIGRATING
         self._state.updated_at = time.time()
+        self._persist_state()
+
+    def mark_migration(self, passed: bool, error: str = "") -> None:
+        """Record migration completion without activating the provider."""
+        self._state.updated_at = time.time()
+        self._state.last_migration_passed = passed
+        self._state.error = "" if passed else (error or "Data migration failed")
+        self._state.phase = ProviderSwitchPhase.CONFIGURED if passed else ProviderSwitchPhase.FAILED
+        self._persist_state()
 
     def mark_verification(self, passed: bool, error: str = "") -> None:
         """Record the post-migration verification result."""
@@ -174,6 +229,7 @@ class ProviderLifecycleManager:
         else:
             self._state.phase = ProviderSwitchPhase.FAILED
             self._state.error = error or "Data verification failed"
+        self._persist_state()
 
     def _get_driver(self, cfg: DatabaseConfig) -> Any:
         return get_driver(cfg)
@@ -238,32 +294,42 @@ class ProviderLifecycleManager:
                 warning=warning,
             )
             self._state.divergence = res
+            self._persist_state()
             return res
         except Exception as exc:
             logger.warning("Divergence check failed: %s", exc)
-            return DivergenceCheckResult(
-                diverged=False,
+            # Unknown divergence is unsafe: never report a clean comparison.
+            res = DivergenceCheckResult(
+                diverged=True,
                 source_provider=src.provider.value,
                 target_provider=dst.provider.value,
-                warning=f"Divergence check could not complete: {exc}",
+                warning=f"Divergence check could not complete: {type(exc).__name__}",
             )
+            self._state.divergence = res
+            return res
         finally:
             if src_driver:
                 src_driver.close()
             if dst_driver:
                 dst_driver.close()
 
-    def confirm_activation(self, force: bool = False) -> bool:
-        """Activate the target provider once verified (or forced).
-
-        Enforces the invariant: target MUST be in READY state before becoming ACTIVE
-        unless force=True is explicitly set by the operator.
-        """
-        if self._state.phase != ProviderSwitchPhase.READY and not force:
+    def confirm_activation(self) -> bool:
+        """Activate only after target testing, migration, verification, and parity."""
+        self._state = self._load_state()
+        if self._state.phase != ProviderSwitchPhase.READY:
             logger.error(
                 "Refusing provider activation: phase is %s (must be READY)",
                 self._state.phase.value,
             )
+            return False
+        if not (
+            self._state.last_test_passed
+            and self._state.last_migration_passed
+            and self._state.last_verification_passed
+            and self._state.divergence is not None
+            and not self._state.divergence.diverged
+        ):
+            logger.error("Refusing provider activation: transition evidence is incomplete")
             return False
 
         from pathlib import Path
@@ -282,6 +348,7 @@ class ProviderLifecycleManager:
         self._state.active_provider = self._state.target_provider
         self._state.phase = ProviderSwitchPhase.ACTIVE
         self._state.updated_at = time.time()
+        self._persist_state()
         logger.info(
             "Database provider successfully switched to %s (ACTIVE)",
             self._state.active_provider,

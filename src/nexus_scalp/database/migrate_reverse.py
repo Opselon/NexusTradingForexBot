@@ -10,6 +10,8 @@ Enforces Section 13 & 14 of the Dual Database Architecture:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -66,6 +68,41 @@ class PostgresToSqliteMigrator:
         )
         dst_driver.execute(ddl)
 
+    def _load_checkpoints(self, dst_driver: Any) -> dict[str, dict[str, Any]]:
+        """Read reverse checkpoints so interrupted tables resume safely."""
+        try:
+            rows = dst_driver.query(f"SELECT * FROM {CHECKPOINT_TABLE}")
+        except Exception:
+            return {}
+        return {
+            row["table_name"]: {
+                "last_id": row.get("last_id"),
+                "rows_copied": int(row.get("rows_copied") or 0),
+                "total_rows": int(row.get("total_rows") or 0),
+                "status": row.get("status") or "RUNNING",
+            }
+            for row in rows
+        }
+
+    def _save_checkpoint(
+        self,
+        dst_driver: Any,
+        table: str,
+        *,
+        last_id: Any,
+        rows_copied: int,
+        total_rows: int,
+        status: str,
+    ) -> None:
+        """Persist a checkpoint after each committed batch."""
+        now = time.time()
+        dst_driver.execute(
+            f"INSERT OR REPLACE INTO {CHECKPOINT_TABLE} "
+            "(table_name,last_id,rows_copied,total_rows,status,updated_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (table, last_id or 0, rows_copied, total_rows, status, now),
+        )
+
     def preview(self) -> dict[str, Any]:
         """Dry-run preview: tables, row counts, and volume."""
         src_driver = get_driver(self.src_cfg)
@@ -114,12 +151,20 @@ class PostgresToSqliteMigrator:
 
         try:
             self._ensure_checkpoint_table(dst_driver)
+            checkpoints = self._load_checkpoints(dst_driver)
             tables = [t for t in src_driver.list_tables() if t not in SKIP_TABLES]
             if self.opts.tables:
                 tables = [t for t in tables if t in self.opts.tables]
 
             for table in sorted(tables):
-                self._migrate_table(src_driver, dst_driver, table, report, on_progress)
+                self._migrate_table(
+                    src_driver,
+                    dst_driver,
+                    table,
+                    report,
+                    on_progress,
+                    checkpoints.get(table),
+                )
 
             val = self.validate()
             report.validation = val.status
@@ -143,12 +188,14 @@ class PostgresToSqliteMigrator:
         table: str,
         report: MigrationReport,
         on_progress: Callable[[str, int, int, int], None] | None,
+        checkpoint: dict[str, Any] | None = None,
     ) -> None:
         """Stream rows from PostgreSQL to SQLite in ordered batches."""
         if not dst.table_exists(table):
-            # Destination must have table schema
-            report.warnings.append(f"Table {table} does not exist in SQLite destination; skipping")
-            return
+            # A missing destination is data loss, never a successful skip.
+            message = f"Table {table} does not exist in SQLite destination"
+            report.errors.append(message)
+            raise RuntimeError(message)
 
         cols = [c["name"] for c in dst.table_columns(table)]
         if not cols:
@@ -163,8 +210,25 @@ class PostgresToSqliteMigrator:
         insert_sql = f'INSERT OR REPLACE INTO "{table}" ({col_str}) VALUES ({qmarks})'
 
         batch_size = self.opts.batch_size or DEFAULT_BATCH_SIZE
-        copied = 0
-        last_val: Any = None
+        copied = int((checkpoint or {}).get("rows_copied") or 0)
+        last_val: Any = (checkpoint or {}).get("last_id")
+        if (checkpoint or {}).get("status") == "COMPLETE":
+            report.tables_migrated += 1
+            report.rows_migrated += copied
+            report.per_table[table] = {
+                "source_rows": total_rows,
+                "migrated_rows": copied,
+                "status": "ALREADY_COMPLETE",
+            }
+            return
+        self._save_checkpoint(
+            dst,
+            table,
+            last_id=last_val,
+            rows_copied=copied,
+            total_rows=total_rows,
+            status="RUNNING",
+        )
 
         while True:
             where = ""
@@ -189,9 +253,25 @@ class PostgresToSqliteMigrator:
 
             copied += len(rows)
             last_val = rows[-1].get(order_col)
+            self._save_checkpoint(
+                dst,
+                table,
+                last_id=last_val,
+                rows_copied=copied,
+                total_rows=total_rows,
+                status="RUNNING",
+            )
             if on_progress:
                 on_progress(table, copied, total_rows, len(rows))
 
+        self._save_checkpoint(
+            dst,
+            table,
+            last_id=last_val,
+            rows_copied=copied,
+            total_rows=total_rows,
+            status="COMPLETE",
+        )
         report.tables_migrated += 1
         report.rows_migrated += copied
         report.per_table[table] = {
@@ -200,8 +280,25 @@ class PostgresToSqliteMigrator:
             "status": "COPIED",
         }
 
+    @staticmethod
+    def _table_digest(driver: Any, table: str, columns: list[str], order: str) -> str:
+        """Create a deterministic digest of primary-key/value rows."""
+        digest = hashlib.sha256()
+        col_sql = ", ".join(f'"{c}"' for c in columns)
+        for row in driver.query(f'SELECT {col_sql} FROM "{table}" ORDER BY "{order}" ASC'):
+            digest.update(
+                json.dumps(
+                    [row.get(c) for c in columns],
+                    sort_keys=True,
+                    default=str,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            )
+            digest.update(b"\\n")
+        return digest.hexdigest()
+
     def validate(self) -> ReverseMigrationValidationResult:
-        """Validate row counts and financial aggregates between PG and SQLite."""
+        """Validate counts, row values, and financial aggregates between PG and SQLite."""
         src = get_driver(self.src_cfg)
         dst = get_driver(self.dst_cfg)
         try:
@@ -215,6 +312,14 @@ class PostgresToSqliteMigrator:
 
             for t in tables:
                 if not dst.table_exists(t):
+                    row_ok = False
+                    errors.append(f"Missing destination table: {t}")
+                    details[t] = {
+                        "source_rows": src.scalar(f"SELECT COUNT(*) FROM {t}") or 0,
+                        "dest_rows": 0,
+                        "match": False,
+                        "missing": True,
+                    }
                     continue
                 s_cnt = src.scalar(f"SELECT COUNT(*) FROM {t}") or 0
                 d_cnt = dst.scalar(f"SELECT COUNT(*) FROM {t}") or 0
@@ -222,11 +327,23 @@ class PostgresToSqliteMigrator:
                 if not match:
                     row_ok = False
                     errors.append(f"Row count mismatch on {t}: source={s_cnt}, dest={d_cnt}")
-                details[t] = {
+                detail = {
                     "source_rows": s_cnt,
                     "dest_rows": d_cnt,
                     "match": match,
                 }
+                columns = [c["name"] for c in src.table_columns(t)]
+                dst_columns = {c["name"] for c in dst.table_columns(t)}
+                if columns and set(columns) <= dst_columns:
+                    order = next((c for c in columns if c == "id"), columns[0])
+                    source_digest = self._table_digest(src, t, columns, order)
+                    dest_digest = self._table_digest(dst, t, columns, order)
+                    detail.update({"source_digest": source_digest, "dest_digest": dest_digest})
+                    detail["match"] = detail["match"] and source_digest == dest_digest
+                    if source_digest != dest_digest:
+                        row_ok = False
+                        errors.append(f"Value digest mismatch on {t}")
+                details[t] = detail
 
             # Financial comparison on audit_ledger
             fin_ok = True

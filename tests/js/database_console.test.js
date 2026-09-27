@@ -372,5 +372,22 @@ test('ageLabel: evidence recency reads as a human sentence', () => {
   assert.equal(ageLabel(-5), 'age unknown');
 });
 
+test('provider lifecycle transport names every guarded backend action', () => {
+  const source = require('fs').readFileSync(require('path').resolve(__dirname, '../../frontend/src/features/database/api.ts'), 'utf8');
+  for (const route of [
+    '/api/db/manage/provider-state',
+    '/api/db/manage/transition/start',
+    '/api/db/manage/transition/test-connection',
+    '/api/db/manage/transition/migrate',
+    '/api/db/manage/transition/verify',
+    '/api/db/manage/transition/activate',
+    '/api/db/manage/transition/divergence',
+    '/api/db/manage/reverse-migrate',
+  ]) assert.ok(source.includes(route), `missing lifecycle route ${route}`);
+  for (const method of ['testTransitionConnection', 'migrateTransition', 'verifyTransition', 'activateTransition']) {
+    assert.match(source, new RegExp(`${method}:`), `${method} must be callable by the UI`);
+  }
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -50,6 +50,11 @@ class MaintenanceCycle:
         #: composition root so both maintenance call sites share one throttle.
         self._operational_digest_interval_sec: float = 24 * 3600.0
         self._last_operational_digest_time: float = 0.0
+        self._last_database_purge_time: float = getattr(om, "_last_database_purge_time", 0.0)
+        self._database_purge_interval_sec: float = 6 * 3600.0
+        self._database_lifecycle_manager: Any | None = getattr(
+            om, "_database_lifecycle_manager", None
+        )
         # Parity snapshot state lives on the CYCLE (read via self._last_*):
         # keep instance defaults so a duck-typed composition root without
         # these attributes still runs (test stand-ins).
@@ -74,15 +79,12 @@ class MaintenanceCycle:
         # silently skips the first pass on a young host — BUG-273 class).
         self._last_spread_sketch_refresh_time: float | None = None
         self._spread_sketch_interval_sec: float = SPREAD_SKETCH_REFRESH_INTERVAL_SEC
-        # Destructive lifecycle purge is explicitly opt-in via SettingsDatabase.
-        self._last_database_purge_time: float = getattr(om, "_last_database_purge_time", 0.0)
-        self._database_purge_interval_sec: float = 6 * 3600.0
-        self._database_lifecycle_manager: Any | None = getattr(
-            om, "_database_lifecycle_manager", None
+        self._last_database_log_purge_time: float = getattr(
+            om, "_last_database_log_purge_time", 0.0
         )
+        self._database_log_purge_interval_sec: float = 6 * 3600.0
 
     def _database_purge_settings(self) -> tuple[bool, float]:
-        """Read the purge opt-in and cadence, failing closed on bad settings."""
         from nexus_scalp.database.lifecycle import (
             DEFAULT_PURGE_INTERVAL_SEC,
             PURGE_ENABLED_SETTING_KEY,
@@ -108,7 +110,6 @@ class MaintenanceCycle:
                 db.close()
 
     async def _run_database_purge(self, *, now_t: float) -> None:
-        """Run the opt-in lifecycle purge off-loop and failure-isolated."""
         enabled, cadence = self._database_purge_settings()
         self._database_purge_interval_sec = cadence
         if not enabled or now_t - self._last_database_purge_time < cadence:
@@ -122,6 +123,22 @@ class MaintenanceCycle:
             await asyncio.to_thread(self._database_lifecycle_manager.run_purge)
         except Exception as purge_err:
             logger.warning("[DB_PURGE] event=PURGE_FAILED (isolated) error=%s", purge_err)
+
+    async def _purge_database_logs(self, *, now_t: float) -> None:
+        """Purge opted-in persistent query logs off-loop and failure-isolated."""
+        try:
+            from nexus_scalp.database.log_store import DatabaseLogStore, log_persistence_enabled
+
+            if (
+                not log_persistence_enabled()
+                or now_t - self._last_database_log_purge_time
+                < self._database_log_purge_interval_sec
+            ):
+                return
+            self._last_database_log_purge_time = now_t
+            await asyncio.to_thread(DatabaseLogStore().purge_expired)
+        except Exception as purge_err:
+            logger.warning("[DB_LOG_RETENTION] event=PURGE_FAILED (isolated) error=%s", purge_err)
 
     async def _refresh_spread_sketch(self, *, now_t: float) -> None:
         """BUG-292: drive the C3 spread-sketch refresh (bounded, off-loop).
@@ -161,7 +178,7 @@ class MaintenanceCycle:
         # deletes, NEVER on the tick path). Failure is isolated: a purge
         # error must never disturb trading.
         now_t = time.time()
-        await self._run_database_purge(now_t=now_t)
+        await self._purge_database_logs(now_t=now_t)
         if now_t - self.om._last_audit_purge_time >= self.om._audit_purge_interval_sec:
             self.om._last_audit_purge_time = now_t
             try:

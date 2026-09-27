@@ -506,10 +506,16 @@ def test_guard_replica_lag_falls_back() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_guard_provider_parse_never_raises() -> None:
-    from nexus_scalp.database.provider import DatabaseProvider
+def test_guard_provider_parse_fails_closed() -> None:
+    from nexus_scalp.database.provider import (
+        DatabaseProvider,
+        ProviderConfigurationError,
+    )
 
-    for raw in (None, "", "garbage", "SQLITE", "postgres", "pgsql", "sqlite3"):
+    for raw in (None, "", "garbage"):
+        with pytest.raises(ProviderConfigurationError):
+            DatabaseProvider.parse(raw)
+    for raw in ("SQLITE", "postgres", "pgsql", "sqlite3"):
         p = DatabaseProvider.parse(raw)
         assert p in {DatabaseProvider.SQLITE, DatabaseProvider.POSTGRESQL}
 
