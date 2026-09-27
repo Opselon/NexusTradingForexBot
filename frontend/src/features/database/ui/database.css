@@ -525,6 +525,22 @@ button.dbc-chip:hover {
   text-transform: uppercase;
 }
 
+.dbc-log-list {
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+  color: var(--text-dim);
+  font: 11px/1.45 var(--mono);
+  white-space: pre-wrap;
+}
+.dbc-days {
+  width: 88px;
+}
+
 /* -- responsive ---------------------------------------------------------- */
 @media (max-width: 1100px) {
   .dbc-console {
