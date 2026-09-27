@@ -75,6 +75,37 @@ def test_pack_count_param_governs_cardinality():
     assert len(b) == 12
 
 
+def test_pack_install_prefetches_existing_seeds_in_one_query():
+    from nexus_scalp.marketplace.packs.price_action import generate
+
+    with tempfile.TemporaryDirectory() as tmp:
+        svc = _mk_service(tmp)
+        seeds = generate(count=5, version="2.0.0")
+        original_query = svc.store.driver.query
+        original_query_one = svc.store.driver.query_one
+        calls = {"query": 0, "query_one": 0}
+
+        def counted_query(*args, **kwargs):
+            calls["query"] += 1
+            return original_query(*args, **kwargs)
+
+        def counted_query_one(*args, **kwargs):
+            calls["query_one"] += 1
+            return original_query_one(*args, **kwargs)
+
+        svc.store.driver.query = counted_query
+        svc.store.driver.query_one = counted_query_one
+        result = svc.install_pack(
+            "prefetch", seeds, pack_name="Prefetch", family="TEST", version="1.0.0"
+        )
+
+        assert result["stored"] == 5
+        # One prefetch plus the existing final stored-count query; no
+        # per-seed existence probes remain.
+        assert calls["query"] == 2
+        assert calls["query_one"] == 0
+
+
 # ---------------------------------------------------------------------------
 # 2. Enable gates reject invalid transitions
 # ---------------------------------------------------------------------------
