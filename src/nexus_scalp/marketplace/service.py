@@ -134,6 +134,21 @@ class MarketplaceService:
             conn=conn,
         )
 
+    def _existing_seed_keys(self, seeds: list[SeedSpec]) -> set[tuple[str, str]]:
+        """Return existing composite keys using bounded portable queries."""
+        existing: set[tuple[str, str]] = set()
+        # Keep parameter counts below SQLite's common 999-variable limit while
+        # still replacing the per-seed query amplification.
+        for start in range(0, len(seeds), 400):
+            batch = seeds[start : start + 400]
+            clauses = " OR ".join("(seed_id = ? AND version = ?)" for _ in batch)
+            args = tuple(value for seed in batch for value in (seed.seed_id, seed.version))
+            rows = self.store.driver.query(
+                f"SELECT seed_id, version FROM mk_seeds WHERE {clauses}", args
+            )
+            existing.update((str(row["seed_id"]), str(row["version"])) for row in rows)
+        return existing
+
     # -- install (idempotent by (seed_id, version)) -------------------------
 
     def install_pack(
@@ -187,25 +202,30 @@ class MarketplaceService:
                 if row is None:
                     self._write_seed(conn, seed, pack_id, MarketplaceLifecycle.INSTALLED)
 
+        # Prefetch the composite primary-key matches once.  The previous
+        # per-seed query amplified installation into one round trip per seed.
+        existing = self._existing_seed_keys(seeds)
+
         # use the store transaction wrapper
-        self.store._write(
-            lambda conn: (
-                self.store.driver.upsert(
-                    "mk_packages",
-                    {
-                        "pack_id": pack_id,
-                        "version": version,
-                        "name": pack_name,
-                        "family": family,
-                        "description": description,
-                        "seed_count": len(seeds),
-                        "installed_at": _now_iso(),
-                    },
-                    conn=conn,
-                ),
-                *[self._upsert_seed_if_absent(conn, seed, pack_id) for seed in seeds],
+        def _write_pack(conn: Any) -> None:
+            self.store.driver.upsert(
+                "mk_packages",
+                {
+                    "pack_id": pack_id,
+                    "version": version,
+                    "name": pack_name,
+                    "family": family,
+                    "description": description,
+                    "seed_count": len(seeds),
+                    "installed_at": _now_iso(),
+                },
+                conn=conn,
             )
-        )
+            for seed in seeds:
+                if (seed.seed_id, seed.version) not in existing:
+                    self._write_seed(conn, seed, pack_id, MarketplaceLifecycle.INSTALLED)
+
+        self.store._write(_write_pack)
 
         # accurate installed count
         rows = self.store.query_all("SELECT seed_id FROM mk_seeds WHERE pack_id = ?", (pack_id,))
