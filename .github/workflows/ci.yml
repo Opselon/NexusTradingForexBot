@@ -178,17 +178,17 @@ jobs:
           # pytest-cov>=4.1.0 + pytest-xdist>=3.5.0 ship in the [dev] extra
           # (pyproject) - the editable install above already provides them;
           # a second resolver pass only added 10-20s per job.
-          # The [postgres] extra (psycopg + psycopg-pool) is REQUIRED here:
-          # the PG test arm (check_pg_arm.py / the suite's NSE_PG_TEST_URL
-          # arms) skips silently without psycopg installed, which is how the
-          # empty live tables hid behind a green suite.
+          # [postgres] keeps psycopg importable so provider-aware modules
+          # import cleanly; the PG ARMS themselves do not run in this job.
           pip install -e ".[dev,web,postgres]"
 
       # -------- Results tree + run metadata (fresh on every run) --------
-      # -------- PG arm: RUN instead of skip (REGR-CI-001) --------
-      # The three CI gates Lane O wrote were never invoked by any workflow,
-      # so a skipping PG arm looked green. These are the guards that make a
-      # skip a failure rather than a pass.
+      # -------- PG arms: not run in this job (see the job note) --------
+      # scripts/ci/check_preexisting_reds.py is deliberately NOT a step here:
+      # it worktrees the base revision, which a shallow checkout cannot
+      # provide, and its instant failure skipped the runtime / layered-smoke
+      # checks that follow. It stays a local tool:
+      #     python scripts/ci/check_preexisting_reds.py --base origin/main
       - name: Initialize results tree
         run: |
           python scripts/ci/make_ci_results.py init "$CI_RESULTS_DIR" \
@@ -450,11 +450,6 @@ jobs:
       - name: OR-verb portability gate
         run: |
           python scripts/ci/check_or_verb_portability.py
-
-      - name: Pre-existing reds gate
-        run: |
-          python scripts/ci/check_preexisting_reds.py
-
 
       - name: Classify blocked downstream checks
         if: env.RUFF_FORMAT_RC != '0' && env.RUFF_REPAIR_STATUS != 'repaired'
