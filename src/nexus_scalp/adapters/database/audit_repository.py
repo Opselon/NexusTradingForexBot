@@ -1760,39 +1760,29 @@ class AuditRepository:
         symbol: str | None = None,
     ) -> list[dict[str, Any]]:
         """Reconstructed logical trades, newest exit first."""
-        if not self._is_sqlite:
-            clauses: list[str] = []
-            args: list[Any] = []
-            if symbol:
-                clauses.append("symbol = ?")
-                args.append(symbol)
-            where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-            return self._provider_read_guard(
-                "get_broker_trades",
-                lambda: ([]),
-                sql=(
-                    "SELECT * FROM audit_broker_trades "
-                    f"{where} ORDER BY COALESCE(NULLIF(exit_time,''), '') DESC "
-                    "LIMIT ? OFFSET ?"
-                ),
-                args=[*args, int(limit), int(offset)],
-                kind="rows",
-            )
         clauses: list[str] = []
-        args: list[Any] = []
+        args: tuple[Any, ...] = ()
         if symbol:
             clauses.append("symbol = ?")
-            args.append(symbol)
+            args = (*args, symbol)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         sql = (
             "SELECT * FROM audit_broker_trades "
             f"{where} ORDER BY COALESCE(NULLIF(exit_time,''), '') DESC "
             "LIMIT ? OFFSET ?"
         )
-        args += [int(limit), int(offset)]
+        args = (*args, int(limit), int(offset))
+        if not self._is_sqlite:
+            return self._provider_read_guard(
+                "get_broker_trades",
+                lambda: ([]),
+                sql=sql,
+                args=args,
+                kind="rows",
+            )
         with self._connect_sqlite(5.0) as conn:
             conn.row_factory = sqlite3.Row
-            return [dict(r) for r in conn.execute(sql, tuple(args)).fetchall()]
+            return [dict(r) for r in conn.execute(sql, args).fetchall()]
 
     def get_broker_deals(
         self,
@@ -1800,13 +1790,13 @@ class AuditRepository:
         limit: int = 2000,
     ) -> list[dict[str, Any]]:
         """Normalized broker deals (optionally for one position lifecycle)."""
+        if position_id is not None:
+            sql = "SELECT * FROM audit_broker_deals WHERE position_id = ? ORDER BY time ASC LIMIT ?"
+            args: tuple[Any, ...] = (int(position_id), int(limit))
+        else:
+            sql = "SELECT * FROM audit_broker_deals ORDER BY time DESC LIMIT ?"
+            args = (int(limit),)
         if not self._is_sqlite:
-            if position_id is not None:
-                sql = "SELECT * FROM audit_broker_deals WHERE position_id = ? ORDER BY time ASC LIMIT ?"
-                args: tuple[Any, ...] = (int(position_id), int(limit))
-            else:
-                sql = "SELECT * FROM audit_broker_deals ORDER BY time DESC LIMIT ?"
-                args = (int(limit),)
             return self._provider_read_guard(
                 "get_broker_deals",
                 lambda: ([]),
@@ -1814,12 +1804,6 @@ class AuditRepository:
                 args=args,
                 kind="rows",
             )
-        if position_id is not None:
-            sql = "SELECT * FROM audit_broker_deals WHERE position_id = ? ORDER BY time ASC LIMIT ?"
-            args: tuple[Any, ...] = (int(position_id), int(limit))
-        else:
-            sql = "SELECT * FROM audit_broker_deals ORDER BY time DESC LIMIT ?"
-            args = (int(limit),)
         with self._connect_sqlite(5.0) as conn:
             conn.row_factory = sqlite3.Row
             return [dict(r) for r in conn.execute(sql, args).fetchall()]
@@ -1830,23 +1814,6 @@ class AuditRepository:
         limit: int = 2000,
     ) -> list[dict[str, Any]]:
         """Normalized broker orders (optionally for one position lifecycle)."""
-        if not self._is_sqlite:
-            if position_id is not None:
-                sql = (
-                    "SELECT * FROM audit_broker_orders WHERE position_id = ? "
-                    "ORDER BY time_setup ASC LIMIT ?"
-                )
-                args: tuple[Any, ...] = (int(position_id), int(limit))
-            else:
-                sql = "SELECT * FROM audit_broker_orders ORDER BY time_setup DESC LIMIT ?"
-                args = (int(limit),)
-            return self._provider_read_guard(
-                "get_broker_orders",
-                lambda: ([]),
-                sql=sql,
-                args=args,
-                kind="rows",
-            )
         if position_id is not None:
             sql = (
                 "SELECT * FROM audit_broker_orders WHERE position_id = ? "
@@ -1856,6 +1823,14 @@ class AuditRepository:
         else:
             sql = "SELECT * FROM audit_broker_orders ORDER BY time_setup DESC LIMIT ?"
             args = (int(limit),)
+        if not self._is_sqlite:
+            return self._provider_read_guard(
+                "get_broker_orders",
+                lambda: ([]),
+                sql=sql,
+                args=args,
+                kind="rows",
+            )
         with self._connect_sqlite(5.0) as conn:
             conn.row_factory = sqlite3.Row
             return [dict(r) for r in conn.execute(sql, args).fetchall()]
@@ -4876,7 +4851,7 @@ class AuditRepository:
                     """,
                     (limit,),
                 )
-                rows: list[dict[str, Any]] = []
+                collected: list[dict[str, Any]] = []
                 for r in cursor.fetchall():
                     row = dict(r)
                     payload = row.get("payload") or "{}"
@@ -4885,8 +4860,8 @@ class AuditRepository:
                     except Exception:
                         parsed = {}
                     row["payload_parsed"] = parsed
-                    rows.append(row)
-                return rows
+                    collected.append(row)
+                return collected
         except Exception as e:
             logger.error("Failed to retrieve recent predictions", error=str(e))
             return []
@@ -4903,7 +4878,7 @@ class AuditRepository:
         if not self._is_sqlite:
             if status_filter:
                 sql = "SELECT * FROM audit_ledger WHERE status = ? ORDER BY ticket DESC LIMIT ? OFFSET ?"
-                args = (status_filter, int(limit), int(offset))
+                args: tuple[Any, ...] = (status_filter, int(limit), int(offset))
             else:
                 sql = "SELECT * FROM audit_ledger ORDER BY ticket DESC LIMIT ? OFFSET ?"
                 args = (int(limit), int(offset))
