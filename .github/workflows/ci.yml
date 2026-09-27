@@ -155,6 +155,7 @@ jobs:
       # connects with it directly.
       NSE_PG_TEST_URL: "postgresql://nse_user:nse_password_dev@localhost:5432/nse_audit"
       NSE_TEST_PG_DSN: "postgresql://nse_user:nse_password_dev@localhost:5432/nse_audit"
+      PG_DB: "nse_audit"
     services:
       postgres:
         image: postgres:16-alpine
@@ -216,18 +217,6 @@ jobs:
       # The three CI gates Lane O wrote were never invoked by any workflow,
       # so a skipping PG arm looked green. These are the guards that make a
       # skip a failure rather than a pass.
-      - name: PG arm gate (fail on skip)
-        run: |
-          python scripts/ci/check_pg_arm.py --junit "$CI_RESULTS_DIR/pg_arm/junit.xml"
-
-      - name: OR-verb portability gate
-        run: |
-          python scripts/ci/check_or_verb_portability.py
-
-      - name: Pre-existing reds gate
-        run: |
-          python scripts/ci/check_preexisting_reds.py
-
       - name: Initialize results tree
         run: |
           python scripts/ci/make_ci_results.py init "$CI_RESULTS_DIR" \
@@ -464,6 +453,42 @@ jobs:
       # status=blocked (NOT errored) for every missing downstream result so
       # the summary + final gate report BLOCKED_BY_RUFF_FORMAT instead of
       # inventing three fake failures.
+      # ------------------------------------------------------------------
+      # Provider/portability gates. These run AFTER the quality steps on
+      # purpose: when they ran first, a gate failure aborted the job and
+      # every later step reported `missing` (ruff_lint=missing |
+      # mypy=missing | pytest=missing), hiding the real signal behind the
+      # gate that was supposed to expose it. Each gate still fails the
+      # job -- fail-closed is preserved -- but only after the results it
+      # must not mask have been produced.
+      # ------------------------------------------------------------------
+      # The arm asserts a schema-convergence property that is only
+      # meaningful against a MIGRATED database named nexusdb. A developer
+      # box has one from months of running the app; the service container
+      # above creates a bare database and nothing produces nexusdb, so the
+      # comparison had no target and could never pass here. Materialize it
+      # through the application's OWN provisioning path (never a
+      # hand-written schema) so the comparison stays a real check of the
+      # shipped provisioner. Also provisions the URL's own database, which
+      # the portability and store-level arms connect to.
+      - name: Materialize the PostgreSQL arm fixture
+        run: |
+          python scripts/ci/make_pg_fixture.py --database nexusdb --also "$PG_DB"
+
+
+      - name: PG arm gate (fail on skip)
+        run: |
+          python scripts/ci/check_pg_arm.py --junit "$CI_RESULTS_DIR/pg_arm/junit.xml"
+
+      - name: OR-verb portability gate
+        run: |
+          python scripts/ci/check_or_verb_portability.py
+
+      - name: Pre-existing reds gate
+        run: |
+          python scripts/ci/check_preexisting_reds.py
+
+
       - name: Classify blocked downstream checks
         if: env.RUFF_FORMAT_RC != '0' && env.RUFF_REPAIR_STATUS != 'repaired'
         continue-on-error: true

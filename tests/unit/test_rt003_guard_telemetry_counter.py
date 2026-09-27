@@ -46,11 +46,24 @@ def test_guard_telemetry_counter_upserts_on_postgresql() -> None:
     Runs on a scratch window (a minute that will never be produced by the
     engine) inside a transaction that is rolled back, so the live domain is
     not written to.
+
+    The table is created from the app's OWN audit DDL first: a CI runner
+    provisions an EMPTY database, so a bare ``psycopg.connect(PG_URL)`` found
+    ``relation "audit_guard_telemetry" does not exist`` and the counter — the
+    single statement that was 99.9% of the dead-letter queue — was never
+    exercised there.
     """
     window = "1999-01-01T00:00"
+    from nexus_scalp.database.migration import sqlite_ddl_statements
+    from nexus_scalp.database.migration.pg_schema import translate_ddl
+
     with psycopg.connect(PG_URL, connect_timeout=10) as conn:
         try:
             with conn.cursor() as cur:
+                # The DDL sources are the app's own, translated SQLite → PG
+                # (the same replay the boot path applies to the live domain).
+                for stmt in sqlite_ddl_statements():
+                    cur.execute(translate_ddl(stmt))
                 # First event: no row exists, so this is the INSERT arm.
                 cur.execute(COUNTER, (window, "TESTRT3", "guard"))
                 cur.execute(

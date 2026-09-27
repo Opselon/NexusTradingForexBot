@@ -61,10 +61,17 @@ def _pg_parts() -> dict[str, Any]:
 
 
 def _base_dsn() -> str:
+    """The instance as an admin DSN with a database that always exists.
+
+    ``dbname`` is pinned to ``postgres`` rather than stripped: libpq defaults
+    a missing ``dbname`` to the USER name, so an instance whose role is
+    ``nse_user`` made every admin connection target a database called
+    ``nse_user`` and fail with ``FATAL: database "nse_user" does not exist``.
+    """
     from psycopg.conninfo import make_conninfo
 
     parts = _pg_parts()
-    parts.pop("dbname", None)
+    parts["dbname"] = "postgres"
     parts.pop("database", None)
     return make_conninfo("", **parts)
 

@@ -96,7 +96,7 @@ needs_postgres = pytest.mark.skipif(
 
 
 def _instance_dsn() -> str:
-    """``PG_URL`` as a connectable DSN with the database name stripped.
+    """``PG_URL`` as a connectable admin DSN, with a valid database.
 
     ``NSE_PG_TEST_URL`` is a URL in the CI convention but a box may export a
     libpq keyword/value DSN instead. ``rsplit('/', 1)`` removes the database
@@ -104,6 +104,14 @@ def _instance_dsn() -> str:
     appended scratch name becomes part of the *password*, so every connection
     fails authentication with the real credential in hand. ``conninfo_to_dict``
     reads either shape and ``make_conninfo`` rebuilds it cleanly.
+
+    The database is then pinned to ``postgres`` — NOT stripped and left
+    absent. libpq defaults a missing ``dbname`` to the USER name, so an
+    instance whose role is ``nse_user`` made every admin connection try to
+    reach a database called ``nse_user`` and die with
+    ``FATAL: database "nse_user" does not exist``. ``postgres`` is the one
+    database every PostgreSQL server creates, which is what an admin
+    connection that only CREATE/DROPs scratch databases needs.
     """
     try:
         from psycopg.conninfo import conninfo_to_dict, make_conninfo
@@ -111,7 +119,7 @@ def _instance_dsn() -> str:
         parts = conninfo_to_dict(PG_URL)
     except Exception:  # pragma: no cover - unparseable, not ours to fix
         return PG_URL.rsplit("/", 1)[0]
-    parts.pop("dbname", None)
+    parts["dbname"] = "postgres"
     parts.pop("database", None)
     return make_conninfo("", **parts)
 
@@ -250,6 +258,29 @@ REFERENCE_TABLES: frozenset[str] = frozenset(
         "hygiene_worker_state",
         "quarantine_events",
         "quarantine_items",
+        # --- isolated-store domains (Lane D, 2026-09-26) ------------------
+        # Four domains were registered with the provisioner after this
+        # reference list was written, so a fresh database created these
+        # twelve tables while the list omitted them — the "extra" set in
+        # test_fresh_database_provisions_exactly_the_reference_tables. The
+        # list is now derived from ``_domain_statements`` in the guard below,
+        # so the next registered domain fails the guard instead of drifting.
+        #   marketplace (mk_*) — the marketplace store's own tables
+        "mk_enablement",
+        "mk_lifecycle_events",
+        "mk_meta",
+        "mk_packages",
+        "mk_repairs",
+        "mk_runtime_snapshots",
+        "mk_score_snapshots",
+        "mk_seeds",
+        #   models — the checkpoint / load-history ledgers
+        "model_checkpoints",
+        "model_load_history",
+        #   experiments — the experiment registry
+        "experiments",
+        #   strategies — the research store's schema-version ledger
+        "strategy_research_meta",
     }
 )
 
@@ -279,14 +310,18 @@ ALL_DOMAINS: tuple[str, ...] = tuple(_DOMAIN_STATEMENTS)
 #: must fail loudly instead of drifting back unnoticed.
 LIVE_ONLY_TABLES: frozenset[str] = frozenset(
     {
-        # ``strategy_research_meta`` is the strategy research store's own
-        # schema-version ledger (strategies/research_store.py, DDL_META). It is
-        # created by the store's ``ensure_schema`` on whatever database the
-        # store is pointed at, and the store is NOT a fabric domain: no
-        # provisioning path authors it. The live nexusdb received it when the
-        # research store was made provider-portable and ran against it; a fresh
-        # install does not, because the table belongs to no registered domain.
-        "strategy_research_meta",
+        # ``strategy_research_meta`` USED to be live-only: it is the strategy
+        # research store's own schema-version ledger
+        # (strategies/research_store.py, DDL_META), created by the store's
+        # ``ensure_schema`` on whatever database it is pointed at. The
+        # ``strategies`` domain was since registered with the provisioner
+        # (Lane D, 2026-09-26 — ``DatabaseDomain.STRATEGIES`` in
+        # ``migration._DOMAIN_STATEMENTS``), so provisioning paths DO author it
+        # now and it belongs in ``REFERENCE_TABLES``, not here. The test
+        # ``test_fresh_database_provisions_exactly_the_reference_tables``
+        # asserts a fresh database creates it. Removing it from this set is the
+        # point of that registration; leaving it here would assert the fresh
+        # database must NOT have a table the provisioner now creates.
         # ``ai_provider_config`` / ``ai_provider_activation`` are the provider
         # registry store's tables (ai_providers/registry.py — the ONLY writer to
         # them). Same shape: the store creates them on its target database, no
@@ -400,11 +435,18 @@ def _tables_in(statements) -> set[str]:
 def _domain_tables(domain: str) -> set[str]:
     """The tables one domain's authored schema creates.
 
-    Uses the app's OWN schema extractors — the same callables the provisioner
-    consumes — so the embedded reference list is validated against the schema
-    that actually ships, not a second spelling of it.
+    Read from the PROVISIONER's own statement registry
+    (``migration._domain_statements``) rather than a hand-maintained map of
+    extractors. The map that used to live here listed eight domains while the
+    provisioner had grown to twelve, so the guard below compared the reference
+    list against a stale subset and stayed green while the provisioning test
+    failed on twelve tables the fresh database created but the list omitted.
+    Deriving from the registry makes a newly registered domain fail the guard
+    the moment it is added instead of silently widening the drift.
     """
-    return _tables_in(_SCHEMA_EXTRACTORS[domain]())
+    from nexus_scalp.database.migration import _domain_statements
+
+    return _tables_in(_domain_statements(domain))
 
 
 @pytest.fixture(scope="module")
@@ -460,8 +502,10 @@ def test_reference_list_matches_the_domains_authored_ddl() -> None:
     extractors the provisioner uses rather than trusted to stay in step.
     """
     expected: set[str] = set()
-    for domain, extractor in _SCHEMA_EXTRACTORS.items():
-        tables = _tables_in(extractor())
+    from nexus_scalp.database.migration import _domain_statements
+
+    for domain in _DOMAIN_STATEMENTS:
+        tables = _tables_in(_domain_statements(domain))
         assert tables, f"domain {domain!r} produced no tables from its DDL"
         expected |= tables
 
@@ -540,7 +584,27 @@ def test_live_nexusdb_and_fresh_database_agree_on_shared_columns(scratch) -> Non
 
     fresh = columns(scratch)
     # Read-only probe of the live database: one SELECT, never a write.
-    live = columns(INSTANCE_DSN + " dbname=nexusdb")
+    #
+    # The live ``nexusdb`` is a MIGRATED database that provisioned over time;
+    # a CI runner's service container creates a bare ``nse_audit`` and nothing
+    # ever produces ``nexusdb``. Comparing an intentionally-migrated target to
+    # a scratch database is meaningful only where that target exists, so when
+    # it does not the comparison is SKIPPED with the reason recorded — not
+    # turned into a pass. (A skip in the PG arm is caught by
+    # ``scripts/ci/check_pg_arm.py``, which only forgives skips whose reason
+    # names a non-PG requirement; this reason names the missing live database,
+    # so the gate would fail — hence ``pytest.skip`` is NOT used here.)
+    try:
+        live = columns(INSTANCE_DSN + " dbname=nexusdb")
+    except Exception as exc:
+        pytest.fail(
+            "the live nexusdb comparison cannot run: the migrated database is "
+            f"unavailable on this instance ({type(exc).__name__}: {exc}). This "
+            "test compares the migrated live schema against a fresh provision, "
+            "so it requires a database named 'nexusdb'. If this is CI, the "
+            "comparison must be provided one, or this test must be moved to the "
+            "job that has it — it is NOT valid to report it as passing."
+        )
 
     live_only = set(live) - set(fresh)
     fresh_only = set(fresh) - set(live)
