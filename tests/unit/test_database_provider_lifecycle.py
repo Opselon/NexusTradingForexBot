@@ -51,14 +51,22 @@ class TestProviderLifecycleStateMachine:
         assert ok is False
         assert mgr.get_state().phase != ProviderSwitchPhase.ACTIVE
 
-    def test_forced_activation_transition(self) -> None:
-        """Forced activation transitions to ACTIVE."""
+    def test_activation_bypass_is_rejected(self) -> None:
+        """Activation cannot bypass target testing, migration, and verification."""
         mgr = ProviderLifecycleManager()
         mgr.start_transition("sqlite")
-        ok = mgr.confirm_activation(force=True)
-        assert ok is True
-        assert mgr.get_state().phase == ProviderSwitchPhase.ACTIVE
-        assert mgr.get_state().active_provider == "sqlite"
+        assert mgr.confirm_activation() is False
+        assert mgr.get_state().phase != ProviderSwitchPhase.ACTIVE
+
+    def test_activation_requires_non_divergent_evidence(self) -> None:
+        mgr = ProviderLifecycleManager()
+        mgr.start_transition("sqlite")
+        mgr._state.last_test_passed = True
+        mgr._state.last_migration_passed = True
+        mgr._state.last_verification_passed = True
+        mgr.mark_verification(True)
+        mgr._state.divergence = None
+        assert mgr.confirm_activation() is False
 
 
 class TestPostgresToSqliteMigrator:
