@@ -328,10 +328,23 @@ def system_diagnostics(request: Request) -> Any:
     if adapter is not None:
         try:
             diag["mt5"] = adapter.diagnostics_summary()
-        except Exception:
-            diag["mt5"] = None
+        except Exception as exc:
+            # F-22 (MT5-PARITY-FORENSICS lane E): an adapter that cannot report
+            # diagnostics must NOT degrade to mt5=None. That payload is
+            # indistinguishable from "no adapter attached" and the live-state
+            # route then reports available:True with an EMPTY diagnostics dict —
+            # a false green that reads as "native MT5 healthy" for a session
+            # with no broker at all. Surface an explicit degraded reason
+            # instead, matching this module's honest-state convention
+            # (fail(DEPENDENCY_UNAVAILABLE) above / the UNSUPPORTED_BY_ADAPTER
+            # port defaults): available=False + reason, never a bare null.
+            diag["mt5"] = {
+                "available": False,
+                "reason": "DIAGNOSTICS_UNAVAILABLE",
+                "detail": f"adapter.diagnostics_summary() raised {type(exc).__name__}",
+            }
     else:
-        diag["mt5"] = None
+        diag["mt5"] = {"available": False, "reason": "NO_ADAPTER_ATTACHED"}
     last = getattr(request.app.state, "v1_last_selftest", None)
     diag["last_selftest"] = last
     try:
