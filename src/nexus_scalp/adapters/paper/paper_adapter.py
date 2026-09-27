@@ -21,6 +21,7 @@ import json
 import math
 import os
 import random
+from collections import deque
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, ClassVar
@@ -95,6 +96,14 @@ def _get_seed() -> int | None:
 
 #: Instruments quoted with 2 decimals and a 100-unit contract size (metals).
 _METAL_PREFIXES: tuple[str, ...] = ("XAU", "XAG", "GOLD", "SILVER")
+
+#: H-04: hard ceiling on the retained paper execution-ledger ring (entries:
+#: one per simulated fill OR rejection). Sized from the largest legitimate
+#: consumer: export_paper_ledger() (risk/paper_parity.py:73) exports the LAST
+#: ``max_rows`` (default 500) rows per maintenance pass, so 2000 retains four
+#: full export batches of headroom while bounding a long session's memory to a
+#: constant. See PaperMT5Adapter._execution_ledger.
+_LEDGER_MAXLEN: int = 2000
 
 
 class _PaperStateCorruptionError(ValueError):
@@ -219,7 +228,21 @@ class PaperMT5Adapter(IMT5Port):
         # Fields: ts, symbol, order_type, volume, requested_price,
         # bid_at_request, ask_at_request, spread, fill_price, slippage,
         # latency_ticks, rejection_reason (None on fill), is_fill, ticket.
-        self._execution_ledger: list[dict[str, Any]] = []
+        #
+        # H-04 (MT5-PARITY-FORENSICS lane H): the ledger is a BOUNDED ring, not
+        # an unbounded list. Every simulated fill/rejection used to append and
+        # never release, so a long PAPER session (or a stress loop at thousands
+        # of orders/minute) grew it without bound AND paid an O(n) full copy on
+        # every get_execution_ledger() call. The bound is the largest legitimate
+        # consumer window with margin: export_paper_ledger()
+        # (risk/paper_parity.py:73) takes the LAST max_rows=500 rows per call,
+        # and the audit store inserts-or-ignores bounded batches, so a cap of
+        # 2000 retains the last four full export batches headroom. Nothing is
+        # dropped on any observed path; if the cap is ever hit the dropped count
+        # is exposed via ledger_dropped_entries()/get_account_snapshot stats so
+        # the audit consumer can never silently under-count a session.
+        self._execution_ledger: deque[dict[str, Any]] = deque(maxlen=_LEDGER_MAXLEN)
+        self._ledger_dropped: int = 0
 
     @classmethod
     def _seed_price(cls, symbol: str) -> float:
@@ -563,6 +586,42 @@ class PaperMT5Adapter(IMT5Port):
         else:
             state.set_state(MT5ConnectionState.DISCONNECTED, "paper simulation disconnected")
         return state
+
+    def diagnostics_summary(self) -> dict[str, Any]:
+        """Honest diagnostics for this adapter (F-22, MT5-PARITY-FORENSICS lane E).
+
+        Before this the paper adapter had NO ``diagnostics_summary``: the API
+        surface fell back to a bare ``except Exception: diag["mt5"] = None``
+        (api_v1/system.py) while the live-state route reported
+        ``available: True`` with an EMPTY diagnostics dict — a false green that
+        read as "native MT5 healthy" for a session that has no broker at all.
+
+        The paper adapter is a designed NO-BROKER boundary, so its diagnostics
+        are honest about that: an explicit ``transport`` field, the real
+        connection state, the market-data mode (SYNTHETIC vs REPLAY) and the
+        memory-bound accounting of the execution ledger (H-04). Shape mirrors
+        the native producer (``mt5_adapter.py:diagnostics_summary``) so the API
+        layer can treat both uniformly; it never raises.
+        """
+        try:
+            connection = self.connection_state().to_dict()
+        except Exception:
+            connection = {}
+        summary: dict[str, Any] = {
+            "transport": "PAPER",
+            "available": bool(self._connected),
+            "connection": connection,
+            "market_data_mode": getattr(self, "market_data_mode", "SYNTHETIC"),
+            "execution_ledger": {
+                "retained": len(self._execution_ledger),
+                "maxlen": _LEDGER_MAXLEN,
+                "dropped": self._ledger_dropped,
+            },
+        }
+        replay_prov = getattr(self, "replay_provenance", None)
+        if replay_prov:
+            summary["replay_provenance"] = replay_prov
+        return summary
 
     # ------------------------------------------------------------------
     # Accounting (Tasks B/D) — unrealized, realized, reconciliation
@@ -1728,16 +1787,37 @@ class PaperMT5Adapter(IMT5Port):
             "is_fill": rejection_reason is None,
             "ticket": int(ticket),
         }
+        # H-04: deque(maxlen=...) silently evicts the head when full; count the
+        # evictions so the stats payload can report a dropped count instead of
+        # hiding the truncation from the audit consumer. The check runs BEFORE
+        # the append: a full ring evicts exactly one entry per append.
+        if len(self._execution_ledger) >= _LEDGER_MAXLEN:
+            self._ledger_dropped += 1
         self._execution_ledger.append(entry)
         return entry
 
     def get_execution_ledger(self) -> list[dict[str, Any]]:
-        """Read-only copy of the execution ledger (audit consumers)."""
+        """Read-only copy of the execution ledger (audit consumers).
+
+        H-04: the backing store is a bounded ring; the returned list holds the
+        most recent entries in chronological (append) order — identical shape
+        and iteration order to the unbounded list it replaced.
+        """
         return [dict(e) for e in self._execution_ledger]
+
+    def ledger_dropped_entries(self) -> int:
+        """H-04: ledger rows evicted from the head of the bounded ring.
+
+        Zero on every observed path (the cap exceeds the audit export window
+        4:1). Non-zero means the session out-ran the export cadence; the count
+        is surfaced so an audit consumer never silently under-counts fills.
+        """
+        return self._ledger_dropped
 
     def clear_execution_ledger(self) -> None:
         """Reset the ledger (per-scenario isolation in tests/stress runs)."""
-        self._execution_ledger = []
+        self._execution_ledger.clear()
+        self._ledger_dropped = 0
 
     def _open_simulated_position(
         self,
