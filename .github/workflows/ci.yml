@@ -194,20 +194,27 @@ jobs:
           python scripts/ci/make_ci_results.py init "$CI_RESULTS_DIR" \
             --json "$CI_RESULTS_DIR/run-info/env-digest.json"
 
-      # Runtime dependency closure gate (NSE rt-deps lane): the environment
-      # above must actually satisfy every declared runtime requirement,
-      # transitively. Guards the uvicorn->click defect class, where the
-      # install succeeds while a transitive requirement stays absent and
-      # the app dies on `import uvicorn`. `pip check` cannot catch it, so
-      # this probe resolves the real modules instead.
+      # Runtime dependency closure gate (NSE rt-deps lane): the installed
+      # environment must actually satisfy every declared runtime
+      # requirement, transitively. Guards the uvicorn->click defect class,
+      # where the install succeeds while a transitive requirement stays
+      # absent and the app dies on `import uvicorn`. `pip check` cannot see
+      # it (metadata-only), so this probe resolves the real modules.
+      # continue-on-error + results-tree, then the final fail-closed
+      # aggregator decides: a dependency probe may never abort ruff/mypy/
+      # pytest in this job (same contract as runtime_gate/layered-smoke).
       - name: Runtime dependency closure
+        id: runtime_deps
+        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
+        continue-on-error: true
         run: |
+          set +e
           mkdir -p "$CI_RESULTS_DIR"
           python -m nexus_scalp.release.runtime_deps --json > "$CI_RESULTS_DIR/runtime_deps.json" 2> "$CI_RESULTS_DIR/runtime_deps.log"
           rc=$?
           cat "$CI_RESULTS_DIR/runtime_deps.json"
           python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" runtime_deps "$rc" "dependency closure incomplete (see runtime_deps.json + runtime_deps.log)" || true
-          exit "$rc"
+          exit 0
 
       # -------- Telegram: workflow started (advisory; never fails CI) --------
       - name: Telegram - CI started

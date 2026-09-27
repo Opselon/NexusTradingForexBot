@@ -292,6 +292,11 @@ def _top_level_modules(name: str) -> list[str]:
 def _unimportable_modules(name: str) -> list[str]:
     """Modules of an installed distribution that cannot be located.
 
+    Only TOP-LEVEL import roots are probed: ``find_spec`` on a SUBMODULE
+    (``torch._C``, ``functorch``) imports its parent package to resolve it —
+    which would drag torch/CUDA into a metadata check, cost seconds, and make
+    a dependency probe depend on the runtime it is verifying.
+
     Judgement rule: a distribution is only reported as unusable when NONE of
     its import roots resolve. That is the real "installed metadata present but
     files gone / corrupt installation" signal. A mix of resolvable and
@@ -301,7 +306,7 @@ def _unimportable_modules(name: str) -> list[str]:
     verifier that reports those healthy installs as broken would be ignored by
     the very operators it is meant to protect.
     """
-    candidates = _top_level_modules(name)
+    candidates = [m for m in _top_level_modules(name) if "." not in m]
     if not candidates:
         return []  # nothing to judge -> never invent a failure
     broken: list[str] = []
@@ -313,7 +318,8 @@ def _unimportable_modules(name: str) -> list[str]:
                 broken.append(module)
         except Exception:
             broken.append(module)
-    if len(broken) == len([c for c in candidates if c not in {"_distutils_hack", "pkg_resources"}]):
+    judged = [c for c in candidates if c not in {"_distutils_hack", "pkg_resources"}]
+    if judged and len(broken) == len(judged):
         # Every root failed: the installation is genuinely unusable.
         return broken
     return []
