@@ -261,6 +261,22 @@ class AuditWriteBackend(abc.ABC):
         pass starts from a clean slate.
         """
 
+    def execute_batch_counted(
+        self, statements: Sequence[tuple[str, Sequence[Sequence[Any]]]]
+    ) -> list[int]:
+        """Like :meth:`execute_batch`, but also report per-statement rowcounts.
+
+        Returns one ``rowcount`` per statement, in order.  Used by the
+        idempotent broker-history sync, whose telemetry must distinguish
+        ``inserted`` from ``duplicates`` exactly as the SQLite path does: an
+        ``INSERT ... ON CONFLICT DO NOTHING`` reports 0 when the row already
+        existed.  The default implementation runs the batch and reports
+        "unknown" (``-1``, matching DB-API) so a backend that cannot count
+        still honours the atomic-batch contract.
+        """
+        self.execute_batch(statements)
+        return [-1] * len(statements)
+
     @abc.abstractmethod
     def execute_one(self, query: str, args: Sequence[Any]) -> None:
         """Apply a single statement in its own transaction (salvage path)."""
@@ -318,6 +334,25 @@ class SqliteAuditWriteBackend(AuditWriteBackend):
                     # Grouping identical statements into executemany keeps
                     # the batch one round trip per distinct statement.
                     self._conn.executemany(query, list(rows))
+
+    def execute_batch_counted(
+        self, statements: Sequence[tuple[str, Sequence[Sequence[Any]]]]
+    ) -> list[int]:
+        # sqlite3's ``rowcount`` after ``executemany`` is NOT the summed row
+        # count (it reports only the last sub-statement's effect), so a counted
+        # batch must run the single-row fast path statement by statement and
+        # fall back to per-row execution for the multi-row case.
+        with self._conn:  # transaction: commit on success, rollback on raise
+            counts: list[int] = []
+            for query, rows in statements:
+                if len(rows) == 1:
+                    counts.append(self._conn.execute(query, rows[0]).rowcount)
+                else:
+                    total = 0
+                    for row in rows:
+                        total += int(self._conn.execute(query, row).rowcount or 0)
+                    counts.append(total)
+            return counts
 
     def execute_one(self, query: str, args: Sequence[Any]) -> None:
         conn = self.connection  # lazy: born on this (worker) thread
