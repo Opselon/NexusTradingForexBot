@@ -86,7 +86,7 @@ class TestProviderLifecycleStateMachine:
         mgr = ProviderLifecycleManager(settings_db_path=settings_db)
         mgr.start_transition("postgresql")
 
-        assert mgr.confirm_activation(force=False) is False
+        assert mgr.confirm_activation() is False
         assert (
             ProviderLifecycleManager(settings_db_path=settings_db).get_state().phase
             == ProviderSwitchPhase.CONFIGURED
@@ -94,7 +94,7 @@ class TestProviderLifecycleStateMachine:
 
         mgr.mark_verification(True)
         assert (
-            ProviderLifecycleManager(settings_db_path=settings_db).confirm_activation(force=False)
+            ProviderLifecycleManager(settings_db_path=settings_db).confirm_activation()
             is True
         )
         assert (

@@ -319,7 +319,7 @@ def transition_activate(request: Request) -> dict[str, Any]:
     request_id = request_id_from_request(request)
     try:
         mgr = _lifecycle_manager()
-        activated = mgr.confirm_activation(force=False)
+        activated = mgr.confirm_activation()
         return {"success": activated, "activated": activated, "state": mgr.get_state().to_dict()}
     except Exception as exc:
         log_web_error(logger, "/api/db/manage/transition/activate", request_id, exc)
