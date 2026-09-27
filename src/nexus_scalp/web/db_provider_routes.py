@@ -50,6 +50,12 @@ from nexus_scalp.web.errors import (
 
 logger = get_logger("nexus_scalp.web.db_provider_routes")
 
+
+def _lifecycle_manager() -> Any:
+    from nexus_scalp.database.provider_lifecycle import ProviderLifecycleManager
+    return ProviderLifecycleManager()
+
+
 router = APIRouter(prefix="/api/db/manage")
 
 
@@ -218,9 +224,7 @@ def get_provider_state(request: Request) -> dict[str, Any]:
     """Lifecycle transition state for provider switching."""
     request_id = request_id_from_request(request)
     try:
-        from nexus_scalp.database.provider_lifecycle import ProviderLifecycleManager
-
-        mgr = ProviderLifecycleManager()
+        mgr = _lifecycle_manager()
         return {"success": True, "state": mgr.get_state().to_dict()}
     except Exception as exc:
         log_web_error(logger, "/api/db/manage/provider-state", request_id, exc)
@@ -237,9 +241,7 @@ def transition_start(payload: dict[str, Any], request: Request) -> dict[str, Any
     request_id = request_id_from_request(request)
     try:
         target = str((payload or {}).get("target_provider") or "sqlite")
-        from nexus_scalp.database.provider_lifecycle import ProviderLifecycleManager
-
-        mgr = ProviderLifecycleManager()
+        mgr = _lifecycle_manager()
         st = mgr.start_transition(target)
         return {"success": True, "state": st.to_dict()}
     except Exception as exc:
@@ -251,14 +253,74 @@ def transition_start(payload: dict[str, Any], request: Request) -> dict[str, Any
         )
 
 
+@router.post("/transition/test")
+def transition_test(payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    request_id = request_id_from_request(request)
+    try:
+        mgr = _lifecycle_manager()
+        ok = mgr.test_target_connection((payload or {}).get("config_overrides"))
+        return {"success": ok, "tested": ok, "state": mgr.get_state().to_dict()}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/transition/test", request_id, exc)
+        return _err("DB_TRANSITION_TEST_FAILED", "Could not test target provider.", request_id)
+
+
+@router.post("/transition/migrate")
+def transition_migrate(payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    """Run an explicit provider migration and keep activation separate."""
+    request_id = request_id_from_request(request)
+    try:
+        from nexus_scalp.database.config import DatabaseConfig, load_database_config
+        from nexus_scalp.database.migrate_engine import MigrationOptions, SqliteToPostgresMigrator
+
+        mgr = _lifecycle_manager()
+        mgr.mark_migrating()
+        source = load_database_config("audit")
+        target = DatabaseConfig.for_postgres("audit")
+        if not source.is_sqlite:
+            return _err("DB_TRANSITION_MIGRATE_INVALID", "Migration requires SQLite as the source.", request_id)
+        report = SqliteToPostgresMigrator(
+            source, target, MigrationOptions(batch_size=int((payload or {}).get("batch_size") or 2000))
+        ).run()
+        passed = report.status == "SUCCESS"
+        mgr.mark_migration(passed, "Migration failed" if not passed else "")
+        return {"success": passed, "report": report.to_dict(), "state": mgr.get_state().to_dict()}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/transition/migrate", request_id, exc)
+        return _err("DB_TRANSITION_MIGRATE_FAILED", "Could not migrate to target provider.", request_id)
+
+
+@router.post("/transition/verify")
+def transition_verify(payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    request_id = request_id_from_request(request)
+    try:
+        mgr = _lifecycle_manager()
+        passed = bool((payload or {}).get("passed", False))
+        mgr.mark_verification(passed, str((payload or {}).get("error") or ""))
+        return {"success": passed, "state": mgr.get_state().to_dict()}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/transition/verify", request_id, exc)
+        return _err("DB_TRANSITION_VERIFY_FAILED", "Could not record provider verification.", request_id)
+
+
+@router.post("/transition/activate")
+def transition_activate(request: Request) -> dict[str, Any]:
+    request_id = request_id_from_request(request)
+    try:
+        mgr = _lifecycle_manager()
+        activated = mgr.confirm_activation(force=False)
+        return {"success": activated, "activated": activated, "state": mgr.get_state().to_dict()}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/transition/activate", request_id, exc)
+        return _err("DB_TRANSITION_ACTIVATE_FAILED", "Provider activation was not confirmed.", request_id)
+
+
 @router.post("/transition/divergence")
 def transition_divergence(request: Request) -> dict[str, Any]:
     """Check for unmigrated operational rows before switching providers."""
     request_id = request_id_from_request(request)
     try:
-        from nexus_scalp.database.provider_lifecycle import ProviderLifecycleManager
-
-        mgr = ProviderLifecycleManager()
+        mgr = _lifecycle_manager()
         res = mgr.check_divergence()
         return {"success": True, "divergence": res.to_dict()}
     except Exception as exc:
