@@ -36,6 +36,7 @@ on:
       - "Official model publication"
       - "QA Deep Assurance"
       - "Nightly ML Benchmark"
+      - "PR Evidence Report"
     types: [completed]
 
 permissions:
