@@ -40,7 +40,7 @@ def _definitions(driver: Any) -> dict[str, str]:
 
     broker_deals = _columns(driver, "audit_broker_deals")
     rules = _columns(driver, "trading_rules_config")
-    
+
     ledger_expr = ", ".join(
         _expr(ledger, c, c)
         for c in (
