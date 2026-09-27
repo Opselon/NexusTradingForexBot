@@ -1888,20 +1888,13 @@ function Install-PythonDependencies {
         $env:VIRTUAL_ENV = Join-Path $NexusHome "venv"
         $env:UV_PYTHON = $venvPython
 
+        # Install the complete declared runtime closure. A successful editable
+        # install must never be replaced by --no-deps: that can leave packages
+        # such as uvicorn present while its required click dependency is absent.
         & $Script:UvCmd pip install -e "." 2>&1 | ForEach-Object { "$_" } | Write-Diag
         $code = $LASTEXITCODE
         if ($code -ne 0) {
-            # Tiered fallback: [web] extra (UI server), then core-only.
-            Write-WarnMsg "Core editable install failed (exit $code); trying [web] extra tier..."
-            & $Script:UvCmd pip install -e ".[web]" 2>&1 | ForEach-Object { "$_" } | Write-Diag
-            $code = $LASTEXITCODE
-            if ($code -ne 0) {
-                Write-WarnMsg "[web] tier failed (exit $code); trying core-only tier..."
-                & $Script:UvCmd pip install -e . --no-deps 2>&1 | ForEach-Object { "$_" } | Write-Diag
-                $code = $LASTEXITCODE
-                if ($code -ne 0) { throw "Failed to install nexus-scalp-engine dependencies even at the core tier (exit $code)" }
-                Write-WarnMsg "Core-only tier installed with --no-deps; run 'install.ps1 -Stage dependencies' after network issues are resolved"
-            }
+            throw "Failed to install nexus-scalp-engine runtime dependencies (exit $code); repair network/package access and retry"
         }
     } finally {
         $ErrorActionPreference = $prevEAP

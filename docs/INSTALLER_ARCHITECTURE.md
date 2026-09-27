@@ -168,9 +168,11 @@ fetch + pinned checkout so future updates still work.
   parked tree is deleted. Failure -> rollback restore. A still-locked old venv
   parks until a later run.
 - **dependencies** (stage `dependencies`): `pyproject.toml` is the single
-  source of truth (`uv pip install -e .`); tiered fallback (`.[web]`,
-  `--no-deps` core) with explicit reporting. Baseline import gate probes
-  `nexus_scalp`, `typer`, `pydantic`, `structlog` through the venv's own
+  source of truth (`uv pip install -e .`). Installation is fail-closed: a
+  resolver failure aborts the stage instead of falling back to `--no-deps`,
+  which could leave transitive runtime packages (for example `click`, required
+  by `uvicorn`) absent. The post-install audit verifies every declared runtime
+  dependency through the venv's own
   interpreter. Entry-point presence (`nexus.exe`) verified.
 - **config** (stage `config`): create-if-missing templates from
   `configs/base.yaml` and `configs/live.yaml.example` -> `<NexusHome>\config`.

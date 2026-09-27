@@ -199,6 +199,12 @@ if (-not (Test-Path $PyInstaller)) { Fail "pyinstaller not found — install wit
 # pg_planes.py / postgres_driver.py are invisible to its static analysis.
 & $Py -m pip install --disable-pip-version-check "psycopg[binary]>=3.1,<4.0" "psycopg-pool>=3.1,<4.0"
 if ($LASTEXITCODE -ne 0) { Fail "postgres extra install failed — the release bundle would be unable to import psycopg_pool" }
+# Runtime closure gate: PyInstaller must never build an artifact from a venv
+# where uvicorn is present but its required click dependency is missing.
+if (-not (& $Py -c "import click, uvicorn; print('runtime closure: click=' + click.__version__ + ' uvicorn=' + uvicorn.__version__)" 2>$null)) {
+    Fail "runtime dependency closure is incomplete: click and uvicorn must both import before packaging"
+}
+Pass "runtime dependency closure: click + uvicorn importable"
 if (-not (& $Py -c "import psycopg, psycopg_pool" 2>$null)) {
     Fail "psycopg/psycopg_pool not importable after install — the release bundle would die on a provider=postgresql boot"
 }
