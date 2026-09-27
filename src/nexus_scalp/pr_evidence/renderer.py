@@ -213,19 +213,30 @@ def _overall(status: Status, failures: list[Failure]) -> str:
     lines = [f"## Overall\n\n{status.dot} **{status.value}**"]
     if status == Status.FAIL:
         lines.append("\n\nRequired CI checks contain failures.\n\n")
-        lines.append("**Primary affected files:**\n")
+        entries: list[str] = []
         seen: set[str] = set()
         for f in failures:
             for path in f.affected_paths():
-                if path in seen:
+                if path in seen or path == UNKNOWN:
                     continue
                 seen.add(path)
                 loc = (
                     f.location if f.location.path == path else (f.production_location or f.location)
                 )
-                lines.append(f"{len(seen)}. `{loc.rendered()}`")
+                entries.append(f"{len(seen)}. `{loc.rendered()}`")
             if len(seen) >= 5:
                 break
+        if entries:
+            lines.append("**Primary affected files:**\n\n")
+            lines.append("\n".join(entries))
+            lines.append("\n")
+        else:
+            # Never leave a bare header with nothing under it: say plainly that
+            # no file was determined, and name the gates so it stays actionable.
+            lines.append(
+                "**Primary affected files:** none determined — the failing gates "
+                "reported no repository file. See **What Failed and Why** below.\n"
+            )
     elif status == Status.UNKNOWN:
         lines.append(
             "\n\nNo check results or failures were collected. The PR may have "
@@ -333,9 +344,12 @@ def _affected_files(failures: list[Failure]) -> str:
         gates = sorted({f.check for f in unresolved if f.check != UNKNOWN})
         lines.append("\n### Location not determined from available evidence\n")
         for f in unresolved:
-            bullet = f"- {f.error_type}"
+            bullet = f"- {f.error_type if f.error_type != UNKNOWN else 'Gate failed'}"
             if f.check != UNKNOWN:
                 bullet += f"\n  - CI: `{f.check}`"
+            # The failing step is the real "where" when the gate reports no file.
+            if f.step != UNKNOWN:
+                bullet += f"\n  - Failed step: `{f.step}`"
             lines.append(bullet)
         if gates:
             lines.append(f"\n_Failing gates: {', '.join(f'`{g}`' for g in gates)}_")
@@ -349,9 +363,14 @@ def _affected_bullet(f: Failure, path: str) -> str:
         bullet += f" — `{loc.function}()`"
     if f.test != UNKNOWN:
         bullet += f"\n  - `{f.test}`"
-    bullet += f"\n  - {f.error_type}"
+    # An ``unknown`` error type adds no information; the check and step below
+    # carry the real cause, so the bare sentinel is omitted rather than echoed.
+    if f.error_type != UNKNOWN:
+        bullet += f"\n  - {f.error_type}"
     if f.check != UNKNOWN:
         bullet += f"\n  - CI: `{f.check}`"
+    if f.step != UNKNOWN:
+        bullet += f"\n  - Failed step: `{f.step}`"
     return bullet
 
 
@@ -369,13 +388,23 @@ def _failed_tests(failures: list[Failure]) -> str:
         return ""
     lines = ["## 🔴 What Failed and Why"]
     for i, f in enumerate(failures, start=1):
-        title = (
-            f.test if f.test != UNKNOWN else (f.error_type if f.error_type != UNKNOWN else f.check)
+        # Prefer the most specific real identifier: a test name, then the error
+        # type, then the failing STEP (which is what actually broke), then the
+        # gate. Never render a bare `unknown` heading.
+        title = next(
+            (v for v in (f.test, f.error_type, f.step, f.check, f.job) if v != UNKNOWN and v),
+            UNKNOWN,
         )
         lines.append(f"\n### {i}. `{title}`\n")
         if f.severity != UNKNOWN:
             lines.append(f"**Severity:** {f.severity}\n")
         lines.append(f"**Where:** `{f.location.rendered()}`\n")
+        if f.step != UNKNOWN:
+            lines.append(f"**Failed step:** `{f.step}`\n")
+        # Only when it adds information: `Where` may already BE the workflow
+        # file (the fallback when a gate reports no file of its own).
+        if f.workflow_file not in (UNKNOWN, f.location.path):
+            lines.append(f"**Workflow file:** `{f.workflow_file}`\n")
         if f.production_location is not None and f.production_location.path != UNKNOWN:
             lines.append(f"**Implementation file:** `{f.production_location.rendered()}`\n")
         elif f.test != UNKNOWN:

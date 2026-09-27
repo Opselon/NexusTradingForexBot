@@ -162,6 +162,12 @@ class Failure:
     remediation: str = UNKNOWN
     #: Deep link to the finding so a reader can open it and act.
     rule_url: str = UNKNOWN
+    #: The CI step that failed (e.g. "Build"). Filled when a job fails without
+    #: a usable annotation — GitHub's job-failure annotation carries a synthetic
+    #: ``.github`` path, so the step is the only real "where" available.
+    step: str = UNKNOWN
+    #: The workflow FILE that defined the job (e.g. ``.github/workflows/x.yml``).
+    workflow_file: str = UNKNOWN
 
     def affected_paths(self) -> list[str]:
         """Files this failure implicates: detected location + production location."""
@@ -192,6 +198,8 @@ class Failure:
             severity=_u(self.severity),
             remediation=_u(self.remediation),
             rule_url=_u(self.rule_url),
+            step=_u(self.step),
+            workflow_file=_u(self.workflow_file),
             source=_u(self.source),
         )
 
@@ -223,6 +231,10 @@ class CheckResult:
     annotations_url: str = UNKNOWN
     annotations: tuple[CheckAnnotation, ...] = ()
     head_sha: str = UNKNOWN
+    #: The workflow FILE backing this check (resolved from its Actions run).
+    workflow_file: str = UNKNOWN
+    #: The CI step that failed, when the job payload named one.
+    step: str = UNKNOWN
 
     @property
     def is_failure(self) -> bool:
