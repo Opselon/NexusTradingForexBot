@@ -1,0 +1,39 @@
+# Integration conflict and resolution record
+
+Integration base: 2a7234cccc15ff83ae6553a15e7a398e6129ac5e
+
+No merge conflicts encountered; all automatic merges completed, and no ambiguous merges were attempted.
+
+## Merge pass
+- ABORTED 2a669f92f8cb9509dd3fa604f3ba15dcc0b76fdc source=C:/c/tmp/nse-pgfix files=src/nexus_scalp/adapters/database/audit_repository.py,src/nexus_scalp/database/fabric/__init__.py,src/nexus_scalp/database/migration/schema_snapshot.py,src/nexus_scalp/incidents/store.py,src/nexus_scalp/model_lifecycle/learning_loop.py,tests/unit/test_pg_safety_persistence.py,tests/unit/test_pg_store_paths.py; merge aborted; source retained.
+- ABORTED eb98eb9ef10a8dbcb7f069f7e6fccd6372aaf07b source=C:/c/tmp/nse-ux9 files=frontend/src/pages/Trading/MarketReadout.tsx; merge aborted; source retained.
+- ABORTED 1654015331d33d0656476a42e8b4e5610711ce7f source=C:/c/tmp/pg-mig-schema files=src/nexus_scalp/database/migration/pg_schema.py; merge aborted; source retained.
+- ABORTED 8d7c6895838d129fabfd94dbbc0a2565de54249a source=C:/tmp/pr338-wt files=(none); merge aborted; source retained.
+- ABORTED 25d4a60d09c5d9241f1ced444b24a9694cf84b3b source=C:/Users/Capsizer/AppData/Local/Temp/nse_tb_wt files=(none); merge aborted; source retained.
+- ABORTED c3c0249d19e76baa2d4355fe7caeb46ac3a468a3 source=C:/Users/Capsizer/source/repos/i18n-complete/d files=agents/locks.yaml,agents/taskboard.md,frontend/src/features/account/ui/AccountChartsSection.tsx,frontend/src/features/account/ui/PerformanceSections.tsx,frontend/src/features/account/ui/StrategiesDashboard.tsx,frontend/src/features/account/ui/StrategiesSection.tsx,frontend/src/features/decision-trace/i18n.ts,frontend/src/features/news/i18n.ts,frontend/src/features/news/ui/NewsFeedSection.tsx,frontend/src/features/news/ui/NewsPage.tsx,frontend/src/features/news/ui/NewsProConsolePanel.tsx; merge aborted; source retained.
+- ABORTED e1d2ff9cfff311e7cb508cbf10ddaab4ca93a18c source=C:/Users/Capsizer/source/repos/i18n-wave/wt-c1 files=(none); merge aborted; source retained.
+- ABORTED 2888af2f4acd0e08840c6194f241ae872e531809 source=C:/Users/Capsizer/source/repos/i18n-wave/wt-f1 files=(none); merge aborted; source retained.
+- ABORTED c1799b164c0b1e2615958263533b63526b49536d source=C:/Users/Capsizer/source/repos/i18n-wave/wt-f2 files=(none); merge aborted; source retained.
+- ABORTED a0db2b6e074168b10661d87499f109609123d98b source=C:/Users/Capsizer/source/repos/i18n-wave/wt-f3 files=(none); merge aborted; source retained.
+- ABORTED 8715fa6b8e182877f2f286a38ec1f343d20284e6 source=C:/Users/Capsizer/source/repos/i18n-wave/wt-f4 files=(none); merge aborted; source retained.
+- ABORTED 8a026ac9d8dcf367984e8f0d26a87e1daa891378 source=C:/Users/Capsizer/source/repos/i18n-wave/wt-f5 files=(none); merge aborted; source retained.
+- ABORTED 29534eb2e2a12764a27e18adb23afde4a6bde39a source=C:/Users/Capsizer/source/repos/i18n-wave/wt-f6 files=(none); merge aborted; source retained.
+- ABORTED 02b5db7da4f78e15a141abcba52420a8f9c87909 source=C:/Users/Capsizer/source/repos/i18n-wave/wt-f7 files=(none); merge aborted; source retained.
+- ABORTED 05667d35266722fbf2a3b8a9c96c309e35395d9d source=C:/Users/Capsizer/source/repos/i18n-wave/wt-f8 files=(none); merge aborted; source retained.
+- ABORTED 855c7384a16c9fca0a942d20dfcba7bf5e8bf29d source=C:/Users/Capsizer/source/repos/i18n-wave/wt-p1 files=(none); merge aborted; source retained.
+- ABORTED 431b03937a3235e0124a74bd8f17e365e8527086 source=C:/Users/Capsizer/source/repos/i18n-wave/wt-p2 files=(none); merge aborted; source retained.
+- ABORTED 2eed2ced640ec56a80766f5e4f5b96d1eea4e216 source=C:/Users/Capsizer/source/repos/NexusTradingForexBot/.worktrees/bug293 files=(none); merge aborted; source retained.
+- ABORTED 0f0ef474c6e3089a87f501240b0ad6791231a567 source=C:/Users/Capsizer/source/repos/NexusTradingForexBot/.worktrees/p1-final files=(none); merge aborted; source retained.
+- ABORTED 3ba5c6c3f27c0dabf9503bf5fac8da4ed50d1cce source=C:/Users/Capsizer/source/repos/NexusTradingForexBot/.worktrees/p1-h4 files=(none); merge aborted; source retained.
+- ABORTED a6614798a8d89337b8bb5d12ac58798a17f6513b source=C:/Users/Capsizer/source/repos/NexusTradingForexBot/.worktrees/p1-probe files=(none); merge aborted; source retained.
+- ABORTED 3a3bd34af306e1fc17acad17e7dfbe9dd353f542 source=C:/Users/Capsizer/source/repos/nse-db-newspg files=src/nexus_scalp/database/fabric/__init__.py,src/nexus_scalp/database/migration/__init__.py,src/nexus_scalp/database/migration/schema_snapshot.py; merge aborted; source retained.
+- ABORTED 522ce4526736dfa60edbed08eca6deebea026087 source=C:/Users/Capsizer/source/repos/nse-euml-cli files=agents/locks.yaml,agents/taskboard.md; merge aborted; source retained.
+- ABORTED 06974bc63f51a6f9a2bf67ec3acacbe76fee3246 source=C:/Users/Capsizer/source/repos/nse-eur-d files=src/nexus_scalp/cli/doctor.py,src/nexus_scalp/cli/engine_boot.py; merge aborted; source retained.
+- ABORTED c3c1caa0b1cdcfa68a0a05c46b5d972cb2723662 source=C:/Users/Capsizer/source/repos/nse-infra-agent-isolation files=(none); merge aborted; source retained.
+- ABORTED 4dfabe5c39b515aed490eaf5c947131c22e5f3cb source=C:/Users/Capsizer/source/repos/nse-mtp-a files=scripts/data/ingest_historical_candles.py; merge aborted; source retained.
+- ABORTED c22c55dda3038895641e7dedf78f3bbaa207ef84 source=C:/Users/Capsizer/source/repos/nse-mtp-b files=src/nexus_scalp/adapters/mt5/remote_gateway.py,src/nexus_scalp/gateway/server.py; merge aborted; source retained.
+- ABORTED d69307c06e66db08165158c3d95e932676f54842 source=C:/Users/Capsizer/source/repos/nse-mtp-int files=agents/taskboard.md; merge aborted; source retained.
+- ABORTED cbf7bd61bbb5d79a1e46d8b1a61fa1c2eb20dbe4 source=C:/Users/Capsizer/source/repos/nse-sec-remediation files=src/nexus_scalp/database/drivers/base.py; merge aborted; source retained.
+- ABORTED 2f969b7365de81bcf6a8911ccb49c69fdff20fa1 source=C:/Users/Capsizer/source/repos/nse-sec-ws-auth files=(none); merge aborted; source retained.
+- ABORTED 63451d269fd00d283f6c86ab71b79a7783e93721 source=C:/Users/Capsizer/source/repos/nse-w6-marketplace files=(none); merge aborted; source retained.
+- ABORTED a98512ff46b33bfb4f72101e218a102ee3cbe6e0 source=C:/Users/Capsizer/source/repos/nse_test_recon files=(none); merge aborted; source retained.
