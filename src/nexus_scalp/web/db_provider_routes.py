@@ -291,7 +291,12 @@ def transition_migrate(payload: dict[str, Any], request: Request) -> dict[str, A
         ).run()
         passed = report.status == "SUCCESS"
         mgr.mark_migration(passed, "Migration failed" if not passed else "")
-        return {"success": passed, "report": report.to_dict(), "state": mgr.get_state().to_dict()}
+        report_payload = report.to_dict()
+        if report_payload.get("errors"):
+            report_payload["errors"] = [
+                "One or more migration errors occurred. Check server logs for details."
+            ]
+        return {"success": passed, "report": report_payload, "state": mgr.get_state().to_dict()}
     except Exception as exc:
         log_web_error(logger, "/api/db/manage/transition/migrate", request_id, exc)
         return _err(
