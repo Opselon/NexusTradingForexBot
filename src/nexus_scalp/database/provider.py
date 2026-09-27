@@ -24,6 +24,10 @@ from __future__ import annotations
 from enum import StrEnum
 
 
+class ProviderConfigurationError(ValueError):
+    """Raised when a persisted provider value is missing or unsupported."""
+
+
 class DatabaseProvider(StrEnum):
     """Relational database providers supported by the persistence layer."""
 
@@ -44,18 +48,18 @@ class DatabaseProvider(StrEnum):
 
         Accepts the canonical names ``sqlite`` / ``postgresql`` plus the
         common spellings used in URLs and config files
-        (``postgres``, ``pgsql``, ``sqlite3``, ``SQLite``, ...).  Unknown or
-        empty values resolve to SQLite (the safe default) — never raise at
-        the configuration boundary.
+        (``postgres``, ``pgsql``, ``sqlite3``, ``SQLite``, ...). Unknown or
+        empty values are configuration errors: callers must not silently route
+        an unavailable provider to SQLite.
         """
-        if not raw:
-            return cls.SQLITE
+        if raw is None or not raw.strip():
+            raise ProviderConfigurationError("Database provider must be explicitly configured.")
         norm = raw.strip().lower().replace("-", "").replace("_", "")
         if norm in {"postgresql", "postgres", "pgsql"}:
             return cls.POSTGRESQL
         if norm in {"sqlite", "sqlite3"}:
             return cls.SQLITE
-        return cls.SQLITE
+        raise ProviderConfigurationError(f"Unsupported database provider: {raw!r}.")
 
     @classmethod
     def from_url(cls, url: str) -> DatabaseProvider:

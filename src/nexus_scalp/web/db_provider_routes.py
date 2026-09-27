@@ -281,7 +281,11 @@ def reverse_migrate(payload: dict[str, Any], request: Request) -> dict[str, Any]
 
         src = load_database_config("audit")
         if not src.is_postgresql:
-            src = DatabaseConfig.for_postgres("audit")
+            return _err(
+                "DB_REVERSE_MIGRATE_REJECTED",
+                "Reverse migration requires PostgreSQL to be the configured active provider.",
+                request_id,
+            )
         dst = DatabaseConfig.for_sqlite("audit")
 
         opts = MigrationOptions(

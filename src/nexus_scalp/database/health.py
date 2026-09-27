@@ -41,8 +41,8 @@ class DatabaseHealthService:
         """Health snapshot for one domain (never raises)."""
         out: dict[str, Any] = {
             "domain": domain,
-            "provider": "",
-            "status": "ERROR",
+            "provider": "UNKNOWN",
+            "status": "UNKNOWN",
             "connected": False,
             "database": "",
             "server": "",
@@ -85,20 +85,28 @@ class DatabaseHealthService:
             out["status"] = "CONNECTED"
             out["database_version"] = driver.database_version()
 
-            # Schema + migration status (TASK-10 engine, unchanged).
+            # SQLite uses the migration engine. PostgreSQL reads its own metadata.
             try:
-                from nexus_scalp.database.engine import DatabaseMigrationEngine
-                from nexus_scalp.database.models import DatabaseDomain
+                if cfg.is_postgresql:
+                    version = driver.scalar(
+                        "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
+                    )
+                    out["schema_version"] = int(version or 0)
+                    out["migration_state"] = "CURRENT"
+                else:
+                    from nexus_scalp.database.engine import DatabaseMigrationEngine
+                    from nexus_scalp.database.models import DatabaseDomain
 
-                path = _engine_path_for(cfg)
-                eng = DatabaseMigrationEngine(db_path=path, domain=DatabaseDomain(domain))
-                st = eng.status()
-                out["schema_version"] = st.get("current_version", 0)
-                out["expected_version"] = st.get("expected_version", 0)
-                out["migration_state"] = st.get("migration_state", "")
+                    eng = DatabaseMigrationEngine(
+                        db_path=cfg.sqlite_connect_path, domain=DatabaseDomain(domain)
+                    )
+                    st = eng.status()
+                    out["schema_version"] = st.get("current_version", 0)
+                    out["expected_version"] = st.get("expected_version", 0)
+                    out["migration_state"] = st.get("migration_state", "")
             except Exception:
-                out["schema_version"] = 0
-                out["migration_state"] = "N/A"
+                out["schema_version"] = None
+                out["migration_state"] = "UNKNOWN"
 
             out["table_count"] = driver.table_count()
             try:
@@ -128,10 +136,13 @@ class DatabaseHealthService:
     def snapshot(self) -> dict[str, Any]:
         """Health for all domains + the active provider summary."""
         domains = {d: self.check_domain(d) for d in self.domains}
-        providers = {d["provider"] for d in domains.values() if d.get("connected")}
-        active = (
-            providers.pop() if len(providers) == 1 else (",".join(sorted(providers)) or "sqlite")
-        )
+        configured: set[str] = set()
+        for domain in self.domains:
+            try:
+                configured.add(self.resolve_config(domain).provider.value)
+            except Exception:
+                continue
+        active = configured.pop() if len(configured) == 1 else (",".join(sorted(configured)) or "UNKNOWN")
         healthy = all(d["health"] == "Healthy" for d in domains.values() if d.get("connected"))
         warn = any(d["health"] in {"Warning", "Error"} for d in domains.values())
         return {

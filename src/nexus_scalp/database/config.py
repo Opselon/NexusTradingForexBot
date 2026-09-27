@@ -480,7 +480,7 @@ def load_database_config(
         try:
             db = SettingsDatabase(db_path=Path(settings_db_path) if settings_db_path else None)
             prov = db.get(PROVIDER_SETTING_KEY)
-            if prov and prov.value:
+            if prov is not None:
                 selected = DatabaseProvider.parse(prov.value)
                 if selected.is_postgresql:
                     pg_cfg = DatabaseConfig.for_postgres(domain=domain)

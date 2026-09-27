@@ -197,12 +197,9 @@ def resolve_audit_db_url(db_url: str = "", config: Any = None) -> str:
         env_db = os.environ.get("NEXUS_AUDIT_DB", "").strip()
         if env_db:
             return f"sqlite:///{Path(env_db).as_posix()}"
-        try:
-            persisted = load_database_config("audit")
-            if getattr(persisted, "is_postgresql", False):
-                return build_postgres_url(persisted, SecureSecretStore())
-        except Exception:  # pragma: no cover - settings DB unavailable
-            pass
+        persisted = load_database_config("audit")
+        if getattr(persisted, "is_postgresql", False):
+            return build_postgres_url(persisted, SecureSecretStore())
         return f"sqlite:///{Path(default_sqlite_path('audit')).as_posix()}"
     return db_url
 
@@ -217,10 +214,7 @@ def active_provider_is_postgresql(domain: str = "audit") -> bool:
     """
     if _isolation_seam_active():
         return False
-    try:
-        return bool(load_database_config(domain).is_postgresql)
-    except Exception:  # pragma: no cover - settings DB unavailable
-        return False
+    return bool(load_database_config(domain).is_postgresql)
 
 
 def domain_for_table(table: str) -> str:

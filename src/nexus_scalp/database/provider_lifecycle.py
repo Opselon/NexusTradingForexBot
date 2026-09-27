@@ -99,12 +99,9 @@ class ProviderLifecycleManager:
         )
 
     def get_active_provider(self) -> str:
-        """Resolve the currently authoritative database provider."""
-        try:
-            cfg = load_database_config("audit", settings_db_path=self.settings_db_path)
-            return cfg.provider.value
-        except Exception:
-            return DatabaseProvider.SQLITE.value
+        """Resolve the authoritative provider; configuration errors propagate."""
+        cfg = load_database_config("audit", settings_db_path=self.settings_db_path)
+        return cfg.provider.value
 
     def get_state(self) -> ProviderTransitionState:
         """Get the current transition state."""
@@ -241,29 +238,37 @@ class ProviderLifecycleManager:
             return res
         except Exception as exc:
             logger.warning("Divergence check failed: %s", exc)
-            return DivergenceCheckResult(
-                diverged=False,
+            # Unknown divergence is unsafe: never report a clean comparison.
+            res = DivergenceCheckResult(
+                diverged=True,
                 source_provider=src.provider.value,
                 target_provider=dst.provider.value,
-                warning=f"Divergence check could not complete: {exc}",
+                warning=f"Divergence check could not complete: {type(exc).__name__}",
             )
+            self._state.divergence = res
+            return res
         finally:
             if src_driver:
                 src_driver.close()
             if dst_driver:
                 dst_driver.close()
 
-    def confirm_activation(self, force: bool = False) -> bool:
-        """Activate the target provider once verified (or forced).
-
-        Enforces the invariant: target MUST be in READY state before becoming ACTIVE
-        unless force=True is explicitly set by the operator.
-        """
-        if self._state.phase != ProviderSwitchPhase.READY and not force:
+    def confirm_activation(self) -> bool:
+        """Activate only after target testing, migration, verification, and parity."""
+        if self._state.phase != ProviderSwitchPhase.READY:
             logger.error(
                 "Refusing provider activation: phase is %s (must be READY)",
                 self._state.phase.value,
             )
+            return False
+        if not (
+            self._state.last_test_passed
+            and self._state.last_migration_passed
+            and self._state.last_verification_passed
+            and self._state.divergence is not None
+            and not self._state.divergence.diverged
+        ):
+            logger.error("Refusing provider activation: transition evidence is incomplete")
             return False
 
         from pathlib import Path
