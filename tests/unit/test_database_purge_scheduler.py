@@ -66,6 +66,8 @@ def test_scheduler_swallows_purge_error(monkeypatch: Any, tmp_path: Path) -> Non
     def fail() -> None:
         raise RuntimeError("purge failed")
 
-    cycle = MaintenanceCycle(SimpleNamespace(_database_lifecycle_manager=SimpleNamespace(run_purge=fail)))
+    cycle = MaintenanceCycle(
+        SimpleNamespace(_database_lifecycle_manager=SimpleNamespace(run_purge=fail))
+    )
     asyncio.run(cycle._run_database_purge(now_t=2.0))
     assert cycle._last_database_purge_time == 2.0
