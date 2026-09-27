@@ -52,37 +52,40 @@ from nexus_scalp.database.config import mask_url_password
 from nexus_scalp.observability.logging import get_logger
 
 _persistence_state = threading.local()
-
-
 LOG_PERSISTENCE_ENABLED_SETTING_KEY = "database.log_persistence.enabled"
 
 
 def _persistence_enabled() -> bool:
-    """Read the explicit opt-in flag; settings failures fail closed."""
+    """Return the explicit opt-in flag; settings failures fail closed."""
     try:
         from nexus_scalp.settings.service import SettingsDatabase
 
-        db = SettingsDatabase()
+        settings = SettingsDatabase()
         try:
-            row = db.get(LOG_PERSISTENCE_ENABLED_SETTING_KEY)
+            row = settings.get(LOG_PERSISTENCE_ENABLED_SETTING_KEY)
             return bool(row and row.value)
         finally:
-            db.close()
+            settings.close()
     except Exception:
         return False
 
 
 def _persist_event(level: str, context: dict[str, Any]) -> None:
-    """Best-effort persistence sink with a thread-local recursion guard."""
+    """Best-effort persistence sink with recursion and failure isolation."""
     if getattr(_persistence_state, "active", False) or not _persistence_enabled():
         return
     _persistence_state.active = True
     try:
         from nexus_scalp.database.log_store import DatabaseLogEntry, DatabaseLogStore
 
+        store = DatabaseLogStore()
+        cfg = store.cfg
+        provider = getattr(getattr(cfg, "provider", None), "value", None) or str(
+            getattr(cfg, "provider", "")
+        )
         entry = DatabaseLogEntry(
             level=level,
-            provider="postgresql",
+            provider=provider,
             domain=str(context.get("domain", "")),
             operation=str(context.get("operation", "")),
             repository=str(context.get("pool", "")),
@@ -94,10 +97,8 @@ def _persist_event(level: str, context: dict[str, Any]) -> None:
             correlation_id=str(context.get("correlation_id", "")),
             masked_sql=str(context.get("sql", "")),
         )
-        DatabaseLogStore().record(entry)
+        store.record(entry)
     except Exception as exc:
-        # The log store owns the counters; this boundary must never disturb the
-        # original database operation or recurse into the logging funnel.
         try:
             from nexus_scalp.database.log_store import _note_dropped
 
