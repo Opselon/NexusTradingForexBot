@@ -55,6 +55,16 @@ def _result_payload(result: Any) -> dict[str, Any]:
         "errors": result.errors,
     }
     if collection is not None:
+        verdict = collection.merge_verdict()
+        payload["merge"] = {
+            "verdict": verdict.state,
+            "headline": verdict.headline.replace("*", ""),
+            "blockers": [r_.detail for r_ in verdict.blockers],
+            "reasons": [r_.detail for r_ in verdict.reasons],
+            "required_checks": collection.required_checks,
+            "required_reviews": collection.required_reviews,
+            "require_up_to_date": collection.require_up_to_date,
+        }
         payload["checks"] = [
             {
                 "name": c.name,
@@ -202,6 +212,14 @@ def _summary_panel(result: Any) -> Panel:
     lines = [
         f"{dot} Status: {getattr(status, 'value', status)}",
         f"PR #{result.pr} · failures: {result.failure_count}",
+    ]
+    verdict = getattr(getattr(result, "collection", None), "merge_verdict", None)
+    if callable(verdict):
+        v = verdict()
+        lines.append(f"{v.dot} Merge? {v.headline.replace('*', '')}")
+        for reason in list(v.blockers)[:3]:
+            lines.append(f"  • {reason.detail}")
+    lines += [
         f"Affected files: {len(result.affected_files)}",
         f"Comment: {result.comment_action} (published={result.published})",
     ]
