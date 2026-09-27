@@ -29,6 +29,7 @@ from nexus_scalp.database.drivers._sql_guard import (
     assert_safe_sql,
 )
 from nexus_scalp.database.drivers.base import DatabaseDriver
+from nexus_scalp.database.query_logging import QueryMetricsRecorder
 
 #: Case-insensitive map: SQLite type name -> portable logical type.
 SQLITE_TYPE_MAP: dict[str, str] = {
@@ -280,12 +281,16 @@ class SQLiteDriver(DatabaseDriver):
         """Run a SELECT and return rows as dicts (row_factory applied)."""
         own = conn is None
         c = conn or self.connect()
-        try:
-            cur = c.execute(assert_safe_sql(sql), tuple(args))
-            return [dict(r) for r in cur.fetchall()]
-        finally:
-            if own:
-                c.close()
+        metrics = QueryMetricsRecorder(self.query_name(sql, "query"), operation="query", sql=sql)
+        with metrics:
+            try:
+                cur = c.execute(assert_safe_sql(sql), tuple(args))
+                rows = [dict(r) for r in cur.fetchall()]
+                metrics.rows = len(rows)
+                return rows
+            finally:
+                if own:
+                    c.close()
 
     def query_readonly(
         self, sql: str, args: Sequence[Any] = (), conn: Any = None
@@ -302,26 +307,39 @@ class SQLiteDriver(DatabaseDriver):
         """
         own = conn is None
         c = conn or self.connect()
-        try:
-            c.set_authorizer(self._readonly_authorizer)
-            cur = c.execute(assert_safe_sql(sql), tuple(args))
-            return [dict(r) for r in cur.fetchall()]
-        finally:
-            if own:
-                c.close()
+        metrics = QueryMetricsRecorder(
+            self.query_name(sql, "query_readonly"), operation="query_readonly", sql=sql
+        )
+        with metrics:
+            try:
+                c.set_authorizer(self._readonly_authorizer)
+                cur = c.execute(assert_safe_sql(sql), tuple(args))
+                rows = [dict(r) for r in cur.fetchall()]
+                metrics.rows = len(rows)
+                return rows
+            finally:
+                if own:
+                    c.close()
 
     def query_one(
         self, sql: str, args: Sequence[Any] = (), conn: Any = None
     ) -> dict[str, Any] | None:
         own = conn is None
         c = conn or self.connect()
-        try:
-            cur = c.execute(assert_safe_sql(sql), tuple(args))
-            row = cur.fetchone()
-            return dict(row) if row is not None else None
-        finally:
-            if own:
-                c.close()
+        metrics = QueryMetricsRecorder(
+            self.query_name(sql, "query_one"), operation="query_one", sql=sql
+        )
+        with metrics:
+            try:
+                cur = c.execute(assert_safe_sql(sql), tuple(args))
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                metrics.rows = 1
+                return dict(row)
+            finally:
+                if own:
+                    c.close()
 
     def scalar(self, sql: str, args: Sequence[Any] = (), conn: Any = None) -> Any:
         own = conn is None

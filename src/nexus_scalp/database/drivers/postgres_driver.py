@@ -33,6 +33,7 @@ from typing import Any
 from nexus_scalp.database.config import DatabaseConfig, build_postgres_url, mask_url_password
 from nexus_scalp.database.drivers._sql_guard import assert_safe_sql
 from nexus_scalp.database.drivers.base import _IDENT_SHAPE, DatabaseDriver
+from nexus_scalp.database.query_logging import QueryMetricsRecorder
 
 #: Case-insensitive map: SQLite/logical type -> PostgreSQL DDL type.
 PG_TYPE_MAP: dict[str, str] = {
@@ -917,60 +918,76 @@ class PostgreSQLDriver(DatabaseDriver):
     def query(self, sql: str, args: Sequence[Any] = (), conn: Any = None) -> list[dict[str, Any]]:
         own = conn is None
         c = conn or self.connect()
-        try:
-            cur = c.execute(
-                # SEC (py/sql-injection #108): this driver IS the
-                # parameterization boundary — callers bind values through
-                # ``args`` placeholders and identifier interpolation is routed
-                # through quote_ident allow-lists by the store layer. The
-                # shared boundary guard enforces the verb allow-list, the
-                # single-statement rule and the block-comment ban at this
-                # sink. User-controlled SQL text exists only in the auth-gated,
-                # read-only db console, which allow-lists
-                # SELECT/EXPLAIN/WITH/PRAGMA/VALUES BEFORE reaching here.
-                # CodeQL recognises no runtime regex/whitelist as a sanitizer
-                # barrier, so the taint chain cannot be cut statically; the
-                # disposition is documented at the boundary that enforces it.
-                assert_safe_sql(_translate_upsert_verb(sql, c)),
-                tuple(args) if args else None,
-            )
-            rows = cur.fetchall()
-            names = [d.name for d in cur.description] if cur.description else []
-            return [dict(zip(names, r, strict=False)) for r in rows]
-        finally:
-            if own:
-                c.close()
+        timer = _DriverQueryTimer("query", sql, _driver_domain(own))
+        metrics = QueryMetricsRecorder(
+            self.query_name(sql, "query"), operation="query", sql=sql
+        )
+        with timer, metrics:
+            try:
+                cur = c.execute(
+                    # SEC (py/sql-injection #108): this driver IS the
+                    # parameterization boundary — callers bind values through
+                    # ``args`` placeholders and identifier interpolation is routed
+                    # through quote_ident allow-lists by the store layer. The
+                    # shared boundary guard enforces the verb allow-list, the
+                    # single-statement rule and the block-comment ban at this
+                    # sink. User-controlled SQL text exists only in the auth-gated,
+                    # read-only db console, which allow-lists
+                    # SELECT/EXPLAIN/WITH/PRAGMA/VALUES BEFORE reaching here.
+                    # CodeQL recognises no runtime regex/whitelist as a sanitizer
+                    # barrier, so the taint chain cannot be cut statically; the
+                    # disposition is documented at the boundary that enforces it.
+                    assert_safe_sql(_translate_upsert_verb(sql, c)),
+                    tuple(args) if args else None,
+                )
+                rows = cur.fetchall()
+                names = [d.name for d in cur.description] if cur.description else []
+                result = [dict(zip(names, r, strict=False)) for r in rows]
+                timer.rows = len(result)
+                metrics.rows = len(result)
+                return result
+            finally:
+                if own:
+                    c.close()
 
     def query_one(
         self, sql: str, args: Sequence[Any] = (), conn: Any = None
     ) -> dict[str, Any] | None:
         own = conn is None
         c = conn or self.connect()
-        try:
-            cur = c.execute(
-                # SEC (py/sql-injection #108): this driver IS the
-                # parameterization boundary — callers bind values through
-                # ``args`` placeholders and identifier interpolation is routed
-                # through quote_ident allow-lists by the store layer. The
-                # shared boundary guard enforces the verb allow-list, the
-                # single-statement rule and the block-comment ban at this
-                # sink. User-controlled SQL text exists only in the auth-gated,
-                # read-only db console, which allow-lists
-                # SELECT/EXPLAIN/WITH/PRAGMA/VALUES BEFORE reaching here.
-                # CodeQL recognises no runtime regex/whitelist as a sanitizer
-                # barrier, so the taint chain cannot be cut statically; the
-                # disposition is documented at the boundary that enforces it.
-                assert_safe_sql(_translate_upsert_verb(sql, c)),
-                tuple(args) if args else None,
-            )
-            row = cur.fetchone()
-            if row is None:
-                return None
-            names = [d.name for d in cur.description] if cur.description else []
-            return dict(zip(names, row, strict=False))
-        finally:
-            if own:
-                c.close()
+        timer = _DriverQueryTimer("query_one", sql, _driver_domain(own))
+        metrics = QueryMetricsRecorder(
+            self.query_name(sql, "query_one"), operation="query_one", sql=sql
+        )
+        with timer, metrics:
+            try:
+                cur = c.execute(
+                    # SEC (py/sql-injection #108): this driver IS the
+                    # parameterization boundary — callers bind values through
+                    # ``args`` placeholders and identifier interpolation is routed
+                    # through quote_ident allow-lists by the store layer. The
+                    # shared boundary guard enforces the verb allow-list, the
+                    # single-statement rule and the block-comment ban at this
+                    # sink. User-controlled SQL text exists only in the auth-gated,
+                    # read-only db console, which allow-lists
+                    # SELECT/EXPLAIN/WITH/PRAGMA/VALUES BEFORE reaching here.
+                    # CodeQL recognises no runtime regex/whitelist as a sanitizer
+                    # barrier, so the taint chain cannot be cut statically; the
+                    # disposition is documented at the boundary that enforces it.
+                    assert_safe_sql(_translate_upsert_verb(sql, c)),
+                    tuple(args) if args else None,
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                names = [d.name for d in cur.description] if cur.description else []
+                result = dict(zip(names, row, strict=False))
+                timer.rows = 1
+                metrics.rows = 1
+                return result
+            finally:
+                if own:
+                    c.close()
 
     def scalar(self, sql: str, args: Sequence[Any] = (), conn: Any = None) -> Any:
         own = conn is None

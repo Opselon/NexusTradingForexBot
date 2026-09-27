@@ -44,6 +44,37 @@ class DatabaseDriver(ABC):
 
     # -- helpers ----------------------------------------------------------
 
+    #: Regex used to normalize a statement into a stable query name. Whitespace
+    #: collapses and any literal is replaced by ``?`` so the SAME business query
+    #: issued with different parameters aggregates under ONE name.
+    _LITERAL = re.compile(r"'(?:[^']|'')*'")
+    _WS = re.compile(r"\s+")
+    _NUM = re.compile(r"\b\d+\b")
+
+    #: Bounded query-name length so a pathological statement cannot flood the
+    #: metrics map.
+    _QUERY_NAME_MAX_LEN = 120
+
+    def query_name(self, sql: str, fallback: str = "query") -> str:
+        """Derive a stable, provider-agnostic name from a statement.
+
+        The name is the statement's normalized SHAPE — whitespace collapsed,
+        literals and numbers replaced by ``?`` — truncated to a bounded length.
+        It is deliberately NOT a full ``pg_stat_statements`` fingerprint: the
+        goal is to group "same business operation" so a workload profile can
+        rank by total time / calls / mean latency / rows, while the caller's
+        repository-level name remains the primary attribution key.
+        """
+        try:
+            if not isinstance(sql, str) or not sql:
+                return fallback
+            text = self._WS.sub(" ", sql.strip())
+            text = self._LITERAL.sub("?", text)
+            text = self._NUM.sub("?", text)
+            return text[: self._QUERY_NAME_MAX_LEN]
+        except Exception:
+            return fallback
+
     def qmarks(self, count: int) -> str:
         """Provider-native placeholder sequence for `count` params."""
         if self.paramstyle == "qmark":
