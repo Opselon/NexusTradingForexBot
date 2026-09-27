@@ -67,24 +67,30 @@ Required future controlled procedure: install or verify the extension, add `pg_s
 
 ## Workload Measurement
 
-The marketplace path was measured with an isolated temporary SQLite database and driver method instrumentation. This proves application query amplification and preserves the no-production-mutation rule. It does not substitute for a PostgreSQL latency benchmark.
+The marketplace path was measured twice: once against an isolated SQLite database (driver instrumentation, no production mutation) and once against a real, throwaway PostgreSQL 17.10 database created and dropped on the same local instance (`nexusdb` was never written to).
 
-### Marketplace query-count benchmark
+### Marketplace query-count and latency benchmark (real PostgreSQL 17.10)
 
-| Seeds | Before: existence probes | Before: final count query | Before: query shape | After: set queries | After: per-seed probes |
-| ---: | ---: | ---: | --- | ---: | ---: |
-| 1 | 1 | 1 | 1 per-seed `query_one` + final query | 2 | 0 |
-| 5 | 5 | 1 | 5 per-seed `query_one` + final query | 2 | 0 |
-| 20 | 20 | 1 | 20 per-seed `query_one` + final query | 2 | 0 |
+Measured through the application's own `PostgresDriver` and repository/service path, with `query`/`query_one` instrumentation and wall-clock timing. Baseline = `b08acc4c` (pre-change); After = merged commit `1daea6b2`.
 
-The before counts were captured from the pre-change implementation harness. The after counts were captured after the change using the same isolated database setup and generated seed workload. The after implementation still performs one final `SELECT seed_id ... WHERE pack_id = ?` to preserve the existing stored-count result contract.
+| Seeds | Before: per-seed `query_one` | Before wall ms | After: per-seed `query_one` | After wall ms |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 1 | 182.5 | 0 | 145.3 |
+| 5 | 5 | 477.7 | 0 | 150.6 |
+| 20 | 20 | 1,090.8 | 0 | 150.7 |
+
+The before column shows linear growth in both round trips and latency (20 seeds ≈ 1.09 s); the after column is flat (≈150 ms regardless of seed count). PostgreSQL install ordering was preserved and re-installation was verified idempotent (`stored == 5`) on both providers.
+
+SQLite hardware-independent query counts (1/5/20 seeds) matched: before 1/5/20 existence probes, after 0.
+
+The measured improvement is specifically the removal of the per-seed existence round trip; the residual ~150 ms includes connection setup and the unchanged seed/pack upserts, which this change intentionally did not alter.
 
 ## Query Fingerprints
 
 Measured marketplace fingerprints:
 
 1. Before: `SELECT seed_id FROM mk_seeds WHERE seed_id = ? AND version = ?`, called once per seed.
-2. After: `SELECT seed_id, version FROM mk_seeds WHERE (seed_id = ? AND version = ?) OR ...`, called once per installation.
+2. After: `SELECT seed_id, version FROM mk_seeds WHERE (seed_id = ? AND version = ?) OR ...`, called once per installation (bounded to 400 seeds per statement).
 3. Existing result-contract query: `SELECT seed_id FROM mk_seeds WHERE pack_id = ?`, called once per installation.
 
 The set-based query uses the provider-neutral `?` placeholder and the existing driver abstraction. No PostgreSQL-only SQL was added.
