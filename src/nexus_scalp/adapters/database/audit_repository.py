@@ -602,6 +602,33 @@ class AuditRepository:
                 else:
                     conn.close()
             logger.info("Initialized High-Performance SQLite WAL storage", db_path=self._db_path)
+        else:
+            self._seed_trading_rules_provider()
+
+    def _seed_trading_rules_provider(self) -> None:
+        """Seeds trading_rules_config on non-SQLite providers if table is empty."""
+        try:
+            plane = self._registered_audit_read_plane()
+            if plane is None:
+                return
+            count = plane.scalar("SELECT count(*) FROM trading_rules_config")
+            if count and count > 0:
+                return
+            backend = self._provider_write_backend()
+            if backend is None:
+                return
+            batch = [
+                (
+                    "INSERT INTO trading_rules_config (rule_name, is_enabled, category, parameters) "
+                    "VALUES (?, 0, ?, ?) ON CONFLICT (rule_name) DO NOTHING",
+                    [rule],
+                )
+                for rule in DEFAULT_TRADING_RULES
+            ]
+            backend.execute_batch(batch)
+            logger.info("Seeded default trading rules into PostgreSQL (rules=%d)", len(DEFAULT_TRADING_RULES))
+        except Exception as e:
+            logger.warning("Failed to seed default trading rules into provider: %s", e)
 
     def _create_sqlite_tables(self, conn: sqlite3.Connection) -> None:
         """Creates table schemas including Crash Recovery Snapshots & Regime tracking."""
@@ -1513,6 +1540,39 @@ class AuditRepository:
             WHERE id=1
         """
         try:
+            if not self._is_sqlite:
+                # PG-READ-PLANE-001 / D2: under a pooled provider _db_path is ""
+                # and _connect_sqlite() would open a throwaway temp DB, so the
+                # release never reached PostgreSQL. Execute synchronously
+                # against the fabric's pooled WRITE backend — the same path
+                # set_runtime_risk_state uses, so the two stay consistent.
+                ok = self._provider_execute_write(
+                    [
+                        (
+                            sql,
+                            (
+                                datetime.now(UTC).isoformat(),
+                                str(actor),
+                                str(note or ""),
+                                str(note or ""),
+                            ),
+                        )
+                    ]
+                )
+                if not ok:
+                    logger.error(
+                        "runtime_risk_state release FAILED actor=%s "
+                        "(provider write backend unavailable)",
+                        actor,
+                    )
+                    return False
+                logger.info(
+                    "RUNTIME RISK STATE RELEASED actor=%s previous=%s note=%s",
+                    actor,
+                    current.get("state"),
+                    note,
+                )
+                return True
             with self._connect_sqlite(10.0) as conn:
                 conn.execute(
                     sql,
@@ -1571,9 +1631,34 @@ class AuditRepository:
         Returns (count, newest_loss_close_time_iso).
         """
         if not self._is_sqlite:
-            return self._provider_read_guard(
+            sql = """
+                SELECT status, net_pnl_usd, COALESCE(NULLIF(close_time,''), timestamp) AS close_ts
+                FROM audit_ledger
+                WHERE status IN ('CLOSED','CLOSED_TP','CLOSED_SL','RECONCILED','MANUALLY_CLOSED')
+                  AND exit_price IS NOT NULL
+                ORDER BY COALESCE(NULLIF(close_time,''), timestamp) DESC
+                LIMIT ?
+            """
+            rows = self._provider_read_guard(
                 "get_consecutive_losses",
-                lambda: (0, ""),
+                lambda: None,
+                sql=sql,
+                args=(int(limit),),
+                kind="rows",
+            )
+            if rows is None:
+                return (0, "")
+            from nexus_scalp.risk.runtime_safety import evaluate_consecutive_losses_with_time
+
+            return evaluate_consecutive_losses_with_time(
+                [
+                    (
+                        r["status"] if isinstance(r, dict) else r[0],
+                        float((r["net_pnl_usd"] if isinstance(r, dict) else r[1]) or 0.0),
+                        str((r["close_ts"] if isinstance(r, dict) else r[2]) or ""),
+                    )
+                    for r in rows
+                ]
             )
         try:
             from nexus_scalp.risk.runtime_safety import evaluate_consecutive_losses_with_time
@@ -1659,6 +1744,8 @@ class AuditRepository:
             return self._provider_read_guard(
                 "get_broker_history_meta",
                 lambda: None,
+                sql="SELECT symbol, last_sync_from, last_sync_to FROM audit_broker_history_meta ORDER BY id DESC LIMIT 1",
+                kind="row",
             )
         with self._connect_sqlite(5.0) as conn:
             return last_sync_window(conn, symbol or "")
@@ -1671,9 +1758,22 @@ class AuditRepository:
     ) -> list[dict[str, Any]]:
         """Reconstructed logical trades, newest exit first."""
         if not self._is_sqlite:
+            clauses: list[str] = []
+            args: list[Any] = []
+            if symbol:
+                clauses.append("symbol = ?")
+                args.append(symbol)
+            where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
             return self._provider_read_guard(
                 "get_broker_trades",
                 lambda: ([]),
+                sql=(
+                    "SELECT * FROM audit_broker_trades "
+                    f"{where} ORDER BY COALESCE(NULLIF(exit_time,''), '') DESC "
+                    "LIMIT ? OFFSET ?"
+                ),
+                args=tuple(args + [int(limit), int(offset)]),
+                kind="rows",
             )
         clauses: list[str] = []
         args: list[Any] = []
@@ -1698,9 +1798,18 @@ class AuditRepository:
     ) -> list[dict[str, Any]]:
         """Normalized broker deals (optionally for one position lifecycle)."""
         if not self._is_sqlite:
+            if position_id is not None:
+                sql = "SELECT * FROM audit_broker_deals WHERE position_id = ? ORDER BY time ASC LIMIT ?"
+                args: tuple[Any, ...] = (int(position_id), int(limit))
+            else:
+                sql = "SELECT * FROM audit_broker_deals ORDER BY time DESC LIMIT ?"
+                args = (int(limit),)
             return self._provider_read_guard(
                 "get_broker_deals",
                 lambda: ([]),
+                sql=sql,
+                args=args,
+                kind="rows",
             )
         if position_id is not None:
             sql = "SELECT * FROM audit_broker_deals WHERE position_id = ? ORDER BY time ASC LIMIT ?"
@@ -1719,9 +1828,21 @@ class AuditRepository:
     ) -> list[dict[str, Any]]:
         """Normalized broker orders (optionally for one position lifecycle)."""
         if not self._is_sqlite:
+            if position_id is not None:
+                sql = (
+                    "SELECT * FROM audit_broker_orders WHERE position_id = ? "
+                    "ORDER BY time_setup ASC LIMIT ?"
+                )
+                args: tuple[Any, ...] = (int(position_id), int(limit))
+            else:
+                sql = "SELECT * FROM audit_broker_orders ORDER BY time_setup DESC LIMIT ?"
+                args = (int(limit),)
             return self._provider_read_guard(
                 "get_broker_orders",
                 lambda: ([]),
+                sql=sql,
+                args=args,
+                kind="rows",
             )
         if position_id is not None:
             sql = (
@@ -2834,7 +2955,23 @@ class AuditRepository:
 
             backend = get_domain_backend("audit", readonly=True)
         except Exception:
-            return None
+            backend = None
+        if backend is None:
+            # No read plane is registered in THIS process yet. The fabric
+            # provisions the read plane from the process that ran
+            # provision_domain; every other process on the box (CLI probe,
+            # diagnostics route, maintenance worker) starts with an empty
+            # registry and its very first audit read degrades — hundreds of
+            # "no read plane registered for domain 'audit'" warnings in the
+            # live log. Bootstrap it lazily here, the read-side mirror of the
+            # write path's documented auto-provision. A registered WRITE
+            # backend is left untouched (the slots are independent).
+            from nexus_scalp.database.ops_provider import ensure_read_plane
+
+            try:
+                backend = ensure_read_plane("audit")
+            except Exception:
+                backend = None
         if backend is None:
             return None
         if hasattr(backend, "execute") or not hasattr(backend, "query"):
@@ -4123,14 +4260,38 @@ class AuditRepository:
 
         Honest None when there is no data — never a fabricated 0/0.
         """
-        if not self._is_sqlite:
-            return self._provider_read_guard(
-                "paper_execution_stats",
-                lambda: ({"fills": 0}),
-            )
         from datetime import UTC, datetime, timedelta
 
         cutoff = (datetime.now(UTC) - timedelta(days=int(days))).isoformat()
+        if not self._is_sqlite:
+            sql = """
+                SELECT
+                    COUNT(*) AS attempts,
+                    SUM(CASE WHEN status = 'FILLED' THEN 1 ELSE 0 END) AS fills,
+                    AVG(spread) AS mean_spread,
+                    AVG(CASE WHEN status = 'FILLED' THEN ABS(slippage) END) AS mean_slippage
+                FROM audit_paper_executions WHERE ts >= ?
+            """
+            row = self._provider_read_guard(
+                "paper_execution_stats",
+                lambda: ({**{"attempts": 0, "fills": 0}}),
+                sql=sql,
+                args=(cutoff,),
+                kind="row",
+            )
+            if row is None:
+                return {"fills": 0}
+            return {
+                "attempts": int(row.get("attempts") or 0),
+                "fills": int(row.get("fills") or 0),
+                "fill_rate": (
+                    (int(row.get("fills") or 0) / int(row.get("attempts") or 1))
+                    if int(row.get("attempts") or 0) > 0
+                    else None
+                ),
+                "mean_spread": row.get("mean_spread"),
+                "mean_slippage": row.get("mean_slippage"),
+            }
         try:
             with self._connect_sqlite(5.0) as conn:
                 row = conn.execute(
@@ -4163,14 +4324,36 @@ class AuditRepository:
         Consumes the canonical audit_broker_trades copy (synced from MT5 by
         BrokerHistorySyncWorker). Honest zeros when nothing synced.
         """
-        if not self._is_sqlite:
-            return self._provider_read_guard(
-                "broker_execution_stats",
-                lambda: ({"trades": 0}),
-            )
         from datetime import UTC, datetime, timedelta
 
         cutoff = (datetime.now(UTC) - timedelta(days=int(days))).isoformat()
+        if not self._is_sqlite:
+            sql = """
+                SELECT
+                    COUNT(*) AS trades,
+                    SUM(CASE WHEN net_pnl > 0 THEN 1 ELSE 0 END) AS winners,
+                    AVG(duration_sec) AS mean_duration_sec,
+                    SUM(net_pnl) AS net_pnl_total
+                FROM audit_broker_trades
+                WHERE COALESCE(exit_time, entry_time) >= ?
+            """
+            row = self._provider_read_guard(
+                "broker_execution_stats",
+                lambda: ({**{"trades": 0}}),
+                sql=sql,
+                args=(cutoff,),
+                kind="row",
+            )
+            if row is None:
+                return {"trades": 0}
+            trades = int(row.get("trades") or 0)
+            winners = int(row.get("winners") or 0)
+            return {
+                "trades": trades,
+                "win_rate": (winners / trades) if trades > 0 else None,
+                "mean_duration_sec": row.get("mean_duration_sec"),
+                "net_pnl_total": row.get("net_pnl_total"),
+            }
         try:
             with self._connect_sqlite(5.0) as conn:
                 row = conn.execute(
@@ -4208,9 +4391,19 @@ class AuditRepository:
         or [] when nothing is captured.
         """
         if not self._is_sqlite:
+            sql = (
+                'SELECT ticket, "order", position_id, symbol, type, entry, '
+                "magic, time, reason, volume, price, profit, fee, swap, "
+                "commission, net_result, comment, external_id "
+                "FROM audit_broker_deals WHERE position_id = ? "
+                "ORDER BY time ASC;"
+            )
             return self._provider_read_guard(
                 "get_broker_deals_for_position",
                 lambda: ([]),
+                sql=sql,
+                args=(int(position_id),),
+                kind="rows",
             )
         try:
             with self._connect_sqlite(5.0) as conn:
@@ -4469,18 +4662,85 @@ class AuditRepository:
         Calculates precise WinRate, Profit Factor, Drawdown, and historical trade metrics from the ledger.
         """
         if not self._is_sqlite:
-            return self._provider_read_guard(
-                "get_account_performance_metrics",
-                lambda: (
-                    {
+            plane = self._registered_audit_read_plane()
+            if plane is None:
+                return {
+                    "total_trades": 0,
+                    "win_rate": 0.0,
+                    "profit_factor": 0.0,
+                    "max_drawdown": 0.0,
+                    "avg_duration": 0.0,
+                }
+            try:
+                rows = plane.query(
+                    "SELECT pnl, commission, swap, duration_sec FROM audit_ledger WHERE status != 'OPENED'"
+                )
+                total_trades = len(rows)
+                if total_trades == 0:
+                    return {
                         "total_trades": 0,
                         "win_rate": 0.0,
                         "profit_factor": 0.0,
                         "max_drawdown": 0.0,
                         "avg_duration": 0.0,
                     }
-                ),
-            )
+
+                wins = 0
+                gross_profit = 0.0
+                gross_loss = 0.0
+                total_duration = 0.0
+
+                for r in rows:
+                    net_pnl = (
+                        float(r["pnl"] or 0.0)
+                        - abs(float(r["commission"] or 0.0))
+                        - float(r["swap"] or 0.0)
+                    )
+                    if net_pnl > 0:
+                        wins += 1
+                        gross_profit += net_pnl
+                    else:
+                        gross_loss += abs(net_pnl)
+                    total_duration += float(r["duration_sec"] or 0.0)
+
+                win_rate = (wins / total_trades) * 100.0
+                profit_factor = (
+                    gross_profit / gross_loss
+                    if gross_loss > 0
+                    else (gross_profit if gross_profit > 0 else 1.0)
+                )
+                avg_duration = total_duration / total_trades
+
+                snap_rows = plane.query(
+                    "SELECT balance, equity FROM audit_account_snapshots ORDER BY id ASC"
+                )
+                max_drawdown = 0.0
+                peak = 0.0
+                for r_snap in snap_rows:
+                    eq = float(r_snap["equity"] or 0.0)
+                    if eq > peak:
+                        peak = eq
+                    if peak > 0:
+                        dd = ((peak - eq) / peak) * 100.0
+                        if dd > max_drawdown:
+                            max_drawdown = dd
+
+                return {
+                    "total_trades": total_trades,
+                    "win_rate": round(win_rate, 2),
+                    "profit_factor": round(profit_factor, 2),
+                    "max_drawdown": round(max_drawdown, 2),
+                    "avg_duration": round(avg_duration, 1),
+                }
+            except Exception as e:
+                logger.error("Failed to calculate account performance metrics (provider)", error=str(e))
+                return {
+                    "total_trades": 0,
+                    "win_rate": 0.0,
+                    "profit_factor": 0.0,
+                    "max_drawdown": 0.0,
+                    "avg_duration": 0.0,
+                }
 
         try:
             with self._connect_sqlite(5.0) as conn:
@@ -4573,10 +4833,32 @@ class AuditRepository:
         served as the predictions table.
         """
         if not self._is_sqlite:
-            return self._provider_read_guard(
+            sql = """
+                SELECT request_id, symbol, action, confidence, proposed_entry,
+                       stop_loss, take_profit, regime, generated_at, payload,
+                       execution_mode, reason_code, decision_stage, blocked_by
+                FROM audit_signals
+                ORDER BY id DESC
+                LIMIT ?
+            """
+            raw_rows = self._provider_read_guard(
                 "get_recent_predictions",
                 lambda: ([]),
+                sql=sql,
+                args=(int(limit),),
+                kind="rows",
             )
+            rows: list[dict[str, Any]] = []
+            for r in raw_rows:
+                row = dict(r)
+                payload = row.get("payload") or "{}"
+                try:
+                    parsed = json.loads(payload) if isinstance(payload, str) else payload
+                except Exception:
+                    parsed = {}
+                row["payload_parsed"] = parsed
+                rows.append(row)
+            return rows
         try:
             with self._connect_sqlite(5.0) as conn:
                 conn.row_factory = sqlite3.Row
@@ -4616,9 +4898,18 @@ class AuditRepository:
         Retrieves paginated and filtered historical trade logs.
         """
         if not self._is_sqlite:
+            if status_filter:
+                sql = "SELECT * FROM audit_ledger WHERE status = ? ORDER BY ticket DESC LIMIT ? OFFSET ?"
+                args = (status_filter, int(limit), int(offset))
+            else:
+                sql = "SELECT * FROM audit_ledger ORDER BY ticket DESC LIMIT ? OFFSET ?"
+                args = (int(limit), int(offset))
             return self._provider_read_guard(
                 "get_ledger_trades",
                 lambda: ([]),
+                sql=sql,
+                args=args,
+                kind="rows",
             )
 
         try:
@@ -4647,6 +4938,8 @@ class AuditRepository:
             return self._provider_read_guard(
                 "get_equity_growth_chart_data",
                 lambda: ([]),
+                sql="SELECT timestamp, balance, equity FROM audit_account_snapshots ORDER BY id ASC",
+                kind="rows",
             )
 
         try:
@@ -4666,9 +4959,19 @@ class AuditRepository:
         MT5 IPC Telemetry Console (retcodes/reasons, latency, state transitions).
         """
         if not self._is_sqlite:
+            sql = """
+                SELECT id, ticket, order_id, symbol, action, price, stop_loss, take_profit,
+                       volume, reason, latency, execution_mode, timestamp
+                FROM audit_orders
+                ORDER BY id DESC
+                LIMIT ?
+            """
             return self._provider_read_guard(
                 "get_recent_order_events",
                 lambda: ([]),
+                sql=sql,
+                args=(int(limit),),
+                kind="rows",
             )
 
         try:
@@ -4756,6 +5059,11 @@ class AuditRepository:
             return self._provider_read_guard(
                 "get_trading_rules",
                 lambda: ([]),
+                sql=(
+                    "SELECT rule_name, is_enabled, category, parameters "
+                    "FROM trading_rules_config ORDER BY rule_name"
+                ),
+                kind="rows",
             )
         try:
             with self._connect_sqlite(5.0) as conn:

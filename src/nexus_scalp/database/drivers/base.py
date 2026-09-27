@@ -70,6 +70,43 @@ class DatabaseDriver(ABC):
             raise ValueError("invalid SQL identifier")
         return f'"{m.group(0)}"'
 
+    def resolve_table_name(self, name: str, conn: Any = None) -> str:
+        """Map a caller-supplied table name to the CATALOG's own table name.
+
+        SEC (py/sql-injection): this is the taint boundary for identifiers. The
+        returned string is an element of :meth:`list_tables` — a value read from
+        the provider's own catalog — and never the caller's argument. A caller
+        can therefore only NAME a table that already exists; it can never
+        contribute characters to SQL text.
+
+        ``quote_ident`` validates shape (and is kept for that), but a shape
+        check cannot satisfy static taint analysis: a validator returns a value
+        DERIVED from its input, so taint flows through it. Selecting the value
+        out of a catalog does not derive from the input at all, which is what
+        makes the result untainted by construction.
+
+        Fail-closed: an unreadable catalog, an unknown name or a malformed one
+        all raise ValueError. A caller that cannot prove the table is real must
+        not build SQL from it.
+        """
+        # Shape first: reject junk (null bytes, quotes, spaces, traversal)
+        # before any catalog work, and keep the historical ValueError contract.
+        if not isinstance(name, str):
+            raise ValueError("invalid SQL identifier")
+        if _IDENT_SHAPE.fullmatch(name) is None:
+            raise ValueError("invalid SQL identifier")
+        try:
+            known = self.list_tables(conn)
+        except Exception as exc:  # fail closed, never fail open
+            raise ValueError(f"cannot resolve table name: catalog unreadable: {exc}") from exc
+        for candidate in known:
+            # Identity comparison against catalog entries ONLY: `candidate` is
+            # the catalog's string, so the value that escapes this function is
+            # never the caller's input.
+            if candidate == name:
+                return str(candidate)
+        raise ValueError("unknown table")
+
     def transaction(self, conn: Any = None):
         """Context manager for an atomic unit of work (savepoint-friendly).
 

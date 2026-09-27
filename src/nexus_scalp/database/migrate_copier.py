@@ -17,6 +17,7 @@ Large-dataset contract (DATABASE PORTABILITY mission):
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from collections.abc import Callable, Iterable
@@ -42,13 +43,19 @@ def _sqlite_table_columns(driver: Any, table: str) -> list[dict[str, Any]]:
 
 
 def ensure_checkpoint_table(pg_driver: Any) -> None:
-    """Create the migration checkpoint table on the destination."""
+    """Create the migration checkpoint table on the destination.
+
+    ``last_rowid``/``total_rows`` are BIGINT: SQLite rowids are signed 64-bit
+    and the SQLite source can carry values beyond the int32 ceiling
+    (``psycopg.errors.NumericValueOutOfRange`` was raised on ``audit_ledger``,
+    whose rowid space is large). int4 columns would silently cap at 2.1B.
+    """
     ddl = (
         f"CREATE TABLE IF NOT EXISTS {CHECKPOINT_TABLE} ("
         "  table_name TEXT PRIMARY KEY,"
-        "  last_rowid INTEGER NOT NULL DEFAULT 0,"
-        "  rows_copied INTEGER NOT NULL DEFAULT 0,"
-        "  total_rows INTEGER NOT NULL DEFAULT 0,"
+        "  last_rowid BIGINT NOT NULL DEFAULT 0,"
+        "  rows_copied BIGINT NOT NULL DEFAULT 0,"
+        "  total_rows BIGINT NOT NULL DEFAULT 0,"
         "  status TEXT NOT NULL DEFAULT 'RUNNING',"
         "  started_at TEXT NOT NULL DEFAULT '',"
         "  updated_at TEXT NOT NULL DEFAULT '',"
@@ -137,11 +144,16 @@ def iter_table_batches(
     batch_size: int,
     order_col: str,
     start_after: int = 0,
+    order_is_int: bool = True,
 ) -> Iterable[list[dict[str, Any]]]:
     """Yield ordered batches of dict rows from the SQLite source.
 
-    `order_col` must be the table's rowid/identity column; batches are cut by
+    ``order_col`` must be the table's rowid/identity column; batches are cut by
     ``WHERE rowid > start_after ORDER BY rowid ASC LIMIT batch_size``.
+
+    For tables whose only usable cursor is a NON-integer column (text PKs,
+    timestamps), keyset pagination is impossible — fall back to OFFSET
+    pagination, with ``start_after`` interpreted as the row offset.
     """
     conn = src_driver.connect(timeout=30.0)
     try:
@@ -154,21 +166,24 @@ def iter_table_batches(
             cur.close()
         except Exception:
             has_rowid = False
+        col_list = ", ".join(f'"{c}"' for c in columns)
         if has_rowid:
             order_col = "rowid"
             where = "rowid > ?"
             order_by = "rowid ASC"
+            sql = f"SELECT {col_list} FROM {table} WHERE {where} ORDER BY {order_by}"
+            cursor = conn.execute(sql, [start_after])
+        elif order_is_int:
+            where = f'"{order_col}" > ?'
+            sql = f'SELECT {col_list} FROM "{table}" WHERE {where} ORDER BY "{order_col}" ASC'
+            cursor = conn.execute(sql, [start_after])
         else:
-            cols = src_driver.table_columns(table)
-            pks = [c["name"] for c in cols if c.get("pk")]
-            if not pks:
-                raise MigrationError(f"table {table}: no rowid and no primary key — cannot migrate")
-            order_col = pks[0]
-            where = f"{order_col} > ?"
-            order_by = f"{order_col} ASC"
-        col_list = ", ".join(columns)
-        sql = f"SELECT {col_list} FROM {table} WHERE {where} ORDER BY {order_by}"
-        cursor = conn.execute(sql, [start_after])
+            # Non-integer cursor: OFFSET pagination (tables are small).
+            sql = (
+                f'SELECT {col_list} FROM "{table}" ORDER BY "{order_col}" ASC '
+                "LIMIT ? OFFSET ?"
+            )
+            cursor = conn.execute(sql, [batch_size, start_after])
         while True:
             rows = cursor.fetchmany(batch_size)
             if not rows:
@@ -226,9 +241,35 @@ def copy_table(
     if not columns:
         return {"table": table, "status": "SKIPPED_EMPTY", "rows_copied": 0, "duration_ms": 0.0}
     col_names = [c["name"] for c in columns]
+    # Intersect with the columns that actually exist on the PostgreSQL target.
+    # Prevents "column X of relation Y does not exist" when SQLite carried
+    # historical or migration-dropped columns that the target DDL omitted.
+    with contextlib.suppress(Exception):
+        pg_cols = {c["name"] for c in pg_driver.table_columns(table)}
+        if pg_cols:
+            col_names = [c for c in col_names if c in pg_cols]
     # identity/order column: prefer rowid alias 'id' if present else first pk
     pks = [c["name"] for c in columns if c.get("pk")]
     order_col = "id" if "id" in col_names else (pks[0] if pks else col_names[0])
+
+    # The destination table may have been provisioned with a GENERATED ALWAYS
+    # identity column. Copying the SQLite ``id`` verbatim into that column is
+    # refused by Postgres unless the statement explicitly overrides it.
+    # Detect that once per table so the INSERT can request the override.
+    override_identity = False
+    with contextlib.suppress(Exception):
+        with pg_driver.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM information_schema.columns c "
+                    "JOIN information_schema.tables t ON "
+                    "  t.table_schema = c.table_schema AND t.table_name = c.table_name "
+                    "WHERE t.table_type = 'BASE TABLE' AND c.table_schema = 'public' "
+                    "  AND c.table_name = %s AND c.column_name = %s "
+                    "  AND c.identity_generation = 'ALWAYS'",
+                    (table, order_col),
+                )
+                override_identity = cur.fetchone() is not None
 
     total_rows = int(src_driver.row_count(table))
     if total_rows == 0:
@@ -257,11 +298,12 @@ def copy_table(
     batch_no = 0
 
     # destination insert template
+    col_list = ", ".join(f'"{c}"' for c in col_names)
     placeholders = ",".join("%s" for _ in col_names)
-    insert_sql = (
-        f"INSERT INTO {table} ({','.join(col_names)}) VALUES ({placeholders}) "
-        "ON CONFLICT DO NOTHING"
-    )
+    insert_prefix = f"INSERT INTO {table} ({col_list}) OVERRIDING SYSTEM VALUE"
+    if not override_identity:
+        insert_prefix = f"INSERT INTO {table} ({col_list})"
+    insert_sql = f"{insert_prefix} VALUES ({placeholders}) ON CONFLICT DO NOTHING"
 
     def _checksum_for(rows: list[dict[str, Any]]) -> str:
         if not checksum:
@@ -273,6 +315,19 @@ def copy_table(
             h.update((json.dumps(r, sort_keys=True, default=str)).encode("utf-8"))
         return h.hexdigest()
 
+    # A non-integer cursor (text PK / timestamp) cannot do keyset pagination;
+    # fall back to OFFSET pagination in iter_table_batches.
+    order_is_int = True
+    try:
+        order_type = next(
+            ((c.get("type") or "").upper() for c in columns if c.get("name") == order_col),
+            "",
+        )
+        if order_type in {"TEXT", "BLOB", "VARCHAR", "CHAR", "CLOB"}:
+            order_is_int = False
+    except Exception:
+        order_is_int = True
+
     try:
         for batch in iter_table_batches(
             src_driver,
@@ -281,6 +336,7 @@ def copy_table(
             batch_size=batch_size,
             order_col=order_col,
             start_after=last_rowid,
+            order_is_int=order_is_int,
         ):
             batch_no += 1
             if not batch:
@@ -289,7 +345,7 @@ def copy_table(
                 with conn.cursor() as cur:
                     cur.executemany(insert_sql, [tuple(r.get(c) for c in col_names) for r in batch])
                 conn.commit()
-            batch_last = last_rowid_of_batch(batch, order_col)
+            batch_last = last_rowid_of_batch(batch, order_col) if order_is_int else last_rowid + len(batch)
             last_rowid = max(last_rowid, batch_last)
             rows_copied += len(batch)
             chk = _checksum_for(batch)
@@ -328,6 +384,22 @@ def copy_table(
         batch_size=batch_size,
         finish=True,
     )
+    # Reset the destination sequence to MAX(order_col) so subsequent engine
+    # inserts never collide with migrated rows.
+    with contextlib.suppress(Exception):
+        with pg_driver.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT pg_get_serial_sequence(%s, %s)",
+                    (table, order_col),
+                )
+                seq_row = cur.fetchone()
+                if seq_row and seq_row[0]:
+                    seq_name = seq_row[0]
+                    cur.execute(f'SELECT COALESCE(MAX("{order_col}"), 1) FROM "{table}"')
+                    max_val = cur.fetchone()[0]
+                    cur.execute(f"SELECT setval(%s, %s)", (seq_name, max_val))
+            conn.commit()
     return {
         "table": table,
         "status": "COMPLETE",

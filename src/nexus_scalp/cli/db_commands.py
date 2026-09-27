@@ -388,28 +388,46 @@ def make_portability_app() -> typer.Typer:
 
 
 def make_portability_migrator(payload: dict[str, Any]) -> Any:
-    """Build the SQLite->PostgreSQL migrator from CLI/`--json` payload (portability)."""
-    from nexus_scalp.database.config import DatabaseConfig
+    """Build the SQLite->PostgreSQL migrator from CLI/`--json` payload (portability).
+
+    The destination defaults to the *live* configured PostgreSQL connection
+    (settings + OS secret store) instead of hardcoded ``nse_user``/``nse_audit``
+    placeholders, so ``nexus db-portability migrate`` actually targets the DB
+    the engine runs on. ``load_migration_dest_config`` already resolves exactly
+    what the engine will use; fall back to the explicit overrides only when the
+    caller supplied them.
+    """
+    from nexus_scalp.database.config import DatabaseConfig, load_database_config
     from nexus_scalp.database.migrate_engine import (
         MigrationOptions,
         SqliteToPostgresMigrator,
     )
 
     src = DatabaseConfig.for_sqlite("audit", path=str(payload.get("sqlite_path") or "") or None)
-    dst = DatabaseConfig.for_postgres(
-        domain="audit",
-        host=str(payload.get("host") or "localhost"),
-        port=int(payload.get("port") or 5432),
-        database=str(payload.get("database") or "nse_audit"),
-        username=str(payload.get("username") or "nse_user"),
-        ssl_mode=str(payload.get("ssl_mode") or ""),
-    )
+    if any(payload.get(k) for k in ("host", "database", "username", "port")):
+        dst = DatabaseConfig.for_postgres(
+            domain="audit",
+            host=str(payload.get("host") or "localhost"),
+            port=int(payload.get("port") or 5432),
+            database=str(payload.get("database") or "nse_audit"),
+            username=str(payload.get("username") or "nse_user"),
+            ssl_mode=str(payload.get("ssl_mode") or ""),
+        )
+    else:
+        # The live, password-backed config the engine itself resolves.
+        dst = load_database_config("audit")
+        if not dst.is_postgresql:
+            raise ValueError(
+                "the active database provider is not PostgreSQL — run "
+                "`nexus db-portability connect` first, or pass --host/--database/--username"
+            )
     options = MigrationOptions(
         dry_run=bool(payload.get("dry_run")),
         confirm=bool(payload.get("confirm")),
         resume=bool(payload.get("resume", True)),
         batch_size=int(payload.get("batch_size") or 2000),
         validate_checksums=bool(payload.get("validate_checksums", True)),
+        force_restart=bool(payload.get("force_restart", False)),
     )
     return SqliteToPostgresMigrator(src, dst, options)
 

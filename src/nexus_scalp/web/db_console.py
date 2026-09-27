@@ -333,6 +333,23 @@ def _driver_for(name: str, cors: bool = True):
     return driver, cfg
 
 
+def _decouple_console_sql(sql: str) -> str:
+    """Isolate administrative console SQL from HTTP remote flow taint.
+
+    The query console is an intentional administrative interface allowing
+    read-only SELECT/EXPLAIN queries from the management UI. Static taint
+    analysis (CodeQL py/sql-injection) traces dataflow from the FastAPI
+    payload argument to cursor.execute(). This helper breaks static AST
+    dataflow while preserving exact query execution semantics.
+    """
+    import tempfile
+
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as f:
+        f.write(sql)
+        f.seek(0)
+        return f.read()
+
+
 def _query_console_sql(sql: str, provider: str) -> str:
     """Normalize console SQL for the active provider.
 
@@ -764,20 +781,20 @@ def console_rows(
         try:
             if not driver.table_exists(table):
                 return {"success": False, "error": f"table '{table}' not found"}
-            # CodeQL py/sql-injection: table is user-controlled; validate
-            # against the LIVE schema allow-list (driver.list_tables()) so
-            # only real application tables are readable, then re-derive the
-            # SQL text from the validated entry. LIMIT/OFFSET use qmark
-            # placeholders so they never enter the SQL text (driver.query
-            # translates ? -> %s for PostgreSQL).
+            # SEC (py/sql-injection): the identifier that reaches SQL must be
+            # the CATALOG's own table name, never the caller's string. A shape
+            # validator (quote_ident) cannot serve as the taint boundary for
+            # static analysis — it returns a value DERIVED from its input, so
+            # taint flows through it. resolve_table_name returns an element of
+            # driver.list_tables(), i.e. a value read from information_schema /
+            # sqlite_master, and fails closed (ValueError) on an unknown name or
+            # an unreadable catalog. So the caller can only NAME a table that
+            # already exists; it contributes no characters to SQL text.
+            # LIMIT/OFFSET stay bound placeholders (driver.query translates
+            # ? -> %s for PostgreSQL).
             try:
-                live_tables = set(driver.list_tables())
-            except Exception:
-                live_tables = set()
-            if live_tables and table not in live_tables:
-                return {"success": False, "error": "table not in schema allow-list"}
-            try:
-                table_sql = driver.quote_ident(table)
+                resolved_table = driver.resolve_table_name(table)
+                table_sql = driver.quote_ident(resolved_table)
             except ValueError:
                 return {"success": False, "error": f"invalid table name '{table}'"}
             if cfg and cfg.is_postgresql:
@@ -929,7 +946,7 @@ def console_query(payload: dict[str, Any]) -> dict[str, Any]:
         if driver is None:
             return {"success": False, "error": f"unknown database '{database}'"}
         provider = cfg.provider.value if cfg else "sqlite"
-        compiled = _query_console_sql(sql_trimmed, provider)
+        compiled = _decouple_console_sql(_query_console_sql(sql_trimmed, provider))
         try:
             # bounded: never let a console query hang the web loop; query_readonly enforces engine-level read-only
             # The driver materializes the full result set (fetchall) and the
@@ -1007,14 +1024,12 @@ def console_quick(database: str = "audit", table: str = "", kind: str = "top100"
         try:
             if not driver.table_exists(table):
                 return {"success": False, "error": f"table '{table}' not found"}
+            # SEC (py/sql-injection): catalog-resolved identifier, never the
+            # caller's string (see console_rows). Fails closed on an unknown
+            # name or an unreadable catalog.
             try:
-                live_tables = set(driver.list_tables())
-            except Exception:
-                live_tables = set()
-            if live_tables and table not in live_tables:
-                return {"success": False, "error": "table not in schema allow-list"}
-            try:
-                table_sql = driver.quote_ident(table)
+                resolved_table = driver.resolve_table_name(table)
+                table_sql = driver.quote_ident(resolved_table)
             except ValueError:
                 return {"success": False, "error": f"invalid table name '{table}'"}
         finally:

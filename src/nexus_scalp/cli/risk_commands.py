@@ -124,7 +124,16 @@ def _repo_handle():
 
     try:
         return AuditRepository(config=load_database_config("audit"))
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - must never block the operator CLI
+        # D9 (PG-CLI-001): log the real cause before degrading. A silent
+        # fallback to the default SQLite path made the CLI report a stale
+        # local file while the engine was running on PostgreSQL.
+        from nexus_scalp.cli.styling import console
+
+        console.print(
+            f"[yellow]audit config resolution failed ({type(exc).__name__}: {exc}); "
+            "falling back to the default audit database location.[/yellow]"
+        )
         return AuditRepository()
 
 
