@@ -1,6 +1,6 @@
 """
 PURPOSE
-=======
+-------
 MT5-PARITY-FORENSICS lane E/H memory-bounds + honest-diagnostics regression
 net. Pins the three fixes this lane shipped:
 
@@ -26,24 +26,24 @@ net. Pins the three fixes this lane shipped:
         bare null).
 
 OWNER
-=====
+-----
 IMPL-E, MT5-PARITY-FORENSICS wave (agent/feature/mt5-parity-e).
 
 CONSUMES
-========
+--------
 nexus_scalp.adapters.paper.paper_adapter.PaperMT5Adapter
 nexus_scalp.market_data.bar_aggregator.BarAggregator / BarData
 nexus_scalp.web.api_v1.system (system_diagnostics route)
 
 PROVIDES
-========
+--------
 Deterministic regression proof for H-04 / H-05 / F-22. All fixtures are
 synthetic (no terminal, no network, no live orders). Assertions are on
 container sizes, eviction counts, field preservation, iteration order and
 API payload shape — no timing thresholds, no strategy behavior.
 
 INVARIANTS
-==========
+----------
 * The ledger ring never exceeds its cap and never silently under-counts.
 * The bar ring never exceeds its cap and never silently drops without a count.
 * Forming-bar state is untouched by the bound (a retention cap on COMPLETED
@@ -53,7 +53,7 @@ INVARIANTS
 * The diagnostics payload is never null and never available:True-but-empty.
 
 EXTEND
-======
+------
 When adding a new legitimate consumer of _completed_bars / _execution_ledger,
 add a case to TEST_CONSUMER_WINDOWS asserting the cap still covers its window.
 """
