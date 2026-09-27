@@ -43,12 +43,70 @@ masking discipline in the codebase, not two.
 from __future__ import annotations
 
 import re
+import threading
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from nexus_scalp.database.config import mask_url_password
 from nexus_scalp.observability.logging import get_logger
+
+_persistence_state = threading.local()
+
+
+LOG_PERSISTENCE_ENABLED_SETTING_KEY = "database.log_persistence.enabled"
+
+
+def _persistence_enabled() -> bool:
+    """Read the explicit opt-in flag; settings failures fail closed."""
+    try:
+        from nexus_scalp.settings.service import SettingsDatabase
+
+        db = SettingsDatabase()
+        try:
+            row = db.get(LOG_PERSISTENCE_ENABLED_SETTING_KEY)
+            return bool(row and row.value)
+        finally:
+            db.close()
+    except Exception:
+        return False
+
+
+def _persist_event(level: str, context: dict[str, Any]) -> None:
+    """Best-effort persistence sink with a thread-local recursion guard."""
+    if getattr(_persistence_state, "active", False) or not _persistence_enabled():
+        return
+    _persistence_state.active = True
+    try:
+        from nexus_scalp.database.log_store import DatabaseLogEntry, DatabaseLogStore
+
+        entry = DatabaseLogEntry(
+            level=level,
+            provider="postgresql",
+            domain=str(context.get("domain", "")),
+            operation=str(context.get("operation", "")),
+            repository=str(context.get("pool", "")),
+            query_name=str(context.get("kind", "")),
+            duration_ms=float(context.get("duration_ms", 0.0) or 0.0),
+            rows=int(context.get("rows", 0) or 0),
+            error_code=str(context.get("error_type", "")),
+            error_message=str(context.get("error_message", "")),
+            correlation_id=str(context.get("correlation_id", "")),
+            masked_sql=str(context.get("sql", "")),
+        )
+        DatabaseLogStore().record(entry)
+    except Exception as exc:
+        # The log store owns the counters; this boundary must never disturb the
+        # original database operation or recurse into the logging funnel.
+        try:
+            from nexus_scalp.database.log_store import _note_dropped
+
+            _note_dropped(exc)
+        except Exception:
+            pass
+    finally:
+        _persistence_state.active = False
+
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -274,6 +332,7 @@ def log_query_failure(
         context["arg_count"],
         **context,
     )
+    _persist_event("ERROR", context)
 
 
 def log_slow_query(
@@ -312,6 +371,7 @@ def log_slow_query(
         context["threshold_ms"],
         **context,
     )
+    _persist_event("WARNING", context)
 
 
 # -- slow-query timing (monotonic, never datetime) -------------------------
@@ -747,6 +807,7 @@ def log_pool_failure(
         context["client_side"],
         **context,
     )
+    _persist_event("ERROR", context)
 
 
 def pool_failure_guard(
