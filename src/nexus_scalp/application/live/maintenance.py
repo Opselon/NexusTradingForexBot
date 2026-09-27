@@ -50,6 +50,9 @@ class MaintenanceCycle:
         #: composition root so both maintenance call sites share one throttle.
         self._operational_digest_interval_sec: float = 24 * 3600.0
         self._last_operational_digest_time: float = 0.0
+        self._last_database_purge_time: float = getattr(om, "_last_database_purge_time", 0.0)
+        self._database_purge_interval_sec: float = 6 * 3600.0
+        self._database_lifecycle_manager: Any | None = getattr(om, "_database_lifecycle_manager", None)
         # Parity snapshot state lives on the CYCLE (read via self._last_*):
         # keep instance defaults so a duck-typed composition root without
         # these attributes still runs (test stand-ins).
@@ -76,6 +79,45 @@ class MaintenanceCycle:
         self._spread_sketch_interval_sec: float = SPREAD_SKETCH_REFRESH_INTERVAL_SEC
         self._last_database_log_purge_time: float = getattr(om, "_last_database_log_purge_time", 0.0)
         self._database_log_purge_interval_sec: float = 6 * 3600.0
+
+    def _database_purge_settings(self) -> tuple[bool, float]:
+        from nexus_scalp.database.lifecycle import (
+            DEFAULT_PURGE_INTERVAL_SEC,
+            PURGE_ENABLED_SETTING_KEY,
+            PURGE_INTERVAL_SETTING_KEY,
+        )
+        from nexus_scalp.settings.paths import settings_db_path
+        from nexus_scalp.settings.service import SettingsDatabase
+
+        db = None
+        try:
+            db = SettingsDatabase(db_path=settings_db_path())
+            enabled = db.get(PURGE_ENABLED_SETTING_KEY)
+            interval = db.get(PURGE_INTERVAL_SETTING_KEY)
+            if not enabled or not bool(enabled.value):
+                return False, DEFAULT_PURGE_INTERVAL_SEC
+            cadence = max(1.0, float(interval.value)) if interval else DEFAULT_PURGE_INTERVAL_SEC
+            return True, cadence
+        except Exception as exc:
+            logger.warning('[DB_PURGE] event=SETTINGS_FAILED (disabled) error=%s', exc)
+            return False, DEFAULT_PURGE_INTERVAL_SEC
+        finally:
+            if db is not None:
+                db.close()
+
+    async def _run_database_purge(self, *, now_t: float) -> None:
+        enabled, cadence = self._database_purge_settings()
+        self._database_purge_interval_sec = cadence
+        if not enabled or now_t - self._last_database_purge_time < cadence:
+            return
+        self._last_database_purge_time = now_t
+        try:
+            if self._database_lifecycle_manager is None:
+                from nexus_scalp.database.lifecycle import DatabaseLifecycleManager
+                self._database_lifecycle_manager = DatabaseLifecycleManager()
+            await asyncio.to_thread(self._database_lifecycle_manager.run_purge)
+        except Exception as purge_err:
+            logger.warning('[DB_PURGE] event=PURGE_FAILED (isolated) error=%s', purge_err)
 
     async def _purge_database_logs(self, *, now_t: float) -> None:
         """Purge opted-in persistent query logs off-loop and failure-isolated."""
