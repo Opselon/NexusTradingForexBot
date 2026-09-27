@@ -41,6 +41,15 @@ from .state_taxonomy import (
     UNKNOWN,
 )
 
+try:  # observability stays optional so this module remains import-light
+    from nexus_scalp.observability.logging import get_logger
+
+    logger = get_logger("nexus_scalp.release.health")
+except Exception:  # pragma: no cover - fallback keeps health importable
+    import logging
+
+    logger = logging.getLogger("nexus_scalp.release.health")
+
 # Categories known to the diagnostics/health contract.
 ALL_CATEGORIES = [
     "SYSTEM",
@@ -474,11 +483,31 @@ class HealthEngine:
     def check_runtime(self) -> HealthEntry:
         v = get_version_info()
         py = f"Python {sys.version.split()[0]}"
-        return HealthEntry(
-            "RUNTIME",
-            "PASS",
-            f"version {v['version']} · {v['channel']} · {py} · commit {v['commit'] or 'n/a'}",
-        )
+        detail = f"version {v['version']} · {v['channel']} · {py} · commit {v['commit'] or 'n/a'}"
+        # Dependency closure (NSE rt-deps lane): the RUNTIME category is the
+        # only place a missing/unusable runtime dependency can be reported
+        # before the app dies on an import. Without this, `nexus doctor` said
+        # RUNTIME PASS on an installation where `import uvicorn` raised
+        # ModuleNotFoundError for its transitive `click`. Read-only probe,
+        # derived from pyproject/installed metadata — never a hard-coded list.
+        try:
+            from nexus_scalp.release.runtime_deps import verify_runtime_closure
+
+            report = verify_runtime_closure()
+            if not report.ok:
+                names = ", ".join(report.missing_names[:6])
+                return HealthEntry(
+                    "RUNTIME",
+                    "FAIL",
+                    f"{detail} · dependency closure incomplete: {names}",
+                    "Reinstall the application (pip install -e . for a source "
+                    "checkout) — the installation is missing declared runtime "
+                    "dependencies.",
+                    state=ERROR,
+                )
+        except Exception as dep_err:  # never let the probe break the category
+            logger.warning("dependency closure probe unavailable: %s", dep_err)
+        return HealthEntry("RUNTIME", "PASS", detail)
 
     def check_configuration(self) -> HealthEntry:
         cfg = self._load_config()

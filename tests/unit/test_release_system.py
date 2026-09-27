@@ -30,7 +30,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_runtime_dependency_closure_is_declared_and_packaged() -> None:
-    """Guard the uvicorn -> click closure in both install and release paths."""
+    """Guard the uvicorn -> click closure in both install and release paths.
+
+    Behavior lives in tests/unit/test_runtime_dependency_closure.py; this pins
+    the two ARTIFACT paths that must never reintroduce the gap: a fail-closed
+    installer (no --no-deps fallback that could leave uvicorn without click)
+    and a release build that refuses to package an incomplete runtime.
+    """
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert '"uvicorn>=' in pyproject
     # Click is a transitive Uvicorn requirement, so it belongs in the lock,
@@ -38,7 +44,15 @@ def test_runtime_dependency_closure_is_declared_and_packaged() -> None:
     lock = (REPO_ROOT / "requirements.lock").read_text(encoding="utf-8")
     assert "click==" in lock
     installer = (REPO_ROOT / "installer" / "install.ps1").read_text(encoding="utf-8")
-    assert "--no-deps" not in installer
+    # Fail-closed installer: no `pip install --no-deps` fallback, which happily
+    # installs uvicorn with no click. Prose (comments explaining WHY the
+    # fallback is gone) must not satisfy or fail this — only real commands.
+    executable = "\n".join(
+        line for line in installer.splitlines() if not line.lstrip().startswith("#")
+    )
+    assert "--no-deps" not in executable, "installer must fail closed, not install --no-deps"
+    dep_fn = installer.split("function Install-PythonDependencies")[1].split("finally")[0]
+    assert "throw" in dep_fn, "the dependencies stage must abort on a resolver failure"
     release = (REPO_ROOT / "scripts" / "build" / "build_release.ps1").read_text(encoding="utf-8")
     assert "import click, uvicorn" in release
 
