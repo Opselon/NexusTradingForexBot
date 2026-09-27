@@ -269,6 +269,152 @@ def _why_payload(ev: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+# ---------------------------------------------------------------------------
+# Lane-C2 query helpers (LIVE-CAUSAL-TOPOLOGY phase 2).
+#
+# Importable, route-free query functions for the ``nexus trace`` CLI (lanes
+# A2/B2): the CLI shares the ONE canonical backend through these instead of
+# re-deriving a second view (§68 "same canonical backend" rule). They are
+# pure reads over the observer's retained state and add NO routes and NO
+# changes to any response above — the REST/SSE surface is untouched.
+# ---------------------------------------------------------------------------
+
+
+def query_events_page(
+    *,
+    last_seq: int = 0,
+    limit: int = 1000,
+    trace_id: str | None = None,
+    stage: str | None = None,
+    status: str | None = None,
+    mode: str | None = None,
+    position_id: str | None = None,
+) -> dict[str, Any]:
+    """Bounded filtered event page (CLI counterpart of ``/api/trace/events``).
+
+    Same filters, same defaults, same honest empty state: no filter is a
+    match-all and a filter that matches nothing yields ``events: []``, never a
+    fabricated page (§73). Never raises — a failure returns the error payload
+    the REST route returns, so the CLI and the API can never diverge.
+    """
+    try:
+        last_seq = max(0, int(last_seq))
+        limit = max(1, min(int(limit), 5000))
+        with trace_observer._lock:
+            base = [e for e in trace_observer._events if e["sequence"] > last_seq][-limit:]
+            events = _apply_event_filters(
+                base,
+                trace_id=trace_id,
+                stage=stage,
+                status=status,
+                mode=mode,
+                position_id=position_id,
+            )
+            gap = False
+            if trace_observer._events and last_seq > 0:
+                oldest = trace_observer._events[0]["sequence"]
+                if last_seq < oldest - 1:
+                    gap = True  # ring evicted the resume point the caller asked for
+        return {
+            "events": events,
+            "gap": gap,
+            "last_seq": trace_observer._seq,
+            "filters": _filter_echo(trace_id, stage, status, mode, position_id),
+        }
+    except Exception:
+        return _err_payload("TRACE_EVENTS_ERROR")
+
+
+def query_trace_bundle(key: str) -> dict[str, Any]:
+    """Forensic bundle for one trace_id / decision_id (CLI counterpart of
+    ``/api/trace/bundle/{key}``).
+
+    ``found: false`` is the honest answer when nothing was retained — the CLI
+    renders PROVENANCE GAP, never a fabricated bundle (§32/§80). Never raises.
+    """
+    try:
+        return trace_observer.trace_bundle(key)
+    except Exception:
+        return _err_payload("TRACE_BUNDLE_ERROR")
+
+
+def query_event(event_id: str) -> dict[str, Any] | None:
+    """One STORED event by id, or None when never emitted / evicted.
+
+    The CLI renders NOT OBSERVED for None rather than synthesizing a record
+    (§60). Never raises.
+    """
+    try:
+        return _stored_event(event_id)
+    except Exception:
+        return None
+
+
+def query_why(event_id: str) -> dict[str, Any] | None:
+    """WHY / NEXT answer for one event, or None when the id is not stored.
+
+    Built by the SAME ``_why_payload`` the REST route uses (§37/§38), so the
+    terminal answer can never diverge from the API's. ``generated_at`` is left
+    to the caller (a CLI timestamp is not an HTTP response time). Never raises.
+    """
+    try:
+        ev = _stored_event(event_id)
+        if ev is None:
+            return None
+        return _why_payload(ev)
+    except Exception:
+        return None
+
+
+def query_decisions(limit: int = 50, offset: int = 0) -> dict[str, Any]:
+    """Bounded recent-decision page (CLI counterpart of ``/api/trace/decisions``).
+
+    Never raises; a failure returns the same error payload the route returns.
+    """
+    try:
+        limit = max(1, min(int(limit), 200))
+        offset = max(0, int(offset))
+        return trace_observer.decisions_list(limit=limit, offset=offset)
+    except Exception:
+        return _err_payload("TRACE_DECISIONS_ERROR")
+
+
+def query_observer() -> dict[str, Any]:
+    """Observer lifecycle + counters (CLI counterpart of the observer route).
+
+    Adds the schema version the CLI prints once per command header. Never
+    raises — the CLI must report the observer state honestly even when the
+    query path itself fails (§58: "observer OFF / no session" is exit 0).
+    """
+    try:
+        snap = trace_observer.snapshot()
+        snap["trace_schema_version"] = TRACE_SCHEMA_VERSION
+        return snap
+    except Exception:
+        return _err_payload("TRACE_OBSERVER_ERROR")
+
+
+def query_trace_ids(limit: int = 50) -> list[str]:
+    """Distinct retained trace ids, most-recent-first (CLI listing aid).
+
+    Derived ONLY from events the observer actually retained — an empty list is
+    the honest "no traces observed", never a fabricated set (§60). Never
+    raises.
+    """
+    try:
+        seen: list[str] = []
+        with trace_observer._lock:
+            for event in reversed(trace_observer._events):
+                tid = event.get("trace_id")
+                if isinstance(tid, str) and tid and tid not in seen:
+                    seen.append(tid)
+                    if len(seen) >= max(1, min(int(limit), 500)):
+                        break
+        return seen
+    except Exception:
+        return []
+
+
 def register_trace_routes(app: Any, _err: Any, _log_err: Any) -> None:
     """Attach the Decision Trace observer surface (additive; read-only)."""
 
