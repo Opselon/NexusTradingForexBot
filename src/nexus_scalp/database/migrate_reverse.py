@@ -85,8 +85,14 @@ class PostgresToSqliteMigrator:
         }
 
     def _save_checkpoint(
-        self, dst_driver: Any, table: str, *, last_id: Any,
-        rows_copied: int, total_rows: int, status: str,
+        self,
+        dst_driver: Any,
+        table: str,
+        *,
+        last_id: Any,
+        rows_copied: int,
+        total_rows: int,
+        status: str,
     ) -> None:
         """Persist a checkpoint after each committed batch."""
         now = time.time()
@@ -152,7 +158,11 @@ class PostgresToSqliteMigrator:
 
             for table in sorted(tables):
                 self._migrate_table(
-                    src_driver, dst_driver, table, report, on_progress,
+                    src_driver,
+                    dst_driver,
+                    table,
+                    report,
+                    on_progress,
                     checkpoints.get(table),
                 )
 
@@ -206,13 +216,18 @@ class PostgresToSqliteMigrator:
             report.tables_migrated += 1
             report.rows_migrated += copied
             report.per_table[table] = {
-                "source_rows": total_rows, "migrated_rows": copied,
+                "source_rows": total_rows,
+                "migrated_rows": copied,
                 "status": "ALREADY_COMPLETE",
             }
             return
         self._save_checkpoint(
-            dst, table, last_id=last_val, rows_copied=copied,
-            total_rows=total_rows, status="RUNNING",
+            dst,
+            table,
+            last_id=last_val,
+            rows_copied=copied,
+            total_rows=total_rows,
+            status="RUNNING",
         )
 
         while True:
@@ -239,15 +254,23 @@ class PostgresToSqliteMigrator:
             copied += len(rows)
             last_val = rows[-1].get(order_col)
             self._save_checkpoint(
-                dst, table, last_id=last_val, rows_copied=copied,
-                total_rows=total_rows, status="RUNNING",
+                dst,
+                table,
+                last_id=last_val,
+                rows_copied=copied,
+                total_rows=total_rows,
+                status="RUNNING",
             )
             if on_progress:
                 on_progress(table, copied, total_rows, len(rows))
 
         self._save_checkpoint(
-            dst, table, last_id=last_val, rows_copied=copied,
-            total_rows=total_rows, status="COMPLETE",
+            dst,
+            table,
+            last_id=last_val,
+            rows_copied=copied,
+            total_rows=total_rows,
+            status="COMPLETE",
         )
         report.tables_migrated += 1
         report.rows_migrated += copied
@@ -263,10 +286,14 @@ class PostgresToSqliteMigrator:
         digest = hashlib.sha256()
         col_sql = ", ".join(f'"{c}"' for c in columns)
         for row in driver.query(f'SELECT {col_sql} FROM "{table}" ORDER BY "{order}" ASC'):
-            digest.update(json.dumps(
-                [row.get(c) for c in columns], sort_keys=True, default=str,
-                separators=(",", ":"),
-            ).encode("utf-8"))
+            digest.update(
+                json.dumps(
+                    [row.get(c) for c in columns],
+                    sort_keys=True,
+                    default=str,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            )
             digest.update(b"\\n")
         return digest.hexdigest()
 
@@ -287,8 +314,12 @@ class PostgresToSqliteMigrator:
                 if not dst.table_exists(t):
                     row_ok = False
                     errors.append(f"Missing destination table: {t}")
-                    details[t] = {"source_rows": src.scalar(f"SELECT COUNT(*) FROM {t}") or 0,
-                                  "dest_rows": 0, "match": False, "missing": True}
+                    details[t] = {
+                        "source_rows": src.scalar(f"SELECT COUNT(*) FROM {t}") or 0,
+                        "dest_rows": 0,
+                        "match": False,
+                        "missing": True,
+                    }
                     continue
                 s_cnt = src.scalar(f"SELECT COUNT(*) FROM {t}") or 0
                 d_cnt = dst.scalar(f"SELECT COUNT(*) FROM {t}") or 0

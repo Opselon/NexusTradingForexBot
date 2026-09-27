@@ -142,7 +142,11 @@ class DatabaseHealthService:
                 configured.add(self.resolve_config(domain).provider.value)
             except Exception:
                 continue
-        active = configured.pop() if len(configured) == 1 else (",".join(sorted(configured)) or "UNKNOWN")
+        active = (
+            configured.pop()
+            if len(configured) == 1
+            else (",".join(sorted(configured)) or "UNKNOWN")
+        )
         healthy = all(d["health"] == "Healthy" for d in domains.values() if d.get("connected"))
         warn = any(d["health"] in {"Warning", "Error"} for d in domains.values())
         return {

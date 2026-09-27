@@ -28,7 +28,9 @@ def test_provider_parse_preserves_aliases(raw: str, expected: DatabaseProvider) 
     assert DatabaseProvider.parse(raw) is expected
 
 
-def test_ops_provider_does_not_fallback_on_configuration_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ops_provider_does_not_fallback_on_configuration_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("NEXUS_AUDIT_DB", raising=False)
 
     def fail(*args: object, **kwargs: object) -> object:
@@ -39,4 +41,3 @@ def test_ops_provider_does_not_fallback_on_configuration_error(monkeypatch: pyte
         resolve_audit_db_url()
     with pytest.raises(DatabaseConfigError):
         active_provider_is_postgresql()
-
