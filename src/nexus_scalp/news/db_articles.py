@@ -300,8 +300,15 @@ class ArticlesMixin(_NewsDbCoreProto):
             # skips them unless a caller asks for a status explicitly.
             where.append("article_status != 'QUARANTINE'")
         if asset_filter:
-            where.append("(title LIKE ? OR summary LIKE ? OR body LIKE ?)")
-            args += [f"%{asset_filter}%"] * 3
+            # LIKE is case-INsensitive on SQLite and case-SENSITIVE on
+            # PostgreSQL, so an uppercase search term silently returns zero
+            # rows on the switched box. The pattern is lowered on BOTH sides
+            # (LOWER(column) LIKE LOWER(?)) which is portable and keeps the
+            # SQLite behaviour the only behaviour — the search finds the
+            # same rows under either provider. This is the silent-wrong-result
+            # class: no error, no log, just an empty result.
+            where.append("(LOWER(title) LIKE ? OR LOWER(summary) LIKE ? OR LOWER(body) LIKE ?)")
+            args += [f"%{asset_filter.lower()}%"] * 3
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY published_at DESC LIMIT ?;"

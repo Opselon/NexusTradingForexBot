@@ -45,6 +45,37 @@ PG_URL = os.environ.get("NSE_PG_TEST_URL", "")
 needs_pg = pytest.mark.skipif(not PG_URL, reason="NSE_PG_TEST_URL not set (PostgreSQL CI test arm)")
 
 
+def _seed_pg_secret_from_env() -> None:
+    """Make the CI-provided credential available to the driver's connect path.
+
+    ``PostgreSQLDriver.connect`` never embeds a password: it resolves it from
+    the secret store through ``build_postgres_url`` / ``resolve_password``,
+    which RAISES when the key is absent. CI provisions its PostgreSQL as a
+    service container and exports the credential in ``NSE_PG_TEST_URL``, but a
+    fresh runner has an EMPTY secret store — so every driver connect failed
+    and ``ping()`` (which swallows the exception) returned False.
+
+    Seeding the store from the URL the suite was pointed at makes the arm
+    self-provisioning: the credential is whatever CI exported, not a literal
+    baked into this file, and a box that already holds the key is untouched.
+    """
+    if not PG_URL:
+        return
+    try:
+        from psycopg.conninfo import conninfo_to_dict
+
+        password = str(conninfo_to_dict(PG_URL).get("password") or "")
+    except Exception:  # pragma: no cover - unparseable URL is a config error
+        return
+    if not password:
+        return
+    from nexus_scalp.settings.secret_store import SecureSecretStore
+
+    store = SecureSecretStore()
+    if not store.has_secret("db.postgresql.password"):
+        store.set_secret("db.postgresql.password", password)
+
+
 # ---------------------------------------------------------------------------
 # Provider selection
 # ---------------------------------------------------------------------------
@@ -320,6 +351,7 @@ class TestPostgresIntegration:
         from nexus_scalp.database.config import DatabaseConfig
         from nexus_scalp.database.drivers import get_driver
 
+        _seed_pg_secret_from_env()
         cfg = DatabaseConfig.for_postgres(domain="audit", host="localhost", database="nse_audit")
         d = get_driver(cfg)
         assert d.ping()
@@ -485,21 +517,38 @@ class TestCliApiSurface:
         assert app.info.name == "db-portability" or app.info.help  # registered typer
 
     def test_server_has_manage_routes(self):
-        server_path = REPO_ROOT / "src" / "nexus_scalp" / "web" / "server.py"
-        text = server_path.read_text(encoding="utf-8")
-        for route in (
-            "/api/db/manage/status",
-            "/api/db/manage/config",
-            "/api/db/manage/test-connection",
-            "/api/db/manage/provider",
-            "/api/db/manage/preview",
-            "/api/db/manage/migrate",
-            "/api/db/manage/validate",
-            "/api/db/manage/progress",
-            "/api/db/manage/report",
-            "/api/db/manage/backup",
-        ):
-            assert route in text, f"missing route {route}"
+        """The app registers all ten DATABASE MANAGEMENT routes.
+
+        This asserts against the REAL application's route table rather than
+        grepping one source file's text. The routes moved out of ``server.py``
+        (CHG-0032-A1 extracted them with the diagnostics state routes), so the
+        old source-text check passed only while they happened to live there —
+        it was a false negative waiting for the refactor that already
+        happened, and it could equally false-pass on a route name appearing in
+        a comment. ``create_app().routes`` is the property that actually
+        matters to a client.
+        """
+        from nexus_scalp.web.server import create_app
+
+        app = create_app()
+        registered = {getattr(route, "path", "") for route in app.routes}
+        missing = [
+            route
+            for route in (
+                "/api/db/manage/status",
+                "/api/db/manage/config",
+                "/api/db/manage/test-connection",
+                "/api/db/manage/provider",
+                "/api/db/manage/preview",
+                "/api/db/manage/migrate",
+                "/api/db/manage/validate",
+                "/api/db/manage/progress",
+                "/api/db/manage/report",
+                "/api/db/manage/backup",
+            )
+            if route not in registered
+        ]
+        assert not missing, f"routes not registered on the app: {missing}"
 
     def test_ui_has_db_tab(self):
         html = (REPO_ROOT / "Web" / "index.html").read_text(encoding="utf-8")

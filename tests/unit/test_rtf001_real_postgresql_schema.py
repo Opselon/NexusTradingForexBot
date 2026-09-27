@@ -76,15 +76,28 @@ def _columns(conn, table: str) -> set[str]:
 
 
 @needs_postgres
-def test_the_replay_leaves_no_required_column_gap_on_the_live_domain() -> None:
-    """The incident's precondition is gone on the live domain.
+def test_the_replay_leaves_no_required_column_gap_on_the_live_domain(scratch: str) -> None:
+    """The incident's precondition is gone wherever the replay has been applied.
 
     CHG-0067's replay is now applied at boot, and the live ``nexusdb`` carries
     every required column (verified separately by the lane's post-merge probe).
     This test asserts that property directly, so a future regression of the
     provisioning gap fails here instead of silently corrupting audit writes.
+
+    It runs against ``scratch`` — a database this module creates and applies the
+    replay to — rather than ``PG_URL`` itself. ``PG_URL`` is the same instance,
+    but its database is EMPTY on a CI runner (the service container creates a
+    bare ``nse_audit`` and nothing provisions it), so asserting the fully
+    migrated shape against it could only ever pass on a box that happens to
+    hold the live ``nexusdb`` schema. The sibling test below proves the same
+    property end-to-end; this one keeps it asserted on the same fixture.
     """
-    with psycopg.connect(PG_URL, connect_timeout=10) as conn:
+    with psycopg.connect(scratch, connect_timeout=10) as conn:
+        for stmt in sqlite_ddl_statements():
+            with conn.cursor() as cur:
+                cur.execute(translate_ddl(stmt))
+        conn.commit()
+
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT table_name, column_name FROM information_schema.columns "

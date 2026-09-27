@@ -33,6 +33,7 @@ from nexus_scalp.adapters.database.provider_store import (
     ops_query_scalar,
     ops_queue_write,
 )
+from nexus_scalp.database.upsert import build_upsert_sql
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.shadow.models import (
     PromotionEvaluation,
@@ -122,6 +123,146 @@ _UPDATE_OUTCOME_SQL = """
         outcome_status = ?
     WHERE shadow_decision_id = ? AND outcome_status = 'PENDING';
 """
+
+
+#: Lane B (PG upsert parity, PR #480 pattern): each SQLite statement stays
+#: byte-identical (SQLite remains a first-class provider — INSERT OR REPLACE
+#: is untouched and the SQLite write route is unchanged). The PostgreSQL branch
+#: gets ``INSERT INTO ... ON CONFLICT (...) DO UPDATE SET``, because
+#: ``INSERT OR REPLACE`` is SQLite-only syntax and the pooled write backend
+#: hands the statement to the server verbatim apart from the ``?``->``%s``
+#: placeholder translation — so it lands as ``syntax error at or near "OR"``.
+#:
+#: The ON CONFLICT target is resolved and re-validated against the table's real
+#: DDL by ``build_upsert_sql`` (nexus_scalp/database/upsert.py): a target with
+#: no covering UNIQUE/PRIMARY KEY constraint would be invalid under PostgreSQL,
+#: and the helper raises instead of emitting it.
+_RUN_COLUMNS = [
+    "run_id",
+    "champion_model_id",
+    "champion_version",
+    "challenger_model_id",
+    "challenger_version",
+    "status",
+    "started_at",
+    "finished_at",
+    "decision_count",
+    "error",
+    "git_revision",
+    "configuration_version",
+    "challenger_artifact_hash",
+    "champion_artifact_hash",
+]
+_DECISION_COLUMNS = [
+    "shadow_decision_id",
+    "run_id",
+    "decision_id",
+    "timestamp",
+    "symbol",
+    "timeframe",
+    "champion_model_id",
+    "champion_version",
+    "challenger_model_id",
+    "challenger_version",
+    "feature_schema_id",
+    "feature_dimension",
+    "feature_hash",
+    "regime",
+    "session",
+    "champion_action",
+    "champion_confidence",
+    "challenger_action",
+    "challenger_confidence",
+    "action_agreement",
+    "valid_comparison",
+    "invalid_reason",
+    "hypothetical_pnl_usd",
+    "hypothetical_r",
+    "mfe_r",
+    "mae_r",
+    "holding_duration_sec",
+    "exit_reason",
+    "simulated",
+    "champion_entry",
+    "champion_sl",
+    "champion_tp",
+    "shadow_entry",
+    "shadow_sl",
+    "shadow_tp",
+    "spread_usd",
+    "shadow_r",
+    "shadow_mfe_r",
+    "shadow_mae_r",
+    "shadow_pnl_usd",
+    "shadow_holding_sec",
+    "shadow_exit_reason",
+    "delta_r",
+    "outcome_status",
+    "payload",
+]
+_SHADOW_COMPARISON_COLUMNS = [
+    "run_id",
+    "champion_model_id",
+    "champion_version",
+    "challenger_model_id",
+    "challenger_version",
+    "sample_count",
+    "valid_comparisons",
+    "invalid_comparisons",
+    "action_agreement_rate",
+    "champion_expectancy_r",
+    "challenger_expectancy_r",
+    "champion_drawdown_r",
+    "challenger_drawdown_r",
+    "evidence_status",
+    "samples_required",
+    "samples_observed",
+    "by_regime",
+    "by_strategy",
+    "best_regimes",
+    "worst_regimes",
+    "degraded_regimes",
+    "degraded_strategies",
+    "evaluated_at",
+    "payload",
+]
+_PROMOTION_COLUMNS = [
+    "run_id",
+    "candidate_model_id",
+    "candidate_version",
+    "champion_model_id",
+    "champion_version",
+    "final_score",
+    "eligible",
+    "vetoes",
+    "reasons",
+    "evaluated_at",
+    "payload",
+]
+
+_SQLITE_RUN_SQL, _PG_RUN_SQL = build_upsert_sql(
+    "shadow_runs", _RUN_COLUMNS, sqlite_sql=_INSERT_RUN_SQL
+)
+_SQLITE_DECISION_SQL, _PG_DECISION_SQL = build_upsert_sql(
+    "shadow_decisions", _DECISION_COLUMNS, sqlite_sql=_INSERT_DECISION_SQL
+)
+_SQLITE_COMPARISON_SQL, _PG_COMPARISON_SQL = build_upsert_sql(
+    "shadow_comparisons", _SHADOW_COMPARISON_COLUMNS, sqlite_sql=_INSERT_COMPARISON_SQL
+)
+_SQLITE_PROMOTION_SQL, _PG_PROMOTION_SQL = build_upsert_sql(
+    "shadow_promotions", _PROMOTION_COLUMNS, sqlite_sql=_INSERT_PROMOTION_SQL
+)
+
+
+def _sql_for(repo: AuditRepository, sqlite_sql: str, pg_sql: str) -> str:
+    """Pick the dialect-correct statement for the ACTIVE provider.
+
+    Mirrors the split PR #480 landed for the incidents store: SQLite keeps the
+    historical ``INSERT OR REPLACE`` (a first-class provider — its statement is
+    untouched), PostgreSQL runs the ``ON CONFLICT ... DO UPDATE`` form the
+    pooled write backend can execute.
+    """
+    return sqlite_sql if getattr(repo, "_is_sqlite", False) else pg_sql
 
 
 class ShadowStore:
@@ -387,7 +528,7 @@ class ShadowStore:
         return ops_queue_write(
             self.audit_repo,
             OPS_SHADOW_DOMAIN,
-            _INSERT_RUN_SQL,
+            _sql_for(self.audit_repo, _SQLITE_RUN_SQL, _PG_RUN_SQL),
             args,
             operation="shadow.save_run",
         )
@@ -447,7 +588,7 @@ class ShadowStore:
         return ops_queue_write(
             self.audit_repo,
             OPS_SHADOW_DOMAIN,
-            _INSERT_DECISION_SQL,
+            _sql_for(self.audit_repo, _SQLITE_DECISION_SQL, _PG_DECISION_SQL),
             args,
             operation="shadow.save_decision",
         )
@@ -485,7 +626,7 @@ class ShadowStore:
         return ops_queue_write(
             self.audit_repo,
             OPS_SHADOW_DOMAIN,
-            _INSERT_COMPARISON_SQL,
+            _sql_for(self.audit_repo, _SQLITE_COMPARISON_SQL, _PG_COMPARISON_SQL),
             args,
             operation="shadow.save_comparison",
         )
@@ -510,7 +651,7 @@ class ShadowStore:
         return ops_queue_write(
             self.audit_repo,
             OPS_SHADOW_DOMAIN,
-            _INSERT_PROMOTION_SQL,
+            _sql_for(self.audit_repo, _SQLITE_PROMOTION_SQL, _PG_PROMOTION_SQL),
             args,
             operation="shadow.save_promotion",
         )

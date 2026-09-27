@@ -15,9 +15,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from nexus_scalp.news._db_core_protocol import _NewsDbCoreProto
+from nexus_scalp.news.db_schema import _is_pg_conn
 
 
-def _epoch_seconds(column: str) -> str:
+def _epoch_seconds(column: str, *, sqlite: bool | None = None) -> str:
     """Portable epoch-seconds expression for an ISO-8601 text column.
 
     SQLite and PostgreSQL spell this differently and neither accepts the
@@ -29,8 +30,19 @@ def _epoch_seconds(column: str) -> str:
     Used by the impact-anchor backfill, whose ``ABS(analyzed_at -
     evaluated_at) <= 5`` window only exists to detect rows anchored to the
     analysis time instead of the publication time.
+
+    The dialect is resolved from the caller's connection (``sqlite``) when
+    known, and otherwise from the ACTIVE provider. Resolving from the
+    connection is what makes the statement correct when it is executed:
+    ``_translate_sql_for_pg`` rewrites the SQL text but never inspects it,
+    so a bare ``_epoch_seconds(col)`` call emitted into the statement is
+    an undefined function on PostgreSQL (proven live:
+    ``function _epoch_seconds(text) does not exist``). Inlining the chosen
+    spelling keeps every statement self-contained and provider-correct.
     """
-    if _provider_is_sqlite():
+    if sqlite is None:
+        sqlite = _provider_is_sqlite()
+    if sqlite:
         return f"CAST(strftime('%s', {column}) AS INTEGER)"
     return f"EXTRACT(EPOCH FROM {column}::timestamptz)"
 
@@ -47,6 +59,65 @@ def _provider_is_sqlite() -> bool:
         return load_database_config("news").is_sqlite
     except Exception:
         return True
+
+
+def _conn_is_sqlite(conn: Any) -> bool:
+    """The provider a live news connection actually speaks.
+
+    ``_connect`` returns a native ``sqlite3`` connection under SQLite and a
+    ``_PooledNewsConnection`` (a psycopg pool checkout) under PostgreSQL, so
+    this is the ground truth for a statement that must spell its dialect
+    inline (``_epoch_seconds``). The ACTIVE config can lag the connection in
+    a test that pins the provider per-store, and the statement has to match
+    the connection that runs it — not the config the builder read.
+    """
+    return not _is_pg_conn(conn)
+
+
+#: The impact-anchor backfill statement. The two epoch expressions are
+#: interpolated per provider (see :func:`_epoch_seconds`) — they CANNOT be a
+#: bare ``_epoch_seconds(col)`` call in the SQL text, because PostgreSQL
+#: would receive an undefined function (proven live:
+#: ``function _epoch_seconds(text) does not exist``). The pooled connection
+#: only rewrites the SQL text; it never resolves the dialect the statement
+#: was built against.
+_BACKFILL_IMPACT_ANCHORS_SQL = """
+                    UPDATE news_impacts
+                    SET evaluated_at = (
+                        SELECT a.published_at FROM news_articles a
+                        WHERE a.article_id = news_impacts.article_id
+                    )
+                    WHERE EXISTS (
+                        SELECT 1 FROM news_articles a2
+                        WHERE a2.article_id = news_impacts.article_id
+                          AND a2.published_at IS NOT NULL
+                          AND a2.published_at != ''
+                          AND news_impacts.evaluated_at != a2.published_at
+                          AND (
+                              -- evaluated_at is within a few seconds of analyzed_at,
+                              -- which indicates the old analysis-time anchoring
+                              EXISTS (
+                                  SELECT 1 FROM news_analysis na
+                                  WHERE na.article_id = news_impacts.article_id
+                                    AND ABS({epoch_na}
+                                      - {epoch_ev}) <= 5
+                              )
+                          )
+                    );
+                    """
+
+
+def _backfill_impact_anchors_sql(*, sqlite: bool) -> str:
+    """The anchor-backfill statement, spelled for one provider.
+
+    Split out so the dialect choice is assertable without a live provider:
+    the statement a PG-configured store builds is exactly what a pooled PG
+    connection would run.
+    """
+    return _BACKFILL_IMPACT_ANCHORS_SQL.format(
+        epoch_na=_epoch_seconds("na.analyzed_at", sqlite=sqlite),
+        epoch_ev=_epoch_seconds("news_impacts.evaluated_at", sqlite=sqlite),
+    )
 
 
 class QueriesMixin(_NewsDbCoreProto):
@@ -175,35 +246,23 @@ class QueriesMixin(_NewsDbCoreProto):
         impact_timeline invocation. Returns rows updated."""
         try:
             with self._connect() as conn:
-                cur = conn.execute(
-                    """
-                    UPDATE news_impacts
-                    SET evaluated_at = (
-                        SELECT a.published_at FROM news_articles a
-                        WHERE a.article_id = news_impacts.article_id
-                    )
-                    WHERE EXISTS (
-                        SELECT 1 FROM news_articles a2
-                        WHERE a2.article_id = news_impacts.article_id
-                          AND a2.published_at IS NOT NULL
-                          AND a2.published_at != ''
-                          AND news_impacts.evaluated_at != a2.published_at
-                          AND (
-                              -- evaluated_at is within a few seconds of analyzed_at,
-                              -- which indicates the old analysis-time anchoring
-                              EXISTS (
-                                  SELECT 1 FROM news_analysis na
-                                  WHERE na.article_id = news_impacts.article_id
-                                    AND ABS(_epoch_seconds(na.analyzed_at)
-                                      - _epoch_seconds(news_impacts.evaluated_at)) <= 5
-                              )
-                          )
-                    );
-                    """
-                )
+                cur = conn.execute(_backfill_impact_anchors_sql(sqlite=self._conn_is_sqlite(conn)))
                 return int(cur.rowcount or 0)
         except Exception:
             return 0
+
+    def _conn_is_sqlite(self, conn: Any) -> bool:
+        """The dialect the connection ``_connect()`` handed this statement.
+
+        ``_connect`` keys off ``self._config``, so the config is the
+        authority; the connection itself is inspected as a fallback for the
+        bare-mixin replay path (the schema snapshot extractor reconstructs
+        the mixin without a store config, and that path is always SQLite).
+        """
+        config = getattr(self, "_config", None)
+        if config is not None:
+            return bool(getattr(config, "is_sqlite", True))
+        return _conn_is_sqlite(conn)
 
     def get_article_status(self, article_id: str) -> str:
         with self._connect() as conn:

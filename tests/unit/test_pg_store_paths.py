@@ -446,8 +446,19 @@ def test_queued_save_hook_is_preserved_when_a_queue_exists(tmp_path: Path) -> No
 
     sql, values = q.get_nowait()
     assert "INSERT INTO incidents" in sql
-    assert isinstance(values, dict)
-    assert values["incident_id"] == "INC-PG-001"
+    # REGR-013: the queue payload is POSITIONAL, not a dict. The real
+    # consumer is AuditWritePlane, which hands the payload straight to
+    # psycopg after the driver seam rewrites ``:name`` placeholders to
+    # ``%s`` (dropping the names). psycopg binds a sequence positionally and
+    # a mapping by name: a dict here bound as ONE positional argument, so
+    # ``$1`` received the whole mapping and the neighbouring int columns got
+    # the string KEYS — every incidents write dead-lettered with
+    # ``invalid input syntax for type bigint: "repeated_count"``. The store
+    # therefore flattens to a tuple at the only place that knows both the
+    # statement and its values. Asserting a dict here would re-lock in the
+    # defect this PR fixes.
+    assert isinstance(values, tuple)
+    assert values[0] == "INC-PG-001"
 
 
 # ---------------------------------------------------------------------------

@@ -28,6 +28,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.database.upsert import build_upsert_sql
 from nexus_scalp.hygiene import WorkerState
 
 _SCHEMA = """
@@ -62,6 +63,50 @@ CREATE TABLE IF NOT EXISTS hygiene_run_history (
     plan_json TEXT DEFAULT '{}'
 );
 """
+
+#: Lane B (PG upsert parity, PR #480 pattern): the SQLite statement stays
+#: byte-identical (SQLite remains a first-class provider — INSERT OR REPLACE
+#: is untouched and the SQLite write route is unchanged). The PostgreSQL branch
+#: gets ``INSERT INTO ... ON CONFLICT (...) DO UPDATE SET`` because
+#: ``INSERT OR REPLACE`` is SQLite-only syntax; the ops_hygiene domain's pooled
+#: write backend hands the statement to the server verbatim apart from the
+#: ``?``->``%s`` placeholder translation, so it would land as
+#: ``syntax error at or near "OR"``.
+#:
+#: The ON CONFLICT target is resolved and re-validated against the table's real
+#: DDL by ``build_upsert_sql`` (nexus_scalp/database/upsert.py).
+_RUN_HISTORY_COLUMNS = [
+    "run_id",
+    "database",
+    "started_at",
+    "finished_at",
+    "duration_ms",
+    "mode",
+    "rows_scanned",
+    "duplicates_found",
+    "orphans_found",
+    "archived",
+    "deleted",
+    "errors",
+    "bytes_freed",
+    "verification_status",
+    "correlation_id",
+    "plan_json",
+]
+
+#: The SQLite statement, byte-identical to the historical inline literal in
+#: ``record_run`` (whitespace included) — SQLite is a first-class provider and
+#: its branch is unchanged.
+_SQLITE_RUN_HISTORY_SQL = (
+    "INSERT OR REPLACE INTO hygiene_run_history "
+    "(run_id, database, started_at, finished_at, duration_ms, mode, "
+    " rows_scanned, duplicates_found, orphans_found, archived, deleted, "
+    " errors, bytes_freed, verification_status, correlation_id, plan_json) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+_SQLITE_RUN_HISTORY_SQL, _PG_RUN_HISTORY_SQL = build_upsert_sql(
+    "hygiene_run_history", _RUN_HISTORY_COLUMNS, sqlite_sql=_SQLITE_RUN_HISTORY_SQL
+)
 
 
 class HygieneStateStore:
@@ -161,11 +206,7 @@ class HygieneStateStore:
         conn = self._connect()
         try:
             conn.execute(
-                "INSERT OR REPLACE INTO hygiene_run_history "
-                "(run_id, database, started_at, finished_at, duration_ms, mode, "
-                " rows_scanned, duplicates_found, orphans_found, archived, deleted, "
-                " errors, bytes_freed, verification_status, correlation_id, plan_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                _SQLITE_RUN_HISTORY_SQL,
                 (
                     run.get("run_id", ""),
                     run.get("database", ""),

@@ -13089,6 +13089,7 @@ function _dbEl(id) { return document.getElementById(id); }
 function dbSet(id, text) { const el = _dbEl(id); if (el) el.textContent = text; }
 
 async function loadDbStatus() {
+    await loadDbQueryStats();
   try {
     const r = await NX.api.get('/api/db/manage/status', { component: 'DatabaseManagement', action: 'STATUS' });
     const data = r.success ? r : await r.json?.() ?? r;
@@ -13426,7 +13427,14 @@ async function dbRunQuery() {
   try {
     const r = await NX.api.post('/api/db/console/query', { database, sql }, { component: 'DatabaseManagement', action: 'CONSOLE_QUERY' });
     const data = r.body || r;
-    if (!data.success) { dbSet('db-sql-result', 'Query rejected: ' + (data.error || '')); return; }
+    // The backend attaches process-global query ERROR/WARNING counters to
+    // every answer. Nonzero after a failure is the operator's evidence the
+    // DB-layer ERROR fired (and that the statement is traceable in the log).
+    dbRenderQueryStats(data);
+    if (!data.success) {
+      dbSet('db-sql-result', 'Query rejected: ' + (data.error || '') + (data.hint ? ' — ' + data.hint : ''));
+      return;
+    }
     if (!data.columns || !data.columns.length) {
       dbSet('db-sql-result', 'Done — ' + (data.rows_returned || 0) + ' rows returned.');
       return;
@@ -13437,6 +13445,35 @@ async function dbRunQuery() {
   } catch (err) {
     console.warn('db query failed', err);
     dbSet('db-sql-result', 'Query failed: ' + (err.message || ''));
+  }
+}
+
+// ---- query observability counters (DATABASE tab) ----
+// Renders the measured PostgreSQL query ERROR/WARNING counts. A connectivity
+// probe answers "can we reach the server"; these answer "are queries
+// working", which is the question the operator actually asks.
+function dbRenderQueryStats(data) {
+  const el = dbEl('db-query-stats');
+  if (!el) return;
+  const errs = (data && data.query_errors) || 0;
+  const warns = (data && data.query_warnings) || 0;
+  const slow = (data && data.slow_queries) || 0;
+  const tone = errs ? 'text-red-400' : (warns ? 'text-amber-300' : 'text-emerald-300');
+  const parts = [];
+  if (errs) parts.push('errors: ' + errs);
+  if (warns) parts.push('warnings: ' + warns + (slow ? ' (slow: ' + slow + ')' : ''));
+  if (!errs && !warns) parts.push('no query errors or warnings');
+  el.innerHTML = '<span class="' + tone + '">' + parts.join(' · ') + '</span>';
+  el.title = 'Process-global PostgreSQL query counters — nonzero errors/warnings are logged server-side as [PG-QUERY] with the masked statement.';
+}
+
+async function dbLoadQueryStats() {
+  try {
+    const r = await NX.api.get('/api/db/console/query-stats', { component: 'DatabaseManagement', action: 'CONSOLE_QUERY_STATS' });
+    dbRenderQueryStats(r.body || r);
+  } catch (err) {
+    const el = dbEl('db-query-stats');
+    if (el) el.textContent = 'query stats unavailable';
   }
 }
 

@@ -62,6 +62,14 @@ e2e = [
 release = [
     "pyinstaller>=6.0.0",
     "feedparser>=6.0.0,<7.0.0",
+    # PG-BOOT-001: the frozen bundle must import psycopg / psycopg_pool at
+    # first boot. A provider=postgresql install without psycopg_pool dies at
+    # boot with RuntimeError('PostgreSQL pooling requires psycopg_pool'), and
+    # PyInstaller cannot freeze packages that are not installed at build time
+    # — the imports in pg_planes.py / postgres_driver.py are runtime-only
+    # inside try/except, so static analysis cannot discover them either.
+    "psycopg[binary]>=3.1,<4.0",
+    "psycopg-pool>=3.1,<4.0",
 ]
 postgres = [
     "psycopg[binary]>=3.1,<4.0",

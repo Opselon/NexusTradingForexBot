@@ -1,0 +1,12 @@
+{
+  "mission": "S20",
+  "harness": "tests/unit/test_sqlite_runtime_trap.py",
+  "scratch_db": "nse_sqlite_trap_04125cb2",
+  "provider": "postgresql",
+  "admin_dsn": "postgresql://***@nse_user:nse_password_dev@localhost:5432/nse_audit",
+  "allowlist": [
+    "app_settings.db"
+  ],
+  "trap_count": 18,
+  "status": "armed"
+}

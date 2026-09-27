@@ -464,3 +464,99 @@ def ops_hygiene_schema_statements() -> tuple[str, ...]:
     from nexus_scalp.hygiene.schema import ops_hygiene_schema_statements
 
     return ops_hygiene_schema_statements()
+
+
+# ---------------------------------------------------------------------------
+# Lane D (2026-09-26): the four isolated-store domains.
+#
+# Each extractor reads the DDL the owning store declares, splits it into
+# statements, and appends the store's own index statements — the exact DDL a
+# fresh SQLite database would receive from the store's ``ensure_schema``. The
+# store is deliberately NOT constructed: its constructor opens a real database
+# file (and, for candle_intel, starts a background worker).
+# ---------------------------------------------------------------------------
+
+
+def marketplace_schema_statements() -> tuple[str, ...]:
+    """The marketplace domain's tables + indexes (SQLite dialect).
+
+    ``MarketplaceStore.ensure_schema`` applies ``ALL_DDL`` then the ``INDEXES``
+    tuples; both are read from the store module verbatim so a PostgreSQL
+    provision converges on the store's own physical schema.
+    """
+    from nexus_scalp.marketplace.store import ALL_DDL, INDEXES
+
+    out: list[str] = []
+    for _table, ddl in ALL_DDL:
+        out.extend(s.strip() for s in ddl.split(";") if s.strip())
+    for idx_name, table, cols in INDEXES:
+        out.append(f'CREATE INDEX IF NOT EXISTS "{idx_name}" ON {table} ({cols})')
+    return tuple(out)
+
+
+def models_schema_statements() -> tuple[str, ...]:
+    """The model registry's tables + indexes (SQLite dialect).
+
+    ``ModelRegistry._ensure_schema`` creates ``model_checkpoints`` /
+    ``model_load_history`` and three indexes; the registry authors that DDL
+    inline (no module-level schema constant exists), so the statements are
+    HARVESTED from the catalog of a disposable database the registry itself
+    builds on its own connection — the same harvest contract
+    ``_apply_learning_cycle_tables`` uses (the store must own the connection;
+    a ``:memory:`` database a second connection opens holds zero tables).
+    ``AUTOINCREMENT`` and the SQLite ``INTEGER PRIMARY KEY`` identity are
+    translated by ``pg_schema.translate_ddl`` on the provider.
+    """
+    import os
+    import sqlite3
+    import tempfile
+
+    from nexus_scalp.model_generation.model_registry import ModelRegistry
+
+    # The SQLite runtime trap exempts ``_schema_harvest.db`` so this transient
+    # scratch file is not mistaken for operational data on a PostgreSQL box.
+    fd, path = tempfile.mkstemp(suffix="_schema_harvest.db")
+    os.close(fd)
+    try:
+        ModelRegistry(path)
+        harvest_conn = sqlite3.connect(path)
+        try:
+            rows = harvest_conn.execute(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type IN ('table', 'index') AND sql <> '' "
+                "AND name LIKE 'model_%' "
+                "ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END, name"
+            ).fetchall()
+        finally:
+            harvest_conn.close()
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+    return tuple(_restore_if_not_exists(str(r[0]).strip()) for r in rows)
+
+
+def strategies_schema_statements() -> tuple[str, ...]:
+    """The strategies domain's factory tables + indexes (SQLite dialect).
+
+    ``StrategyResearchStore.ensure_schema`` applies ``ALL_DDL`` then the
+    ``INDEXES`` tuples; both are read from the store module verbatim.
+    """
+    from nexus_scalp.strategies.research_store import ALL_DDL, INDEXES
+
+    out: list[str] = []
+    for _table, ddl in ALL_DDL:
+        out.extend(s.strip() for s in ddl.split(";") if s.strip())
+    for idx_name, table, cols in INDEXES:
+        out.append(f'CREATE INDEX IF NOT EXISTS "{idx_name}" ON {table} ({cols})')
+    return tuple(out)
+
+
+def experiments_schema_statements() -> tuple[str, ...]:
+    """The experiments domain's table + indexes (SQLite dialect).
+
+    ``ExperimentRegistry.__init__`` applies ``_SCHEMA`` (two ``CREATE INDEX``
+    statements follow the table in the same string); read verbatim.
+    """
+    from nexus_scalp.model_lab.experiment_registry import _SCHEMA
+
+    return tuple(s.strip() for s in _SCHEMA.split(";") if s.strip())

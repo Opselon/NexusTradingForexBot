@@ -116,13 +116,21 @@ def _resolve_admin_dsn() -> str:
         user = parts.get("user", "postgres")
         pw = parts.get("password", "")
         auth = f"{user}:{pw}@" if pw else f"{user}@"
-        return f"postgresql://{auth}{host}:{port}"
+        # The database segment is REQUIRED, not optional: libpq defaults a
+        # missing dbname to the USER name, so an instance whose role is
+        # `nse_user` made every admin connection target a database called
+        # `nse_user` and fail with FATAL: database "nse_user" does not exist.
+        dbname = parts.get("dbname") or parts.get("database") or "postgres"
+        return f"postgresql://{auth}{host}:{port}/{dbname}"
     from nexus_scalp.database.config import build_postgres_url, load_database_config
 
     try:
         cfg = load_database_config("audit")
         if cfg.is_postgresql:
-            return build_postgres_url(cfg, SecureSecretStore()).rsplit("/", 1)[0]
+            url = build_postgres_url(cfg, SecureSecretStore()).rsplit("/", 1)[0]
+            # libpq defaults a missing dbname to the USER name; pin it so the
+            # admin connection cannot land on a database named after the role.
+            return f"{url}/postgres"
     except Exception:
         pass
     return ""

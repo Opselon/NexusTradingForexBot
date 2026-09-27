@@ -68,12 +68,17 @@ class PostEventValidator:
 
     def _ensure_table(self) -> None:
         """Creates the news_post_event table (idempotent, additive)."""
+        from nexus_scalp.news.db_schema import _ddl_for_provider
+
         try:
             conn = self.db._connect()
             try:
-                conn.execute(_POST_EVENT_DDL)
+                conn.execute(_ddl_for_provider(_POST_EVENT_DDL, getattr(self.db, "_config", None)))
                 conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_post_event_article ON news_post_event(article_id);"
+                    _ddl_for_provider(
+                        "CREATE INDEX IF NOT EXISTS idx_post_event_article ON news_post_event(article_id);",
+                        getattr(self.db, "_config", None),
+                    )
                 )
                 conn.commit()
             finally:

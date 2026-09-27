@@ -25,6 +25,7 @@ from nexus_scalp.adapters.database.provider_store import (
     query_scalar,
     queue_write,
 )
+from nexus_scalp.database.upsert import build_upsert_sql
 from nexus_scalp.model_lifecycle.models import (
     ChampionChallengerComparison,
     TrainingRun,
@@ -52,6 +53,69 @@ _INSERT_COMPARISON_SQL = """
         champion_version, comparison, improvement_score, eligible, compared_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 """
+
+#: Lane B (PG upsert parity, PR #480 pattern): the SQLite statement stays
+#: byte-identical and the PostgreSQL branch gets an explicit
+#: ``ON CONFLICT ... DO UPDATE`` — ``INSERT OR REPLACE`` is SQLite-only syntax
+#: and reaches the server verbatim on the pooled write backend
+#: (``syntax error at or near "OR"``). The ON CONFLICT target is resolved and
+#: re-validated against the table's real DDL by ``build_upsert_sql``; it only
+#: needs the statement's own column list.
+_RUN_COLUMNS = [
+    "run_id",
+    "dataset_id",
+    "feature_schema_id",
+    "feature_dimension",
+    "model_id",
+    "model_version",
+    "parent_champion_id",
+    "parent_champion_version",
+    "hyperparameters",
+    "random_seed",
+    "architecture",
+    "train_range",
+    "validation_range",
+    "oos_range",
+    "embargo_bars",
+    "purge_bars",
+    "started_at",
+    "finished_at",
+    "artifacts",
+    "metrics",
+    "gates",
+    "status",
+    "failure_reason",
+    "build_identity",
+]
+_COMPARISON_COLUMNS = [
+    "run_id",
+    "candidate_model_id",
+    "candidate_version",
+    "champion_model_id",
+    "champion_version",
+    "comparison",
+    "improvement_score",
+    "eligible",
+    "compared_at",
+]
+
+_SQLITE_RUN_SQL, _PG_RUN_SQL = build_upsert_sql(
+    "training_runs", _RUN_COLUMNS, sqlite_sql=_INSERT_RUN_SQL
+)
+_SQLITE_COMPARISON_SQL, _PG_COMPARISON_SQL = build_upsert_sql(
+    "model_comparisons", _COMPARISON_COLUMNS, sqlite_sql=_INSERT_COMPARISON_SQL
+)
+
+
+def _sql_for(repo: AuditRepository, sqlite_sql: str, pg_sql: str) -> str:
+    """Pick the dialect-correct statement for the ACTIVE provider.
+
+    Mirrors the split PR #480 landed for the incidents store: SQLite keeps the
+    historical ``INSERT OR REPLACE`` (a first-class provider — its statement is
+    untouched), PostgreSQL runs the ``ON CONFLICT ... DO UPDATE`` form the
+    pooled write backend can execute.
+    """
+    return sqlite_sql if getattr(repo, "_is_sqlite", False) else pg_sql
 
 
 class TrainingRunStore:
@@ -120,7 +184,10 @@ class TrainingRunStore:
             run.build_identity,
         )
         return queue_write(
-            self.audit_repo, _INSERT_RUN_SQL, args, operation="training_run.save_run"
+            self.audit_repo,
+            _sql_for(self.audit_repo, _SQLITE_RUN_SQL, _PG_RUN_SQL),
+            args,
+            operation="training_run.save_run",
         )
 
     def save_comparison(self, comparison: ChampionChallengerComparison) -> bool:
@@ -140,7 +207,7 @@ class TrainingRunStore:
         )
         return queue_write(
             self.audit_repo,
-            _INSERT_COMPARISON_SQL,
+            _sql_for(self.audit_repo, _SQLITE_COMPARISON_SQL, _PG_COMPARISON_SQL),
             args,
             operation="training_run.save_comparison",
         )

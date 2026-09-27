@@ -151,13 +151,23 @@ export function dbConsoleName(db: ConsoleDatabase): string {
 /** The advanced knob values the UI shows.  `live` says the backend reported
  *  the block at all; false means an older engine build — every knob then
  *  renders UNAVAILABLE and its control stays inert (never a zero-filled or
- *  invented default). */
+ *  invented default).
+ *
+ *  The pool-sizing knobs are OPTIONAL on the persisted row: `null` means the
+ *  operator never set one, which is a *different fact* from a deliberate 0
+ *  (pool_min_size 0 opens the pool lazily; 0 idle/lifetime = never reap).
+ *  The backend omits an unset knob rather than reporting a fabricated
+ *  number, so `null` renders UNAVAILABLE exactly like an unreported one. */
 export interface DbOptionsState {
   live: boolean;
   command_timeout_sec: number | null;
   connect_timeout_sec: number | null;
   migrate_on_startup: boolean | null;
   pooling_enabled: boolean | null;
+  pool_min_size: number | null;
+  pool_max_size: number | null;
+  pool_idle_timeout_sec: number | null;
+  pool_max_lifetime_sec: number | null;
   domain: string | null;
   database: string | null;
 }
@@ -218,6 +228,13 @@ export function optionsFromStatus(manage: DbManageStatus | null | undefined): Db
     connect_timeout_sec: opts ? num("connect_timeout_sec") : null,
     migrate_on_startup: opts ? bool("migrate_on_startup") : null,
     pooling_enabled: opts ? bool("pooling_enabled") : null,
+    // Optional knobs: an UNSET pool knob is omitted server-side (never
+    // zero-filled), so "not reported" and "reported as the running default"
+    // stay distinguishable from an explicit 0.
+    pool_min_size: opts ? num("pool_min_size") : null,
+    pool_max_size: opts ? num("pool_max_size") : null,
+    pool_idle_timeout_sec: opts ? num("pool_idle_timeout_sec") : null,
+    pool_max_lifetime_sec: opts ? num("pool_max_lifetime_sec") : null,
     domain: opts ? str("domain") : null,
     database: opts ? str("database") : null,
   };
@@ -225,7 +242,11 @@ export function optionsFromStatus(manage: DbManageStatus | null | undefined): Db
 
 /**
  * The advanced knobs as form field specs.  Bounds mirror the backend exactly
- * (contract §3.3): command_timeout_sec 0..600, connect_timeout_sec 1..120.
+ * (contract §3.3): command_timeout_sec 0..600, connect_timeout_sec 1..120,
+ * pool sizing 0..64/1..128, pool idle/lifetime in seconds (0 = never reap).
+ *
+ * The pool knobs are OPTIONAL on the row: a blank control means "leave the
+ * stored value alone" (advancedPayload omits it), never "reset to 0".
  */
 export function advancedSpecs(): FieldSpec[] {
   return [
@@ -234,6 +255,10 @@ export function advancedSpecs(): FieldSpec[] {
     { key: "connect_timeout_sec", label: "connect timeout (s)", kind: "integer", required: false, min: 1, max: 120, hint: "connection establishment timeout" },
     { key: "migrate_on_startup", label: "migrate on startup", kind: "boolean", required: false },
     { key: "pooling_enabled", label: "pooling", kind: "boolean", required: false },
+    { key: "pool_min_size", label: "pool min size", kind: "integer", required: false, min: 0, max: 64, hint: "connections held open; 0 = open lazily; blank = the engine default" },
+    { key: "pool_max_size", label: "pool max size", kind: "integer", required: false, min: 1, max: 128, hint: "connections the pool will open at most; blank = the engine default" },
+    { key: "pool_idle_timeout_sec", label: "pool idle timeout (s)", kind: "integer", required: false, min: 0, max: 86400, hint: "an idle connection is reaped after this; 0 = never; blank = the engine default" },
+    { key: "pool_max_lifetime_sec", label: "pool max lifetime (s)", kind: "integer", required: false, min: 0, max: 604800, hint: "a connection is recycled at this age; 0 = no limit; blank = the engine default" },
   ];
 }
 
@@ -258,12 +283,20 @@ export function advancedPayload(values: FieldValues): {
   connect_timeout_sec?: number;
   migrate_on_startup?: boolean;
   pooling_enabled?: boolean;
+  pool_min_size?: number;
+  pool_max_size?: number;
+  pool_idle_timeout_sec?: number;
+  pool_max_lifetime_sec?: number;
 } {
   const out: {
     command_timeout_sec?: number;
     connect_timeout_sec?: number;
     migrate_on_startup?: boolean;
     pooling_enabled?: boolean;
+    pool_min_size?: number;
+    pool_max_size?: number;
+    pool_idle_timeout_sec?: number;
+    pool_max_lifetime_sec?: number;
   } = {};
   const intOf = (k: string): number | null => {
     const n = toFiniteNumber(values[k]);
@@ -283,6 +316,17 @@ export function advancedPayload(values: FieldValues): {
   if (mos !== null) out.migrate_on_startup = mos;
   const pool = boolOf("pooling_enabled");
   if (pool !== null) out.pooling_enabled = pool;
+  // Pool sizing: an untouched control is OMITTED (the backend then keeps its
+  // stored value).  An explicit 0 is sent through — it is a real setting
+  // (open lazily / never reap), not "unset".
+  const pmin = intOf("pool_min_size");
+  if (pmin !== null) out.pool_min_size = pmin;
+  const pmax = intOf("pool_max_size");
+  if (pmax !== null) out.pool_max_size = pmax;
+  const pidle = intOf("pool_idle_timeout_sec");
+  if (pidle !== null) out.pool_idle_timeout_sec = pidle;
+  const plife = intOf("pool_max_lifetime_sec");
+  if (plife !== null) out.pool_max_lifetime_sec = plife;
   return out;
 }
 
@@ -291,6 +335,10 @@ export function advancedPayload(values: FieldValues): {
  * backend payload; an unreported knob seeds as an EMPTY string (never a
  * fabricated number or boolean) — the panel then renders it as UNAVAILABLE
  * (contract: missing renders as `—`/UNAVAILABLE).
+ *
+ * The pool knobs are optional on the row: an empty string here is the
+ * "engine default applies" state, and it is NOT zero-filled (0 would be a
+ * real setting: open-lazy / never reap).
  */
 export function baselineOptionsFromManage(manage: DbManageStatus | null | undefined): FieldValues {
   const opts = optionsFromStatus(manage);
@@ -303,6 +351,11 @@ export function baselineOptionsFromManage(manage: DbManageStatus | null | undefi
     connect_timeout_sec: opts.connect_timeout_sec === null ? "" : String(opts.connect_timeout_sec),
     migrate_on_startup: opts.migrate_on_startup === null ? "" : String(opts.migrate_on_startup),
     pooling_enabled: opts.pooling_enabled === null ? "" : String(opts.pooling_enabled),
+    // Unset = empty (engine default), never 0.
+    pool_min_size: opts.pool_min_size === null ? "" : String(opts.pool_min_size),
+    pool_max_size: opts.pool_max_size === null ? "" : String(opts.pool_max_size),
+    pool_idle_timeout_sec: opts.pool_idle_timeout_sec === null ? "" : String(opts.pool_idle_timeout_sec),
+    pool_max_lifetime_sec: opts.pool_max_lifetime_sec === null ? "" : String(opts.pool_max_lifetime_sec),
   };
 }
 

@@ -3532,6 +3532,8 @@
                             <i class="fa-solid fa-terminal text-amber-300"></i>
                             <span class="text-sm font-bold text-white">SQL Console</span>
                             <span class="text-[10px] text-gray-500 font-mono">SELECT / EXPLAIN / WITH / PRAGMA only — read-only</span>
+                            <span class="flex-1"></span>
+                            <span id="db-query-stats" class="text-[10px] font-mono text-gray-500" title="Process-global PostgreSQL query counters — nonzero errors/warnings are logged server-side as [PG-QUERY] with the masked statement.">query stats not loaded</span>
                         </div>
                         <textarea id="db-sql-input" rows="4" spellcheck="false"
                                   placeholder="SELECT * FROM audit_ledger ORDER BY rowid DESC LIMIT 100"

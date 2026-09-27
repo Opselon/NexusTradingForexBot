@@ -56,6 +56,15 @@ _DOMAIN_STATEMENTS: dict[str, str] = {
     # The operational tables the hygiene state + quarantine stores own
     # (DB-FABRIC-002), same ownership contract as ops_shadow.
     "ops_hygiene": "ops_hygiene_schema_statements",
+    # Lane D (2026-09-26): the four isolated-store domains. Same ownership
+    # contract as the entries above — the DDL is authored in the owning
+    # package (each store's declared schema constants), so the statements are
+    # read from there verbatim and the store is deliberately NOT constructed
+    # (its constructor opens a real database file / starts a worker thread).
+    DatabaseDomain.MARKETPLACE.value: "marketplace_schema_statements",
+    DatabaseDomain.MODELS.value: "models_schema_statements",
+    DatabaseDomain.STRATEGIES.value: "strategies_schema_statements",
+    DatabaseDomain.EXPERIMENTS.value: "experiments_schema_statements",
 }
 
 
@@ -107,7 +116,8 @@ def migrate_domain(
     """Provision/upgrade a domain's schema on the bound provider.
 
     ``execute`` runs one translated SQL string. The result record is the
-    migration's audit trail — applied count, per-statement errors — so a
+    migration's audit trail — applied count, per-statement errors, and the
+    number of registry migrations recorded into ``schema_migrations`` — so a
     failed migration is visible rather than silently leaving a half-built
     schema behind.
 
@@ -115,10 +125,15 @@ def migrate_domain(
     replay in :mod:`migration.schema_snapshot` produces each list). A domain
     with no authored DDL raises :class:`NotImplementedError` instead of
     no-oping, so a caller can never mistake "not provisioned" for success.
+
+    The DDL replay creates every object the registry's migration chain owns;
+    ``domain`` is forwarded to :func:`pg_schema.apply_schema` so the chain is
+    also RECORDED — without that, a freshly provisioned PostgreSQL database
+    has all its tables and an empty ``schema_migrations`` ledger.
     """
     statements = _domain_statements(domain)
     logger.info("[DB-MIGRATE] domain=%s statements=%d", domain, len(statements))
-    return apply_schema(statements, execute, stop_on_error=stop_on_error)
+    return apply_schema(statements, execute, stop_on_error=stop_on_error, domain=domain)
 
 
 def verify_domain_schema(domain: str, list_tables: Callable[[], list[str]]) -> dict[str, Any]:

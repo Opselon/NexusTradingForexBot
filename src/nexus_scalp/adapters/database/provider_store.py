@@ -76,9 +76,41 @@ OPS_SHADOW_DOMAIN = "ops_shadow"
 #: which the audit domain's schema does not hold either.
 OPS_HYGIENE_DOMAIN = "ops_hygiene"
 
+#: The fabric domain for the News subsystem's own tables (news_articles,
+#: news_sources, ... + calendar_events, which the news store provisions). The
+#: news store resolves its pooled backend through the fabric directly; it is
+#: declared here so the shared ``resolve_backend`` seam recognises the domain
+#: and can bootstrap it the same way it bootstraps the ``ops_*`` domains.
+NEWS_DOMAIN = "news"
+
+#: Lane D (2026-09-26): the isolated-store domains the fabric can now serve.
+#: Each store owns its schema, so the fabric bootstraps it on first use
+#: (``provision_domain`` runs the domain's authored DDL through the migrator).
+#: ``candle_intel`` is already declared as a ``DatabaseDomain`` and replay-
+#: provisioned by the migration chain, but it was absent from this set, so a
+#: provider helper resolving it (as opposed to the store's own resolve)
+#: returned ``None`` and never bootstrapped.
+MARKETPLACE_DOMAIN = "marketplace"
+MODELS_DOMAIN = "models"
+STRATEGIES_DOMAIN = "strategies"
+EXPERIMENTS_DOMAIN = "experiments"
+CANDLE_INTEL_DOMAIN = "candle_intel"
+
 #: Every domain an operational store may route through. ``resolve_backend``
 #: bootstraps the domain the first time a process touches a pooled provider.
-_KNOWN_DOMAINS: frozenset[str] = frozenset({AUDIT_DOMAIN, OPS_SHADOW_DOMAIN, OPS_HYGIENE_DOMAIN})
+_KNOWN_DOMAINS: frozenset[str] = frozenset(
+    {
+        AUDIT_DOMAIN,
+        OPS_SHADOW_DOMAIN,
+        OPS_HYGIENE_DOMAIN,
+        NEWS_DOMAIN,
+        MARKETPLACE_DOMAIN,
+        MODELS_DOMAIN,
+        STRATEGIES_DOMAIN,
+        EXPERIMENTS_DOMAIN,
+        CANDLE_INTEL_DOMAIN,
+    }
+)
 
 #: Minimum spacing between repeated "not provisioned" warnings for one store.
 #: The first occurrence always logs; later repeats are rate-limited so a hot
@@ -152,6 +184,15 @@ def _read_backend(repo: Any, domain: str = AUDIT_DOMAIN) -> Any:
     read-only pool (``SET default_transaction_read_only = on``). A
     write-shaped backend is refused outright, exactly like the audit
     repository's own read guard.
+
+    A domain whose read plane is not registered yet is BOOTSTRAPPED here: a
+    process that only reads (a diagnostics route, a maintenance worker, a CLI
+    probe) never runs the write-plane provisioning that would have registered
+    it, so without this step its first read finds an empty registry and
+    degrades to a documented default while the data sits on the server — the
+    repeated "no read plane registered" warning on the live cluster. A
+    read-only process must still resolve a read plane; it must never
+    provision the write path.
     """
     try:
         from nexus_scalp.database.fabric import get_domain_backend
@@ -159,6 +200,28 @@ def _read_backend(repo: Any, domain: str = AUDIT_DOMAIN) -> Any:
         backend = get_domain_backend(domain, readonly=True)
     except Exception as exc:  # pragma: no cover - fabric import failure
         logger.warning("[DB-FABRIC] %s read backend resolve failed: %s", domain, type(exc).__name__)
+        return None
+    if backend is not None:
+        if hasattr(backend, "execute") or not hasattr(backend, "query"):
+            return None
+        return backend
+    # Nothing registered for this process yet. Only the READ side may be
+    # bootstrapped from a read path — provisioning the write plane here could
+    # close a pool a concurrent writer is using.
+    try:
+        from nexus_scalp.database.ops_provider import ensure_read_plane
+
+        # A repository that already resolved its own DSN (its _db_url) is the
+        # authoritative source: the persisted settings lookup can disagree with
+        # the URL the repository actually reads through (an env-overridden test
+        # instance, a box mid-switch), and opening a pool against the wrong one
+        # silently degrades every read after it.
+        resolved_dsn = getattr(repo, "_db_url", "")
+        if not resolved_dsn or not str(resolved_dsn).startswith(("postgresql:", "postgres:")):
+            resolved_dsn = None
+        backend = ensure_read_plane(domain, dsn=resolved_dsn)
+    except Exception as exc:  # pragma: no cover - ops import failure
+        logger.warning("[DB-FABRIC] %s read plane bootstrap failed: %s", domain, type(exc).__name__)
         return None
     if backend is None:
         return None
@@ -168,7 +231,33 @@ def _read_backend(repo: Any, domain: str = AUDIT_DOMAIN) -> Any:
 
 
 def _degrade(operation: str, kind: str, detail: str, domain: str = AUDIT_DOMAIN) -> None:
-    """Emit one observable degradation warning (rate-limited per operation)."""
+    """Emit one observable degradation warning (rate-limited per operation).
+
+    The degradation itself is counted and deduplicated by
+    :func:`nexus_scalp.database.query_logging.note_degraded_read` per
+    ``(domain, reason)`` — the first occurrence is a WARNING, repeats drop to
+    DEBUG with a cumulative counter, and a pair that degrades for more than
+    ``PG_DEGRADED_ESCALATION_AFTER`` consecutive occurrences escalates to
+    ERROR. 368 identical warnings in three minutes is how operators stop
+    reading a log; one warning plus a counter plus an escalation is the same
+    information, still readable.
+    """
+    reason = kind or "not_provisioned"
+    try:
+        from nexus_scalp.database.query_logging import note_degraded_read
+
+        note_degraded_read(
+            domain=domain,
+            reason=reason,
+            operation=operation,
+            detail=detail,
+        )
+    except Exception:
+        with _Suppress():
+            logger.debug("[DB-FABRIC] degraded-read logging path failed")
+    # The per-store legacy rate limiter stays for callers that read the
+    # log stream by operation name (existing tooling): it is a SECOND dedupe
+    # layer, not a replacement, and it costs one dict lookup on the cold path.
     if _rate_limited(f"{operation}|{kind}"):
         logger.warning(
             "[DB-FABRIC] operational store %s degraded kind=%s: %s "
@@ -237,6 +326,23 @@ def queue_write_batch(
         backend.execute_batch(list(statements))
         return True
     except Exception as exc:
+        # The failing QUERY is the one thing the live log was missing: a
+        # batch fails as one statement and the legacy message carried only the
+        # error string. Log the whole batch (masked) with its arity.
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "queue_write_batch",
+                exc=exc,
+                sql="; ".join(q for q, _a in statements),
+                args=[a for _q, a in statements],
+                domain=AUDIT_DOMAIN,
+                kind="batch_write",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational batch write failed op=%s error=%s",
             operation or "?",
@@ -285,6 +391,20 @@ def queue_write(repo: Any, query: str, args: tuple[Any, ...], *, operation: str 
         backend.execute(query, args)
         return True
     except Exception as exc:
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "queue_write",
+                exc=exc,
+                sql=query,
+                args=args,
+                domain=AUDIT_DOMAIN,
+                kind="write",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational write failed op=%s error=%s",
             operation or "?",
@@ -322,6 +442,24 @@ def ops_queue_write(
         backend.execute(query, args)
         return True
     except Exception as exc:
+        # Full context for a failed write: the masked SQL (placeholders kept,
+        # values never rendered) plus placeholder_count vs arg_count — the
+        # pair that proves the live "syntax error at or near OR / 0
+        # placeholders but 32 parameters" class of failure.
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "ops_queue_write",
+                exc=exc,
+                sql=query,
+                args=args,
+                domain=domain,
+                kind="write",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational write failed domain=%s op=%s error=%s",
             domain,
@@ -357,6 +495,20 @@ def ops_queue_write_batch(
         backend.execute_batch(list(statements))
         return True
     except Exception as exc:
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "ops_queue_write_batch",
+                exc=exc,
+                sql="; ".join(q for q, _a in statements),
+                args=[a for _q, a in statements],
+                domain=domain,
+                kind="batch_write",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational batch write failed domain=%s op=%s error=%s",
             domain,
@@ -434,6 +586,20 @@ def query_rows(
     try:
         return list(backend.query(sql, args))
     except Exception as exc:
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "query_rows",
+                exc=exc,
+                sql=sql,
+                args=args,
+                domain=AUDIT_DOMAIN,
+                kind="read",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational read failed op=%s error=%s",
             operation or "?",
@@ -473,6 +639,20 @@ def ops_query_rows(
     try:
         return list(backend.query(sql, args))
     except Exception as exc:
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "ops_query_rows",
+                exc=exc,
+                sql=sql,
+                args=args,
+                domain=domain,
+                kind="read",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational read failed domain=%s op=%s error=%s",
             domain,
@@ -500,6 +680,20 @@ def ops_query_scalar(
     try:
         return backend.scalar(sql, args)
     except Exception as exc:
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "ops_query_scalar",
+                exc=exc,
+                sql=sql,
+                args=args,
+                domain=domain,
+                kind="read",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational scalar read failed domain=%s op=%s error=%s",
             domain,
@@ -536,6 +730,20 @@ def query_scalar(repo: Any, sql: str, args: Sequence[Any] = (), *, operation: st
     try:
         return backend.scalar(sql, args)
     except Exception as exc:
+        try:
+            from nexus_scalp.database.query_logging import log_query_failure
+
+            log_query_failure(
+                operation=operation or "query_scalar",
+                exc=exc,
+                sql=sql,
+                args=args,
+                domain=AUDIT_DOMAIN,
+                kind="read",
+            )
+        except Exception:
+            with _Suppress():
+                pass
         logger.error(
             "[DB-FABRIC] operational scalar read failed op=%s error=%s",
             operation or "?",

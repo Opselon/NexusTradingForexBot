@@ -28,6 +28,19 @@ permissions:
 env:
   PYTHON_VERSION: "3.11"
 
+  # PostgreSQL test arms: NOT run on GitHub CI. They require a MIGRATED
+  # server (scratch databases, a provisioned nexusdb, credentials in the
+  # OS secret store); a throwaway container cannot supply one, and standing
+  # it up made the quality job 45 minutes long while STILL not producing a
+  # verdict. They run in the LOCAL gate against a real server:
+  #     python scripts/ci/check_local.py --pg
+  # On CI those tests skip, and the quality job REPORTS the skip as a
+  # status line rather than counting it as a pass - a skip is not a pass.
+  #
+  # NOTE: PG_TEST_URL / PG_TEST_DSN used to sit here and were read by
+  # nothing (the suite keys off NSE_PG_TEST_URL / NSE_TEST_PG_DSN), so
+  # their presence proved only that someone had written a variable down.
+
   # Canonical per-run results directory. Every check writes ONLY into its own
   # subdirectory; the tree is wiped and recreated at the start of every run so
   # no result from a previous run can leak into this one.
@@ -128,6 +141,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    # No PostgreSQL service container here, by operator decision. The
+    # database-backed arms need a MIGRATED server (scratch databases, a
+    # provisioned nexusdb, credentials in the OS secret store) and a
+    # throwaway container cannot supply one: standing one up turned a
+    # 20-second quality job into a 45-minute one that STILL could not
+    # produce a verdict. GitHub CI therefore runs the database-FREE gates
+    # below; the database arms run in the LOCAL gate, against a real
+    # server, via `python scripts/ci/check_local.py --pg`.
+    #
+    # Without NSE_PG_TEST_URL those arms skip here. That skip is REPORTED
+    # as a status line rather than silently counted as a pass - a skip is
+    # not a pass.
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -152,9 +178,17 @@ jobs:
           # pytest-cov>=4.1.0 + pytest-xdist>=3.5.0 ship in the [dev] extra
           # (pyproject) - the editable install above already provides them;
           # a second resolver pass only added 10-20s per job.
-          pip install -e ".[dev,web]"
+          # [postgres] keeps psycopg importable so provider-aware modules
+          # import cleanly; the PG ARMS themselves do not run in this job.
+          pip install -e ".[dev,web,postgres]"
 
       # -------- Results tree + run metadata (fresh on every run) --------
+      # -------- PG arms: not run in this job (see the job note) --------
+      # scripts/ci/check_preexisting_reds.py is deliberately NOT a step here:
+      # it worktrees the base revision, which a shallow checkout cannot
+      # provide, and its instant failure skipped the runtime / layered-smoke
+      # checks that follow. It stays a local tool:
+      #     python scripts/ci/check_preexisting_reds.py --base origin/main
       - name: Initialize results tree
         run: |
           python scripts/ci/make_ci_results.py init "$CI_RESULTS_DIR" \
@@ -391,6 +425,32 @@ jobs:
       # status=blocked (NOT errored) for every missing downstream result so
       # the summary + final gate report BLOCKED_BY_RUFF_FORMAT instead of
       # inventing three fake failures.
+      # ------------------------------------------------------------------
+      # Provider/portability gates. These run AFTER the quality steps on
+      # purpose: when they ran first, a gate failure aborted the job and
+      # every later step reported `missing` (ruff_lint=missing |
+      # mypy=missing | pytest=missing), hiding the real signal behind the
+      # gate that was supposed to expose it. Each gate still fails the
+      # job -- fail-closed is preserved -- but only after the results it
+      # must not mask have been produced.
+      # ------------------------------------------------------------------
+      # The PostgreSQL arms do NOT run here: they need a migrated server
+      # this runner does not have (see the job note above). Record that as
+      # an explicit status instead of letting a silent skip read as a pass.
+      - name: PostgreSQL arms - not run on this runner (reported)
+        run: |
+          {
+            echo '### PostgreSQL arms'
+            echo ''
+            echo '- Status: **NOT RUN** on GitHub CI - no migrated server on the runner.'
+            echo '- They run in the local gate: `python scripts/ci/check_local.py --pg`'
+            echo '- A skip here is NOT a pass and is not counted as one.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: OR-verb portability gate
+        run: |
+          python scripts/ci/check_or_verb_portability.py
+
       - name: Classify blocked downstream checks
         if: env.RUFF_FORMAT_RC != '0' && env.RUFF_REPAIR_STATUS != 'repaired'
         continue-on-error: true
@@ -712,25 +772,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [integration, e2e, database-provider, research-backtest, model-validation]
+        suite: [integration, e2e, research-backtest, model-validation]
 
     env:
       CI_RESULTS_DIR: ci-results
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: nse_audit
-          POSTGRES_USER: nse_user
-          POSTGRES_PASSWORD: nse_password_dev
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U nse_user -d nse_audit"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
 
     steps:
       - name: Checkout repository
@@ -769,13 +814,6 @@ jobs:
               pip install playwright
               python -m playwright install --with-deps chromium
               pytest tests/integration/test_playwright_e2e.py \
-                --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
-              ;;
-            database-provider)
-              # DATABASE PORTABILITY: provider matrix suite against a REAL
-              # PostgreSQL service (SQLite always; PG via NSE_PG_TEST_URL).
-              NSE_PG_TEST_URL="postgresql://nse_user:nse_password_dev@localhost:5432/nse_audit" \
-                pytest tests/unit/test_database_portability.py \
                 --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
               ;;
             research-backtest)

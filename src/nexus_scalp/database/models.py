@@ -16,11 +16,30 @@ from typing import Any
 
 
 class DatabaseDomain(StrEnum):
-    """Independent schema domains — each carries its own schema version."""
+    """Independent schema domains — each carries its own schema version.
+
+    The first three (audit / news / candle_intel) own SQLite files under
+    ``artifacts/`` AND are replay-provisioned on PostgreSQL. The four that
+    follow (marketplace / models / strategies / experiments) own isolated
+    stores that were SQLite-only until the fabric learned their names: adding
+    them here is what lets ``provision_domain`` serve them at all (Lane D,
+    DATABASE PORTABILITY). Their DDL is authored in the owning package, so
+    they are replay-registered through the same extractor contract the
+    ``ops_*`` domains use (``migration._DOMAIN_STATEMENTS``), not through
+    ``replay_schema``.
+    """
 
     AUDIT = "audit"
     NEWS = "news"
     CANDLE_INTEL = "candle_intel"
+    # Lane D (2026-09-26): the isolated stores' domains. Each had a store + a
+    # canonical artifacts/<name>.db but NO enum entry, so the fabric had no
+    # name to provision and no backend to hand out — they could only ever
+    # write SQLite.
+    MARKETPLACE = "marketplace"
+    MODELS = "models"
+    STRATEGIES = "strategies"
+    EXPERIMENTS = "experiments"
 
 
 class MigrationRisk(StrEnum):

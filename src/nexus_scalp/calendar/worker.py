@@ -100,11 +100,21 @@ class CalendarWorker:
     # -- schema ----------------------------------------------------------
 
     def _ensure_tables(self) -> None:
-        """Idempotent, additive tables in news.db (dedicated DB, no audit mix)."""
+        """Idempotent, additive tables in news.db (dedicated DB, no audit mix).
+
+        The DDL is authored once in the SQLite dialect and translated to the
+        provider the store's connection actually speaks — the same single
+        translation path the news store uses (``_ddl_for_provider``), so a
+        box switched to PostgreSQL gets the tables created instead of a
+        syntax error on ``INTEGER PRIMARY KEY`` shapes PG rejects.
+        """
+        from nexus_scalp.news.db_schema import _ddl_for_provider
+
         try:
             with self.db._connect() as conn:
+                config = getattr(self.db, "_config", None)
                 for ddl in CALENDAR_SCHEMA_SQL:
-                    conn.execute(ddl)
+                    conn.execute(_ddl_for_provider(ddl, config))
         except Exception as e:
             logger.error("[CALENDAR] schema init failed (worker disabled-safe)", error=str(e))
 

@@ -121,11 +121,15 @@ export function ProviderOptions({
         }
 
         if (spec.kind === "integer") {
+          /* The optional pool knobs render blank when the operator never set
+           * one — that blank is "the engine default applies", NOT a 0, and
+           * saving it back sends nothing (advancedPayload omits an empty
+           * control so the stored value survives untouched). */
           return (
             <FieldRow
               key={spec.key}
               label={spec.label ?? spec.key}
-              hint={`${spec.hint ?? spec.key} · reported: ${row.reported}`}
+              hint={row.unavailable ? `${OPTION_UNAVAILABLE} — this backend build does not report this knob` : `${spec.hint ?? spec.key} · reported: ${row.reported}`}
               error={err}
               dirty={reportedValue !== row.reported}
             >

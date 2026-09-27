@@ -15,7 +15,15 @@ Usage:
     python scripts/ci/check_local.py --staged        # staged files only
     python scripts/ci/check_local.py --fix           # apply SAFE mechanical fixes, re-check
     python scripts/ci/check_local.py --fast          # skip mypy (cheap syntactic checks only)
+    python scripts/ci/check_local.py --pg            # ALSO run the PostgreSQL arms
     python scripts/ci/check_local.py --json          # machine-readable (stdout = pure JSON)
+
+The PostgreSQL arms (--pg) need a MIGRATED server and are therefore NOT run
+on GitHub CI: a throwaway service container cannot supply the scratch
+databases, the provisioned ``nexusdb`` or the OS secret store those tests
+require. Run them HERE, against a real server, with ``NSE_PG_TEST_URL`` set.
+Without the flag the stage is reported as ``skipped`` with that reason — a
+skip is never counted as a pass.
 
 Safety contract (multi-agent swarm):
     * NEVER stages, commits, pushes, stashes, resets or checks out anything.
@@ -389,6 +397,80 @@ def stage_decision_ids() -> StageResult:
     )
 
 
+def stage_pg_arms(*, enabled: bool) -> StageResult:
+    """PostgreSQL arms (``--pg``): database-backed integration coverage.
+
+    These are the tests that need a MIGRATED server — they create and drop
+    scratch databases, compare against a provisioned ``nexusdb`` and resolve a
+    credential from the OS secret store. A throwaway CI service container
+    cannot supply any of that, which is why this stage lives HERE and not in
+    GitHub CI.
+
+    Contract:
+      * WITHOUT ``--pg``: status ``skipped`` with an explicit reason. A skip is
+        reported, never silently folded into a pass.
+      * WITH ``--pg``: the arms RUN. If the connection env is missing they FAIL
+        (not skip) — a silently-skipped arm is exactly the defect class the
+        gate exists to catch.
+    """
+    script = REPO_ROOT / "scripts" / "ci" / "check_pg_arm.py"
+    cmd = [sys.executable, "scripts/ci/check_pg_arm.py"]
+    if not enabled:
+        return StageResult(
+            name="pg_arms",
+            command=cmd,
+            exit_code=0,
+            status="skipped",
+            duration_sec=0.0,
+            detail=(
+                "not requested; PostgreSQL arms need a migrated server "
+                "(run with --pg and NSE_PG_TEST_URL set)"
+            ),
+        )
+    if not script.exists():
+        return StageResult(
+            name="pg_arms",
+            command=cmd,
+            exit_code=1,
+            status="failed",
+            duration_sec=0.0,
+            detail=f"check_pg_arm.py not found at {script}",
+        )
+
+    t0 = time.perf_counter()
+    env = os.environ.copy()
+    # The suite reads BOTH conventions; export whichever is set under the other
+    # name too, so an operator who set only one does not lose half the arm.
+    url = env.get("NSE_PG_TEST_URL", "").strip()
+    dsn = env.get("NSE_TEST_PG_DSN", "").strip()
+    if url and not dsn:
+        env["NSE_TEST_PG_DSN"] = url
+    elif dsn and not url:
+        env["NSE_PG_TEST_URL"] = dsn
+
+    r = subprocess.run(
+        cmd,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=env,
+        timeout=2700,
+    )
+    out = (r.stdout or "") + (r.stderr or "")
+    return StageResult(
+        name="pg_arms",
+        command=cmd,
+        exit_code=r.returncode,
+        status="passed" if r.returncode == 0 else "failed",
+        duration_sec=time.perf_counter() - t0,
+        detail=out.strip().splitlines()[-1][:200] if out.strip() else "",
+        output=out[-4000:],
+    )
+
+
 def stage_fast_tests(scope_files: list[str]) -> StageResult:
     """Cheap targeted tests: the FAST lane manifest (tests/fast_suite.txt —
     one mutation-proven owner per P0 domain, budget <=60s, wave-2 agent-loop
@@ -524,7 +606,9 @@ def prepush_plan() -> dict[str, Any]:
     }
 
 
-def run_gate(*, all_files: bool, staged_only: bool, fix: bool, fast: bool, json_out: bool) -> int:
+def run_gate(
+    *, all_files: bool, staged_only: bool, fix: bool, fast: bool, json_out: bool, pg: bool = False
+) -> int:
     scope = changed_files(all_files=all_files, staged_only=staged_only)
     deleted = deleted_files()
     results: list[StageResult] = []
@@ -617,6 +701,10 @@ def run_gate(*, all_files: bool, staged_only: bool, fix: bool, fast: bool, json_
 
     # [5] Fast targeted unit tests
     results.append(stage_fast_tests(scope))
+
+    # [5a] PostgreSQL arms (--pg only): database-backed coverage that cannot
+    # run on GitHub CI. Reported as skipped when not requested — never as a pass.
+    results.append(stage_pg_arms(enabled=pg))
 
     # [5b] ML contract drift (ML-CI-002): canonical ML constants parsed from
     # source must match the docs/ml-system suite. Same gate that fails CI on
@@ -756,6 +844,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--fix", action="store_true", help="apply SAFE mechanical fixes then re-check")
     p.add_argument("--fast", action="store_true", help="skip mypy (cheap stages only)")
     p.add_argument(
+        "--pg",
+        action="store_true",
+        help="ALSO run the PostgreSQL arms against a real migrated server "
+        "(needs NSE_PG_TEST_URL; they are not run on GitHub CI)",
+    )
+    p.add_argument(
         "--prepush",
         action="store_true",
         help="canonical push-time contract: push-scope validation level chosen "
@@ -787,6 +881,7 @@ def main(argv: list[str] | None = None) -> int:
                 fix=args.fix,
                 fast=plan["fast"],
                 json_out=args.json,
+                pg=args.pg,
             )
         return run_gate(
             all_files=args.all,
@@ -794,6 +889,7 @@ def main(argv: list[str] | None = None) -> int:
             fix=args.fix,
             fast=args.fast,
             json_out=args.json,
+            pg=args.pg,
         )
     except subprocess.TimeoutExpired as e:
         print(f"stage timeout: {e}", file=sys.stderr)

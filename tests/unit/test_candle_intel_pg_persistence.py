@@ -135,13 +135,18 @@ def _pg_password() -> str:
 
 
 def _base_dsn() -> str:
-    """The configured instance with the database name stripped (for CREATE/DROP).
+    """The configured instance as an admin DSN, with a valid database.
 
     ``NSE_PG_TEST_URL`` is a URL in the CI convention but may arrive as a libpq
     keyword/value DSN. ``rsplit('/', 1)`` strips the database only for the URL
     form; on a DSN it keeps the ``dbname`` token and then appending the scratch
     name yields a value libpq cannot parse. ``conninfo_to_dict`` reads either
     shape and ``make_conninfo`` rebuilds it without the database segment.
+
+    The database is pinned to ``postgres`` rather than left absent: libpq
+    defaults a missing ``dbname`` to the USER name, so an instance whose role
+    is ``nse_user`` made every admin connection target a database called
+    ``nse_user`` and fail with ``FATAL: database "nse_user" does not exist``.
     """
     assert PG_URL, "NSE_PG_TEST_URL must be set"
     try:
@@ -150,7 +155,7 @@ def _base_dsn() -> str:
         parts = conninfo_to_dict(PG_URL)
     except Exception:  # pragma: no cover - unparseable, not ours to fix
         return PG_URL.rsplit("/", 1)[0]
-    parts.pop("dbname", None)
+    parts["dbname"] = "postgres"
     parts.pop("database", None)
     return make_conninfo("", **parts)
 
