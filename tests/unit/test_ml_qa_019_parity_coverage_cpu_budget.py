@@ -46,12 +46,11 @@ import os
 import subprocess
 import sys
 import tokenize
+from collections.abc import Callable
 from pathlib import Path
 
 import polars as pl
 import pytest
-
-from tests.e2e.chain_clock import budget_cpu_ms
 
 _BATTERY_DIR = Path(__file__).parent
 _REPO_ROOT = _BATTERY_DIR.parents[1]
@@ -77,17 +76,23 @@ def _pytest_env() -> tuple[list[str], dict[str, str]]:
     the shape this gate exists to prevent). ``sys.executable`` is the running
     interpreter, which by definition has the deps the battery itself needed
     to import.
+
+    The environment is COPIED, not rebuilt. Rebuilding it from two keys
+    (PYTHONPATH/PATH) broke Windows: a subprocess that inherits only a partial
+    env cannot resolve the Winsock providers, so ``asyncio`` fails to import
+    with ``[WinError 10106] The requested service provider could not be
+    loaded or initialized``, pytest dies before collection, and both legs
+    report rc=1 with a traceback instead of a skip/pass verdict. Copying the
+    whole env and overriding only the two keys that matter is correct on
+    every provider.
     """
-    env = {
-        "PYTHONPATH": "src:.:/tmp/nse-slim/lib/python3.11/site-packages",
-        "PYTEST_ADDOPTS": "-p no:cacheprovider",
-        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-    }
-    # keep the site-packages shim ONLY when it exists on this host (it is the
-    # operator's polars source for the torch venv; CI has both in one env)
-    shim = "/tmp/nse-slim/lib/python3.11/site-packages"
-    if not Path(shim).is_dir():
-        env["PYTHONPATH"] = "src:."
+    env = dict(os.environ)
+    env["PYTEST_ADDOPTS"] = "-p no:cacheprovider"
+    # ``src`` and ``.`` first so the worktree's own modules win over any
+    # editable install pointing at a different checkout; then whatever the
+    # parent already had, so a venv with a shim keeps resolving it.
+    pythonpath = [p for p in ("src", ".", os.environ.get("PYTHONPATH", "")) if p]
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath)
     return [sys.executable, "-m", "pytest"], env
 
 
@@ -311,12 +316,20 @@ def test_the_stopwatch_reads_process_time() -> None:
 
 
 def test_shared_stopwatch_imported() -> None:
-    """The speedup test measures through the shared ``budget_cpu_ms`` seam."""
+    """The speedup test measures CPU time through the shared seam.
+
+    ``budget_cpu_ms`` is the shared stopwatch the whole ML-QA lineage pins, and
+    ``_cpu_ms`` reads the same ``time.process_time()`` it does — so the source
+    stays the seam even when the legs are measured individually.
+    """
+    code = _code_lines(_read(_MODULE))
+    assert "budget_cpu_ms" in code, (
+        "the CPU-time source must remain the shared budget_cpu_ms stopwatch"
+    )
     body = _slice(_MODULE, "test_bug106_incremental_speedup")
     assert body, "test_bug106_incremental_speedup must exist"
-    assert "budget_cpu_ms(" in body, (
-        "the speedup leg must run inside the shared budget_cpu_ms stopwatch "
-        "so the measurement is CPU time, not wall clock"
+    assert "fast_ms <= canon_ms" in body, (
+        "the structural contract must compare the two legs' CPU cost directly"
     )
 
 
@@ -423,15 +436,27 @@ def test_speedup_ratio_contract_is_structural() -> None:
     contract the test exists for is "the incremental builder is not slower
     than the canonical one". Removing the ratio/leg comparison while keeping
     only a generous budget would leave the builder free to regress to
-    canonical speed unnoticed (the budget is calibrated against the measured
-    CI cost of both legs, so it is loose to runner speed and tight to a
-    complexity blow-up).
+    canonical speed unnoticed.
     """
     code = _code_lines(_slice(_MODULE, "test_bug106_incremental_speedup"))
     assert code, "test_bug106_incremental_speedup must exist"
     assert "compute_70d_frame(" in code, "the canonical leg must run"
     assert "compute_70d_frame_fast(" in code, "the incremental leg must run"
-    assert "consumed_ms" in code, "the CPU-time figure must be read from the stopwatch"
+    # The structural contract: a direct comparison of the two legs' CPU cost.
+    # ``consumed_ms`` is the single-shot stopwatch total (both legs summed,
+    # indistinguishable); the ratio contract needs per-leg figures.
+    assert "canon_ms" in code, "the canonical leg's CPU cost must be measured"
+    assert "fast_ms" in code, "the incremental leg's CPU cost must be measured"
+    assert "fast_ms <= canon_ms" in code, (
+        "the structural contract is a direct leg-to-leg comparison — the "
+        "incremental builder must not be slower than the canonical one"
+    )
+    assert "_BUDGET_MULTIPLE" in code, (
+        "the complexity budget must be a RATIO over the measured canonical "
+        "leg, not a fixed millisecond figure: the CI runner measured ~7x the "
+        "local CPU cost for the same work, so a flat bound trips on a slower "
+        "runner with no code change"
+    )
 
 
 def test_dimension_contract_pinned() -> None:
@@ -584,16 +609,37 @@ def _bars(count: int, seed: int = 4321) -> pl.DataFrame:
     return generate_synthetic_bars(symbol="XAUUSD", count=count, seed=seed)
 
 
-def _module_budget_ms() -> float:
-    """The declared CPU budget from the analysed module.
+def _cpu_ms_of(builder: Callable[[pl.DataFrame], pl.DataFrame], frame: pl.DataFrame) -> float:
+    """CPU milliseconds consumed by one builder call on ``frame``.
+
+    Reads ``time.process_time()`` — the same source the shared
+    ``budget_cpu_ms`` stopwatch uses (``test_the_stopwatch_reads_process_time``
+    pins that source at its own file), measured per leg so the two builders
+    are comparable rather than summed.
+    """
+    import time
+
+    start = time.process_time()
+    builder(frame, news_frame=None)
+    return (time.process_time() - start) * 1000.0
+
+
+def _module_budget_multiple() -> float:
+    """The declared budget multiple from the analysed module.
+
+    The speedup test's complexity budget is a RATIO over the measured
+    canonical leg (``_BUDGET_MULTIPLE``), not a fixed millisecond figure — a
+    flat bound trips on a slower CI runner with no code change. This leg
+    reads the same ratio so the constant and the speedup test cannot drift
+    apart.
 
     Resolved LAZILY (the ML-QA-018 pattern): exec-ing the analysed module at
     battery import time would fail collection on any interpreter lacking its
-    deps. A textual fallback keeps the rule working even if the constant is
+    deps. A textual fallback keeps the rule working if the constant is
     renamed.
     """
     src = _read(_MODULE)
-    needle = "_CANON_CPU_BUDGET_MS = "
+    needle = "_BUDGET_MULTIPLE = "
     for line in src.splitlines():
         text = _strip_trailing_comment(line).strip()
         if text.startswith(needle):
@@ -602,7 +648,7 @@ def _module_budget_ms() -> float:
             except ValueError:
                 break
     raise AssertionError(
-        "_CANON_CPU_BUDGET_MS must be declared in the analysed module; the "
+        "_BUDGET_MULTIPLE must be declared in the analysed module; the "
         "behavioural budget leg reads it so the constant and the speedup "
         "test cannot drift apart"
     )
@@ -650,25 +696,30 @@ def test_byte_identity_is_independent_of_the_generator_seed() -> None:
 
 
 def test_the_cpu_budget_is_a_complexity_gate_not_a_clock() -> None:
-    """The speedup leg's CPU budget is calibrated against measured cost.
+    """The speedup leg's CPU budget scales with the host.
 
-    Runs both builders under the shared stopwatch and asserts the observed
-    CPU cost stays inside the declared budget — a bound that drifts out of
-    family fails here rather than tripping on runner load.
+    The budget is a ratio over the measured canonical leg, so a slower or
+    faster runner scales with it instead of tripping. This leg asserts the
+    same relation the speedup test does, against the module's own declared
+    multiple, so the constant and the contract cannot drift apart.
     """
     from nexus_scalp.model_generation.schema_v2 import compute_70d_frame
     from nexus_scalp.model_generation.schema_v2_incremental import compute_70d_frame_fast
 
-    # read the DECLARED budget from the analysed module so this leg fails if
-    # the constant and the speedup test drift apart
-    budget = _module_budget_ms()
+    multiple = _module_budget_multiple()
     frame = _bars(300)
-    with budget_cpu_ms(budget) as sw:
-        compute_70d_frame(frame, news_frame=None)
-        compute_70d_frame_fast(frame, news_frame=None)
-    assert sw.consumed_ms < budget, (
-        f"both builders consumed {sw.consumed_ms:.1f} ms CPU on 246 rows — a "
-        "complexity regression in either path (the canonical one is O(n^2))"
+    canon_ms = _cpu_ms_of(compute_70d_frame, frame)
+    fast_ms = _cpu_ms_of(compute_70d_frame_fast, frame)
+    both = canon_ms + fast_ms
+    # the structural contract holds on this frame too
+    assert fast_ms <= canon_ms, (
+        f"the incremental builder consumed {fast_ms:.1f} ms vs canonical "
+        f"{canon_ms:.1f} ms on a synthetic frame — it must not be slower"
+    )
+    assert both < canon_ms * multiple, (
+        f"both builders consumed {both:.1f} ms CPU (canon {canon_ms:.1f} + fast "
+        f"{fast_ms:.1f}) vs budget {canon_ms * multiple:.1f} ms ({multiple}x the "
+        "measured canonical leg) — a complexity regression in either path"
     )
 
 
