@@ -549,6 +549,22 @@ class GitHubClient:
             return payload
         return []
 
+    def get_job_steps(self, job_id: int) -> list[dict[str, Any]]:
+        """The steps of one CI job, with per-step conclusions (spec §10).
+
+        When a job fails without a usable annotation — GitHub emits a synthetic
+        ``.github`` path for some job-level failures — the failing STEP is the
+        only location evidence that exists. It names what actually broke
+        ("Build", "Tests"), which a bare "Process completed with exit code 1"
+        never does.
+        """
+        payload = self._get(f"/repos/{self._repo}/actions/jobs/{job_id}")
+        if isinstance(payload, dict) and not _error_of(payload):
+            steps = payload.get("steps")
+            if isinstance(steps, list):
+                return [s for s in steps if isinstance(s, dict)]
+        return []
+
     def get_workflow_run(self, run_id: int) -> dict[str, Any]:
         """Workflow run metadata — the authoritative workflow name (spec §10).
 

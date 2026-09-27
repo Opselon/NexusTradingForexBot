@@ -70,7 +70,31 @@ FUNCTION_TOKEN_RE = re.compile(r"\b(?:in|def)\s+([A-Za-z_][\w.]*)\s*\(?")
 
 #: Known repo roots that are NOT source roots — prefixes stripped during
 #: normalization. All discovery is path-structural, never a hardcoded file list.
-_NON_SOURCE_ROOTS = (".git", ".github/.", "node_modules", "__pycache__", ".venv", "site")
+_NON_SOURCE_ROOTS = ("node_modules", "__pycache__", ".venv", "site")
+
+#: GitHub's synthetic annotation path for JOB-level failures. The platform emits
+#: the literal string ``.github`` (a directory, not a file) when a step fails
+#: without a file-scoped diagnostic. It names no real location, so callers must
+#: prefer the workflow file / failing step instead of publishing it as the answer.
+#: This is a platform constant, not a per-repo special case.
+SYNTHETIC_ANNOTATION_PATH = ".github"
+
+
+def is_usable_path(path: str) -> bool:
+    """True when ``path`` names an actual file location (spec §4).
+
+    ``unknown`` and GitHub's synthetic ``.github`` placeholder both mean "no file
+    reported", so neither may be presented as the location of a failure.
+    """
+    if not path or path == UNKNOWN:
+        return False
+    return path.strip("/") != SYNTHETIC_ANNOTATION_PATH
+
+
+#: Roots that must match a WHOLE path segment, never a string prefix.
+#: A bare `startswith(".git")` also matches `.github`, which silently deleted
+#: legitimately located evidence.
+_EXACT_SEGMENT_ROOTS = (".git",)
 
 #: Extensions that mark a file as a TEST file (used only to classify the
 #: detected vs suspected-production location, never to filter evidence).
@@ -82,8 +106,15 @@ def _is_real_source_path(path: str) -> bool:
     if not path or len(path) > 512:
         return False
     normalized = path.replace("\\", "/")
+    # `.git` must match a whole segment: a prefix test also swallows `.github`,
+    # which is CI configuration rather than a git internal.
+    segments = normalized.split("/")
+    if any(root in segments for root in _EXACT_SEGMENT_ROOTS):
+        return False
     return not any(
-        normalized.startswith(root) or f"/{root}/" in normalized for root in _NON_SOURCE_ROOTS
+        normalized.startswith(root) or f"/{root}/" in normalized
+        for root in _NON_SOURCE_ROOTS
+        if root not in _EXACT_SEGMENT_ROOTS
     )
 
 

@@ -89,6 +89,10 @@ def _result_payload(result: Any) -> dict[str, Any]:
                 "check": f.check,
                 "workflow": f.workflow,
                 "job": f.job,
+                "step": f.step,
+                "workflow_file": f.workflow_file,
+                "severity": f.severity,
+                "finding": f.rule_url,
             }
             for f in collection.all_failures()
         ]

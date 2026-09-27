@@ -21,6 +21,7 @@ from nexus_scalp.pr_evidence.github_client import GitHubClient
 from nexus_scalp.pr_evidence.locations import (
     extract_error_type,
     extract_locations,
+    is_usable_path,
 )
 from nexus_scalp.pr_evidence.models import (
     UNKNOWN,
@@ -60,6 +61,24 @@ def _actions_run_id(url: Any) -> int | None:
     if not text:
         return None
     match = _ACTIONS_RUN_RE.search(text)
+    if match is None:
+        return None
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+def _actions_job_id(url: Any) -> int | None:
+    """Extract the Actions JOB id from a check-run URL (``.../job/<id>``).
+
+    Generic: the id is whatever sits between ``/job/`` and the next ``/``.
+    ``None`` when absent so callers degrade rather than invent one.
+    """
+    text = _text(url)
+    if not text:
+        return None
+    match = _ACTIONS_JOB_RE.search(text)
     if match is None:
         return None
     try:
@@ -135,28 +154,28 @@ class CheckRunCollector:
         failures: list[Failure] = []
         for raw in raw_runs:
             check = self._to_check(raw)
-            if check.workflow == UNKNOWN:
-                resolved = self._workflow_for(raw)
-                if resolved != UNKNOWN:
-                    check = replace(check, workflow=resolved)
+            resolved_workflow = self._workflow_for(raw)
+            if resolved_workflow != UNKNOWN:
+                check = replace(check, workflow=resolved_workflow)
+            # Only failures need the extra run/job round-trips: a passing gate
+            # has no location to explain, and one extra pair of calls per check
+            # would multiply API traffic across every PR.
+            if check.is_failure:
+                run_meta = self._run_meta_for(raw)
+                if run_meta.get("workflow_file"):
+                    check = replace(check, workflow_file=str(run_meta["workflow_file"]))
+                if run_meta.get("failing_step"):
+                    check = replace(check, step=str(run_meta["failing_step"]))
             raw_annotations: list[dict[str, Any]] = []
             if fetch_annotations and check.annotations_count:
                 fetched = self.client.get_annotations(int(raw["id"]))
                 raw_annotations = [a for a in fetched if isinstance(a, dict)]
             if raw_annotations:
-                check = CheckResult(
-                    name=check.name,
-                    status=check.status,
-                    conclusion=check.conclusion,
-                    workflow=check.workflow,
-                    job=check.job,
-                    url=check.url,
-                    started_at=check.started_at,
-                    completed_at=check.completed_at,
+                # replace() so newly added fields are never silently dropped.
+                check = replace(
+                    check,
                     annotations_count=len(raw_annotations),
-                    annotations_url=check.annotations_url,
                     annotations=tuple(self._to_annotation(a) for a in raw_annotations),
-                    head_sha=check.head_sha,
                 )
             checks.append(check)
             if check.is_failure or check.annotations:
@@ -185,6 +204,37 @@ class CheckRunCollector:
         except Exception:
             pass
         return _text((raw.get("app") or {}).get("name")) or UNKNOWN
+
+    def _run_meta_for(self, raw: dict[str, Any]) -> dict[str, str]:
+        """Workflow FILE + failing STEP for an Actions check (spec §10).
+
+        Both are read from the run/job payloads because a check-run carries
+        neither, and a job-level failure often annotates a synthetic ``.github``
+        path that normalizes to ``unknown``. The failing step ("Build", "Tests")
+        is then the only real location evidence GitHub exposes, so it is used to
+        explain the failure instead of printing ``unknown``.
+        """
+        try:
+            run_id = _actions_run_id(raw.get("details_url")) or _actions_run_id(raw.get("html_url"))
+            if run_id is None:
+                return {}
+            run = self.client.get_workflow_run(run_id)
+            meta: dict[str, str] = {}
+            path = _text(run.get("path"))
+            if path:
+                meta["workflow_file"] = path
+            job_id = _actions_job_id(raw.get("details_url")) or _actions_job_id(raw.get("html_url"))
+            if job_id is None:
+                return meta
+            for step in self.client.get_job_steps(int(job_id)):
+                if _text(step.get("conclusion")).lower() == "failure":
+                    name = _text(step.get("name"))
+                    if name:
+                        meta["failing_step"] = name
+                        break
+            return meta
+        except Exception:
+            return {}
 
     def _to_check(self, raw: dict[str, Any]) -> CheckResult:
         output = raw.get("output") or {}
@@ -247,9 +297,28 @@ class CheckRunCollector:
             part for part in (check.name, check.workflow, check.job) if part != UNKNOWN
         )
 
+    def _locate(
+        self, check: CheckResult, path: str, line: int | None, col: int | None
+    ) -> SourceLocation:
+        """Anchor a failure to the workflow file when the reported path resolves to nothing.
+
+        GitHub emits a synthetic ``.github`` path for job-level failures, which
+        carries no usable file. The workflow file that DEFINED the job is a real
+        repository path (spec §13 wants navigable refs), so it is a strictly
+        better answer than ``unknown``.
+        """
+        if is_usable_path(path):
+            return SourceLocation(path, line, col)
+        if check.workflow_file != UNKNOWN:
+            # Drop line/column: they were reported against the synthetic path
+            # (``.github``), so carrying them onto a different file would
+            # fabricate a precise-looking location that means nothing.
+            return SourceLocation(check.workflow_file, None, None)
+        return SourceLocation.unknown()
+
     def _failure_from_annotation(self, check: CheckResult, anno: CheckAnnotation) -> Failure:
         path = normalize_or_unknown(anno.path, self.repo_root)
-        loc = SourceLocation(path, anno.start_line, anno.start_column)
+        loc = self._locate(check, path, anno.start_line, anno.start_column)
         rule = self._extract_rule(anno.title, anno.message)
         category = self._classify_check(check, anno, rule)
         return Failure(
@@ -266,17 +335,20 @@ class CheckRunCollector:
             check=check.name,
             check_url=check.url,
             evidence_source="github-checks",
+            step=check.step,
+            workflow_file=check.workflow_file,
         )
 
     def _failures_from_text(self, check: CheckResult, text: str) -> list[Failure]:
         locs = extract_locations(text, self.repo_root)
         base_message = f"CI gate failed: {check.name}"
+        fallback = self._locate(check, UNKNOWN, None, None)
         if not locs:
             return [
                 Failure(
                     source="github-checks",
                     suite=check.workflow,
-                    location=SourceLocation.unknown(),
+                    location=fallback,
                     message=base_message,
                     category=self._classify_check(check, None, None),
                     workflow=check.workflow,
@@ -284,6 +356,8 @@ class CheckRunCollector:
                     check=check.name,
                     check_url=check.url,
                     evidence_source="github-checks",
+                    step=check.step,
+                    workflow_file=check.workflow_file,
                 )
             ]
         return [
@@ -298,6 +372,8 @@ class CheckRunCollector:
                 check=check.name,
                 check_url=check.url,
                 evidence_source="github-checks",
+                step=check.step,
+                workflow_file=check.workflow_file,
             )
             for loc in locs
         ]
@@ -340,6 +416,7 @@ _RE_RULE_ID = re.compile(r"\b([a-z][a-z0-9-]*/[a-z0-9-]+)\b")
 #: ``https://<host>/<owner>/<repo>/actions/runs/<run_id>[/job/<job_id>]``.
 #: Bounded quantifiers keep this linear (no nested repeats) — ReDoS-safe.
 _ACTIONS_RUN_RE = re.compile(r"/actions/runs/(\d{1,20})(?:/|$)")
+_ACTIONS_JOB_RE = re.compile(r"/job/(\d{1,20})(?:/|$)")
 
 
 def normalize_or_unknown(path: str, repo_root: str | None = None) -> str:
