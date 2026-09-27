@@ -151,3 +151,36 @@ class TestPurgeExecutionAndBatching:
         assert report["provider"] == "sqlite"
         assert report["status"] == "SUCCESS"
         assert report["integrity_check"] == "ok"
+
+    def test_retention_policy_persists_across_manager_instances(self, tmp_path: Path) -> None:
+        """Retention changes survive construction of a fresh manager."""
+        settings_path = tmp_path / "settings.db"
+        cfg = DatabaseConfig.for_sqlite("audit", path=str(tmp_path / "audit.db"))
+        first = DatabaseLifecycleManager(config=cfg, settings_path=settings_path)
+        assert first.update_policy("audit_signals", 91)
+        second = DatabaseLifecycleManager(config=cfg, settings_path=settings_path)
+        assert second.policies["audit_signals"].retention_days == 91
+
+    def test_update_immutable_policy_is_rejected(self, tmp_path: Path) -> None:
+        """Immutable tables cannot be made configurable."""
+        manager = DatabaseLifecycleManager(
+            config=DatabaseConfig.for_sqlite("audit", path=str(tmp_path / "audit.db")),
+            settings_path=tmp_path / "settings.db",
+        )
+        with pytest.raises(ImmutableDataProtectionError):
+            manager.update_policy("audit_ledger", 1)
+
+    def test_retention_policy_persists_between_managers(self, tmp_path: Path) -> None:
+        """Retention updates survive construction of a fresh manager."""
+        settings_path = tmp_path / "settings.db"
+        first = DatabaseLifecycleManager(settings_path=settings_path)
+        assert first.update_policy("audit_signals", 91)
+
+        second = DatabaseLifecycleManager(settings_path=settings_path)
+        assert second.policies["audit_signals"].retention_days == 91
+
+    def test_immutable_policy_cannot_be_changed(self, tmp_path: Path) -> None:
+        """Immutable tables remain protected even through policy updates."""
+        manager = DatabaseLifecycleManager(settings_path=tmp_path / "settings.db")
+        with pytest.raises(ImmutableDataProtectionError):
+            manager.update_policy("audit_ledger", 1)
