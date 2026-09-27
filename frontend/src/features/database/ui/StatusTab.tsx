@@ -14,7 +14,7 @@ import { useI18n } from "@/stores/i18nStore";
 import { FreshnessCaption, JsonView, PollControl, QuerySection, usePolling } from "@/features/config/ui/kit";
 
 type TFunc = (key: string, fallback: string, vars?: Record<string, string | number>) => string;
-import { useDbHygiene, useDbManageStatus, useDbStatus } from "../useCases";
+import { useDatabaseLogs, useDatabaseViews, useDbDashboard, useDbHygiene, useDbManageStatus, useDbStatus } from "../useCases";
 import { domainRows, formatBytes } from "../model";
 import {
   hygienePlanRows,
@@ -244,6 +244,9 @@ export function StatusTab() {
   const manage = useDbManageStatus(poll.paused);
   const status = useDbStatus(poll.paused);
   const hygiene = useDbHygiene(poll.paused);
+  const dashboard = useDbDashboard(poll.paused);
+  const views = useDatabaseViews(poll.paused);
+  const logs = useDatabaseLogs(poll.paused);
   // `data` is typed `… | undefined`, but a resolved-null / aborted-refetch
   // window has been observed at runtime (crash caught live 2026-09-23:
   // "Cannot read properties of null (reading 'supported_providers')") —
@@ -333,6 +336,14 @@ export function StatusTab() {
       >
         {(data) => <DomainTable status={data} t={t} />}
       </QuerySection>
+
+      <Panel title={t("database.status.dashboard_title", "Runtime database health") }>
+        {!dashboard.data?.dashboard ? <div className="dbc-note warn">{t("database.status.dashboard_unavailable", "UNAVAILABLE — runtime dashboard data was not reported.")}</div> : <div className="dbc-kpis">
+          {(["active_connections", "idle_connections", "waiting", "failed_queries", "slow_queries", "last_purge", "next_purge", "last_integrity_check"] as const).map((key) => <MetricCard key={key} label={key.replaceAll("_", " ")} value={dashboard.data.dashboard?.[key] == null ? "—" : String(dashboard.data.dashboard[key])} sub={dashboard.data.dashboard?.[key] == null ? "UNAVAILABLE" : "backend reported"} />)}
+        </div>}
+      </Panel>
+      <Panel title={t("database.status.views_title", "Analytics views") }><pre className="dbc-log-list">{views.data?.views ? JSON.stringify(views.data.views, null, 2) : "UNAVAILABLE"}</pre></Panel>
+      <Panel title={t("database.status.logs_title", "Recent database logs") }><pre className="dbc-log-list">{logs.data?.logs ? JSON.stringify(logs.data.logs, null, 2) : "UNAVAILABLE"}</pre></Panel>
 
       <QuerySection<DbHygiene>
         title={t("database.status.hygiene_title", "Hygiene worker (/api/db/hygiene)")}

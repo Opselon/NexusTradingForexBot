@@ -13,11 +13,20 @@ import enum
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig, load_database_config
 from nexus_scalp.database.drivers import get_driver
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.settings.paths import settings_db_path
+from nexus_scalp.settings.service import SettingsDatabase
+
+#: Settings keys for the destructive lifecycle scheduler and persisted policies.
+RETENTION_POLICIES_SETTING_KEY = "database.retention_policies"
+PURGE_ENABLED_SETTING_KEY = "database.purge_scheduler.enabled"
+PURGE_INTERVAL_SETTING_KEY = "database.purge_scheduler.interval_sec"
+DEFAULT_PURGE_INTERVAL_SEC = 6 * 3600.0
 
 logger = get_logger("nexus_scalp.database.lifecycle")
 
@@ -147,10 +156,79 @@ class DatabaseLifecycleManager:
         self,
         config: DatabaseConfig | None = None,
         policies: dict[str, RetentionPolicy] | None = None,
+        settings_path: str | Path | None = None,
     ) -> None:
         self.cfg = config or load_database_config("audit")
-        self.policies = dict(policies or DEFAULT_POLICIES)
+        self._settings_path = Path(settings_path) if settings_path else settings_db_path()
+        self.policies = {
+            name: RetentionPolicy(**asdict(policy))
+            for name, policy in (policies or DEFAULT_POLICIES).items()
+        }
+        self._load_persisted_policies()
         self._history: list[PurgeResult] = []
+
+    def _load_persisted_policies(self) -> None:
+        """Overlay valid persisted retention days without weakening defaults."""
+        db: SettingsDatabase | None = None
+        try:
+            db = SettingsDatabase(db_path=self._settings_path)
+            row = db.get(RETENTION_POLICIES_SETTING_KEY)
+            values = row.value if row else {}
+            if isinstance(values, dict):
+                for table, days in values.items():
+                    if table in self.policies and table not in IMMUTABLE_TABLES:
+                        try:
+                            self.policies[table].retention_days = max(1, int(days))
+                        except (TypeError, ValueError):
+                            logger.warning("Ignoring invalid persisted retention for %s", table)
+        except Exception as exc:
+            logger.warning("Could not load persisted lifecycle policies: %s", exc)
+        finally:
+            if db is not None:
+                db.close()
+
+    def _persist_policies(self) -> None:
+        db: SettingsDatabase | None = None
+        try:
+            db = SettingsDatabase(db_path=self._settings_path)
+            db.set(
+                RETENTION_POLICIES_SETTING_KEY,
+                {name: policy.retention_days for name, policy in self.policies.items()},
+                value_type="json",
+                source="USER_SETTINGS",
+                actor="lifecycle",
+            )
+        finally:
+            if db is not None:
+                db.close()
+
+    @property
+    def last_purge(self) -> dict[str, Any] | None:
+        """Summary of the latest purge, or ``None`` before the first run."""
+        return self._history[-1].to_dict() if self._history else None
+
+    @property
+    def next_purge(self) -> str | None:
+        """Scheduled next purge time when configured; otherwise ``None``."""
+        db: SettingsDatabase | None = None
+        try:
+            db = SettingsDatabase(db_path=self._settings_path)
+            enabled = db.get(PURGE_ENABLED_SETTING_KEY)
+            interval = db.get(PURGE_INTERVAL_SETTING_KEY)
+            if not enabled or not bool(enabled.value) or not interval:
+                return None
+            last = self._history[-1] if self._history else None
+            base = datetime.fromisoformat(last.started_at) if last else datetime.now(UTC)
+            return (base + timedelta(seconds=max(1.0, float(interval.value)))).isoformat()
+        except (TypeError, ValueError):
+            return None
+        finally:
+            if db is not None:
+                db.close()
+
+    def purge_status(self) -> dict[str, Any]:
+        """Read-only dashboard surface for purge timing."""
+        return {"last_purge": self.last_purge, "next_purge": self.next_purge}
 
     def get_policies(self) -> dict[str, dict[str, Any]]:
         """Return all active retention policies."""
@@ -164,6 +242,7 @@ class DatabaseLifecycleManager:
             )
         if table_name in self.policies:
             self.policies[table_name].retention_days = max(1, retention_days)
+            self._persist_policies()
             return True
         return False
 

@@ -165,6 +165,58 @@ export interface MigrationProgress {
   error?: { code?: string; message?: string };
 }
 
+export interface DbDashboard {
+  provider?: string;
+  overall_health?: string;
+  connected?: boolean;
+  latency_ms?: number | null;
+  database_size_bytes?: number | null;
+  table_count?: number | null;
+  index_count?: number | null;
+  dead_tuples?: number | null;
+  largest_tables?: Array<Record<string, unknown>>;
+  pool?: Record<string, number | boolean | null>;
+  [key: string]: unknown;
+}
+
+export interface ProviderState {
+  active_provider?: string;
+  target_provider?: string;
+  phase?: string;
+  updated_at?: number;
+  last_test_passed?: boolean;
+  last_migration_passed?: boolean;
+  last_verification_passed?: boolean;
+  error?: string;
+  divergence?: Record<string, unknown> | null;
+}
+
+export interface RetentionPolicy {
+  table_name: string;
+  tier?: string;
+  retention_days?: number | null;
+  timestamp_column?: string;
+  condition?: string;
+  description?: string;
+}
+
+export interface PurgePreviewItem {
+  table_name: string;
+  retention_days?: number | null;
+  cutoff_timestamp?: string;
+  purgeable_rows?: number | null;
+  tier?: string;
+}
+
+export interface PurgeResult {
+  started_at?: string;
+  duration_ms?: number;
+  total_deleted?: number;
+  per_table_deleted?: Record<string, number>;
+  errors?: string[];
+  maintenance_run?: boolean;
+}
+
 export interface DbActionEnvelope {
   success?: boolean;
   report?: MigrationReport | null;
@@ -259,6 +311,19 @@ export const dbApi = {
   status: (signal?: AbortSignal): Promise<DbStatus> => getLegacy<DbStatus>("/api/db/status", signal),
   hygiene: (signal?: AbortSignal): Promise<DbHygiene> => getLegacy<DbHygiene>("/api/db/hygiene", signal),
   manageStatus: (signal?: AbortSignal): Promise<DbManageStatus> => getLegacy<DbManageStatus>("/api/db/manage/status", signal),
+  dashboard: (signal?: AbortSignal): Promise<{ success: boolean; dashboard?: DbDashboard }> => getLegacy("/api/db/manage/dashboard", signal),
+  providerState: (signal?: AbortSignal): Promise<{ success: boolean; state?: ProviderState; error?: DbActionEnvelope["error"] }> => getLegacy("/api/db/manage/provider-state", signal),
+  startTransition: (target_provider: string): Promise<DbActionEnvelope & { state?: ProviderState }> => send("/api/db/manage/transition/start", { target_provider }),
+  divergence: (): Promise<DbActionEnvelope & { divergence?: Record<string, unknown> }> => send("/api/db/manage/transition/divergence", {}),
+  reverseMigrate: (batch_size = 2000): Promise<DbActionEnvelope> => send("/api/db/manage/reverse-migrate", { batch_size }),
+  purgePolicies: (signal?: AbortSignal): Promise<{ success: boolean; policies?: Record<string, RetentionPolicy>; error?: DbActionEnvelope["error"] }> => getLegacy("/api/db/manage/purge/policies", signal),
+  purgePreview: (): Promise<DbActionEnvelope & { preview?: PurgePreviewItem[] }> => send("/api/db/manage/purge/preview", {}),
+  purgeRun: (payload: { batch_size?: number; run_maintenance?: boolean }): Promise<DbActionEnvelope & { result?: PurgeResult }> => send("/api/db/manage/purge/run", payload),
+  maintenance: (): Promise<DbActionEnvelope & { maintenance?: Record<string, unknown> }> => send("/api/db/manage/maintenance", {}),
+  views: (signal?: AbortSignal): Promise<DbActionEnvelope & { views?: Record<string, unknown> }> => getLegacy("/api/db/manage/views", signal),
+  logs: (signal?: AbortSignal): Promise<DbActionEnvelope & { logs?: Array<Record<string, unknown>> }> => getLegacy("/api/db/manage/logs", signal),
+  purgeHistory: (signal?: AbortSignal): Promise<DbActionEnvelope & { history?: PurgeResult[] }> => getLegacy("/api/db/manage/purge/history", signal),
+  updatePolicy: (table_name: string, retention_days: number): Promise<DbActionEnvelope> => send("/api/db/manage/purge/policy", { table_name, retention_days }),
 
   saveConfig: (payload: PgConfig & { password?: string; confirm_password?: string }): Promise<DbActionEnvelope> =>
     send<DbActionEnvelope>("/api/db/manage/config", payload),

@@ -21,7 +21,71 @@ export const DB_KEYS = {
   progress: ["database", "progress"] as QueryKey,
   report: ["database", "report"] as QueryKey,
   databases: ["database", "console", "databases"] as QueryKey,
+  dashboard: ["database", "dashboard"] as QueryKey,
+  providerState: ["database", "provider-state"] as QueryKey,
+  purgePolicies: ["database", "purge-policies"] as QueryKey,
+  purgePreview: ["database", "purge-preview"] as QueryKey,
+  purgeHistory: ["database", "purge-history"] as QueryKey,
+  views: ["database", "views"] as QueryKey,
+  logs: ["database", "logs"] as QueryKey,
 };
+
+export function useDbDashboard(paused = false) {
+  return useQuery({ queryKey: DB_KEYS.dashboard, queryFn: ({ signal }) => dbApi.dashboard(signal), refetchInterval: paused ? false : 15_000, retry: false });
+}
+
+export function useProviderState(paused = false) {
+  return useQuery({ queryKey: DB_KEYS.providerState, queryFn: ({ signal }) => dbApi.providerState(signal), refetchInterval: paused ? false : 5_000, retry: false });
+}
+
+export function usePurgePolicies(paused = false) {
+  return useQuery({ queryKey: DB_KEYS.purgePolicies, queryFn: ({ signal }) => dbApi.purgePolicies(signal), refetchInterval: paused ? false : 60_000, retry: false });
+}
+
+export function usePurgePreview() {
+  return useMutation({ mutationFn: () => dbApi.purgePreview() });
+}
+
+export function usePurgeHistory(paused = false) {
+  return useQuery({ queryKey: DB_KEYS.purgeHistory, queryFn: ({ signal }) => dbApi.purgeHistory(signal), refetchInterval: paused ? false : 60_000, retry: false });
+}
+
+export function useDatabaseViews(paused = false) {
+  return useQuery({ queryKey: DB_KEYS.views, queryFn: ({ signal }) => dbApi.views(signal), refetchInterval: paused ? false : 30_000, retry: false });
+}
+
+export function useDatabaseLogs(paused = false) {
+  return useQuery({ queryKey: DB_KEYS.logs, queryFn: ({ signal }) => dbApi.logs(signal), refetchInterval: paused ? false : 30_000, retry: false });
+}
+
+export function useProviderTransition() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: (target: string) => dbApi.startTransition(target), onSuccess: () => void queryClient.invalidateQueries({ queryKey: DB_KEYS.providerState }) });
+}
+
+export function useDivergenceCheck() {
+  return useMutation({ mutationFn: () => dbApi.divergence() });
+}
+
+export function useReverseMigrate() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: () => dbApi.reverseMigrate(), onSuccess: () => void queryClient.invalidateQueries({ queryKey: DB_KEYS.providerState }) });
+}
+
+export function usePurgeRun() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: () => dbApi.purgeRun({ batch_size: 2000, run_maintenance: true }), onSuccess: () => { void queryClient.invalidateQueries({ queryKey: DB_KEYS.purgePreview }); void queryClient.invalidateQueries({ queryKey: DB_KEYS.purgeHistory }); void queryClient.invalidateQueries({ queryKey: DB_KEYS.dashboard }); } });
+}
+
+export function useMaintenance() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: () => dbApi.maintenance(), onSuccess: () => void queryClient.invalidateQueries({ queryKey: DB_KEYS.dashboard }) });
+}
+
+export function useUpdatePurgePolicy() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: ({ table, days }: { table: string; days: number }) => dbApi.updatePolicy(table, days), onSuccess: () => void queryClient.invalidateQueries({ queryKey: DB_KEYS.purgePolicies }) });
+}
 
 export function useDbStatus(paused = false) {
   return useQuery({ queryKey: DB_KEYS.status, queryFn: ({ signal }) => dbApi.status(signal), refetchInterval: paused ? false : 30_000 });

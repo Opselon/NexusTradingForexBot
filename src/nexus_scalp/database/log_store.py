@@ -11,16 +11,72 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
+from threading import Lock
 from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig, load_database_config
 from nexus_scalp.database.drivers import get_driver
 from nexus_scalp.database.query_logging import mask_query_text
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.settings.service import SettingsDatabase
 
 logger = get_logger("nexus_scalp.database.log_store")
 
 LOG_TABLE = "db_operation_logs"
+#: SettingsDatabase key used by the query-logging sink.  It is deliberately
+#: opt-in because opening a database during another database failure is risky.
+LOG_PERSISTENCE_ENABLED_SETTING_KEY = "database.log_persistence.enabled"
+#: Settings key reserved for lifecycle policy registration by the integrator.
+LOG_RETENTION_SETTING_KEY = "database.log_persistence.retention_days"
+
+
+def log_persistence_enabled(settings_db: Any | None = None) -> bool:
+    """Read the opt-in sink flag and fail closed on settings failures."""
+    try:
+        db = settings_db or SettingsDatabase()
+        setting = db.get(LOG_PERSISTENCE_ENABLED_SETTING_KEY)
+        return bool(setting and setting.value)
+    except Exception:
+        return False
+
+
+_counter_lock = Lock()
+_counters: dict[str, Any] = {
+    "persisted_total": 0,
+    "dropped_total": 0,
+    "last_persist_error": None,
+}
+
+
+def _counter_snapshot() -> dict[str, Any]:
+    with _counter_lock:
+        return dict(_counters)
+
+
+def _note_persisted() -> None:
+    with _counter_lock:
+        _counters["persisted_total"] += 1
+
+
+def _note_dropped(error: BaseException | None = None) -> None:
+    with _counter_lock:
+        _counters["dropped_total"] += 1
+        if error is not None:
+            _counters["last_persist_error"] = f"{type(error).__name__}: {error}"
+
+
+def log_persistence_snapshot() -> dict[str, Any]:
+    """Return read-only counters for the database health dashboard."""
+    try:
+        return _counter_snapshot()
+    except Exception:
+        return {"persisted_total": 0, "dropped_total": 0, "last_persist_error": None}
+
+
+def reset_log_persistence_counters() -> None:
+    """Reset process counters; intended for isolated tests and diagnostics."""
+    with _counter_lock:
+        _counters.update(persisted_total=0, dropped_total=0, last_persist_error=None)
 
 
 @dataclass
@@ -120,7 +176,18 @@ class DatabaseLogStore:
         """Persist a warning, error, or critical event."""
         # Only retain WARNING, ERROR, CRITICAL
         if entry.level.upper() not in {"WARNING", "ERROR", "CRITICAL"}:
+            _note_dropped()
             return False
+        entry.level = entry.level.upper()
+        entry.masked_sql = mask_query_text(entry.masked_sql)
+        entry.error_message = mask_query_text(entry.error_message)[:2000]
+        entry.provider = mask_query_text(entry.provider)
+        entry.domain = mask_query_text(entry.domain)
+        entry.operation = mask_query_text(entry.operation)
+        entry.repository = mask_query_text(entry.repository)
+        entry.query_name = mask_query_text(entry.query_name)
+        entry.error_code = mask_query_text(entry.error_code)
+        entry.correlation_id = mask_query_text(entry.correlation_id)
 
         close_needed = False
         if driver is None:
@@ -157,8 +224,10 @@ class DatabaseLogStore:
 
             insert_sql = f"INSERT INTO {LOG_TABLE} ({cols}) VALUES ({placeholders})"
             driver.execute(insert_sql, params)
+            _note_persisted()
             return True
         except Exception as exc:
+            _note_dropped(exc)
             logger.debug("Failed to persist database log entry: %s", exc)
             return False
         finally:

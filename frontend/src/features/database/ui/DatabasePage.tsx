@@ -25,8 +25,10 @@ import { ageLabel, providerTruth, psycopgState } from "../uiLogic";
 import { StatusTab } from "./StatusTab";
 import { ManageTab } from "./ManageTab";
 import { ConsoleTab } from "./ConsoleTab";
+import { LifecycleTab } from "./LifecycleTab";
+import { ProviderTab } from "./ProviderTab";
 
-type TabId = "status" | "manage" | "console";
+type TabId = "status" | "manage" | "console" | "lifecycle" | "provider";
 
 function useTabLabels() {
   const t = useI18n((s) => s.t);
@@ -34,6 +36,8 @@ function useTabLabels() {
     { id: "status", label: t("database.tab.status", "Status") },
     { id: "manage", label: t("database.tab.manage", "Manage") },
     { id: "console", label: t("database.tab.console", "Console") },
+    { id: "lifecycle", label: t("database.tab.lifecycle", "Lifecycle") },
+    { id: "provider", label: t("database.tab.provider", "Provider") },
   ];
   const TAB_HINT: Record<TabId, string> = {
     status: t(
@@ -48,6 +52,8 @@ function useTabLabels() {
       "database.page.hint_console",
       "databases → tables → rows, column schema, read-only SQL console and named API keys"
     ),
+    lifecycle: t("database.page.hint_lifecycle", "retention policies, purge preview/history and maintenance"),
+    provider: t("database.page.hint_provider", "provider state machine, divergence and reverse migration"),
   };
   return { TABS, TAB_HINT };
 }
@@ -136,6 +142,8 @@ export default function DatabasePage(props: ShellPageProps) {
       {tab === "status" && <StatusTab />}
       {tab === "manage" && <ManageTab />}
       {tab === "console" && <ConsoleTab />}
+      {tab === "lifecycle" && <LifecycleTab />}
+      {tab === "provider" && <ProviderTab />}
     </div>
   );
 }
