@@ -67,6 +67,30 @@ export function useDivergenceCheck() {
   return useMutation({ mutationFn: () => dbApi.divergence() });
 }
 
+function useTransitionAction(action: (target: string) => Promise<DbActionEnvelope>) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (target: string) => action(target),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: DB_KEYS.providerState }),
+  });
+}
+
+export function useTestTransitionConnection() {
+  return useTransitionAction(dbApi.testTransitionConnection);
+}
+
+export function useMigrateTransition() {
+  return useTransitionAction(dbApi.migrateTransition);
+}
+
+export function useVerifyTransition() {
+  return useTransitionAction(dbApi.verifyTransition);
+}
+
+export function useActivateTransition() {
+  return useTransitionAction(dbApi.activateTransition);
+}
+
 export function useReverseMigrate() {
   const queryClient = useQueryClient();
   return useMutation({ mutationFn: () => dbApi.reverseMigrate(), onSuccess: () => void queryClient.invalidateQueries({ queryKey: DB_KEYS.providerState }) });

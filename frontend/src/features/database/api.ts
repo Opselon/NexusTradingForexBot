@@ -10,6 +10,10 @@
  *  POST /api/db/manage/test-connection ping PG before migrating (never persists)
  *  POST /api/db/manage/preview        dry-run migration preview
  *  POST /api/db/manage/migrate        start background migration {confirm:true,...}
+ *  POST /api/db/manage/transition/test-connection  lifecycle target probe
+ *  POST /api/db/manage/transition/migrate         lifecycle migration step
+ *  POST /api/db/manage/transition/verify          lifecycle verification step
+ *  POST /api/db/manage/transition/activate        backend-gated activation step
  *  GET  /api/db/manage/progress       live progress poll while a job runs
  *  GET  /api/db/manage/report         last migration report
  *  GET  /api/db/manage/validate       validate last migration
@@ -314,6 +318,10 @@ export const dbApi = {
   dashboard: (signal?: AbortSignal): Promise<{ success: boolean; dashboard?: DbDashboard }> => getLegacy("/api/db/manage/dashboard", signal),
   providerState: (signal?: AbortSignal): Promise<{ success: boolean; state?: ProviderState; error?: DbActionEnvelope["error"] }> => getLegacy("/api/db/manage/provider-state", signal),
   startTransition: (target_provider: string): Promise<DbActionEnvelope & { state?: ProviderState }> => send("/api/db/manage/transition/start", { target_provider }),
+  testTransitionConnection: (target_provider: string): Promise<DbActionEnvelope> => send("/api/db/manage/transition/test-connection", { target_provider }),
+  migrateTransition: (target_provider: string): Promise<DbActionEnvelope> => send("/api/db/manage/transition/migrate", { target_provider }),
+  verifyTransition: (target_provider: string): Promise<DbActionEnvelope> => send("/api/db/manage/transition/verify", { target_provider }),
+  activateTransition: (target_provider: string): Promise<DbActionEnvelope> => send("/api/db/manage/transition/activate", { target_provider }),
   divergence: (): Promise<DbActionEnvelope & { divergence?: Record<string, unknown> }> => send("/api/db/manage/transition/divergence", {}),
   reverseMigrate: (batch_size = 2000): Promise<DbActionEnvelope> => send("/api/db/manage/reverse-migrate", { batch_size }),
   purgePolicies: (signal?: AbortSignal): Promise<{ success: boolean; policies?: Record<string, RetentionPolicy>; error?: DbActionEnvelope["error"] }> => getLegacy("/api/db/manage/purge/policies", signal),

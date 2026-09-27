@@ -4,7 +4,7 @@
 
 ### 1. Architectural Invariant & Topology
 
-Nexus Scalp Engine implements a **production-grade dual-database architecture** where **SQLite** and **PostgreSQL** are first-class, independent, fully supported operational providers.
+Nexus Scalp Engine defines a dual-database architecture where **SQLite** is the local default and **PostgreSQL** is an optional provider. The lifecycle UI exposes only backend-reported capabilities; PostgreSQL readiness, migration, verification, and activation remain dependent on the corresponding backend routes and their server-side gates.
 
 ```text
                                NEXUS SCALP ENGINE
@@ -82,7 +82,11 @@ Switching active database providers is **not a simple configuration toggle**. It
 
 ---
 
-### 5. Data Lifecycle & Domain-Aware Purging
+### 5. UI Lifecycle Route Dependency
+
+The alternative UI renders and invokes provider lifecycle actions only through these backend contracts: `GET /api/db/manage/provider-state`, `POST /api/db/manage/transition/start`, `/test-connection`, `/migrate`, `/verify`, `/activate`, `/divergence`, and `POST /api/db/manage/reverse-migrate`. The transition step routes are backend-owned and must reject invalid state transitions; the UI does not infer readiness or bypass those gates. Until those routes are present in the running backend, the lifecycle controls are unavailable in practice and activation must not be treated as safe or supported.
+
+### 6. Data Lifecycle & Domain-Aware Purging
 
 The purge engine (`nexus_scalp.database.lifecycle`) maintains database performance and bounds disk consumption without destroying audit integrity:
 
