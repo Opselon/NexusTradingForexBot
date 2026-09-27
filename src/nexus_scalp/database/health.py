@@ -15,6 +15,8 @@ from typing import Any
 from nexus_scalp.database.config import DatabaseConfig, load_database_config
 from nexus_scalp.database.drivers import get_driver
 from nexus_scalp.database.provider import DatabaseProvider
+from nexus_scalp.database.query_logging import query_observability_snapshot
+from nexus_scalp.database.views import ensure_analytics_views
 
 #: Tables whose availability matters for trading safety.
 CRITICAL_TABLES: dict[str, tuple[str, ...]] = {
@@ -141,51 +143,79 @@ class DatabaseHealthService:
         }
 
     def dashboard_snapshot(self) -> dict[str, Any]:
-        """Comprehensive real runtime database dashboard per Section 15."""
+        """Comprehensive dashboard; unavailable measurements are explicit."""
         base = self.snapshot()
-        audit_domain = self.check_domain("audit")
+        audit_domain = base["domains"].get("audit", {})
         cfg = self.resolve_config("audit")
+        pool_stats: dict[str, Any]
+        views: dict[str, dict[str, str]] = {}
+        if cfg.is_postgresql:
+            pool_stats = {"applicable": True, "source": "PgPool.stats"}
+            try:
+                from nexus_scalp.database.ops_provider import ensure_read_plane
 
-        pool_stats: dict[str, Any] = {"active": 0, "idle": 0, "waiting": 0}
-        dead_tuples: int = 0
-        index_count: int = 0
+                plane = ensure_read_plane("audit")
+                pool = getattr(plane, "_primary", None)
+                stats = pool.stats() if pool is not None else {}
+                available = stats.get("available", {})
+                pool_stats.update(
+                    {
+                        "active": (
+                            available.get("pool_size") - available.get("pool_available")
+                            if available.get("pool_size") is not None
+                            and available.get("pool_available") is not None
+                            else None
+                        ),
+                        "idle": available.get("pool_available"),
+                        "waiting": available.get("requests_waiting"),
+                        "raw": stats,
+                    }
+                )
+            except Exception as exc:
+                pool_stats.update({"error": f"{type(exc).__name__}: {exc}"})
+        else:
+            pool_stats = {"applicable": False, "reason": "SQLite has no connection pool"}
+
+        dead_tuples: int | None = None
+        index_count: int | None = None
         largest_tables: list[dict[str, Any]] = []
-
         try:
             driver = get_driver(cfg)
             try:
                 if cfg.is_postgresql:
-                    # Index count on PG
                     index_count = int(
                         driver.scalar("SELECT COUNT(*) FROM pg_indexes WHERE schemaname = 'public'")
                         or 0
                     )
-                    # Dead tuples estimate
                     dead_tuples = int(
                         driver.scalar(
                             "SELECT COALESCE(SUM(n_dead_tup), 0) FROM pg_stat_user_tables"
                         )
                         or 0
                     )
-                    # Largest tables
                     rows = driver.query(
-                        "SELECT relname as table_name, n_live_tup as row_count "
-                        "FROM pg_stat_user_tables ORDER BY n_live_tup DESC LIMIT 5"
+                        "SELECT relname AS table_name, n_live_tup AS row_count FROM pg_stat_user_tables ORDER BY n_live_tup DESC LIMIT 5"
                     )
                     largest_tables = [
                         {"table": r.get("table_name"), "rows": r.get("row_count")} for r in rows
                     ]
                 else:
-                    # SQLite index count
                     index_count = int(
                         driver.scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index'")
                         or 0
                     )
+                views = ensure_analytics_views(driver)
             finally:
                 driver.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            views = {"_ensure": {"status": "FAILED", "error": f"{type(exc).__name__}: {exc}"}}
 
+        unavailable = {
+            "value": None,
+            "status": "unavailable",
+            "reason": "lifecycle accessor not available",
+        }
+        observability = query_observability_snapshot()
         return {
             "provider": base["active_provider"],
             "overall_health": base["overall"],
@@ -197,6 +227,15 @@ class DatabaseHealthService:
             "dead_tuples": dead_tuples,
             "largest_tables": largest_tables,
             "pool": pool_stats,
+            "active_connections": pool_stats.get("active"),
+            "idle_connections": pool_stats.get("idle"),
+            "oldest_connection": unavailable,
+            "failed_queries": observability.get("query_errors"),
+            "slow_queries": observability.get("slow_queries"),
+            "last_purge": unavailable,
+            "next_purge": unavailable,
+            "last_integrity_check": unavailable,
+            "views": views,
             "schema_version": audit_domain.get("schema_version"),
             "critical_tables": audit_domain.get("critical_tables", {}),
             "timestamp_utc": _utc_now(),

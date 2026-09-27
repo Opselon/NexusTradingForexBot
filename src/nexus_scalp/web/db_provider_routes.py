@@ -187,6 +187,32 @@ def get_dashboard(request: Request) -> dict[str, Any]:
         )
 
 
+@router.get("/views")
+def get_views(request: Request) -> dict[str, Any]:
+    """Return analytics-view status on the active provider."""
+    request_id = request_id_from_request(request)
+    try:
+        from nexus_scalp.database.config import load_database_config
+        from nexus_scalp.database.drivers import get_driver
+        from nexus_scalp.database.views import ensure_analytics_views
+
+        cfg = load_database_config("audit")
+        driver = get_driver(cfg)
+        try:
+            return {"success": True, "views": ensure_analytics_views(driver)}
+        finally:
+            driver.close()
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/views", request_id, exc)
+        return _err("DB_VIEWS_FAILED", "Could not inspect analytics views.", request_id)
+
+
+@router.post("/views/ensure")
+def ensure_views(request: Request) -> dict[str, Any]:
+    """Explicitly create analytics views on the active provider."""
+    return get_views(request)
+
+
 @router.get("/provider-state")
 def get_provider_state(request: Request) -> dict[str, Any]:
     """Lifecycle transition state for provider switching."""
@@ -330,6 +356,52 @@ def run_purge(payload: dict[str, Any], request: Request) -> dict[str, Any]:
             "Data lifecycle purge failed.",
             request_id,
         )
+
+
+@router.get("/logs")
+def get_logs(request: Request) -> dict[str, Any]:
+    """Read persisted database warning/error records."""
+    request_id = request_id_from_request(request)
+    try:
+        from nexus_scalp.database.log_store import DatabaseLogStore
+
+        return {"success": True, "logs": DatabaseLogStore().query_recent(limit=50)}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/logs", request_id, exc)
+        return _err("DB_LOGS_FAILED", "Could not load database logs.", request_id)
+
+
+@router.get("/purge/history")
+def get_purge_history(request: Request) -> dict[str, Any]:
+    """Read the lifecycle manager's recent purge history."""
+    request_id = request_id_from_request(request)
+    try:
+        from nexus_scalp.database.lifecycle import DatabaseLifecycleManager
+
+        return {"success": True, "history": DatabaseLifecycleManager().get_history()}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/purge/history", request_id, exc)
+        return _err("DB_PURGE_HISTORY_FAILED", "Could not load purge history.", request_id)
+
+
+@router.post("/purge/policy")
+def update_purge_policy(payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    """Set one retention policy through the lifecycle manager."""
+    request_id = request_id_from_request(request)
+    try:
+        from nexus_scalp.database.lifecycle import DatabaseLifecycleManager
+
+        table = str((payload or {}).get("table") or "")
+        days = int((payload or {}).get("retention_days"))
+        if not table or days < 0:
+            return _err(
+                "DB_PURGE_POLICY_INVALID", "A table and non-negative days are required.", request_id
+            )
+        policy = DatabaseLifecycleManager().update_policy(table, days)
+        return {"success": True, "policy": policy}
+    except Exception as exc:
+        log_web_error(logger, "/api/db/manage/purge/policy", request_id, exc)
+        return _err("DB_PURGE_POLICY_FAILED", "Could not save purge policy.", request_id)
 
 
 @router.post("/maintenance")
