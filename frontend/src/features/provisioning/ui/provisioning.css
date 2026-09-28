@@ -637,6 +637,8 @@
   .pv-page { gap: 10px; }
   .pv-toolbar { gap: 8px; }
   .pv-ds { padding: 8px 10px; }
+  .pv-mi { padding: 8px 10px; }
+  .pv-mi-table { font-size: 10.5px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -648,3 +650,57 @@
     transition: none !important;
   }
 }
+
+/* --------------------- Model inventory (phases 13/30/31/32) ------------- */
+.pv-mi {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-inset);
+}
+.pv-mi-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.pv-mi-table th {
+  text-align: start;
+  font-weight: 600;
+  color: var(--text);
+  padding: 5px 8px;
+  border-block-end: 1px solid var(--border);
+  white-space: nowrap;
+}
+.pv-mi-table td {
+  padding: 5px 8px;
+  border-block-end: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  vertical-align: top;
+}
+.pv-mi-table tr:hover td {
+  background: color-mix(in srgb, var(--bg-panel-2) 70%, transparent);
+  color: var(--text);
+}
+.pv-mi-name {
+  max-inline-size: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Plane tag: the LIVE engine plane is green, the Studio workspace plane is
+ * violet, an on-disk bundle is neutral. Only the serving plane may be ACTIVE. */
+.pv-mi-plane {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.pv-mi-plane.serving { color: var(--green); background: color-mix(in srgb, var(--green) 14%, transparent); }
+.pv-mi-plane.studio { color: var(--violet); background: color-mix(in srgb, var(--violet) 14%, transparent); }
+.pv-mi-plane.bundle { color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 12%, transparent); }
+.pv-mi-active { color: var(--green); font-weight: 700; }

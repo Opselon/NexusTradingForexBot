@@ -52,6 +52,8 @@ import type {
   DatasetRoot,
   EnvCheck,
   EnvironmentReport,
+  ModelInventoryResponse,
+  ModelInventoryRow,
   ProgressEvent,
   ProvisioningEnvironmentResponse,
   ProvisioningStatusResponse,
@@ -177,6 +179,54 @@ function firstScalar(...vals: unknown[]): string | null {
 function dateText(iso: unknown): string {
   const t = typeof iso === "string" ? Date.parse(iso) : NaN;
   return Number.isNaN(t) ? "" : new Date(t).toLocaleDateString();
+}
+
+/**
+ * One inventory row: METADATA ONLY, server-derived. Never infers state. A
+ * missing artifact is shown as "MISSING" (not hidden), and only a `serving`
+ * row may render an ACTIVE badge — a Studio CHAMPION is not the live model.
+ */
+function InventoryRow({
+  model,
+  t,
+}: {
+  model: ModelInventoryRow;
+  t: (key: string, fallback: string, vars?: Record<string, string | number>) => string;
+}) {
+  const modified = dateText(model.modified_iso);
+  const status =
+    !model.artifact_exists
+      ? t("provisioning.inventory.row_missing", "MISSING")
+      : model.hash_pending
+        ? t("provisioning.inventory.row_unverified", "UNVERIFIED")
+        : (model.status || t("provisioning.inventory.row_available", "AVAILABLE"));
+  const planeClass = model.plane === "serving" ? "serving" : model.plane === "studio" ? "studio" : "bundle";
+  return (
+    <tr>
+      <td className="pv-mi-name" title={model.artifact || model.model_id}>
+        <div className="inline-mono" style={TRUNCATE}>{model.name || model.model_id}</div>
+        {model.detail ? <div className="faint" style={TRUNCATE}>{model.detail}</div> : null}
+      </td>
+      <td>
+        <span className={`pv-mi-plane ${planeClass}`} title={model.source}>
+          {model.plane}
+        </span>
+      </td>
+      <td>{model.dimension != null ? model.dimension : "—"}</td>
+      <td className="inline-mono">
+        {model.hash ? (
+          <span title={model.hash}>{model.hash.slice(0, 10)}</span>
+        ) : model.hash_pending ? (
+          <span className="faint" title={t("provisioning.inventory.hash_hint", "Enable Hashes to compute")}>—</span>
+        ) : (
+          <span className="faint">—</span>
+        )}
+      </td>
+      <td>{status}</td>
+      <td>{model.active ? <span className="pv-mi-active">● ACTIVE</span> : <span className="faint">—</span>}</td>
+      <td className="inline-mono">{modified || "—"}</td>
+    </tr>
+  );
 }
 
 /** Where a failure came from — decides banner vs. in-card surface. */
@@ -344,6 +394,10 @@ export default function ProvisioningPage(_props: ShellPageProps) {
   const [ds, setDs] = useState<DsState>({ status: "loading" });
   const [dsReload, setDsReload] = useState<number>(0);
   const [now, setNow] = useState<number>(() => Date.now());
+  /** Model inventory (phases 13/30/31/32) — metadata-only, plane-separated. */
+  const [inv, setInv] = useState<ModelInventoryResponse | null>(null);
+  const [invReload, setInvReload] = useState<number>(0);
+  const [invHashes, setInvHashes] = useState<boolean>(false);
   /** `after=` cursor for train/progress (server slices the tail by INDEX). */
   const seenSeq = useRef<number>(0);
   const trainingRef = useRef<boolean>(false);
@@ -517,6 +571,28 @@ export default function ProvisioningPage(_props: ShellPageProps) {
     const el = logRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [events]);
+
+  // Model inventory: metadata-only read over /api/provisioning/models. It is
+  // fetched ONCE per mount/reload (never on the 2s train poll) and never
+  // fabricates a row — a failed or absent endpoint shows the honest state.
+  // Hashes are opt-in (they read every artifact) and stay off by default.
+  useEffect(() => {
+    let cancelled = false;
+    const ac = new AbortController();
+    void (async () => {
+      try {
+        const r = await provisioningApi.models({ limit: 100, hashes: invHashes }, ac.signal);
+        if (cancelled) return;
+        setInv(r.success ? r : null);
+      } catch (err) {
+        if (!cancelled) setInv(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
+  }, [invReload, invHashes]);
 
   const onInstall = useCallback(async () => {
     setInstalling(true);
@@ -1443,6 +1519,120 @@ export default function ProvisioningPage(_props: ShellPageProps) {
             ) : null}
           </>
         ) : null}
+      </Panel>
+
+      {/* --------------------------------------------- model inventory (§13/32) */}
+      <Panel
+        title={t("provisioning.inventory.title", "Model Inventory")}
+        subtitle={
+          inv
+            ? t("provisioning.inventory.subtitle", "{n} models · {active} active", {
+                n: inv.total,
+                active: inv.planes?.active_count ?? 0,
+              })
+            : undefined
+        }
+        right={
+          <div className="pv-toolbar">
+            <button
+              type="button"
+              className="btn small"
+              onClick={() => setInvHashes((v) => !v)}
+              title={t(
+                "provisioning.inventory.hashes_title",
+                "Compute artifact hashes (reads every model.pt — off by default)",
+              )}
+            >
+              {invHashes
+                ? t("provisioning.inventory.hashes_on", "Hashes: on")
+                : t("provisioning.inventory.hashes_off", "Hashes: off")}
+            </button>
+            <button
+              type="button"
+              className="btn small"
+              disabled={busy}
+              onClick={() => setInvReload((n) => n + 1)}
+            >
+              {t("provisioning.inventory.reload", "Reload")}
+            </button>
+          </div>
+        }
+      >
+        <p className="small muted">
+          {t(
+            "provisioning.inventory.intro",
+            "Every model on this host, metadata-only (model.pt is never opened unless Hashes is on). Two planes: the live engine's serving bundle (exactly one ACTIVE) and Model Studio's hot-load registry. A Studio row marked CHAMPION is NOT the live model.",
+          )}
+        </p>
+
+        {inv?.active_artifact ? (
+          <div className="pv-callout ok">
+            <div className="head">
+              {t("provisioning.inventory.active_label", "Active (live engine)")}
+            </div>
+            <div className="small">
+              <span className="inline-mono">{inv.active_artifact}</span>
+            </div>
+          </div>
+        ) : null}
+
+        {!inv ? (
+          <EmptyState
+            message={t(
+              "provisioning.inventory.unavailable",
+              "Model inventory unavailable — the endpoint is pending restart or failed.",
+            )}
+            hint={t(
+              "provisioning.inventory.unavailable_hint",
+              "Reload once the server has picked up /api/provisioning/models.",
+            )}
+          />
+        ) : inv.models.length === 0 ? (
+          <EmptyState
+            message={t("provisioning.inventory.empty", "No models found on this host.")}
+            hint={t(
+              "provisioning.inventory.empty_hint",
+              "Download the official bundle or train a local model to populate it.",
+            )}
+          />
+        ) : (
+          <div className="pv-mi">
+            <div className="pv-meta">
+              {inv.limited
+                ? t(
+                    "provisioning.inventory.limited",
+                    "Showing {shown} of {total} models (limit {limit})",
+                    { shown: inv.models.length, total: inv.total, limit: inv.limit },
+                  )
+                : t("provisioning.inventory.count", "{total} models", { total: inv.total })}
+              {inv.planes
+                ? ` · ${t("provisioning.inventory.planes", "{serving} serving · {studio} studio · {disk} on disk", {
+                    serving: inv.planes.on_disk_bundles > 0 ? 1 : 0,
+                    studio: inv.planes.studio_registered,
+                    disk: inv.planes.on_disk_bundles,
+                  })}`
+                : ""}
+            </div>
+            <table className="pv-mi-table">
+              <thead>
+                <tr>
+                  <th>{t("provisioning.inventory.col_model", "Model")}</th>
+                  <th>{t("provisioning.inventory.col_plane", "Plane")}</th>
+                  <th>{t("provisioning.inventory.col_dim", "Dim")}</th>
+                  <th>{t("provisioning.inventory.col_hash", "Hash")}</th>
+                  <th>{t("provisioning.inventory.col_status", "Status")}</th>
+                  <th>{t("provisioning.inventory.col_active", "Active")}</th>
+                  <th>{t("provisioning.inventory.col_modified", "Modified")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {inv.models.map((m) => (
+                  <InventoryRow key={`${m.plane}:${m.model_id}:${m.artifact}`} model={m} t={t} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Panel>
     </div>
   );

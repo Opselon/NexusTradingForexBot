@@ -14,6 +14,7 @@ import type {
   DatasetListResponse,
   InstallRequest,
   InstallResponse,
+  ModelInventoryResponse,
   OfficialRequest,
   OfficialResponse,
   ProvisioningEnvironmentResponse,
@@ -78,7 +79,21 @@ export const provisioningApi = {
     send<OfficialResponse>(`${BASE}/official`, req),
 
   /**
-   * POST /api/provisioning/train/start — start one local training run. Folds
+   * GET /api/provisioning/models — the model inventory read-plane.
+   *
+   * Metadata-only by default (no ?hashes=true): model.pt is never opened, so
+   * a large inventory stays cheap. Two planes are returned: `serving` (the
+   * live engine bundle — exactly one `active: true`) and `studio` (Model
+   * Studio's hot-load registry). The UI must never present a Studio row as
+   * the live model.
+   */
+  models: (opts?: { limit?: number; hashes?: boolean }, signal?: AbortSignal): Promise<ModelInventoryResponse> =>
+    getLegacy<ModelInventoryResponse>(
+      `${BASE}/models?limit=${opts?.limit ?? 100}${opts?.hashes ? "&hashes=true" : ""}`,
+      signal,
+    ),
+
+  /** POST /api/provisioning/train/start — start one local training run. Folds
    * and epochs are validated server side (1..1000); broker source requires an
    * explicit candle count.
    */
