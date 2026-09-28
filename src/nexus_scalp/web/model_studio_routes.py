@@ -26,7 +26,7 @@ import zipfile
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import polars as pl
@@ -46,6 +46,11 @@ from nexus_scalp.web.errors import (
 
 logger = get_logger("nexus_scalp.web.model_studio_routes")
 
+if TYPE_CHECKING:
+    # Import-only, for annotations: the builder module is otherwise imported
+    # lazily inside the endpoints that use it (see _builder_config_from_request).
+    from nexus_scalp.model_lab.model_builder import ModelBuilderConfig
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -57,7 +62,14 @@ def _repo_root() -> Path:
     inventories at a tmp dir (writing probe files into the shared ``data/raw``
     would let a parallel test worker's scan pick them up). A bare global read
     binds the real repo at import time and silently ignores that redirect.
+
+    ``NEXUS_MODEL_STUDIO_REPO_ROOT`` overrides the root wholesale for callers
+    (an isolated trainer, a studio pointed at another worktree) that need the
+    inventories to scan a different tree than the installed checkout.
     """
+    override = str(os.environ.get(_REPO_ROOT_ENV, "")).strip()
+    if override:
+        return Path(override).expanduser().resolve()
     return REPO_ROOT
 
 
@@ -66,6 +78,11 @@ def _repo_root() -> Path:
 # come from the operator UI / REST body, so they are confined to declared roots
 # (containment via Path.is_relative_to, never string prefix) and only ever READ.
 _DATASET_ROOTS_ENV = "NEXUS_MODEL_STUDIO_ROOTS"
+# Optional override of the repository root the dataset/model inventories scan.
+# Used by callers that run the studio against a tree other than the installed
+# checkout (e.g. an isolated trainer run): set this instead of monkeypatching
+# module internals. Empty/absent means "use the checkout this module lives in".
+_REPO_ROOT_ENV = "NEXUS_MODEL_STUDIO_REPO_ROOT"
 # artifacts/datasets is the generator's real output root (position_replay
 # writes pos_ds_*.parquet there); without it the inventory — and therefore the
 # safe-path dataset selectors — cannot see the datasets it just produced.
@@ -3059,10 +3076,7 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
 
     @app.post("/api/model-studio/model-builder/preflight")
     def route_builder_preflight(req: ModelBuilderPreflightRequest) -> dict[str, Any]:
-        from nexus_scalp.model_lab.model_builder import (
-            ModelBuilderConfig,
-            preflight_dataset,
-        )
+        from nexus_scalp.model_lab.model_builder import preflight_dataset
 
         cfg = _builder_config_from_request(req)
         report = preflight_dataset(cfg)
@@ -3071,7 +3085,6 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     @app.post("/api/model-studio/model-builder/save")
     def route_builder_save(req: ModelBuilderPreflightRequest) -> dict[str, Any]:
         from nexus_scalp.model_lab.model_builder import (
-            ModelBuilderConfig,
             get_builder_config_store,
             validate_builder_config,
         )
@@ -3120,6 +3133,7 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
         dimension: int = 50,
         use_live: bool = False,
         perturbation_sigma: float = 0.0,
+        engine: Any = None,
     ) -> dict[str, Any]:
         from nexus_scalp.model_lab.tensor_inspector import inspect_tensor
 
@@ -3193,7 +3207,10 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
         return {"status": "OK", "inspection": out}
 
     @app.get("/api/model-studio/runtime/state")
-    def route_runtime_state(selected_model_id: str = "") -> dict[str, Any]:
+    def route_runtime_state(
+        selected_model_id: str = "",
+        engine: Any = None,
+    ) -> dict[str, Any]:
         from nexus_scalp.model_lab.runtime_state import resolve_runtime_state
 
         registry = get_model_registry()
@@ -3203,9 +3220,13 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
         active_champion = registry.get_active_model()
         # The runtime model is the SLOT if loaded, else the registry champion.
         runtime_bundle = bundle
-        runtime_record = None
+        runtime_record: ModelRecord | None = None
         if runtime_bundle is None and active_champion is not None:
             runtime_record = active_champion
+        # ``runtime_record`` is the runtime identity of record (champion when no
+        # hot bundle is live); the state machine below derives the same value,
+        # so keep it as the explicit, inspectable local rather than dropping it.
+        _ = runtime_record
         state = resolve_runtime_state(
             engine=engine,
             selected_model_id=selected_model_id,
@@ -3295,9 +3316,6 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
         # forward pass at the declared width?
         def _smoke() -> None:
             weights = torch.load(weights_path, map_location="cpu", weights_only=True)
-            from nexus_scalp.model_lifecycle.model_class_contract import (
-                TRAINED_CLASS_COUNT,
-            )
             from nexus_scalp.models.scalp_net import ScalpNet
 
             head = weights["classifier.weight"].shape[0]
@@ -3323,7 +3341,10 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
         }
 
     @app.post("/api/model-studio/models/switch")
-    def route_switch(req: ModelStudioSwitchRequest) -> dict[str, Any]:
+    def route_switch(
+        req: ModelStudioSwitchRequest,
+        engine: Any = None,
+    ) -> dict[str, Any]:
         from nexus_scalp.model_lab.contract_gate import (
             assert_model_weights_dimension,
             assert_schema_dimension,

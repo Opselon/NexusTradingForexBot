@@ -36,6 +36,7 @@ MODEL_LIFECYCLE_STATES: tuple[str, ...] = (
     "TRAINED",      # fit finished, artifact written
     "VERIFIED",     # passed the verify battery
     "SERVABLE",     # artifact + scaler + manifest all validated
+    "NOT_LOADED",   # no model resident in the inference slot
     "LOADED",       # weights resident in the inference slot
     "WARMING",      # warmup forward in flight
     "READY",        # warmup passed; inference is possible
@@ -178,20 +179,39 @@ def resolve_runtime_state(
     # ------------------------------------------------------------ inference
     # A loaded model can still be unable to infer: the engine is stopped, or the
     # scaler is absent. These are separate verdicts from "is it loaded".
+    #
+    # ``engine is None`` means the web layer is not attached to a live engine at
+    # all (the studio running against a bare web process). That is NOT an
+    # inference-permitting state — a studio that reports READY while nothing can
+    # actually produce a live decision is the exact conflation this module
+    # exists to end. Only a RUNNING (or absent-but-explicitly-standalone) engine
+    # permits inference.
     if hot_loaded_bundle is None:
         inference_state = "NOT_LOADED"
         inference_detail = model_detail
-    elif engine is not None and engine_state == "STOPPED":
+    elif engine is None:
+        inference_state = "BLOCKED"
+        inference_detail = (
+            f"model {runtime_model_id} is loaded but no live engine is attached, "
+            "so no live decision can be produced"
+        )
+    elif engine_state == "STOPPED":
         inference_state = "BLOCKED"
         inference_detail = (
             f"model {runtime_model_id} is loaded but the engine is stopped, so "
             "no live decision can be produced"
         )
-    elif engine is not None and engine_state == "DEGRADED":
+    elif engine_state == "DEGRADED":
         inference_state = "BLOCKED"
         inference_detail = (
             f"model {runtime_model_id} is loaded but the engine is degraded; "
             "inference is withheld"
+        )
+    elif engine_state == "UNKNOWN":
+        inference_state = "BLOCKED"
+        inference_detail = (
+            f"model {runtime_model_id} is loaded but the engine health probe "
+            "failed; inference is withheld until the engine state is known"
         )
     else:
         scaler = getattr(hot_loaded_bundle, "scaler", None)

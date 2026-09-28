@@ -28,7 +28,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from nexus_scalp.features.schema import FEATURE_SCHEMAS, active_schema
+from nexus_scalp.features.schema import FEATURE_SCHEMAS
 from nexus_scalp.features.schema_contract import (
     canonical_feature_names,
     feature_schema_hash,
@@ -349,12 +349,21 @@ def _dataset_sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def validate_builder_config(cfg: ModelBuilderConfig) -> list[PreflightFinding]:
+def validate_builder_config(
+    cfg: ModelBuilderConfig,
+    *,
+    registry: object | None = None,
+) -> list[PreflightFinding]:
     """Cross-field validation against the real schema and trainer bounds.
 
     This is the 50D/70D cross-contamination gate (Phase 40): the schema id must
     match the dimension, the feature count must be EXACT, and a fine-tune must
     name a base whose dimension equals the target dimension.
+
+    ``registry`` optionally supplies the :class:`ModelRegistry` the fine-tune
+    base lookup reads from. Callers that need a specific registry (tests, a
+    studio session pointed at a non-default ``models.db``) pass it explicitly;
+    production callers omit it and get the global registry.
     """
     findings: list[PreflightFinding] = []
 
@@ -487,7 +496,7 @@ def validate_builder_config(cfg: ModelBuilderConfig) -> list[PreflightFinding]:
                 )
             )
         else:
-            base_dim = _registry_dimension_for(cfg.base_model_id)
+            base_dim = _registry_dimension_for(cfg.base_model_id, registry=registry)
             if base_dim is not None and base_dim != cfg.dimension:
                 findings.append(
                     PreflightFinding(
@@ -507,8 +516,19 @@ def validate_builder_config(cfg: ModelBuilderConfig) -> list[PreflightFinding]:
     return findings
 
 
-def _registry_dimension_for(model_id: str) -> int | None:
-    """Read a registered model's dimension without importing the registry eagerly."""
+def _registry_dimension_for(
+    model_id: str,
+    *,
+    registry: object | None = None,
+) -> int | None:
+    """Read a registered model's dimension without importing the registry eagerly.
+
+    A caller-supplied ``registry`` wins; otherwise the global registry is used.
+    """
+    if registry is not None:
+        rec = registry.get_model(model_id)
+        return rec.dimension if rec else None
+
     from nexus_scalp.model_generation.model_registry import get_model_registry
 
     rec = get_model_registry().get_model(model_id)
@@ -804,7 +824,7 @@ _STORE_LOCK = threading.Lock()
 
 
 def get_builder_config_store() -> BuilderConfigStore:
-    global _STORE
+    global _STORE  # noqa: PLW0603  # singleton, double-checked under _STORE_LOCK
     if _STORE is None:
         with _STORE_LOCK:
             if _STORE is None:

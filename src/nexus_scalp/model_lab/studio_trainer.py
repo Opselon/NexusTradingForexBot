@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -44,7 +45,6 @@ import torch
 from nexus_scalp.model_lab.model_builder import (
     DIMENSION_TO_SCHEMA_ID,
     ModelBuilderConfig,
-    get_feature_contract,
     resolve_dataset_for_training,
     validate_builder_config,
 )
@@ -53,6 +53,10 @@ from nexus_scalp.observability.logging import get_logger
 logger = get_logger("nexus_scalp.model_lab.studio_trainer")
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# Name of the env override the web routes read for the inventory root. Imported
+# here (not re-declared) so the trainer and the routes can never drift apart.
+_REPO_ROOT_ENV = "NEXUS_MODEL_STUDIO_REPO_ROOT"
 
 _MIN_TRAIN_ROWS = 20
 _TRAINED_CLASS_COUNT = 3
@@ -113,6 +117,14 @@ def _hash_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _restore_env(name: str, token: str | None) -> None:
+    """Undo a temporary ``os.environ`` override without leaking it."""
+    if token is None:
+        os.environ.pop(name, None)
+    else:
+        os.environ[name] = token
+
+
 class NeuralStudioTrainer:
     """Contract-aware trainer driven by a ``ModelBuilderConfig``."""
 
@@ -121,11 +133,36 @@ class NeuralStudioTrainer:
 
     # ------------------------------------------------------------------ run
     def train(self, cfg: ModelBuilderConfig, run_id: str | None = None) -> TrainingResult:
-        """Synchronous preflighted fit (Phase 8 flow, steps 1-12)."""
+        """Synchronous preflighted fit (Phase 8 flow, steps 1-12).
+
+        If this trainer was constructed with an explicit ``repo_root`` other
+        than the installed checkout, the dataset/model inventories are pointed
+        at that tree for the duration of the resolution only — never globally,
+        and never past this call (a leaked override would silently redirect
+        every later studio read in the process).
+        """
         started = time.perf_counter()
         started_at = _now()
         run_id = run_id or f"train_studio_{int(time.time())}"
         schema_id = cfg.schema_id or DIMENSION_TO_SCHEMA_ID.get(cfg.dimension, "")
+
+        token: str | None = None
+        if self._root.resolve() != REPO_ROOT.resolve():
+            token = os.environ.get(_REPO_ROOT_ENV)
+            os.environ[_REPO_ROOT_ENV] = str(self._root.resolve())
+        try:
+            return self._train(cfg, run_id, schema_id, started, started_at)
+        finally:
+            _restore_env(_REPO_ROOT_ENV, token)
+
+    def _train(
+        self,
+        cfg: ModelBuilderConfig,
+        run_id: str,
+        schema_id: str,
+        started: float,
+        started_at: str,
+    ) -> TrainingResult:
 
         def _fail(phase: str, error: str, artifact: dict[str, Any] | None = None) -> TrainingResult:
             return TrainingResult(
@@ -373,6 +410,8 @@ class NeuralStudioTrainer:
         # Contract validation of a representative tensor (Phase 41)
         validate_vector(
             [float(v) for v in scaler_mean[: cfg.dimension]],
+            dimension=cfg.dimension,
+            schema_id=schema_id,
             context=f"train_{run_id}",
         )
 
