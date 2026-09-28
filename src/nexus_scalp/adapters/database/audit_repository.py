@@ -2066,6 +2066,14 @@ class AuditRepository:
                 build_identity TEXT DEFAULT '',
                 was_replacement INTEGER DEFAULT 0,
                 registered_at TEXT NOT NULL,
+                lifecycle_status TEXT DEFAULT 'CANDIDATE',
+                training_run_id TEXT DEFAULT '',
+                parent_model_id TEXT DEFAULT '',
+                parent_model_version TEXT DEFAULT '',
+                child_model_id TEXT DEFAULT '',
+                promotion_reason TEXT DEFAULT '',
+                gate_summary TEXT DEFAULT '{}',
+                validation_run_ids TEXT DEFAULT '[]',
                 UNIQUE(model_id, model_version, artifact_fingerprint)
             );
             """
@@ -3289,6 +3297,7 @@ class AuditRepository:
             return AuditWritePlane(
                 queue=self._queue,
                 queue_resolver=lambda: self._queue,
+                owns_backend=True,
                 backend_factory=lambda: SqliteAuditWriteBackend(
                     self._connect_sqlite, busy_timeout=10.0
                 ),
@@ -3319,6 +3328,7 @@ class AuditRepository:
             queue=self._queue,
             queue_resolver=lambda: self._queue,
             backend_factory=lambda: pg_backend,
+            owns_backend=False,
             dead_letter_store=self.dead_letter_store,
             overflow_dir=self._overflow_dir(),
             overflow_resolver=self._overflow_dir,

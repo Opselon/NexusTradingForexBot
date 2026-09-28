@@ -3226,10 +3226,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     "[RUNTIME_CONFIG] live.yaml projection dropped non-schema keys: %s",
                     sorted(removed),
                 )
-            tmp = Path("configs/live.yaml").with_suffix(".yaml.tmp")
+            # BUG-545: same relative-path atomic write as POST /api/config —
+            # the parent directory must exist before the swap, or os.replace
+            # raises FileNotFoundError and the projection silently never lands.
+            live_path = Path("configs/live.yaml")
+            live_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = live_path.with_suffix(".yaml.tmp")
             with open(tmp, "w", encoding="utf-8") as f:
                 yaml.safe_dump(cleaned, f, default_flow_style=False)
-            tmp.replace(Path("configs/live.yaml"))
+            os.replace(tmp, live_path)
         except Exception as e:
             logger.warning("[RUNTIME_CONFIG] live.yaml projection failed (non-fatal): %s", e)
         return {
