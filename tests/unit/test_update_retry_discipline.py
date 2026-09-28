@@ -39,10 +39,10 @@ from __future__ import annotations
 
 import socket
 import time
+import urllib.error
 from pathlib import Path
 
 import pytest
-import urllib.error
 
 from nexus_scalp.release.update_engine.discovery import (
     GitHubDiscoveryError,
@@ -78,7 +78,7 @@ def _probe_kind() -> str:
     probe.settimeout(_PROBE_SOCKET_SEC)
     try:
         probe.connect(("127.0.0.1", _PROBE_PORT))
-    except socket.timeout:
+    except TimeoutError:
         return "timeout"
     except OSError:
         return "refused"
@@ -228,7 +228,7 @@ def test_transient_http_error_is_still_retried(monkeypatch) -> None:
 
             return _j.dumps([{"tag_name": "v9.1.0"}]).encode()
 
-        def __enter__(self) -> "_FakeResp":
+        def __enter__(self) -> _FakeResp:
             return self
 
         def __exit__(self, *a: object) -> bool:
