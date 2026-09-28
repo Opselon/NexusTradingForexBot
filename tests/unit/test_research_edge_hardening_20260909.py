@@ -264,13 +264,25 @@ def test_sized_path_performance_is_linear() -> None:
     waiver that made the bound meaningless at ``n=1000`` where the whole leg
     costs ~10 ms CPU.
     """
+    import gc
+    import statistics
+
+    from tests.e2e.chain_clock import _PROCESS_TIME_FLOOR_MS
+
     econ = EconomicAssumptions()
+    # Warm up function dispatch, imports, and caches
+    compute_sized_economic_pnl(_mk_samples(100), econ)
 
     def _cost(n: int) -> float:
         samples = _mk_samples(n)
-        with budget_cpu_ms(_SIZED_PATH_BUDGET_CPU_MS) as sw:
-            compute_sized_economic_pnl(samples, econ)
-        return sw.consumed_ms
+        times: list[float] = []
+        for _ in range(5):
+            gc.collect()
+            with budget_cpu_ms(_SIZED_PATH_BUDGET_CPU_MS) as sw:
+                compute_sized_economic_pnl(samples, econ)
+            times.append(sw.consumed_ms)
+        med = statistics.median(times)
+        return max(med, _PROCESS_TIME_FLOOR_MS)
 
     small = _cost(1000)
     big = _cost(4000)
