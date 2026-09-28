@@ -47,6 +47,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from functools import lru_cache
 from importlib import metadata as _md
 from importlib.util import find_spec
 from pathlib import Path
@@ -237,6 +238,22 @@ def _base_requirements(root: Path | None) -> tuple[list[Requirement], str]:
 # ---------------------------------------------------------------------------
 # Verification
 # ---------------------------------------------------------------------------
+@lru_cache(maxsize=1)
+def _packages_distributions() -> dict[str, list[str]]:
+    """Cached ``importlib.metadata.packages_distributions()``.
+
+    CPython 3.11 does not cache it, so the closure walk re-scanned every
+    ``dist-info`` on disk once per inspected distribution (~0.08s each, 3.5s+
+    total on a 100-package venv). The mapping is immutable for a process:
+    verifying a dependency closure must never install or uninstall anything,
+    so a single computation is correct and safe to share.
+    """
+    try:
+        return {k: list(v) for k, v in _md.packages_distributions().items()}
+    except Exception:
+        return {}
+
+
 def _installed_version(name: str) -> str | None:
     try:
         return _md.version(name)  # type: ignore[no-any-return]
@@ -269,7 +286,7 @@ def _top_level_modules(name: str) -> list[str]:
     try:
         modules = [
             mod
-            for mod, dists in _md.packages_distributions().items()
+            for mod, dists in _packages_distributions().items()
             if any(d.lower().replace("-", "_") == name.lower().replace("-", "_") for d in dists)
         ]
     except Exception:
@@ -467,9 +484,7 @@ def verify_runtime_closure(
             # strict contract — those are never downgraded.
             if _is_optional_companion(child.name, parent=req.name):
                 inspected.add(child.name.lower().replace("_", "-"))
-                owned_by.setdefault(
-                    child.name.lower().replace("_", "-"), []
-                ).append(req.name)
+                owned_by.setdefault(child.name.lower().replace("_", "-"), []).append(req.name)
                 continue
             queue.append((child, req.name))
 
