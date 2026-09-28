@@ -24,7 +24,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from nexus_scalp.features.schema import FEATURE_SCHEMAS
 from nexus_scalp.features.schema_contract import (
@@ -347,7 +347,7 @@ def _dataset_sha256(path: Path) -> str:
 def validate_builder_config(
     cfg: ModelBuilderConfig,
     *,
-    registry: object | None = None,
+    registry: _ModelLookup | None = None,
 ) -> list[PreflightFinding]:
     """Cross-field validation against the real schema and trainer bounds.
 
@@ -507,10 +507,21 @@ def validate_builder_config(
     return findings
 
 
+class _ModelLookup(Protocol):
+    """Structural type for the registry the validator reads a base dimension from.
+
+    Deliberately narrow (``get_model`` only) so a test can pass any lightweight
+    stand-in without inheriting from the real registry.
+    """
+
+    def get_model(self, model_id: str) -> Any:
+        """Return the record for ``model_id`` or None."""
+
+
 def _registry_dimension_for(
     model_id: str,
     *,
-    registry: object | None = None,
+    registry: _ModelLookup | None = None,
 ) -> int | None:
     """Read a registered model's dimension without importing the registry eagerly.
 
