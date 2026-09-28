@@ -201,3 +201,30 @@ def test_save_carries_margin_usage_through_the_runtime_store(dd_client):
     snap = dd_client.get("/api/runtime-config").json()
     assert snap["effective"]["risk"]["max_margin_usage_pct"] == 42.0
     assert snap["effective"]["risk"]["max_account_drawdown_pct"] == 99.0
+
+
+def test_save_succeeds_when_configs_dir_is_not_the_process_cwd(dd_client, monkeypatch, tmp_path):
+    """The atomic live.yaml write must survive a CWD that is not the repo root.
+
+    ``save_config`` resolves ``configs/live.yaml`` as a RELATIVE path, so the
+    temp file lands wherever the process happens to be. On CI the parent
+    directory did not exist from that vantage and the atomic swap raised
+    ``FileNotFoundError`` — the route then returned OPERATION_FAILED and the
+    runtime apply never ran, so the operator's save silently did nothing.
+    """
+    payload = dd_client.get("/api/config").json()
+    payload["risk"]["max_account_drawdown_pct"] = 77.0
+
+    # chdir into an EMPTY directory: no configs/ here, exactly the CI case.
+    # monkeypatch.chdir restores the original CWD on teardown so the fixture's
+    # other tests keep resolving the repo-relative paths they rely on.
+    empty = tmp_path / "elsewhere"
+    empty.mkdir()
+    monkeypatch.chdir(empty)
+
+    resp = dd_client.post("/api/config", json=payload).json()
+    assert resp["success"] is True, resp
+    assert resp["runtime_applied"] is True, resp
+
+    snap = dd_client.get("/api/runtime-config").json()
+    assert snap["effective"]["risk"]["max_account_drawdown_pct"] == 77.0
