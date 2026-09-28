@@ -453,7 +453,7 @@ def register_debug_research_routes(
                     scaler_ready = bool(getattr(bundle.scaler, "is_ready", lambda: False)())
                     probs = engine._last_probs
                     last_infer_ok = probs is not None
-                    metrics = {
+                    metrics: dict[str, Any] = {
                         "artifact_path": str(getattr(bundle, "artifact_path", "")),
                         "scaler_ready": scaler_ready,
                         "last_inference_available": last_infer_ok,
@@ -516,7 +516,7 @@ def register_debug_research_routes(
                 )
                 halt_reason = str(getattr(engine, "_halt_reason", "") or "")
                 halt_at = str(getattr(engine, "_halt_triggered_at", "") or "")
-                metrics = {
+                metrics: dict[str, Any] = {
                     "kill_switch_active": kill_switch,
                     "max_allowed_lots": float(getattr(risk, "max_allowed_lots", 0.0)),
                     "hard_max_lots": hard_max,
@@ -613,7 +613,7 @@ def register_debug_research_routes(
                     except Exception:
                         tick_age = None
 
-                metrics = {
+                metrics: dict[str, Any] = {
                     "adapter": type(adapter).__name__,
                     "connection_state": state_name,
                     "connected": connected,
