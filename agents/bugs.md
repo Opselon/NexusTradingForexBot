@@ -3406,3 +3406,57 @@ docs/testing/test_value_matrix.md + scripts/testing/classification_overrides.jso
   `AdviserTrainingResult.classes_absent` and the manifest.
 - **Tests**: 2-class subset (KEEP+CLOSE, REDUCE absent) → finite loss, zero
   weight on the absent class, and the absence is reported.
+
+## BUG-542 — Max Drawdown header read the bootstrap, so a UI save to 99% left the header pinned at the boot value while the risk engine enforced the saved one
+
+- **Symptom**: An operator saved Max Drawdown = 99% in the settings UI and got a
+  "saved" confirmation. The value was persisted and the risk engine enforced
+  it, but `/api/live/state` (which the header and the control center consume)
+  kept reporting the value the process booted with. Two surfaces of one fact
+  disagreed and the operator had no way to tell which one the engine used.
+- **Live evidence** (running engine, bootstrap `configs/live.yaml` = 5.0,
+  drawdown saved and runtime-applied = 99.0):
+  ```
+  /api/live/state  risk.limits.max_drawdown_pct = 5.0    <- header
+  /api/runtime-config effective drawdown        = 99.0   <- risk engine
+  ```
+- **Root cause**: `POST /api/config` routes through
+  `engine.apply_runtime_update` into the versioned `RuntimeConfigStore`, and
+  the risk engine reads THAT snapshot (`live_engine._update_survival_state`
+  and `_sync_runtime_config`, both fixed earlier by BUG-132). But
+  `/api/live/state` built its risk section from `engine.config.risk` — the
+  BOOTSTRAP `AppConfig` loaded from `live.yaml` at boot, which a save never
+  mutates. Bootstrap and snapshot are unrelated objects, so the header froze
+  at the boot value while the engine moved to the saved one. The value was
+  never mis-persisted; the display read path was looking at a different
+  object. `debug_snapshot._risk_section` (`/api/debug`) and the accounting
+  plan's `risk_pct` fallback had the same bootstrap read.
+- **Why 5.0**: it was the `configs/live.yaml` bootstrap — the value printed by
+  the runtime's own boot line `max_drawdown=5.0`. It was never the persisted
+  or effective value.
+- **Fix**: new `_effective_risk(engine)` reads the authoritative snapshot
+  ONCE per response (so a concurrent save cannot half-update the section),
+  falling back to the bootstrap only when the engine is detached. Used by
+  `/api/live/state` (headline + limits + accounting fallback) and
+  `debug_snapshot._risk_section`. This mirrors the already-merged
+  RISK-LIVE-003 fix in `web/api_v1/risk.py`, which is exactly why those
+  surfaces were still stale. Also added `risk.max_margin_usage_pct` to the
+  `POST /api/config` allowlist — a validated, persisted, hot-applied runtime
+  field the save route omitted, so a UI edit wrote `live.yaml` only and the
+  runtime kept the bootstrap.
+- **Safety**: no safety behaviour change. The limit was not relaxed, the
+  HALTED state was untouched, no risk check was bypassed, and the drawdown
+  guard still fails closed.
+- **Regression protection**: `tests/unit/test_bug542_drawdown_sync.py` drives
+  the real store + apply pipeline over a real settings DB and asserts the
+  saved value reaches the store snapshot, `/api/config`, `/api/live/state`
+  and the accounting plan for 5 / 25 / 99%, that the header stops reporting
+  the bootstrap value, that a rehydrate restores it, and that
+  `max_margin_usage_pct` round-trips. Reverting the two source files fails 5
+  of its 6 tests. Registered in `tests/critical_suite.txt` (CI only runs that
+  manifest).
+- **Status**: VERIFIED — PR #545, squash-merged as `bf890906`; all required
+  checks green on CI and all 6 tests observed executing (and passing) in the
+  `Code Quality & Tests` job's junit.
+
+
