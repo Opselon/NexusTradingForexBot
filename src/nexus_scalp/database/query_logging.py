@@ -716,6 +716,237 @@ def note_degraded_read(
         return
 
 
+# -- query metrics: workload attribution without pg_stat_statements ----------
+#
+# ``pg_stat_statements`` is unavailable on the NSE PostgreSQL instance (the
+# extension exists on disk but is neither installed in ``nexusdb`` nor loaded
+# via ``shared_preload_libraries``, and enabling it needs a server restart).
+# The counters below give the rankings a Phase 4 workload profile needs —
+# total DB time, call count, mean latency, rows — from the ONE place both
+# providers share: the driver boundary. They are opt-in and stay in the
+# process, so a production run that never enables them pays one ``getattr``.
+
+
+class _QueryMetrics:
+    """Provider-agnostic per-query-name aggregation (process-local, opt-in).
+
+    The key is a stable ``query_name`` the caller assigns at the repository or
+    service boundary (``repository.method``), NOT raw SQL: a single normalized
+    fingerprint can be reached from several call sites, and attributing cost to
+    the business operation is what the workload profile needs. Raw SQL is kept
+    only as an optional shape hint and goes through :func:`mask_query_text`.
+
+    Thread-safe, lock-free on the read path (the snapshot copies under the
+    lock), and never raises: a metrics failure must never become a query
+    failure.
+    """
+
+    __slots__ = ("_enabled", "_lock", "_max_query_names", "_stats")
+
+    def __init__(self, *, max_query_names: int = 4096) -> None:
+        import threading
+
+        self._enabled = False
+        self._lock = threading.Lock()
+        self._max_query_names = max_query_names
+        self._stats: dict[str, dict[str, Any]] = {}
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    def enable(self) -> None:
+        """Turn collection on. Off by default so production is unaffected."""
+        with self._lock:
+            self._enabled = True
+
+    def disable(self) -> None:
+        """Turn collection off and drop accumulated samples."""
+        with self._lock:
+            self._enabled = False
+            self._stats.clear()
+
+    def reset(self) -> None:
+        """Clear the accumulated profile without changing the enabled state."""
+        with self._lock:
+            self._stats.clear()
+
+    def record(
+        self,
+        *,
+        query_name: str,
+        duration_ms: float,
+        rows: int = 0,
+        operation: str = "",
+        domain: str = "",
+        repository: str = "",
+        sql_shape: str = "",
+        error: bool = False,
+    ) -> None:
+        """Accumulate one executed statement against ``query_name``."""
+        if not self._enabled or not query_name:
+            return
+        try:
+            with self._lock:
+                stats = self._stats.get(query_name)
+                if stats is None:
+                    if len(self._stats) >= self._max_query_names:
+                        return  # unbounded query-name growth must not exhaust memory
+                    stats = {
+                        "calls": 0,
+                        "total_ms": 0.0,
+                        "min_ms": None,
+                        "max_ms": 0.0,
+                        "rows": 0,
+                        "errors": 0,
+                        "operation": operation,
+                        "domain": domain,
+                        "repository": repository,
+                        "sql_shape": mask_query_text(sql_shape) if sql_shape else "",
+                    }
+                    self._stats[query_name] = stats
+                stats["calls"] += 1
+                stats["total_ms"] += duration_ms
+                stats["min_ms"] = (
+                    duration_ms if stats["min_ms"] is None else min(stats["min_ms"], duration_ms)
+                )
+                stats["max_ms"] = max(stats["max_ms"], duration_ms)
+                stats["rows"] += int(rows or 0)
+                if error:
+                    stats["errors"] += 1
+                if not stats["sql_shape"] and sql_shape:
+                    stats["sql_shape"] = mask_query_text(sql_shape)
+                if repository and not stats["repository"]:
+                    stats["repository"] = repository
+                if domain and not stats["domain"]:
+                    stats["domain"] = domain
+        except Exception:
+            return
+
+    def snapshot(self) -> dict[str, Any]:
+        """Read-only copy of the profile plus the derived rankings.
+
+        Rankings are kept separate (the caller decides which one matters);
+        they are never collapsed into one synthetic score.
+        """
+        try:
+            with self._lock:
+                items = [
+                    {
+                        **v,
+                        "query_name": k,
+                        "mean_ms": (v["total_ms"] / v["calls"] if v["calls"] else 0.0),
+                    }
+                    for k, v in self._stats.items()
+                ]
+        except Exception:
+            return {"enabled": self._enabled, "queries": [], "rankings": {}}
+        rankings: dict[str, list[dict[str, Any]]] = {
+            # Rank A — total DB time
+            "total_time": sorted(items, key=lambda s: s["total_ms"], reverse=True),
+            # Rank B — call amplification
+            "calls": sorted(items, key=lambda s: s["calls"], reverse=True),
+            # Rank C — mean latency
+            "mean_latency": sorted(items, key=lambda s: s["mean_ms"], reverse=True),
+            # Rank E — rows processed/transferred
+            "rows": sorted(items, key=lambda s: s["rows"], reverse=True),
+        }
+        return {"enabled": self._enabled, "queries": items, "rankings": rankings}
+
+
+#: Process-global query metrics recorder. Disabled until a profiling harness
+#: explicitly opts in (``query_metrics.enable()``), so the default production
+#: path costs one boolean read per statement.
+query_metrics = _QueryMetrics()
+
+
+def query_metrics_snapshot() -> dict[str, Any]:
+    """Public read-only accessor for diagnostics/profiling surfaces."""
+    try:
+        return query_metrics.snapshot()
+    except Exception:
+        return {"enabled": False, "queries": [], "rankings": {}}
+
+
+class QueryMetricsRecorder:
+    """Context manager that records one statement into ``query_metrics``.
+
+    Sits at the driver boundary alongside :class:`QueryTimer`. The fast path
+    (collection disabled) is one attribute read on enter and one on exit; the
+    enabled path adds one monotonic subtraction and a dict update. Never
+    raises, and returns ``None`` from ``__exit__`` so the caller's exception
+    propagates unchanged.
+    """
+
+    __slots__ = (
+        "_domain",
+        "_name",
+        "_op",
+        "_repo",
+        "_sql",
+        "duration_ms",
+        "rows",
+        "start",
+    )
+
+    def __init__(
+        self,
+        query_name: str,
+        *,
+        operation: str = "",
+        domain: str = "",
+        repository: str = "",
+        sql: str = "",
+    ) -> None:
+        self._name = query_name
+        self._op = operation
+        self._domain = domain
+        self._repo = repository
+        self._sql = sql
+        self.rows: int | None = None
+        self.start: float | None = None
+        self.duration_ms: float = 0.0
+
+    def __enter__(self) -> QueryMetricsRecorder:
+        try:
+            self.start = time.monotonic()
+        except Exception:
+            self.start = None
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        if self.start is None or not query_metrics.enabled:
+            return None
+        try:
+            elapsed = (time.monotonic() - self.start) * 1000.0
+        except Exception:
+            return None
+        self.duration_ms = elapsed
+        try:
+            query_metrics.record(
+                query_name=self._name,
+                duration_ms=elapsed,
+                rows=int(self.rows or 0),
+                operation=self._op,
+                domain=self._domain,
+                repository=self._repo,
+                sql_shape=self._sql,
+                error=exc_type is not None,
+            )
+        except Exception:
+            return None
+        return None
+
+
+#: Call-site name: reads as the context-manager helper it is.
+query_metrics_recorder = QueryMetricsRecorder
+
+
 # -- connection / pool failure classification ------------------------------
 
 

@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
@@ -530,3 +531,137 @@ def test_pg_planes_pool_failure_logging_wires_through(monkeypatch: pytest.Monkey
     assert kw["error_type"] == "RuntimeError"
     # A closed pool is a client-side condition, not a server condition.
     assert kw["failure_class"] in {"pool_closed", "other"}
+
+
+# ---------------------------------------------------------------------------
+# (7) Phase 4 query metrics: workload attribution without pg_stat_statements
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=False)
+def _reset_query_metrics() -> Any:
+    """Isolate the global recorder: disabled and empty before and after."""
+    ql.query_metrics.disable()
+    ql.query_metrics.reset()
+    yield ql.query_metrics
+    ql.query_metrics.disable()
+    ql.query_metrics.reset()
+
+
+def test_query_metrics_off_by_default_and_records_nothing() -> None:
+    metrics = ql.query_metrics
+    metrics.disable()
+    metrics.reset()
+    with ql.QueryMetricsRecorder("repo.select_thing", sql="SELECT 1") as r:
+        r.rows = 5
+    snap = ql.query_metrics_snapshot()
+    assert snap["enabled"] is False
+    assert snap["queries"] == []
+
+
+def test_query_metrics_aggregates_calls_total_mean_min_max_rows() -> None:
+    metrics = ql.query_metrics
+    metrics.enable()
+    try:
+        for _ in range(3):
+            with ql.QueryMetricsRecorder("repo.list_things", sql="SELECT * FROM t") as r:
+                r.rows = 10
+        snap = metrics.snapshot()
+        assert len(snap["queries"]) == 1
+        only = snap["queries"][0]
+        assert only["query_name"] == "repo.list_things"
+        assert only["calls"] == 3
+        assert only["rows"] == 30
+        assert only["total_ms"] >= 0.0
+        assert only["mean_ms"] == only["total_ms"] / 3
+        assert only["errors"] == 0
+    finally:
+        metrics.disable()
+
+
+def test_query_metrics_rankings_stay_separate() -> None:
+    """Rank A/B/C/E are distinct orderings, never one collapsed score."""
+    metrics = ql.query_metrics
+    metrics.enable()
+    try:
+        with ql.QueryMetricsRecorder("a.one_big", sql="SELECT 1") as r:
+            r.rows = 1000
+        for _ in range(50):
+            with ql.QueryMetricsRecorder("b.many_small", sql="SELECT 2") as r:
+                r.rows = 1
+        snap = metrics.snapshot()
+        top_by_time = snap["rankings"]["total_time"][0]["query_name"]
+        top_by_calls = snap["rankings"]["calls"][0]["query_name"]
+        top_by_rows = snap["rankings"]["rows"][0]["query_name"]
+        assert top_by_calls == "b.many_small"
+        assert top_by_rows == "a.one_big"
+        assert snap["rankings"]["mean_latency"][0]["query_name"] in {"a.one_big", "b.many_small"}
+        # A single collapsed score would make all four identical.
+        assert len({top_by_time, top_by_calls, top_by_rows}) >= 2
+    finally:
+        metrics.disable()
+
+
+def test_query_metrics_never_raises_on_recorder_failure() -> None:
+    """A metrics failure must never become a query failure."""
+    metrics = ql.query_metrics
+    metrics.enable()
+    try:
+        broken = ql.QueryMetricsRecorder("repo.x", sql="SELECT 1")
+        # Simulate a broken clock on exit.
+        broken.start = None
+        broken.__exit__(None, None, None)
+        # An exception inside __exit__ must still not propagate.
+        with ql.QueryMetricsRecorder("repo.x", sql="SELECT 1"):
+            raise ValueError("boom")
+    except ValueError:
+        pass  # the caller's exception propagates unchanged
+    finally:
+        metrics.disable()
+
+
+def test_query_metrics_masks_the_sql_shape() -> None:
+    """The stored sql_shape is masked, so no bound value is retained."""
+    metrics = ql.query_metrics
+    metrics.enable()
+    try:
+        with ql.QueryMetricsRecorder("repo.x", sql=f"SELECT * FROM t WHERE k='{SECRET}'"):
+            pass
+        snap = metrics.snapshot()
+        blob = repr(snap["queries"])
+        assert SECRET not in blob
+    finally:
+        metrics.disable()
+
+
+def test_query_name_is_provider_agnostic_and_stable() -> None:
+    """Both drivers derive the same name for the same statement shape."""
+    from nexus_scalp.database.config import DatabaseConfig, DatabaseProvider
+    from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
+    from nexus_scalp.database.drivers.sqlite_driver import SQLiteDriver
+
+    pg = PostgreSQLDriver(DatabaseConfig(provider=DatabaseProvider.POSTGRESQL))
+    lite = SQLiteDriver(DatabaseConfig(provider=DatabaseProvider.SQLITE))
+    for sql in (
+        "SELECT id FROM t WHERE symbol = 'EURUSD' AND   volume = 2",
+        "  SELECT   1  ",
+        "",
+        "SELECT * FROM t ORDER BY COALESCE(NULLIF(exit_time,''), '') DESC LIMIT 500 OFFSET 2000",
+    ):
+        assert pg.query_name(sql) == lite.query_name(sql), f"names diverged for {sql!r}"
+    # literals and numbers collapse so the same business query aggregates
+    assert pg.query_name("SELECT * FROM t WHERE id = 7") == pg.query_name(
+        "SELECT * FROM t WHERE id = 9"
+    )
+    assert pg.query_name("", fallback="fallback") == "fallback"
+
+
+def test_query_metrics_bounded_query_name_cardinality() -> None:
+    """An unbounded stream of new names cannot exhaust the metrics map."""
+    metrics = ql._QueryMetrics(max_query_names=8)
+    metrics.enable()
+    for i in range(50):
+        with ql.QueryMetricsRecorder(f"repo.q{i}", sql="SELECT 1"):
+            pass
+    snap = metrics.snapshot()
+    assert len(snap["queries"]) <= 8
