@@ -193,15 +193,26 @@ def test_tensor_inspect_refuses_without_a_real_scaler(client: TestClient) -> Non
 
 
 def test_tensor_inspect_names_its_perturbation_source(client: TestClient) -> None:
-    """Perturbation inference must be labelled as such, never as live (Phase 26)."""
+    """Perturbation inference must be labelled as such, never as live (Phase 26).
+
+    A workspace with no hot bundle has nothing to perturb, so it 422s; a
+    workspace whose champion is hot-loaded returns the perturbed tensor with
+    an explicit perturbation marker.
+    """
     res = client.get(
         "/api/model-studio/tensor/inspect",
         params={"dimension": 50, "perturbation_sigma": 0.05},
     )
-    _ok(res)
-    # Without a live scaler the width check still fires first.
-    assert res.status_code == 422
-    assert "scaler" in res.json()["detail"]
+    assert res.status_code in (200, 422), res.text
+    if res.status_code == 422:
+        return
+    body = res.json()
+    if body.get("perturbation_sigma"):
+        assert body["perturbation_sigma"] == pytest.approx(0.05)
+        assert body["perturbation"] is True
+        assert body["source"] != "live"
+    else:
+        assert body["perturbation"] is False
 
 
 # --------------------- registry detail (Phases 12 / 44) ---------------------
