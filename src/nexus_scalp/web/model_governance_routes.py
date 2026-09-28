@@ -39,7 +39,6 @@ from nexus_scalp.web.errors import log_web_error, new_request_id, safe_error_pay
 logger = get_logger("nexus_scalp.web.model_governance_routes")
 
 router = APIRouter()
-_ACTIVE_APP: list[Any] = []
 
 
 def _shadow70_verdict(row: dict[str, Any]) -> str:
@@ -55,7 +54,18 @@ def _shadow70_verdict(row: dict[str, Any]) -> str:
 
 
 def _get_active_app(fallback_app: Any) -> Any:
-    return _ACTIVE_APP[0] if _ACTIVE_APP else fallback_app
+    """Resolve the app for the *current request*.
+
+    ROUTE-SCOPE FIX (ML-RUNTIME-TRUTH / Phases 2-4): the route registry used a
+    process-global ``_ACTIVE_APP`` slot, so the engine attached to ANY app
+    object created later won: ``getattr(..., "engine", None)`` then read the
+    wrong engine (or None). With the self-test + dev harness both building apps
+    in one process, every governance route silently resolved the last-registered
+    app and reported UNAVAILABLE while the real serving app held a loaded model.
+
+    Callers already close over their own ``app``, so we return it directly.
+    """
+    return fallback_app
 
 
 # ---------------------------------------------------------------------------
@@ -198,8 +208,6 @@ async def _run_training_async(orchestrator: Any, dataset: Any, num_epochs: int) 
 
 def register_model_governance_routes(app: Any) -> None:
     """Attach the model/shadow/governance routes (closures over ``app``)."""
-    _ACTIVE_APP.clear()
-    _ACTIVE_APP.append(app)
     from nexus_scalp.web.server import serialize_enums  # local import: avoids module cycle
 
     def _err(code: str = "INTERNAL_ERROR", **kw: Any) -> dict[str, Any]:

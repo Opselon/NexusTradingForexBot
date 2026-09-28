@@ -300,8 +300,22 @@ export interface ShadowRunRow {
   [key: string]: unknown;
 }
 
+export interface Shadow70Summary {
+  available: boolean;
+  observations?: number;
+  agreements?: number;
+  invalid?: number;
+  events?: number;
+  /** Explicit run-state so "no alerts" is never read as "monitor ran". */
+  monitor_state?: "NOT_RUN" | "NO_ALERTS" | "EVALUATED" | "UNAVAILABLE" | string;
+  drift_alerts?: number;
+  feature_health_rows?: number;
+  latest_event_at?: string | null;
+  [key: string]: unknown;
+}
+
 export interface Shadow70Block {
-  summary?: Record<string, unknown> | null;
+  summary?: Shadow70Summary | null;
   disagreement_counts?: Record<string, number> | null;
   drift_alerts?: Array<Record<string, unknown>> | null;
   feature_health?: Record<string, unknown> | null;

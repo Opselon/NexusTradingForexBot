@@ -634,8 +634,32 @@ export default function MLPage({ snapshot }: Props) {
             errorFallback={t("ml.err.shadow70_v1", "v1 shadow70 endpoint failed.")}
             emptyWhen={(d) => (d.drift_alerts?.length ?? 0) === 0 && (!d.feature_health || Object.keys(d.feature_health).length === 0)}
           >
-            {(d) => (
+            {(d) => {
+              // ML-RUNTIME-TRUTH D2 (Phase 23): the backend now reports an
+              // explicit monitor_state. Zero alerts is only a clean bill of
+              // health when the monitor actually ran; NOT_RUN / UNAVAILABLE
+              // must stay visibly distinct from NO_ALERTS so an unwritten
+              // store is never presented as "distribution is fine".
+              const state = d.summary?.monitor_state;
+              const storeAnswered = d.summary?.available === true;
+              const ran = state === "NO_ALERTS" || state === "EVALUATED";
+              return (
               <div style={{ display: "grid", gap: 10 }}>
+                <dl className="kv">
+                  <dt className="small">{t("ml.drift.state", "monitor state")}</dt>
+                  <dd>{storeAnswered ? (state || "UNKNOWN") : t("ml.drift.unavailable", "UNAVAILABLE")}</dd>
+                  {d.summary?.latest_event_at ? (
+                    <>
+                      <dt className="small">{t("ml.drift.last_event", "last event")}</dt>
+                      <dd className="small">{fmtAge((Date.now() - Date.parse(d.summary.latest_event_at)) / 1000)}</dd>
+                    </>
+                  ) : (
+                    <>
+                      <dt className="small">{t("ml.drift.last_event", "last event")}</dt>
+                      <dd className="small">{t("ml.drift.no_event", "none recorded")}</dd>
+                    </>
+                  )}
+                </dl>
                 {d.feature_health && Object.keys(d.feature_health).length > 0 && (
                   <dl className="kv">
                     <dt className="section-title" style={{ gridColumn: "1 / -1" }}>{t("ml.drift.feature_health", "feature health (latest)")}</dt>
@@ -666,11 +690,14 @@ export default function MLPage({ snapshot }: Props) {
                       ))}
                     </DataTable>
                   </>
-                ) : (
+                ) : ran ? (
                   <div className="l4-note">{t("ml.drift.none", "No drift alerts: the backend has not flagged the 70D feature distribution.")}</div>
+                ) : (
+                  <div className="l4-note warn">{t("ml.drift.not_run", "Monitor has not recorded any 70D observations yet — an empty store, not a clean bill of health.")}</div>
                 )}
               </div>
-            )}
+              );
+            }}
           </SectionState>
         </Panel>
       </div>
