@@ -750,17 +750,22 @@ def register_debug_research_routes(
                 # silent write loss is the exact failure mode Phase 13 targets).
                 # The counters are typed explicitly: this widget's metrics
                 # literal is heterogeneous (mypy infers dict[str, object]), and
-                # the write-path gate compares them, so the comparison reads
-                # the concrete ints rather than an opaque object.
-                _write_failures = int(metrics["write_failures"])
-                _dropped_rows = int(metrics["dropped_rows"])
-                if _write_failures > 0 or _dropped_rows > 0:
+                # the write-path gate compares them. Reading through an Any
+                # local keeps the arithmetic and int() calls well-typed without
+                # annotating the literal (four dicts share the name in this
+                # function scope, so an annotation trips no-redef).
+                _wf: Any = metrics["write_failures"]
+                _dr: Any = metrics["dropped_rows"]
+                _sr: Any = metrics["salvaged_rows"]
+                write_failures = int(_wf)
+                dropped_rows = int(_dr)
+                if write_failures > 0 or dropped_rows > 0:
                     add(
                         "Audit Database",
                         "DEGRADED",
-                        f"Writer alive but failing: {_write_failures} batch failures, "
-                        f"{_dropped_rows} rows dropped "
-                        f"({int(metrics['salvaged_rows'])} salvaged).",
+                        f"Writer alive but failing: {write_failures} batch failures, "
+                        f"{dropped_rows} rows dropped "
+                        f"({int(_sr)} salvaged).",
                         metrics,
                     )
                 else:
