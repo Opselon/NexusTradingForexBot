@@ -832,7 +832,11 @@ class _QueryMetrics:
         try:
             with self._lock:
                 items = [
-                    {**v, "query_name": k, "mean_ms": (v["total_ms"] / v["calls"] if v["calls"] else 0.0)}
+                    {
+                        **v,
+                        "query_name": k,
+                        "mean_ms": (v["total_ms"] / v["calls"] if v["calls"] else 0.0),
+                    }
                     for k, v in self._stats.items()
                 ]
         except Exception:

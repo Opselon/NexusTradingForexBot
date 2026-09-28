@@ -919,9 +919,7 @@ class PostgreSQLDriver(DatabaseDriver):
         own = conn is None
         c = conn or self.connect()
         timer = _DriverQueryTimer("query", sql, _driver_domain(own))
-        metrics = QueryMetricsRecorder(
-            self.query_name(sql, "query"), operation="query", sql=sql
-        )
+        metrics = QueryMetricsRecorder(self.query_name(sql, "query"), operation="query", sql=sql)
         with timer, metrics:
             try:
                 cur = c.execute(
