@@ -140,10 +140,14 @@ class _TrainRun:
 
     @staticmethod
     def _latest_fraction(events: list[dict[str, Any]]) -> float | None:
+        import math
+
         for ev in reversed(events):
             frac = ev.get("fraction")
-            # Only a real numeric fraction counts — None / NaN never does.
-            if isinstance(frac, (int, float)) and not (isinstance(frac, float) and frac != frac):
+            # Only a real, finite numeric fraction counts — None / NaN never does.
+            if isinstance(frac, (int, float)) and not (
+                isinstance(frac, float) and math.isnan(frac)
+            ):
                 return float(frac)
         return None
 
@@ -764,7 +768,9 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
                 be told the cancellation is real (contract §28)."""
                 if run.cancel.is_set() and not run.cancel_acknowledged:
                     run.cancel_acknowledged = True
-                    logger.info("[PROVISION-WEB] event=CANCEL_ACKNOWLEDGED run=%s at=%s", run.run_id, where)
+                    logger.info(
+                        "[PROVISION-WEB] event=CANCEL_ACKNOWLEDGED run=%s at=%s", run.run_id, where
+                    )
 
             try:
                 from nexus_scalp.model_provisioning.training_env import TrainingEnvironmentManager
@@ -867,7 +873,10 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
                 from nexus_scalp.model_provisioning.pipeline import train_local_model
 
                 run.result = train_local_model(request, progress=run.record)
-                if run.cancel.is_set() and str(run.result.get("outcome", "")).upper() == "CANCELLED":
+                if (
+                    run.cancel.is_set()
+                    and str(run.result.get("outcome", "")).upper() == "CANCELLED"
+                ):
                     _ack_cancel("train-complete")
             except Exception as exc:  # defensive: train_local_model should not raise
                 # Web-exposed payload carries the SAFE CATEGORY only (full
@@ -922,7 +931,7 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
             "events": run.tail(max(0, int(after))),
             "count": len(run.events),
             "result": run.result
-            or ({ "state": prov.read_provisioner_state().get("state")} if run.done.is_set() else {}),
+            or ({"state": prov.read_provisioner_state().get("state")} if run.done.is_set() else {}),
             # Structured run truth (contract §26): state/phase/percent/loss/
             # epoch/folds — every field measured by the pipeline, never
             # synthesized. Consumed by the UI progress panel verbatim.

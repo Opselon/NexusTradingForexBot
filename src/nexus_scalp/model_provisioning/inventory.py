@@ -159,7 +159,9 @@ def _bundle_entry(
     classes = None
     if manifest:
         try:
-            dimension = int(manifest.get("input_dim")) if manifest.get("input_dim") is not None else None
+            dimension = (
+                int(manifest.get("input_dim")) if manifest.get("input_dim") is not None else None
+            )
         except (TypeError, ValueError):
             dimension = None
     if meta:
@@ -171,7 +173,11 @@ def _bundle_entry(
                     dimension = None
         schema_id = meta.get("feature_schema_id") or meta.get("schema_id")
         try:
-            classes = int(meta.get("model_head_classes")) if meta.get("model_head_classes") is not None else None
+            classes = (
+                int(meta.get("model_head_classes"))
+                if meta.get("model_head_classes") is not None
+                else None
+            )
         except (TypeError, ValueError):
             classes = None
     if schema_id is None:
@@ -191,7 +197,9 @@ def _bundle_entry(
 
     return {
         "model_id": _first(manifest, meta, "model_id") or bundle_dir.name,
-        "version": _first(manifest, meta, "model_version") or _first(manifest, meta, "version") or "",
+        "version": _first(manifest, meta, "model_version")
+        or _first(manifest, meta, "version")
+        or "",
         "source": origin_hint,
         "name": bundle_dir.name,
         "artifact": artifact_str,
@@ -294,7 +302,9 @@ def _walk_bundles(root: Path) -> list[Path]:
     return found
 
 
-def list_model_inventory(limit: int = _DEFAULT_LIMIT, include_hashes: bool = False) -> dict[str, Any]:
+def list_model_inventory(
+    limit: int = _DEFAULT_LIMIT, include_hashes: bool = False
+) -> dict[str, Any]:
     """READ-ONLY model inventory across all bundle roots + the Studio registry.
 
     Returns ``{"available": bool, "models": [...], "active_artifact": str,
@@ -317,10 +327,17 @@ def list_model_inventory(limit: int = _DEFAULT_LIMIT, include_hashes: bool = Fal
 
     try:
         from nexus_scalp.release.paths import get_runtime_workspace
+
         workspace = get_runtime_workspace()
     except Exception as exc:  # pragma: no cover - workspace resolution is core
         logger.debug("inventory workspace unresolved: %s", exc)
-        return {"available": False, "models": [], "active_artifact": None, "total": 0, "limited": False}
+        return {
+            "available": False,
+            "models": [],
+            "active_artifact": None,
+            "total": 0,
+            "limited": False,
+        }
 
     entries: list[dict[str, Any]] = []
     seen_artifacts: set[str] = set()
@@ -397,6 +414,7 @@ def _resolve_registered(weights_path: str, workspace: Path) -> Path | None:
         candidates.append(workspace / raw)
         try:
             from nexus_scalp.model_generation.model_registry import REPO_ROOT
+
             candidates.append(Path(str(REPO_ROOT)) / raw)
         except Exception:
             pass
@@ -458,9 +476,9 @@ def _studio_registry_rows(
                 "source": "studio-registry",
                 "plane": "studio",
                 "name": str(getattr(rec, "name", "") or ""),
-                "artifact": str(weights) if weights is not None else str(
-                    getattr(rec, "weights_path", "") or ""
-                ),
+                "artifact": str(weights)
+                if weights is not None
+                else str(getattr(rec, "weights_path", "") or ""),
                 "artifact_exists": weights is not None,
                 "hash": (str(getattr(rec, "sha256", "") or "")[:16] or None),
                 "scaler": str(scaler) if scaler is not None else None,
