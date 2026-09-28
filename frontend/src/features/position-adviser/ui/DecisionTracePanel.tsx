@@ -25,21 +25,21 @@ export function DecisionTracePanel({ trace, atMs, error, unavailable, loading }:
 
   const head = (
     <div className="pa-tensor-head">
-      <span className="pa-tensor-title">{t("pa.trace_title", "Live Decision Trace")}</span>
+      <span className="pa-tensor-title">{t("position-adviser.trace.title", "Live Decision Trace")}</span>
       <span
         className={`pa-tensor-source ${unavailable ? "is-unavailable" : trace ? "is-live" : ""}`}
       >
         {unavailable
-          ? t("pa.tensor_unavailable", "UNAVAILABLE")
+          ? t("position-adviser.tensor.unavailable", "UNAVAILABLE")
           : trace
-            ? t("pa.tensor_backend", "BACKEND")
+            ? t("position-adviser.tensor.backend", "BACKEND")
             : loading
-              ? t("pa.tensor_loading", "LOADING…")
-              : t("pa.trace_none", "NO DECISION YET")}
+              ? t("position-adviser.tensor.loading", "LOADING…")
+              : t("position-adviser.trace.none", "NO DECISION YET")}
       </span>
       {ageMs !== null && trace ? (
         <span className="pa-tensor-age">
-          {t("pa.tensor_age", "read {ms} ms ago", { ms: Math.round(ageMs) })}
+          {t("position-adviser.tensor.age", "read {ms} ms ago", { ms: Math.round(ageMs) })}
         </span>
       ) : null}
     </div>
@@ -51,7 +51,7 @@ export function DecisionTracePanel({ trace, atMs, error, unavailable, loading }:
         {head}
         <p className="pa-panel-empty">
           {t(
-            "pa.trace_unavailable_body",
+            "position-adviser.trace.unavailable_body",
             "This server build does not expose the decision-trace route.",
           )}
         </p>
@@ -67,7 +67,7 @@ export function DecisionTracePanel({ trace, atMs, error, unavailable, loading }:
           {error
             ? error
             : t(
-                "pa.trace_empty_body",
+                "position-adviser.trace.empty_body",
                 "No advisory yet. Enable the adviser to produce one.",
               )}
         </p>
@@ -83,7 +83,7 @@ export function DecisionTracePanel({ trace, atMs, error, unavailable, loading }:
       {head}
       <ol className="pa-trace-stages">
         <li>
-          <span className="pa-trace-stage">{t("pa.trace_position", "POSITION")}</span>
+          <span className="pa-trace-stage">{t("position-adviser.trace.position", "POSITION")}</span>
           <span className="pa-mono">
             #{trace.position.ticket} · snapshot {trace.position.snapshot_id ?? "—"} ·{" "}
             {trace.position.snapshot_age_ms !== null
@@ -92,28 +92,28 @@ export function DecisionTracePanel({ trace, atMs, error, unavailable, loading }:
           </span>
         </li>
         <li>
-          <span className="pa-trace-stage">{t("pa.trace_model", "MODEL")}</span>
+          <span className="pa-trace-stage">{t("position-adviser.trace.model", "MODEL")}</span>
           <span className="pa-mono">
             {trace.model.model_id} · {trace.model.model_dimension}D · {trace.model.activation}
           </span>
         </li>
         <li>
-          <span className="pa-trace-stage">{t("pa.trace_decision", "DECISION")}</span>
+          <span className="pa-trace-stage">{t("position-adviser.trace.decision", "DECISION")}</span>
           <span className="pa-decision-action" data-action={d.action}>
             {d.action}
           </span>
           <span className="pa-mono">conf {(d.confidence * 100).toFixed(1)}%</span>
         </li>
         <li>
-          <span className="pa-trace-stage">{t("pa.trace_policy", "POLICY")}</span>
+          <span className="pa-trace-stage">{t("position-adviser.trace.policy", "POLICY")}</span>
           <span>
             {d.applied
-              ? t("pa.trace_applied", "applied to hold score")
-              : d.not_applied_reason || t("pa.trace_not_applied", "not applied")}
+              ? t("position-adviser.trace.applied", "applied to hold score")
+              : d.not_applied_reason || t("position-adviser.trace.not_applied", "not applied")}
           </span>
         </li>
         <li>
-          <span className="pa-trace-stage">{t("pa.trace_ts", "TIMESTAMP")}</span>
+          <span className="pa-trace-stage">{t("position-adviser.trace.ts", "TIMESTAMP")}</span>
           <span className="pa-mono">{d.evaluated_at || "—"}</span>
         </li>
       </ol>
@@ -135,17 +135,17 @@ export function DecisionTracePanel({ trace, atMs, error, unavailable, loading }:
 
       <ul className="pa-tensor-counts">
         <li>
-          {t("pa.latency_total", "total: {ms} ms", {
+          {t("position-adviser.latency.total", "total: {ms} ms", {
             ms: trace.latency.total_ms.toFixed(3),
           })}
         </li>
         <li>
-          {t("pa.latency_feature", "feature build: {ms} ms", {
+          {t("position-adviser.latency.feature", "feature build: {ms} ms", {
             ms: trace.latency.feature_ms !== null ? trace.latency.feature_ms.toFixed(3) : "—",
           })}
         </li>
         <li>
-          {t("pa.latency_inference", "inference: {ms} ms", {
+          {t("position-adviser.latency.inference", "inference: {ms} ms", {
             ms: trace.latency.inference_ms !== null ? trace.latency.inference_ms.toFixed(3) : "—",
           })}
         </li>

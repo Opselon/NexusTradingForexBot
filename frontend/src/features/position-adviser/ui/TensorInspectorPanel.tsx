@@ -35,26 +35,26 @@ export function TensorInspectorPanel({ tensor, atMs, error, unavailable, loading
 
   const head = (
     <div className="pa-tensor-head">
-      <span className="pa-tensor-title">{t("pa.tensor_title", "Tensor Inspector")}</span>
+      <span className="pa-tensor-title">{t("position-adviser.tensor.title", "Tensor Inspector")}</span>
       <span
         className={`pa-tensor-source ${unavailable ? "is-unavailable" : "is-live"}`}
         title={
           unavailable
-            ? t("pa.tensor_unavailable_hint", "The diagnostic route is not wired on this server")
-            : t("pa.tensor_source_hint", "Read from the live diagnostic endpoint")
+            ? t("position-adviser.tensor.unavailable_hint", "The diagnostic route is not wired on this server")
+            : t("position-adviser.tensor.source_hint", "Read from the live diagnostic endpoint")
         }
       >
         {unavailable
-          ? t("pa.tensor_unavailable", "UNAVAILABLE")
+          ? t("position-adviser.tensor.unavailable", "UNAVAILABLE")
           : tensor
-            ? t("pa.tensor_backend", "BACKEND")
+            ? t("position-adviser.tensor.backend", "BACKEND")
             : loading
-              ? t("pa.tensor_loading", "LOADING…")
-              : t("pa.tensor_no_sample", "NO SAMPLE YET")}
+              ? t("position-adviser.tensor.loading", "LOADING…")
+              : t("position-adviser.tensor.no_sample", "NO SAMPLE YET")}
       </span>
       {ageMs !== null && tensor ? (
         <span className="pa-tensor-age">
-          {t("pa.tensor_age", "read {ms} ms ago", { ms: Math.round(ageMs) })}
+          {t("position-adviser.tensor.age", "read {ms} ms ago", { ms: Math.round(ageMs) })}
         </span>
       ) : null}
     </div>
@@ -66,7 +66,7 @@ export function TensorInspectorPanel({ tensor, atMs, error, unavailable, loading
         {head}
         <p className="pa-panel-empty">
           {t(
-            "pa.tensor_unavailable_body",
+            "position-adviser.tensor.unavailable_body",
             "This server build does not expose the tensor diagnostic route, so the panel stays empty rather than showing an invented tensor.",
           )}
         </p>
@@ -82,7 +82,7 @@ export function TensorInspectorPanel({ tensor, atMs, error, unavailable, loading
           {error
             ? error
             : t(
-                "pa.tensor_empty_body",
+                "position-adviser.tensor.empty_body",
                 "No evaluation has run yet. Load an adviser, enable PAPER, and the first real input appears here.",
               )}
         </p>
@@ -98,31 +98,31 @@ export function TensorInspectorPanel({ tensor, atMs, error, unavailable, loading
       {head}
       <dl className="pa-tensor-meta">
         <div>
-          <dt>{t("pa.tensor_model", "Model")}</dt>
+          <dt>{t("position-adviser.tensor.model", "Model")}</dt>
           <dd className="pa-mono">{tensor.model_id || "—"}</dd>
         </div>
         <div>
-          <dt>{t("pa.tensor_shape", "Tensor shape")}</dt>
+          <dt>{t("position-adviser.tensor.shape", "Tensor shape")}</dt>
           <dd className="pa-mono">[{tensor.tensor_shape.join(", ")}]</dd>
         </div>
         <div>
-          <dt>{t("pa.tensor_dtype", "DType")}</dt>
+          <dt>{t("position-adviser.tensor.dtype", "DType")}</dt>
           <dd className="pa-mono">{tensor.dtype}</dd>
         </div>
         <div>
-          <dt>{t("pa.tensor_device", "Device")}</dt>
+          <dt>{t("position-adviser.tensor.device", "Device")}</dt>
           <dd className="pa-mono">{tensor.device}</dd>
         </div>
         <div>
-          <dt>{t("pa.tensor_schema", "Feature schema")}</dt>
+          <dt>{t("position-adviser.tensor.schema", "Feature schema")}</dt>
           <dd className="pa-mono">{tensor.feature_schema}</dd>
         </div>
         <div>
-          <dt>{t("pa.tensor_seq", "Sequence length")}</dt>
+          <dt>{t("position-adviser.tensor.seq", "Sequence length")}</dt>
           <dd className="pa-mono">{tensor.sequence_length}</dd>
         </div>
         <div>
-          <dt>{t("pa.tensor_infer_ts", "Inference timestamp")}</dt>
+          <dt>{t("position-adviser.tensor.infer_ts", "Inference timestamp")}</dt>
           <dd className="pa-mono">{tensor.inference_timestamp || "—"}</dd>
         </div>
       </dl>
@@ -130,18 +130,18 @@ export function TensorInspectorPanel({ tensor, atMs, error, unavailable, loading
       <p
         className={`pa-tensor-verdict ${dimsAgree ? "is-ok" : "is-bad"}`}
         title={t(
-          "pa.tensor_verdict_hint",
+          "position-adviser.tensor.verdict_hint",
           "raw dimension, normalized dimension and the model's input dimension must all agree",
         )}
       >
         {dimsAgree
           ? t(
-              "pa.tensor_dims_ok",
+              "position-adviser.tensor.dims_ok",
               "Dimensions agree: raw {raw} = normalized {norm} = model input {model}",
               { raw: v.raw_dim, norm: v.normalized_dim, model: v.model_input_dim },
             )
           : t(
-              "pa.tensor_dims_bad",
+              "position-adviser.tensor.dims_bad",
               "Dimension mismatch: raw {raw} / normalized {norm} / model {model}",
               { raw: v.raw_dim, norm: v.normalized_dim, model: v.model_input_dim },
             )}
@@ -150,12 +150,12 @@ export function TensorInspectorPanel({ tensor, atMs, error, unavailable, loading
       <table className="pa-tensor-table">
         <thead>
           <tr>
-            <th>{t("pa.tensor_th_index", "INDEX")}</th>
-            <th>{t("pa.tensor_th_feature", "FEATURE")}</th>
-            <th>{t("pa.tensor_th_raw", "RAW")}</th>
-            <th>{t("pa.tensor_th_normalized", "NORMALIZED")}</th>
-            <th>{t("pa.tensor_th_valid", "VALID")}</th>
-            <th>{t("pa.tensor_th_age", "AGE (s)")}</th>
+            <th>{t("position-adviser.tensor.th_index", "INDEX")}</th>
+            <th>{t("position-adviser.tensor.th_feature", "FEATURE")}</th>
+            <th>{t("position-adviser.tensor.th_raw", "RAW")}</th>
+            <th>{t("position-adviser.tensor.th_normalized", "NORMALIZED")}</th>
+            <th>{t("position-adviser.tensor.th_valid", "VALID")}</th>
+            <th>{t("position-adviser.tensor.th_age", "AGE (s)")}</th>
           </tr>
         </thead>
         <tbody>
@@ -176,16 +176,16 @@ export function TensorInspectorPanel({ tensor, atMs, error, unavailable, loading
 
       <ul className="pa-tensor-counts">
         <li className={v.nan_count ? "pa-bad" : "pa-ok"}>
-          {t("pa.tensor_nan", "NaN: {n}", { n: v.nan_count })}
+          {t("position-adviser.tensor.nan", "NaN: {n}", { n: v.nan_count })}
         </li>
         <li className={v.inf_count ? "pa-bad" : "pa-ok"}>
-          {t("pa.tensor_inf", "Inf: {n}", { n: v.inf_count })}
+          {t("position-adviser.tensor.inf", "Inf: {n}", { n: v.inf_count })}
         </li>
         <li>
-          {t("pa.tensor_zero", "zero/default: {n}", { n: v.zero_default_count })}
+          {t("position-adviser.tensor.zero", "zero/default: {n}", { n: v.zero_default_count })}
         </li>
         <li>
-          {t("pa.tensor_sat", "clipped/saturated: {n}", { n: v.saturated_count })}
+          {t("position-adviser.tensor.sat", "clipped/saturated: {n}", { n: v.saturated_count })}
         </li>
       </ul>
     </section>
