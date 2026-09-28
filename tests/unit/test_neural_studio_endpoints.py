@@ -180,10 +180,17 @@ def test_tensor_inspect_refuses_without_a_real_scaler(client: TestClient) -> Non
     assert res.status_code in (200, 422), res.text
     if res.status_code == 200:
         body = res.json()
-        assert body["dimension"] == 70
-        assert len(body["raw"]) == 70
-        assert len(body["normalized"]) == 70
-        assert len(body["model_input"]) == 70
+        # The route wraps the inspector payload in {"status", "inspection"} —
+        # the shape the frontend's TensorInspectResponse consumes. The three
+        # layers are layer dicts (shape/width/dtype), not flat vectors, so the
+        # widths are the honest dimension assertions.
+        insp = body["inspection"]
+        assert insp["dimension"] == 70
+        dims = insp["all_dimensions"]
+        assert dims["raw"] == 70
+        assert dims["normalized"] == 70
+        assert dims["model_input"] == 70
+        assert insp["dimensions_match"] is True
         return
     detail = str(res.json().get("detail", "")).lower()
     assert any(k in detail for k in ("scaler", "measurable", "contract violation")), res.text
@@ -208,14 +215,19 @@ def test_tensor_inspect_names_its_perturbation_source(client: TestClient) -> Non
         assert any(k in detail for k in ("scaler", "measurable", "contract violation")), res.text
         return
     body = res.json()
-    sigma = body.get("perturbation_sigma") or body.get("sigma")
+    insp = body["inspection"]
+    sigma = insp.get("perturbation_sigma") or insp.get("sigma")
+    # The perturbation label is carried by ``feature_source`` — the route has
+    # no separate boolean, so a perturbed tensor must read NOISE here and may
+    # never read LIVE.
+    source = insp.get("feature_source", "")
     if sigma:
         assert float(sigma) == pytest.approx(0.05)
         # Perturbation must be labelled, never presented as live.
-        assert body.get("perturbation", body.get("perturbed", False)) is True
-        assert body.get("source", "perturbed") != "live"
+        assert "NOISE" in source
+        assert source != "LIVE_TICK"
     else:
-        assert body.get("perturbation", body.get("perturbed", False)) is False
+        assert "NOISE" not in source
 
 
 # --------------------- registry detail (Phases 12 / 44) ---------------------
