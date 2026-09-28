@@ -609,7 +609,6 @@ class Shadow70Store(Shadow70Persistence):
             return str(value) if value is not None else None
         return None
 
-
     def _query(self, sql: str, args: tuple[Any, ...]) -> list[dict[str, Any]]:
         if not self.audit_repo:
             return []
