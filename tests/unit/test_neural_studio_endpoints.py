@@ -186,9 +186,10 @@ def test_tensor_inspect_refuses_without_a_real_scaler(client: TestClient) -> Non
         return
     # 422 is the honest answer when no measurable scaler is attached.
     detail = res.json()
-    assert "scaler" in str(detail.get("detail", "")).lower() or "measurable" in str(
-        detail.get("detail", "")
-    ).lower()
+    assert (
+        "scaler" in str(detail.get("detail", "")).lower()
+        or "measurable" in str(detail.get("detail", "")).lower()
+    )
 
 
 def test_tensor_inspect_names_its_perturbation_source(client: TestClient) -> None:
