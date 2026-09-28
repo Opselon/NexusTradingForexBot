@@ -257,6 +257,47 @@ def get_audit_repo(request: Request) -> Any:
     return repo
 
 
+class ProviderReadUnavailableError(RuntimeError):
+    """A pooled provider's READ plane could not be resolved (PG-AUDIT-READ-001).
+
+    Distinct from "the query returned no rows": the store the engine writes
+    exists and is reachable, but this process cannot read it yet. Routes map
+    this to the ``DEPENDENCY_UNAVAILABLE`` envelope code (a real failure the
+    operator sees) instead of an empty page that reads as "no data".
+    """
+
+
+def _repo_read_plane(repo: Any) -> Any:
+    """The READ plane a pooled-provider repo reads through (PG-AUDIT-READ-001).
+
+    Composes the repo's OWN resolution seam (``audit_read_plane`` /
+    ``research_read_plane`` — both are ``_registered_audit_read_plane()``,
+    which is the fabric's ``get_domain_backend("audit", readonly=True)`` and
+    refuses a write-shaped backend), so no second connection path is created.
+
+    A SQLite repo resolves ``None`` here and is served by the caller's own
+    sqlite3 connection; a pooled provider with no registered plane also
+    resolves ``None`` and the caller raises :class:`ProviderReadUnavailableError`.
+    """
+    if getattr(repo, "_is_sqlite", True):
+        return None
+    for name in ("audit_read_plane", "research_read_plane"):
+        resolver = getattr(repo, name, None)
+        if callable(resolver):
+            return resolver()
+    # A repo from a version without the accessor: fall back to the fabric's
+    # read accessor directly, keeping the write-shaped refusal.
+    try:
+        from nexus_scalp.database.fabric import get_domain_backend
+
+        backend = get_domain_backend("audit", readonly=True)
+    except Exception:
+        return None
+    if backend is None or hasattr(backend, "execute") or not hasattr(backend, "query"):
+        return None
+    return backend
+
+
 def engine_or_503(request: Request) -> tuple[Any, JSONResponse | None]:
     """(engine, None) when attached; (None, 503-envelope) otherwise."""
     engine = get_engine(request)
@@ -290,24 +331,45 @@ def fetch_rows_bounded(
     args: tuple[Any, ...],
     limit: int,
 ) -> list[dict[str, Any]]:
-    """Runs a bounded parameterized SELECT via the repo's SQLite path.
+    """Runs a bounded parameterized SELECT via the repo's provider.
 
     Used by v1 routes whose store layer lacks a paginated API; LIMIT is
     always injected server-side (never client-controlled beyond the cap).
+
+    PG-AUDIT-READ-001: this used to open a raw ``sqlite3.connect(repo._db_path)``
+    and gate on ``repo._is_sqlite``, returning ``[]`` with NO exception and NO
+    log under a pooled provider. The Audit page's event stream/ledger tabs
+    therefore rendered a truthful-looking "No audit events match." while the
+    engine was writing thousands of rows to the PostgreSQL server it had
+    migrated to. A SQLite repo keeps its own connection (the fabric is never
+    consulted); a pooled provider reads through the repo's own declared READ
+    plane (``repo.audit_read_plane()``) so the API reads the same store the
+    engine writes.
+
+    ``sql`` arrives WITHOUT a LIMIT clause from every caller (the cap is
+    injected here), so the plane receives the same statement shape and the
+    bound ``limit`` argument.
     """
-    if not getattr(repo, "_is_sqlite", False):
-        return []
     bounded = max(1, min(int(limit), 200 * 25))  # hard safety ceiling
-    try:
-        conn = sqlite3.connect(getattr(repo, "_db_path", ""), timeout=5.0)
-        conn.row_factory = sqlite3.Row
+    if getattr(repo, "_is_sqlite", False):
         try:
-            cursor = conn.execute(sql + " LIMIT ?", (*args, bounded))
-            return [dict(r) for r in cursor.fetchall()]
-        finally:
-            conn.close()
-    except Exception:
-        return []
+            conn = sqlite3.connect(getattr(repo, "_db_path", ""), timeout=5.0)
+            conn.row_factory = sqlite3.Row
+            try:
+                cursor = conn.execute(sql + " LIMIT ?", (*args, bounded))
+                return [dict(r) for r in cursor.fetchall()]
+            finally:
+                conn.close()
+        except Exception:
+            return []
+
+    # Non-SQLite provider: read the store the engine writes, through the
+    # repo's own read plane (no second connection path). A None plane is
+    # "cannot read", never "there is no data" — callers surface the failure.
+    plane = _repo_read_plane(repo)
+    if plane is None:
+        raise ProviderReadUnavailableError("audit read plane unavailable for a pooled provider")
+    return list(plane.query(sql, tuple(args)))[:bounded]
 
 
 def iso_or_none(value: Any) -> str | None:

@@ -491,7 +491,13 @@ export interface AutopsyRow {
 export interface AuditEventRow {
   id: number | string;
   event_type: string | null;
-  created_at: string | null;
+  /** Backend timestamp column — `occurred_at` on research_events (the table the
+   *  observability stream actually reads); kept as an alias for the legacy
+   *  `created_at` name so both shapes render. */
+  occurred_at?: string | null;
+  created_at?: string | null;
+  /** research_events carries the human-readable summary in `message`. */
+  message?: string | null;
   payload: string | Record<string, unknown> | null;
 }
 

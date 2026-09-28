@@ -12,8 +12,10 @@ import sqlite3
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
+from fastapi.responses import JSONResponse
 
 from nexus_scalp.web.api_v1.common import (
+    _repo_read_plane,
     build_page,
     fail,
     get_audit_repo,
@@ -163,8 +165,14 @@ def observability_events(
     p, ps = checked
     where = " WHERE event_type = ?" if event_type else ""
     args: tuple[Any, ...] = (event_type,) if event_type else ()
-    sql = f"SELECT id, event_type, created_at, payload FROM audit_events{where} ORDER BY id DESC"
+    sql = (
+        "SELECT id, event_type, occurred_at, message, payload FROM research_events"
+        + where
+        + " ORDER BY id DESC"
+    )
     rows = fetch_bounded(request, sql, args, ps + 1 + (p - 1) * ps)
+    if not isinstance(rows, list):
+        return rows
     page_rows = rows[(p - 1) * ps : (p - 1) * ps + ps]
     has_more = len(rows) > (p - 1) * ps + ps
     return ok(request, build_page(page_rows, p, ps, has_more=has_more))
@@ -172,11 +180,24 @@ def observability_events(
 
 def fetch_bounded(
     request: Request, sql: str, args: tuple[Any, ...], limit: int
-) -> list[dict[str, Any]]:
-    """Read-only bounded SELECT via the audit repo path (LIMIT injected here)."""
-    from nexus_scalp.web.api_v1.common import fetch_rows_bounded
+) -> list[dict[str, Any]] | JSONResponse:
+    """Read-only bounded SELECT via the audit repo's provider (PG-AUDIT-READ-001).
 
-    return fetch_rows_bounded(get_audit_repo(request), sql, args, min(limit, 5_000))
+    Returns a JSONResponse error envelope (not an empty list) when a pooled
+    provider's READ plane is unavailable, so the operator sees a real failure
+    instead of a page that reads as "no data". Callers must return a non-list
+    result verbatim.
+    """
+    from nexus_scalp.web.api_v1.common import (
+        ProviderReadUnavailableError,
+        fail,
+        fetch_rows_bounded,
+    )
+
+    try:
+        return fetch_rows_bounded(get_audit_repo(request), sql, args, min(limit, 5_000))
+    except ProviderReadUnavailableError:
+        return fail(request, "DEPENDENCY_UNAVAILABLE", message="audit read plane unavailable")
 
 
 @router.get("/observability/metrics", summary="Process/API metrics (real counters only)")
@@ -232,6 +253,8 @@ def audit_events(
         "timestamp, pnl FROM audit_ledger" + where + " ORDER BY ticket DESC"
     )
     rows = fetch_bounded(request, sql, args, ps + 1 + (p - 1) * ps)
+    if not isinstance(rows, list):
+        return rows
     page_rows = rows[(p - 1) * ps : (p - 1) * ps + ps]
     has_more = len(rows) > (p - 1) * ps + ps
     return ok(request, build_page(page_rows, p, ps, has_more=has_more))
@@ -246,11 +269,38 @@ def audit_events(
 def database_status(request: Request) -> Any:
     from pathlib import Path as _Path
 
-    path = _audit_db_path(request)
+    repo = get_audit_repo(request)
+    if not getattr(repo, "_is_sqlite", False):
+        # Pooled provider (PG-AUDIT-READ-001): no local file exists to stat, and
+        # reporting a missing "nexusdb" file would misreport a live server as
+        # absent. Report the provider + reachability through the READ plane.
+        plane = _repo_read_plane(repo)
+        if plane is None:
+            return fail(
+                request,
+                "DEPENDENCY_UNAVAILABLE",
+                message="audit read plane unavailable",
+            )
+        try:
+            row = plane.query_one(
+                "SELECT current_database() AS database, current_schema() AS schema"
+            )
+        except Exception:
+            row = None
+        data: dict[str, Any] = {
+            "filename": (row or {}).get("database") if row else None,
+            "provider": "postgresql",
+            "exists": row is not None,
+            "probed_at": utc_now_iso(),
+        }
+        return ok(request, data)
+
+    path = str(getattr(repo, "_db_path", "") or "")
     p = _Path(path) if path else None
     exists = bool(p and p.exists())
-    data: dict[str, Any] = {
+    data = {
         "filename": p.name if p else None,
+        "provider": "sqlite",
         "exists": exists,
         "size_bytes": p.stat().st_size if exists else None,
         "probed_at": utc_now_iso(),
@@ -274,16 +324,61 @@ def database_status(request: Request) -> Any:
     return ok(request, data)
 
 
+#: The audit-domain tables the integrity view reports (both providers).
+_INTEGRITY_TABLES: tuple[str, ...] = (
+    "audit_signals",
+    "audit_ledger",
+    "audit_orders",
+    "audit_executions",
+)
+
+
 @router.get("/database/integrity", summary="Integrity: quick_check + bounded row counts")
 def database_integrity(request: Request) -> Any:
-    path = _audit_db_path(request)
+    repo = get_audit_repo(request)
+    if not getattr(repo, "_is_sqlite", False):
+        # Pooled provider (PG-AUDIT-READ-001): no SQLite PRAGMAs exist. Report the
+        # server's own integrity probe plus the real row counts, or fail loudly
+        # when the READ plane is unavailable (never an all-null "not readable").
+        plane = _repo_read_plane(repo)
+        if plane is None:
+            return fail(
+                request,
+                "DEPENDENCY_UNAVAILABLE",
+                message="audit read plane unavailable",
+            )
+        try:
+            quick = plane.scalar("SELECT 1")
+        except Exception as exc:  # pragma: no cover - defensive, surfaced
+            return fail(
+                request,
+                "DEPENDENCY_UNAVAILABLE",
+                message=f"audit read probe failed: {type(exc).__name__}",
+            )
+        counts: dict[str, int | None] = {}
+        for table in _INTEGRITY_TABLES:
+            try:
+                counts[table] = int(plane.scalar(f"SELECT COUNT(*) FROM {table}") or 0)
+            except Exception:
+                counts[table] = None
+        return ok(
+            request,
+            {
+                "quick_check": "ok" if quick is not None else None,
+                "provider": "postgresql",
+                "row_counts": counts,
+                "probed_at": utc_now_iso(),
+            },
+        )
+
+    path = str(getattr(repo, "_db_path", "") or "")
     conn = _sqlite_ro(path)
     if conn is None:
         return fail(request, "DEPENDENCY_UNAVAILABLE", message="audit database not readable")
     try:
         row = conn.execute("PRAGMA quick_check").fetchone()
-        counts: dict[str, int | None] = {}
-        for table in ("audit_signals", "audit_ledger", "audit_orders", "audit_executions"):
+        counts = {}
+        for table in _INTEGRITY_TABLES:
             try:
                 counts[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
             except sqlite3.Error:
@@ -292,6 +387,7 @@ def database_integrity(request: Request) -> Any:
             request,
             {
                 "quick_check": row[0] if row else None,
+                "provider": "sqlite",
                 "row_counts": counts,
                 "probed_at": utc_now_iso(),
             },
@@ -302,7 +398,32 @@ def database_integrity(request: Request) -> Any:
 
 @router.get("/database/tables", summary="Table inventory (names only; no row dumps)")
 def database_tables(request: Request) -> Any:
-    path = _audit_db_path(request)
+    repo = get_audit_repo(request)
+    if not getattr(repo, "_is_sqlite", False):
+        plane = _repo_read_plane(repo)
+        if plane is None:
+            return fail(
+                request,
+                "DEPENDENCY_UNAVAILABLE",
+                message="audit read plane unavailable",
+            )
+        try:
+            rows = plane.query(
+                "SELECT table_name AS name FROM information_schema.tables "
+                "WHERE table_schema = current_schema() AND table_type = 'BASE TABLE' "
+                "AND table_name NOT LIKE 'pg_%' AND table_name NOT LIKE 'sqlite_%' "
+                "ORDER BY table_name"
+            )
+        except Exception:
+            return fail(
+                request,
+                "DEPENDENCY_UNAVAILABLE",
+                message="audit table inventory probe failed",
+            )
+        tables = [str(r["name"]) for r in rows]
+        return ok(request, {"tables": tables, "count": len(tables)})
+
+    path = str(getattr(repo, "_db_path", "") or "")
     conn = _sqlite_ro(path)
     if conn is None:
         return fail(request, "DEPENDENCY_UNAVAILABLE", message="audit database not readable")

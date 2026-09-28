@@ -3154,6 +3154,33 @@ class AuditRepository:
             return None
         return self._registered_audit_read_plane()
 
+    def audit_read_plane(self) -> Any:
+        """The READ plane the web/observability surface queries (PG-AUDIT-READ-001).
+
+        Companion accessor to :meth:`research_read_plane`, resolving the same
+        registered READ plane; kept under its own name so the v1 audit routes
+        declare their read dependency explicitly and do not piggyback on the
+        research surface's accessor.
+
+        The v1 API's bounded read helper (``web/api_v1/common.fetch_rows_bounded``)
+        used to open a raw ``sqlite3.connect(self._db_path)`` behind an
+        ``if not self._is_sqlite`` gate. Under a pooled provider that gate
+        returned ``[]`` with no exception and no log, so the Audit page's event
+        stream and trade-ledger tabs rendered a self-consistent
+        "No audit events match." while the engine was writing thousands of rows
+        to the PostgreSQL server it had migrated to — fail-silent wrong data.
+
+        SQLite resolves ``None`` (the caller's own sqlite3 connection remains the
+        reader and the fabric is never consulted); a pooled provider resolves
+        the same registered READ plane the audit read guard already serves
+        declared reads from, so the API reads the SAME store the engine writes.
+        ``None`` under a pooled provider means "cannot read", never "there is no
+        data" — the caller surfaces it as a real failure.
+        """
+        if self._is_sqlite:
+            return None
+        return self._registered_audit_read_plane()
+
     def provider_read_metrics(self) -> dict[str, Any]:
         """Provider-read observability surface (CR-02 / CHG-0067).
 
