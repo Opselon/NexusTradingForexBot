@@ -282,8 +282,14 @@ def register_operator_routes(
                 actions = Counter(r["action"] for r in rows)
                 stats["actions"] = dict(actions)
                 stats["total"] = scanned
-                last = rows[0]["generated_at"] if rows else None
-                stats["latest_decision_at"] = last
+                # LATEST, not first-returned: the IN (...) fetch is unordered,
+                # so rows[0] is an arbitrary row — it was reporting the OLDEST
+                # timestamp in the window as "latest decision". Take the max
+                # over the ledger's own timestamps (never the wall clock).
+                stats["latest_decision_at"] = max(
+                    (r["generated_at"] for r in rows if r["generated_at"] is not None),
+                    default=None,
+                )
                 # Simple 1h recency split (no clock fabrication: bounded by
                 # ledger timestamps themselves).
                 stats["actions_1h"] = {}
