@@ -638,6 +638,16 @@ APP_UNIQUE_TARGETS: dict[str, tuple[tuple[str, ...], ...]] = {
     "anomaly_events": (("anomaly_id",),),
     "strategy_evolution_candidates": (("candidate_id",),),
     "intelligence_worker_state": (("scope",),),
+    # BUG-276 completion: AuditRepository seeds the default rules with
+    # `INSERT ... ON CONFLICT (rule_name) DO NOTHING` (_seed_trading_rules /
+    # _seed_trading_rules_provider), but the audit-domain baseline skeleton
+    # (database/manifest.py) creates this table with only (id, rule_id) and NO
+    # unique index, so the conflict target was dead on every gate-first
+    # install — the seed raised "ON CONFLICT clause does not match any PRIMARY
+    # KEY or UNIQUE constraint". Registering it here makes the existing
+    # baseline-unique heal (engine._create_baseline_tables) and the
+    # _ensure_unique_constraint_heal boot repair cover it.
+    "trading_rules_config": (("rule_name",),),
 }
 
 __all__ = ["APP_REQUIRED_COLUMNS", "APP_UNIQUE_TARGETS"]
