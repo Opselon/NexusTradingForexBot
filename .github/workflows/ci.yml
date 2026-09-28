@@ -139,7 +139,13 @@ jobs:
   quality:
     name: Code Quality & Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # pytest alone runs ~1010s under `-n auto` on a loaded shared runner, which
+    # left only ~190s of the previous 20m budget for ruff/mypy/coverage/runtime
+    # gate/smoke. A loaded runner then crossed the cap and GitHub cancelled the
+    # JOB with "The operation was canceled" (not "timeout"), aborting gates that
+    # had not yet run and masking a green pytest as a red check. The cap measures
+    # test correctness, not runner contention.
+    timeout-minutes: 30
 
     # No PostgreSQL service container here, by operator decision. The
     # database-backed arms need a MIGRATED server (scratch databases, a
