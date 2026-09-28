@@ -126,13 +126,48 @@ export default function HealthPage(props: ShellPageProps) {
       });
     }
     if (news.data) {
+      // HEALTH-NEWS-AXES: service liveness and data freshness are independent
+      // axes and both are backend-provided. `available` = the news subsystem
+      // is attached and its engine responds (liveness); `state`/`stale` =
+      // the DERIVED CONTEXT's freshness (data). The old cell rendered
+      // "ACTIVE" whenever the service was up, hiding a STALE data state
+      // behind a green badge. The verdict tone now follows the DATA axis;
+      // liveness is reported as the presence/detail, never as the tone.
+      const n = news.data;
+      const nHealth = (n.health ?? {}) as {
+        state?: string;
+        stale?: boolean;
+        available?: boolean;
+        last_cycle_at?: string;
+      };
+      const dataState = typeof nHealth.state === "string" ? nHealth.state.toUpperCase() : "";
+      const dataStale = nHealth.stale === true;
+      // Verdict word for the badge: the DATA state when the service is live.
+      // STALE data is a WARN state the operator must see, not a suppressed one.
+      const newsStatus = !n.available
+        ? "UNAVAILABLE"
+        : dataStale || dataState === "STALE"
+          ? "STALE"
+          : n.enabled
+            ? "ACTIVE"
+            : "IDLE";
+      const newsDetail = !n.available
+        ? "news module not attached"
+        : [
+            n.enabled ? "service active" : "service idle",
+            dataState ? `context state=${dataState}` : "",
+            typeof nHealth.available === "boolean" ? `context available=${nHealth.available}` : "",
+            nHealth.last_cycle_at ? `last cycle ${nHealth.last_cycle_at}` : "",
+          ]
+            .filter(Boolean)
+            .join(" · ");
       out.push({
         id: "news:subsystem",
         name: "News intelligence",
-        status: news.data.available ? (news.data.enabled ? "ACTIVE" : "IDLE") : "UNAVAILABLE",
-        level: news.data.available ? "good" : "neutral",
-        detail: news.data.available ? String(news.data.worker ?? "") : "news module not attached",
-        metrics: Object.entries(news.data.health ?? {}).slice(0, 4),
+        status: newsStatus,
+        level: news.data.available ? (newsStatus === "STALE" ? "warn" : "good") : "neutral",
+        detail: newsDetail,
+        metrics: Object.entries(nHealth).slice(0, 4),
         fetchedAtMs: news.dataUpdatedAt || null,
         source: "news",
       });

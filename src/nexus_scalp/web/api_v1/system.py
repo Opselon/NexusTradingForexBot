@@ -124,12 +124,16 @@ def system_readiness(request: Request) -> Any:
     verdict, checks, _critical = _health_block(request)
     if verdict is None:
         return fail(request, "DEPENDENCY_UNAVAILABLE", message="health engine unavailable")
-    required = [
-        c
-        for c in checks
-        if c.get("category")
-        in {"SYSTEM", "RUNTIME", "CONFIGURATION", "DATABASE", "MODEL", "FEATURE_SCHEMA"}
-    ]
+    # HEALTH-READINESS-POLICY: the required set must be EXACTLY the backend's
+    # CRITICAL_CATEGORIES. The hardcoded list below previously omitted
+    # MODEL_CONTRACT, so a bundle whose input dimension contradicted the
+    # runtime contract (a genuine MODEL_INPUT_DIMENSION_MISMATCH, FAIL in
+    # HealthEngine and a NOT READY there) read ready=True here — the API and
+    # the HealthEngine disagreed about the same gate. Single source: import
+    # the authoritative set, never duplicate it.
+    from nexus_scalp.release.health import CRITICAL_CATEGORIES
+
+    required = [c for c in checks if c.get("category") in CRITICAL_CATEGORIES]
     ready = verdict != "NOT READY" and not any(c.get("verdict") == "FAIL" for c in required)
     return ok(
         request,
@@ -246,25 +250,118 @@ def system_workers(request: Request) -> Any:
     engine = get_engine(request)
     if engine is None:
         return ok(request, {"workers": [], "engine_attached": False})
+    # HEALTH-WORKER-LOOKUP: probe the attribute names the engine actually
+    # holds. The three workers above reported NOT_ATTACHED on every live
+    # engine because the route asked for ``incident_worker`` while the engine
+    # stores ``_incident_worker`` (lazy, private) — a pure name mismatch the
+    # operator read as "worker not wired". model_lifecycle has no worker
+    # attribute at all: the lifecycle is an orchestrator + TrainingWorker, so
+    # its state is derived from the orchestrator, not an absent attribute.
+    probes: list[tuple[str, str]] = [
+        ("accounting_worker", "accounting_worker"),
+        ("incident_worker", "_incident_worker"),
+        ("hygiene_worker", "_hygiene_worker"),
+    ]
+    # The model-lifecycle state comes from the orchestrator when one exists.
+    orchestrator = getattr(engine, "model_lifecycle_orchestrator", None)
+    lifecycle_state = None
+    if orchestrator is not None:
+        for attr in ("state", "status", "current_state"):
+            v = getattr(orchestrator, attr, None)
+            if v is not None:
+                lifecycle_state = str(v)
+                break
     workers: list[dict[str, Any]] = []
-    for name in (
-        "accounting_worker",
-        "incident_worker",
-        "hygiene_worker",
-        "model_lifecycle_worker",
-    ):
-        w = getattr(engine, name, None)
+    for display, attr in probes:
+        w = getattr(engine, attr, None)
         if w is None:
-            workers.append({"name": name, "state": "NOT_ATTACHED"})
+            # HEALTH-WORKER-STATE: NOT_ATTACHED is a definite, authoritative
+            # backend state (the engine object genuinely has no such
+            # attribute): it means "this worker is not configured for this
+            # engine build". It is NOT UNKNOWN (truth undetermined) and NOT a
+            # failure. Report both the raw state word the UI renders and the
+            # canonical taxonomy state so consumers never have to re-derive
+            # intent from a string.
+            workers.append(
+                {
+                    "name": display,
+                    "state": "NOT_ATTACHED",
+                    "taxonomy_state": "NOT_APPLICABLE",
+                    "attached": False,
+                }
+            )
             continue
         state = getattr(w, "state", None)
-        if state is None and hasattr(w, "_running"):
-            state = "RUNNING" if w._running else "STOPPED"
+        if state is None:
+            state = (
+                "RUNNING"
+                if bool(getattr(w, "running", getattr(w, "_running", False)))
+                else "STOPPED"
+            )
+        raw = str(state) if state is not None else "UNKNOWN"
+        # Map the raw worker word onto the canonical taxonomy (one owner for
+        # the vocabulary; the UI renders it verbatim and never infers a
+        # health verdict from an attachment state).
+        from nexus_scalp.release.state_taxonomy import (
+            ACTIVE,
+            DEGRADED,
+            DISABLED,
+            NOT_APPLICABLE,
+            NOT_INITIALIZED,
+            UNKNOWN,
+        )
+
+        _taxonomy = {
+            "RUNNING": ACTIVE,
+            "HEALTHY": ACTIVE,
+            "STARTING": NOT_INITIALIZED,
+            "IDLE": NOT_INITIALIZED,
+            "STOPPED": DISABLED,
+            "NOT_ATTACHED": NOT_APPLICABLE,
+        }.get(raw.upper(), UNKNOWN)
+        # Phase 15 liveness evidence: a persisted/attribute state alone does
+        # not prove the worker is progressing. Expose the worker's own cycle
+        # counters + last error so the UI shows EVIDENCE, and a stale last
+        # cycle (worker marking itself RUNNING while never ticking) degrades
+        # to DEGRADED instead of an ACTIVE green.
+        evidence: dict[str, Any] = {}
+        for k in ("cycle_count", "last_error", "last_cycle_start", "interval_sec"):
+            v = getattr(w, k, None)
+            if v is not None and v != "":
+                evidence[k] = v.isoformat() if hasattr(v, "isoformat") else v
+        if evidence:
+            _taxonomy = DEGRADED if evidence.get("last_error") else _taxonomy
         workers.append(
             {
-                "name": name,
-                "state": str(state) if state is not None else "UNKNOWN",
+                "name": display,
+                "state": raw,
+                "taxonomy_state": _taxonomy,
                 "attached": True,
+                **evidence,
+            }
+        )
+    # The lifecycle entry is derived from the orchestrator (it has no worker
+    # attribute); report it with the same shape so the UI treats it alike.
+    if lifecycle_state is not None:
+        from nexus_scalp.release.state_taxonomy import ACTIVE as _ACTIVE
+
+        workers.append(
+            {
+                "name": "model_lifecycle_worker",
+                "state": lifecycle_state,
+                "taxonomy_state": _ACTIVE
+                if lifecycle_state.upper() in ("RUNNING", "IDLE")
+                else UNKNOWN,
+                "attached": True,
+            }
+        )
+    else:
+        workers.append(
+            {
+                "name": "model_lifecycle_worker",
+                "state": "NOT_ATTACHED",
+                "taxonomy_state": "NOT_APPLICABLE",
+                "attached": False,
             }
         )
     return ok(request, {"workers": workers, "engine_attached": True})

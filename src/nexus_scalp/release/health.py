@@ -479,7 +479,112 @@ class HealthEngine:
         resolved = getattr(self, "_config_source", None)
         return str(resolved) if resolved is not None else "configs/base.yaml (default chain)"
 
+    def _active_audit_provider(self) -> tuple[str, Any]:
+        """The ACTIVE persistence provider for the audit domain.
+
+        Returns ``(provider_name, config_or_None)``. provider_name is
+        ``"postgresql"`` / ``"sqlite"`` when the authoritative settings DB
+        resolves a config, else ``"sqlite"`` (the implicit default for a
+        machine that has never chosen). ``config_or_None`` is the resolved
+        DatabaseConfig when one exists.
+
+        HEALTH-DBPROV: this is the ONLY place check_database decides which
+        database it is describing. Previously it always probed the SQLite
+        file under workspace/artifacts/audit.db even when the operator's
+        settings DB persisted ``database.provider=postgresql`` — under that
+        (real, first-run-wizard) configuration the SQLite file does not
+        exist, so check_database reported WARNING "not initialized yet" and
+        the operator never learned whether the PostgreSQL audit database
+        that actually holds the ledger was reachable at all.
+        """
+        try:
+            from nexus_scalp.database.config import load_database_config
+
+            cfg = load_database_config("audit")
+            name = "postgresql" if getattr(cfg, "is_postgresql", False) else "sqlite"
+            return name, cfg
+        except Exception:
+            # A settings DB that cannot be read must NOT become a silent
+            # healthy SQLite fallback — the caller reports the resolution
+            # failure explicitly.
+            return "sqlite", None
+
     def check_database(self) -> HealthEntry:
+        provider, cfg = self._active_audit_provider()
+        # HEALTH-DBPROV: describe the database the engine actually uses.
+        # The provider comes from the authoritative settings DB, not from a
+        # path heuristic (a provider URI never looks like a local file).
+        if cfg is not None and provider == "postgresql":
+            return self._check_database_postgres(cfg)
+        return self._check_database_sqlite()
+
+    def _check_database_postgres(self, cfg: Any) -> HealthEntry:
+        """PostgreSQL audit domain: real connection + schema probe.
+
+        HEALTHY requires the connection to SUCCEED (``driver.ping()``) —
+        connection establishment alone is not enough: the check also reports
+        the live schema version and the critical-table set. The label names
+        the actual provider and database; it never prints SQLite terminology
+        (WAL, integrity_check, "tables, integrity ok") for a PostgreSQL
+        server (HEALTH-DBLABEL).
+        """
+        database = getattr(cfg, "database", "") or "?"
+        host = getattr(cfg, "host", "") or "localhost"
+        port = getattr(cfg, "port", 0) or 5432
+        label = f"postgresql://{host}:{port}/{database}"
+        try:
+            from nexus_scalp.database.health import DatabaseHealthService
+
+            snap = DatabaseHealthService().check_domain("audit")
+        except Exception as exc:  # failure isolation
+            return HealthEntry(
+                "DATABASE",
+                "FAIL",
+                f"{label}: provider probe raised: {type(exc).__name__}: {exc}",
+                "Check the PostgreSQL service and the settings DB connection.",
+                state=ERROR,
+            )
+        status = str(snap.get("status") or "UNKNOWN")
+        connected = bool(snap.get("connected"))
+        tables = int(snap.get("table_count") or 0)
+        health = str(snap.get("health") or "ERROR").lower()
+        # driver.ping() failed / psycopg absent / DNS down / auth refused.
+        if not connected:
+            err = str(snap.get("error") or "") or status
+            # A missing psycopg driver is a packaging defect, not a dead
+            # server: FAIL with the real reason (never WARNING-then-healthy).
+            verdict = "FAIL"
+            state = MISSING if status == "DRIVER_UNAVAILABLE" else ERROR
+            return HealthEntry(
+                "DATABASE",
+                verdict,
+                f"{label}: {status} ({err})",
+                "Start the PostgreSQL service / verify credentials (nexus db status).",
+                state=state,
+            )
+        missing = [t for t, s in (snap.get("critical_tables") or {}).items() if s != "OK"]
+        detail = f"{label}: connected, {tables} tables"
+        if snap.get("schema_version") is not None:
+            detail += f", schema v{snap['schema_version']}"
+        if missing:
+            # Connected but a critical table is absent = usable but degraded.
+            return HealthEntry(
+                "DATABASE",
+                "WARNING",
+                f"{detail} · missing critical tables: {', '.join(sorted(missing))}",
+                "Run `nexus db migrate` to create the missing tables.",
+                state=DEGRADED,
+            )
+        # health == "warning" (e.g. non-critical table gap) stays WARNING.
+        verdict = "PASS" if health == "healthy" else "WARNING"
+        entry = HealthEntry(
+            "DATABASE", verdict, detail, state=AVAILABLE if verdict == "PASS" else DEGRADED
+        )
+        if snap.get("latency_ms") is not None:
+            entry.reason += f", ping {snap['latency_ms']}ms"
+        return entry
+
+    def _check_database_sqlite(self) -> HealthEntry:
         verdict, reason = _db_health(self.db_path)
         entry = HealthEntry("DATABASE", verdict, f"audit.db: {reason}")
         # CHG-0043: an absent audit.db is lazy first-use (NOT_INITIALIZED),
