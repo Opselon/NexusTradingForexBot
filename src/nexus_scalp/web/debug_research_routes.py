@@ -685,7 +685,7 @@ def register_debug_research_routes(
                 repo = AuditRepository(config=_default_audit_config())
 
             metrics_db = repo.get_account_performance_metrics()
-            queue_size = 0
+            queue_size: int = 0
             queue_obj = getattr(repo, "_queue", None)
             if queue_obj is not None:
                 try:
