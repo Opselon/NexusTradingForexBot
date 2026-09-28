@@ -372,7 +372,7 @@ class HealthEngine:
         if self._config is not None:
             return self._config
         try:
-            from nexus_scalp.configuration.config import AppConfig
+            from nexus_scalp.configuration.config import AppConfig, ExecutionMode
 
             # NSE-HEALTHFIX-001: mirror the engine's own resolution order
             # (cli/engine_boot.py) instead of only accepting an explicit user
@@ -418,7 +418,15 @@ class HealthEngine:
                             base_cfg = AppConfig.load_from_yaml(cand)
                         except Exception:
                             continue
-                        base_cfg.execution.mode = str(persisted_mode.value).strip()
+                        # Coerce through the enum so the field keeps its
+                        # declared ExecutionMode type (mypy); an invalid value
+                        # rejects this candidate rather than being stored raw.
+                        try:
+                            base_cfg.execution.mode = ExecutionMode(
+                                str(persisted_mode.value).strip()
+                            )
+                        except ValueError:
+                            continue
                         self._config = base_cfg
                         return self._config
 
