@@ -490,10 +490,23 @@ def register_debug_research_routes(
             try:
                 risk = engine.risk_engine
                 kill_switch = bool(getattr(risk, "_kill_switch_active", False))
+                # HEALTH-RISK-CONST: the hard ceiling is the ORDER MANAGER's
+                # enforcement constant (order_manager.HARD_MAX_LOTS, the
+                # last-defense clamp composed into every dispatch). The
+                # hardcoded 10.0 here drifted silently from the authority; a
+                # change to the real clamp would have left the UI asserting
+                # a stale value while the engine enforced another.
+                hard_max = 10.0
+                try:
+                    from nexus_scalp.execution.lifecycle.dispatch import _om_dispatch_symbols
+
+                    hard_max = float(_om_dispatch_symbols()[0])
+                except Exception:
+                    pass
                 metrics = {
                     "kill_switch_active": kill_switch,
                     "max_allowed_lots": float(getattr(risk, "max_allowed_lots", 0.0)),
-                    "hard_max_lots": 10.0,
+                    "hard_max_lots": hard_max,
                     "min_risk_reward_ratio": float(getattr(risk, "min_risk_reward_ratio", 0.0)),
                     "survival_mode": bool(getattr(engine, "_survival_mode_active", False)),
                 }
@@ -515,7 +528,7 @@ def register_debug_research_routes(
                     add(
                         "Risk Engine",
                         "HEALTHY",
-                        "Clamps armed (HARD_MAX_LOTS = 10.0), kill switch disengaged.",
+                        f"Clamps armed (HARD_MAX_LOTS = {hard_max}), kill switch disengaged.",
                         metrics,
                     )
             except Exception as e:
@@ -528,8 +541,33 @@ def register_debug_research_routes(
         else:
             try:
                 adapter = engine.adapter
+                # HEALTH-MT5-STATE: the IPC verdict must come from the
+                # adapter's authoritative connection state machine
+                # (MT5ConnectionState: DISCONNECTED/CONNECTING/CONNECTED/
+                # DEGRADED/AUTHENTICATION_ERROR/TERMINAL_ERROR/UNKNOWN),
+                # not from a bare is_connected() boolean. The boolean is
+                # true under DEGRADED and AUTHENTICATION_ERROR, so the old
+                # logic reported a healthy stream on an adapter whose
+                # terminal or account was broken.
+                conn_state: Any = None
+                conn_dict: dict[str, Any] = {}
+                get_state = getattr(adapter, "connection_state", None)
+                if callable(get_state):
+                    try:
+                        conn_state = get_state()
+                        to_dict = getattr(conn_state, "to_dict", None)
+                        conn_dict = to_dict() if callable(to_dict) else {}
+                    except Exception:
+                        conn_state = None
+                state_name = (
+                    str(getattr(conn_state, "state", "")).upper() if conn_state is not None else ""
+                )
                 is_conn_fn = getattr(adapter, "is_connected", None)
                 connected = bool(is_conn_fn()) if callable(is_conn_fn) else True
+                if not state_name:
+                    # No state machine on this adapter (e.g. a non-MT5
+                    # implementation): keep the boolean, it is all we have.
+                    state_name = "CONNECTED" if connected else "DISCONNECTED"
 
                 tick = engine._last_tick
                 tick_age = None
@@ -541,18 +579,41 @@ def register_debug_research_routes(
 
                 metrics = {
                     "adapter": type(adapter).__name__,
+                    "connection_state": state_name,
                     "connected": connected,
                     "last_tick_age_seconds": tick_age,
                     "execution_mode": engine.config.execution.mode.value,
                     "symbol": engine.config.execution.symbol,
                 }
-                if not connected:
+                # PAPER/SIMULATED adapters carry no broker truth: the IPC
+                # layer is a simulation, so the connection dimension is
+                # NOT_APPLICABLE rather than a live-market health claim.
+                adapter_kind = str(type(adapter).__name__).lower()
+                simulated = "paper" in adapter_kind or "sim" in adapter_kind
+                if simulated:
+                    metrics["simulated"] = True
+
+                def _mt5_detail() -> str:
+                    err = conn_dict.get("last_error") or conn_dict.get("last_failure")
+                    return f"Connection state {state_name}" + (f" ({err})" if err else "")
+
+                # The STATE MACHINE is authoritative over is_connected(): the
+                # boolean is true under DEGRADED/AUTHENTICATION_ERROR, and can
+                # be stale during a transition. Order the branches by the
+                # state word first, the boolean only as a fallback for
+                # adapters that expose no state machine (state_name was
+                # synthesized from the boolean for those, so the two agree).
+                if state_name in ("AUTHENTICATION_ERROR", "TERMINAL_ERROR"):
+                    add("MT5 Win32 IPC Adapter", "UNHEALTHY", _mt5_detail(), metrics)
+                elif state_name == "DISCONNECTED" or not connected:
                     add(
                         "MT5 Win32 IPC Adapter",
                         "DISCONNECTED",
                         "Broker IPC channel reports disconnected.",
                         metrics,
                     )
+                elif state_name in ("CONNECTING", "DEGRADED"):
+                    add("MT5 Win32 IPC Adapter", "DEGRADED", _mt5_detail(), metrics)
                 elif tick_age is None:
                     add(
                         "MT5 Win32 IPC Adapter",
@@ -604,7 +665,26 @@ def register_debug_research_routes(
                 "write_queue_depth": queue_size,
                 "worker_alive": worker_alive,
                 "total_trades": metrics_db.get("total_trades", 0),
+                # HEALTH-DB-WRITEPATH: worker liveness + an empty queue prove
+                # the writer EXISTS, not that it SUCCEEDS. Expose the
+                # repository's own failure counters so a writer that is alive
+                # but silently dropping every batch is visible: a non-zero
+                # audit_dropped_rows / audit_batch_failures is a real write
+                # failure the old widget never surfaced (Phase 13: report the
+                # write path, not just the connection).
+                "write_failures": int(getattr(repo, "audit_batch_failures", 0) or 0),
+                "dropped_rows": int(getattr(repo, "audit_dropped_rows", 0) or 0),
+                "salvaged_rows": int(getattr(repo, "audit_salvaged_rows", 0) or 0),
             }
+            # HEALTH-DBLABEL: the detail string must describe the provider the
+            # repository is ACTUALLY using. Under PostgreSQL there is no WAL
+            # and no local file — the old fixed "WAL storage reachable" label
+            # described a storage engine the database does not use. Read the
+            # provider from the repository's own provider flag (it is the
+            # single authority for "which database am I writing to"), and
+            # surface it as a metric so the UI never has to guess either.
+            is_sqlite = bool(getattr(repo, "_is_sqlite", True))
+            metrics["provider"] = "postgresql" if not is_sqlite else "sqlite"
             if not worker_alive:
                 add(
                     "Audit Database", "DEGRADED", "Background write worker is not running.", metrics
@@ -617,12 +697,32 @@ def register_debug_research_routes(
                     metrics,
                 )
             else:
-                add(
-                    "Audit Database",
-                    "HEALTHY",
-                    "WAL storage reachable; async writer draining normally.",
-                    metrics,
-                )
+                if is_sqlite:
+                    detail = "SQLite storage reachable; async writer draining normally."
+                else:
+                    # The async writer + queue exist under PostgreSQL too, but
+                    # the durability guarantee is the server's WAL, not a local
+                    # file — name the real provider and its database.
+                    detail = (
+                        f"PostgreSQL reachable ({metrics['db_path']}); "
+                        "async writer draining normally."
+                    )
+                # HEALTH-DB-WRITEPATH: a live worker with a healthy queue can
+                # still be failing every batch — the counters above are the
+                # evidence. Non-zero failures/downgrades degrade the verdict;
+                # the detail says WHY (an operator seeing "healthy" over a
+                # silent write loss is the exact failure mode Phase 13 targets).
+                if metrics["write_failures"] > 0 or metrics["dropped_rows"] > 0:
+                    add(
+                        "Audit Database",
+                        "DEGRADED",
+                        f"Writer alive but failing: {metrics['write_failures']} batch failures, "
+                        f"{metrics['dropped_rows']} rows dropped "
+                        f"({metrics['salvaged_rows']} salvaged).",
+                        metrics,
+                    )
+                else:
+                    add("Audit Database", "HEALTHY", detail, metrics)
         except Exception as e:
             _log_err(e, "Audit DB health introspection failed", endpoint="/api/debug/health")
             add("Audit Database", "UNHEALTHY", "Audit database is unreachable.")
@@ -632,9 +732,16 @@ def register_debug_research_routes(
         for sub in subsystems:
             if rank.get(sub["status"], 0) > rank.get(overall, 0):
                 overall = sub["status"]
+        # HEALTH-OVERALL-COUNT: an empty subsystem list is not "all healthy" —
+        # it means the widgets produced no evidence at all. Report UNHEALTHY
+        # so a page that silently lost every probe cannot display a green
+        # overall banner over an empty grid (the unknown is not the healthy).
+        if not subsystems:
+            overall = "UNHEALTHY"
 
         return {
             "overall_status": overall,
+            "subsystem_count": len(subsystems),
             "subsystems": subsystems,
             "checked_at": datetime.now(UTC).isoformat(),
         }
@@ -1845,10 +1952,43 @@ def register_debug_research_routes(
 
             engine = ForensicHealthEngine()
             dash = engine.dashboard()
-            return serialize_enums({"available": True, "forensics": dash})
+            # HEALTH-FORENSICS-TRUTH: the forensic matrix must report the
+            # number of checks it actually ran, and the worst status it saw.
+            # The old payload returned {"available": True} unconditionally —
+            # including on the exception path below, where the engine had
+            # produced NO checks at all. A dead probe must read available=
+            # False with the error, never a green "ACTIVE" with empty data.
+            rows = dash.get("rows") if isinstance(dash, dict) else None
+            n_checks = len(rows) if isinstance(rows, dict) else 0
+            worst = "PASS"
+            if n_checks:
+                for _r in rows.values():
+                    s = str(_r.get("status") if isinstance(_r, dict) else "").upper()
+                    if s in ("CRITICAL", "FAIL", "FAILED", "ERROR"):
+                        worst = "CRITICAL"
+                        break
+                    if s in ("WARNING", "DEGRADED") and worst != "CRITICAL":
+                        worst = "WARNING"
+                    elif s in ("UNKNOWN",) and worst == "PASS":
+                        worst = "UNKNOWN"
+            payload = {
+                "available": True,
+                "check_count": n_checks,
+                "worst_status": worst,
+                "forensics": dash,
+            }
+            return serialize_enums(payload)
         except Exception as e:
             log_web_error(logger, "/api", None, e, context={"msg": "Forensic health failed"})
-            return _err("INTERNAL_ERROR")
+            return serialize_enums(
+                {
+                    "available": False,
+                    "check_count": 0,
+                    "worst_status": "UNAVAILABLE",
+                    "reason": "FORENSIC_ENGINE_UNAVAILABLE",
+                    "error": {"code": "FORENSIC_ENGINE_UNAVAILABLE"},
+                }
+            )
 
     @app.get("/api/forensics/deploy-gate")
     def get_forensic_deploy_gate() -> dict[str, Any]:
