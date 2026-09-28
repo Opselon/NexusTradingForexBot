@@ -382,8 +382,13 @@ function RuntimeConfigForm() {
   const cfgQuery = useConfigFormQuery(poll.paused);
   const diagQuery = useRuntimeDiagnosticsQuery(poll.paused);
   const effectiveQuery = useRuntimeEffectiveQuery(poll.paused);
-  const apply = useApplyRuntimeConfig();
   const pushToast = useUiStore((s) => s.pushToast);
+
+  const baseline = useMemo(() => (cfgQuery.data ? configBaseline(cfgQuery.data) : null), [cfgQuery.data]);
+  // TASK-CFGUI-002: the apply gate needs the authoritative baseline so the
+  // partial edit is validated against the MERGED configuration, and the specs
+  // must carry the translator's labels (they interpolate into the messages).
+  const apply = useApplyRuntimeConfig(baseline, t);
 
   const [draft, setDraft] = useState<FieldValues | null>(null);
   const [result, setResult] = useState<CommandOutcome | null>(null);
@@ -391,8 +396,7 @@ function RuntimeConfigForm() {
   const [step, setStep] = useState<null | "client" | "server" | "applied">(null);
   const [steps, setSteps] = useState<ApplySteps | null>(null);
 
-  const specs = useMemo(() => runtimeConfigSpecs(), []);
-  const baseline = useMemo(() => (cfgQuery.data ? configBaseline(cfgQuery.data) : null), [cfgQuery.data]);
+  const specs = useMemo(() => runtimeConfigSpecs(t), [t]);
   const values = draft ?? baseline ?? {};
   // perf: validation / dirty-key / section grouping derived only when their
   // inputs change (deps: specs, baseline, values — every reactive value read).

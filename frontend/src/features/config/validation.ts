@@ -353,6 +353,43 @@ export function validateFields(
   return errors;
 }
 
+/**
+ * Validate a PARTIAL edit against the canonical merged configuration.
+ *
+ * The runtime-config apply payload is a sparse `section.field -> value` map
+ * holding ONLY the edited keys (see buildPayload). Every spec in the table is
+ * `required`, so feeding that partial map to validateFields() reports every
+ * untouched field as missing — a single-field edit is refused with a whole-form
+ * error list and the request never reaches the wire.
+ *
+ * The complete document an edit belongs to is the authoritative baseline merged
+ * with the partial edit: rules see whole values, the verdict is reported ONLY
+ * for the keys the operator actually touched. Cross-field checks (which compare
+ * values across sections) run over the merged map so a real conflict between
+ * the edited value and the stored ones is still caught. An untouched key can
+ * never produce an error here — the backend's own dry-run remains the authority
+ * for everything the operator did not edit.
+ */
+export function validateChangedValues(
+  specs: readonly FieldSpec[],
+  baseline: FieldValues,
+  changes: FieldValues,
+  rules: FieldRule[] = DEFAULT_RULES,
+  t: Translate = identityT,
+): FieldErrors {
+  const merged: FieldValues = { ...baseline, ...changes };
+  const errors: FieldErrors = {};
+  const changed = new Set(Object.keys(changes));
+  for (const spec of specs) {
+    if (!changed.has(spec.key)) continue;
+    const msgs = validateField(spec, merged[spec.key], rules, t);
+    for (const m of msgs) addError(errors, spec.key, m);
+    const crossMsg = spec.cross ? spec.cross(merged) : null;
+    if (crossMsg) addError(errors, spec.key, crossMsg);
+  }
+  return errors;
+}
+
 export function hasErrors(errors: FieldErrors | null | undefined): boolean {
   if (!errors) return false;
   return Object.values(errors).some((msgs) => (msgs?.length ?? 0) > 0);
