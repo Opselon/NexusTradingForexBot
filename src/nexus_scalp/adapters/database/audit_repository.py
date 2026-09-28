@@ -3129,6 +3129,31 @@ class AuditRepository:
             total,
         )
 
+    def research_read_plane(self) -> Any:
+        """The READ plane the research surface queries under a pooled provider.
+
+        PG-RESEARCH-READ-001: every research read
+        (``research/store.py``, ``research/registry.py``,
+        ``research/observability.py``, ``research/dataset.py``) historically
+        opened a raw ``sqlite3.connect(repo._db_path)`` behind an
+        ``if not repo._is_sqlite`` gate. Under a PostgreSQL provider that
+        gate returned the documented empty default (0 / [] / unavailable)
+        with no exception and no log, so the /research page rendered
+        ``Registry total: 0`` while the server held thousands of registry
+        rows — fail-silent wrong data.
+
+        SQLite resolves ``None`` and keeps using its own connection (the
+        fabric must never be consulted for a SQLite domain). A pooled
+        provider resolves the same registered READ plane the audit read
+        guard already serves declared reads from, so the research surface
+        reads the SAME store the engine writes. ``None`` (no plane
+        registered, or a write-shaped backend) means "cannot read", never
+        "there is no data" — callers surface that as ``available: False``.
+        """
+        if self._is_sqlite:
+            return None
+        return self._registered_audit_read_plane()
+
     def provider_read_metrics(self) -> dict[str, Any]:
         """Provider-read observability surface (CR-02 / CHG-0067).
 

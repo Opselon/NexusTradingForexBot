@@ -28,6 +28,102 @@ MAX_READ_LIMIT = 2000
 CONTEXT_MATRICES_COLUMN = "context_matrices"
 
 
+class _ProviderRead:
+    """Provider-portable reader: SQLite keeps its own connection, a pooled
+    provider reads through the registered fabric READ plane.
+
+    PG-RESEARCH-READ-001: this module used to open
+    ``sqlite3.connect(repo._db_path)`` behind an ``if not repo._is_sqlite``
+    gate, so under the persisted PostgreSQL provider every research read
+    returned its empty default (0 / [] / unavailable) with no exception and
+    no log — the /research page reported ``Registry total: 0`` while the
+    server held thousands of registry rows. The plane is the SAME registered
+    read backend the audit read guard serves declared reads from (CHG-0067),
+    so the research surface now reads the store the engine writes.
+
+    A pooled provider without a resolvable plane yields ``None``; callers
+    must surface that as ``available: False`` (cannot read) and never as an
+    empty result (no data) — the failure mode this fix exists to remove.
+    """
+
+    def __init__(self, repo: AuditRepository) -> None:
+        self._repo = repo
+        self._plane: Any = None
+        self._checked = False
+
+    def _resolve(self) -> Any:
+        """Resolve the plane once and cache it (idempotent across methods)."""
+        if not self._checked:
+            self._checked = True
+            try:
+                self._plane = self._repo.research_read_plane()
+            except Exception:
+                self._plane = None
+            if self._plane is None:
+                # Unreadable must stay visible in the same degradation metrics
+                # the CHG-0067 audit guard already emits, so an operator can
+                # tell "no data" from "cannot read" from a dashboard alone.
+                # Observability must never break the read itself: a repository
+                # (or a test double) without the counter hooks still reads.
+                with contextlib.suppress(Exception):
+                    for name, op in (
+                        ("provider_read_degraded_total", None),
+                        ("_bump_provider_read_operation", "research_read"),
+                    ):
+                        if op is None:
+                            self._repo._bump_provider_read_counter(name)
+                        else:
+                            self._repo._bump_provider_read_operation(op)
+        return self._plane
+
+    @property
+    def available(self) -> bool:
+        """A readable backend is resolvable for this process.
+
+        SQLite always reads through its own connection (``None`` plane is the
+        documented, correct answer there), so readability is ``_is_sqlite`` or
+        a resolved plane — never just the plane.
+        """
+        return self._repo._is_sqlite or self._resolve() is not None
+
+    def rows(self, sql: str, args: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+        """Rows as dicts; raises so the caller's except-clause logs it."""
+        if self._repo._is_sqlite:
+            conn = sqlite3.connect(self._repo._db_path, timeout=5.0)
+            conn.row_factory = sqlite3.Row
+            try:
+                return [dict(r) for r in conn.execute(sql, args).fetchall()]
+            finally:
+                conn.close()
+        plane = self._resolve()
+        if plane is None:
+            raise RuntimeError("no read plane registered for domain 'audit'")
+        return [dict(r) for r in plane.query(sql, args)]
+
+    def one(self, sql: str, args: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+        rows = self.rows(sql, args)
+        return rows[0] if rows else None
+
+    def scalar(self, sql: str, args: tuple[Any, ...] = ()) -> Any:
+        if self._repo._is_sqlite:
+            conn = sqlite3.connect(self._repo._db_path, timeout=5.0)
+            try:
+                return conn.execute(sql, args).fetchone()[0]
+            finally:
+                conn.close()
+        plane = self._resolve()
+        if plane is None:
+            raise RuntimeError("no read plane registered for domain 'audit'")
+        return plane.scalar(sql, args)
+
+    def count(self, table: str, where: str = "", args: tuple[Any, ...] = ()) -> int:
+        """Bounded ``COUNT(*)``; 0 only when the table is genuinely empty."""
+        sql = f"SELECT COUNT(*) FROM {table}"
+        if where:
+            sql += f" WHERE {where}"
+        return int(self.scalar(sql, args) or 0)
+
+
 def ensure_registry_context_columns(conn: sqlite3.Connection) -> None:
     """Idempotent ALTER TABLE adding ``context_matrices`` to strategy_registry.
 
@@ -104,7 +200,8 @@ def list_registry(
     limit: int = 200,
 ) -> list[dict[str, Any]]:
     """Bounded listing of registry entries, newest first."""
-    if not repo._is_sqlite:
+    reader = _ProviderRead(repo)
+    if not reader.available:
         return []
     bounded = max(1, min(int(limit), MAX_READ_LIMIT))
     sql = "SELECT * FROM strategy_registry"
@@ -115,14 +212,8 @@ def list_registry(
     sql += " ORDER BY updated_at DESC LIMIT ?;"
     out: list[dict[str, Any]] = []
     try:
-        conn = sqlite3.connect(repo._db_path, timeout=5.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            rows = conn.execute(sql, (*args, bounded)).fetchall()
-        finally:
-            conn.close()
-        for r in rows:
-            out.append(_registry_row_safe(dict(r)))
+        for r in reader.rows(sql, (*args, bounded)):
+            out.append(_registry_row_safe(r))
     except Exception as e:
         logger.error("[STRATEGY_REGISTRY] list failed", error=str(e))
     return out
@@ -132,26 +223,22 @@ def get_registry_entry(
     repo: AuditRepository, strategy_id: str, strategy_version: str | None = None
 ) -> dict[str, Any] | None:
     """Single registry entry."""
-    if not repo._is_sqlite:
+    reader = _ProviderRead(repo)
+    if not reader.available:
         return None
     try:
-        conn = sqlite3.connect(repo._db_path, timeout=5.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            if strategy_version:
-                row = conn.execute(
-                    "SELECT * FROM strategy_registry WHERE strategy_id=? AND strategy_version=?;",
-                    (strategy_id, strategy_version),
-                ).fetchone()
-            else:
-                row = conn.execute(
-                    "SELECT * FROM strategy_registry WHERE strategy_id=? "
-                    "ORDER BY updated_at DESC LIMIT 1;",
-                    (strategy_id,),
-                ).fetchone()
-            return _registry_row_safe(dict(row)) if row else None
-        finally:
-            conn.close()
+        if strategy_version:
+            row = reader.one(
+                "SELECT * FROM strategy_registry WHERE strategy_id=? AND strategy_version=?;",
+                (strategy_id, strategy_version),
+            )
+        else:
+            row = reader.one(
+                "SELECT * FROM strategy_registry WHERE strategy_id=? "
+                "ORDER BY updated_at DESC LIMIT 1;",
+                (strategy_id,),
+            )
+        return _registry_row_safe(row) if row else None
     except Exception as e:
         logger.error("[STRATEGY_REGISTRY] entry load failed", strategy=strategy_id, error=str(e))
         return None
@@ -163,7 +250,8 @@ def list_research_runs(
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     """Append-only validation run records (reproducibility lineage)."""
-    if not repo._is_sqlite:
+    reader = _ProviderRead(repo)
+    if not reader.available:
         return []
     bounded = max(1, min(int(limit), 500))
     sql = "SELECT * FROM research_runs"
@@ -174,14 +262,7 @@ def list_research_runs(
     sql += " ORDER BY executed_at DESC LIMIT ?;"
     out: list[dict[str, Any]] = []
     try:
-        conn = sqlite3.connect(repo._db_path, timeout=5.0)
-        conn.row_factory = sqlite3.Row
-        try:
-            rows = conn.execute(sql, (*args, bounded)).fetchall()
-        finally:
-            conn.close()
-        for r in rows:
-            out.append(dict(r))
+        out = list(reader.rows(sql, (*args, bounded)))
     except Exception as e:
         logger.error("[STRATEGY_RESEARCH] runs list failed", error=str(e))
     return out
@@ -190,21 +271,18 @@ def list_research_runs(
 def registry_summary(repo: AuditRepository) -> dict[str, Any]:
     """Candidate count / validation status / lifecycle distribution."""
     out: dict[str, Any] = {"available": False, "total": 0, "by_lifecycle": {}}
-    if not repo._is_sqlite:
+    reader = _ProviderRead(repo)
+    if not reader.available:
         return out
     try:
-        conn = sqlite3.connect(repo._db_path, timeout=5.0)
-        try:
-            row = conn.execute("SELECT COUNT(*) FROM strategy_registry;").fetchone()
-            out["total"] = int(row[0]) if row else 0
-            out["by_lifecycle"] = {}
-            for r in conn.execute(
-                "SELECT lifecycle, COUNT(*) AS c FROM strategy_registry GROUP BY lifecycle;"
-            ).fetchall():
-                out["by_lifecycle"][str(r[0])] = int(r[1])
-            out["available"] = True
-        finally:
-            conn.close()
+        out["total"] = reader.count("strategy_registry")
+        by_lifecycle: dict[str, int] = {}
+        for r in reader.rows(
+            "SELECT lifecycle, COUNT(*) AS c FROM strategy_registry GROUP BY lifecycle;"
+        ):
+            by_lifecycle[str(r["lifecycle"])] = int(r["c"])
+        out["by_lifecycle"] = by_lifecycle
+        out["available"] = True
     except Exception as e:
         logger.error("[STRATEGY_RESEARCH] summary failed", error=str(e))
     return out
@@ -218,59 +296,45 @@ def outcome_quality_summary(repo: AuditRepository) -> dict[str, Any]:
     evidence) instead of showing a bare zero.
     """
     out: dict[str, Any] = {"available": False}
-    if not repo._is_sqlite:
+    reader = _ProviderRead(repo)
+    if not reader.available:
         return out
     try:
-        conn = sqlite3.connect(repo._db_path, timeout=5.0)
-        try:
-            row = conn.execute("SELECT COUNT(*) FROM audit_experience_outcomes;").fetchone()
-            total = int(row[0]) if row else 0
-            out["total_outcomes"] = total
-            out["closed_outcomes"] = int(
-                conn.execute(
-                    "SELECT COUNT(*) FROM audit_experience_outcomes WHERE is_closed = 1;"
-                ).fetchone()[0]
-            )
-            zero_r = int(
-                conn.execute(
-                    "SELECT COUNT(*) FROM audit_experience_outcomes "
-                    "WHERE ABS(realized_r_multiple) < 1e-12 AND ABS(realized_pnl_usd) < 1e-9;"
-                ).fetchone()[0]
-            )
-            nonzero = total - zero_r
-            out["zero_r_outcomes"] = zero_r
-            out["nonzero_r_outcomes"] = max(0, nonzero)
-            out["positive_r_outcomes"] = int(
-                conn.execute(
-                    "SELECT COUNT(*) FROM audit_experience_outcomes WHERE realized_r_multiple > 1e-12;"
-                ).fetchone()[0]
-            )
-            out["negative_r_outcomes"] = int(
-                conn.execute(
-                    "SELECT COUNT(*) FROM audit_experience_outcomes WHERE realized_r_multiple < -1e-12;"
-                ).fetchone()[0]
-            )
-            # reconstruction source census from payloads (bounded scan)
-            srcs: dict[str, int] = {}
-            for r in conn.execute(
-                "SELECT payload FROM audit_experience_outcomes WHERE is_closed = 1 "
-                "ORDER BY outcome_timestamp DESC LIMIT 2000;"
-            ).fetchall():
-                try:
-                    import json
+        total = reader.count("audit_experience_outcomes")
+        out["total_outcomes"] = total
+        out["closed_outcomes"] = reader.count("audit_experience_outcomes", "is_closed = 1")
+        zero_r = reader.count(
+            "audit_experience_outcomes",
+            "ABS(realized_r_multiple) < 1e-12 AND ABS(realized_pnl_usd) < 1e-9",
+        )
+        nonzero = total - zero_r
+        out["zero_r_outcomes"] = zero_r
+        out["nonzero_r_outcomes"] = max(0, nonzero)
+        out["positive_r_outcomes"] = reader.count(
+            "audit_experience_outcomes", "realized_r_multiple > 1e-12"
+        )
+        out["negative_r_outcomes"] = reader.count(
+            "audit_experience_outcomes", "realized_r_multiple < -1e-12"
+        )
+        # reconstruction source census from payloads (bounded scan)
+        srcs: dict[str, int] = {}
+        for r in reader.rows(
+            "SELECT payload FROM audit_experience_outcomes WHERE is_closed = 1 "
+            "ORDER BY outcome_timestamp DESC LIMIT 2000;"
+        ):
+            try:
+                import json
 
-                    payload = json.loads(r[0] or "{}")
-                    bo = payload.get("broker_outcome") or {}
-                    src = bo.get("reconstruction_source", "") if isinstance(bo, dict) else ""
-                except Exception:
-                    src = ""
-                if not src:
-                    src = "NONE_OR_MISSING"
-                srcs[src] = srcs.get(src, 0) + 1
-            out["reconstruction_sources"] = srcs
-            out["available"] = True
-        finally:
-            conn.close()
+                payload = json.loads(r.get("payload") or "{}")
+                bo = payload.get("broker_outcome") or {}
+                src = bo.get("reconstruction_source", "") if isinstance(bo, dict) else ""
+            except Exception:
+                src = ""
+            if not src:
+                src = "NONE_OR_MISSING"
+            srcs[src] = srcs.get(src, 0) + 1
+        out["reconstruction_sources"] = srcs
+        out["available"] = True
     except Exception as e:
         logger.error("[STRATEGY_RESEARCH] outcome quality summary failed", error=str(e))
     return out
@@ -296,32 +360,17 @@ def research_health_summary(
     the registry summary. Never fabricates rows.
     """
     out: dict[str, Any] = {"available": False}
-    if not repo._is_sqlite:
+    reader = _ProviderRead(repo)
+    if not reader.available:
         return out
     try:
         out["available"] = True
         # 1. Source / canonical trades.
-        conn = sqlite3.connect(repo._db_path, timeout=5.0)
-        try:
-            out["source_experiences"] = int(
-                conn.execute("SELECT COUNT(*) FROM audit_experiences;").fetchone()[0]
-            )
-            out["canonical_outcomes"] = int(
-                conn.execute("SELECT COUNT(*) FROM audit_experience_outcomes;").fetchone()[0]
-            )
-            out["closed_ledger_rows"] = int(
-                conn.execute("SELECT COUNT(*) FROM audit_ledger WHERE status='CLOSED';").fetchone()[
-                    0
-                ]
-            )
-            out["registry_count"] = int(
-                conn.execute("SELECT COUNT(*) FROM strategy_registry;").fetchone()[0]
-            )
-            out["research_runs"] = int(
-                conn.execute("SELECT COUNT(*) FROM research_runs;").fetchone()[0]
-            )
-        finally:
-            conn.close()
+        out["source_experiences"] = reader.count("audit_experiences")
+        out["canonical_outcomes"] = reader.count("audit_experience_outcomes")
+        out["closed_ledger_rows"] = reader.count("audit_ledger", "status = 'CLOSED'")
+        out["registry_count"] = reader.count("strategy_registry")
+        out["research_runs"] = reader.count("research_runs")
 
         # 2. Eligibility audit + family distribution (derived, read-only).
         audit: dict[str, Any] = {}
@@ -356,20 +405,16 @@ def research_health_summary(
         out["candidates_discovered"] = candidates_discovered
 
         # 3. Validation attempt census (research_runs).
-        conn = sqlite3.connect(repo._db_path, timeout=5.0)
-        try:
-            rows = conn.execute(
-                "SELECT result_summary FROM research_runs ORDER BY executed_at DESC LIMIT 500;"
-            ).fetchall()
-        finally:
-            conn.close()
+        rows = reader.rows(
+            "SELECT result_summary FROM research_runs ORDER BY executed_at DESC LIMIT 500;"
+        )
         attempts = len(rows)
         oos_fail = oos_pass = rob_fail = validated = rejected = 0
-        for (rs,) in rows:
+        for r in rows:
             try:
                 import json as _json
 
-                s = _json.loads(rs or "{}")
+                s = _json.loads(r.get("result_summary") or "{}")
             except Exception:
                 s = {}
             if s.get("oos_status") == "FAIL":
@@ -392,17 +437,13 @@ def research_health_summary(
         # 4. Worker telemetry.
         if registry is not None and hasattr(registry, "audit_repo"):
             with contextlib.suppress(Exception):
-                conn = sqlite3.connect(repo._db_path, timeout=5.0)
-                try:
-                    row = conn.execute(
-                        "SELECT cycle_count, last_cycle_at, last_error FROM research_worker_state "
-                        "WHERE scope='research' LIMIT 1;"
-                    ).fetchone()
-                finally:
-                    conn.close()
+                row = reader.one(
+                    "SELECT cycle_count, last_cycle_at, last_error FROM research_worker_state "
+                    "WHERE scope='research' LIMIT 1;"
+                )
                 if row is not None:
-                    out["last_cycle_at"] = row[0] if len(row) > 1 else ""
-                    out["last_error_worker"] = row[2] if len(row) > 2 else ""
+                    out["last_cycle_at"] = row.get("last_cycle_at", "")
+                    out["last_error_worker"] = row.get("last_error", "")
         return out
     except Exception as e:
         logger.error("[STRATEGY_RESEARCH] health summary failed", error=str(e))
@@ -418,7 +459,8 @@ def self_heal_research(repo: AuditRepository, registry) -> int:
     Never touches historical validation truth; only derived rankings/summaries
     are rebuilt. Returns the number of registry entries repaired.
     """
-    if not repo._is_sqlite:
+    reader = _ProviderRead(repo)
+    if not reader.available:
         return 0
     repaired = 0
     try:

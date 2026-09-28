@@ -71,6 +71,21 @@ def _read_json(text: str | None) -> dict[str, Any]:
         return {}
 
 
+def _reader(repo: AuditRepository) -> Any:
+    """Provider-portable research reader (PG-RESEARCH-READ-001).
+
+    ``_connect`` below opens a raw SQLite connection, which the callers used
+    behind an ``if not repo._is_sqlite`` gate — so under a PostgreSQL
+    provider every observability read (gates / events / evidence / worker /
+    queue / heatmap / families) returned its empty default while the server
+    held the rows. A pooled provider now reads through the same registered
+    fabric READ plane the audit read guard serves.
+    """
+    from nexus_scalp.research.store import _ProviderRead
+
+    return _ProviderRead(repo)
+
+
 def _connect(repo: AuditRepository) -> sqlite3.Connection:
     conn = sqlite3.connect(repo._db_path, timeout=5.0)
     conn.row_factory = sqlite3.Row
@@ -294,16 +309,12 @@ class ResearchObservabilityStore:
         cached = self._gates.get(gate_id)
         if cached is not None:
             return cached
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return None
         try:
-            conn = _connect(self.audit_repo)
-            try:
-                row = conn.execute(
-                    "SELECT * FROM research_gates WHERE gate_id=?;", (gate_id,)
-                ).fetchone()
-            finally:
-                conn.close()
+            row = _reader(self.audit_repo).one(
+                "SELECT * FROM research_gates WHERE gate_id=?;", (gate_id,)
+            )
             return self._gate_from_row(row) if row else None
         except Exception as e:
             logger.error("[RESEARCH_OBS] gate load failed", gate=gate_id, error=str(e))
@@ -315,7 +326,7 @@ class ResearchObservabilityStore:
         research_run_id: str | None = None,
         limit: int = 500,
     ) -> list[ResearchGate]:
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return []
         bounded = max(1, min(int(limit), MAX_READ_LIMIT))
         sql = "SELECT * FROM research_gates"
@@ -333,11 +344,7 @@ class ResearchObservabilityStore:
         args.append(bounded)
         out: list[ResearchGate] = []
         try:
-            conn = _connect(self.audit_repo)
-            try:
-                rows = conn.execute(sql, args).fetchall()
-            finally:
-                conn.close()
+            rows = _reader(self.audit_repo).rows(sql, args)
             for r in rows:
                 gate = self._gate_from_row(r)
                 if gate is not None:
@@ -418,13 +425,16 @@ class ResearchObservabilityStore:
         )
         return event
 
-    def _archive_available(self, conn: Any) -> bool:
+    def _archive_available(self) -> bool:
         """True when the AUDIT-0009 archive tables exist on this database."""
-        row = conn.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN "
-            "('research_events_archive', 'research_evidence_archive')"
-        ).fetchone()
-        return bool(row and row[0] == 2)
+        try:
+            row = _reader(self.audit_repo).one(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' "
+                "AND name IN ('research_events_archive', 'research_evidence_archive')"
+            )
+        except Exception:
+            return False
+        return bool(row and int(row.get(0) or 0) == 2)
 
     def history_counts(self) -> dict[str, int]:
         """Live vs archived row counts (archive-only retention visibility).
@@ -437,26 +447,14 @@ class ResearchObservabilityStore:
             "evidence_live": 0,
             "evidence_archived": 0,
         }
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return out
         try:
-            conn = _connect(self.audit_repo)
-            try:
-                out["events_live"] = int(
-                    conn.execute("SELECT COUNT(*) FROM research_events").fetchone()[0]
-                )
-                out["evidence_live"] = int(
-                    conn.execute("SELECT COUNT(*) FROM research_evidence").fetchone()[0]
-                )
-                if self._archive_available(conn):
-                    out["events_archived"] = int(
-                        conn.execute("SELECT COUNT(*) FROM research_events_archive").fetchone()[0]
-                    )
-                    out["evidence_archived"] = int(
-                        conn.execute("SELECT COUNT(*) FROM research_evidence_archive").fetchone()[0]
-                    )
-            finally:
-                conn.close()
+            reader = _reader(self.audit_repo)
+            out["events_live"] = reader.count("research_events")
+            out["evidence_live"] = reader.count("research_evidence")
+            out["events_archived"] = reader.count("research_events_archive")
+            out["evidence_archived"] = reader.count("research_evidence_archive")
         except Exception as e:
             logger.error("[RESEARCH_OBS] history counts failed", error=str(e))
         return out
@@ -468,7 +466,7 @@ class ResearchObservabilityStore:
         limit: int = 300,
         include_archive: bool = True,
     ) -> list[dict[str, Any]]:
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return []
         bounded = max(1, min(int(limit), MAX_READ_LIMIT))
         # EDGE ROUND-4: archive-aware read. The archive IS the history, so the
@@ -498,11 +496,7 @@ class ResearchObservabilityStore:
         args.append(bounded)
         out: list[dict[str, Any]] = []
         try:
-            conn = _connect(self.audit_repo)
-            try:
-                rows = conn.execute(sql, args).fetchall()
-            finally:
-                conn.close()
+            rows = _reader(self.audit_repo).rows(sql, args)
             for r in rows:
                 out.append(
                     {
@@ -543,16 +537,12 @@ class ResearchObservabilityStore:
         return artifact.evidence_id
 
     def get_evidence(self, evidence_id: str) -> dict[str, Any] | None:
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return None
         try:
-            conn = _connect(self.audit_repo)
-            try:
-                row = conn.execute(
-                    "SELECT * FROM research_evidence WHERE evidence_id=?;", (evidence_id,)
-                ).fetchone()
-            finally:
-                conn.close()
+            row = _reader(self.audit_repo).one(
+                "SELECT * FROM research_evidence WHERE evidence_id=?;", (evidence_id,)
+            )
             return self._evidence_from_row(row) if row else None
         except Exception as e:
             logger.error("[RESEARCH_OBS] evidence load failed", evidence=evidence_id, error=str(e))
@@ -565,7 +555,7 @@ class ResearchObservabilityStore:
         limit: int = 500,
         include_archive: bool = True,
     ) -> list[dict[str, Any]]:
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return []
         bounded = max(1, min(int(limit), MAX_READ_LIMIT))
         # EDGE ROUND-4: archive-aware (see list_events); explicit columns —
@@ -592,11 +582,7 @@ class ResearchObservabilityStore:
         args.append(bounded)
         out: list[dict[str, Any]] = []
         try:
-            conn = _connect(self.audit_repo)
-            try:
-                rows = conn.execute(sql, args).fetchall()
-            finally:
-                conn.close()
+            rows = _reader(self.audit_repo).rows(sql, args)
             for r in rows:
                 ev = self._evidence_from_row(r)
                 if ev is not None:
@@ -662,17 +648,12 @@ class ResearchObservabilityStore:
         return snapshot.fingerprint()
 
     def get_run_snapshot(self, research_run_id: str) -> dict[str, Any] | None:
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return None
         try:
-            conn = _connect(self.audit_repo)
-            try:
-                row = conn.execute(
-                    "SELECT * FROM research_run_snapshots WHERE research_run_id=?;",
-                    (research_run_id,),
-                ).fetchone()
-            finally:
-                conn.close()
+            row = _reader(self.audit_repo).one(
+                "SELECT * FROM research_run_snapshots WHERE research_run_id=?;", (research_run_id,)
+            )
             if row is None:
                 return None
             return {
@@ -759,16 +740,12 @@ class ResearchObservabilityStore:
 
     def worker_health(self, scope: str = "research") -> dict[str, Any]:
         """Classifies worker health from the heartbeat (HEALTHY/DEGRADED/STUCK/FAILED)."""
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return {"available": False, "health": "UNKNOWN"}
         try:
-            conn = _connect(self.audit_repo)
-            try:
-                row = conn.execute(
-                    "SELECT * FROM research_worker_heartbeat WHERE scope=?;", (scope,)
-                ).fetchone()
-            finally:
-                conn.close()
+            row = _reader(self.audit_repo).one(
+                "SELECT * FROM research_worker_heartbeat WHERE scope=?;", (scope,)
+            )
             if row is None:
                 return {"available": True, "health": WorkerHealth.IDLE.value, "heartbeat": None}
             hb = dict(row)
@@ -824,44 +801,41 @@ class ResearchObservabilityStore:
             "running": [],
             "last_errors": {},
         }
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return out
         try:
-            conn = _connect(self.audit_repo)
-            try:
-                for r in conn.execute(
-                    "SELECT gate_type, status, COUNT(*) AS c FROM research_gates "
-                    "GROUP BY gate_type, status;"
-                ).fetchall():
-                    gt = str(r["gate_type"])
-                    st = str(r["status"])
-                    bucket = out["queued"].setdefault(gt, {})
-                    bucket[st] = int(r["c"])
-                for r in conn.execute(
-                    "SELECT gate_id, strategy_id, research_run_id, gate_type, status "
-                    "FROM research_gates WHERE status IN ('RUNNING','QUEUED') "
-                    "ORDER BY order_index ASC LIMIT 20;"
-                ).fetchall():
-                    out["running"].append(
-                        {
-                            "gate_id": r["gate_id"],
-                            "strategy_id": r["strategy_id"],
-                            "research_run_id": r["research_run_id"],
-                            "gate_type": r["gate_type"],
-                            "status": r["status"],
-                        }
-                    )
-                for r in conn.execute(
-                    "SELECT gate_type, failure_reason, COUNT(*) AS c "
-                    "FROM research_gates WHERE status IN ('FAILED','ERROR','BLOCKED') "
-                    "GROUP BY gate_type, failure_reason ORDER BY c DESC LIMIT 15;"
-                ).fetchall():
-                    gt = str(r["gate_type"])
-                    out["last_errors"].setdefault(gt, []).append(
-                        {"reason": str(r["failure_reason"] or ""), "count": int(r["c"])}
-                    )
-            finally:
-                conn.close()
+            reader = _reader(self.audit_repo)
+            for r in reader.rows(
+                "SELECT gate_type, status, COUNT(*) AS c FROM research_gates "
+                "GROUP BY gate_type, status;"
+            ):
+                gt = str(r["gate_type"])
+                st = str(r["status"])
+                bucket = out["queued"].setdefault(gt, {})
+                bucket[st] = int(r["c"])
+            for r in reader.rows(
+                "SELECT gate_id, strategy_id, research_run_id, gate_type, status "
+                "FROM research_gates WHERE status IN ('RUNNING','QUEUED') "
+                "ORDER BY order_index ASC LIMIT 20;"
+            ):
+                out["running"].append(
+                    {
+                        "gate_id": r["gate_id"],
+                        "strategy_id": r["strategy_id"],
+                        "research_run_id": r["research_run_id"],
+                        "gate_type": r["gate_type"],
+                        "status": r["status"],
+                    }
+                )
+            for r in reader.rows(
+                "SELECT gate_type, failure_reason, COUNT(*) AS c "
+                "FROM research_gates WHERE status IN ('FAILED','ERROR','BLOCKED') "
+                "GROUP BY gate_type, failure_reason ORDER BY c DESC LIMIT 15;"
+            ):
+                gt = str(r["gate_type"])
+                out["last_errors"].setdefault(gt, []).append(
+                    {"reason": str(r["failure_reason"] or ""), "count": int(r["c"])}
+                )
             out["available"] = True
             return out
         except Exception as e:
@@ -876,31 +850,28 @@ class ResearchObservabilityStore:
         """Most common gate failures + rejection reasons across all runs."""
         out: dict[str, Any] = {"by_gate": {}, "rejection_reasons": {}}
         try:
-            conn = _connect(self.audit_repo)
-            try:
-                total = 0
-                for r in conn.execute(
-                    "SELECT gate_type, COUNT(*) AS c FROM research_gates "
-                    "WHERE status IN ('FAILED','ERROR') GROUP BY gate_type ORDER BY c DESC;"
-                ).fetchall():
-                    gt = str(r["gate_type"])
-                    out["by_gate"][gt] = int(r["c"])
-                    total += int(r["c"])
-                out["total_failures"] = total
-                reasons: dict[str, int] = {}
-                for r in conn.execute("SELECT result_summary FROM research_runs;").fetchall():
-                    s = _read_json(r[0])
-                    lc = s.get("lifecycle", "")
-                    if lc == "REJECTED":
-                        for key in ("primary_failure", "reason", "rejection_reason"):
-                            val = s.get(key)
-                            if val:
-                                reasons[str(val)] = reasons.get(str(val), 0) + 1
-                out["rejection_reasons"] = dict(
-                    sorted(reasons.items(), key=lambda kv: kv[1], reverse=True)
-                )
-            finally:
-                conn.close()
+            reader = _reader(self.audit_repo)
+            total = 0
+            for r in reader.rows(
+                "SELECT gate_type, COUNT(*) AS c FROM research_gates "
+                "WHERE status IN ('FAILED','ERROR') GROUP BY gate_type ORDER BY c DESC;"
+            ):
+                gt = str(r["gate_type"])
+                out["by_gate"][gt] = int(r["c"])
+                total += int(r["c"])
+            out["total_failures"] = total
+            reasons: dict[str, int] = {}
+            for r in reader.rows("SELECT result_summary FROM research_runs;"):
+                s = _read_json(r.get("result_summary"))
+                lc = s.get("lifecycle", "")
+                if lc == "REJECTED":
+                    for key in ("primary_failure", "reason", "rejection_reason"):
+                        val = s.get(key)
+                        if val:
+                            reasons[str(val)] = reasons.get(str(val), 0) + 1
+            out["rejection_reasons"] = dict(
+                sorted(reasons.items(), key=lambda kv: kv[1], reverse=True)
+            )
             return out
         except Exception as e:
             logger.error("[RESEARCH_OBS] heatmap failed", error=str(e))
@@ -910,30 +881,26 @@ class ResearchObservabilityStore:
         """Grouped candidate analytics by family / discovery window / tier."""
         out: dict[str, Any] = {"families": {}}
         try:
-            conn = _connect(self.audit_repo)
-            try:
-                for r in conn.execute(
-                    "SELECT context_definition, lifecycle, score, sample_count "
-                    "FROM strategy_registry;"
-                ).fetchall():
-                    ctx = _read_json(r["context_definition"])
-                    fam = str(ctx.get("fingerprint") or ctx.get("symbol") or "UNKNOWN")
-                    lc = str(r["lifecycle"] or "UNKNOWN")
-                    score = _read_json(r["score"])
-                    bucket = out["families"].setdefault(
-                        fam,
-                        {"candidates": 0, "validated": 0, "rejected": 0, "scores": []},
-                    )
-                    bucket["candidates"] += 1
-                    if lc == "VALIDATED":
-                        bucket["validated"] += 1
-                    elif lc == "REJECTED":
-                        bucket["rejected"] += 1
-                    fs = score.get("final_score")
-                    if isinstance(fs, (int, float)):
-                        bucket["scores"].append(float(fs))
-            finally:
-                conn.close()
+            reader = _reader(self.audit_repo)
+            for r in reader.rows(
+                "SELECT context_definition, lifecycle, score, sample_count FROM strategy_registry;"
+            ):
+                ctx = _read_json(r["context_definition"])
+                fam = str(ctx.get("fingerprint") or ctx.get("symbol") or "UNKNOWN")
+                lc = str(r["lifecycle"] or "UNKNOWN")
+                score = _read_json(r["score"])
+                bucket = out["families"].setdefault(
+                    fam,
+                    {"candidates": 0, "validated": 0, "rejected": 0, "scores": []},
+                )
+                bucket["candidates"] += 1
+                if lc == "VALIDATED":
+                    bucket["validated"] += 1
+                elif lc == "REJECTED":
+                    bucket["rejected"] += 1
+                fs = score.get("final_score")
+                if isinstance(fs, (int, float)):
+                    bucket["scores"].append(float(fs))
             for _fam, bucket in out["families"].items():
                 scores = bucket["scores"]
                 bucket["avg_score"] = round(sum(scores) / len(scores), 3) if scores else None
@@ -979,15 +946,11 @@ class ResearchObservabilityStore:
 
     def _registry_entry(self, strategy_id: str) -> dict[str, Any] | None:
         try:
-            conn = _connect(self.audit_repo)
-            try:
-                row = conn.execute(
-                    "SELECT * FROM strategy_registry WHERE strategy_id=? "
-                    "ORDER BY updated_at DESC LIMIT 1;",
-                    (strategy_id,),
-                ).fetchone()
-            finally:
-                conn.close()
+            row = _reader(self.audit_repo).one(
+                "SELECT * FROM strategy_registry WHERE strategy_id=? "
+                "ORDER BY updated_at DESC LIMIT 1;",
+                (strategy_id,),
+            )
             if row is None:
                 return None
             out = dict(row)
@@ -1011,25 +974,23 @@ class ResearchObservabilityStore:
 
     def _runs_for(self, strategy_id: str, run_id: str | None = None) -> list[dict[str, Any]]:
         try:
-            conn = _connect(self.audit_repo)
-            try:
-                if run_id:
-                    rows = conn.execute(
-                        "SELECT * FROM research_runs WHERE strategy_id=? AND run_id=? "
-                        "ORDER BY executed_at DESC LIMIT 20;",
-                        (strategy_id, run_id),
-                    ).fetchall()
-                else:
-                    rows = conn.execute(
-                        "SELECT * FROM research_runs WHERE strategy_id=? "
-                        "ORDER BY executed_at DESC LIMIT 20;",
-                        (strategy_id,),
-                    ).fetchall()
-            finally:
-                conn.close()
+            reader = _reader(self.audit_repo)
+            if run_id:
+                rows = reader.rows(
+                    "SELECT * FROM research_runs WHERE strategy_id=? AND run_id=? "
+                    "ORDER BY executed_at DESC LIMIT 20;",
+                    (strategy_id, run_id),
+                )
+            else:
+                rows = reader.rows(
+                    "SELECT * FROM research_runs WHERE strategy_id=? "
+                    "ORDER BY executed_at DESC LIMIT 20;",
+                    (strategy_id,),
+                )
             return [dict(r) for r in rows]
         except Exception as e:
             logger.error("[RESEARCH_OBS] runs load failed", strategy=strategy_id, error=str(e))
+            return []
             return []
 
 
@@ -1148,19 +1109,15 @@ def _registry_blocked_reason(
         "reason": "",
         "required": "",
     }
-    if not repo._is_sqlite:
+    if not _reader(repo).available:
         return blocker
     try:
-        conn = _connect(repo)
-        try:
-            row = conn.execute(
-                "SELECT gate_type, status, failure_reason, result "
-                "FROM research_gates WHERE strategy_id=? "
-                "ORDER BY order_index DESC, completed_at DESC LIMIT 1;",
-                (sid,),
-            ).fetchone()
-        finally:
-            conn.close()
+        row = _reader(repo).one(
+            "SELECT gate_type, status, failure_reason, result "
+            "FROM research_gates WHERE strategy_id=? "
+            "ORDER BY order_index DESC, completed_at DESC LIMIT 1;",
+            (sid,),
+        )
         if row is not None:
             gt = str(row["gate_type"])
             st = str(row["status"])
