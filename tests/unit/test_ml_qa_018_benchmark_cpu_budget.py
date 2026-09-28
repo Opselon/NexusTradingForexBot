@@ -504,7 +504,18 @@ def test_sized_path_is_linear_in_cpu_time() -> None:
     that the module declares. Per-trade cost is constant by construction, so 4x
     samples costs ~4x CPU time; the ratio bound 6.0 carries margin over the
     measured 4.20x and a genuine O(n^2) regression (a per-trade scan over the
-    whole equity history) clears it."""
+    whole equity history) clears it.
+
+    Scale: the small leg is sized ABOVE the process-time tick so the ratio
+    measures the algorithm, not the quantization. ``process_time()`` resolves
+    to one OS scheduler tick on several platforms (~15.625 ms on Windows), and
+    the 1000-sample leg burns roughly one tick — its reading then *is* the tick
+    width regardless of the real cost, so the ratio degenerates to tick-count
+    arithmetic and can read 5 or 6 on a genuinely linear algorithm (observed
+    6.67 on a shared Linux runner). Proven linear on this box at
+    0.015625 ms/sample constant from n=1000 to n=8000; the O(n^2) class is 16x
+    at 4x samples and stays far outside any bound the tick could fabricate.
+    """
     import gc
     import statistics
 
@@ -516,8 +527,12 @@ def test_sized_path_is_linear_in_cpu_time() -> None:
     # Warm up function dispatch, imports, and caches
     compute_sized_economic_pnl(_mk_research_samples(ResearchSample, 100), econ)
 
+    # Size each leg so its median spans several ticks; the ratio is then
+    # dominated by the algorithm rather than by the clock's resolution.
+    small_n = 4000
+    big_n = 16000
     base_costs: dict[int, float] = {}
-    for n in (1000, 4000):
+    for n in (small_n, big_n):
         samples = _mk_research_samples(ResearchSample, n)
         times: list[float] = []
         for _ in range(5):
@@ -527,8 +542,8 @@ def test_sized_path_is_linear_in_cpu_time() -> None:
             times.append(sw.consumed_ms)
         med = statistics.median(times)
         base_costs[n] = max(med, _PROCESS_TIME_FLOOR_MS)
-    assert base_costs[4000] > 0.0 and base_costs[1000] > 0.0
-    ratio = base_costs[4000] / max(base_costs[1000], 1e-9)
+    assert base_costs[big_n] > 0.0 and base_costs[small_n] > 0.0
+    ratio = base_costs[big_n] / max(base_costs[small_n], 1e-9)
     _ratio_bound = _budget_constant("_SIZED_PATH_LINEARITY_RATIO")
     assert ratio <= _ratio_bound, (
         f"cost is not linear in samples: {base_costs} -> ratio {ratio:.2f} (bound {_ratio_bound})"
@@ -550,8 +565,12 @@ def test_sized_path_per_sample_cost_is_constant() -> None:
     # Warm up function dispatch, imports, and caches
     compute_sized_economic_pnl(_mk_research_samples(ResearchSample, 100), econ)
 
+    # Size every leg above the process-time tick: the per-sample cost is a
+    # division, so a leg that reads as exactly one tick injects a whole tick
+    # into its own per-sample figure and the worst/best bound measures the
+    # clock rather than the algorithm (see test_sized_path_is_linear_in_cpu_time).
     per_unit: dict[int, float] = {}
-    for n in (1000, 2000, 4000):
+    for n in (4000, 8000, 16000):
         samples = _mk_research_samples(ResearchSample, n)
         times: list[float] = []
         for _ in range(5):
