@@ -477,6 +477,57 @@ class ModelStudioDriftRequest(BaseModel):
     max_rows: int = Field(default=500, ge=50, le=10000, description="Row sample limit")
 
 
+class ModelBuilderPreflightRequest(BaseModel):
+    """Full model-builder configuration (Phase 4 / N3-N5).
+
+    Every field maps to a real backend field: architecture params land on the
+    ``ScalpNet`` constructor and training params on the studio trainer. Optional
+    fields default to ``None`` so "unset" stays distinguishable from "explicitly
+    zero" when a saved config is replayed.
+    """
+
+    config_name: str = Field(default="Untitled Config", description="Operator-facing name")
+    dimension: int = Field(default=50, ge=2, description="50 or 70")
+    schema_id: str = Field(default="", description="scalp_v1 (50D) or scalp_v3 (70D)")
+    dataset_path: str = Field(default="", description="Dataset path (allowlisted roots)")
+    architecture: str = Field(default="ScalpNet")
+    hidden_dim: int = Field(default=128, ge=8, le=1024)
+    num_heads: int = Field(default=4, ge=1, le=32)
+    dropout_rate: float = Field(default=0.25, ge=0.0, le=0.9)
+    output_classes: int = Field(default=3, ge=2, le=16)
+    train_mode: str = Field(default="full")
+    epochs: int = Field(default=3, ge=1, le=50)
+    batch_size: int = Field(default=256, ge=1, le=8192)
+    learning_rate: float = Field(default=5e-4, gt=0.0, le=1.0)
+    weight_decay: float = Field(default=0.01, ge=0.0, le=10.0)
+    optimizer: str = Field(default="adamw")
+    scheduler: str = Field(default="none")
+    seed: int = Field(default=42, ge=0)
+    device: str = Field(default="cpu")
+    early_stopping: bool = Field(default=False)
+    early_stopping_patience: int = Field(default=3, ge=1, le=20)
+    class_weights: list[float] | None = Field(default=None)
+    base_model_id: str = Field(default="")
+    freeze_backbone: bool = Field(default=False)
+    sequence_length: int = Field(default=1, ge=1, le=512)
+    oos_ratio: float = Field(default=0.2, ge=0.0, lt=0.5)
+    training_version: str = Field(default="")
+    code_version: str = Field(default="")
+    notes: str = Field(default="")
+
+
+class ModelStudioSwitchRequest(BaseModel):
+    """Phase 20: SWITCH requires explicit confirmation."""
+
+    model_id: str = Field(..., description="Candidate model to activate")
+    confirm: bool = Field(
+        default=False,
+        description="Must be true. Preview via /models/switch/preview first.",
+    )
+    fine_tune_enabled: bool = Field(default=False)
+    operator: str = Field(default="REACT_UI")
+
+
 # In-memory training progress tracker for studio
 _STUDIO_TRAIN_STATE: dict[str, Any] = {
     "status": "IDLE",
@@ -514,6 +565,18 @@ class _StudioLoadedScaler:
     def transform(self, x: np.ndarray) -> np.ndarray:
         if not self.is_ready():
             return np.clip(x, -5.0, 5.0)
+        # CONTRACT GATE (Phase 40): the fitted width must equal the input width.
+        # The old code sliced mean[:x.shape[-1]], so a 50D scaler silently
+        # accepted a 70D input and left 20 features completely unnormalized —
+        # the model then consumed a half-raw tensor the UI called normalized.
+        if x.shape[-1] != self._dim:
+            from nexus_scalp.model_lab.contract_gate import ContractDimensionError
+
+            raise ContractDimensionError(
+                f"studio scaler is fitted for {self._dim} features but received a "
+                f"{int(x.shape[-1])}-wide tensor; 50D and 70D contracts cannot share "
+                f"a scaler"
+            )
         m = self.mean[: x.shape[-1]]
         s = self.std[: x.shape[-1]]
         return np.clip((x - m) / s, -5.0, 5.0)
@@ -574,12 +637,25 @@ def _get_active_model_and_scaler(engine: Any, dimension: int) -> tuple[torch.nn.
     fresh_model.eval()
 
     class _MockScaler:
+        """Unit scaler used ONLY for the random-init fallback.
+
+        ``is_ready`` is deliberately False: there is no fitted normalization for
+        an untrained random-init model, and the runtime state machine must be
+        able to distinguish "inference is possible" from "a stand-in exists".
+        Marking this ready would let the UI report INFERENCE READY for a model
+        that was never trained (Phase 35/52).
+        """
+
         def __init__(self, dim: int):
             self.mean = np.zeros(dim, dtype=np.float32)
             self.std = np.ones(dim, dtype=np.float32)
+            self._dim = dim
 
         def is_ready(self) -> bool:
-            return True
+            return False
+
+        def dimension(self) -> int:
+            return self._dim
 
         def transform(self, x: np.ndarray) -> np.ndarray:
             return np.clip(x, -5.0, 5.0)
@@ -729,6 +805,52 @@ def _scan_available_datasets() -> list[dict[str, Any]]:
                     }
                 )
     return sorted(found, key=lambda d: d["name"])
+
+
+# =============================================================================
+# Model Builder request conversion (Phase 4)
+# =============================================================================
+
+
+def _builder_config_from_request(req: ModelBuilderPreflightRequest) -> ModelBuilderConfig:
+    """Translate the API request into the validated builder config object.
+
+    The request is the wire shape; ``ModelBuilderConfig`` is the internal
+    contract. Keeping the translation in one place means the preflight, save and
+    train endpoints all validate the SAME object.
+    """
+    from nexus_scalp.model_lab.model_builder import ModelBuilderConfig
+
+    return ModelBuilderConfig(
+        config_name=str(req.config_name or "").strip() or "Untitled Config",
+        dimension=int(req.dimension),
+        schema_id=str(req.schema_id or ""),
+        dataset_path=str(req.dataset_path or ""),
+        architecture=str(req.architecture or "ScalpNet"),
+        hidden_dim=int(req.hidden_dim),
+        num_heads=int(req.num_heads),
+        dropout_rate=float(req.dropout_rate),
+        output_classes=int(req.output_classes),
+        train_mode=str(req.train_mode or "full"),
+        epochs=int(req.epochs),
+        batch_size=int(req.batch_size),
+        learning_rate=float(req.learning_rate),
+        weight_decay=float(req.weight_decay),
+        optimizer=str(req.optimizer or "adamw"),
+        scheduler=str(req.scheduler or "none"),
+        seed=int(req.seed),
+        device=str(req.device or "cpu"),
+        early_stopping=bool(req.early_stopping),
+        early_stopping_patience=int(req.early_stopping_patience),
+        class_weights=list(req.class_weights) if req.class_weights else None,
+        base_model_id=str(req.base_model_id or ""),
+        freeze_backbone=bool(req.freeze_backbone),
+        sequence_length=int(req.sequence_length),
+        oos_ratio=float(req.oos_ratio),
+        training_version=str(req.training_version or ""),
+        code_version=str(req.code_version or ""),
+        notes=str(req.notes or ""),
+    )
 
 
 # =============================================================================
@@ -896,9 +1018,34 @@ def execute_predict(req: ModelStudioPredictRequest, engine: Any = None) -> dict[
         feature_source = "LIVE_70D_ASSEMBLED"
     elif req.use_live_features or features is None:
         if engine is not None and getattr(engine, "_last_fv", None) is not None:
-            features = list(engine._last_fv.to_tensor_input())
-            if dim == 70:
-                features = features + [0.0] * 20
+            live_vec = list(engine._last_fv.to_tensor_input())
+            # CONTRACT GATE (Phase 40): the live tick vector is a 50D scalp_v1
+            # artifact. It is NOT a 70D vector with 20 missing slots. The old
+            # path zero-padded it (features + [0.0] * 20) and then ran a 70D
+            # inference on a vector whose News/Liquidity blocks were fabricated
+            # zeros — presented to the operator as a live 70D tensor. Refuse
+            # instead: the operator must explicitly request the 70D assembly,
+            # which fetches the real News/Liquidity components.
+            if dim == 70 and len(live_vec) == 50:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "contract violation: the live tick feature vector is 50D "
+                        "(scalp_v1). A 70D (scalp_v3) inference requires the real "
+                        "News 50..59 and Liquidity 60..69 blocks — use "
+                        "'fetch_live_70d' to assemble them. 50D is never silently "
+                        "zero-padded to 70D."
+                    ),
+                )
+            if len(live_vec) != dim:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"contract violation: live tick vector is {len(live_vec)}D, "
+                        f"model contract is {dim}D. No truncation, no padding."
+                    ),
+                )
+            features = live_vec
             feature_source = "LIVE_TICK"
         else:
             features = [0.0] * dim
@@ -1362,6 +1509,10 @@ def execute_train(req: ModelStudioTrainRequest) -> dict[str, Any]:
         dataset_path=str(target_path.relative_to(REPO_ROOT)) if target_path else "synthetic",
         fine_tune_enabled=True,
         stage="STAGING",
+        # This record is produced by a COMPLETED fit, so its losses are real
+        # measurements (Phase 12): TRAINED, never the NOT_TRAINED default that
+        # reads as a fake 0.0000.
+        training_status="TRAINED",
         metrics={
             "final_loss": final_loss,
             "final_val_loss": final_val_loss,
@@ -2184,6 +2335,7 @@ def execute_fine_tune(req: ModelStudioFineTuneRequest) -> dict[str, Any]:
         dataset_path=str(target_path.relative_to(REPO_ROOT)) if target_path else "synthetic",
         fine_tune_enabled=True,
         stage="STAGING",
+        training_status="TRAINED",
         metrics={
             "parent_model_id": base_rec.id,
             "freeze_backbone": req.freeze_backbone,
@@ -2885,3 +3037,342 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     @app.get("/api/model-studio/artifact-locations")
     def route_artifact_locations() -> dict[str, Any]:
         return get_artifact_locations()
+
+    # -------------------------------------------------------------------------
+    # MODEL BUILDER / FEATURE CONTRACT / RUNTIME STATE (this wave)
+    # -------------------------------------------------------------------------
+
+    @app.get("/api/model-studio/feature-contract")
+    def route_feature_contract(dimension: int = 50) -> dict[str, Any]:
+        from nexus_scalp.model_lab.model_builder import get_feature_contract
+
+        try:
+            return {"status": "OK", "contract": get_feature_contract(dimension).to_dict()}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/model-studio/model-builder/options")
+    def route_builder_options() -> dict[str, Any]:
+        from nexus_scalp.model_lab.model_builder import builder_options
+
+        return builder_options()
+
+    @app.post("/api/model-studio/model-builder/preflight")
+    def route_builder_preflight(req: ModelBuilderPreflightRequest) -> dict[str, Any]:
+        from nexus_scalp.model_lab.model_builder import (
+            ModelBuilderConfig,
+            preflight_dataset,
+        )
+
+        cfg = _builder_config_from_request(req)
+        report = preflight_dataset(cfg)
+        return report.to_dict()
+
+    @app.post("/api/model-studio/model-builder/save")
+    def route_builder_save(req: ModelBuilderPreflightRequest) -> dict[str, Any]:
+        from nexus_scalp.model_lab.model_builder import (
+            ModelBuilderConfig,
+            get_builder_config_store,
+            validate_builder_config,
+        )
+
+        cfg = _builder_config_from_request(req)
+        findings = validate_builder_config(cfg)
+        if any(f.severity == "error" for f in findings):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "CONFIG_INVALID",
+                    "errors": [
+                        {"code": f.code, "message": f.message}
+                        for f in findings
+                        if f.severity == "error"
+                    ],
+                },
+            )
+        saved = get_builder_config_store().save(cfg)
+        return {"status": "OK", "config": saved.to_dict()}
+
+    @app.get("/api/model-studio/model-builder/configs")
+    def route_builder_configs(limit: int = 100) -> dict[str, Any]:
+        from nexus_scalp.model_lab.model_builder import get_builder_config_store
+
+        rows = get_builder_config_store().list_configs(limit=limit)
+        return {
+            "status": "OK",
+            "count": len(rows),
+            "configs": [r.to_dict() for r in rows],
+        }
+
+    @app.post("/api/model-studio/model-builder/train")
+    def route_builder_train(req: ModelBuilderPreflightRequest) -> dict[str, Any]:
+        from nexus_scalp.model_lab.studio_trainer import NeuralStudioTrainer
+
+        cfg = _builder_config_from_request(req)
+        result = NeuralStudioTrainer().train(cfg)
+        body = result.to_dict()
+        if result.status != "COMPLETE":
+            raise HTTPException(status_code=400, detail=body)
+        return body
+
+    @app.get("/api/model-studio/tensor/inspect")
+    def route_tensor_inspect(
+        dimension: int = 50,
+        use_live: bool = False,
+        perturbation_sigma: float = 0.0,
+    ) -> dict[str, Any]:
+        from nexus_scalp.model_lab.tensor_inspector import inspect_tensor
+
+        dim = dimension if dimension in (50, 70) else 50
+        with _STUDIO_BUNDLE_LOCK:
+            bundle = _StudioBundleHolder.active
+            model = bundle.model if bundle is not None else None
+            scaler = bundle.scaler if bundle is not None else None
+            model_id = bundle.model_id if bundle is not None else ""
+            bundle_dim = bundle.dimension if bundle is not None else None
+            model_source = (
+                f"HOT_LOADED:{model_id}" if bundle is not None else "IN_MEMORY_INSTANCE"
+            )
+
+        if bundle is not None and bundle_dim != dim:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"contract violation: the active runtime model is {bundle_dim}D "
+                    f"({model_id}); cannot inspect a {dim}D tensor against it. "
+                    f"Switch the runtime model or the contract selector."
+                ),
+            )
+
+        if use_live:
+            if engine is None or getattr(engine, "_last_fv", None) is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="live tick features are unavailable: no live feature vector "
+                    "is held by the engine",
+                )
+            raw = list(engine._last_fv.to_tensor_input())
+            if dim == 70:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "contract violation: the live tick vector is 50D (scalp_v1); "
+                        "a 70D tensor requires the assembled News/Liquidity blocks. "
+                        "Use the 70D assembly control, not live-tick."
+                    ),
+                )
+        else:
+            raw = [0.0] * dim
+
+        if perturbation_sigma > 0.0:
+            import numpy as _np
+
+            raw = (
+                _np.asarray(raw, dtype=_np.float32)
+                + _np.random.normal(0.0, perturbation_sigma, size=len(raw))
+            ).tolist()
+
+        try:
+            inspection = inspect_tensor(
+                model_id=model_id or "IN_MEMORY_INSTANCE",
+                dimension=dim,
+                raw_features=raw,
+                scaler=scaler,
+                model=model,
+                context="studio_tensor_inspect",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        out = inspection.to_dict()
+        out["model_source"] = model_source
+        out["perturbation_sigma"] = perturbation_sigma
+        out["feature_source"] = (
+            "LIVE_TICK" if use_live else ("SYNTHETIC_ZERO" if perturbation_sigma <= 0 else "SYNTHETIC_ZERO+NOISE")
+        )
+        return {"status": "OK", "inspection": out}
+
+    @app.get("/api/model-studio/runtime/state")
+    def route_runtime_state(selected_model_id: str = "") -> dict[str, Any]:
+        from nexus_scalp.model_lab.runtime_state import resolve_runtime_state
+
+        registry = get_model_registry()
+        selected = registry.get_model(selected_model_id) if selected_model_id else None
+        with _STUDIO_BUNDLE_LOCK:
+            bundle = _StudioBundleHolder.active
+        active_champion = registry.get_active_model()
+        # The runtime model is the SLOT if loaded, else the registry champion.
+        runtime_bundle = bundle
+        runtime_record = None
+        if runtime_bundle is None and active_champion is not None:
+            runtime_record = active_champion
+        state = resolve_runtime_state(
+            engine=engine,
+            selected_model_id=selected_model_id,
+            selected_model_record=selected,
+            hot_loaded_bundle=runtime_bundle,
+        )
+        out = state.to_dict()
+        out["registry_champion_id"] = active_champion.id if active_champion else ""
+        out["registry_champion_dimension"] = (
+            active_champion.dimension if active_champion else None
+        )
+        return {"status": "OK", "runtime": out}
+
+    @app.get("/api/model-studio/models/{model_id}/detail")
+    def route_model_detail(model_id: str) -> dict[str, Any]:
+        registry = get_model_registry()
+        rec = registry.get_model(model_id)
+        if rec is None:
+            raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
+        detail = asdict(rec)
+        detail["is_active"] = bool(rec.is_active)
+        detail["fine_tune_enabled"] = bool(rec.fine_tune_enabled)
+        detail["artifact_exists"] = bool(
+            rec.weights_path and (REPO_ROOT / rec.weights_path).is_file()
+        )
+        detail["scaler_exists"] = bool(
+            rec.scaler_path and (REPO_ROOT / rec.scaler_path).is_file()
+        )
+        detail["manifest_exists"] = bool(
+            rec.manifest_path and (REPO_ROOT / rec.manifest_path).is_file()
+        )
+        return {"status": "OK", "model": detail}
+
+    @app.get("/api/model-studio/models/switch/preview")
+    def route_switch_preview(model_id: str) -> dict[str, Any]:
+        from nexus_scalp.model_lab.contract_gate import (
+            assert_model_weights_dimension,
+            assert_scaler_file_compatibility,
+            assert_schema_dimension,
+        )
+
+        registry = get_model_registry()
+        rec = registry.get_model(model_id)
+        if rec is None:
+            raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
+        if not rec.weights_path or not (REPO_ROOT / rec.weights_path).is_file():
+            raise HTTPException(
+                status_code=400, detail=f"Model {model_id!r} has no weights artifact."
+            )
+
+        schema_id = "scalp_v1" if rec.dimension == 50 else "scalp_v3"
+        checks: list[dict[str, Any]] = []
+
+        def _check(name: str, fn: Any) -> None:
+            try:
+                fn()
+                checks.append({"name": name, "passed": True, "detail": "ok"})
+            except Exception as exc:
+                checks.append({"name": name, "passed": False, "detail": str(exc)})
+
+        weights_path = REPO_ROOT / rec.weights_path
+        _check(
+            "SCHEMA_DIMENSION_BINDING",
+            lambda: assert_schema_dimension(
+                schema_id, rec.dimension, context=f"switch_preview:{model_id}"
+            ),
+        )
+        _check(
+            "WEIGHTS_CONTRACT_WIDTH",
+            lambda: assert_model_weights_dimension(
+                weights_path, rec.dimension, context=f"switch_preview:{model_id}"
+            ),
+        )
+        _check(
+            "SCALER_CONTRACT_WIDTH",
+            lambda: (
+                assert_scaler_file_compatibility(
+                    REPO_ROOT / rec.scaler_path,
+                    rec.dimension,
+                    context=f"switch_preview:{model_id}",
+                )
+                if rec.scaler_path
+                else None
+            ),
+        )
+        # Live check: can the weights actually be loaded and produce a finite
+        # forward pass at the declared width?
+        def _smoke() -> None:
+            weights = torch.load(weights_path, map_location="cpu", weights_only=True)
+            from nexus_scalp.model_lifecycle.model_class_contract import (
+                TRAINED_CLASS_COUNT,
+            )
+            from nexus_scalp.models.scalp_net import ScalpNet
+
+            head = weights["classifier.weight"].shape[0]
+            model = ScalpNet(
+                num_features=rec.dimension, num_classes=int(head)
+            )
+            model.load_state_dict(weights)
+            model.eval()
+            with torch.inference_mode():
+                out = model(torch.zeros((1, rec.dimension), dtype=torch.float32))
+            if not bool(torch.all(torch.isfinite(out)).item()):
+                raise ValueError("smoke inference produced non-finite output")
+
+        _check("SMOKE_LOAD_INFERENCE", _smoke)
+
+        all_passed = all(c["passed"] for c in checks)
+        return {
+            "status": "OK",
+            "model_id": model_id,
+            "dimension": rec.dimension,
+            "switchable": all_passed,
+            "checks": checks,
+        }
+
+    @app.post("/api/model-studio/models/switch")
+    def route_switch(req: ModelStudioSwitchRequest) -> dict[str, Any]:
+        from nexus_scalp.model_lab.contract_gate import (
+            assert_model_weights_dimension,
+            assert_schema_dimension,
+        )
+
+        if not req.confirm:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "switch requires an explicit confirmation "
+                    "(confirm=true). Preview the switch first via "
+                    "GET /api/model-studio/models/switch/preview."
+                ),
+            )
+        registry = get_model_registry()
+        rec = registry.get_model(req.model_id)
+        if rec is None:
+            raise HTTPException(status_code=404, detail=f"Model {req.model_id!r} not found.")
+        if not rec.weights_path or not (REPO_ROOT / rec.weights_path).is_file():
+            raise HTTPException(
+                status_code=400, detail=f"Model {req.model_id!r} has no weights artifact."
+            )
+        schema_id = "scalp_v1" if rec.dimension == 50 else "scalp_v3"
+        assert_schema_dimension(schema_id, rec.dimension, context=f"switch:{req.model_id}")
+        assert_model_weights_dimension(
+            REPO_ROOT / rec.weights_path, rec.dimension, context=f"switch:{req.model_id}"
+        )
+
+        hot_req = ModelStudioHotLoadRequest(
+            model_id=req.model_id,
+            fine_tune_enabled=req.fine_tune_enabled,
+            attach_scaler=True,
+            operator=req.operator or "REACT_UI_SWITCH",
+        )
+        res = execute_hot_load(hot_req, engine=engine)
+        res["action"] = "SWITCH"
+        # Runtime-truth check (Phase 39): the loaded model must now BE the
+        # selected model.
+        with _STUDIO_BUNDLE_LOCK:
+            loaded_id = _StudioBundleHolder.active.model_id if _StudioBundleHolder.active else ""
+        if loaded_id != req.model_id:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"switch verification failed: selected {req.model_id!r} but the "
+                    f"runtime model is {loaded_id!r}"
+                ),
+            )
+        res["runtime_model_id"] = loaded_id
+        res["selected_model_id"] = req.model_id
+        res["dimension"] = rec.dimension
+        return res
