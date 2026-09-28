@@ -27,6 +27,8 @@ resolve inside an allowed root (``DATASETS_ROOT_REJECTED`` otherwise).
 
 from __future__ import annotations
 
+import itertools
+import os
 import re as _re
 import threading
 from datetime import UTC, datetime
@@ -75,20 +77,154 @@ class _TrainRun:
         self._lock = threading.Lock()
         self.done = threading.Event()
         self.result: dict[str, Any] = {}
+        # Stable run identity, generated at queue time and returned by
+        # train/start so the operator can name the run BEFORE the artifact
+        # exists (contract §25: "immediately persist job state").
+        self.run_id = _new_run_id()
+        self.started_iso = datetime.now(tz=UTC).isoformat(timespec="seconds")
+        self.updated_iso = self.started_iso
+        # Set by the worker thread once it has OBSERVED a cancel request —
+        # cancel only reports ACKNOWLEDGED from that moment (contract §28).
+        self.cancel_acknowledged = False
 
     def record(self, ev: ProgressEvent) -> None:
         with self._lock:
             self.events.append(ev.as_dict())
+            self.updated_iso = datetime.now(tz=UTC).isoformat(timespec="seconds")
 
     def tail(self, after: int) -> list[dict[str, Any]]:
         with self._lock:
             return self.events[after:]
+
+    def snapshot(self) -> dict[str, Any]:
+        """Structured run snapshot derived ONLY from recorded events.
+
+        Every number below is a measured value the pipeline actually emitted
+        (``ProgressEvent.fraction`` / ``.metrics``) or a request constant —
+        nothing is interpolated and no stage is invented (contract §26: "no
+        fake percentage, no jumping from 0 to 100").
+        """
+        with self._lock:
+            events = list(self.events)
+            stage = self._latest_stage(events)
+            frac = self._latest_fraction(events)
+            metrics = self._latest_metrics(events)
+            started = self.started_iso
+            updated = self.updated_iso
+        metrics = metrics or {}
+        return {
+            "run_id": self.run_id,
+            "state": _run_state(self.done.is_set(), self.cancel.is_set(), self.result, events),
+            "phase": stage,
+            "started": started,
+            "updated": updated,
+            "percent": round(frac * 100, 1) if frac is not None else None,
+            "fold": metrics.get("fold"),
+            "epoch": metrics.get("epoch"),
+            "total_folds": metrics.get("folds"),
+            "total_epochs": metrics.get("epochs"),
+            "loss": metrics.get("loss"),
+            "validation_loss": metrics.get("val_loss"),
+            "metrics": metrics,
+            "cancel_requested": self.cancel.is_set(),
+            "cancel_acknowledged": bool(self.cancel_acknowledged),
+        }
+
+    @staticmethod
+    def _latest_stage(events: list[dict[str, Any]]) -> str | None:
+        for ev in reversed(events):
+            stage = ev.get("stage")
+            if isinstance(stage, str) and stage:
+                return stage
+        return None
+
+    @staticmethod
+    def _latest_fraction(events: list[dict[str, Any]]) -> float | None:
+        for ev in reversed(events):
+            frac = ev.get("fraction")
+            # Only a real numeric fraction counts — None / NaN never does.
+            if isinstance(frac, (int, float)) and not (isinstance(frac, float) and frac != frac):
+                return float(frac)
+        return None
+
+    @staticmethod
+    def _latest_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
+        for ev in reversed(events):
+            metrics = ev.get("metrics")
+            if isinstance(metrics, dict) and metrics:
+                # Only per-epoch metric payloads carry fold/epoch/loss; a
+                # stage-forwarding event keeps its payload as-is, so prefer a
+                # payload that actually has the training counters.
+                if any(k in metrics for k in ("fold", "epoch", "loss", "val_loss")):
+                    return metrics
+        return {}
 
 
 _ACTIVE: _TrainRun | None = None
 _ACTIVE_LOCK = threading.Lock()
 _INSTALL_ACTIVE = False  # single-flight env install (explicit user action)
 _OFFICIAL_ACTIVE = False  # single-flight official download/install (shared reservation)
+
+#: Process-unique counter so run ids are monotonic within one server lifetime
+#: (paired with the pid and a timestamp they are globally nameable).
+_RUN_SEQ = itertools.count()
+
+
+def _new_run_id() -> str:
+    """Stable, sortable run identity: ``run-<utc compact>-<pid>-<seq>``."""
+    stamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
+    return f"run-{stamp}-{os.getpid()}-{next(_RUN_SEQ)}"
+
+
+def _run_state(
+    done: bool,
+    cancel_requested: bool,
+    result: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> str:
+    """Authoritative run state, derived — never stored separately.
+
+    Priority: a terminal result wins (it carries the pipeline's own outcome),
+    then an observed cancel, then the last recorded event status, else QUEUED.
+    A run that finished without an outcome word is reported COMPLETE only when
+    the last event is a healthy terminal status.
+    """
+    if done:
+        outcome = str(result.get("outcome") or "").strip().upper()
+        if outcome:
+            if outcome == "CANCELLED":
+                return "CANCELLED"
+            if outcome in ("INSTALLED", "COMPLETE", "DONE"):
+                return "COMPLETE"
+            if "FAIL" in outcome or "BLOCK" in outcome or "REJECT" in outcome:
+                return "FAILED"
+            if outcome == "VALIDATION_FAILED":
+                return "FAILED"
+            return outcome
+        last_status = _last_event_status(events)
+        if last_status in ("failed", "cancelled", "canceled"):
+            return "FAILED" if last_status == "failed" else "CANCELLED"
+        if last_status in ("done", "ok", "success", "complete", "completed"):
+            return "COMPLETE"
+        return "COMPLETE"
+    if cancel_requested:
+        return "CANCELLING"
+    if events:
+        last_status = _last_event_status(events)
+        if last_status == "failed":
+            return "FAILED"
+        if last_status in ("cancelled", "canceled"):
+            return "CANCELLED"
+        return "RUNNING"
+    return "QUEUED"
+
+
+def _last_event_status(events: list[dict[str, Any]]) -> str:
+    for ev in reversed(events):
+        status = ev.get("status")
+        if isinstance(status, str) and status:
+            return status.strip().lower()
+    return ""
 
 
 def _backend(raw: Any) -> str | None:
@@ -292,6 +428,40 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
         except Exception as exc:
             _log_err(exc, "provisioning status failed", endpoint="/api/provisioning/status")
             return _err(code="PROVISIONING_STATUS_ERROR")
+
+    @router.get("/api/provisioning/models")
+    def provisioning_models(limit: int = 100, hashes: bool = False) -> dict[str, Any]:
+        """READ-ONLY model inventory (phases 13/30/31/32/35/37).
+
+        Lists EVERY servable NSE model with identity, artifact, hash, schema,
+        dimension, scaler, source and active flag:
+
+        * metadata-only by default — ``model.pt`` is never opened unless
+          ``?hashes=true`` is passed EXPLICITLY, so a 100-model inventory costs
+          the same as a 10-model one;
+        * two planes are reported separately: ``serving`` (the live engine's
+          bundle, exactly one ``active: true``) and ``studio`` (Model Studio's
+          hot-load registry). A Studio checkpoint marked CHAMPION is NOT
+          reported as the live model — the planes never blur;
+        * the official/serving-slot model appears as an ordinary bundle, not a
+          hidden special path;
+        * no duplicate registry — this reads disk sidecars + the existing
+          Studio registry; it owns no store;
+        * pagination via ``limit`` (default 100, hard cap 500).
+
+        Failures are logged and answered with the stable
+        ``PROVISIONING_MODELS_ERROR`` envelope — the list is never fabricated.
+        """
+        from nexus_scalp.model_provisioning.inventory import list_model_inventory
+
+        try:
+            return {
+                "success": True,
+                **list_model_inventory(limit=limit, include_hashes=bool(hashes)),
+            }
+        except Exception as exc:
+            _log_err(exc, "model inventory failed", endpoint="/api/provisioning/models")
+            return _err(code="PROVISIONING_MODELS_ERROR")
 
     @router.get("/api/provisioning/datasets")
     def provisioning_datasets(root: str | None = None) -> dict[str, Any]:
@@ -588,6 +758,14 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
 
         def _worker() -> None:
             stage = "environment"
+
+            def _ack_cancel(where: str) -> None:
+                """The worker OBSERVED the cancel — from here the operator may
+                be told the cancellation is real (contract §28)."""
+                if run.cancel.is_set() and not run.cancel_acknowledged:
+                    run.cancel_acknowledged = True
+                    logger.info("[PROVISION-WEB] event=CANCEL_ACKNOWLEDGED run=%s at=%s", run.run_id, where)
+
             try:
                 from nexus_scalp.model_provisioning.training_env import TrainingEnvironmentManager
 
@@ -601,6 +779,7 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
                 manager = TrainingEnvironmentManager()
                 gate = manager.status(backend=request.backend)
                 if run.cancel.is_set():
+                    _ack_cancel("environment-prep")
                     run.result = {"outcome": "CANCELLED"}
                     run.record(
                         ProgressEvent(
@@ -635,6 +814,7 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
                     )
                     return
                 if run.cancel.is_set():
+                    _ack_cancel("environment-ready")
                     run.result = {"outcome": "CANCELLED"}
                     run.record(
                         ProgressEvent(
@@ -663,6 +843,7 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
                         cancel_event=run.cancel,
                     )
                 except TrainingCancelledError:
+                    _ack_cancel("dataset")
                     run.result = {"outcome": "CANCELLED"}
                     run.record(
                         ProgressEvent(
@@ -686,6 +867,8 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
                 from nexus_scalp.model_provisioning.pipeline import train_local_model
 
                 run.result = train_local_model(request, progress=run.record)
+                if run.cancel.is_set() and str(run.result.get("outcome", "")).upper() == "CANCELLED":
+                    _ack_cancel("train-complete")
             except Exception as exc:  # defensive: train_local_model should not raise
                 # Web-exposed payload carries the SAFE CATEGORY only (full
                 # detail stays server-side in the log) — py/stack-trace-exposure.
@@ -716,7 +899,10 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
                 _ACTIVE = None
             _log_err(exc, "training worker launch failed", endpoint="/api/provisioning/train/start")
             return _err(code="TRAIN_WORKER_START_ERROR")
-        return {"success": True, "started": True}
+        # The run_id is returned IMMEDIATELY so the operator can name the job
+        # before the artifact exists; progress/progress is the truth source
+        # from here on (contract §25 + §43 async job model).
+        return {"success": True, "started": True, "run_id": run.run_id}
 
     @router.get("/api/provisioning/train/progress")
     def provisioning_train_progress(after: int = 0) -> dict[str, Any]:
@@ -736,7 +922,11 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
             "events": run.tail(max(0, int(after))),
             "count": len(run.events),
             "result": run.result
-            or ({"state": prov.read_provisioner_state().get("state")} if run.done.is_set() else {}),
+            or ({ "state": prov.read_provisioner_state().get("state")} if run.done.is_set() else {}),
+            # Structured run truth (contract §26): state/phase/percent/loss/
+            # epoch/folds — every field measured by the pipeline, never
+            # synthesized. Consumed by the UI progress panel verbatim.
+            "run": run.snapshot(),
         }
 
     @router.post("/api/provisioning/train/cancel")
@@ -749,5 +939,6 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
         return {
             "success": True,
             "cancel": "REQUESTED",
+            "run_id": run.run_id,
             "note": "observed at the next epoch boundary",
         }
