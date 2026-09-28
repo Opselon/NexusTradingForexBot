@@ -271,14 +271,16 @@ export default function LiquidityPage(props: ShellPageProps) {
                 hint={s?.reason ?? t("liquidity.empty.features_hint", "governor snapshot empty — check enabled/available above")}
               />
             ) : (
-              <DataTable headers={[{ label: t("liquidity.th.feature", "feature") }, { label: t("liquidity.th.value", "value"), num: true }]}>
-                {featureNames.map((n) => (
-                  <tr key={n}>
-                    <td className="tiny inline-mono">{n}</td>
-                    <td className="num tiny">{num(featureMap[n]) === null ? "—" : formatNumber(num(featureMap[n])!, 4)}</td>
-                  </tr>
-                ))}
-              </DataTable>
+              <div className="liq-zebra">
+                <DataTable headers={[{ label: t("liquidity.th.feature", "feature") }, { label: t("liquidity.th.value", "value"), num: true }]}>
+                  {featureNames.map((n) => (
+                    <tr key={n}>
+                      <td className="tiny inline-mono">{n}</td>
+                      <td className="num tiny">{num(featureMap[n]) === null ? "—" : formatNumber(num(featureMap[n])!, 4)}</td>
+                    </tr>
+                  ))}
+                </DataTable>
+              </div>
             )}
             <div className="tiny faint" style={{ marginTop: 6 }}>
               {t("liquidity.meta.schema", "schema {id} · dim {dim} · availability {av}", {
@@ -297,9 +299,11 @@ export default function LiquidityPage(props: ShellPageProps) {
                 <EmptyState message={t("liquidity.empty.pools", "No pools in the current snapshot (engine not running or features disabled).")} />
               )
             ) : (
-              <DataTable headers={[{ label: t("liquidity.th.side", "side") }, { label: t("liquidity.th.source", "source") }, { label: t("liquidity.th.state", "state") }, { label: t("liquidity.th.price", "price"), num: true }]}>
-                {poolRows}
-              </DataTable>
+              <div className="liq-zebra">
+                <DataTable headers={[{ label: t("liquidity.th.side", "side") }, { label: t("liquidity.th.source", "source") }, { label: t("liquidity.th.state", "state") }, { label: t("liquidity.th.price", "price"), num: true }]}>
+                  {poolRows}
+                </DataTable>
+              </div>
             )}
           </Panel>
         </div>
@@ -336,52 +340,54 @@ export default function LiquidityPage(props: ShellPageProps) {
                   {zones.length === 0 ? (
                     <EmptyState message={t("liquidity.empty.zones", "No liquidity zones mapped yet (engine STANDBY until bars arrive).")} />
                   ) : (
-                    <DataTable
-                      headers={[
-                        { label: t("liquidity.th.side", "side") },
-                        { label: t("liquidity.th.price", "price"), num: true },
-                        { label: t("liquidity.th.tf", "tf") },
-                        { label: t("liquidity.th.tests", "tests"), num: true },
-                        { label: t("liquidity.th.prob", "prob"), num: true },
-                        { label: t("liquidity.th.rank", "rank") },
-                      ]}
-                    >
-                      {rankedZones.map((z, i) => (
-                        <tr key={i}>
-                          <td className="tiny">{z.side ?? "—"}</td>
-                          <td className="num tiny">{formatPrice(z.price, 2)}</td>
-                          <td className="tiny">{z.timeframe ?? "—"}</td>
-                          <td className="num tiny">{z.tests ?? "—"}</td>
-                          <td
-                            className={`num tiny liq-heat${z.probability === null ? " dim" : ""}`}
-                            style={{
-                              background:
-                                z.probability !== null
-                                  ? `color-mix(in srgb, var(--accent) ${Math.min(60, Math.round((z.probability ?? 0) * 60))}%, transparent)`
-                                  : undefined,
-                            }}
-                          >
-                            <span className="liq-heat-v">{z.probability === null ? "—" : `${(z.probability * 100).toFixed(0)}%`}</span>
-                            <span
-                              className="liq-heat-bar"
-                              role="img"
-                              aria-label={
-                                z.probability === null
-                                  ? t("liquidity.heat.no_prob", "no probability")
-                                  : t("liquidity.heat.prob", "probability {p} percent", { p: (z.probability * 100).toFixed(0) })
-                              }
+                    <div className="liq-zebra">
+                      <DataTable
+                        headers={[
+                          { label: t("liquidity.th.side", "side") },
+                          { label: t("liquidity.th.price", "price"), num: true },
+                          { label: t("liquidity.th.tf", "tf") },
+                          { label: t("liquidity.th.tests", "tests"), num: true },
+                          { label: t("liquidity.th.prob", "prob"), num: true },
+                          { label: t("liquidity.th.rank", "rank") },
+                        ]}
+                      >
+                        {rankedZones.map((z, i) => (
+                          <tr key={i}>
+                            <td className="tiny">{z.side ?? "—"}</td>
+                            <td className="num tiny">{formatPrice(z.price, 2)}</td>
+                            <td className="tiny">{z.timeframe ?? "—"}</td>
+                            <td className="num tiny">{z.tests ?? "—"}</td>
+                            <td
+                              className={`num tiny liq-heat${z.probability === null ? " dim" : ""}`}
+                              style={{
+                                background:
+                                  z.probability !== null
+                                    ? `color-mix(in srgb, var(--accent) ${Math.min(60, Math.round((z.probability ?? 0) * 60))}%, transparent)`
+                                    : undefined,
+                              }}
                             >
-                              <i
-                                style={{
-                                  inlineSize: z.probability === null ? "0%" : `${(z.probability * 100).toFixed(1)}%`,
-                                }}
-                              />
-                            </span>
-                          </td>
-                          <td className="tiny">{z.rank ?? "—"}</td>
-                        </tr>
-                      ))}
-                    </DataTable>
+                              <span className="liq-heat-v">{z.probability === null ? "—" : `${(z.probability * 100).toFixed(0)}%`}</span>
+                              <span
+                                className="liq-heat-bar"
+                                role="img"
+                                aria-label={
+                                  z.probability === null
+                                    ? t("liquidity.heat.no_prob", "no probability")
+                                    : t("liquidity.heat.prob", "probability {p} percent", { p: (z.probability * 100).toFixed(0) })
+                                }
+                              >
+                                <i
+                                  style={{
+                                    inlineSize: z.probability === null ? "0%" : `${(z.probability * 100).toFixed(1)}%`,
+                                  }}
+                                />
+                              </span>
+                            </td>
+                            <td className="tiny">{z.rank ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </DataTable>
+                    </div>
                   )}
                 </div>
                 <div>
