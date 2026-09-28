@@ -62,6 +62,77 @@ export interface AdviserStatusResponse {
   stale_rejected_count: number;
 }
 
+/** One row of the tensor inspector: a single feature, raw vs normalized. */
+export interface TensorFeatureRow {
+  index: number;
+  name: string;
+  raw: number;
+  normalized: number;
+  finite: boolean;
+  age_sec: number;
+}
+
+/** The validity verdict the BACKEND computes (the UI never invents this). */
+export interface TensorValidity {
+  raw_dim: number;
+  normalized_dim: number;
+  model_input_dim: number;
+  dims_match: boolean;
+  nan_count: number;
+  inf_count: number;
+  zero_default_count: number;
+  raw_finite: boolean;
+  normalized_finite: boolean;
+  saturated_count: number;
+}
+
+/** GET /tensor/current-input — the actual last model input. */
+export interface TensorInspectorResponse {
+  status: string;
+  model_id: string;
+  feature_schema: string;
+  feature_dimension: number;
+  sequence_length: number;
+  device: string;
+  dtype: string;
+  inference_timestamp: string;
+  source: string;
+  tensor_shape: number[];
+  features: TensorFeatureRow[];
+  validity: TensorValidity;
+  position: Record<string, unknown> | null;
+  error?: string;
+}
+
+/** GET /decision/current — the last completed advisory + measured latencies. */
+export interface DecisionTraceResponse {
+  status: string;
+  position: {
+    ticket: number;
+    snapshot_id: string | null;
+    snapshot_age_ms: number | null;
+    inspected_state: Record<string, unknown>;
+  };
+  model: {
+    model_id: string;
+    model_dimension: number;
+    activation: string;
+  };
+  decision: {
+    action: string;
+    confidence: number;
+    probabilities: Record<string, number>;
+    evaluated_at: string;
+    applied: boolean;
+    not_applied_reason: string;
+  };
+  latency: {
+    total_ms: number;
+    feature_ms: number | null;
+    inference_ms: number | null;
+  };
+}
+
 export interface AdviserConfigDto {
   max_hold_score_penalty: number;
   min_confidence_to_apply: number;

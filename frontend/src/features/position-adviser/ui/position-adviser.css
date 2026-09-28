@@ -1224,3 +1224,256 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================================ live diagnostics
+   Tensor inspector + decision trace (mission §11/§12/§33/§34). Both panels are
+   backend-backed; the empty/unavailable states are honest, not placeholders. */
+
+.pa-diagnostics-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-block-start: 12px;
+}
+
+.pa-tensor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pa-tensor.is-unavailable {
+  opacity: 0.72;
+}
+
+.pa-tensor-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pa-tensor-title {
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.pa-tensor-source {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 9px;
+  border: 1px solid var(--border, #333);
+  color: var(--text-dim, #9aa);
+}
+
+.pa-tensor-source.is-live {
+  color: var(--ok, #3c3);
+  border-color: var(--ok, #3c3);
+}
+
+.pa-tensor-source.is-unavailable {
+  color: var(--warn, #c93);
+  border-color: var(--warn, #c93);
+}
+
+.pa-tensor-age {
+  font-size: 0.72rem;
+  color: var(--text-dim, #9aa);
+}
+
+.pa-panel-empty {
+  margin: 0;
+  color: var(--text-dim, #9aa);
+  font-size: 0.88em;
+  line-height: 1.5;
+}
+
+.pa-tensor-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 6px 12px;
+  margin: 0;
+}
+
+.pa-tensor-meta div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.pa-tensor-meta dt {
+  font-size: 0.66rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-dim, #9aa);
+}
+
+.pa-tensor-meta dd {
+  margin: 0;
+  font-size: 0.85em;
+}
+
+.pa-tensor-verdict {
+  margin: 0;
+  font-size: 0.8em;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #333);
+}
+
+.pa-tensor-verdict.is-ok {
+  color: var(--ok, #3c3);
+}
+
+.pa-tensor-verdict.is-bad {
+  color: var(--bad, #c33);
+  border-color: var(--bad, #c33);
+}
+
+.pa-tensor-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8em;
+}
+
+.pa-tensor-table th {
+  text-align: start;
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  color: var(--text-dim, #9aa);
+  padding: 4px 6px;
+  border-block-end: 1px solid var(--border, #333);
+}
+
+.pa-tensor-table td {
+  padding: 3px 6px;
+  border-block-end: 1px solid color-mix(in srgb, var(--border, #333) 50%, transparent);
+  white-space: nowrap;
+}
+
+.pa-tensor-table tr.is-invalid td {
+  color: var(--bad, #c33);
+}
+
+.pa-tensor-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.76em;
+  color: var(--text-dim, #9aa);
+}
+
+.pa-ok {
+  color: var(--ok, #3c3);
+}
+
+.pa-bad {
+  color: var(--bad, #c33);
+}
+
+.pa-trace-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pa-trace-stages li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.84em;
+  flex-wrap: wrap;
+}
+
+.pa-trace-stage {
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  color: var(--text-dim, #9aa);
+  min-inline-size: 78px;
+}
+
+.pa-decision-action {
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #333);
+}
+
+.pa-decision-action[data-action="CLOSE"] {
+  color: var(--bad, #c33);
+  border-color: var(--bad, #c33);
+}
+
+.pa-decision-action[data-action="REDUCE"] {
+  color: var(--warn, #c93);
+  border-color: var(--warn, #c93);
+}
+
+.pa-decision-action[data-action="KEEP"] {
+  color: var(--ok, #3c3);
+  border-color: var(--ok, #3c3);
+}
+
+.pa-probs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pa-prob {
+  display: grid;
+  grid-template-columns: 76px 1fr 48px;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8em;
+}
+
+.pa-prob-name {
+  font-size: 0.72em;
+}
+
+.pa-prob-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--border, #333) 45%, transparent);
+  overflow: hidden;
+}
+
+.pa-prob-fill {
+  display: block;
+  height: 100%;
+  background: var(--text-dim, #9aa);
+  border-radius: 4px;
+}
+
+.pa-prob-fill.is-winner {
+  background: var(--ok, #3c3);
+}
+
+.pa-prob-val {
+  text-align: end;
+  font-size: 0.74em;
+}
+
+@media (max-width: 900px) {
+  .pa-diagnostics-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pa-tensor-table {
+    min-width: 480px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pa-prob-fill {
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -308,6 +308,15 @@ class PositionAdviserService:
         self._last_eval_at: dict[int, float] = {}
         #: Last COMMITTED snapshot id per ticket (F1 duplicate-decision gate).
         self._last_snapshot_ids: dict[int, str] = {}
+        #: The model replaced by the most recent successful load, kept as a live
+        #: in-memory handle so a hot-swap rollback is a pointer swap (mission §27).
+        self._previous: dict[str, Any] | None = None
+        #: The last position state actually fed to inference. The tensor
+        #: inspector reads this so the UI shows a REAL input, and a later caller
+        #: mutation cannot rewrite the inspected history (mission §11/§12).
+        self._last_inspected_state: dict[str, Any] | None = None
+        #: The last completed advisory, for the decision-trace endpoint.
+        self._last_advisory: Any | None = None
 
     # ------------------------------------------------------------------ state
 
@@ -560,6 +569,30 @@ class PositionAdviserService:
         mp = wp.with_suffix(".meta.json") if wp.suffix == ".pt" else None
 
         with self._lock:
+            # Retain the incumbent for hot-swap rollback (mission §27). The old
+            # model stays a live in-memory handle, so restoring it is a pointer
+            # swap with no reload and no window where inference sees no model.
+            # Only retained when the incumbent was itself loaded: an unloaded
+            # adviser has nothing to roll back to, and the first load must not
+            # invent a rollback target out of empty state.
+            if (
+                self._state._model is not None
+                and self._state._scaler is not None
+                and self._state.model_id
+            ):
+                self._previous = {
+                    "model": self._state._model,
+                    "scaler": self._state._scaler,
+                    "model_id": self._state.model_id,
+                    "weights_path": self._state.weights_path,
+                    "scaler_path": self._state.scaler_path,
+                    "weights_sha256": self._state.weights_sha256,
+                    "manifest_path": self._state.manifest_path,
+                    "integrity": self._state.integrity,
+                    "source_dataset_hash": self._state.source_dataset_hash,
+                    "feature_dim": self._state.feature_dim,
+                    "loaded_at": self._state.loaded_at,
+                }
             self._state._model = model
             self._state._scaler = scaler
             self._state.model_id = model_id or wp.stem
@@ -587,12 +620,29 @@ class PositionAdviserService:
         return {
             "status": "OK",
             "model_id": self._state.model_id,
+            "model_version": "adviser_v1",
             "weights_sha256": self._state.weights_sha256,
             "integrity": self._state.integrity,
             "source_dataset_hash": self._state.source_dataset_hash,
             "feature_dim": ADVISER_FEATURE_DIM,
+            "feature_schema_id": "adviser_v1",
             "loaded_at": self._state.loaded_at,
             "message": "adviser model loaded; activation still DISABLED until set",
+            # Mission §37: a caller must be able to tell "loaded" from "absent"
+            # without re-issuing status(). These mirror the runtime state, not a
+            # claim: ``loaded`` is true only because the tensors above were
+            # produced by an object that is still in memory.
+            "loaded": True,
+            "active": str(self._state.activation) != "DISABLED",
+            "device": "cpu",
+            # Mission §3/§4: an adviser artifact is fully self-describing, so a
+            # hot-swap never needs a process restart. A contract change is a
+            # REJECTION from verify_artifact above, never a reason to bounce the
+            # app. Reported explicitly so the UI can rely on it instead of
+            # guessing.
+            "restart_required": False,
+            "hot_swap": self._previous is not None,
+            "previous_model_id": (self._previous or {}).get("model_id", ""),
         }
 
     def unload(self) -> dict[str, Any]:
@@ -602,7 +652,100 @@ class PositionAdviserService:
             self._state.activation = AdviserActivation.DISABLED
             self._state.model_id = ""
             self._state.loaded_at = None
+            self._previous = None
         return {"status": "OK", "message": "adviser unloaded and disabled"}
+
+    def rollback(self) -> dict[str, Any]:
+        """Restore the model replaced by the last successful load (§27).
+
+        The retained incumbent is RE-VERIFIED with a warm-up forward pass before
+        it is re-activated, so a corrupted incumbent is never silently restored.
+        Returns REJECTED (leaving the current model in place) when there is
+        nothing to roll back to or the retained model no longer serves.
+        """
+        with self._lock:
+            prev = self._previous
+            if prev is None:
+                return {"status": "REJECTED", "reason": "no previous model to roll back to"}
+            model = prev["model"]
+            scaler = prev["scaler"]
+            if model is None or scaler is None:
+                return {"status": "REJECTED", "reason": "retained model is no longer valid"}
+            try:
+                with torch.no_grad():
+                    probe = model(torch.zeros((1, ADVISER_FEATURE_DIM), dtype=torch.float32))
+                if probe.shape[0] != 1 or probe.shape[1] < len(ADVISER_ACTIONS):
+                    raise RuntimeError(f"unexpected rollback output shape {tuple(probe.shape)}")
+            except Exception as exc:
+                logger.warning("[ADVISER] event=ROLLBACK_VERIFY_FAILED err=%s", exc)
+                return {
+                    "status": "REJECTED",
+                    "reason": "retained model failed re-verification; see server logs",
+                }
+            displaced = {
+                "model": self._state._model,
+                "scaler": self._state._scaler,
+                "model_id": self._state.model_id,
+                "weights_path": self._state.weights_path,
+                "scaler_path": self._state.scaler_path,
+                "weights_sha256": self._state.weights_sha256,
+                "manifest_path": self._state.manifest_path,
+                "integrity": self._state.integrity,
+                "source_dataset_hash": self._state.source_dataset_hash,
+                "feature_dim": self._state.feature_dim,
+                "loaded_at": self._state.loaded_at,
+            }
+            self._state._model = model
+            self._state._scaler = scaler
+            self._state.model_id = str(prev["model_id"])
+            self._state.weights_path = str(prev["weights_path"])
+            self._state.scaler_path = str(prev["scaler_path"])
+            self._state.weights_sha256 = str(prev["weights_sha256"])
+            self._state.manifest_path = str(prev["manifest_path"])
+            self._state.integrity = str(prev["integrity"])
+            self._state.source_dataset_hash = str(prev["source_dataset_hash"])
+            self._state.feature_dim = int(prev["feature_dim"])
+            self._state.loaded_at = _utcnow_iso()
+            self._state.last_error = ""
+            self._previous = displaced
+            logger.info(
+                "[ADVISER] event=MODEL_ROLLBACK restored=%s displaced=%s",
+                self._state.model_id,
+                displaced["model_id"],
+            )
+            return {
+                "status": "OK",
+                "model_id": self._state.model_id,
+                "restored_from": displaced["model_id"],
+                "weights_sha256": self._state.weights_sha256,
+                "integrity": self._state.integrity,
+                "loaded_at": self._state.loaded_at,
+                "message": f"rolled back to {self._state.model_id}",
+            }
+
+    def rehydrate(
+        self,
+        *,
+        model_id: str,
+        weights_path: Path | str,
+        scaler_path: Path | str,
+        activation: str = "DISABLED",
+    ) -> dict[str, Any]:
+        """Restart recovery (mission §4/§41): reload the persisted selection.
+
+        The adviser model is in-process state, so restarting the engine is a
+        normal load plus the persisted activation rung — no special process-level
+        machinery is required. ``restart_required`` is reported False by
+        ``load()`` because an adviser artifact is fully self-describing: a
+        contract change is a REJECTION, never a reason to restart.
+        """
+        out = self.load(weights_path, scaler_path, model_id=model_id)
+        if out.get("status") != "OK":
+            return out
+        if activation and activation != "DISABLED":
+            out["activation_result"] = self.set_activation(activation)
+        out["rehydrated"] = True
+        return out
 
     # ------------------------------------------------------------- evaluation
 
@@ -723,6 +866,7 @@ class PositionAdviserService:
             self._last_snapshot_ids[ticket] = snapshot_id
 
         t0 = time.perf_counter()
+        t_feature = t0
         applied = False
         not_applied = ""
         try:
@@ -734,16 +878,24 @@ class PositionAdviserService:
                     st.last_error = str(exc)
                 logger.warning("[ADVISER] event=EVAL_REFUSED ticket=%s reason=%s", ticket, exc)
                 return None
+            t_feature = time.perf_counter()
 
             with self._lock:
                 model = st._model
                 scaler = st._scaler
                 if model is None or scaler is None:
                     return None
+                # Tensor-inspector evidence (mission §11/§12): this is the REAL
+                # position state about to be fed to the model. Copied so a later
+                # caller mutation cannot rewrite the inspected history.
+                self._last_inspected_state = dict(position_state)
+                t_infer = time.perf_counter()
                 x = torch.tensor(scaler.transform(vec.reshape(1, -1)), dtype=torch.float32)
 
             with torch.no_grad():
                 logits = model(x)
+            inference_ms = (time.perf_counter() - t_infer) * 1000.0
+            feature_ms = (t_feature - t0) * 1000.0
             logits_np = logits.float().cpu().numpy().reshape(-1)
             if not np.all(np.isfinite(logits_np)):
                 with self._lock:
@@ -796,6 +948,12 @@ class PositionAdviserService:
                     # the snapshot was when inference ran.
                     "snapshot_id": snapshot_id,
                     "snapshot_age_ms": round(snapshot_age_ms, 3),
+                    # Per-stage measured latency (mission §14): the real cost of
+                    # each step of the loop, not a single aggregate. The UI's
+                    # decision trace renders these as the stage ages.
+                    "latency_feature_ms": round(feature_ms, 3),
+                    "latency_inference_ms": round(inference_ms, 3),
+                    "raw_feature_norm": "raw 12D vector → sklearn StandardScaler → float32 tensor",
                 },
             )
 
@@ -803,6 +961,7 @@ class PositionAdviserService:
                 st.evaluated_count += 1
                 if applied:
                     st.applied_count += 1
+                self._last_advisory = advisory
             return advisory
 
         except Exception as exc:  # fail closed, never propagate into the hot path
