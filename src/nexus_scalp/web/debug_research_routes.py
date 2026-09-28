@@ -696,7 +696,7 @@ def register_debug_research_routes(
             worker = getattr(repo, "_worker_thread", None)
             worker_alive = bool(worker.is_alive()) if worker is not None else False
 
-            metrics = {
+            metrics: dict[str, Any] = {
                 "db_path": getattr(repo, "_db_path", ""),
                 "write_queue_depth": queue_size,
                 "worker_alive": worker_alive,
