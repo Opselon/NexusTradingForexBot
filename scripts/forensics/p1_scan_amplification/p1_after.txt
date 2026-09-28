@@ -1,0 +1,205 @@
+=== P1 AFTER: fixed query paths on PostgreSQL 17 ===
+table: audit_signals  rows: 9108 (representative fixture)
+
+--- correctness (Test H) ---
+OK  Q1-after get_decision_stats (bounded tail, by decision_stage): 9 rows
+OK  Q1-after get_decision_stats (bounded tail, by reason_code): 3 rows
+OK  Q2-after operator summary census (bounded tail, one query): 2000 rows
+OK  Q2-after operator funnel (bounded tail, one query): 2000 rows
+OK  Q3-after count_decisions(NO_TRADE) over the bounded slice: 1 rows
+OK  Q3-after no-trade reasons (bounded tail grouped by reason_code): 1 rows
+OK  Q4b-after get_recent_predictions (unchanged: pkey index): 40 rows
+OK  Q4b-after ledger_high_water_mark (the memo key): 1 rows
+OK  Q4-after why_blocked sargable path: 1 rows
+
+--- amplitude: 50 iterations of each fixed path ---
+Q1-after get_decision_stats (bounded tail, by decision_stage)
+    seq_scan +0  seq_tup_read +0  tup/scan=0.0  117.6ms/50
+Q1-after get_decision_stats (bounded tail, by reason_code)
+    seq_scan +0  seq_tup_read +0  tup/scan=0.0  193.4ms/50
+Q2-after operator summary census (bounded tail, one query)
+    seq_scan +0  seq_tup_read +0  tup/scan=0.0  116.0ms/50
+Q2-after operator funnel (bounded tail, one query)
+    seq_scan +0  seq_tup_read +0  tup/scan=0.0  254.4ms/50
+Q3-after count_decisions(NO_TRADE) over the bounded slice
+    seq_scan +0  seq_tup_read +0  tup/scan=0.0  87.9ms/50
+Q3-after no-trade reasons (bounded tail grouped by reason_code)
+    seq_scan +0  seq_tup_read +0  tup/scan=0.0  93.7ms/50
+Q4b-after get_recent_predictions (unchanged: pkey index)
+    seq_scan +0  seq_tup_read +0  tup/scan=0.0  142.9ms/50
+Q4b-after ledger_high_water_mark (the memo key)
+    seq_scan +0  seq_tup_read +0  tup/scan=0.0  43.5ms/50
+Q4-after why_blocked sargable path
+    seq_scan +50  seq_tup_read +455400  tup/scan=9108.0  131.0ms/50
+
+--- SSE hot path: 5Hz x 10s with the high-water-mark memo ---
+tail reads over 10s at 5Hz: 1 (unmemoized: 50)
+    seq_scan +0  seq_tup_read +0
+
+--- plans (EXPLAIN ANALYZE BUFFERS VERBOSE) ---
+
+### Q1-after get_decision_stats (bounded tail, by decision_stage)
+Sort  (cost=501.52..501.58 rows=24 width=31) (actual time=2.745..2.746 rows=9 loops=1)
+  Output: audit_signals.decision_stage, audit_signals.action, (count(*))
+  Sort Key: (count(*)) DESC
+  Sort Method: quicksort  Memory: 25kB
+  Buffers: shared hit=415
+  ->  HashAggregate  (cost=500.73..500.97 rows=24 width=31) (actual time=2.723..2.725 rows=9 loops=1)
+        Output: audit_signals.decision_stage, audit_signals.action, count(*)
+        Group Key: audit_signals.decision_stage, audit_signals.action
+        Batches: 1  Memory Usage: 24kB
+        Buffers: shared hit=412
+        ->  Limit  (cost=0.29..465.73 rows=2000 width=91) (actual time=0.019..2.062 rows=2000 loops=1)
+              Output: audit_signals.id, audit_signals.action, audit_signals.decision_stage, NULL::text, NULL::text
+              Buffers: shared hit=412
+              ->  Index Scan Backward using audit_signals_pkey on public.audit_signals  (cost=0.29..2119.91 rows=9108 width=91) (actual time=0.018..1.931 rows=2000 loops=1)
+                    Output: audit_signals.id, audit_signals.action, audit_signals.decision_stage, NULL::text, NULL::text
+                    Buffers: shared hit=412
+Planning:
+  Buffers: shared hit=123
+Planning Time: 0.802 ms
+Execution Time: 2.797 ms
+
+### Q1-after get_decision_stats (bounded tail, by reason_code)
+Sort  (cost=500.78..500.79 rows=3 width=30) (actual time=3.087..3.089 rows=3 loops=1)
+  Output: audit_signals.reason_code, audit_signals.action, (count(*))
+  Sort Key: (count(*)) DESC
+  Sort Method: quicksort  Memory: 25kB
+  Buffers: shared hit=415
+  ->  HashAggregate  (cost=500.73..500.76 rows=3 width=30) (actual time=3.064..3.066 rows=3 loops=1)
+        Output: audit_signals.reason_code, audit_signals.action, count(*)
+        Group Key: audit_signals.reason_code, audit_signals.action
+        Batches: 1  Memory Usage: 24kB
+        Buffers: shared hit=412
+        ->  Limit  (cost=0.29..465.73 rows=2000 width=90) (actual time=0.025..2.398 rows=2000 loops=1)
+              Output: audit_signals.id, audit_signals.action, NULL::text, audit_signals.reason_code, NULL::text
+              Buffers: shared hit=412
+              ->  Index Scan Backward using audit_signals_pkey on public.audit_signals  (cost=0.29..2119.91 rows=9108 width=90) (actual time=0.023..2.262 rows=2000 loops=1)
+                    Output: audit_signals.id, audit_signals.action, NULL::text, audit_signals.reason_code, NULL::text
+                    Buffers: shared hit=412
+Planning:
+  Buffers: shared hit=123
+Planning Time: 0.777 ms
+Execution Time: 3.153 ms
+
+### Q2-after operator summary census (bounded tail, one query)
+Limit  (cost=0.29..465.73 rows=2000 width=45) (actual time=0.027..2.030 rows=2000 loops=1)
+  Output: action, generated_at, id
+  Buffers: shared hit=412
+  ->  Index Scan Backward using audit_signals_pkey on public.audit_signals  (cost=0.29..2119.91 rows=9108 width=45) (actual time=0.026..1.895 rows=2000 loops=1)
+        Output: action, generated_at, id
+        Buffers: shared hit=412
+Planning:
+  Buffers: shared hit=108
+Planning Time: 0.625 ms
+Execution Time: 2.206 ms
+
+### Q2-after operator funnel (bounded tail, one query)
+Limit  (cost=0.29..465.73 rows=2000 width=73) (actual time=0.019..1.542 rows=2000 loops=1)
+  Output: action, decision_stage, blocked_by, generated_at, id
+  Buffers: shared hit=412
+  ->  Index Scan Backward using audit_signals_pkey on public.audit_signals  (cost=0.29..2119.91 rows=9108 width=73) (actual time=0.018..1.458 rows=2000 loops=1)
+        Output: action, decision_stage, blocked_by, generated_at, id
+        Buffers: shared hit=412
+Planning:
+  Buffers: shared hit=114
+Planning Time: 0.544 ms
+Execution Time: 1.654 ms
+
+### Q3-after count_decisions(NO_TRADE) over the bounded slice
+Aggregate  (cost=495.29..495.30 rows=1 width=8) (actual time=2.241..2.243 rows=1 loops=1)
+  Output: count(*)
+  Buffers: shared hit=412
+  ->  Subquery Scan on tail  (cost=0.29..490.73 rows=1826 width=0) (actual time=0.043..2.105 rows=1831 loops=1)
+        Output: tail.id, tail.action
+        Filter: (tail.action = 'NO_TRADE'::text)
+        Rows Removed by Filter: 169
+        Buffers: shared hit=412
+        ->  Limit  (cost=0.29..465.73 rows=2000 width=13) (actual time=0.041..1.901 rows=2000 loops=1)
+              Output: audit_signals.id, audit_signals.action
+              Buffers: shared hit=412
+              ->  Index Scan Backward using audit_signals_pkey on public.audit_signals  (cost=0.29..2119.91 rows=9108 width=13) (actual time=0.040..1.788 rows=2000 loops=1)
+                    Output: audit_signals.id, audit_signals.action
+                    Buffers: shared hit=412
+Planning:
+  Buffers: shared hit=108
+Planning Time: 0.794 ms
+Execution Time: 2.277 ms
+
+### Q3-after no-trade reasons (bounded tail grouped by reason_code)
+Limit  (cost=499.88..499.88 rows=1 width=21) (actual time=1.952..1.953 rows=1 loops=1)
+  Output: tail.reason_code, (count(*))
+  Buffers: shared hit=415
+  ->  Sort  (cost=499.88..499.88 rows=1 width=21) (actual time=1.951..1.952 rows=1 loops=1)
+        Output: tail.reason_code, (count(*))
+        Sort Key: (count(*)) DESC
+        Sort Method: quicksort  Memory: 25kB
+        Buffers: shared hit=415
+        ->  HashAggregate  (cost=499.86..499.87 rows=1 width=21) (actual time=1.933..1.934 rows=1 loops=1)
+              Output: tail.reason_code, count(*)
+              Group Key: tail.reason_code
+              Batches: 1  Memory Usage: 24kB
+              Buffers: shared hit=412
+              ->  Subquery Scan on tail  (cost=0.29..490.73 rows=1826 width=13) (actual time=0.019..1.675 rows=1831 loops=1)
+                    Output: tail.id, tail.action, tail.reason_code
+                    Filter: (tail.action = 'NO_TRADE'::text)
+                    Rows Removed by Filter: 169
+                    Buffers: shared hit=412
+                    ->  Limit  (cost=0.29..465.73 rows=2000 width=26) (actual time=0.019..1.530 rows=2000 loops=1)
+                          Output: audit_signals.id, audit_signals.action, audit_signals.reason_code
+                          Buffers: shared hit=412
+                          ->  Index Scan Backward using audit_signals_pkey on public.audit_signals  (cost=0.29..2119.91 rows=9108 width=26) (actual time=0.018..1.443 rows=2000 loops=1)
+                                Output: audit_signals.id, audit_signals.action, audit_signals.reason_code
+                                Buffers: shared hit=412
+Planning:
+  Buffers: shared hit=123
+Planning Time: 0.676 ms
+Execution Time: 1.983 ms
+
+### Q4b-after get_recent_predictions (unchanged: pkey index)
+Limit  (cost=0.29..9.59 rows=40 width=36) (actual time=0.017..0.047 rows=40 loops=1)
+  Output: request_id, symbol, action, confidence, id
+  Buffers: shared hit=11
+  ->  Index Scan Backward using audit_signals_pkey on public.audit_signals  (cost=0.29..2119.91 rows=9108 width=36) (actual time=0.016..0.044 rows=40 loops=1)
+        Output: request_id, symbol, action, confidence, id
+        Buffers: shared hit=11
+Planning:
+  Buffers: shared hit=114
+Planning Time: 0.482 ms
+Execution Time: 0.105 ms
+
+### Q4b-after ledger_high_water_mark (the memo key)
+Result  (cost=0.32..0.33 rows=1 width=4) (actual time=0.099..0.100 rows=1 loops=1)
+  Output: (InitPlan 1).col1
+  Buffers: shared hit=3
+  InitPlan 1
+    ->  Limit  (cost=0.29..0.32 rows=1 width=4) (actual time=0.096..0.096 rows=1 loops=1)
+          Output: audit_signals.id
+          Buffers: shared hit=3
+          ->  Index Only Scan Backward using audit_signals_pkey on public.audit_signals  (cost=0.29..305.91 rows=9108 width=4) (actual time=0.095..0.095 rows=1 loops=1)
+                Output: audit_signals.id
+                Heap Fetches: 0
+                Buffers: shared hit=3
+Planning:
+  Buffers: shared hit=112
+Planning Time: 0.647 ms
+Execution Time: 0.173 ms
+
+### Q4-after why_blocked sargable path
+Limit  (cost=1985.86..1985.87 rows=1 width=1325) (actual time=7.326..7.327 rows=1 loops=1)
+  Output: id, request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload, execution_mode, reason_code, decision_stage, blocked_by, htf_score, smc_score, confidence_before_filters, confidence_after_filters, signal_dedup_key, preferred_direction, raw_prob_buy, raw_prob_sell, raw_prob_no_trade, raw_prob_wait, confidence_source, spread_usd, account_source
+  Buffers: shared hit=1878
+  ->  Sort  (cost=1985.86..1985.87 rows=1 width=1325) (actual time=7.325..7.326 rows=1 loops=1)
+        Output: id, request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload, execution_mode, reason_code, decision_stage, blocked_by, htf_score, smc_score, confidence_before_filters, confidence_after_filters, signal_dedup_key, preferred_direction, raw_prob_buy, raw_prob_sell, raw_prob_no_trade, raw_prob_wait, confidence_source, spread_usd, account_source
+        Sort Key: audit_signals.generated_at DESC, audit_signals.id DESC
+        Sort Method: quicksort  Memory: 27kB
+        Buffers: shared hit=1878
+        ->  Seq Scan on public.audit_signals  (cost=0.00..1985.85 rows=1 width=1325) (actual time=0.011..7.298 rows=1 loops=1)
+              Output: id, request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload, execution_mode, reason_code, decision_stage, blocked_by, htf_score, smc_score, confidence_before_filters, confidence_after_filters, signal_dedup_key, preferred_direction, raw_prob_buy, raw_prob_sell, raw_prob_no_trade, raw_prob_wait, confidence_source, spread_usd, account_source
+              Filter: (audit_signals.request_id = 'req-0000001'::text)
+              Rows Removed by Filter: 9107
+              Buffers: shared hit=1872
+Planning:
+  Buffers: shared hit=185
+Planning Time: 0.593 ms
+Execution Time: 7.353 ms

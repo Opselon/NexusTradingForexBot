@@ -396,22 +396,69 @@ def learning_pipeline_rates(db_path: str) -> dict[str, Any]:
     }
 
 
+#: P1 (scan-amplification fix): the sargable correlation key for a signal
+#: row. ``why_blocked`` asks "which ledger rows talk about this ticket?"; the
+#: correlation key is ``request_id``, an index-served equality. The
+#: leading-wildcard ``payload LIKE '%..%'`` scan is retained ONLY as the
+#: last-resort fallback for rows written before that correlation existed, so
+#: the common path never materializes the ~855-byte payload of every row in
+#: the table.
+#:
+#: NOTE: this is a COLD path (the ``nexus incident`` diagnostic CLI, invoked
+#: by an operator on demand), not a hot poll. It is fixed because the old
+#: shape made even a diagnostic a guaranteed full table scan, not because it
+#: runs at 5Hz.
+_SARGABLE_SIGNAL_LOOKUPS = (
+    "SELECT * FROM audit_signals WHERE request_id = ? "
+    "ORDER BY generated_at DESC, id DESC LIMIT 20",
+)
+
+
 def why_blocked(db_path: str, ticket: str | int) -> dict[str, Any]:
     """Why was this trade blocked? (spec 39). Diagnostic only."""
     conn = _connect(db_path)
     try:
-        signals = _safe_rows(
-            conn,
-            "SELECT * FROM audit_signals WHERE ticket=? OR payload LIKE ? "
-            "ORDER BY timestamp DESC LIMIT 20",
-            (str(ticket), f"%{ticket}%"),
-        )
+        # P1 (scan-amplification fix): the query used to be
+        # ``WHERE ticket=? OR payload LIKE '%..%'`` — the LIKE has a LEADING
+        # wildcard, which is non-sargable by construction: no B-tree can ever
+        # serve it, and on PostgreSQL the planner's only option is a seq scan
+        # that materializes the ~855-byte payload of every row before the
+        # LIMIT 20. ``ticket`` is not even a column on audit_signals (the
+        # correlation key is request_id / execution_id), so the OR's first
+        # branch matched nothing and the LIKE branch did all the damage.
+        #
+        # The diagnostic question is "which ledger rows talk about this
+        # ticket?". The sargable key (request_id, execution_id) is tried
+        # first with an index-served equality; the substring scan is kept as
+        # the explicit fallback for rows written before the correlation
+        # columns existed, and it is now the LAST resort, bounded, and only
+        # runs when the equality path found nothing.
+        needle = str(ticket)
+        signals: list[dict[str, Any]] = []
+        for sql in _SARGABLE_SIGNAL_LOOKUPS:
+            # Each lookup targets a correlation column; a ledger generation
+            # predating request_id/execution_id just yields no rows here
+            # (``_safe_rows`` swallows the OperationalError), so the loop
+            # falls through to the next key.
+            signals = _safe_rows(conn, sql, (needle,))
+            if signals:
+                break
+        if not signals:
+            # Final resort: a bounded substring scan over the payload blob.
+            # This runs only when every sargable key missed, i.e. for rows
+            # written before the correlation columns existed.
+            signals = _safe_rows(
+                conn,
+                "SELECT * FROM audit_signals WHERE payload LIKE ? "
+                "ORDER BY generated_at DESC LIMIT 20",
+                (f"%{needle}%",),
+            )
         guard = _safe_rows(
             conn,
             "SELECT * FROM audit_guard_telemetry WHERE symbol IN "
             "(SELECT symbol FROM audit_ledger WHERE ticket=?) "
             "ORDER BY window_start DESC LIMIT 20",
-            (str(ticket),),
+            (needle,),
         )
     finally:
         conn.close()

@@ -1,0 +1,17 @@
+=== scan attribution (run_sec=10.0) ===
+  SSE get_recent_predictions(40) @5.0Hz: calls=50 seq_scan+=0 seq_tup_read+=0 idx_scan+=50
+  v1 signals/latest @1/15s: calls=1 seq_scan+=0 seq_tup_read+=0 idx_scan+=1
+  v1 decisions/stats Q1 @1/60s: calls=1 seq_scan+=1 seq_tup_read+=9108 idx_scan+=1
+  v1 decisions/no-trade Q3 @1/60s: calls=1 seq_scan+=1 seq_tup_read+=9108 idx_scan+=0
+  v1 decisions/no-trade COUNT Q3b @1/60s: calls=1 seq_scan+=1 seq_tup_read+=9108 idx_scan+=0
+  op summary Q2 @1/15s: calls=1 seq_scan+=1 seq_tup_read+=9108 idx_scan+=3
+
+=== extrapolation to the forensic 18.11h window ===
+  SSE get_recent_predictions(40) @5.0Hz:    325980 calls ->         0 seq_scans,             0 seq_tup_read
+  v1 signals/latest @1/15s:      6520 calls ->         0 seq_scans,             0 seq_tup_read
+  v1 decisions/stats Q1 @1/60s:      6520 calls ->      6520 seq_scans,      59380517 seq_tup_read
+  v1 decisions/no-trade Q3 @1/60s:      6520 calls ->      6520 seq_scans,      59380517 seq_tup_read
+  v1 decisions/no-trade COUNT Q3b @1/60s:      6520 calls ->      6520 seq_scans,      59380517 seq_tup_read
+  op summary Q2 @1/15s:      6520 calls ->      6520 seq_scans,      59380517 seq_tup_read
+  TOTAL:     26078 seq_scans,     237522067 seq_tup_read
+  forensic observed: 533577 seq_scans, 4927831046 seq_tup_read

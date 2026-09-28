@@ -1,0 +1,95 @@
+seeded: (9108, '2026-09-28T14:00:00+00:00', '2026-09-21T14:01:06.403162+00:00')
+[after-seed] {'rel': 'audit_signals', 'seq_scan': 4, 'seq_tup_read': 9108, 'idx_scan': 0, 'live': 18216, 'dead': 0, 'size': '16 MB', 'exact': 9108}
+
+----- Q1 BEFORE: decisions/stats — generated_at >= ? GROUP BY (ANALYZED)
+Sort  (cost=2054.95..2055.01 rows=24 width=31) (actual time=14.212..14.213 rows=9 loops=1)
+  Output: action, decision_stage, (count(*))
+  Sort Key: (count(*)) DESC
+  Sort Method: quicksort  Memory: 25kB
+  Buffers: shared hit=1875
+  ->  HashAggregate  (cost=2054.16..2054.40 rows=24 width=31) (actual time=14.181..14.183 rows=9 loops=1)
+        Output: action, decision_stage, count(*)
+        Group Key: audit_signals.action, audit_signals.decision_stage
+        Batches: 1  Memory Usage: 24kB
+        Buffers: shared hit=1872
+        ->  Seq Scan on public.audit_signals  (cost=0.00..1985.85 rows=9108 width=23) (actual time=0.062..11.244 rows=9064 loops=1)
+              Output: id, request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload, execution_mode, reason_code, decision_stage, blocked_by, htf_score, smc_score, confidence_before_filters, confidence_after_filters, signal_dedup_key, preferred_direction, raw_prob_buy, raw_prob_sell, raw_prob_no_trade, raw_prob_wait, confidence_source, spread_usd, account_source
+              Filter: (audit_signals.generated_at >= '2026-09-21T14:48:56.504711+00:00'::text)
+              Rows Removed by Filter: 44
+              Buffers: shared hit=1872
+Planning:
+  Buffers: shared hit=156
+Planning Time: 1.027 ms
+Execution Time: 14.264 ms
+
+
+----- Q2 BEFORE: operator/summary — id IN (last 20000) (ANALYZED)
+Hash Semi Join  (cost=2233.76..4322.07 rows=9108 width=69) (actual time=8.204..14.075 rows=9108 loops=1)
+  Output: audit_signals.action, audit_signals.decision_stage, audit_signals.blocked_by, audit_signals.generated_at
+  Hash Cond: (audit_signals.id = audit_signals_1.id)
+  Buffers: shared hit=3713
+  ->  Seq Scan on public.audit_signals  (cost=0.00..1963.08 rows=9108 width=73) (actual time=0.005..2.202 rows=9108 loops=1)
+        Output: audit_signals.id, audit_signals.request_id, audit_signals.symbol, audit_signals.action, audit_signals.confidence, audit_signals.proposed_entry, audit_signals.stop_loss, audit_signals.take_profit, audit_signals.regime, audit_signals.generated_at, audit_signals.payload, audit_signals.execution_mode, audit_signals.reason_code, audit_signals.decision_stage, audit_signals.blocked_by, audit_signals.htf_score, audit_signals.smc_score, audit_signals.confidence_before_filters, audit_signals.confidence_after_filters, audit_signals.signal_dedup_key, audit_signals.preferred_direction, audit_signals.raw_prob_buy, audit_signals.raw_prob_sell, audit_signals.raw_prob_no_trade, audit_signals.raw_prob_wait, audit_signals.confidence_source, audit_signals.spread_usd, audit_signals.account_source
+        Buffers: shared hit=1872
+  ->  Hash  (cost=2119.91..2119.91 rows=9108 width=4) (actual time=8.162..8.163 rows=9108 loops=1)
+        Output: audit_signals_1.id
+        Buckets: 16384  Batches: 1  Memory Usage: 449kB
+        Buffers: shared hit=1841
+        ->  Limit  (cost=0.29..2119.91 rows=9108 width=4) (actual time=0.013..6.995 rows=9108 loops=1)
+              Output: audit_signals_1.id
+              Buffers: shared hit=1841
+              ->  Index Only Scan Backward using audit_signals_pkey on public.audit_signals audit_signals_1  (cost=0.29..2119.91 rows=9108 width=4) (actual time=0.012..6.529 rows=9108 loops=1)
+                    Output: audit_signals_1.id
+                    Heap Fetches: 9108
+                    Buffers: shared hit=1841
+Planning:
+  Buffers: shared hit=136
+Planning Time: 0.805 ms
+Execution Time: 14.573 ms
+
+
+----- Q3 BEFORE: decisions/no-trade/reasons — action='NO_TRADE' GROUP BY (ANALYZED)
+Sort  (cost=2027.44..2027.45 rows=1 width=40) (actual time=10.537..10.540 rows=1 loops=1)
+  Output: (COALESCE(reason_code, 'UNKNOWN'::text)), (count(*))
+  Sort Key: (count(*)) DESC
+  Sort Method: quicksort  Memory: 25kB
+  Buffers: shared hit=1875
+  ->  HashAggregate  (cost=2027.42..2027.43 rows=1 width=40) (actual time=10.516..10.518 rows=1 loops=1)
+        Output: (COALESCE(reason_code, 'UNKNOWN'::text)), count(*)
+        Group Key: COALESCE(audit_signals.reason_code, 'UNKNOWN'::text)
+        Batches: 1  Memory Usage: 24kB
+        Buffers: shared hit=1872
+        ->  Seq Scan on public.audit_signals  (cost=0.00..1985.85 rows=8314 width=32) (actual time=0.019..8.922 rows=8314 loops=1)
+              Output: COALESCE(reason_code, 'UNKNOWN'::text)
+              Filter: (audit_signals.action = 'NO_TRADE'::text)
+              Rows Removed by Filter: 794
+              Buffers: shared hit=1872
+Planning:
+  Buffers: shared hit=122
+Planning Time: 0.760 ms
+Execution Time: 10.629 ms
+
+
+----- Q4 BEFORE: get_recent_predictions — ORDER BY id DESC LIMIT 40 (ANALYZED)
+Limit  (cost=0.29..9.59 rows=40 width=1260) (actual time=0.019..0.053 rows=40 loops=1)
+  Output: request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload, execution_mode, reason_code, decision_stage, blocked_by, id
+  Buffers: shared hit=11
+  ->  Index Scan Backward using audit_signals_pkey on public.audit_signals  (cost=0.29..2119.91 rows=9108 width=1260) (actual time=0.018..0.050 rows=40 loops=1)
+        Output: request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload, execution_mode, reason_code, decision_stage, blocked_by, id
+        Buffers: shared hit=11
+Planning:
+  Buffers: shared hit=144
+Planning Time: 0.661 ms
+Execution Time: 0.117 ms
+
+
+----- Q4b BEFORE: incidents why_blocked — ticket=? OR payload LIKE ? (ESTIMATED)
+Limit  (cost=2008.63..2008.63 rows=2 width=1325)
+  Output: id, request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload, execution_mode, reason_code, decision_stage, blocked_by, htf_score, smc_score, confidence_before_filters, confidence_after_filters, signal_dedup_key, preferred_direction, raw_prob_buy, raw_prob_sell, raw_prob_no_trade, raw_prob_wait, confidence_source, spread_usd, account_source
+  ->  Sort  (cost=2008.63..2008.63 rows=2 width=1325)
+        Output: id, request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload, execution_mode, reason_code, decision_stage, blocked_by, htf_score, smc_score, confidence_before_filters, confidence_after_filters, signal_dedup_key, preferred_direction, raw_prob_buy, raw_prob_sell, raw_prob_no_trade, raw_prob_wait, confidence_source, spread_usd, account_source
+        Sort Key: audit_signals.generated_at DESC
+        ->  Seq Scan on public.audit_signals  (cost=0.00..2008.62 rows=2 width=1325)
+              Output: id, request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload, execution_mode, reason_code, decision_stage, blocked_by, htf_score, smc_score, confidence_before_filters, confidence_after_filters, signal_dedup_key, preferred_direction, raw_prob_buy, raw_prob_sell, raw_prob_no_trade, raw_prob_wait, confidence_source, spread_usd, account_source
+              Filter: ((audit_signals.request_id = 'req-0000001'::text) OR (audit_signals.payload ~~ '%req-0000001%'::text))
+
