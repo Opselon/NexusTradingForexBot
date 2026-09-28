@@ -25,7 +25,7 @@
 ## COMMIT RECORD
 
 - Subject: `AGENT-13: Commit + synchronize swarm registry state and TASK-13 surveillance baseline`
-- Body: Agent/Role/Task/Scope/Why/Files/Behavior/Tests/Risk/Dependencies/Handoff per contract.
+- Body: agents/Role/Task/Scope/Why/Files/Behavior/Tests/Risk/Dependencies/Handoff per contract.
 - Files: agents/{bugs,change_control,contracts,runtime_invariants,taskboard,repository_state}.md,
   docs/historical/task-reports/TASK_13_GIT_SURVEILLANCE_FINAL.md, docs/agent_handoffs/TASK-13-git-surveillance.md.
 

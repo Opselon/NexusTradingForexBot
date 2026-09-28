@@ -78,7 +78,7 @@
 
 ---
 
-## 6. Agent/ vs agents/ — resolution & canonical ownership
+## 6. agents/ vs agents/ — resolution & canonical ownership
 
 * [`agents/`](../../agents/) (lowercase) is the **CANONICAL, ACTIVE** registry:
   * `skill.md` (authoritative master map, §1–§20)
@@ -88,10 +88,10 @@
   * `change_control.md` (CHG registry)
   * `taskboard.md` (active taskboard)
   * `locks.yaml` (concurrency locks)
-* [`Agent/`](../../Agent/) (capital A) is the **HISTORICAL COMPANION** directory:
+* [`agents/`](../../agents/) is the **HISTORICAL COMPANION** directory:
   * Contains `PROJECT_GRAPH.md`, `ARCHITECTURE_CONTRACT.md`, `AGENT_REASONING_PROTOCOL.md`, `DATABASE_MIGRATION_STATUS.md`, `TEST_OPTIMIZATION_REPORT.md`, and `skill.md` alias.
-  * Explained by [`Agent/README.md`](../../Agent/README.md).
-  * Both directories are **kept as-is** — no blind merge, no deletion.
+  * Explained by [`docs/governance/legacy-agent-directory.md`](../governance/legacy-agent-directory.md).
+  * The retired capital-A shim is documented in [`legacy-agent-directory.md`](../governance/legacy-agent-directory.md).
 
 ---
 
@@ -109,6 +109,6 @@ README.md → agents/skill.md → docs/forensics/README.md (this file) → histo
 
 ## 8. Preservation rules
 
-* Do not delete `forensic_recovery_20260904/`, `_backup_portable_*`, `artifacts/`, `scratch/`, `Agent/`, `agents/`.
+* Do not delete `forensic_recovery_20260904/`, `_backup_portable_*`, `artifacts/`, `scratch/`, `agents/`, `agents/`.
 * No `git reset --hard`, `git clean -fdx`, `git stash drop/clear`, `git branch -D`, `git worktree prune`, or `git push --force` on this hygiene task.
 * For any consolidation that moves files, use `git mv` and update references — no history squashing.
