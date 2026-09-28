@@ -61,11 +61,11 @@ Tables: 74 | foreign keys: 0 | unique indexes: 0 | CHECK constraints: 8
 ### training_runs.model_id -> experience_model_registry.model_id
 
 - stage: **MODEL**  importance: **critical**
-- invariant: every training run produces a model the registry knows
+- invariant: every completed training run produces a model the registry knows
 - enforcement: **neither**
 - evidence: no DB constraint AND 6 orphan rows live: the invariant is asserted by nothing
-- note: model_id is nullable in training_runs; the registry is keyed on (model_id, model_version)
-- guard: a model trained but never registered cannot be promoted or rolled back
+- note: model_id is nullable in training_runs; the registry is keyed on (model_id, model_version). LIVE EVIDENCE: all 6 completed training runs persist model_id = '' (empty string, not NULL) while the registry holds 6 distinct model ids — the training stage completes without recording which model it produced, so no training run can be joined to its model. PRODUCTION DEFECT (owned by Agent 1's runtime scope; reported, not patched).
+- guard: a model trained but never linked cannot be promoted or rolled back
 
 ### research_runs.strategy_id -> strategy_registry.strategy_id
 

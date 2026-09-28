@@ -278,8 +278,7 @@ class TestStrategyLifecycleImmutability:
 
         ok = queue_write(
             repo,
-            "UPDATE strategy_registry SET lifecycle=? "
-            "WHERE strategy_id=? AND strategy_version=?",
+            "UPDATE strategy_registry SET lifecycle=? WHERE strategy_id=? AND strategy_version=?",
             ("VALIDATED", sid, "1.0.0"),
             operation="phase2.strategy.raw_update",
         )
@@ -308,17 +307,27 @@ class TestLiveStrategyReadback:
 
         # The real lifecycle vocabulary the live writers use.
         valid_lifecycle = {
-            "DISCOVERED", "INITIAL_TESTING", "EVIDENCE_BUILDING",
-            "WALK_FORWARD_READY", "OOS_READY", "ROBUSTNESS_READY",
-            "BACKTESTING", "VALIDATING", "OOS_TESTING", "ROBUSTNESS_TESTING",
-            "VALIDATED", "SHADOW", "ACTIVE", "REJECTED", "DEGRADED", "RETIRED",
+            "DISCOVERED",
+            "INITIAL_TESTING",
+            "EVIDENCE_BUILDING",
+            "WALK_FORWARD_READY",
+            "OOS_READY",
+            "ROBUSTNESS_READY",
+            "BACKTESTING",
+            "VALIDATING",
+            "OOS_TESTING",
+            "ROBUSTNESS_TESTING",
+            "VALIDATED",
+            "SHADOW",
+            "ACTIVE",
+            "REJECTED",
+            "DEGRADED",
+            "RETIRED",
         }
         total = conn.execute("SELECT COUNT(*) FROM strategy_registry").fetchone()[0]
         if not total:
             pytest.skip("live strategy_registry is empty")
-        rows = conn.execute(
-            "SELECT strategy_id, lifecycle FROM strategy_registry"
-        ).fetchall()
+        rows = conn.execute("SELECT strategy_id, lifecycle FROM strategy_registry").fetchall()
         assert rows, "the live STRATEGY stage has persisted strategies"
         for r in rows:
             assert r["strategy_id"], "every strategy row carries a strategy_id"
@@ -344,8 +353,7 @@ class TestLiveStrategyReadback:
         dist = {
             r["lifecycle"]: int(r["c"])
             for r in conn.execute(
-                "SELECT lifecycle, COUNT(*) AS c FROM strategy_registry "
-                "GROUP BY lifecycle"
+                "SELECT lifecycle, COUNT(*) AS c FROM strategy_registry GROUP BY lifecycle"
             )
         }
         # The distribution must account for every row in the table.

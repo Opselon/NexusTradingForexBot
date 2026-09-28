@@ -60,7 +60,9 @@ def _ensure_lifecycle_columns(env) -> None:
     # ``ensure_schema`` only needs the repository (``register_candidate`` uses
     # ``model_registry``; the migration does not). Construct the registry on the
     # isolated database this fixture owns — never the live one.
-    ModelLifecycleRegistry(audit_repo=env.repo, model_registry=ModelRegistry(env.repo)).ensure_schema()
+    ModelLifecycleRegistry(
+        audit_repo=env.repo, model_registry=ModelRegistry(env.repo)
+    ).ensure_schema()
 
 
 #: The exact insert the production provenance writer uses
@@ -135,9 +137,17 @@ class TestModelWriteReadRoundTrip:
             repo,
             _MODEL_SQL,
             (
-                model_id, version, "PHASE2_ROLE", "artifacts/model.pt",
-                "fingerprint-phase2", "scalp_v3", 70, "cfg-1", "build-1",
-                0, _iso(),
+                model_id,
+                version,
+                "PHASE2_ROLE",
+                "artifacts/model.pt",
+                "fingerprint-phase2",
+                "scalp_v3",
+                70,
+                "cfg-1",
+                "build-1",
+                0,
+                _iso(),
             ),
             operation="phase2.model.insert_registry",
         )
@@ -170,7 +180,8 @@ class TestModelWriteReadRoundTrip:
                 "v0.9",
                 "child_model_id_value",
                 json.dumps(["VAL-1", "VAL-2"]),
-                model_id, version,
+                model_id,
+                version,
             ),
             operation="phase2.model.stamp_lifecycle",
         )
@@ -220,9 +231,7 @@ class TestModelWriteReadRoundTrip:
         )
         sqlite_env.flush()
 
-        rows = query_rows(
-            repo, "SELECT * FROM training_runs WHERE run_id=?", (run_id,)
-        )
+        rows = query_rows(repo, "SELECT * FROM training_runs WHERE run_id=?", (run_id,))
         assert len(rows) == 1, "the written training run row is readable"
         row = rows[0]
         assert row["run_id"] == run_id
@@ -296,8 +305,17 @@ class TestModelIdempotency:
         stamp = _stamp()
         model_id = f"phase2_dup_model_{stamp}"
         args = (
-            model_id, "v1.0", "PHASE2_ROLE", "artifacts/model.pt",
-            "fp-dup", "scalp_v3", 70, "cfg", "build", 0, _iso(),
+            model_id,
+            "v1.0",
+            "PHASE2_ROLE",
+            "artifacts/model.pt",
+            "fp-dup",
+            "scalp_v3",
+            70,
+            "cfg",
+            "build",
+            0,
+            _iso(),
         )
         assert queue_write(repo, _MODEL_SQL, args, operation="phase2.model.dup.1")
         sqlite_env.flush()
@@ -328,20 +346,21 @@ class TestLiveModelReadback:
         conn = live_sqlite_probe
         cols = [r[1] for r in conn.execute("PRAGMA table_xinfo(experience_model_registry)")]
         for required in (
-            "model_id", "model_version", "artifact_fingerprint",
-            "feature_schema_id", "feature_dimension", "gate_summary",
+            "model_id",
+            "model_version",
+            "artifact_fingerprint",
+            "feature_schema_id",
+            "feature_dimension",
+            "gate_summary",
         ):
-            assert required in cols, (
-                f"experience_model_registry lost the {required} column"
-            )
+            assert required in cols, f"experience_model_registry lost the {required} column"
         rows = conn.execute(
             "SELECT feature_schema_id, feature_dimension FROM experience_model_registry"
         ).fetchall()
         assert rows, "the live MODEL stage has registered models"
         for r in rows:
             assert r["feature_schema_id"], (
-                "every registry row carries a feature_schema_id "
-                f"(got {r['feature_schema_id']!r})"
+                f"every registry row carries a feature_schema_id (got {r['feature_schema_id']!r})"
             )
             assert int(r["feature_dimension"]) > 0
 
@@ -356,9 +375,7 @@ class TestLiveModelReadback:
         exceeds the raw row count.
         """
         conn = live_sqlite_probe
-        total = conn.execute(
-            "SELECT COUNT(*) FROM experience_model_registry"
-        ).fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) FROM experience_model_registry").fetchone()[0]
         if not total:
             pytest.skip("live experience_model_registry is empty")
         champions = conn.execute(

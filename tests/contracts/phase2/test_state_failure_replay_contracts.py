@@ -25,16 +25,16 @@ import pytest
 from nexus_scalp.adapters.database.provider_store import query_rows, queue_write
 from nexus_scalp.governance.engine import ModelGovernanceEngine, PromotionGateError
 from nexus_scalp.governance.models import (
-    PromotionState,
     PROMOTION_TRANSITIONS,
+    PromotionState,
 )
 from nexus_scalp.governance.store import GovernanceStore
 from nexus_scalp.model_lifecycle.learning_cycle import (
     ALLOWED_TRANSITIONS,
     TERMINAL_STATES,
 )
-from nexus_scalp.research.models import CandidateLifecycle
 from nexus_scalp.research.evidence import EvidenceArtifact, EvidenceKind
+from nexus_scalp.research.models import CandidateLifecycle
 from nexus_scalp.research.observability import (
     FailureClass,
     GateStatus,
@@ -112,9 +112,7 @@ class TestPromotionStateMachine:
             "promoted without passing review"
         )
 
-    def test_an_illegal_transition_is_audited_not_silently_dropped(
-        self, engine, sqlite_env
-    ):
+    def test_an_illegal_transition_is_audited_not_silently_dropped(self, engine, sqlite_env):
         """A refused transition must leave an audit trail, not a silent no-op."""
         store = GovernanceStore(sqlite_env.repo)
         model_id = f"M-SM-{_stamp()}"
@@ -149,10 +147,14 @@ class TestPromotionStateMachine:
     def test_terminal_states_allow_no_exit(self):
         for state, targets in PROMOTION_TRANSITIONS.items():
             if not targets:
-                assert state in {
-                    PromotionState.REJECTED,
-                    PromotionState.RETIRED,
-                } or not targets, f"{state.value} is terminal but reachable"
+                assert (
+                    state
+                    in {
+                        PromotionState.REJECTED,
+                        PromotionState.RETIRED,
+                    }
+                    or not targets
+                ), f"{state.value} is terminal but reachable"
 
     def test_the_machine_is_not_silent_about_an_unknown_state(self, engine):
         """A model with no recorded state defaults to RESEARCH — the entry
@@ -218,7 +220,9 @@ class TestStrategyLifecycleStateMachine:
     def test_the_live_store_only_uses_declared_lifecycle_values(self):
         conn = _live_conn()
         try:
-            values = {r[0] for r in conn.execute("SELECT DISTINCT lifecycle FROM strategy_registry")}
+            values = {
+                r[0] for r in conn.execute("SELECT DISTINCT lifecycle FROM strategy_registry")
+            }
         finally:
             conn.close()
         declared = {m.value for m in CandidateLifecycle}
@@ -274,9 +278,7 @@ class TestFailurePropagation:
             failure_class=FailureClass.RESEARCH,
         )
         sqlite_env.flush()
-        rows = query_rows(
-            repo, "SELECT * FROM research_gates WHERE gate_id=?", (gate.gate_id,)
-        )
+        rows = query_rows(repo, "SELECT * FROM research_gates WHERE gate_id=?", (gate.gate_id,))
         assert rows[0]["status"] == "FAILED"
         assert rows[0]["failure_reason"] == "oos expectancy below threshold"
         assert rows[0]["evidence_id"] == artifact.evidence_id
@@ -304,7 +306,8 @@ class TestFailurePropagation:
         )
         sqlite_env.flush()
         rows = query_rows(
-            repo, "SELECT status, evidence_id FROM research_gates WHERE gate_id=?",
+            repo,
+            "SELECT status, evidence_id FROM research_gates WHERE gate_id=?",
             (gate.gate_id,),
         )
         assert rows[0]["status"] == "PENDING"
@@ -328,7 +331,8 @@ class TestFailurePropagation:
         )
         sqlite_env.flush()
         rows = query_rows(
-            repo, "SELECT lifecycle, retirement_reason FROM strategy_registry WHERE strategy_id=?",
+            repo,
+            "SELECT lifecycle, retirement_reason FROM strategy_registry WHERE strategy_id=?",
             (sid,),
         )
         assert rows[0]["lifecycle"] == "REJECTED"
@@ -346,9 +350,7 @@ class TestFailurePropagation:
             assert exists, "model_promotion_audit is not in the live schema"
             cols = {r[1] for r in conn.execute("PRAGMA table_info(model_promotion_audit)")}
             for required in ("approval_actor", "status", "recorded_at"):
-                assert required in cols, (
-                    f"model_promotion_audit lost the {required} column"
-                )
+                assert required in cols, f"model_promotion_audit lost the {required} column"
             count = conn.execute("SELECT COUNT(*) FROM model_promotion_audit").fetchone()[0]
             assert count == 0, "the live audit DB carries real promotions — re-derive"
         finally:
@@ -397,9 +399,7 @@ class TestReplayDeterminism:
             operation="phase2.json.run",
         )
         sqlite_env.flush()
-        rows = query_rows(
-            repo, "SELECT config FROM research_runs WHERE run_id=?", (run_id,)
-        )
+        rows = query_rows(repo, "SELECT config FROM research_runs WHERE run_id=?", (run_id,))
         assert rows[0]["config"] == expected
 
     def test_an_idempotent_re_insert_does_not_duplicate(self, sqlite_env):
@@ -426,7 +426,8 @@ class TestReplayDeterminism:
         store.store_evidence(artifact)  # the SAME artifact, replayed
         sqlite_env.flush()
         rows = query_rows(
-            repo, "SELECT COUNT(*) AS n FROM research_evidence WHERE evidence_id=?",
+            repo,
+            "SELECT COUNT(*) AS n FROM research_evidence WHERE evidence_id=?",
             (artifact.evidence_id,),
         )
         assert rows[0]["n"] == 1, "a replayed evidence artifact was duplicated"
@@ -454,7 +455,8 @@ class TestReplayDeterminism:
         queue_write(repo, decision_sql, args, operation="phase2.rep.dec2")
         sqlite_env.flush()
         rows = query_rows(
-            repo, "SELECT COUNT(*) AS n FROM shadow_decisions WHERE shadow_decision_id=?",
+            repo,
+            "SELECT COUNT(*) AS n FROM shadow_decisions WHERE shadow_decision_id=?",
             ("sd-1",),
         )
         assert rows[0]["n"] == 1, "the replayed shadow decision was duplicated"

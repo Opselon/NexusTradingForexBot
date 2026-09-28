@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import pytest
 
@@ -26,11 +26,11 @@ from nexus_scalp.adapters.database.provider_store import (
 
 
 def _iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _new_idempotency_key() -> str:
-    return "IDK-PHASE2-%d" % int(time.time() * 1_000_000)
+    return f"IDK-PHASE2-{int(time.time() * 1_000_000)}"
 
 
 _EXPERIENCE_SQL = (
@@ -77,7 +77,7 @@ class TestDataWriteReadRoundTrip:
     def test_experience_roundtrip(self, sqlite_env):
         repo = sqlite_env.repo
         key = _new_idempotency_key()
-        exp_id = "EXP-PHASE2-%d" % int(time.time() * 1000)
+        exp_id = f"EXP-PHASE2-{int(time.time() * 1000)}"
         assert queue_write(
             repo,
             _EXPERIENCE_SQL,
@@ -154,9 +154,7 @@ class TestDataWriteReadRoundTrip:
         stmts = [
             (
                 _EXPERIENCE_SQL,
-                _experience_args(
-                    f"IDK-BATCH-{base}-{i}", f"EXP-BATCH-{base}-{i}", f"REQ-B-{i}"
-                ),
+                _experience_args(f"IDK-BATCH-{base}-{i}", f"EXP-BATCH-{base}-{i}", f"REQ-B-{i}"),
             )
             for i in range(5)
         ]
@@ -196,9 +194,7 @@ class TestDataReadBackFromRepositoryAndRawConnection:
 
         repo = sqlite_env.repo
         key = _new_idempotency_key()
-        assert queue_write(
-            repo, _OUTCOME_SQL, (key, _iso(), 1, 1, "STOP_LOSS", -18.0, -0.9, "{}")
-        )
+        assert queue_write(repo, _OUTCOME_SQL, (key, _iso(), 1, 1, "STOP_LOSS", -18.0, -0.9, "{}"))
         sqlite_env.flush()
 
         via_repo = query_one(
@@ -244,9 +240,7 @@ class TestLiveDataReadback:
     def test_live_outcome_r_distribution_is_not_all_zero(self, live_sqlite_probe):
         """BUG-046 class: the R distribution must not be wholly zero."""
         conn = live_sqlite_probe
-        total = conn.execute(
-            "SELECT COUNT(*) FROM audit_experience_outcomes"
-        ).fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) FROM audit_experience_outcomes").fetchone()[0]
         if not total:
             pytest.skip("live outcome table is empty")
         zero = conn.execute(
@@ -261,9 +255,7 @@ class TestLiveDataReadback:
         Records how much of the ledger joins and that nothing enforces it.
         """
         conn = live_sqlite_probe
-        total = conn.execute(
-            "SELECT COUNT(*) FROM audit_experience_outcomes"
-        ).fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) FROM audit_experience_outcomes").fetchone()[0]
         if not total:
             pytest.skip("live outcome table is empty")
         joined = conn.execute(

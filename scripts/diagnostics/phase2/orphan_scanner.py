@@ -33,7 +33,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 try:
@@ -43,7 +43,7 @@ except Exception:  # pragma: no cover
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _native(path: str) -> str:
@@ -79,8 +79,7 @@ class _SQLiteProbe(_Probe):
         self._tables = {
             r[0]
             for r in self._conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' "
-                "AND name NOT LIKE 'sqlite_%'"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             )
         }
 
@@ -102,8 +101,7 @@ class _PgProbe(_Probe):
         self._tables = {
             r[0]
             for r in self._conn.execute(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema='public'"
+                "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
             )
         }
 
@@ -122,7 +120,7 @@ class _PgProbe(_Probe):
 
 def scan_orphans(p: _Probe) -> list[dict[str, object]]:
     out: list[dict[str, object]] = []
-    ph = "?" if p.kind == "sqlite" else "%s"
+    _ph = "?" if p.kind == "sqlite" else "%s"
 
     def add(check: str, detail: str, **extra: object) -> None:
         out.append({"check": check, "detail": detail, **extra})
@@ -217,7 +215,7 @@ def scan_orphans(p: _Probe) -> list[dict[str, object]]:
             "SELECT event_id, model_id, model_version FROM model_governance_events "
             "WHERE event IN ('PROMOTED','PROMOTION','CHAMPION_PROMOTED') "
             "AND NOT EXISTS (SELECT 1 FROM research_runs x WHERE x.model_id IS NOT NULL "
-            f"AND x.model_id=model_governance_events.model_id) LIMIT 200"
+            "AND x.model_id=model_governance_events.model_id) LIMIT 200"
         ):
             add(
                 "promotion_without_validation",
@@ -350,9 +348,7 @@ def scan_duplicates(p: _Probe) -> list[dict[str, object]]:
     return out
 
 
-def _classify_collision(
-    pg_ids: set[str], sq_ids: set[str]
-) -> list[dict[str, object]]:
+def _classify_collision(pg_ids: set[str], sq_ids: set[str]) -> list[dict[str, object]]:
     """PG/SQLite identity collisions for one logical-id set."""
     out: list[dict[str, object]] = []
     shared = pg_ids & sq_ids
@@ -418,13 +414,11 @@ def main() -> int:
 
     stores: list[dict[str, object]] = []
     probes: list[_Probe] = []
-    for path in (sqlite_targets or []):
+    for path in sqlite_targets or []:
         try:
             probes.append(_SQLiteProbe(path, path))
         except Exception as exc:
-            stores.append(
-                {"name": path, "kind": "sqlite", "error": f"{type(exc).__name__}: {exc}"}
-            )
+            stores.append({"name": path, "kind": "sqlite", "error": f"{type(exc).__name__}: {exc}"})
     if psycopg is not None and args.pg_uri:
         try:
             conn = psycopg.connect(args.pg_uri, connect_timeout=8)
@@ -477,7 +471,9 @@ def main() -> int:
     total_d = sum(
         len(s.get("duplicates", [])) for s in stores if isinstance(s.get("duplicates"), list)
     )
-    print(f"orphan scan -> {out_dir} (orphans={total_o}, duplicates={total_d}, collisions={len(collisions)})")
+    print(
+        f"orphan scan -> {out_dir} (orphans={total_o}, duplicates={total_d}, collisions={len(collisions)})"
+    )
     return 0
 
 

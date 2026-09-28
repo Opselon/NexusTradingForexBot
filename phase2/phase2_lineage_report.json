@@ -33,7 +33,7 @@
     "training_runs": 6,
     "training_runs_empty_model_id": 6
   },
-  "generated_at": "2026-09-28T01:41:37.852781+00:00",
+  "generated_at": "2026-09-28T02:15:23.688260+00:00",
   "lineage_findings": [
     {
       "action": "reported \u2014 production file not modified",

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 MAIN_CHECKOUT = Path(r"C:/Users/Capsizer/source/repos/NexusTradingForexBot")
@@ -245,8 +245,7 @@ def main() -> None:
     lin = _sqlite_lineage(LIVE_AUDIT_DB)
 
     contract_paths = {
-        stage: Path(__file__).resolve().parents[3] / rel
-        for stage, rel in CONTRACT_MODULES.items()
+        stage: Path(__file__).resolve().parents[3] / rel for stage, rel in CONTRACT_MODULES.items()
     }
     contract_exists = {s: p.exists() for s, p in contract_paths.items()}
 
@@ -254,7 +253,7 @@ def main() -> None:
 
     fingerprint_collision = lin["distinct_model_rows"] - lin["distinct_model_fingerprints"]
     payload = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "live_database": str(LIVE_AUDIT_DB),
         "counts": lin,
         "lineage_findings": [

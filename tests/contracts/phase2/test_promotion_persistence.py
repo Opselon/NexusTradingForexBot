@@ -118,17 +118,13 @@ class TestPromotionWriteReadRoundTrip:
         )
         assert actives, "the ACTIVE promotion row is readable"
         for r in actives:
-            assert r["approval_actor"], (
-                "no ACTIVE promotion lacks an approval_actor"
-            )
+            assert r["approval_actor"], "no ACTIVE promotion lacks an approval_actor"
 
 
 class TestLivePromotionReadback:
     """Read-only probes of the RUNNING engine's real promotion audit table."""
 
-    def test_live_promotion_table_exists_and_carries_approval_actor(
-        self, live_sqlite_probe
-    ):
+    def test_live_promotion_table_exists_and_carries_approval_actor(self, live_sqlite_probe):
         """The live table EXISTS and carries approval_actor.
 
         LIVE FINDING: the table has 0 rows — the promotion audit surface is
@@ -138,12 +134,7 @@ class TestLivePromotionReadback:
         asserts the surface, not the rows.
         """
         conn = live_sqlite_probe
-        tables = {
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
-        }
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert "model_promotion_audit" in tables, (
             "model_promotion_audit must exist on the live store"
         )
@@ -153,9 +144,7 @@ class TestLivePromotionReadback:
             "the column would be the finding; it is present)"
         )
         # The number of live rows is evidence, not a threshold.
-        count = conn.execute(
-            "SELECT COUNT(*) FROM model_promotion_audit"
-        ).fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM model_promotion_audit").fetchone()[0]
         assert count >= 0
 
     def test_live_active_promotions_have_actors(self, live_sqlite_probe):
@@ -166,6 +155,4 @@ class TestLivePromotionReadback:
         # Evidence: every ACTIVE promotion present must carry an actor. An
         # empty table (the live finding) vacuously satisfies this.
         for r in actives:
-            assert r["approval_actor"], (
-                "no ACTIVE promotion lacks an approval_actor"
-            )
+            assert r["approval_actor"], "no ACTIVE promotion lacks an approval_actor"

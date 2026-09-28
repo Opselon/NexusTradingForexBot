@@ -19,8 +19,9 @@ invariant.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -39,7 +40,7 @@ def _live_conn():
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # ===========================================================================
@@ -57,7 +58,7 @@ class TestStageIdentityColumns:
     # carry them, but nothing in the schema requires it. Asserting NOT NULL here
     # would assert a contract the schema does not hold; instead each stage is
     # pinned to what the schema actually guarantees.
-    STAGE_ID_COLUMNS = {
+    STAGE_ID_COLUMNS: ClassVar[dict[str, tuple[str, str]]] = {
         "DATA": ("research_runs", "dataset_id"),
         "STRATEGY": ("research_runs", "strategy_id"),
         "BACKTEST": ("research_runs", "run_id"),
@@ -67,7 +68,9 @@ class TestStageIdentityColumns:
         "MODEL": ("training_runs", "model_id"),
     }
     # The stages whose identity column the schema guarantees NOT NULL.
-    _NOT_NULL_STAGES = {"DATA", "STRATEGY", "BACKTEST", "VALIDATION", "REPLAY"}
+    _NOT_NULL_STAGES: ClassVar[frozenset[str]] = frozenset(
+        {"DATA", "STRATEGY", "BACKTEST", "VALIDATION", "REPLAY"}
+    )
 
     @pytest.mark.parametrize("stage", list(STAGE_ID_COLUMNS))
     def test_the_stage_records_its_own_identity(self, sqlite_env, stage):
@@ -175,9 +178,7 @@ class TestLiveLineageIntegrity:
             ).fetchall()
             fingerprints = [r[2] for r in rows]
             dupes = len(fingerprints) - len(set(fingerprints))
-            assert dupes >= 1, (
-                "the fingerprint collision was repaired — re-derive this check"
-            )
+            assert dupes >= 1, "the fingerprint collision was repaired — re-derive this check"
         finally:
             conn.close()
 
@@ -219,11 +220,13 @@ class TestStageToStageHandoff:
         )
         sqlite_env.flush()
         runs = query_rows(
-            repo, "SELECT run_id, dataset_id FROM research_runs WHERE run_id=?",
+            repo,
+            "SELECT run_id, dataset_id FROM research_runs WHERE run_id=?",
             (run_id,),
         )
         gates = query_rows(
-            repo, "SELECT research_run_id FROM research_gates WHERE gate_id=?",
+            repo,
+            "SELECT research_run_id FROM research_gates WHERE gate_id=?",
             ("g-handoff",),
         )
         assert runs[0]["run_id"] == gates[0]["research_run_id"]
@@ -276,7 +279,8 @@ class TestStageToStageHandoff:
         )
         sqlite_env.flush()
         rows = query_rows(
-            repo, "SELECT run_id FROM shadow_decisions WHERE shadow_decision_id=?",
+            repo,
+            "SELECT run_id FROM shadow_decisions WHERE shadow_decision_id=?",
             ("sd-1",),
         )
         assert rows[0]["run_id"] == "shr-1", (
@@ -302,7 +306,7 @@ class TestTemporalContracts:
 
     def test_no_future_timestamps_are_written(self, sqlite_env):
         repo = sqlite_env.repo
-        future = datetime.now(timezone.utc).replace(year=2100).isoformat()
+        future = datetime.now(UTC).replace(year=2100).isoformat()
         queue_write(
             repo,
             "INSERT INTO research_runs "
@@ -335,7 +339,8 @@ class TestTemporalContracts:
         )
         sqlite_env.flush()
         rows = query_rows(
-            repo, "SELECT executed_at, completed_at FROM research_runs WHERE run_id=?",
+            repo,
+            "SELECT executed_at, completed_at FROM research_runs WHERE run_id=?",
             ("run-chrono",),
         )
         # read back exactly what was written — the DB does not reorder it.
@@ -393,9 +398,7 @@ class TestTemporalContracts:
         rows = query_rows(
             repo, "SELECT executed_at FROM research_runs WHERE run_id=?", ("run-micro",)
         )
-        assert rows[0]["executed_at"] == micro, (
-            "the read seam truncated sub-second precision"
-        )
+        assert rows[0]["executed_at"] == micro, "the read seam truncated sub-second precision"
 
 
 class TestLiveTemporalIntegrity:
@@ -404,7 +407,7 @@ class TestLiveTemporalIntegrity:
     def test_no_live_timestamp_is_in_the_future(self):
         conn = _live_conn()
         try:
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             for table, col in (
                 ("research_runs", "executed_at"),
                 ("research_gates", "started_at"),
@@ -416,7 +419,9 @@ class TestLiveTemporalIntegrity:
                 future = [
                     r[0]
                     for r in rows
-                    if r[0] and _is_iso(r[0]) and datetime.fromisoformat(r[0]) > datetime.fromisoformat(now)
+                    if r[0]
+                    and _is_iso(r[0])
+                    and datetime.fromisoformat(r[0]) > datetime.fromisoformat(now)
                 ]
                 assert not future, (
                     f"{table}.{col}: {len(future)} timestamps are in the future "

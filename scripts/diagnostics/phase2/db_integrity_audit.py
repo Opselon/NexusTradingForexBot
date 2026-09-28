@@ -26,7 +26,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 try:
@@ -36,7 +36,7 @@ except Exception:  # pragma: no cover
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -162,9 +162,7 @@ def sqlite_schema(path: str) -> dict[str, dict[str, object]]:
             unique: list[str] = []
             indexes: list[dict[str, object]] = []
             for idx in conn.execute(f'PRAGMA index_list("{t}")'):
-                cols_of = [
-                    r[2] for r in conn.execute(f'PRAGMA index_info("{idx[1]}")')
-                ]
+                cols_of = [r[2] for r in conn.execute(f'PRAGMA index_info("{idx[1]}")')]
                 if idx[2]:
                     unique.append("(" + ",".join(cols_of) + ")")
                 indexes.append({"name": idx[1], "columns": cols_of})
@@ -173,9 +171,7 @@ def sqlite_schema(path: str) -> dict[str, dict[str, object]]:
                 for r in conn.execute(f'PRAGMA foreign_key_list("{t}")')
             ]
             try:
-                row_count: object = conn.execute(
-                    f'SELECT COUNT(*) FROM "{t}"'
-                ).fetchone()[0]
+                row_count: object = conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
             except Exception:
                 row_count = None
             latest = _sqlite_latest_ts(conn, t)
@@ -304,9 +300,7 @@ def pg_schema(conn) -> dict[str, dict[str, object]]:
             )
         ]
         try:
-            row_count: object = conn.execute(
-                'SELECT COUNT(*) FROM "%s"' % t
-            ).fetchone()[0]
+            row_count: object = conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
         except Exception:
             row_count = None
         latest = _pg_latest_ts(conn, t)
@@ -328,13 +322,15 @@ def pg_schema(conn) -> dict[str, dict[str, object]]:
 # ---------------------------------------------------------------------------
 
 
-def _dup_ids(conn_like: object, table: str, cols: list[str], is_sqlite: bool) -> list[dict[str, object]]:
+def _dup_ids(
+    conn_like: object, table: str, cols: list[str], is_sqlite: bool
+) -> list[dict[str, object]]:
     """Rows whose declared logical identity is duplicated."""
     if not cols:
         return []
     col_sql = ", ".join(f'"{c}"' for c in cols)
     sql = (
-        f"SELECT {col_sql}, COUNT(*) AS n FROM \"{table}\" "
+        f'SELECT {col_sql}, COUNT(*) AS n FROM "{table}" '
         f"GROUP BY {col_sql} HAVING COUNT(*) > 1 ORDER BY n DESC LIMIT 50"
     )
     try:
@@ -408,7 +404,7 @@ def pg_integrity_findings(conn) -> list[dict[str, object]]:
 def _state_findings(conn, tabs: set[str], is_sqlite: bool) -> list[dict[str, object]]:
     """Impossible-state and stale/stale-copy checks, per real semantics."""
     out: list[dict[str, object]] = []
-    placeholder = "?" if is_sqlite else "%s"
+    _placeholder = "?" if is_sqlite else "%s"
 
     def q(sql: str, args: tuple[object, ...] = ()) -> list[tuple[object, ...]]:
         try:
@@ -463,8 +459,8 @@ def _state_findings(conn, tabs: set[str], is_sqlite: bool) -> list[dict[str, obj
     if "strategy_registry" in tabs:
         for r in q(
             "SELECT COUNT(*) FROM strategy_registry WHERE lifecycle='ACTIVE' "
-            f"AND json_extract(oos, '$.status') IS NOT NULL "
-            f"AND json_extract(oos, '$.status') != 'PASS'"
+            "AND json_extract(oos, '$.status') IS NOT NULL "
+            "AND json_extract(oos, '$.status') != 'PASS'"
         ):
             if r[0]:
                 out.append(
@@ -531,12 +527,13 @@ def _state_findings(conn, tabs: set[str], is_sqlite: bool) -> list[dict[str, obj
                     }
                 )
     # Future timestamps (discovered per-table from the real schema).
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     for table in sorted(tabs):
         for c in _discover_ts_columns(conn, table, is_sqlite):
             for r in q(
                 f'SELECT COUNT(*) FROM "{table}" WHERE "{c}" IS NOT NULL '
-                f'AND "{c}" != '' AND "{c}" > {placeholder}',
+                f'AND "{c}" != '
+                ' AND "{c}" > {placeholder}',
                 (now,),
             ):
                 if r[0]:
@@ -564,7 +561,9 @@ _DIV_CLASS_NOTE = {
 }
 
 
-def reconcile(pg: dict[str, dict[str, object]], sq: dict[str, dict[str, object]]) -> dict[str, object]:
+def reconcile(
+    pg: dict[str, dict[str, object]], sq: dict[str, dict[str, object]]
+) -> dict[str, object]:
     """Per-domain PG vs SQLite comparison with classification + evidence."""
     domains: dict[str, object] = {}
     for stage, tables in STAGE_DOMAINS.items():
@@ -599,8 +598,7 @@ def reconcile(pg: dict[str, dict[str, object]], sq: dict[str, dict[str, object]]
                 set(p.get("columns", [])) ^ set(s.get("columns", []))
             )
             entry["unique_divergence"] = sorted(
-                set(p.get("unique_constraints", []))
-                ^ set(s.get("unique_constraints", []))
+                set(p.get("unique_constraints", [])) ^ set(s.get("unique_constraints", []))
             )
             entry["fk_divergence"] = {
                 "pg": p.get("foreign_keys"),
@@ -693,19 +691,19 @@ def _pg_connect(uri: str, repo: Path | None = None):
     except Exception:
         pass
     if repo is None:
-        raise
+        raise RuntimeError("no psycopg available; cannot open a PostgreSQL probe")
     from nexus_scalp.settings.secret_store import SecureSecretStore  # type: ignore
 
     store = SecureSecretStore()
     key = "db.postgresql.password"
     if not store.has_secret(key):
-        raise
+        raise RuntimeError(f"{key} is not staged in the secret store")
     pw = store.get_secret(key)
     from urllib.parse import urlsplit, urlunsplit
 
     parts = urlsplit(uri)
     if parts.password:
-        raise
+        raise RuntimeError("the supplied URI already carries a password")
     netloc = f"{parts.username or 'postgres'}:{pw}@{parts.hostname}:{parts.port}"
     return psycopg.connect(
         urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment)),
@@ -737,11 +735,12 @@ def main() -> int:
     runtime: dict[str, object] = {"provider": None}
     try:
         sys.path.insert(0, str(repo / "src"))
-        from nexus_scalp.settings.secret_store import SecureSecretStore  # type: ignore
         import sqlite3 as _s
 
-        base = Path(args.repo).parent / "NexusTradingForexBot"
-        settings_db = None
+        from nexus_scalp.settings.secret_store import SecureSecretStore  # type: ignore
+
+        _base = Path(args.repo).parent / "NexusTradingForexBot"
+        _settings_db = None
         cand_base = Path(__import__("os").environ.get("LOCALAPPDATA", "")) / "NexusScalpEngine"
         for p in sorted(cand_base.rglob("*.db")) if cand_base.exists() else []:
             try:
@@ -753,7 +752,7 @@ def main() -> int:
                 )
                 c.close()
                 if rows:
-                    settings_db = p
+                    _settings_db = p
                     runtime["provider"] = rows[0][1]
                     runtime["settings_db"] = str(p)
                     break
@@ -761,7 +760,11 @@ def main() -> int:
                 pass
         if runtime.get("provider") == "postgresql":
             store = SecureSecretStore()
-            pw = store.get_secret("db.postgresql.password") if store.has_secret("db.postgresql.password") else ""
+            pw = (
+                store.get_secret("db.postgresql.password")
+                if store.has_secret("db.postgresql.password")
+                else ""
+            )
             runtime["configured_database"] = "nexusdb"
             runtime["pg_reachable"] = bool(pw)
     except Exception as exc:
@@ -779,9 +782,7 @@ def main() -> int:
     sq_findings: list[dict[str, object]] = []
     for path in sqlite_targets:
         sq_schemas.update(sqlite_schema(_native(path)))
-        sq_findings.extend(
-            {"store": path, **f} for f in sqlite_integrity_findings(_native(path))
-        )
+        sq_findings.extend({"store": path, **f} for f in sqlite_integrity_findings(_native(path)))
 
     # --- PostgreSQL arm ---
     pg_schemas: dict[str, dict[str, object]] = {}

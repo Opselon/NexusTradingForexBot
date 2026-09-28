@@ -18,8 +18,6 @@ import json
 import sqlite3
 from pathlib import Path
 
-from nexus_scalp.settings.secret_store import SecureSecretStore
-
 MAIN_CHECKOUT = Path(r"C:/Users/Capsizer/source/repos/NexusTradingForexBot")
 LIVE_AUDIT_DB = MAIN_CHECKOUT / "artifacts" / "audit.db"
 OUT_DIR = Path(__file__).resolve().parents[3] / "phase2"
@@ -117,23 +115,21 @@ def _db_schema(db: Path) -> dict:
     try:
         tables = {
             name: conn.execute(f"PRAGMA table_info({name})").fetchall()
-            for (name,) in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
+            for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
-        fks = {
-            t: conn.execute(f"PRAGMA foreign_key_list({t})").fetchall()
-            for t in tables
-        }
+        fks = {t: conn.execute(f"PRAGMA foreign_key_list({t})").fetchall() for t in tables}
         uniques = {
             t: [i for i in conn.execute(f"PRAGMA index_list({t})").fetchall() if i[2] == 2]
             for t in tables
         }
         # UNIQUE / CHECK inside the CREATE statement text
         ddl = {
-            t: (conn.execute(
-                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (t,)
-            ).fetchone() or ("",))[0]
+            t: (
+                conn.execute(
+                    "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (t,)
+                ).fetchone()
+                or ("",)
+            )[0]
             for t in tables
         }
         return {
@@ -184,11 +180,9 @@ def classify(rel: dict, schema: dict, violations: int) -> dict:
 
     fk_list = schema["foreign_keys"].get(child_tbl, [])
     has_fk = any(
-        fk[2] == parent_tbl and fk[3] == child_col and fk[4] == parent_col
-        for fk in fk_list
+        fk[2] == parent_tbl and fk[3] == child_col and fk[4] == parent_col for fk in fk_list
     )
     child_ddl = schema["ddl"].get(child_tbl, "")
-    parent_ddl = schema["ddl"].get(parent_tbl, "")
     ddl_declares = (
         f"REFERENCES {parent_tbl}" in child_ddl.upper()
         or f"REFERENCES {parent_tbl}({parent_col})" in child_ddl.upper()
@@ -210,7 +204,7 @@ def classify(rel: dict, schema: dict, violations: int) -> dict:
     elif violations == 0:
         enforcement = "application"
         evidence = (
-            f"no DB constraint; 0 orphan rows in the live store, so the "
+            "no DB constraint; 0 orphan rows in the live store, so the "
             "application currently holds the invariant"
         )
         orphan_class = "EXPECTED"
@@ -224,9 +218,7 @@ def classify(rel: dict, schema: dict, violations: int) -> dict:
             f"no DB constraint AND {violations} orphan rows live: the invariant "
             "is asserted by nothing"
         )
-        orphan_class = (
-            "EXPECTED" if nullable_by_design else "INCORRECT"
-        )
+        orphan_class = "EXPECTED" if nullable_by_design else "INCORRECT"
 
     return {
         "enforcement": enforcement,
@@ -296,9 +288,7 @@ def main() -> None:
 
     fk_total = sum(len(v) for v in schema["foreign_keys"].values())
     uq_total = sum(len(v) for v in schema["unique_indexes"].values())
-    check_total = sum(
-        1 for ddl in schema["ddl"].values() if ddl and "CHECK" in ddl.upper()
-    )
+    check_total = sum(1 for ddl in schema["ddl"].values() if ddl and "CHECK" in ddl.upper())
     summary = {
         "database": str(LIVE_AUDIT_DB),
         "tables": len(schema["tables"]),
@@ -338,9 +328,7 @@ def main() -> None:
     lines.append("")
     lines.append("## Relationships")
     lines.append("")
-    lines.append(
-        "| Relationship | Stage | Enforcement | Child NOT NULL | Live orphans | Class |"
-    )
+    lines.append("| Relationship | Stage | Enforcement | Child NOT NULL | Live orphans | Class |")
     lines.append("| --- | --- | --- | --- | --- | --- |")
     for r in relationships:
         lines.append(

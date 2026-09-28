@@ -86,15 +86,21 @@ class TestBacktestWriteReadRoundTrip:
             repo,
             f"INSERT INTO research_runs ({_RUN_COLS}) VALUES ({_placeholders(8)})",
             (
-                run_id, "DS-PHASE2", strategy_id, "1.0.0", _iso(),
-                json.dumps(run_cfg), "build-phase2", json.dumps(run_summary),
+                run_id,
+                "DS-PHASE2",
+                strategy_id,
+                "1.0.0",
+                _iso(),
+                json.dumps(run_cfg),
+                "build-phase2",
+                json.dumps(run_summary),
             ),
             operation="phase2.backtest.insert_run",
         )
 
         # --- research_gates (the 4 validation gate types, real columns) ----
         gates: dict[str, str] = {}
-        for order, (gtype, status) in enumerate(
+        for order, (gtype, _status) in enumerate(
             [
                 (GateType.BACKTEST, GateStatus.PASSED),
                 (GateType.WALK_FORWARD, GateStatus.PASSED),
@@ -146,9 +152,7 @@ class TestBacktestWriteReadRoundTrip:
         sqlite_env.flush()
 
         # --- read back and compare ----------------------------------------
-        run_rows = query_rows(
-            repo, "SELECT * FROM research_runs WHERE run_id=?", (run_id,)
-        )
+        run_rows = query_rows(repo, "SELECT * FROM research_runs WHERE run_id=?", (run_id,))
         assert len(run_rows) == 1, "the written research_run is readable"
         run = run_rows[0]
         assert run["run_id"] == run_id
@@ -165,10 +169,16 @@ class TestBacktestWriteReadRoundTrip:
         )
         assert len(gate_rows) == 4, "all four validation gates are readable"
         assert [r["gate_type"] for r in gate_rows] == [
-            "BACKTEST", "WALK_FORWARD", "OOS", "ROBUSTNESS",
+            "BACKTEST",
+            "WALK_FORWARD",
+            "OOS",
+            "ROBUSTNESS",
         ]
         assert [r["status"] for r in gate_rows] == [
-            "PASSED", "PASSED", "PASSED", "FAILED",
+            "PASSED",
+            "PASSED",
+            "PASSED",
+            "FAILED",
         ]
         for r in gate_rows:
             assert r["gate_id"], "every gate carries an identity"
@@ -193,9 +203,7 @@ class TestBacktestWriteReadRoundTrip:
                 "SELECT * FROM research_evidence WHERE evidence_id=?",
                 (r["evidence_id"],),
             )
-            assert len(ev) == 1, (
-                f"gate {r['gate_type']} evidence_id resolves to exactly one row"
-            )
+            assert len(ev) == 1, f"gate {r['gate_type']} evidence_id resolves to exactly one row"
 
         # the full three-way join reads back correctly
         joined = query_rows(
@@ -212,7 +220,9 @@ class TestBacktestWriteReadRoundTrip:
         )
         assert len(joined) == 4
         assert [r["kind"] for r in joined] == [
-            "BACKTEST_RESULT", "WALK_FORWARD_RESULT", "OOS_RESULT",
+            "BACKTEST_RESULT",
+            "WALK_FORWARD_RESULT",
+            "OOS_RESULT",
             "ROBUSTNESS_RESULT",
         ]
         assert all(r["run_id"] == run_id for r in joined)
@@ -254,9 +264,7 @@ class TestBacktestWriteReadRoundTrip:
         )
         sqlite_env.flush()
 
-        rows = query_rows(
-            repo, "SELECT * FROM research_gates WHERE gate_id=?", (gate.gate_id,)
-        )
+        rows = query_rows(repo, "SELECT * FROM research_gates WHERE gate_id=?", (gate.gate_id,))
         assert len(rows) == 1
         assert rows[0]["status"] == "PASSED"
         assert json.loads(rows[0]["result"])["oos_expectancy_r"] == pytest.approx(0.27)
@@ -282,9 +290,7 @@ class TestGateRunLineageIsApplicationOnly:
         sid = f"ST-ORPHAN-{stamp}"
 
         # No research_runs row is ever created for ghost_run_id.
-        assert not query_rows(
-            repo, "SELECT * FROM research_runs WHERE run_id=?", (ghost_run_id,)
-        )
+        assert not query_rows(repo, "SELECT * FROM research_runs WHERE run_id=?", (ghost_run_id,))
 
         gate = store.create_gate(
             strategy_id=sid,
@@ -294,9 +300,7 @@ class TestGateRunLineageIsApplicationOnly:
         )
         sqlite_env.flush()
 
-        rows = query_rows(
-            repo, "SELECT * FROM research_gates WHERE gate_id=?", (gate.gate_id,)
-        )
+        rows = query_rows(repo, "SELECT * FROM research_gates WHERE gate_id=?", (gate.gate_id,))
         assert len(rows) == 1, (
             "finding lineage-enforced-in-application-only: a gate referencing a "
             "missing research_run_id was inserted (no FK on research_run_id)"
@@ -364,14 +368,15 @@ class TestLiveBacktestReadback:
             pytest.skip("live research_gates is empty")
         # The real gate types the validation pipeline runs.
         expected = {
-            "STATIC_VALIDATION", "BACKTEST", "WALK_FORWARD", "OOS",
-            "ROBUSTNESS", "SCORING",
+            "STATIC_VALIDATION",
+            "BACKTEST",
+            "WALK_FORWARD",
+            "OOS",
+            "ROBUSTNESS",
+            "SCORING",
         }
         present = {
-            r["gate_type"]
-            for r in conn.execute(
-                "SELECT DISTINCT gate_type FROM research_gates"
-            )
+            r["gate_type"] for r in conn.execute("SELECT DISTINCT gate_type FROM research_gates")
         }
         # Every live gate type must be one the pipeline knows about; the
         # presence set is recorded as evidence (not every type need appear).

@@ -1,6 +1,6 @@
 # Phase 2 — Lineage Report
 
-generated: 2026-09-28T01:41:37.852781+00:00
+generated: 2026-09-28T02:15:23.688260+00:00
 live database: `C:\Users\Capsizer\source\repos\NexusTradingForexBot\artifacts\audit.db`
 
 ## Lineage findings

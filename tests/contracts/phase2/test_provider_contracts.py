@@ -37,7 +37,6 @@ from nexus_scalp.database.ops_provider import (
 )
 from nexus_scalp.database.provider import DatabaseProvider
 
-
 # ---------------------------------------------------------------------------
 # K — provider routing
 # ---------------------------------------------------------------------------
@@ -67,9 +66,7 @@ class TestProviderRouting:
 
     def test_resolve_audit_db_url_prefers_explicit_caller_url(self):
         """An explicit db_url always wins (the caller keeps authority)."""
-        assert resolve_audit_db_url("sqlite:///tmp/explicit_probe.db").endswith(
-            "explicit_probe.db"
-        )
+        assert resolve_audit_db_url("sqlite:///tmp/explicit_probe.db").endswith("explicit_probe.db")
 
     def test_resolve_audit_db_url_seam_is_sqlite(self, monkeypatch, tmp_path):
         monkeypatch.setenv("NEXUS_AUDIT_DB", str(tmp_path / "seam.db"))
@@ -97,10 +94,7 @@ class TestProviderRouting:
 
     def test_url_scheme_detection(self):
         assert DatabaseProvider.from_url("sqlite:///x.db") is DatabaseProvider.SQLITE
-        assert (
-            DatabaseProvider.from_url("postgresql://u:p@h:5432/d")
-            is DatabaseProvider.POSTGRESQL
-        )
+        assert DatabaseProvider.from_url("postgresql://u:p@h:5432/d") is DatabaseProvider.POSTGRESQL
         # an empty URL is SQLite (the documented default), not an error
         assert DatabaseProvider.from_url("") is DatabaseProvider.SQLITE
 
@@ -166,8 +160,7 @@ class TestProviderWriterReaderAgreement:
             repo, "INSERT INTO t (a) VALUES (?)", (1,), operation="phase2.probe"
         )
         assert wrote is False, (
-            "a PostgreSQL-shaped store with no backend accepted a write — "
-            "the silent-fallback class"
+            "a PostgreSQL-shaped store with no backend accepted a write — the silent-fallback class"
         )
         rows = provider_store.query_rows(repo, "SELECT a FROM t", operation="phase2.probe")
         assert rows == [], "a failed read must return an empty default, not a fallback"
@@ -223,9 +216,7 @@ class TestSilentFallbackSourceScan:
         assert hits, "no persistence sources found — the package layout moved"
         return hits
 
-    def test_every_persistence_module_names_its_provider_behavior(
-        self, persistence_sources
-    ):
+    def test_every_persistence_module_names_its_provider_behavior(self, persistence_sources):
         """Every persistence module that catches a DB error must say what it
         returns. Silent `except: pass` on a connection path is the defect class."""
         undocumented: list[str] = []
@@ -250,9 +241,7 @@ class TestSilentFallbackSourceScan:
         assert isinstance(undocumented, list)
 
     def test_provider_store_documents_its_degradation_contract(self, persistence_sources):
-        store = next(
-            p for p in persistence_sources if p.name == "provider_store.py"
-        )
+        store = next(p for p in persistence_sources if p.name == "provider_store.py")
         text = store.read_text(encoding="utf-8")
         assert "never a silent loss of data" in text or "silent" in text.lower(), (
             "provider_store no longer documents its silent-loss contract"
@@ -268,8 +257,7 @@ class TestSilentFallbackSourceScan:
             (
                 p
                 for p in persistence_sources
-                if p.name == "registry.py"
-                and "model_lifecycle" in str(p)
+                if p.name == "registry.py" and "model_lifecycle" in str(p)
             ),
             None,
         )
@@ -312,7 +300,7 @@ class TestSilentFallbackSourceScan:
         # SQLite has no pooled plane), but the PostgreSQL path must NOT be a
         # silent empty return.
         assert "if self._repo._is_sqlite:" in text
-        assert "raise RuntimeError(\"no read plane registered" in text or (
+        assert 'raise RuntimeError("no read plane registered' in text or (
             "no read plane registered" in text
         ), (
             "a missing read plane must RAISE, not return [] — the silent "
@@ -337,9 +325,7 @@ class TestSilentFallbackSourceScan:
             "if not repo._is_sqlite:\n            return []",
             "if not self.audit_repo._is_sqlite:\n            return []",
         ):
-            assert forbidden not in text, (
-                f"the silent empty-read return is back: {forbidden!r}"
-            )
+            assert forbidden not in text, f"the silent empty-read return is back: {forbidden!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -386,8 +372,9 @@ class TestRuntimeProviderEvidence:
         # The operator's REAL keystore. The repo's session isolation fixture
         # redirects SecureSecretStore's default root to a temp dir, so ask for
         # the real one explicitly — this test never writes to it.
-        store = SecureSecretStore(root=Path(os.environ.get("LOCALAPPDATA", ""))
-                                   / "NexusScalpEngine")
+        store = SecureSecretStore(
+            root=Path(os.environ.get("LOCALAPPDATA", "")) / "NexusScalpEngine"
+        )
         if not store.has_secret("db.postgresql.password"):
             pytest.skip("no db.postgresql.password staged")
         # The key EXISTS; the value is never printed by this test.

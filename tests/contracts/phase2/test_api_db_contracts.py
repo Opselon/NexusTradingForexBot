@@ -42,11 +42,10 @@ def _stamp() -> int:
 def _db_console_client(sqlite_env):
     """The real db_console router mounted on a TestClient, bound to the
     isolated database through the router's own driver resolution."""
+    from fastapi import FastAPI
     from starlette.testclient import TestClient
 
     from nexus_scalp.web.db_console import router
-
-    from fastapi import FastAPI
 
     app = FastAPI()
     app.include_router(router)
@@ -96,9 +95,7 @@ class TestDbConsoleReadsTheDatabase:
 
     def test_the_direct_db_read_matches_the_write(self, sqlite_env, a_row):
         run_id, payload = a_row
-        rows = query_rows(
-            sqlite_env.repo, "SELECT * FROM research_runs WHERE run_id=?", (run_id,)
-        )
+        rows = query_rows(sqlite_env.repo, "SELECT * FROM research_runs WHERE run_id=?", (run_id,))
         assert len(rows) == 1
         for field in payload:
             assert rows[0][field] == payload[field], f"field {field} diverged"
@@ -113,9 +110,7 @@ class TestDbConsoleReadsTheDatabase:
         # a snapshot must be written into), so use the run's gate read, which
         # resolves straight off research_runs.
         assert store.audit_repo is sqlite_env.repo
-        rows = query_rows(
-            sqlite_env.repo, "SELECT * FROM research_runs WHERE run_id=?", (run_id,)
-        )
+        rows = query_rows(sqlite_env.repo, "SELECT * FROM research_runs WHERE run_id=?", (run_id,))
         assert rows, "the repository's own read seam did not return the written row"
         # ResearchObservabilityStore.list_gates reads research_gates; write one
         # so the run is resolvable through the store's public API as well.
@@ -136,7 +131,9 @@ class TestDbConsoleReadsTheDatabase:
         """An unknown table must be an explicit error, never an empty 200 that
         looks like a successful read of an empty table."""
         client = _db_console_client(sqlite_env)
-        r = client.get("/api/db/console/rows", params={"database": "audit", "table": "no_such_table"})
+        r = client.get(
+            "/api/db/console/rows", params={"database": "audit", "table": "no_such_table"}
+        )
         assert r.status_code == 200
         body = r.json()
         assert body.get("success") is False, (
@@ -180,9 +177,10 @@ class TestDbConsoleReadsTheDatabase:
         # NOT visible unless the console resolved the same database.
         if rows:
             assert "run_id" in rows[0]
-            isolated = {r["run_id"] for r in query_rows(
-                sqlite_env.repo, "SELECT run_id FROM research_runs", ()
-            )}
+            isolated = {
+                r["run_id"]
+                for r in query_rows(sqlite_env.repo, "SELECT run_id FROM research_runs", ())
+            }
             # The isolated write must not leak into the console's view unless
             # the two genuinely share a database.
             leaking = {r["run_id"] for r in rows} & isolated
@@ -202,8 +200,7 @@ class TestDbConsoleReadsTheDatabase:
         assert r.status_code == 200
         body = r.json()
         listed = {
-            t for t in (body.get("tables") or body.get("data") or [])
-            if isinstance(t, str)
+            t for t in (body.get("tables") or body.get("data") or []) if isinstance(t, str)
         } or {
             t.get("name")
             for t in (body.get("tables") or body.get("data") or [])
@@ -212,8 +209,7 @@ class TestDbConsoleReadsTheDatabase:
         if listed:
             for required in ("research_runs", "research_gates", "research_evidence"):
                 assert required in listed, (
-                    f"the API's table list omits {required} — the API and the "
-                    "DB schema disagree"
+                    f"the API's table list omits {required} — the API and the DB schema disagree"
                 )
 
 
@@ -222,7 +218,9 @@ class TestApiFailurePropagation:
 
     def test_an_unknown_database_is_an_explicit_error(self, sqlite_env):
         client = _db_console_client(sqlite_env)
-        r = client.get("/api/db/console/rows", params={"database": "not_a_db", "table": "research_runs"})
+        r = client.get(
+            "/api/db/console/rows", params={"database": "not_a_db", "table": "research_runs"}
+        )
         assert r.status_code == 200
         body = r.json()
         assert body.get("success") is False, (
@@ -245,7 +243,7 @@ class TestLiveThreePathConsistency:
         try:
             cols = [c[1] for c in conn.execute(f"PRAGMA table_info({table})")]
             cur = conn.execute(f"SELECT * FROM {table} LIMIT ?", (limit,))
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
+            return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
         finally:
             conn.close()
 

@@ -20,7 +20,7 @@ import os
 import re
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 try:
@@ -62,7 +62,7 @@ _KNOWN_SQLITE_NAMES = {
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _sqlite_tables(path: str) -> list[dict[str, object]]:
@@ -86,10 +86,7 @@ def _sqlite_tables(path: str) -> list[dict[str, object]]:
             uniq: list[str] = []
             for idx in conn.execute(f'PRAGMA index_list("{name}")'):
                 if idx[2]:
-                    cols_of = [
-                        r[2]
-                        for r in conn.execute(f'PRAGMA index_info("{idx[1]}")')
-                    ]
+                    cols_of = [r[2] for r in conn.execute(f'PRAGMA index_info("{idx[1]}")')]
                     uniq.append("(" + ",".join(cols_of) + ")")
             fks = [
                 f"({r[2]} -> {r[3]}.{r[4]})"
@@ -104,9 +101,7 @@ def _sqlite_tables(path: str) -> list[dict[str, object]]:
                 ts_cols = [c[1] for c in cols if re.search(r"(at|time|date)$", c[1] or "")]
                 for tc in ts_cols:
                     try:
-                        v = conn.execute(
-                            f'SELECT MAX("{tc}") FROM "{name}"'
-                        ).fetchone()[0]
+                        v = conn.execute(f'SELECT MAX("{tc}") FROM "{name}"').fetchone()[0]
                         if v is not None and (latest is None or str(v) > str(latest)):
                             latest = str(v)
                     except Exception:
@@ -147,7 +142,7 @@ def _file_size(p: Path) -> int | None:
 
 def _discover_sqlite_files(repo: Path) -> list[Path]:
     """All .db/.sqlite/.sqlite3 files under the repo + the live artifacts tree."""
-    root = repo if (repo / "artifacts").exists() else repo
+    root = repo
     found: dict[str, Path] = {}
     for pat in ("*.db", "*.sqlite", "*.sqlite3"):
         for p in root.rglob(pat):
@@ -161,7 +156,7 @@ def _discover_sqlite_files(repo: Path) -> list[Path]:
         for pat in ("*.db", "*.sqlite", "*.sqlite3"):
             for p in main_artifacts.rglob(pat):
                 found[str(p.resolve())] = p
-    return sorted(found.values(), key=lambda p: str(p))
+    return sorted(found.values(), key=str)
 
 
 def _discover_user_data_sqlite() -> list[Path]:
@@ -169,11 +164,7 @@ def _discover_user_data_sqlite() -> list[Path]:
     base = Path(os.environ.get("LOCALAPPDATA", "")) / "NexusScalpEngine"
     if not base.exists():
         return []
-    return sorted(
-        p
-        for pat in ("*.db", "*.sqlite", "*.sqlite3")
-        for p in base.rglob(pat)
-    )
+    return sorted(p for pat in ("*.db", "*.sqlite", "*.sqlite3") for p in base.rglob(pat))
 
 
 def _pg_databases(uri: str) -> list[dict[str, object]]:
@@ -187,8 +178,7 @@ def _pg_databases(uri: str) -> list[dict[str, object]]:
         dbs = [
             r[0]
             for r in conn.execute(
-                "SELECT datname FROM pg_database WHERE datistemplate = false "
-                "ORDER BY datname"
+                "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname"
             )
         ]
         out: list[dict[str, object]] = []
@@ -209,9 +199,7 @@ def _pg_databases(uri: str) -> list[dict[str, object]]:
                 counts = {}
                 for t in tabs:
                     try:
-                        counts[t] = c2.execute(
-                            'SELECT COUNT(*) FROM "%s"' % t
-                        ).fetchone()[0]
+                        counts[t] = c2.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
                     except Exception:
                         counts[t] = None
                 out.append(
@@ -251,12 +239,7 @@ def _runtime_provider(repo: Path) -> dict[str, object]:
         except Exception:
             return False
         try:
-            tabs = {
-                r[0]
-                for r in conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                )
-            }
+            tabs = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if "application_settings" not in tabs:
                 return False
             rows = list(
@@ -270,8 +253,7 @@ def _runtime_provider(repo: Path) -> dict[str, object]:
             out["resolved"] = True
             out["settings_db"] = str(p)
             out["entries"] = [
-                {"key": r[0], "value": r[1], "source": r[2], "updated_at": r[3]}
-                for r in rows
+                {"key": r[0], "value": r[1], "source": r[2], "updated_at": r[3]} for r in rows
             ]
             prov = [r for r in rows if r[0] == "database.provider"]
             out["provider"] = prov[0][1] if prov else None
@@ -414,9 +396,7 @@ def build_inventory(repo: Path, pg_uri: str | None) -> dict[str, object]:
             "kind": "sqlite",
             "path": str(p),
             "bytes": _file_size(p),
-            "modified_utc": datetime.fromtimestamp(
-                p.stat().st_mtime, tz=timezone.utc
-            ).isoformat()
+            "modified_utc": datetime.fromtimestamp(p.stat().st_mtime, tz=UTC).isoformat()
             if p.exists()
             else None,
         }
@@ -475,9 +455,7 @@ def _render_markdown(inv: dict[str, object]) -> str:
     lines.append("")
     lines.append("## SQLite stores")
     lines.append("")
-    lines.append(
-        "| path | bytes | tables | WAL | SHM | latest ts |"
-    )
+    lines.append("| path | bytes | tables | WAL | SHM | latest ts |")
     lines.append("| --- | --- | --- | --- | --- | --- |")
     for s in inv["stores"]:
         if s.get("kind") != "sqlite":
@@ -501,9 +479,7 @@ def _render_markdown(inv: dict[str, object]) -> str:
         if "error" in db:
             lines.append(f"- `{db.get('database')}` — ERROR: {db['error']}")
             continue
-        lines.append(
-            f"- `{db['database']}` — {db.get('table_count')} tables"
-        )
+        lines.append(f"- `{db['database']}` — {db.get('table_count')} tables")
     lines.append("")
     lines.append("## Domain map (source-derived)")
     lines.append("")
@@ -534,9 +510,7 @@ def main() -> int:
     (out_dir / "storage_inventory.json").write_text(
         json.dumps(inv, indent=2, default=str), encoding="utf-8"
     )
-    (out_dir / "storage_inventory.md").write_text(
-        _render_markdown(inv), encoding="utf-8"
-    )
+    (out_dir / "storage_inventory.md").write_text(_render_markdown(inv), encoding="utf-8")
     print(f"inventory: {len(inv['stores'])} stores -> {out_dir}")
     prov = inv["provider_runtime"]
     print(f"runtime provider: {prov.get('provider')} (resolved={prov.get('resolved')})")

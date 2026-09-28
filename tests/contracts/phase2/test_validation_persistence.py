@@ -18,6 +18,8 @@ import json
 import time
 from datetime import UTC, datetime
 
+import pytest
+
 from nexus_scalp.governance.models import (
     GovernanceEvent,
     GovernanceStage,
@@ -158,18 +160,20 @@ class TestLiveValidationReadback:
         conn = live_sqlite_probe
         cols = [r[1] for r in conn.execute("PRAGMA table_xinfo(model_governance_events)")]
         for required in (
-            "event_id", "event", "stage", "model_id", "actor",
-            "previous_state", "new_state", "timestamp",
+            "event_id",
+            "event",
+            "stage",
+            "model_id",
+            "actor",
+            "previous_state",
+            "new_state",
+            "timestamp",
         ):
-            assert required in cols, (
-                f"model_governance_events lost the {required} column"
-            )
+            assert required in cols, f"model_governance_events lost the {required} column"
 
     def test_live_promoted_events_carry_actor_and_states(self, live_sqlite_probe):
         conn = live_sqlite_probe
-        total = conn.execute(
-            "SELECT COUNT(*) FROM model_governance_events"
-        ).fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) FROM model_governance_events").fetchone()[0]
         if not total:
             pytest.skip("live model_governance_events is empty")
         promoted = conn.execute(

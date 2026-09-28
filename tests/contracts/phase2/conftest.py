@@ -23,6 +23,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -197,9 +198,7 @@ class Phase2PgEnv:
         conn.autocommit = True
         try:
             with contextlib.suppress(Exception):
-                conn.execute(
-                    "CREATE ROLE nse_user LOGIN PASSWORD 'nse_password_dev' CREATEDB"
-                )
+                conn.execute("CREATE ROLE nse_user LOGIN PASSWORD 'nse_password_dev' CREATEDB")
             with contextlib.suppress(Exception):
                 conn.execute("CREATE DATABASE nse_phase2 OWNER nse_user")
         finally:
@@ -233,7 +232,7 @@ def phase2_pg() -> Any:
     if os.environ.get("NSE_PHASE2_PG_DISABLE") == "1":
         pytest.skip("NSE_PHASE2_PG_DISABLE=1")
     try:
-        import psycopg  # noqa: F401
+        import psycopg
     except Exception:
         pytest.skip("psycopg not installed")
     with _PG_LOCK:
@@ -334,14 +333,14 @@ def live_pg_probe():
 def iso_now() -> str:
     from datetime import datetime, timezone
 
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def insert_strategy_registry_row(env: Phase2SQLiteEnv, **overrides: Any) -> str:
     """Insert one strategy_registry row through the repository's write queue."""
     from nexus_scalp.adapters.database.provider_store import queue_write
 
-    sid = overrides.pop("strategy_id", "ST-PHASE2-%d" % int(time.time() * 1000))
+    sid = overrides.pop("strategy_id", f"ST-PHASE2-{int(time.time() * 1000)}")
     vals = {
         "strategy_id": sid,
         "strategy_version": overrides.pop("strategy_version", "1.0"),
