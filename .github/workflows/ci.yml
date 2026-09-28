@@ -622,6 +622,23 @@ jobs:
           PY
           exit 0
 
+      # -------- Failure summary IN THE JOB LOG (CI-FAILSUM-001) --------
+      # Everything above writes its output ONLY into $CI_RESULTS_DIR, so a red
+      # job used to show the failing test names, assertions and durations
+      # exclusively inside the ci-results zip. This step renders the failure
+      # record straight into the step log from the SAME tree (zero network,
+      # zero extra tool invocations): every failing test with its duration and
+      # its first meaningful assertion/error line, plus ruff/mypy violation
+      # tails. Bounded output so a cascade cannot hide the first failure.
+      # `if: always()` + `continue-on-error` so a diagnostic can never turn a
+      # run red or mask a real failure; the artifact remains the deep-dive
+      # layer, not the only source of truth.
+      - name: Print failure summary to job log
+        if: always()
+        continue-on-error: true
+        run: |
+          python scripts/ci/ci_failure_summary.py --results "$CI_RESULTS_DIR"
+
       # -------- Telegram: run finished (advisory; never fails CI) --------
       - name: Telegram - CI finished
         if: always()
