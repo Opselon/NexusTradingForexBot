@@ -273,6 +273,13 @@ def test_sized_path_performance_is_linear() -> None:
     # Warm up function dispatch, imports, and caches
     compute_sized_economic_pnl(_mk_samples(100), econ)
 
+    # Size each leg above the process-time tick so the ratio measures the
+    # algorithm, not the clock's quantization (see ML-QA-018 for the proof that
+    # the 1000-sample leg degenerates to a single tick and the ratio to
+    # tick-count arithmetic).
+    small_n = 4000
+    big_n = 16000
+
     def _cost(n: int) -> float:
         samples = _mk_samples(n)
         times: list[float] = []
@@ -284,8 +291,8 @@ def test_sized_path_performance_is_linear() -> None:
         med = statistics.median(times)
         return max(med, _PROCESS_TIME_FLOOR_MS)
 
-    small = _cost(1000)
-    big = _cost(4000)
+    small = _cost(small_n)
+    big = _cost(big_n)
     assert big <= small * _SIZED_PATH_LINEARITY_RATIO, (
         f"quadratic regression suspected: {small=:.3f} ms CPU {big=:.3f} ms CPU "
         f"(ratio bound {_SIZED_PATH_LINEARITY_RATIO})"
