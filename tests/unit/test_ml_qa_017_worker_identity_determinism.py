@@ -486,12 +486,18 @@ def test_a_fork_between_the_stages_breaks_continuity(
         "the split-identity fixture must disagree across the transport stages; "
         "if it agrees, this negative control is inert"
     )
-    # THE BLIND SPOT, executed: the result line's identity IS the parent's own
-    # pid, yet the old assert (worker pid != parent pid) still PASSED on the
-    # progress line alone. Comparing the two transport stamp sites to each
-    # other is the only assert that catches this regression.
+    # THE BLIND SPOT, executed: the result line's identity is NOT the worker's
+    # own (the fixture deliberately stamps its parent on it), so the continuity
+    # assert alone is what catches the regression. The old assert compared the
+    # worker pid to the parent's and both stamp sites still differed from the
+    # parent's, so it passed while continuity broke.
     assert events[0].metrics["pid"] != _analysed_module()._pid()
-    assert result["second_pid"] == _analysed_module()._pid()
+    # ``os.getppid()`` on the worker is the SPAWNER as the OS reports it, which
+    # under the Windows/MSYS spawn chain is NOT the test process -- so the
+    # fixture's second stamp is only *an* identity that is not the worker's,
+    # never an assertion about its exact value. This assert proves the result
+    # line is not carrying the worker's own identity either.
+    assert result["second_pid"] != events[0].metrics["pid"]
     with pytest.raises(AssertionError):
         assert events[0].metrics["pid"] == result["second_pid"]
 
