@@ -1,6 +1,5 @@
 """
 Strategy Registry (Persistence)
-===============================
 PHASE 09B (spec 20 / 26 / 40).
 
 The registry is the enduring home of validation truth. It preserves for every
@@ -19,12 +18,16 @@ mutated; updates append lineage (spec 28 immutability).
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from nexus_scalp.adapters.database import provider_store
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.observability.logging import get_logger
+
+if TYPE_CHECKING:  # pragma: no cover - annotation-only, no runtime sqlite3 use
+    import sqlite3
+
 from nexus_scalp.research.lifecycle import transition
 from nexus_scalp.research.models import (
     BacktestResult,
@@ -161,13 +164,9 @@ class StrategyRegistry:
             entry.updated_at.isoformat(),
             _json(getattr(entry, "context_matrices", None) or {}),
         )
-        try:
-            if hasattr(self.audit_repo, "_queue"):
-                self.audit_repo._queue.put_nowait((UPSERT_ENTRY_SQL, args))
-                return True
-        except Exception as e:
-            logger.error("[STRATEGY_REGISTRY] upsert failed (isolated)", error=str(e))
-        return False
+        return provider_store.queue_write(
+            self.audit_repo, UPSERT_ENTRY_SQL, args, operation="strategy_registry.upsert"
+        )
 
     # ------------------------------------------------------------------
     # Query
@@ -195,6 +194,22 @@ class StrategyRegistry:
         except Exception as e:
             logger.error("[STRATEGY_REGISTRY] load failed", strategy=strategy_id, error=str(e))
             return None
+        if strategy_version:
+            row = provider_store.query_one(
+                self.audit_repo,
+                "SELECT * FROM strategy_registry WHERE strategy_id=? AND strategy_version=?;",
+                (strategy_id, strategy_version),
+                operation="strategy_registry.get",
+            )
+        else:
+            row = provider_store.query_one(
+                self.audit_repo,
+                "SELECT * FROM strategy_registry WHERE strategy_id=? "
+                "ORDER BY updated_at DESC LIMIT 1;",
+                (strategy_id,),
+                operation="strategy_registry.get",
+            )
+        return self._from_row(row) if row else None
 
     def list(self, lifecycle: str | None = None, limit: int = 200) -> list[StrategyRegistryEntry]:
         """Bounded listing, newest first."""
@@ -215,6 +230,13 @@ class StrategyRegistry:
                     out.append(entry)
         except Exception as e:
             logger.error("[STRATEGY_REGISTRY] list failed", error=str(e))
+        rows = provider_store.query_rows(
+            self.audit_repo, sql, (*args, bounded), operation="strategy_registry.list"
+        )
+        for r in rows:
+            entry = self._from_row(r)
+            if entry is not None:
+                out.append(entry)
         return out
 
     def count(self, lifecycle: str | None = None) -> int:
@@ -232,6 +254,20 @@ class StrategyRegistry:
             return int(self._reader().scalar("SELECT COUNT(*) FROM strategy_registry;") or 0)
         except Exception:
             return 0
+        if lifecycle:
+            value = provider_store.query_scalar(
+                self.audit_repo,
+                "SELECT COUNT(*) FROM strategy_registry WHERE lifecycle=?;",
+                (lifecycle,),
+                operation="strategy_registry.count",
+            )
+        else:
+            value = provider_store.query_scalar(
+                self.audit_repo,
+                "SELECT COUNT(*) FROM strategy_registry;",
+                operation="strategy_registry.count",
+            )
+        return int(value or 0)
 
     # ------------------------------------------------------------------
     # Validation invariants (TASK-21, spec 55 / 56 / 57)
@@ -329,7 +365,14 @@ class StrategyRegistry:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _from_row(row: sqlite3.Row) -> StrategyRegistryEntry | None:
+    def _from_row(row: sqlite3.Row | dict[str, Any]) -> StrategyRegistryEntry | None:
+        """Decodes one registry row.
+
+        Accepts both row shapes the provider-portable read seam yields:
+        ``sqlite3.Row`` on SQLite and ``dict`` on PostgreSQL
+        (``provider_store.query_rows`` normalizes to dict on pooled backends).
+        Both support ``row[key]`` and the ``.keys()`` surface this decoder uses.
+        """
         try:
 
             def _load(column: str, model: type[Any]) -> Any | None:

@@ -24,6 +24,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from nexus_scalp.adapters.database import provider_store
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.research.evidence import (
@@ -421,11 +422,16 @@ class ResearchObservabilityStore:
             return None
 
     def _queue(self, sql: str, args: tuple[Any, ...]) -> None:
-        try:
-            if hasattr(self.audit_repo, "_queue"):
-                self.audit_repo._queue.put_nowait((sql, args))
-        except Exception as e:
-            logger.error("[RESEARCH_OBS] queue write failed", error=str(e))
+        """Persist through the ACTIVE provider.
+
+        ``provider_store.queue_write`` routes to the repository background queue
+        on SQLite and to the audit domain's pooled write backend on PostgreSQL,
+        translating placeholders itself. A failure is logged, never raised —
+        the research path must not crash a worker on a persistence error.
+        """
+        provider_store.queue_write(
+            self.audit_repo, sql, args, operation="research_observability.queue"
+        )
 
     # ==================================================================
     # Events (persisted timeline)

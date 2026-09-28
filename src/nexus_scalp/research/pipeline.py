@@ -28,6 +28,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from nexus_scalp.adapters.database import provider_store
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.research.backtest import BacktestEngine
 from nexus_scalp.research.candidates import StrategyCandidate
@@ -982,27 +983,27 @@ class ResearchPipeline:
             completed_at=datetime.now(UTC),
         )
         self.last_run = run
-        if self.registry and self.registry.audit_repo._is_sqlite:
+        if self.registry:
             try:
-                self.registry.audit_repo._queue.put_nowait(
+                provider_store.queue_write(
+                    self.registry.audit_repo,
+                    _INSERT_RUN_SQL,
                     (
-                        _INSERT_RUN_SQL,
-                        (
-                            run.run_id,
-                            run.dataset_id,
-                            run.strategy_id,
-                            run.strategy_version,
-                            run.executed_at.isoformat(),
-                            json.dumps(run.config),
-                            run.build_identity,
-                            json.dumps(run.result_summary, default=str),
-                            run.status,
-                            run.run_outcome,
-                            run.snapshot_id,
-                            json.dumps(run.gates),
-                            run.completed_at.isoformat() if run.completed_at else "",
-                        ),
-                    )
+                        run.run_id,
+                        run.dataset_id,
+                        run.strategy_id,
+                        run.strategy_version,
+                        run.executed_at.isoformat(),
+                        json.dumps(run.config),
+                        run.build_identity,
+                        json.dumps(run.result_summary, default=str),
+                        run.status,
+                        run.run_outcome,
+                        run.snapshot_id,
+                        json.dumps(run.gates),
+                        run.completed_at.isoformat() if run.completed_at else "",
+                    ),
+                    operation="research_pipeline.run_record",
                 )
             except Exception as e:
                 logger.error("[STRATEGY_RESEARCH] run record failed", error=str(e))

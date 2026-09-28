@@ -177,9 +177,6 @@ class ExperienceLedger:
         UNIQUE constraint on `idempotency_key`, so a replayed event is a no-op
         at the database level rather than a second learning sample.
         """
-        if not self.audit_repo._is_sqlite:
-            return False
-
         payload = record.model_dump_json()
         args = (
             record.experience_id,
@@ -235,9 +232,6 @@ class ExperienceLedger:
         `idempotency_key` is discarded by the UNIQUE constraint, so realised
         PnL can never be double-counted.
         """
-        if not self.audit_repo._is_sqlite:
-            return False
-
         d = outcome.decomposition
         b = outcome.behavior
         args = (
@@ -299,8 +293,6 @@ class ExperienceLedger:
         Returns True when a NEW outcome row was queued, False otherwise
         (already present / invalid / non-sqlite backend).
         """
-        if not self.audit_repo._is_sqlite:
-            return False
         key = outcome.idempotency_key
         if not key:
             logger.warning("[EXPERIENCE] TERMINAL_OUTCOME rejected: empty idempotency_key")
@@ -350,9 +342,6 @@ class ExperienceLedger:
 
         Returns True when the repair write was queued.
         """
-        if not self.audit_repo._is_sqlite:
-            return False
-
         d = outcome.decomposition
         b = outcome.behavior
         args = (
@@ -400,9 +389,6 @@ class ExperienceLedger:
         Appends a correction event. Historical rows are never overwritten - the
         correction is evidence in its own right.
         """
-        if not self.audit_repo._is_sqlite:
-            return False
-
         query = """
             INSERT INTO audit_experience_corrections
             (correction_id, idempotency_key, corrected_at, reason, field_name,
@@ -457,13 +443,13 @@ class ExperienceLedger:
         the ``file:``-URI contract (shared in-memory audit DBs need
         ``uri=True``) lives in exactly one place: a raw
         ``sqlite3.connect(self._db_path)`` treated the URI string as a literal
-        file name and silently created a junk CWD file on every read. Every
-        caller already gates on ``audit_repo._is_sqlite`` before reaching here,
-        so a non-SQLite repository never opens a SQLite connection.
+        file name and silently created a junk CWD file on every read.
 
-        Under a pooled provider the reads go through the fabric's audit read
-        backend instead (see ``_query_records`` / the single-row lookups), so
-        this seam is reached on the SQLite path only.
+        The provider-portable read helpers (``query_rows`` / ``query_one`` /
+        ``query_scalar``) decide per call whether to use this seam (SQLite) or
+        the fabric's pooled audit read backend (PostgreSQL). This connect is
+        therefore reached on the SQLite path only; a pooled provider never
+        opens a SQLite connection through it.
         """
         connect = getattr(self.audit_repo, "_connect_sqlite", None)
         if connect is not None:
@@ -524,9 +510,6 @@ class ExperienceLedger:
         self, where: str, args: tuple[Any, ...], limit: int
     ) -> list[ExperienceRecord]:
         """Runs a bounded merged query and returns typed records."""
-        if not self.audit_repo._is_sqlite:
-            return []
-
         bounded = max(1, min(int(limit), MAX_RETRIEVAL_LIMIT))
         sql = f"{_SELECT_MERGED} WHERE {where} ORDER BY e.decision_timestamp DESC LIMIT ?;"
         records: list[ExperienceRecord] = []
@@ -611,7 +594,7 @@ class ExperienceLedger:
         this reveals the existing owner so the caller can reject the
         duplicate instead of double-counting the same position.
         """
-        if not execution_id or not self.audit_repo._is_sqlite:
+        if not execution_id:
             return ""
         sql = (
             "SELECT idempotency_key FROM audit_experience_outcomes "
@@ -629,8 +612,6 @@ class ExperienceLedger:
 
     def has_outcome(self, idempotency_key: str) -> bool:
         """True when an outcome event already exists for this experience."""
-        if not self.audit_repo._is_sqlite:
-            return False
         row = query_one(
             self.audit_repo,
             "SELECT 1 AS one FROM audit_experience_outcomes WHERE idempotency_key = ? LIMIT 1;",
@@ -646,8 +627,6 @@ class ExperienceLedger:
         Counts executed entries in the same strategy family inside a trailing
         window. Used for the objective REENTRY_OVERTRADING measurement.
         """
-        if not self.audit_repo._is_sqlite:
-            return 0
         from datetime import timedelta
 
         window_start = before_timestamp - timedelta(seconds=max(1.0, window_seconds))
@@ -677,9 +656,6 @@ class ExperienceLedger:
         lives. ``_connect`` already sets ``row_factory = sqlite3.Row``, so the
         dict-row promise the portable helpers introduced is preserved here too.
         """
-        if not self.audit_repo._is_sqlite:
-            return []
-
         rows = query_rows(
             self.audit_repo,
             "SELECT DISTINCT strategy_id FROM audit_experiences LIMIT ?;",
@@ -690,8 +666,6 @@ class ExperienceLedger:
 
     def count_experiences(self) -> int:
         """Total immutable decision rows."""
-        if not self.audit_repo._is_sqlite:
-            return 0
         value = query_scalar(
             self.audit_repo,
             "SELECT COUNT(*) FROM audit_experiences;",
@@ -706,8 +680,6 @@ class ExperienceLedger:
         Proves at runtime that historical schemas are preserved rather than
         rewritten when the live contract widens.
         """
-        if not self.audit_repo._is_sqlite:
-            return {}
         rows = query_rows(
             self.audit_repo,
             """

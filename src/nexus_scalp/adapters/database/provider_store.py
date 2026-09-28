@@ -787,3 +787,79 @@ def sqlite_connection(repo: AuditRepository, timeout: float = 5.0) -> Any:
 def provider_name(repo: Any) -> str:
     """A short provider label for telemetry/diagnostics."""
     return "sqlite" if _is_sqlite(repo) else "postgresql"
+
+
+class _BorrowedRows:
+    """Minimal DB-API-shaped cursor over a fabric read backend.
+
+    ``resolve_decision_evidence`` and other legacy helpers speak the
+    ``conn.execute(sql, args).fetchone()`` / positional-``row[i]`` surface.
+    The fabric's pooled read backend speaks ``query(sql, args) -> list[dict]``
+    instead; this adapter bridges the two so those helpers run unchanged on
+    PostgreSQL. Positional access maps to the SELECT's declared column order.
+    """
+
+    def __init__(self, rows: Sequence[dict[str, Any]], columns: Sequence[str]) -> None:
+        self._rows = [dict(zip(columns, (r.get(c) for c in columns), strict=False)) for r in rows]
+        self._index = 0
+
+    def __getitem__(self, key: str | int) -> Any:
+        # Positional access reads the CURRENT row (the one fetchone() will
+        # return next, matching sqlite3.Row semantics on a fresh result).
+        idx = self._index if self._index < len(self._rows) else max(0, len(self._rows) - 1)
+        if idx >= len(self._rows):
+            raise IndexError(key)
+        row = self._rows[idx]
+        return row[key] if isinstance(key, str) else list(row.values())[key]
+
+    def keys(self) -> list[str]:
+        if self._index < len(self._rows):
+            return list(self._rows[self._index].keys())
+        return list(self._rows[0].keys()) if self._rows else []
+
+    def fetchone(self) -> Any:
+        if self._index >= len(self._rows):
+            return None
+        row = self._rows[self._index]
+        self._index += 1
+        return row
+
+    def fetchall(self) -> list[Any]:
+        rest = self._rows[self._index :]
+        self._index = len(self._rows)
+        return rest
+
+
+class _BorrowedConnection:
+    """Read-only connection facade over a fabric pooled read backend."""
+
+    def __init__(self, backend: Any) -> None:
+        self._backend = backend
+
+    def execute(self, sql: str, args: Sequence[Any] = ()) -> _BorrowedRows:
+        rows = list(self._backend.query(sql, tuple(args)))
+        # Column order comes from the translated query the backend executed;
+        # the pool's query() already zipped rows into dicts by column name.
+        columns: list[str] = list(rows[0].keys()) if rows else []
+        return _BorrowedRows(rows, columns)
+
+    def close(self) -> None:
+        """No-op: the pooled connection returns to the pool automatically."""
+
+
+def read_connection(repo: Any, *, timeout: float = 10.0) -> Any:
+    """A bounded READ connection on the ACTIVE provider.
+
+    SQLite: the repository's own ``_connect_sqlite`` seam (row_factory set).
+    PostgreSQL: a facade over the audit domain's pooled read backend that
+    exposes the ``execute(...).fetchone()/fetchall()`` surface legacy helpers
+    expect. Never opens a write connection for a read, and never opens a
+    SQLite connection on a PostgreSQL box.
+    """
+    if _is_sqlite(repo):
+        return sqlite_connection(repo, timeout)
+    backend = _read_backend(repo, domain=AUDIT_DOMAIN)
+    if backend is None:
+        _read_not_provisioned("read_connection")
+        raise RuntimeError("audit read plane is not provisioned for this process")
+    return _BorrowedConnection(backend)
