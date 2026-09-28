@@ -176,6 +176,8 @@ export interface TrainStartRequest {
 export interface TrainStartResponse {
   success: boolean;
   started?: boolean;
+  /** Stable run identity returned immediately (async job model). */
+  run_id?: string;
   code?: string;
   detail?: string;
   message?: string;
@@ -193,6 +195,33 @@ export interface ProgressEvent {
   [key: string]: unknown;
 }
 
+/**
+ * The structured run snapshot from GET /api/provisioning/train/progress.
+ *
+ * Every field is MEASURED by the pipeline (ProgressEvent.fraction/metrics) or
+ * is a request constant — the server never synthesizes a percentage, epoch or
+ * loss, and neither does the UI. Fields absent server-side are `undefined`,
+ * which the UI renders as "—" rather than a fabricated 0.
+ */
+export interface RunSnapshot {
+  run_id: string;
+  /** QUEUED | RUNNING | CANCELLING | COMPLETE | FAILED | CANCELLED */
+  state: string;
+  phase: string | null;
+  started: string;
+  updated: string;
+  percent: number | null;
+  fold: number | null;
+  epoch: number | null;
+  total_folds: number | null;
+  total_epochs: number | null;
+  loss: number | null;
+  validation_loss: number | null;
+  metrics: Record<string, unknown>;
+  cancel_requested: boolean;
+  cancel_acknowledged: boolean;
+}
+
 export interface TrainProgressResponse {
   success: boolean;
   active: boolean;
@@ -201,11 +230,69 @@ export interface TrainProgressResponse {
   count?: number;
   /** Terminal outcome of the run (TRAINING_OK | CANCELLED | *_BLOCKED | ...). */
   result?: Record<string, unknown> | null;
+  /** Structured run truth — every field measured, never synthesized. */
+  run?: RunSnapshot;
   code?: string;
 }
 
 export interface TrainCancelResponse {
   success: boolean;
   cancel: "REQUESTED" | "NO_ACTIVE_RUN";
+  run_id?: string;
   note?: string;
+}
+
+/**
+ * One row of the model inventory (GET /api/provisioning/models).
+ *
+ * `plane` separates the LIVE engine's bundle ("serving") from Model Studio's
+ * hot-load workspace ("studio") and on-disk bundles ("bundle"). Only a
+ * `plane === "serving"` row may carry `active: true`; a Studio row marked
+ * CHAMPION is NOT the live model and must never be presented as one.
+ */
+export interface ModelInventoryRow {
+  model_id: string;
+  version: string;
+  /** serving-slot | trained-candidate | studio-registry */
+  source: string;
+  /** serving | bundle | studio */
+  plane: string;
+  name: string;
+  artifact: string;
+  artifact_exists: boolean;
+  hash: string | null;
+  /** True when the hash was deliberately not computed (metadata-only mode). */
+  hash_pending?: boolean;
+  scaler: string | null;
+  scaler_exists: boolean;
+  schema_id: string | null;
+  dimension: number | null;
+  classes: number | null;
+  size_bytes: number | null;
+  modified_iso: string | null;
+  active: boolean;
+  status: string;
+  created_iso?: string | null;
+  loaded_iso?: string | null;
+  archived?: boolean;
+  metrics?: Record<string, unknown>;
+  detail?: string;
+}
+
+export interface ModelInventoryResponse {
+  success: boolean;
+  available?: boolean;
+  models: ModelInventoryRow[];
+  active_artifact: string | null;
+  total: number;
+  limited: boolean;
+  limit: number;
+  planes?: {
+    serving: string | null;
+    active_count: number;
+    studio_registered: number;
+    on_disk_bundles: number;
+  };
+  /** Present only when success is false. */
+  code?: string;
 }
