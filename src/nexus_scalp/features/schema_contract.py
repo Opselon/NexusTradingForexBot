@@ -64,6 +64,12 @@ SCHEMA_ID: str = "scalp_v3"
 SCHEMA_VERSION: str = "1.0.0"
 DIMENSION: int = 70
 
+# The two explicit Neural Studio model contracts (Phase 40). The studio builds
+# and serves exactly these two; there is no generic "N-dimensional" path.
+_STUDIO_SCHEMA_IDS: tuple[str, ...] = ("scalp_v1", "scalp_v3")
+_STUDIO_DIMENSIONS: frozenset[int] = frozenset({50, 70})
+_CONTRACT_DIMENSIONS: dict[str, int] = {"scalp_v1": 50, "scalp_v3": 70}
+
 BASE_START: int = 0
 BASE_END: int = 50  # exclusive -> indices 0..49
 NEWS_START: int = 50
@@ -250,6 +256,53 @@ def validate_70d_vector(
             f"70D contract violation{f' in {context}' if context else ''}: "
             f"schema hash mismatch expected={feature_schema_hash()} actual={schema_hash}"
         )
+    return vec
+
+
+def validate_vector(
+    vector: list[float] | tuple[float, ...],
+    *,
+    dimension: int,
+    schema_id: str = "",
+    context: str = "",
+) -> list[float]:
+    """Validate a feature vector against EITHER studio contract, by dimension.
+
+    The studio trains and serves two explicit contracts (Phase 40):
+
+        50D  scalp_v1  — exactly 50 features
+        70D  scalp_v3  — exactly 70 features
+
+    A 50-wide vector is NOT a 70-wide vector with 20 slots missing, and a
+    70-wide vector is not a 50-wide vector with 20 extras. This never pads and
+    never truncates — it raises, and names the contract it was checking.
+
+    Returns the vector as a fresh list.
+    """
+    expected = _CONTRACT_DIMENSIONS.get(schema_id) if schema_id else None
+    if expected is None:
+        if dimension not in _STUDIO_DIMENSIONS:
+            raise SchemaContractError(
+                f"contract violation{f' in {context}' if context else ''}: "
+                f"unsupported dimension {dimension} (studio contracts: "
+                f"{sorted(_STUDIO_DIMENSIONS)})"
+            )
+        expected = dimension
+
+    vec = list(vector)
+    if len(vec) != expected:
+        who = f" ({schema_id})" if schema_id else ""
+        raise SchemaContractError(
+            f"contract violation{f' in {context}' if context else ''}: "
+            f"dimension {dimension}{who} requires exactly {expected} features, "
+            f"got {len(vec)}"
+        )
+    for i, v in enumerate(vec):
+        if not _is_finite(v):
+            raise SchemaContractError(
+                f"contract violation{f' in {context}' if context else ''}: "
+                f"non-finite value at index {i}"
+            )
     return vec
 
 

@@ -12,7 +12,12 @@
 import { getLegacy, send } from "@/api/client";
 import type {
   ActiveModelResponse,
+  ArtifactLocationsResponse,
   BenchmarkResponse,
+  BuilderConfigRequest,
+  BuilderOptionsResponse,
+  BuilderPreflightResponse,
+  BuilderSaveResponse,
   DatasetDownloadRequest,
   DatasetDownloadResponse,
   Fetch70dResponse,
@@ -23,6 +28,7 @@ import type {
   InspectFeaturesRequest,
   InspectFeaturesResponse,
   InspectScalerResponse,
+  ModelDetailResponse,
   ModelsListResponse,
   ModelStudioDatasetsDto,
   ModelStudioOverviewDto,
@@ -32,10 +38,14 @@ import type {
   PositionDatasetRequest,
   PositionDatasetResponse,
   PredictResponse,
+  RuntimeStateResponse,
   StressTestResponse,
+  SwitchModelRequest,
+  SwitchModelResponse,
+  SwitchPreviewResponse,
+  TensorInspectResponse,
   VerifyModelRequest,
   VerifyModelResponse,
-  ArtifactLocationsResponse,
 } from "./model";
 import { compareDatasetsByGranularity } from "./model";
 
@@ -131,4 +141,73 @@ export const modelStudioApi = {
   /** GET /api/model-studio/artifact-locations — server-derived on-disk roots. */
   artifactLocations: (signal?: AbortSignal): Promise<ArtifactLocationsResponse> =>
     getLegacy<ArtifactLocationsResponse>(`${BASE}/artifact-locations`, signal),
+
+  // ---- Neural Studio model engineering (50D/70D model builder) ----------------
+  /**
+   * GET /api/model-studio/model-builder/options — the ONLY source of truth for
+   * what the builder can actually construct. The UI renders these controls; it
+   * never hardcodes a second copy of the 50D/70D contract.
+   */
+  builderOptions: (signal?: AbortSignal): Promise<BuilderOptionsResponse> =>
+    getLegacy<BuilderOptionsResponse>(`${BASE}/model-builder/options`, signal),
+
+  /**
+   * POST /api/model-studio/model-builder/preflight — validate a configuration
+   * before training. Errors block training; warnings do not (Phase 49).
+   */
+  builderPreflight: (req: BuilderConfigRequest): Promise<BuilderPreflightResponse> =>
+    send<BuilderPreflightResponse>(`${BASE}/model-builder/preflight`, req),
+
+  /** POST /api/model-studio/model-builder/save — persist the exact configuration. */
+  builderSave: (req: BuilderConfigRequest): Promise<BuilderSaveResponse> =>
+    send<BuilderSaveResponse>(`${BASE}/model-builder/save`, req),
+
+  /**
+   * GET /api/model-studio/runtime/state — the three-state truth: engine, model
+   * and inference are reported SEPARATELY so LOADED ≠ INFERENCE AVAILABLE ≠
+   * ENGINE RUNNING (Phases 3/35).
+   */
+  runtimeState: (selectedModelId?: string, signal?: AbortSignal): Promise<RuntimeStateResponse> =>
+    getLegacy<RuntimeStateResponse>(
+      `${BASE}/runtime/state${selectedModelId ? `?selected_model_id=${encodeURIComponent(selectedModelId)}` : ""}`,
+      signal,
+    ),
+
+  /**
+   * GET /api/model-studio/tensor/inspect — the raw / normalized / model-input
+   * triple at one width. Refuses with 422 when no measurable scaler is attached
+   * rather than inventing a normalized layer.
+   */
+  inspectTensor: (params: {
+    dimension: number;
+    use_live?: boolean;
+    perturbation_sigma?: number;
+  }): Promise<TensorInspectResponse> => {
+    const q = new URLSearchParams({ dimension: String(params.dimension) });
+    if (params.use_live) q.set("use_live", "true");
+    if (params.perturbation_sigma && params.perturbation_sigma > 0)
+      q.set("perturbation_sigma", String(params.perturbation_sigma));
+    return getLegacy<TensorInspectResponse>(`${BASE}/tensor/inspect?${q.toString()}`);
+  },
+
+  /** GET /api/model-studio/models/{id}/detail — registry detail incl. training_status. */
+  modelDetail: (modelId: string, signal?: AbortSignal): Promise<ModelDetailResponse> =>
+    getLegacy<ModelDetailResponse>(`${BASE}/models/${encodeURIComponent(modelId)}/detail`, signal),
+
+  /**
+   * GET /api/model-studio/models/switch/preview — the switch readiness battery
+   * (weights load, smoke inference, contract width) before any confirmation.
+   */
+  switchPreview: (modelId: string, signal?: AbortSignal): Promise<SwitchPreviewResponse> =>
+    getLegacy<SwitchPreviewResponse>(
+      `${BASE}/models/switch/preview?model_id=${encodeURIComponent(modelId)}`,
+      signal,
+    ),
+
+  /**
+   * POST /api/model-studio/models/switch — switch with EXPLICIT confirmation.
+   * After the switch the runtime model id must equal the selected model id.
+   */
+  switchModel: (req: SwitchModelRequest): Promise<SwitchModelResponse> =>
+    send<SwitchModelResponse>(`${BASE}/models/switch`, req),
 };

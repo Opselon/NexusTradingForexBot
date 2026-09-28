@@ -55,6 +55,15 @@ class ModelRecord:
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     loaded_at: str | None = None
     metrics: dict[str, Any] = field(default_factory=dict)
+    # METRIC TRUTHFULNESS (Phase 12): ``final_loss`` defaults to 0.0, so a
+    # record that was REGISTERED BUT NEVER TRAINED (register-but-never-trained
+    # rows: epochs=0, no manifest, empty metrics) reports a perfect-looking
+    # ``loss: 0.0000`` in the UI. ``training_status`` distinguishes the three
+    # states so the UI can show "NOT_TRAINED" instead of a fake zero loss.
+    #   NOT_TRAINED  - registered artifact, no fit ever ran for it
+    #   TRAINED      - a fit completed; final_loss/final_val_loss are real
+    #   FAILED       - a fit ran and failed; the loss fields hold no meaning
+    training_status: str = "NOT_TRAINED"
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -121,10 +130,33 @@ class ModelRegistry:
                             is_active INTEGER DEFAULT 0,
                             fine_tune_enabled INTEGER DEFAULT 0,
                             stage TEXT DEFAULT 'STAGING',
+                            training_status TEXT DEFAULT 'NOT_TRAINED',
                             created_at TEXT NOT NULL,
                             loaded_at TEXT,
                             metrics_json TEXT DEFAULT '{}'
                         );
+                        """
+                    )
+                    # ADDITIVE MIGRATION (Phase 12): existing artifacts/models.db
+                    # files predate the training_status column. Additive ALTER
+                    # is safe and idempotent — re-running raises "duplicate
+                    # column", which we treat as already-migrated.
+                    try:
+                        conn.execute(
+                            "ALTER TABLE model_checkpoints ADD COLUMN "
+                            "training_status TEXT DEFAULT 'NOT_TRAINED';"
+                        )
+                    except sqlite3.OperationalError:
+                        pass
+                    # Backfill the truthful state for legacy rows: a record with
+                    # a completed fit carries epochs>0 and real losses. Rows
+                    # with epochs=0 stay NOT_TRAINED, which is exactly the
+                    # "loss 0.0000 that was never a measurement" class.
+                    conn.execute(
+                        """
+                        UPDATE model_checkpoints
+                        SET training_status = 'TRAINED'
+                        WHERE training_status = 'NOT_TRAINED' AND epochs > 0;
                         """
                     )
                     conn.execute(
@@ -168,8 +200,9 @@ class ModelRegistry:
                             id, name, version, dimension, architecture, weights_path,
                             scaler_path, manifest_path, sha256, epochs, final_loss,
                             final_val_loss, accuracy, dataset_path, is_active,
-                            fine_tune_enabled, stage, created_at, loaded_at, metrics_json
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            fine_tune_enabled, stage, training_status,
+                            created_at, loaded_at, metrics_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(id) DO UPDATE SET
                             name=excluded.name,
                             version=excluded.version,
@@ -185,6 +218,7 @@ class ModelRegistry:
                             dataset_path=excluded.dataset_path,
                             fine_tune_enabled=excluded.fine_tune_enabled,
                             stage=excluded.stage,
+                            training_status=excluded.training_status,
                             metrics_json=excluded.metrics_json;
                         """,
                         (
@@ -205,6 +239,7 @@ class ModelRegistry:
                             1 if record.is_active else 0,
                             1 if record.fine_tune_enabled else 0,
                             record.stage,
+                            record.training_status,
                             record.created_at,
                             record.loaded_at,
                             json.dumps(record.metrics, default=str),
@@ -568,10 +603,25 @@ class ModelRegistry:
             is_active=bool(row["is_active"]),
             fine_tune_enabled=bool(row["fine_tune_enabled"]),
             stage=row["stage"],
+            training_status=_training_status_from_row(row),
             created_at=row["created_at"],
             loaded_at=row["loaded_at"],
             metrics=metrics,
         )
+
+
+def _training_status_from_row(row: sqlite3.Row) -> str:
+    """Read the persisted training status, defaulting legacy rows safely."""
+    try:
+        value = row["training_status"]
+    except (IndexError, KeyError):
+        return "NOT_TRAINED"
+    if value is None:
+        return "NOT_TRAINED"
+    value = str(value)
+    if value not in ("NOT_TRAINED", "TRAINED", "FAILED"):
+        return "NOT_TRAINED"
+    return value
 
 
 class _RegistryHolder:

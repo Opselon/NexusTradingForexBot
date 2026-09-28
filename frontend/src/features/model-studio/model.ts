@@ -345,6 +345,9 @@ export interface ModelRecordDto {
   created_at: string;
   loaded_at: string | null;
   metrics?: Record<string, unknown>;
+  /** NOT_TRAINED | TRAINED | FAILED — separates "never measured" from "measured
+   * zero" (the loss=0.0000 defect class). */
+  training_status?: string;
 }
 
 export interface ModelsListResponse {
@@ -478,6 +481,176 @@ export interface ArtifactLocationsResponse {
   repo_root: string;
   separator?: string;
   locations: Record<ArtifactLocationKey, ArtifactLocationEntry>;
+}
+
+// ---- Neural Studio model engineering DTOs (50D/70D model builder) -----------
+// The UI renders ONLY these server-derived shapes. No second hardcoded copy of
+// the 50D/70D contract exists in the frontend.
+
+/** One explicit model contract, keyed by its dimension ("50" | "70"). */
+export interface ModelContractDto {
+  schema_id: string;
+  dimension: number;
+  schema_hash: string;
+  sequence_length: number;
+  dtype: string;
+  normalization: string;
+  output_classes: number;
+  feature_count: number;
+  families: Record<string, { start: number; end: number; count: number }>;
+}
+
+export interface BuilderOptionsResponse {
+  status: string;
+  supported_dimensions: number[];
+  dimension_to_schema_id: Record<string, string>;
+  contracts: Record<string, ModelContractDto>;
+  architecture: Record<string, unknown>;
+  training: Record<string, unknown>;
+  defaults: Record<string, unknown>;
+}
+
+export interface BuilderConfigRequest {
+  config_name: string;
+  dimension: number;
+  schema_id: string;
+  dataset_path?: string;
+  epochs?: number;
+  batch_size?: number;
+  learning_rate?: number;
+  seed?: number;
+  hidden_dim?: number;
+  dropout_rate?: number;
+  optimizer?: string;
+  scheduler?: string;
+  device?: string;
+  train_mode?: string;
+  base_model_id?: string;
+  oos_ratio?: number;
+  early_stopping?: boolean;
+}
+
+export interface PreflightFinding {
+  severity: "error" | "warning" | "info";
+  code: string;
+  message: string;
+}
+
+export interface BuilderPreflightResponse {
+  status: string;
+  findings: PreflightFinding[];
+  dataset: unknown;
+  contract: ModelContractDto;
+}
+
+export interface BuilderSaveResponse {
+  status: string;
+  config: {
+    config_id: string;
+    config_name: string;
+    dimension: number;
+    schema_id: string;
+    config_json: string;
+  };
+}
+
+/** Runtime truth: engine / model / inference are three SEPARATE verdicts. */
+export interface RuntimeStateResponse {
+  status: string;
+  runtime: {
+    engine_state: string;
+    model_state: string;
+    inference_state: string;
+    engine_detail: string;
+    model_detail: string;
+    inference_detail: string;
+    runtime_model_id: string;
+    runtime_dimension: number | null;
+    runtime_schema_id: string;
+    selected_model_id: string;
+    selected_dimension: number | null;
+    selected_schema_id: string;
+    device: string;
+    inference_available: boolean;
+    engine_running: boolean;
+    model_loaded: boolean;
+    model_lifecycle_states: string[];
+    engine_states: string[];
+    inference_states: string[];
+    registry_champion_id: string;
+    registry_champion_dimension: number | null;
+  };
+}
+
+export interface TensorSlot {
+  index: number;
+  feature: string;
+  family: string;
+  raw_value: number;
+  normalized_value: number;
+  valid: boolean;
+  flags: string[];
+}
+
+export interface TensorInspectResponse {
+  status: string;
+  inspection: {
+    model_id: string;
+    schema_id: string;
+    dimension: number;
+    sequence_length: number;
+    dtype: string;
+    device: string;
+    timestamp: string;
+    slots: TensorSlot[];
+    all_dimensions: { raw: number; normalized: number; model_input: number };
+    dimensions_match: boolean;
+    nan_count: number;
+    inf_count: number;
+    zero_default_count: number;
+    clamped_count: number;
+    model_source: string;
+    perturbation_sigma: number;
+    feature_source: string;
+  };
+}
+
+export interface ModelDetailResponse {
+  status: string;
+  model: ModelRecordDto & {
+    artifact_exists: boolean;
+    scaler_exists: boolean;
+    manifest_exists: boolean;
+    is_active: boolean;
+  };
+}
+
+export interface SwitchCheck {
+  name: string;
+  passed: boolean;
+  detail?: string;
+}
+
+export interface SwitchPreviewResponse {
+  status: string;
+  model_id: string;
+  dimension: number;
+  switchable: boolean;
+  checks: SwitchCheck[];
+}
+
+export interface SwitchModelRequest {
+  model_id: string;
+  confirm: boolean;
+  fine_tune_enabled?: boolean;
+  operator?: string;
+}
+
+export interface SwitchModelResponse extends HotLoadResponse {
+  action: string;
+  runtime_model_id: string;
+  selected_model_id: string;
+  dimension: number;
 }
 
 /** Display metadata for each artifact root (legacy STUDIO_LOCATION_META). */
