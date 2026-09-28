@@ -25,7 +25,7 @@ scaler == manifest
 | :--- | :--- | :--- | :--- |
 | `docs/70D_DATA_CONTRACT.md` | exists | missing | ❌ |
 | `docs/agent_handoffs/TASK-03-70D-PARITY.md` | exists | missing | ❌ |
-| `docs/agent_handoffs/TASK-01-60D-LIQUIDITY.md` | exists | missing (only `docs/LIQUIDITY_60D_FORENSIC_BASELINE.md`, Phase-A read-only) | ❌ |
+| `docs/agent_handoffs/TASK-01-60D-LIQUIDITY.md` | exists | missing (only `docs/forensics/LIQUIDITY_60D_FORENSIC_BASELINE.md`, Phase-A read-only) | ❌ |
 | `docs/agent_handoffs/TASK-02-70D-INTEGRATION.md` | exists | missing | ❌ |
 | 70D parity tests in `tests/` | exist | none (search: no `parity` suite referencing 70D) | ❌ |
 | `scalp_v3` = 70D registry entry | exists | `scalp_v3` is **350D** (research contract, `features/schema.py`) | ❌ |
@@ -269,7 +269,7 @@ a 70D artifact/schema exists:
 10. Walk-forward fold-by-fold + OOS + robustness + calibration + ablation +
    news×liquidity interaction + regime/session analysis (§15–25).
 11. Register in the existing research registry (§36) — no parallel registry.
-12. Classify result (§51), write `docs/MODEL_BENCHMARK_70D_LIQUIDITY.md`
+12. Classify result (§51), write `docs/research/70d-program/MODEL_BENCHMARK_70D_LIQUIDITY.md`
     final table (§31) + `docs/agent_handoffs/TASK-04-70D-MODEL-VALIDATION.md`.
 13. Full quality gates (§55): ruff check/format, mypy src, pytest unit +
     integration, beforePush.ps1.

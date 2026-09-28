@@ -29,8 +29,8 @@ mutate trading, risk, models, or accounting.
 | `tests/unit/test_incident_response_task12.py` | TEST-INCIDENT-01..35 (62 tests) |
 | `tests/integration/test_diagnostics_api.py` | diagnostics API round-trip + read-only enforcement |
 | `docs/70D_INCIDENT_RESPONSE_MODEL.md` | canonical incident structure |
-| `docs/70D_INITIAL_INCIDENT_FORENSIC_REPORT.md` | read-only real-data baseline (spec 56/57) |
-| `docs/70D_INCIDENT_RESPONSE_FINAL_REPORT.md` | final report (spec 62) |
+| `docs/forensics/70D_INITIAL_INCIDENT_FORENSIC_REPORT.md` | read-only real-data baseline (spec 56/57) |
+| `docs/forensics/70D_INCIDENT_RESPONSE_FINAL_REPORT.md` | final report (spec 62) |
 
 ## Key findings (read-only real-data baseline)
 

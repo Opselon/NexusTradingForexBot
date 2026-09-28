@@ -28,7 +28,7 @@ the repository — was rejected by this exact gate (OOS NOT_ELIGIBLE) after
 real-data walk-forward and shadow benchmarks came back negative/inconclusive.
 A gate that rejects nothing is decoration; this one has a public rejection on
 its record. See [Project Status](../project/status.md) and
-`docs/TASK-05-70D-SHADOW-FINAL.md`.
+`docs/historical/task-reports/TASK-05-70D-SHADOW-FINAL.md`.
 
 ## Temporal OOS protocol
 

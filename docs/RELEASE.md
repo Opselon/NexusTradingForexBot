@@ -214,12 +214,12 @@ Every release that changes persistence schema MUST ship:
 1. **Migration metadata** — versioned, checksummed migrations registered in
    `src/nexus_scalp/database/registry.py` (per domain, additive-first).
 2. **Migration tests** — TEST-DBM-xx coverage for the new migrations
-   (see `docs/DATABASE_MIGRATIONS.md` §15).
+   (see `docs/architecture/database/DATABASE_MIGRATIONS.md` §15).
 3. **Expected schema versions** — the release manifest declares the schema
    versions it supports (audit/news/candle_intel), enforced by the startup
    migration gate and `nexus db verify`.
 4. **Migration notes + rollback/recovery strategy** — documented in the
-   release body and `docs/DATABASE_MIGRATIONS.md`.
+   release body and `docs/architecture/database/DATABASE_MIGRATIONS.md`.
 5. **Compatibility declaration** — DB schema ↔ minimum app version mapping so
    an old app never runs against a newer schema (downgrade blocked).
 

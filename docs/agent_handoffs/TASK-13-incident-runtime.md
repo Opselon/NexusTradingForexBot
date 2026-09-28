@@ -36,7 +36,7 @@
 - `src/nexus_scalp/application/live_engine.py` (worker lifecycle + telemetry)
 - `tests/unit/test_incident_runtime_task13.py`, `test_incident_accounting_timebase_task13.py`
 - `artifacts/forensics/{accounting_divergence,timebase_probe}.json`
-- `agents/bugs.md` (BUG-115), `docs/TASK-13-INCIDENT-RUNTIME-FINAL.md`
+- `agents/bugs.md` (BUG-115), `docs/forensics/TASK-13-INCIDENT-RUNTIME-FINAL.md`
 
 ## Registries
 

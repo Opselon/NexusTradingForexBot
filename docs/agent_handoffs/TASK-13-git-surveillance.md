@@ -27,7 +27,7 @@
 - Subject: `AGENT-13: Commit + synchronize swarm registry state and TASK-13 surveillance baseline`
 - Body: Agent/Role/Task/Scope/Why/Files/Behavior/Tests/Risk/Dependencies/Handoff per contract.
 - Files: agents/{bugs,change_control,contracts,runtime_invariants,taskboard,repository_state}.md,
-  docs/TASK_13_GIT_SURVEILLANCE_FINAL.md, docs/agent_handoffs/TASK-13-git-surveillance.md.
+  docs/historical/task-reports/TASK_13_GIT_SURVEILLANCE_FINAL.md, docs/agent_handoffs/TASK-13-git-surveillance.md.
 
 ## CURRENT SOURCE OF TRUTH
 
@@ -56,7 +56,7 @@
 - TASK-07-70D-LIQUIDITY-RESEARCH remains BLOCKED (BLOCKED_ON_FROZEN_LIQUIDITY_VERSION) until
   the 70D series TASK-01..06 land + freeze an algorithm version.
 - Registry ids in use: BUG up to BUG-100; CHG up to CHG-0013 (CHG-0014 = TASK-13);
-  INV up to INV-018 (+INV-70D-001..004 in docs/POST_70D_RUNTIME_INVARIANTS.md).
+  INV up to INV-018 (+INV-70D-001..004 in docs/forensics/POST_70D_RUNTIME_INVARIANTS.md).
 - `governance/load_gate.py` now derives schema ids from FEATURE_SCHEMAS (no hard-coded list).
 
 ## DO NOT TOUCH (files owned by OTHER active agents — preserve)
@@ -80,7 +80,7 @@ git branch --show-current
 git log -20 --oneline
 git fetch --prune
 ```
-Then read this handoff + docs/TASK_13_GIT_SURVEILLANCE_FINAL.md.
+Then read this handoff + docs/historical/task-reports/TASK_13_GIT_SURVEILLANCE_FINAL.md.
 
 ## DEPENDENCIES / BLOCKING CHAIN (commit ordering)
 

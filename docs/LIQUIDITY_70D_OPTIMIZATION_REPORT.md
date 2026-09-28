@@ -38,7 +38,7 @@ Verified at HEAD `4455874` (branch main):
   all 60 TASK-1 contract/causality/feature tests green.
 - `src/nexus_scalp/features/liquidity_runtime.py` (TASK-2, 70D governor).
 - `src/nexus_scalp/shadow/shadow70/` (TASK-5, shadow observability).
-- Full map: `docs/LIQUIDITY_70D_IMPLEMENTATION_MAP.md`.
+- Full map: `docs/research/70d-program/LIQUIDITY_70D_IMPLEMENTATION_MAP.md`.
 
 ---
 

@@ -59,7 +59,7 @@
 - 1 duplicate economic outcome (152494870397): PROVEN true duplicate —
   broker truth -18.27 vs ledger -31.50 (BUG-097 split-fill sibling leak).
   Immutable; WARNING historical, CRITICAL on new.
-- Audit doc: docs/POST_70D_HISTORICAL_ANOMALY_AUDIT.md.
+- Audit doc: docs/forensics/POST_70D_HISTORICAL_ANOMALY_AUDIT.md.
 
 ## LIQUIDITY
 - Frozen references REGISTERED from the PROVEN golden baseline

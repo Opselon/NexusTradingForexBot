@@ -45,8 +45,8 @@ UI was a faithful renderer of a contradictory payload.
 - `tests/integration/test_liquidity_api.py` — contract pin updates
   (indices 60..69, scalp_v3/70D, DIMENSION_70D import)
 - `tests/unit/test_liquidity_task02_integration.py` — schema row update
-- `docs/LIQUIDITY_UI_FORENSIC_BASELINE.md` (new) — before-state matrix
-- `docs/LIQUIDITY_UI_FORENSIC_FINAL.md` (new) — final report (A..K)
+- `docs/forensics/LIQUIDITY_UI_FORENSIC_BASELINE.md` (new) — before-state matrix
+- `docs/forensics/LIQUIDITY_UI_FORENSIC_FINAL.md` (new) — final report (A..K)
 - `artifacts/forensics/liquidity_ui_state_trace.json`,
   `liquidity_index_registry.json`, `liquidity_timestamp_trace.json`,
   `liquidity_api_ui_parity.json` (new)

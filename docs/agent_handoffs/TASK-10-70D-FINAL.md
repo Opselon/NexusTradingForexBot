@@ -70,12 +70,12 @@
    keeping scalp_v3 per the TASK-03 parity contract; update TASK-02
    governor SCHEMA_70D + release/model_artifacts if so).
 5. Then re-run this task's probes (scratch/task10_*.py) and update
-   docs/70D_FINAL_FORENSIC_ACCEPTANCE_REPORT.md release verdict.
+   docs/forensics/70D_FINAL_FORENSIC_ACCEPTANCE_REPORT.md release verdict.
 
 ## 5. Traceability
 
 - TASK-ID: TASK-10-70D-FINAL-FORENSIC (AGENT-10)
 - Root: HEAD b3c8d35 on `main` (parallel 70D swarm active; the tree is
   a shared workspace — DO NOT reset/clean unknown WIP; contract §1)
-- Evidence: scratch/task10_1..3 + docs/70D_FINAL_FORENSIC_BASELINE.md +
-  docs/70D_FINAL_FORENSIC_ACCEPTANCE_REPORT.md
+- Evidence: scratch/task10_1..3 + docs/forensics/70D_FINAL_FORENSIC_BASELINE.md +
+  docs/forensics/70D_FINAL_FORENSIC_ACCEPTANCE_REPORT.md

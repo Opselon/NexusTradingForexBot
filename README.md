@@ -343,7 +343,7 @@ DATA ─► FEATURES ─► MODEL ─► STRATEGY ─► BACKTEST ─► WALK-FO
 ```
 
 - **Philosophy:** reproducibility, no future leakage, deterministic replay, identity/fingerprint tracking, dataset & model provenance, execution fidelity — [methodology](docs/research/methodology.md) · [validation](docs/research/validation.md) · [runtime path](docs/architecture/runtime.md)
-- **Negative results are published, not buried.** The flagship 70D series (`scalp_v3`) was returned **NOT_ELIGIBLE** by the hard OOS gate on real-data walk-forward and was **not promoted**. The live contract remains governed. Evidence: [TASK-05](docs/TASK-05-70D-SHADOW-FINAL.md) · [TASK-09](docs/TASK-09-70D-CANDIDATE-VALIDATION-FINAL.md) · [status](docs/project/status.md)
+- **Negative results are published, not buried.** The flagship 70D series (`scalp_v3`) was returned **NOT_ELIGIBLE** by the hard OOS gate on real-data walk-forward and was **not promoted**. The live contract remains governed. Evidence: [TASK-05](docs/historical/task-reports/TASK-05-70D-SHADOW-FINAL.md) · [TASK-09](docs/historical/task-reports/TASK-09-70D-CANDIDATE-VALIDATION-FINAL.md) · [status](docs/project/status.md)
 
 ---
 

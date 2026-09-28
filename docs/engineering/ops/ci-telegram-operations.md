@@ -67,7 +67,7 @@ Validate-documentation requirements, fail-closed money paths).
 Flow (src/nexus_scalp/observability/ci_ai_triage.py):
 
 1. CONFIG GATE — `AI_HOST`+`AI_KEY` secrets must be present (names in
-   `docs/ci-secrets.md`), else provenance `AI_UNCONFIGURED` + rules fallback.
+   `docs/engineering/ops/ci-secrets.md`), else provenance `AI_UNCONFIGURED` + rules fallback.
 2. REACHABILITY GATE (the timer) — TCP connect phase capped 2 s
    (`AI_PROBE_CONNECT_SEC`), full `/models` response budget 4 s
    (`AI_PROBE_TIMEOUT_SEC`); slower-than-2.5 s = `SLOW_OK` (one attempt,

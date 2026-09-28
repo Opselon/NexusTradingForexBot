@@ -13,9 +13,9 @@
   + history.jsonl (bounded, append-only).
 
 ## Thresholds / invariants
-- INV-70D-001..020 + m47xj8 (docs/POST_70D_RUNTIME_INVARIANTS.md).
+- INV-70D-001..020 + m47xj8 (docs/forensics/POST_70D_RUNTIME_INVARIANTS.md).
 - Deploy policy table in deploy_gate.py::DEPLOY_POLICY (doc:
-  docs/POST_70D_DEPLOY_GATE.md). CRITICAL always blocks; UNKNOWN never
+  docs/forensics/POST_70D_DEPLOY_GATE.md). CRITICAL always blocks; UNKNOWN never
   passes; engine failure -> FORENSIC_ENGINE_UNAVAILABLE (exit 3).
 - Alert throttling in engine.py::ALERT_POLICY (immediate/aggregated 15m/
   periodic 60m).

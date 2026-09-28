@@ -42,7 +42,7 @@
 ## 5. EXACT NEXT-AGENT INSTRUCTIONS (TASK-15)
 
 1. READ FIRST: agents/skill.md, agents/bugs.md (head — next free BUG id),
-   docs/TASK-14-70D-CANDIDATE-LATENCY-HARDENING.md, docs/70D_CURRENT_STATE_
+   docs/historical/task-reports/TASK-14-70D-CANDIDATE-LATENCY-HARDENING.md, docs/70D_CURRENT_STATE_
    RECONCILIATION.md, docs/CHAMPION_ARTIFACT_INCIDENT_20260819.md,
    agents/locks.yaml.
 2. Do NOT touch the champion artifact. The RESTORED_CANDIDATE state needs

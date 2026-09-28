@@ -9,7 +9,7 @@
 - **Forensics**: real flapping reproduced (4000 XAUUSD M1 events, 597
   flips, median interval 60 s); root cause = E combination (liquidity
   feature volatility + model boundary noise + missing temporal context).
-  docs/70D_TEMPORAL_FORENSIC_BASELINE.md.
+  docs/forensics/70D_TEMPORAL_FORENSIC_BASELINE.md.
 - **Temporal layer**: src/nexus_scalp/features/temporal.py — 22 causal
   dims (lag1/lag2/delta1/persistence/time-since-change/state-duration),
   cold-start policy, O(1) bounded tracker, NO_FUTURE_LEAKAGE verified.
@@ -45,7 +45,7 @@
 
 ## 4. Exact next-agent instructions
 
-1. Read docs/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT.md + the two temporal
+1. Read docs/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT.md + the two temporal
    docs.
 2. Run the full purged walk-forward / OOS / robustness for C and E vs A
    with identical budgets (TASK-04 protocol) before any promotion

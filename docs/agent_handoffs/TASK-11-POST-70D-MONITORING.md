@@ -62,7 +62,7 @@ Persisted snapshot: `artifacts/forensics/forensic_health_snapshot.json` +
 
 ## Invariants
 
-docs/POST_70D_RUNTIME_INVARIANTS.md — INV-70D-001..020 + m47xj8 (NO SILENT
+docs/forensics/POST_70D_RUNTIME_INVARIANTS.md — INV-70D-001..020 + m47xj8 (NO SILENT
 CORRUPTION/SCHEMA DRIFT/FALLBACK/MODEL MISMATCH/DB DAMAGE/UI-API DIVERGENCE).
 All map 1:1 to CHECK-* IDs and TEST-MONITOR-* tests.
 
@@ -117,7 +117,7 @@ verified by hermetic cwd assertions).
 
 ## EXACT NEXT-AGENT INSTRUCTIONS (TASK-12)
 
-1. Read docs/POST_70D_FORENSIC_MONITORING_FINAL.md + this handoff.
+1. Read docs/forensics/POST_70D_FORENSIC_MONITORING_FINAL.md + this handoff.
 2. Wire `nexus forensic --deploy-gate` into the pre-push/release pipeline
    (beforePush.ps1/sh or release.yml) so a CRITICAL blocks deployment.
 3. Add a periodic cron/Telegram summarized report ("NSE FORENSIC HEALTH")

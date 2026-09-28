@@ -208,7 +208,7 @@ bounded (0.24 s @ 100k rows).
 - tests/unit/test_cli_db_phase18.py (new)
 - scratch/probe_db_migration_scale.py (+ .out.txt)
 - scratch/realtime_{audit,news,candle}_pre10.db (pre-migration copies)
-- docs/DATABASE_MIGRATIONS.md (new), docs/RELEASE.md (§11)
+- docs/architecture/database/DATABASE_MIGRATIONS.md (new), docs/RELEASE.md (§11)
 - agents/skill.md, contracts.md, runtime_invariants.md (INV-013),
   change_control.md (CHG-0002 VERIFIED), taskboard.md (TASK-10 READY_FOR_REVIEW),
   repository_state.md

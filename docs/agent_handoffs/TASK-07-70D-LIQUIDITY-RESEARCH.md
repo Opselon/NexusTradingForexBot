@@ -37,7 +37,7 @@
 11. **Research hypotheses** (mission 25/26): HYP-LIQ-001..005, RESEARCH_ONLY.
 12. **A/B/C benchmark execution** (mission 7): driver path bug fixed
     (parents[2] -> parents[1]); run launched on 6000 rows.
-13. **Report + handoff**: docs/LIQUIDITY_70D_RESEARCH_REPORT.md.
+13. **Report + handoff**: docs/research/70d-program/LIQUIDITY_70D_RESEARCH_REPORT.md.
 
 ## 2. Key findings (feature-level, PROVEN)
 
@@ -55,7 +55,7 @@
 
 - scratch/task07_*.py (scripts)
 - scratch/task07_research/*.json (artifacts, tracked)
-- docs/LIQUIDITY_70D_RESEARCH_REPORT.md
+- docs/research/70d-program/LIQUIDITY_70D_RESEARCH_REPORT.md
 - agents/taskboard.md (TASK-07-70D-LIQUIDITY-RESEARCH row)
 - agents/repository_state.md (snapshot)
 - scratch/bench_70d_abc_driver.py (path fix only)
@@ -75,7 +75,7 @@ path bug fixed and documented).
 
 ## 6. EXACT NEXT-AGENT INSTRUCTIONS (TASK-8)
 
-1. Read docs/LIQUIDITY_70D_RESEARCH_REPORT.md (the full synthesis).
+1. Read docs/research/70d-program/LIQUIDITY_70D_RESEARCH_REPORT.md (the full synthesis).
 2. Check artifacts/model_generation/liquidity_research/benchmark_70d_abc.json
    — if present, record the A/B/C verdict as the model-level ablation;
    if absent/failed, re-run `python scratch/bench_70d_abc_driver.py`.

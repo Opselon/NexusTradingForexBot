@@ -71,7 +71,7 @@ execution policy, or weakens any validation gate.
 - `agents/taskboard.md` — TASK-08-70D-GOVERNANCE row (IN_PROGRESS).
 - `agents/change_control.md` — CHG-0017 (PROPOSED).
 - `agents/contracts.md` — MODEL_GOVERNANCE v2 row.
-- `docs/MODEL_GOVERNANCE_70D.md` — full governance documentation.
+- `docs/research/70d-program/MODEL_GOVERNANCE_70D.md` — full governance documentation.
 
 ### Tests
 - `tests/unit/test_model_governance_phase16.py::TestGovernance70` —
@@ -112,8 +112,8 @@ TASK-9 — 70D governance continuation:
 
 1. **Do NOT promote anything.** The 70D evidence chain is still
    INSUFFICIENT_EVIDENCE until a validated candidate exists.
-2. Read `agents/skill.md`, `agents/bugs.md`, `docs/MODEL_GOVERNANCE_70D.md`,
-   `docs/70D_SHADOW_RUNTIME.md`, `docs/MODEL_BENCHMARK_70D_LIQUIDITY.md`,
+2. Read `agents/skill.md`, `agents/bugs.md`, `docs/research/70d-program/MODEL_GOVERNANCE_70D.md`,
+   `docs/70D_SHADOW_RUNTIME.md`, `docs/research/70d-program/MODEL_BENCHMARK_70D_LIQUIDITY.md`,
    `docs/agent_handoffs/TASK-08-70D-GOVERNANCE.md`, `agents/locks.yaml`.
 3. Verify the current 70D candidate state:
    - `GET /api/models/governance/status` (or the engine snapshot) — is
@@ -159,7 +159,7 @@ src/nexus_scalp/web/server.py                 (status/preview/execute/rollback/e
 Web/index.html + Web/app.js                   (promotion controls)
 tests/unit/test_model_governance_phase16.py   (TEST-GOV-01..30)
 tests/integration/test_model_lifecycle_api.py (TestGovernance70API)
-docs/MODEL_GOVERNANCE_70D.md                  (new)
+docs/research/70d-program/MODEL_GOVERNANCE_70D.md                  (new)
 docs/agent_handoffs/TASK-08-70D-GOVERNANCE.md (this file)
 agents/taskboard.md, agents/change_control.md, agents/contracts.md (additive)
 ```

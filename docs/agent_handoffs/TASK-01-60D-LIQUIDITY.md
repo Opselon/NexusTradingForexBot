@@ -42,9 +42,9 @@
 4. **Config switch** — `model.liquidity_features_enabled` (default **false**):
    false → exactly the existing 50D behavior; true → 60D layer available to
    candidate pipelines. The switch never silently alters schema expectations.
-5. **Docs** — `docs/LIQUIDITY_60D_FORENSIC_BASELINE.md`,
+5. **Docs** — `docs/forensics/LIQUIDITY_60D_FORENSIC_BASELINE.md`,
    `docs/LIQUIDITY_60D_50D_CONTRACT_SNAPSHOT.json` (50D contract capture),
-   `docs/LIQUIDITY_60D.md` (per-feature contract).
+   `docs/research/70d-program/LIQUIDITY_60D.md` (per-feature contract).
 6. **Registries (additive)** — taskboard `TASK-01-60D-LIQUIDITY`,
    contracts `LIQUIDITY_60D v1`, runtime_invariants `INV-019`.
 
@@ -99,7 +99,7 @@ lines 528-537; floor 0.20). Confirmation delay = SWING_CONFIRM_BARS=5.
 The engine is a pure function re-deriving pools per call. Flag is OFF by
 default → zero live-impact. When enabled for candidate ingestion, pool state
 can be cached incrementally (only newly closed bars confirm swings) — see
-"Known limitations" in docs/LIQUIDITY_60D.md. No per-tick DB/network.
+"Known limitations" in docs/research/70d-program/LIQUIDITY_60D.md. No per-tick DB/network.
 
 ## Known limitations / risks
 
@@ -112,7 +112,7 @@ can be cached incrementally (only newly closed bars confirm swings) — see
 
 ## What TASK-2 should do next
 
-1. Read `docs/LIQUIDITY_60D.md` (feature contract) + this handoff + the 50D
+1. Read `docs/research/70d-program/LIQUIDITY_60D.md` (feature contract) + this handoff + the 50D
    snapshot JSON before touching anything.
 2. Wire the 60D liquidity layer into the candidate pipeline: build a
    `scalp_liquidity_v1` dataset from a real broker parquet (use

@@ -42,7 +42,7 @@ invalid result.
 
 ## 2. WHAT TASK-4 DELIVERED (executable now, independent of the blocker)
 
-### 2.1 Fair-Benchmark protocol — `docs/MODEL_BENCHMARK_70D_LIQUIDITY.md`
+### 2.1 Fair-Benchmark protocol — `docs/research/70d-program/MODEL_BENCHMARK_70D_LIQUIDITY.md`
 Full protocol: the A/B/C(+D) matrix definition, the absolute scientific rule,
 dataset alignment (sample_id identity), statistical design (purged walk-forward,
 effect size, no naive IID test), metrics (accuracy/macro-F1/ECE/Brier/per-class),
@@ -110,7 +110,7 @@ When you take over (TASK-5: 70D Shadow runtime / drift / champion-safe deploymen
    shadow70/ runtime already did) and finalize with NO_VALIDATED_CANDIDATE.
 3. If TASK-3 + TASK-4 have landed (this handoff's continuation):
    a. Run `tests/unit/test_70d_model_validation_task4.py` — expect 0 fails.
-   b. Execute the continuation in `docs/MODEL_BENCHMARK_70D_LIQUIDITY.md` §10
+   b. Execute the continuation in `docs/research/70d-program/MODEL_BENCHMARK_70D_LIQUIDITY.md` §10
       (A/B/C(+D) benchmark with identical budgets/seeds/splits; dataset quality
       audit; liquidity distribution/redundancy audit; walk-forward fold-by-fold;
       OOS; robustness; calibration; ablation; news×liquidity interaction).
@@ -134,7 +134,7 @@ When you take over (TASK-5: 70D Shadow runtime / drift / champion-safe deploymen
 | :--- | :--- |
 | `src/nexus_scalp/model_generation/training.py` | BUG-101: seed BEFORE model build (12 lines) |
 | `tests/unit/test_70d_model_validation_task4.py` | NEW — TEST-70D-MODEL-01..25 |
-| `docs/MODEL_BENCHMARK_70D_LIQUIDITY.md` | NEW — fair benchmark protocol + blocker evidence |
+| `docs/research/70d-program/MODEL_BENCHMARK_70D_LIQUIDITY.md` | NEW — fair benchmark protocol + blocker evidence |
 | `docs/agent_handoffs/TASK-04-70D-MODEL-VALIDATION.md` | NEW — this handoff |
 | `agents/bugs.md` | BUG-101 appended |
 | `agents/taskboard.md` | TASK-04 row + note |

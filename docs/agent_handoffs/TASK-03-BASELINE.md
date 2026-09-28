@@ -113,4 +113,4 @@ pass `bars[0..i]`).
 - Real-data multi-timestamp parity: 25/25 EXACT (delta 0.0).
 - Performance: governor 16 ms @ 240 bars (M1), 68 ms @ 1000, 290 ms @ 4000;
   real M5 733 ms @ 1000 (HTF bucket grouping dominates).
-- Full report: `docs/TASK-03-70D-PARITY-FINAL-REPORT.md`.
+- Full report: `docs/historical/task-reports/TASK-03-70D-PARITY-FINAL-REPORT.md`.

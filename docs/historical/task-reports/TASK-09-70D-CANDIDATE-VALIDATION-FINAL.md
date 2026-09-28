@@ -39,7 +39,7 @@ The TASK-13 report's `67b77e5` and TASK-08's `11e3402` are both OLD heads — su
 
   Asymptotics: unbounded ~quadratic, bounded ~linear after the 4000-bar crossover.
   Semantics preserved: same causal window, same engine, same features/clipping/normalization.
-- Authoritative benchmark artifacts: `docs/BUG-106-PERFORMANCE-FIX.md` + scratch benches
+- Authoritative benchmark artifacts: `docs/forensics/BUG-106-PERFORMANCE-FIX.md` + scratch benches
   (committed e7586f9).
 
 ## 3. PARITY (dataset == replay == inference == runtime)
@@ -176,9 +176,9 @@ evidence through the verify gates. Promotion remains human-authorized (INV-015).
 - artifacts/validation/70d_candidate_manifest.json → N/A (no candidate — documented in
   readiness JSON; not fabricating a manifest)
 - Existing authoritative artifacts reused (no duplicates created):
-  artifacts/validation/70d_liquidity_parity.json, docs/BUG-106-PERFORMANCE-FIX.md,
+  artifacts/validation/70d_liquidity_parity.json, docs/forensics/BUG-106-PERFORMANCE-FIX.md,
   docs/CHAMPION_ARTIFACT_INCIDENT_20260819.md, docs/70D_LIQUIDITY_PARITY_REPORT.md,
-  docs/MODEL_BENCHMARK_70D_LIQUIDITY.md.
+  docs/research/70d-program/MODEL_BENCHMARK_70D_LIQUIDITY.md.
 
 ## 18. QUALITY GATES
 

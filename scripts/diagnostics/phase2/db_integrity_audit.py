@@ -722,7 +722,7 @@ def _native(path: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--repo", default=str(Path(__file__).resolve().parents[3]))
-    ap.add_argument("--out", default="phase2")
+    ap.add_argument("--out", default="docs/forensics/phase2-audit")
     ap.add_argument("--sqlite", action="append", default=None)
     ap.add_argument("--pg-uri", default=None)
     args = ap.parse_args()

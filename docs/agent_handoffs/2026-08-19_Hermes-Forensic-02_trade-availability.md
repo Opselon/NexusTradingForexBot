@@ -15,7 +15,7 @@ None. The dirty working tree contains another agent's in-progress work:
 DO NOT stage/commit these files — they belong to parallel agents.
 
 ## Files (this task, uncommitted)
-- `docs/TRADE_AVAILABILITY_FORENSIC_FINAL.md` — final report
+- `docs/forensics/TRADE_AVAILABILITY_FORENSIC_FINAL.md` — final report
 - `artifacts/forensics/trade_funnel.json` — signal funnel + window + root cause
 - `artifacts/forensics/rejection_reasons.json` — policy funnel reasons
 - `artifacts/forensics/model_runtime_trace.json` — artifact/tensor/integrity trace

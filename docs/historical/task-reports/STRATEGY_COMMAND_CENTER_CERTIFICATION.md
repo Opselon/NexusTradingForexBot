@@ -8,7 +8,7 @@
 
 | Phase | Deliverable | Module(s) | Status |
 |:---|:---|:---|:---|
-| 0 | Forensic baseline + gap report | `docs/STRATEGY_LIFECYCLE_MAP.md`, `docs/ARCHITECTURE_GAP_REPORT.md` | ✅ |
+| 0 | Forensic baseline + gap report | `docs/architecture/STRATEGY_LIFECYCLE_MAP.md`, `docs/architecture/ARCHITECTURE_GAP_REPORT.md` | ✅ |
 | 1 | Canonical read model | `nexus_scalp/research/snapshot.py` | ✅ |
 | 2 | Traceability / event projection | `nexus_scalp/research/event_projection.py` | ✅ |
 | 3 | Command Center API (overview, fleet, inspector, exec safety, validation, timeline) | `nexus_scalp/web/command_center_routes.py` | ✅ |

@@ -28,7 +28,7 @@ Upgrade the Debug tab into a full 70D runtime intelligence console (brief: "UPGR
 - `Web/index.html` — Debug tab rebuilt: RUNTIME STATUS, 70D CONTRACT VALIDATION banner, 70D FEATURE MATRIX (10 columns + health badges + filters), FEATURE DETAIL, MODEL INPUT/OUTPUT, CONFIDENCE PIPELINE, POLICY DECISION TRACE, RISK ENGINE, EXPOSURE, EXECUTION, POSITIONS, EXIT FORENSICS, LIQUIDITY INTELLIGENCE + pools, NEWS, WORKERS, DATABASE, CACHES, CHART+SSE, DEBUG SNAPSHOT (copy/download/compare/JSON tree), NO HIDDEN ERRORS.
 - `Web/app.js` — 7 chunks of renderers all consuming `/api/debug/state` + snapshot compare/history/copy/download/JSON tree. `node --check` PASS.
 - `tests/unit/test_debug_snapshot_phase20.py` (new) — 36 tests (TEST-DEBUG-01..32 + API variants + regressions).
-- `docs/DEBUG_70D_FORENSIC_UPGRADE_FINAL.md` — final report.
+- `docs/forensics/DEBUG_70D_FORENSIC_UPGRADE_FINAL.md` — final report.
 
 ## Functions (new/changed)
 - `build_debug_snapshot(engine, app_state)` — the canonical payload.
@@ -76,7 +76,7 @@ Upgrade the Debug tab into a full 70D runtime intelligence console (brief: "UPGR
 - Optional: surface `Shadow70Runtime.summary()` in the debug model section when a 70D candidate is attached.
 
 ## EXACT NEXT-AGENT INSTRUCTIONS
-1. Read `docs/DEBUG_70D_FORENSIC_UPGRADE_FINAL.md` and this handoff.
+1. Read `docs/forensics/DEBUG_70D_FORENSIC_UPGRADE_FINAL.md` and this handoff.
 2. Run the engine (LIVE or PAPER), open the Debug tab, visually verify: contract banner, 70D matrix values, liquidity pools, model input tensor, policy gates, snapshot capture/download/compare.
 3. Run `tests/integration/test_playwright_e2e.py` (may need `--ignore` if playwright missing locally; CI installs it).
 4. If the runtime exposes raw logits, extend `_model_section()` and TEST-DEBUG-33.

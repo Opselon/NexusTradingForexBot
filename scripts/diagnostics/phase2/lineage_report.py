@@ -4,7 +4,7 @@ Read-only. Reads the live SQLite store and the live PostgreSQL store, derives
 the lineage graph per lifecycle stage, and writes:
 
     phase2/phase2_lineage_report.{json,md}
-    phase2/phase2_stage_matrix.md
+    docs/forensics/phase2-audit/phase2_stage_matrix.md
 
 The stage matrix is the Phase 2 required artifact: for every stage, whether it
 writes/reads through PostgreSQL and SQLite, whether lineage is persisted,
@@ -20,7 +20,7 @@ from pathlib import Path
 
 MAIN_CHECKOUT = Path(r"C:/Users/Capsizer/source/repos/NexusTradingForexBot")
 LIVE_AUDIT_DB = MAIN_CHECKOUT / "artifacts" / "audit.db"
-OUT_DIR = Path(__file__).resolve().parents[3] / "phase2"
+OUT_DIR = Path(__file__).resolve().parents[3] / "docs/forensics/phase2-audit"
 
 CONTRACT_MODULES = {
     "DATA": "tests/contracts/phase2/test_data_persistence.py",

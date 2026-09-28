@@ -45,7 +45,7 @@ governance verify (runtime_schema_id), TEST-SCHEMA-70D-01..08 (58 tests green).
 (canonical contract), scalp_v4's 50..59 = FAMILY 10D (TASK-02 integration
 placeholder). Hashes differ (235b8fcc vs f97338e2). scalp_v4 has NO dataset,
 NO runtime, NO shadow consumer, NO validated model. Full comparison:
-`docs/70D_SCHEMA_REFERENCE_MATRIX.md`.
+`docs/research/70d-program/70D_SCHEMA_REFERENCE_MATRIX.md`.
 
 ## 4. Datasets
 

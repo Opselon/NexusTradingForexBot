@@ -178,9 +178,9 @@ on the baseline) are both justified by real replay evidence.
 - src/nexus_scalp/signals/stability_controller.py (new) — controller
 - src/nexus_scalp/features/schema.py (edit) — scalp_v4_temporal_candidate
 - tests/unit/test_temporal_liquidity_phase20.py (new) — 34 tests
-- docs/70D_TEMPORAL_FORENSIC_BASELINE.md (new)
+- docs/forensics/70D_TEMPORAL_FORENSIC_BASELINE.md (new)
 - docs/70D_TEMPORAL_FEATURE_CONTRACT.md (new)
-- docs/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT.md (this file)
+- docs/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT.md (this file)
 - scratch/temporal_step01*.py, step02, step03, step07*.py (harnesses)
 - artifacts/forensics/70d_signal_flapping_trace.json (8.6 MB)
 - artifacts/forensics/liquidity_feature_deltas.json

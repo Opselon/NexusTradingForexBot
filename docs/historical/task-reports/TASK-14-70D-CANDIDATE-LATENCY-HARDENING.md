@@ -53,7 +53,7 @@ instrumentation + the thread-pin fix:
   contention was the bottleneck; set_num_threads(1) around forward)
 - 70D candidate model forward: p50 0.298ms / p95 0.677ms / p99 11.575ms
 - Evidence: artifacts/benchmarks/inference_latency.json, TEST-LATENCY-01..22,
-  docs/INFERENCE_LATENCY_FORENSIC_FINAL.md
+  docs/forensics/INFERENCE_LATENCY_FORENSIC_FINAL.md
 
 ### BUG-112 (found + fixed by AGENT-14): 70D shadow per-tick liquidity cost
 - Measured: build_liquidity_10 recomputed the FULL liquidity engine

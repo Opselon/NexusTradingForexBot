@@ -120,7 +120,7 @@ trained on v1.1 must record `liquidity_algorithm_version=liquidity-v1.1`.
 ## 10. EXACT NEXT-AGENT INSTRUCTIONS (TASK-7)
 
 1. Read `docs/LIQUIDITY_70D_OPTIMIZATION_REPORT.md` FIRST, then this handoff,
-   then `docs/LIQUIDITY_70D_IMPLEMENTATION_MAP.md`.
+   then `docs/research/70d-program/LIQUIDITY_70D_IMPLEMENTATION_MAP.md`.
 2. TASK-7 is Liquidity Feature Attribution / Regime Research: run the
    incremental-information study (Base vs Base+News vs Base+News+Liquidity)
    using the frozen **liquidity-v1.1** candidate ONLY if the OOS numbers in
