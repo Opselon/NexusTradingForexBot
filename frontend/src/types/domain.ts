@@ -290,6 +290,11 @@ export interface V1RiskStatus {
     max_margin_usage_pct: number | null;
     max_allowed_lots: number | null;
     enforce_stop_loss: boolean | null;
+    /** RISK-LIVE-003: which config authority the limits came from
+     *  ("runtime" = the effective snapshot /api/config also exposes;
+     *   "bootstrap" = live.yaml diagnostic fallback). */
+    config_source?: "runtime" | "bootstrap" | null;
+    configuration_version?: number | null;
   } | null;
   probed_at: string;
 }

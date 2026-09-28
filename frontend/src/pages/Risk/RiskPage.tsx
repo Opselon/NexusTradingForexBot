@@ -344,6 +344,14 @@ export default function RiskPage({ snapshot, nowMs }: Props) {
             <dl className="kv">
               <dt>{t("risk.cfg.max_drawdown", "max drawdown %")}</dt>
               <dd>{formatPct(cfg.max_account_drawdown_pct)}</dd>
+              <dt>{t("risk.cfg.source", "limit source")}</dt>
+              <dd>
+                {cfg.config_source === "runtime"
+                  ? t("risk.cfg.source_runtime", "runtime (effective, v{v})", { v: String(cfg.configuration_version ?? "?") })
+                  : cfg.config_source === "bootstrap"
+                    ? t("risk.cfg.source_bootstrap", "bootstrap YAML (fallback)")
+                    : t("risk.cfg.source_unknown", "—")}
+              </dd>
               <dt>{t("risk.cfg.risk_per_trade", "risk per trade %")}</dt>
               <dd>{formatPct(cfg.risk_per_trade_pct)}</dd>
               <dt>{t("risk.cfg.max_concurrent", "max concurrent positions")}</dt>

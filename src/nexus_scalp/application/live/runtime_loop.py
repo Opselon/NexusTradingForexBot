@@ -89,6 +89,45 @@ class RuntimeLoop:
         self._next_reconnect_at: float = 0.0
         self._last_stall_notice_at: float = 0.0
 
+    def _refresh_observable_account_state(self) -> None:
+        """Populate the OBSERVABLE account state (read-only, no trading effect).
+
+        RISK-LIVE-002: RuntimeLoop.run() sets the typed broker account snapshot,
+        the peak-equity baseline and the account freshness only inside the
+        armed tick loop. When a persisted safety halt refuses trading, the loop
+        never arms and those stay at boot defaults (_account_snapshot=None,
+        _peak_equity=0.0, _account_freshness="MISSING"), so the /risk console
+        reports a null drawdown and a MISSING account while the broker is live.
+
+        This reads broker truth only — the same adapter calls the armed path
+        makes — and marks the account FRESH on success so a static-looking
+        gauge is distinguishable from an unmeasured one. It must never raise:
+        a telemetry read cannot influence the safety decision that follows.
+        """
+        try:
+            account = self.om.adapter.get_account_info()
+        except Exception as exc:
+            logger.warning("[RISK_LIVE] account_info read failed (isolated)", error=str(exc))
+            return
+        try:
+            self.om._account_snapshot = self.om.adapter.get_account_snapshot()
+        except Exception as exc:
+            logger.warning("[RISK_LIVE] account snapshot read failed (isolated)", error=str(exc))
+            self.om._account_snapshot = None
+        # The peak-equity baseline is the drawdown denominator. On a halted
+        # boot _restore_peak_equity() (called only in the armed path) never
+        # runs, so restore it here from the same audit source.
+        if getattr(self.om, "_peak_equity", 0.0) <= 0.0:
+            try:
+                self.om._restore_peak_equity(account)
+            except Exception as exc:
+                logger.warning("[RISK_LIVE] peak equity restore failed (isolated)", error=str(exc))
+        if account is not None:
+            self.om._last_account_info = account
+            self.om._last_account_refresh = time.time()
+            self.om._account_last_successful_refresh = time.time()
+            self.om._account_freshness = "FRESH"
+
     async def _poll_tick(self, symbol: str) -> Any:
         """Offload only remote market reads; never detach a poll on cancellation.
 
@@ -181,6 +220,18 @@ class RuntimeLoop:
         # process: only `nexus risk release` can clear it. Restart,
         # reconnect, reload and Windows updates can never release it.
         # =====================================================================
+        # =====================================================================
+        # LIVE TELEMETRY (RISK-LIVE-002): read-only broker state is refreshed
+        # BEFORE the persisted-halt guard below. A halted engine never enters
+        # the tick loop, so the account snapshot / peak equity / account
+        # freshness set at lines further down would otherwise stay at their
+        # boot defaults forever — the /risk page then reports account_freshness
+        # MISSING and a null drawdown while the broker is connected and live.
+        # This changes NO trading authority: it only populates observable state
+        # the halt guard does not read. Fail-isolated; a broker read fault must
+        # never influence the safety decision.
+        self._refresh_observable_account_state()
+
         boot_decision = self.om._restore_runtime_risk_state()
         if not boot_decision.trading_allowed:
             # Fail closed: never enter the trading loop. The engine stays
