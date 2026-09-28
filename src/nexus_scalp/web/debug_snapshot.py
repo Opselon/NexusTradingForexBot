@@ -54,6 +54,26 @@ def _mask_path(path: str | None) -> str | None:
     return f".../{name}"
 
 
+def _masked_dsn(url: str) -> str | None:
+    """PostgreSQL target, credentials stripped, host kept.
+
+    ``_mask_path`` reduces a provider URI to its basename, which HIDES the
+    host/port a PG-backed audit store is unreachable on — an UNVERIFIED row
+    then names no target at all. This keeps the connection target (host, port,
+    database, sslmode) and only redacts userinfo.
+    """
+    if not url:
+        return None
+    text = str(url)
+    # scheme://user:pass@host:port/db?params -> scheme://host:port/db?params
+    if "://" not in text:
+        return _mask_path(text)
+    scheme, rest = text.split("://", 1)
+    if "@" in rest:
+        rest = rest.split("@", 1)[1]
+    return f"{scheme}://{rest}"
+
+
 # ---------------------------------------------------------------------------
 # Snapshot identity (brief 28)
 # ---------------------------------------------------------------------------
@@ -709,6 +729,107 @@ def _confidence_section(engine: Any) -> dict[str, Any]:
         return {"available": False, "reason": "CONFIDENCE_ERROR"}
 
 
+def _runtime_halt_state(engine: Any) -> dict[str, Any]:
+    """Canonical persisted runtime safety state for the debug snapshot.
+
+    Reads the engine's in-memory mirror of the persisted ``runtime_risk_state``
+    row (set by ``LiveEngine._apply_persisted_halt`` / ``trigger_runtime_halt``)
+    plus the effective accessor, which folds in session-local degradation
+    (hot-path circuit, stale account, loss freeze). The EFFECTIVE state is
+    what refuses trading, so it is the authority for gate verdicts.
+
+    Returns a dict with the raw state, the effective state, whether trading is
+    refused, the recorded halt reason and a display reason string. Never
+    invents a halt: absent engine attributes resolve to the RUNNING default.
+    """
+    if engine is None:
+        return {
+            "state": "UNKNOWN",
+            "effective": "UNKNOWN",
+            "blocked": False,
+            "halt_reason": "",
+            "reason": "engine not attached",
+        }
+    raw = str(getattr(engine, "_runtime_risk_state", "") or "RUNNING")
+    # ``runtime_risk_state`` is a METHOD on the engine; call it when callable
+    # (reading it as an attribute leaked a bound method into the payload).
+    eff_attr = getattr(engine, "runtime_risk_state", None)
+    if callable(eff_attr):
+        with contextlib.suppress(Exception):
+            eff_attr = eff_attr()
+    effective = str(eff_attr or raw)
+    halt_reason = str(getattr(engine, "_halt_reason", "") or "")
+    blocked = effective in ("HALTED", "KILL_SWITCH")
+    if blocked:
+        reason = halt_reason or f"{effective}: reason not recorded"
+    elif effective == "DEGRADED":
+        reason = "DEGRADED: session-local risk degradation (no new entries)"
+    else:
+        reason = ""
+    return {
+        "state": raw,
+        "effective": effective,
+        "blocked": blocked,
+        "halt_reason": halt_reason,
+        "reason": reason,
+    }
+
+
+def _proposal_state_reason(engine: Any) -> str:
+    """Why the pipeline has no evaluated proposal this session.
+
+    Mirrors the real gate order that produces a NO_TRADE-without-proposal
+    (persisted halt -> session degradation -> inference disabled -> warmup
+    incomplete). Returned as the ``reason`` of every NOT_EVALUATED gate so
+    the operator sees ONE cause, not nine unexplained blanks.
+    """
+    halt = _runtime_halt_state(engine)
+    if halt["blocked"]:
+        return f"NO_PROPOSAL_{halt['effective']}: {halt['reason']}"
+    if engine is None:
+        return "ENGINE_NOT_ATTACHED"
+    # Session-local degradation (hot-path circuit / stale account / loss
+    # freeze) also refuses new entries without a persisted halt; the reason
+    # must name it, or the operator sees a healthy engine that never trades.
+    if halt["effective"] == "DEGRADED":
+        return f"NO_PROPOSAL_DEGRADED: {halt['reason']}"
+    if not bool(getattr(engine, "_inference_enabled", False)):
+        return "NO_PROPOSAL_INFERENCE_DISABLED"
+    warmup = getattr(engine, "warmup_state", None)
+    if warmup is not None and str(warmup) != "READY":
+        return f"NO_PROPOSAL_WARMUP_INCOMPLETE state={warmup}"
+    return "NO_PROPOSAL_YET"
+
+
+def _news_context_state(engine: Any) -> dict[str, Any]:
+    """Cached news context state for the NEWS gate's reason text.
+
+    Reads the same ``NewsEngine.current_context()`` cache the news section
+    reports (cache-only, never a DB hit). Returns the context state plus the
+    gate ``actual`` value: ``NO_VERDICT`` when a context exists but no
+    proposal has been evaluated against it, ``UNAVAILABLE`` when there is no
+    usable context at all.
+    """
+    if engine is None or not bool(getattr(engine, "_news_enabled", False)):
+        return {"state": "DISABLED", "actual": "DISABLED", "available": False}
+    try:
+        news_engine = getattr(engine, "news_engine", None)
+        if news_engine is None:
+            return {"state": "NOT_CONSTRUCTED", "actual": "UNAVAILABLE", "available": False}
+        ctx = news_engine.current_context()
+        if ctx is None:
+            return {"state": "NO_NEWS_CONTEXT", "actual": "UNAVAILABLE", "available": False}
+        available = bool(getattr(ctx, "available", False))
+        state = str(getattr(getattr(ctx, "state", None), "value", "UNKNOWN"))
+        return {
+            "state": state,
+            "actual": "NO_VERDICT" if available else "UNAVAILABLE",
+            "available": available,
+        }
+    except Exception:
+        return {"state": "NEWS_CONTEXT_ERROR", "actual": "UNAVAILABLE", "available": False}
+
+
 def _policy_section(engine: Any) -> dict[str, Any]:
     """POLICY DECISION TRACE (brief 17) — every gate in order with actual
     value / threshold / status. Uses the proposal's decision_stage /
@@ -722,19 +843,40 @@ def _policy_section(engine: Any) -> dict[str, Any]:
 
     gates: list[dict[str, Any]] = []
 
+    # No proposal means no gate in the sequence has been evaluated yet. The
+    # debug contract must not paint that as PASS, UNAVAILABLE-with-no-reason
+    # or a blank string: every unevaluated gate carries NOT_EVALUATED + a
+    # real cause (brief: distinct from both "evaluated and failed" and
+    # "evaluator missing"). The cause is the reason the pipeline never
+    # produced a proposal this session (persisted safety halt / cold warmup /
+    # inference disabled), read from the same runtime state the risk section
+    # reports — never invented here.
+    proposal_state = _proposal_state_reason(engine)
+
     # 1. Signal / model action
     action = getattr(proposal.action, "value", None) if proposal else None
-    gates.append(
-        {
-            "name": "SIGNAL",
-            "status": "PASS"
-            if action not in (None, "NO_TRADE", "WAIT")
-            else ("PASS" if action in ("NO_TRADE", "WAIT") else "UNAVAILABLE"),
-            "actual": action,
-            "threshold": "TRADE or NO_TRADE",
-            "reason": getattr(proposal, "reason_code", "") or "",
-        }
-    )
+    if action is not None:
+        gates.append(
+            {
+                "name": "SIGNAL",
+                "status": "PASS"
+                if action not in (None, "NO_TRADE", "WAIT")
+                else ("PASS" if action in ("NO_TRADE", "WAIT") else "UNAVAILABLE"),
+                "actual": action,
+                "threshold": "TRADE or NO_TRADE",
+                "reason": getattr(proposal, "reason_code", "") or "",
+            }
+        )
+    else:
+        gates.append(
+            {
+                "name": "SIGNAL",
+                "status": "NOT_EVALUATED",
+                "actual": None,
+                "threshold": "TRADE or NO_TRADE",
+                "reason": proposal_state,
+            }
+        )
 
     # 2. Confidence gate
     conf = float(getattr(proposal, "confidence", 0.0)) if proposal else None
@@ -757,30 +899,45 @@ def _policy_section(engine: Any) -> dict[str, Any]:
         gates.append(
             {
                 "name": "CONFIDENCE",
-                "status": "UNAVAILABLE",
+                "status": "NOT_EVALUATED" if proposal is None else "UNAVAILABLE",
                 "actual": conf,
                 "threshold": threshold,
-                "reason": "",
+                "reason": proposal_state if proposal is None else "NO_INFERENCE",
             }
         )
 
-    # 3. Regime / guardian
+    # 3. Regime / guardian. An absent regime state is NOT a safe regime: the
+    # detector has not classified anything this session, so the "unsafe
+    # regimes blocked" guarantee is unevaluated, not satisfied (the previous
+    # code rendered PASS/UNKNOWN, which equated "we know nothing" with "no
+    # unsafe regime exists").
     regime = getattr(engine, "_last_regime_state", None)
     regime_name = getattr(getattr(regime, "regime_type", None), "value", None) if regime else None
     guardian = getattr(proposal, "guardian_status", None) if proposal else None
-    gates.append(
-        {
-            "name": "REGIME",
-            "status": ("BLOCKED" if guardian == "ACTIVE" else "PASS"),
-            "actual": regime_name or "UNKNOWN",
-            "threshold": "UNSAFE regimes blocked",
-            "reason": (
-                f"guardian={guardian}"
-                if guardian == "ACTIVE"
-                else ("regime safe" if regime_name else "no regime state")
-            ),
-        }
-    )
+    if regime is None:
+        gates.append(
+            {
+                "name": "REGIME",
+                "status": "NOT_EVALUATED",
+                "actual": None,
+                "threshold": "UNSAFE regimes blocked",
+                "reason": proposal_state,
+            }
+        )
+    else:
+        gates.append(
+            {
+                "name": "REGIME",
+                "status": ("BLOCKED" if guardian == "ACTIVE" else "PASS"),
+                "actual": regime_name or "UNKNOWN",
+                "threshold": "UNSAFE regimes blocked",
+                "reason": (
+                    f"guardian={guardian}"
+                    if guardian == "ACTIVE"
+                    else ("regime safe" if regime_name else "no regime state")
+                ),
+            }
+        )
 
     # 4. R:R gate
     rr = float(getattr(proposal, "risk_reward_ratio", 0.0)) if proposal else None
@@ -803,10 +960,10 @@ def _policy_section(engine: Any) -> dict[str, Any]:
         gates.append(
             {
                 "name": "R:R",
-                "status": "UNAVAILABLE",
+                "status": "NOT_EVALUATED" if proposal is None else "UNAVAILABLE",
                 "actual": rr,
                 "threshold": min_rr,
-                "reason": "",
+                "reason": proposal_state if proposal is None else "NO_PROPOSAL_METRICS",
             }
         )
 
@@ -828,8 +985,12 @@ def _policy_section(engine: Any) -> dict[str, Any]:
         }
     )
 
-    # 6. News gate
+    # 6. News gate. News ENABLED with no verdict is not a pass: the gate has
+    # simply not been applied to a proposal yet (its IGNORE verdict only
+    # exists for a proposal). Rendered as NOT_APPLIED with the real news
+    # context state, so "no block" is never shown as "news is healthy".
     news_verdict = getattr(engine, "_last_news_gate", None)
+    news_enabled = bool(getattr(engine, "_news_enabled", False))
     if news_verdict is not None:
         blocked = bool(getattr(news_verdict, "blocked", False))
         gates.append(
@@ -842,15 +1003,25 @@ def _policy_section(engine: Any) -> dict[str, Any]:
             }
         )
     else:
+        ctx_state = _news_context_state(engine)
         gates.append(
             {
                 "name": "NEWS",
-                "status": "PASS",
-                "actual": "DISABLED"
-                if not getattr(engine, "_news_enabled", False)
-                else "NO_VERDICT",
-                "threshold": "-",
-                "reason": "news gate not applied or disabled",
+                "status": "NOT_APPLIED",
+                "actual": (
+                    "DISABLED"
+                    if not news_enabled
+                    else (ctx_state["actual"] if ctx_state["actual"] else "NO_VERDICT")
+                ),
+                "threshold": "not BLOCK",
+                "reason": (
+                    "news gate disabled"
+                    if not news_enabled
+                    else (
+                        "news gate not applied yet (no proposal evaluated); "
+                        f"context_state={ctx_state['state']}"
+                    )
+                ),
             }
         )
 
@@ -882,37 +1053,99 @@ def _policy_section(engine: Any) -> dict[str, Any]:
         }
     )
 
-    # 8. Risk gate (risk engine decision on the last proposal)
+    # 8. Risk gate. The persisted runtime safety state is the ONLY authority
+    # that can refuse trading at boot, and it lives on the ENGINE, not on the
+    # (possibly absent) last proposal. When the engine is HALTED/KILL_SWITCH
+    # the gate is BLOCKED with the real halt reason; a proposal-level
+    # rejection only refines that verdict. Rendering UNAVAILABLE here told the
+    # operator "risk did not run" while the engine was refusing every trade.
+    halt_state = _runtime_halt_state(engine)
     risk_allowed = getattr(proposal, "risk_allowed", None) if proposal else None
-    gates.append(
-        {
-            "name": "RISK",
-            "status": "PASS"
-            if risk_allowed is True
-            else ("FAIL" if risk_allowed is False else "UNAVAILABLE"),
-            "actual": risk_allowed,
-            "threshold": "True",
-            "reason": getattr(proposal, "rejection_reason", "") or "",
-        }
-    )
+    if halt_state["blocked"]:
+        gates.append(
+            {
+                "name": "RISK",
+                "status": "BLOCKED",
+                "actual": False,
+                "threshold": "True",
+                "reason": halt_state["reason"],
+            }
+        )
+    elif risk_allowed is True:
+        gates.append(
+            {
+                "name": "RISK",
+                "status": "PASS",
+                "actual": True,
+                "threshold": "True",
+                "reason": getattr(proposal, "rejection_reason", "") or "risk engine allowed",
+            }
+        )
+    elif risk_allowed is False:
+        gates.append(
+            {
+                "name": "RISK",
+                "status": "FAIL",
+                "actual": False,
+                "threshold": "True",
+                "reason": getattr(proposal, "rejection_reason", "") or "risk engine rejected",
+            }
+        )
+    else:
+        gates.append(
+            {
+                "name": "RISK",
+                "status": "NOT_EVALUATED",
+                "actual": None,
+                "threshold": "True",
+                "reason": proposal_state,
+            }
+        )
 
-    # 9. Execution / decision stage
+    # 9. Execution / decision stage. "No blocker recorded" is NOT "execution
+    # approved": with no proposal there is no dispatch evaluation at all, and
+    # a persisted halt keeps dispatch refusing entries regardless of the
+    # proposal-level blocked_by field.
     stage = getattr(proposal, "decision_stage", None) if proposal else None
     blocked_by = getattr(proposal, "blocked_by", None) if proposal else None
-    gates.append(
-        {
-            "name": "EXECUTION",
-            "status": ("BLOCKED" if blocked_by not in (None, "") else "PASS"),
-            "actual": stage or "-",
-            "threshold": "-",
-            "reason": f"blocked_by={blocked_by}" if blocked_by else "no blocker",
-        }
-    )
+    if halt_state["blocked"]:
+        gates.append(
+            {
+                "name": "EXECUTION",
+                "status": "BLOCKED",
+                "actual": stage or "-",
+                "threshold": "dispatch permitted",
+                "reason": halt_state["reason"],
+            }
+        )
+    elif proposal is None:
+        gates.append(
+            {
+                "name": "EXECUTION",
+                "status": "NOT_EVALUATED",
+                "actual": "-",
+                "threshold": "dispatch permitted",
+                "reason": proposal_state,
+            }
+        )
+    else:
+        gates.append(
+            {
+                "name": "EXECUTION",
+                "status": ("BLOCKED" if blocked_by not in (None, "") else "PASS"),
+                "actual": stage or "-",
+                "threshold": "dispatch permitted",
+                "reason": f"blocked_by={blocked_by}" if blocked_by else "no blocker",
+            }
+        )
 
     out["gates"] = gates
-    out["decision"] = action
+    out["decision"] = action if proposal is not None else "NO_DECISION_YET"
+    out["decision_state"] = "PROPOSAL_EVALUATED" if proposal is not None else proposal_state
     out["decision_stage"] = stage
     out["blocked_by"] = blocked_by
+    out["runtime_risk_state"] = halt_state["state"]
+    out["halt_reason"] = halt_state["halt_reason"]
     out["reason_code"] = getattr(proposal, "reason_code", None) if proposal else None
     out["confidence_before_filters"] = (
         getattr(proposal, "confidence_before_filters", None) if proposal else None
@@ -981,6 +1214,7 @@ def _risk_section(engine: Any) -> dict[str, Any]:
             except Exception:
                 _effective = getattr(engine, "_runtime_risk_state", "RUNNING")
         out["runtime_risk_state_effective"] = str(_effective or "RUNNING")
+
         out["halt_reason"] = str(getattr(engine, "_halt_reason", "") or "")
         out["halt_triggered_at"] = str(getattr(engine, "_halt_triggered_at", "") or "")
         circuit = getattr(engine, "_hot_path_circuit", None)
@@ -1336,6 +1570,22 @@ def _mslie_section(engine: Any) -> dict[str, Any]:
         if ms is None:
             return {"available": False, "reason": "MSLIE_ENGINE_NOT_ATTACHED"}
         status = ms.get_debug_status()
+        # A never-driven engine reports available=False with no reason at all
+        # (STANDBY + compute_count 0). Distinguish the honest perception
+        # states so the UI shows WHY there is no vector instead of a bare
+        # "unavailable": NOT_INITIALIZED (constructed, never analyzed),
+        # DEGRADED (analyzed then errored), READY (vector present).
+        if not status.get("available"):
+            es = status.get("engine_status") or {}
+            if isinstance(es.get("last_error"), str) and es["last_error"]:
+                status["reason"] = "MSLIE_DEGRADED"
+            elif int(es.get("compute_count", 0) or 0) > 0:
+                status["reason"] = "MSLIE_NO_VECTOR_AFTER_COMPUTE"
+            else:
+                status["reason"] = "MSLIE_NOT_INITIALIZED"
+            status["state"] = "NOT_READY"
+        else:
+            status["state"] = "READY"
         return {"available": True, **status}
     except Exception as exc:
         logger.warning("debug_snapshot mslie error", error=str(exc))
@@ -1404,18 +1654,46 @@ def _workers_section(engine: Any) -> dict[str, Any]:
 
     def _fmt(worker: Any) -> dict[str, Any]:
         if worker is None:
-            return {"status": "UNAVAILABLE"}
+            return {"state": "UNAVAILABLE", "reason": "WORKER_NOT_ATTACHED"}
+        # Shadow70 exposes a structured status() dict (thread-based worker);
+        # every other worker is the ``running``/``cycle_count`` shape.
+        if hasattr(worker, "status") and callable(worker.status):
+            with contextlib.suppress(Exception):
+                st = worker.status()
+                if isinstance(st, dict):
+                    running = bool(st.get("running", False))
+                    return {
+                        "state": "RUNNING" if running else "IDLE",
+                        "cycle": int(st.get("persisted", 0) or 0),
+                        "last_start": None,
+                        "last_success": st.get("last_flush_at"),
+                        "last_failure": None,
+                        "last_error": "",
+                        "duration_ms": None,
+                        "queue": st.get("queue_size"),
+                        "extra": {k: v for k, v in st.items() if k not in ("running",)},
+                    }
         running = bool(getattr(worker, "running", False))
         last_start = getattr(worker, "last_cycle_start", None)
-        last_error = getattr(worker, "last_error", "") or ""
+        last_error = str(getattr(worker, "last_error", "") or "")
         duration = getattr(worker, "last_cycle_duration", None)
+        # NO worker class exposes last_success: the producers record
+        # last_cycle_start only. Reporting last_start AS last_success claimed
+        # a cycle succeeded the instant it began. last_success is now reported
+        # only when the worker really publishes it, and last_failure only
+        # from the attribute the producers actually write.
+        last_success = getattr(worker, "last_success", None)
+        if last_success is None and last_error and last_start is not None:
+            # A recorded error with no success stamp means the last cycle
+            # failed; keep last_success absent rather than fabricated.
+            last_success = None
         return {
             "state": "RUNNING" if running else "IDLE",
             "cycle": getattr(worker, "cycle_count", 0),
             "last_start": _iso(last_start),
-            "last_success": _iso(last_start),
+            "last_success": _iso(last_success),
             "last_failure": _iso(getattr(worker, "last_failure_at", None)),
-            "last_error": str(last_error)[:200],
+            "last_error": last_error[:200],
             "duration_ms": round(duration * 1000.0, 1) if duration else None,
             "queue": getattr(worker, "queue_size", None) or getattr(worker, "_queue_size", None),
         }
@@ -1475,7 +1753,7 @@ def _workers_section(engine: Any) -> dict[str, Any]:
                 "queue": h.get("queue_size"),
             }
         else:
-            workers["telegram"] = {"state": "UNAVAILABLE"}
+            workers["telegram"] = {"state": "UNAVAILABLE", "reason": "WORKER_NOT_ATTACHED"}
     except Exception:
         workers["telegram"] = {"state": "ERROR"}
     return {"available": True, "workers": workers, "checked_at": _iso(now)}
@@ -1538,29 +1816,51 @@ def _database_section(engine: Any) -> dict[str, Any]:
             }
 
     try:
-        audit_path = None
-        if engine is not None and getattr(engine, "audit", None) is not None:
-            resolved = getattr(engine.audit, "_db_path", "") or ""
+        audit_path: Path | None = None
+        audit_url = ""
+        audit_engine = getattr(engine, "audit", None) if engine is not None else None
+        if audit_engine is not None:
+            resolved = getattr(audit_engine, "_db_path", "") or ""
             # RT-005: a PostgreSQL-configured AuditRepository has no
-            # filesystem path (only SQLite sets _db_path), and Path("") is
+            # filesystem path (only SQLite sets a real path), and Path("") is
             # WindowsPath('.') — feeding that to the SQLite-only migration
             # engine raised "WindowsPath('.') has an empty name" on every
-            # snapshot. Report an explicit provider mismatch instead.
-            if resolved:
+            # snapshot.
+            # PG-DBPATH-BOOT-001: under a pooled provider _db_path carries
+            # the provider URI (postgresql://host:port/db), not a local file.
+            # A path never carries a URL scheme, so this predicate accepts
+            # every Windows/UNC/bare path and rejects every provider URI.
+            if resolved and "://" not in resolved and not resolved.startswith("file:"):
                 audit_path = Path(resolved)
-            elif str(getattr(engine.audit, "_db_url", "") or "").startswith("postgresql://"):
-                out["databases"]["audit"] = {
-                    "path": _mask_path(str(engine.audit._db_url)),
-                    "provider": "postgresql",
-                    "health": "READY",
-                    "exists": True,
-                    "schema_version": "NOT_RECORDED",
-                    "migration_state": "MANAGED_EXTERNALLY",
-                    "reason": "POSTGRES_DOMAIN_NOT_FILE_BASED",
-                }
-                audit_path = None
+            else:
+                url = str(getattr(audit_engine, "_db_url", "") or "")
+                if url.startswith(("postgresql://", "postgres://")) or resolved.startswith(
+                    ("postgresql://", "postgres://")
+                ):
+                    audit_url = url or resolved
         if audit_path is not None:
             out["databases"]["audit"] = _probe("audit", audit_path)
+        elif audit_url:
+            # A provider we cannot verify from here is NOT reported READY:
+            # the debug contract requires a real probe, not a connectivity
+            # assumption. health=UNVERIFIED + the DSN so the operator can
+            # check the live server themselves.
+            out["databases"]["audit"] = {
+                "path": _mask_path(audit_url),
+                "provider": "postgresql",
+                "dsn": _masked_dsn(audit_url),
+                "exists": True,
+                "schema_version": "NOT_RECORDED",
+                "migration_state": "MANAGED_EXTERNALLY",
+                "health": "UNVERIFIED",
+                "reason": "POSTGRES_DOMAIN_NOT_FILE_BASED",
+            }
+        else:
+            out["databases"]["audit"] = {
+                "path": None,
+                "health": "UNAVAILABLE",
+                "reason": "NO_AUDIT_PATH",
+            }
     except Exception:
         out["databases"]["audit"] = {"health": "ERROR"}
     try:

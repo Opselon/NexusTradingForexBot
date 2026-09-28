@@ -2562,6 +2562,13 @@ function debugTone(status) {
     if (s.includes('DEGRADED') || s === 'WARN' || s === 'STALE' || s === 'WARNING') {
         return { text: 'text-accentGold', bg: 'bg-amber-500/10', border: 'border-amber-500/30', dot: 'bg-amber-400', icon: 'fa-triangle-exclamation' };
     }
+    // NOT_EVALUATED / NOT_APPLIED / NO_DECISION_YET: the pipeline never ran
+    // for this gate — a NEUTRAL state, neither healthy nor failed. Painting
+    // it green would repeat the "PASS means nothing was checked" lie; red
+    // would claim a failure that never happened.
+    if (s.startsWith('NOT_') || s === 'NO_DECISION_YET' || s === 'NO_INFERENCE' || s === 'IDLE' || s === 'WAITING') {
+        return { text: 'text-sky-400', bg: 'bg-sky-500/10', border: 'border-sky-500/30', dot: 'bg-sky-400', icon: 'fa-circle-minus' };
+    }
     if (s.includes('UNAVAILABLE') || s === 'UNKNOWN' || s === 'DISABLED' || s === 'DISCONNECTED' || s === 'STOPPED' || s === 'EMPTY') {
         return { text: 'text-slate-400', bg: 'bg-slate-500/10', border: 'border-slate-500/30', dot: 'bg-slate-400', icon: 'fa-circle-question' };
     }
@@ -2832,6 +2839,16 @@ function renderDebugPolicy(p) {
         ${debugStatusChip('STAGE', p.decision_stage || '-')}
         ${p.blocked_by ? debugStatusChip('BLOCKED BY', p.blocked_by, 'FAIL') : ''}
     </div>`;
+    // A NO_DECISION_YET result carries its own cause (persisted halt / cold
+    // warmup / inference disabled). Render it as a visible banner instead of
+    // a bare empty value so the operator sees WHY nothing was evaluated.
+    const stateNote = p.decision_state || (p.decision ? undefined : 'NO_DECISION_YET');
+    if (stateNote && String(stateNote).startsWith('NO_')) {
+        html += `<div class="text-[10px] text-sky-400 italic mb-2 pb-2 border-b border-sky-500/20">pipeline state: ${esc(String(stateNote))} — no gate was evaluated; this is not a pass.</div>`;
+    }
+    if (p.halt_reason) {
+        html += `<div class="text-[10px] text-rose-400 italic mb-2 pb-2 border-b border-rose-500/20">runtime safety state: ${esc(String(p.halt_reason))} (release: nexus risk release --confirm)</div>`;
+    }
     html += p.gates.map(g => {
         const t = debugTone(g.status);
         return `<div class="flex items-center justify-between py-1 border-b border-borderClr/20">
@@ -2839,7 +2856,7 @@ function renderDebugPolicy(p) {
             <span class="text-gray-300 w-40 truncate">${debugFmt(g.actual)} / ${debugFmt(g.threshold)}</span>
             <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold border ${t.bg} ${t.text} ${t.border}">${g.status}</span>
         </div>
-        <div class="text-[9px] text-textMuted pb-1">${(g.reason || '').substring(0, 160)}</div>`;
+        <div class="text-[9px] text-textMuted pb-1">${(g.reason || '').substring(0, 200)}</div>`;
     }).join('');
     body.innerHTML = html;
 }
@@ -3132,16 +3149,25 @@ function renderDebugWorkers(w) {
                 if (ageSec > 600) degraded = true; // 10 min
             }
         }
+        // A worker with zero completed cycles never did any work: IDLE is
+        // honest but incomplete — flag it so "IDLE" cannot be read as
+        // "healthy and waiting" when the worker was never started.
+        const neverRan = (state === 'IDLE' || state === 'UNAVAILABLE') && (!worker.cycle || worker.cycle === 0);
+        const neverRanNote = neverRan ? ' (no completed cycle this session)' : '';
         const dispState = degraded ? 'DEGRADED' : state;
         const dispTone = degraded ? debugTone('DEGRADED') : tone;
+        const successTxt = worker.last_success
+            ? worker.last_success
+            : (worker.last_start ? 'started, not yet completed' : 'never started');
+        const failureTxt = worker.last_failure || (worker.last_error ? 'error recorded (see last error)' : 'none recorded');
         html += `<div class="border border-borderClr/40 rounded-lg p-2 mb-1 bg-darkBg/30">
             <div class="flex justify-between items-center">
-                <span class="text-gray-200 font-bold">${label}</span>
+                <span class="text-gray-200 font-bold">${label}${neverRanNote ? `<span class="text-sky-400 text-[9px] font-normal italic">${neverRanNote}</span>` : ''}</span>
                 <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold border ${dispTone.bg} ${dispTone.text} ${dispTone.border}">${dispState}${degraded ? ' (idle>10m)' : ''}</span>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-1 text-[10px] mt-1">
-                ${debugKV('Cycle', worker.cycle)}${debugKV('Last Start', worker.last_start)}${debugKV('Last Success', worker.last_success)}
-                ${debugKV('Duration ms', worker.duration_ms)}${debugKV('Queue', worker.queue)}${debugKV('Last Error', worker.last_error)}
+                ${debugKV('Cycle', worker.cycle)}${debugKV('Last Start', worker.last_start)}${debugKV('Last Success', successTxt)}
+                ${debugKV('Last Failure', failureTxt)}${debugKV('Duration ms', worker.duration_ms)}${debugKV('Queue', worker.queue)}${debugKV('Last Error', worker.last_error)}
             </div>
         </div>`;
     });
@@ -3166,7 +3192,7 @@ function renderDebugDatabase(db) {
             <div class="grid grid-cols-2 md:grid-cols-4 gap-1 text-[10px] mt-1">
                 ${debugKV('Path', d.path)}${debugKV('Size', d.size_bytes !== null && d.size_bytes !== undefined ? (d.size_bytes / 1024).toFixed(1) + ' KB' : '--')}
                 ${debugKV('WAL', d.wal_bytes !== null && d.wal_bytes !== undefined ? (d.wal_bytes / 1024).toFixed(1) + ' KB' : '--')}
-                ${debugKV('Reason', d.reason)}
+                ${debugKV('Target', d.dsn)}${debugKV('Provider', d.provider)}${debugKV('Reason', d.reason)}
             </div>
         </div>`;
     });
