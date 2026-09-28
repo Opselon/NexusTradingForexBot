@@ -194,22 +194,6 @@ class StrategyRegistry:
         except Exception as e:
             logger.error("[STRATEGY_REGISTRY] load failed", strategy=strategy_id, error=str(e))
             return None
-        if strategy_version:
-            row = provider_store.query_one(
-                self.audit_repo,
-                "SELECT * FROM strategy_registry WHERE strategy_id=? AND strategy_version=?;",
-                (strategy_id, strategy_version),
-                operation="strategy_registry.get",
-            )
-        else:
-            row = provider_store.query_one(
-                self.audit_repo,
-                "SELECT * FROM strategy_registry WHERE strategy_id=? "
-                "ORDER BY updated_at DESC LIMIT 1;",
-                (strategy_id,),
-                operation="strategy_registry.get",
-            )
-        return self._from_row(row) if row else None
 
     def list(self, lifecycle: str | None = None, limit: int = 200) -> list[StrategyRegistryEntry]:
         """Bounded listing, newest first."""
@@ -230,13 +214,6 @@ class StrategyRegistry:
                     out.append(entry)
         except Exception as e:
             logger.error("[STRATEGY_REGISTRY] list failed", error=str(e))
-        rows = provider_store.query_rows(
-            self.audit_repo, sql, (*args, bounded), operation="strategy_registry.list"
-        )
-        for r in rows:
-            entry = self._from_row(r)
-            if entry is not None:
-                out.append(entry)
         return out
 
     def count(self, lifecycle: str | None = None) -> int:
@@ -254,20 +231,6 @@ class StrategyRegistry:
             return int(self._reader().scalar("SELECT COUNT(*) FROM strategy_registry;") or 0)
         except Exception:
             return 0
-        if lifecycle:
-            value = provider_store.query_scalar(
-                self.audit_repo,
-                "SELECT COUNT(*) FROM strategy_registry WHERE lifecycle=?;",
-                (lifecycle,),
-                operation="strategy_registry.count",
-            )
-        else:
-            value = provider_store.query_scalar(
-                self.audit_repo,
-                "SELECT COUNT(*) FROM strategy_registry;",
-                operation="strategy_registry.count",
-            )
-        return int(value or 0)
 
     # ------------------------------------------------------------------
     # Validation invariants (TASK-21, spec 55 / 56 / 57)
