@@ -508,3 +508,5 @@ tests/unit/test_ml_qa_015_hygiene_cadence_clock_determinism.py
 tests/unit/test_ml_qa_016_hot_reload_identity_determinism.py
 tests/unit/test_ml_qa_018_benchmark_cpu_budget.py
 tests/unit/test_ml_qa_019_parity_coverage_cpu_budget.py
+tests/unit/test_neural_studio_contracts.py
+tests/unit/test_neural_studio_endpoints.py
