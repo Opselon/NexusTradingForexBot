@@ -368,6 +368,15 @@ class CurrentNewsContext(BaseModel):
     source_consensus: float = Field(default=0.0, ge=0.0, le=1.0)
     stale: bool = False
     active_high_impact: list[str] = Field(default_factory=list)
+    # HEALTH-TRUTH-006: freshness EVIDENCE so a health surface can prove WHY
+    # the context is fresh or stale instead of asserting it. ``newest_event_at``
+    # is the newest *published* event time in the analysed window (the input
+    # the staleness verdict is computed from); ``analyses_used`` is how many
+    # deduped analyses contributed. Both stay None/0 when no evidence exists
+    # — a health surface must distinguish "no evidence" from "old evidence".
+    newest_event_at: datetime | None = None
+    analyses_used: int = 0
+    articles_used: int = 0
 
     @property
     def news_adjustment(self) -> float:

@@ -965,6 +965,10 @@ def _risk_section(engine: Any) -> dict[str, Any]:
         out["survival_mode"] = bool(getattr(engine, "_survival_mode_active", False))
         # Runtime-safety mission: canonical persisted state + session-local
         # degradation + data-integrity counters (observable loss invariants).
+        # HEALTH-TRUTH-001: ``runtime_risk_state`` is a METHOD (it merges
+        # session-local DEGRADED into the persisted state). ``str()`` of the
+        # bound method printed a LiveEngine repr instead of the state, hiding
+        # a persisted HALT from every consumer of this snapshot. Call it.
         out["runtime_risk_state"] = str(
             getattr(engine, "_runtime_risk_state", "RUNNING") or "RUNNING"
         )
@@ -974,6 +978,10 @@ def _risk_section(engine: Any) -> dict[str, Any]:
         # the frontend then uppercases garbage and renders UNKNOWN although the
         # persisted state is HALTED. Resolve it: call when callable, fall back
         # to the persisted string, and only then to the RUNNING default.
+        # HEALTH-TRUTH-001: upstream #519 fixed the same defect independently;
+        # this version keeps the fail-safe call (a raising state derivation
+        # must never blank the snapshot) and adds the boot/loop markers the
+        # health surface reads to distinguish STARTING from STOPPED.
         _effective = getattr(engine, "runtime_risk_state", "RUNNING")
         if callable(_effective):
             try:
@@ -983,6 +991,9 @@ def _risk_section(engine: Any) -> dict[str, Any]:
         out["runtime_risk_state_effective"] = str(_effective or "RUNNING")
         out["halt_reason"] = str(getattr(engine, "_halt_reason", "") or "")
         out["halt_triggered_at"] = str(getattr(engine, "_halt_triggered_at", "") or "")
+        out["boot_state"] = str(getattr(engine, "_boot_state", "") or "")
+        out["boot_detail"] = str(getattr(engine, "_boot_detail", "") or "")
+        out["run_loop_alive"] = bool(getattr(engine, "_run_loop_alive", False))
         circuit = getattr(engine, "_hot_path_circuit", None)
         out["consecutive_tick_errors"] = int(getattr(circuit, "consecutive_error_count", 0) or 0)
         out["consecutive_tick_errors_max"] = int(getattr(circuit, "max_consecutive_errors", 0) or 0)
@@ -1385,6 +1396,70 @@ def _news_section(engine: Any) -> dict[str, Any]:
     # News dimensions active in the model contract.
     reg = _feature_registry()
     out["model_dimensions"] = [row for row in reg.get("rows", []) if row["family"] == "news"]
+    return out
+
+
+def build_worker_states(engine: Any) -> dict[str, Any]:
+    """Per-worker runtime registry for health (last cycle / last error).
+
+    HEALTH-TRUTH-007: the health block needs the per-worker TELEMETRY (not
+    just the started flags) to distinguish a launched worker from a live one.
+    This is a thin extraction of the names ``_workers_section`` resolves,
+    kept in the owning module so both consumers stay in sync and the health
+    block never re-derives worker identity. Returns {} for no engine; every
+    per-worker lookup is individually failure-isolated so one broken worker
+    object can never hide the others.
+    """
+    if engine is None:
+        return {}
+    out: dict[str, Any] = {}
+
+    def _fmt(worker: Any) -> dict[str, Any]:
+        if worker is None:
+            return {"state": "STOPPED", "cycle": 0}
+        running = bool(getattr(worker, "running", False))
+        last_start = getattr(worker, "last_cycle_start", None)
+        ls = last_start.isoformat() if hasattr(last_start, "isoformat") else None
+        # The worker contract records failure as a non-empty ``last_error``
+        # string (cycle_count advances on both success and failure; there is
+        # no separate failure timestamp). Derive success evidence from a
+        # clean ``last_error`` together with a completed cycle.
+        cycle = int(getattr(worker, "cycle_count", 0) or 0)
+        err = str(getattr(worker, "last_error", "") or "")
+        return {
+            "state": "RUNNING" if running else "IDLE",
+            "cycle": cycle,
+            "last_start": ls,
+            "last_success": ls if (cycle and not err) else None,
+            "last_failure": ls if err else None,
+            "last_error": err[:200],
+        }
+
+    for name, attr in (
+        ("accounting", "accounting_worker"),
+        ("history_sync", "history_sync_worker"),
+        ("intelligence", "intelligence_worker"),
+        ("research", "research_worker"),
+        ("training", "training_worker"),
+        ("shadow", "shadow_worker"),
+        ("shadow70", "_shadow70_worker"),
+    ):
+        try:
+            out[name] = _fmt(getattr(engine, attr, None))
+        except Exception:
+            out[name] = {"state": "ERROR"}
+    try:
+        nw = getattr(engine, "news_worker", None)
+        if nw is not None:
+            from nexus_scalp.news.worker import format_news_worker_status
+
+            st = format_news_worker_status(nw)
+            st["state"] = st.get("status", "UNAVAILABLE")
+            out["news"] = st
+        else:
+            out["news"] = {"state": "DISABLED"}
+    except Exception:
+        out["news"] = {"state": "ERROR"}
     return out
 
 

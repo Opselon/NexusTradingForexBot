@@ -116,6 +116,11 @@ class NewsContextCache:
         max_importance = 0.0
         any_breaking = False
         any_conflict = False
+        # HEALTH-TRUTH-006: newest *published* event time in the analysed
+        # window — the input the staleness verdict is computed from. Stays
+        # None when no evidence exists so a health surface can distinguish
+        # "no evidence" from "old evidence".
+        newest_event_at: datetime | None = None
 
         # Deduplicate to the latest analysis per article so a re-analyzed
         # old article does not double-count and new analysis is authoritative.
@@ -168,6 +173,11 @@ class NewsContextCache:
                 freshness = self.decay.freshness(published_at, now, horizon)
                 if freshness <= 0.02:
                     continue  # fully decayed events drop out
+                # HEALTH-TRUTH-006: track the newest event that actually
+                # contributed, so the health surface can prove the staleness
+                # verdict with the underlying timestamp.
+                if newest_event_at is None or published_at > newest_event_at:
+                    newest_event_at = published_at
                 confidence = float(row.get("confidence", 0.0) or 0.0)
                 relevance = float(row.get("relevance_to_xauusd", 0.0) or 0.0)
                 # Junk-NEUTRAL guard: ultra-low-signal NEUTRAL (e.g. Venmo tuition) was
@@ -285,6 +295,13 @@ class NewsContextCache:
             source_consensus=round(min(1.0, consensus_sum / n), 4),
             stale=stale,
             active_high_impact=active_high[:10],
+            # HEALTH-TRUTH-006: freshness EVIDENCE so a health surface can
+            # name HOW stale the context is instead of only asserting it.
+            # ``n`` is a weighted count (float) but the field is an int count
+            # of contributing analyses — floor it to the real article count.
+            newest_event_at=newest_event_at,
+            analyses_used=int(n),
+            articles_used=count,
         )
 
 
