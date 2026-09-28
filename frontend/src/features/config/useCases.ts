@@ -25,7 +25,7 @@ import {
   hasErrors,
   identityT,
   serverErrorsToFieldErrors,
-  validateFields,
+  validateChangedValues,
   type FieldErrors,
   type FieldValues,
   type Translate,
@@ -146,13 +146,23 @@ export interface ApplySteps {
  * Run the full gate chain for `changes` (dotted key -> proposed value), then
  * apply what survives. Returns per-step evidence so the page can render every
  * refusal inline. Sends NOTHING when client validation fails.
+ *
+ * TASK-CFGUI-002: `changes` is a PARTIAL map (only the edited dotted keys —
+ * see buildPayload). Validating it against every required spec reports the
+ * 11 untouched fields as missing and the apply is refused before it is ever
+ * sent. The canonical configuration is the MERGE of the authoritative
+ * baseline with the partial edit, and that whole document is what the
+ * required/type/enum rules must see. validateChangedValues keeps the verdict
+ * scoped to the edited keys (an untouched field can never produce an error),
+ * so the server-side gate still blocks exactly the field the operator broke.
  */
 export async function validateAndApplyChanges(
   changes: FieldValues,
+  baseline: FieldValues,
   t: Translate = identityT,
 ): Promise<ApplySteps> {
   const specs = runtimeConfigSpecs(t);
-  const clientErrors = validateFields(specs, changes, DEFAULT_RULES, t);
+  const clientErrors = validateChangedValues(specs, baseline, changes, DEFAULT_RULES, t);
   if (hasErrors(clientErrors)) {
     return { clientErrors, serverErrors: {}, restartRequired: [], outcome: null, sent: false };
   }
@@ -254,10 +264,13 @@ export async function validateAndApplyChanges(
   }
 }
 
-export function useApplyRuntimeConfig(t: Translate = identityT) {
+export function useApplyRuntimeConfig(baseline: FieldValues | null, t: Translate = identityT) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (changes: FieldValues) => validateAndApplyChanges(changes, t),
+    // TASK-CFGUI-002: the baseline (authoritative GET /api/config values) is
+    // required to validate the partial edit against the merged document.
+    mutationFn: (changes: FieldValues) =>
+      validateAndApplyChanges(changes, baseline ?? {}, t),
     onSettled: (steps) => {
       // Refetch-on-result: the versioned store is the authority after any
       // settled attempt (accepted OR refused — a partial apply must re-read).
