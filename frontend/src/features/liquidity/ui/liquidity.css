@@ -7,6 +7,8 @@
  *           behavior, query, polling, toggle gate or rendered value changes
  *           (see LiquidityPage.tsx; the page logic is untouched by this file).
  * OWNER     lane-3 · branch ui/lane3-hero-liquidity (wave nse-uiux-w8)
+ *           · w8b visual pass: depth, live-signal motion, grouped tables,
+ *             bounded striping, swept-glow accents (all CSS-only).
  * CONSUMES  theme.css :root tokens ONLY (no rogue hex); the shared primitives
  *           (@/components/primitives: Panel, MetricCard, DataTable,
  *           StatusBadge, EmptyState, ErrorState, Skeleton) and the lane5Kit
@@ -24,6 +26,9 @@
  *           the heat cell adds the `dim` modifier only when probability is null
  *           (the em-dash case), so the bar never implies a magnitude that the
  *           backend did not report.
+ *           ZEBRA: striping is applied to ODD rows only and bounded by
+ *           .liq-zebra so it never escapes this feature's tables; a dense
+ *           ten-row table keeps alternation, a two-row table is unstriped.
  * EXTEND    additive only — primitives keep their own classes; a later wave
  *           may add sections here without touching LiquidityPage logic.
  */
@@ -50,7 +55,7 @@
     radial-gradient(380px 170px at 94% -30%, rgba(157, 123, 240, 0.14), transparent 70%),
     linear-gradient(180deg, var(--elevate-hi), transparent 45%),
     var(--bg-panel);
-  box-shadow: var(--elev-1);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.035) inset, 0 10px 30px rgba(0, 0, 0, 0.28);
 }
 .liq-hero::after {
   content: "";
@@ -130,6 +135,7 @@
   border: 1px solid var(--border-strong);
   color: var(--text-dim);
   background: var(--bg-inset);
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
 }
 .liq-state-pill .d {
   width: 6px;
@@ -194,6 +200,19 @@
   text-transform: uppercase;
   color: var(--text-dim);
   padding-block-end: 2px;
+  position: relative;
+}
+.liq-sec-label::after {
+  /* hairline rule that anchors the label to the section it introduces */
+  content: "";
+  flex: 1;
+  block-size: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(65, 166, 242, 0.32),
+    color-mix(in srgb, var(--border) 55%, transparent)
+  );
+  border-radius: 1px;
 }
 .liq-sec-label .liq-sec-i {
   font-family: var(--mono);
@@ -214,6 +233,9 @@
   text-transform: none;
   color: var(--text-faint);
 }
+/* keep the rule from swallowing the note once it wraps (narrow/RTL) */
+.liq-sec-label .liq-sec-note { position: relative; z-index: 0; }
+.liq-sec-label::after { position: relative; z-index: 0; }
 
 /* ------------------------------ Governor state cards ------------------------------ */
 .liq-state-grid {
@@ -235,6 +257,9 @@
   position: relative;
   min-width: 78px;
   font-variant-numeric: tabular-nums;
+  border-radius: 5px;
+  padding-block: 2px;
+  transition: background 0.2s ease;
 }
 .liq-heat .liq-heat-v { display: block; }
 .liq-heat-bar {
@@ -249,9 +274,16 @@
 .liq-heat-bar i {
   display: block;
   block-size: 100%;
-  background: color-mix(in srgb, var(--accent) 72%, var(--violet));
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 62%, var(--violet)),
+    color-mix(in srgb, var(--accent) 40%, var(--violet))
+  );
+  box-shadow: 0 0 6px rgba(65, 166, 242, 0.35);
 }
 .liq-heat.dim .liq-heat-bar { opacity: 0.35; }
+.liq-heat.dim .liq-heat-bar i { box-shadow: none; }
 
 /* last-sweep key/value detail gets a framed surface so the two halves of the
    split read as one "sweep event" block */
@@ -264,6 +296,20 @@
 }
 .liq-sweep-dl + .section-title { margin-block-start: 12px; }
 
+/* ------------------------------ Bounded table polish ------------------------------
+   Applied ONLY through .liq-zebra (this feature's tables). Zebra is bound to
+   odd rows so a 2-row table never stripes; hover is a surface lift, not a
+   recolour, so no backend value looks changed by the pointer. */
+.liq-zebra > tbody > tr:nth-child(odd) > td {
+  background: color-mix(in srgb, var(--bg-inset) 62%, transparent);
+}
+.liq-zebra > tbody > tr:hover > td {
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-inset));
+}
+.liq-zebra > tbody > tr {
+  transition: background 0.14s ease;
+}
+
 /* ------------------------------ Responsive ------------------------------ */
 @media (max-width: 900px) {
   .liq-title { font-size: 20px; }
@@ -275,9 +321,12 @@
 @media (max-width: 720px) {
   .liq-hero-side { inline-size: 100%; align-items: flex-start; }
   .liq-sec-label .liq-sec-note { margin-inline-start: 0; }
+  /* the hairline rule adds noise once the label wraps; drop it, not the note */
+  .liq-sec-label::after { display: none; }
 }
 
 /* decorative motion only — data keeps updating (freshness is text, not motion) */
 @media (prefers-reduced-motion: reduce) {
   .liq-kicker .dot { animation: none; }
+  .liq-zebra > tbody > tr { transition: none; }
 }
