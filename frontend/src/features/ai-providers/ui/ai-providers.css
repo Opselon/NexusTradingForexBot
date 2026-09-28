@@ -280,3 +280,531 @@
   color: var(--text-dim);
   font-size: 10px;
 }
+
+/* ============================== HERO =======================================
+ * kicker -> glyph + gradient title -> description -> status chips (the house
+ * hero shape; GovernancePage/NewsHero are the reference implementations). The
+ * visible title is an <h1> with an explicit id so the route has exactly one.
+ */
+
+.aipage-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--panel-gap, 16px);
+  flex-wrap: wrap;
+  padding: calc(var(--card-pad, 14px) * 1.3) calc(var(--card-pad, 14px) * 1.5);
+  margin-block-end: var(--panel-gap, 16px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(460px 190px at 6% -40%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 70%),
+    radial-gradient(380px 170px at 94% -30%, color-mix(in srgb, var(--violet) 13%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--elevate-hi, rgba(255, 255, 255, 0.035)), transparent 45%),
+    var(--bg-panel);
+  box-shadow: var(--elev-1);
+}
+.aipage-hero::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 0;
+  block-size: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--accent) 60%, transparent),
+    color-mix(in srgb, var(--violet) 45%, transparent),
+    transparent
+  );
+}
+.aipage-hero-main {
+  position: relative;
+  min-inline-size: 0;
+  flex: 1 1 460px;
+}
+.aipage-kicker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.aipage-kicker-dot {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--accent) 70%, transparent);
+  flex-shrink: 0;
+  animation: livePulse 2s ease-in-out infinite;
+}
+.aipage-kicker-rule {
+  flex: 1 1 auto;
+  min-inline-size: 32px;
+  block-size: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, transparent), transparent);
+}
+.aipage-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 9px 0 6px;
+  font-size: clamp(22px, 2.6vw, 30px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.12;
+}
+.aipage-title .glyph {
+  font-family: var(--mono);
+  font-size: 0.72em;
+  font-weight: 700;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 9px;
+  padding: 5px 8px;
+}
+.aipage-title .word {
+  color: var(--text);
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .aipage-title .word {
+    background: linear-gradient(115deg, var(--text) 32%, var(--accent-strong));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+.aipage-desc {
+  margin: 0;
+  max-width: 84ch;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+.aipage-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block-start: 12px;
+}
+.aipage-chip2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent-strong);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.aipage-chip2.warn {
+  border-color: color-mix(in srgb, var(--amber) 50%, transparent);
+  background: var(--amber-dim);
+  color: var(--amber);
+}
+.aipage-chip2.bad {
+  border-color: color-mix(in srgb, var(--red) 50%, transparent);
+  background: var(--red-dim);
+  color: #ff8f89;
+}
+.aipage-chip2.good {
+  border-color: color-mix(in srgb, var(--green) 45%, transparent);
+  background: var(--green-dim);
+  color: var(--green);
+}
+.aipage-chip2 .dot {
+  inline-size: 5px;
+  block-size: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* hero right rail: runtime source + fallback badge */
+.aipage-hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 9px;
+  flex: 0 0 auto;
+}
+.aipage-source {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-inset);
+}
+.aipage-source .k {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.aipage-source .v {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+.aipage-source .sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.aipage-fallback {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent);
+  background: var(--amber-dim);
+  color: var(--amber);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  animation: livePulse 2s ease-in-out infinite;
+}
+
+.aipage-notice.ok {
+  border-left-color: var(--green);
+}
+.aipage-notice.warn {
+  border-left-color: var(--amber);
+}
+.aipage-notice.bad {
+  border-left-color: var(--red);
+}
+
+/* lifecycle badge — the backend's own token, coloured by its category */
+.aipage-lc {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.aipage-lc .dot {
+  inline-size: 5px;
+  block-size: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+.aipage-lc.good {
+  border-color: color-mix(in srgb, var(--green) 45%, transparent);
+  background: var(--green-dim);
+  color: var(--green);
+}
+.aipage-lc.warn {
+  border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+  background: var(--amber-dim);
+  color: var(--amber);
+}
+.aipage-lc.bad {
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
+  background: var(--red-dim);
+  color: #ff8f89;
+}
+.aipage-lc.dim {
+  opacity: 0.7;
+}
+
+/* capability chips */
+.aipage-caps {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.aipage-cap {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--violet) 40%, transparent);
+  background: color-mix(in srgb, var(--violet) 9%, transparent);
+  color: var(--violet);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+/* token presence: "set" vs "missing" — never the value */
+.aipage-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.aipage-token .dot {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+.aipage-token.set {
+  color: var(--green);
+}
+.aipage-token.set .dot {
+  background: var(--green);
+}
+.aipage-token.missing {
+  color: var(--amber);
+}
+.aipage-token.missing .dot {
+  background: var(--amber);
+}
+
+.aipage-actions button.primary {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent-strong);
+}
+.aipage-actions button.danger {
+  border-color: color-mix(in srgb, var(--red) 50%, transparent);
+  color: #ff938c;
+}
+
+/* ==================== WIZARD + MODALS (house .modal shell) ===================
+ * The overlay/modal/modal-header/modal-body/modal-actions classes come from
+ * theme.css; these are the feature-local surfaces layered on top.
+ */
+
+.aipage-wizard {
+  width: min(680px, calc(100vw - 40px));
+  max-height: min(86vh, 860px);
+  display: flex;
+  flex-direction: column;
+}
+.aipage-wizard .modal-body {
+  overflow: auto;
+}
+
+.aipage-steps {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 10px 16px 0;
+}
+.aipage-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.aipage-step .n {
+  inline-size: 15px;
+  block-size: 15px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  font-size: 9px;
+}
+.aipage-step.done {
+  border-color: color-mix(in srgb, var(--green) 45%, transparent);
+  color: var(--green);
+}
+.aipage-step.done .n {
+  border-color: var(--green);
+  background: var(--green-dim);
+}
+.aipage-step.current {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent-strong);
+}
+.aipage-step.current .n {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* form rows */
+.aipage-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-block-end: 12px;
+}
+.aipage-field > label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.aipage-field input,
+.aipage-field select {
+  background: var(--bg-inset);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.aipage-field input:focus,
+.aipage-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(65, 166, 242, 0.15);
+}
+.aipage-field input[type="password"] {
+  letter-spacing: 0.18em;
+}
+.aipage-field .hint {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.aipage-field .err {
+  font-size: 11px;
+  color: var(--red);
+}
+
+.aipage-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 560px) {
+  .aipage-grid2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* template picker */
+.aipage-tpls {
+  display: grid;
+  gap: 8px;
+}
+.aipage-tpl {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-inset);
+  cursor: pointer;
+  text-align: start;
+  color: var(--text);
+  font: inherit;
+}
+.aipage-tpl:hover {
+  border-color: var(--accent);
+}
+.aipage-tpl.sel {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.aipage-tpl input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.aipage-tpl-body {
+  min-inline-size: 0;
+  flex: 1;
+}
+.aipage-tpl-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+.aipage-tpl-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* discovered model list */
+.aipage-modelist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-inset);
+}
+.aipage-modelist button {
+  display: flex;
+  text-align: start;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+.aipage-modelist button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.aipage-modelist button.sel {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+/* test result block inside the wizard */
+.aipage-wiztest {
+  margin-block-start: 12px;
+}
+.aipage-preconditions {
+  margin-block-start: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.aipage-pre {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.aipage-pre .mark {
+  font-family: var(--mono);
+  flex: none;
+}
+.aipage-pre.pass {
+  color: var(--green);
+}
+.aipage-pre.fail {
+  color: var(--red);
+}
