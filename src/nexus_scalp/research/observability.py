@@ -86,10 +86,51 @@ def _reader(repo: AuditRepository) -> Any:
     return _ProviderRead(repo)
 
 
-def _connect(repo: AuditRepository) -> sqlite3.Connection:
-    conn = sqlite3.connect(repo._db_path, timeout=5.0)
-    conn.row_factory = sqlite3.Row
-    return conn
+class _PooledCursor:
+    """sqlite3-connection-shaped facade over the pooled READ plane.
+
+    ``_connect`` hands this to bodies written against
+    ``conn.execute(...).fetchone()/fetchall()`` + ``conn.close()``, so a
+    pooled provider answers them without touching a local file.
+    """
+
+    class _Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return list(self._rows)
+
+        def fetchone(self):
+            return self._rows[0] if self._rows else None
+
+    def __init__(self, reader):
+        self._reader = reader
+
+    def execute(self, sql, args=()):
+        return _PooledCursor._Result(self._reader.rows(sql, tuple(args)))
+
+    def close(self):
+        return None
+
+
+def _connect(repo: AuditRepository):
+    """Provider-portable connection: sqlite file or the pooled READ plane.
+
+    A pooled provider holds a provider URI in ``_db_path``, never a sqlite
+    path, so a bare sqlite3.connect() cannot work there. SQLite keeps its
+    own connection as before.
+    """
+    if repo._is_sqlite:
+        conn = sqlite3.connect(repo._db_path, timeout=5.0)
+        conn.row_factory = sqlite3.Row
+        return conn
+    from nexus_scalp.research.store import _ProviderRead
+
+    reader = _ProviderRead(repo)
+    if not reader.available:
+        raise RuntimeError("no read plane registered for domain 'audit'")
+    return _PooledCursor(reader)
 
 
 class ResearchObservabilityStore:
@@ -429,7 +470,8 @@ class ResearchObservabilityStore:
         """True when the AUDIT-0009 archive tables exist on this database."""
         try:
             row = _reader(self.audit_repo).one(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' "
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema = current_schema() "
                 "AND name IN ('research_events_archive', 'research_evidence_archive')"
             )
         except Exception:
@@ -837,6 +879,9 @@ class ResearchObservabilityStore:
                     {"reason": str(r["failure_reason"] or ""), "count": int(r["c"])}
                 )
             out["available"] = True
+            # Stamp the census so the UI can tell a fresh read from a stale
+            # one; the freshest gate activity is the best signal available.
+            out["census_at"] = reader.scalar("SELECT MAX(completed_at) AS c FROM research_gates;")
             return out
         except Exception as e:
             logger.error("[RESEARCH_OBS] queue snapshot failed", error=str(e))

@@ -36,6 +36,7 @@ export interface ResearchSummaryDto {
     by_lifecycle?: Record<string, number>;
     outcome_quality?: Row;
     worker?: Row;
+    census_at?: string | null;
   };
   health?: Row;
 }
@@ -111,6 +112,7 @@ export interface ResearchQueueDto {
     queued?: Record<string, Record<string, number>>;
     running?: Row[];
     last_errors?: Record<string, Row>;
+    census_at?: string | null;
   };
 }
 

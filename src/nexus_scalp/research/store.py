@@ -283,6 +283,10 @@ def registry_summary(repo: AuditRepository) -> dict[str, Any]:
             by_lifecycle[str(r["lifecycle"])] = int(r["c"])
         out["by_lifecycle"] = by_lifecycle
         out["available"] = True
+        # The census is a derived cache: stamp it so the UI can tell a fresh
+        # read from a stale one instead of guessing. The registry's own row
+        # activity is the freshest signal available.
+        out["census_at"] = reader.scalar("SELECT MAX(updated_at) AS c FROM strategy_registry;")
     except Exception as e:
         logger.error("[STRATEGY_RESEARCH] summary failed", error=str(e))
     return out

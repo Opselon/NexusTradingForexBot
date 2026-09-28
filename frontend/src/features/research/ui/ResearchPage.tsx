@@ -464,7 +464,7 @@ export default function ResearchPage(props: ShellPageProps) {
       {/* ----------------------------------------------- lifecycle rail */}
       <Panel
         title="Lifecycle census (registry summary)"
-        right={<FreshnessCaption timestamp={null} isFetching={summaryQ.isFetching} error={summaryQ.isError} />}
+        right={<FreshnessCaption timestamp={summary?.census_at ?? null} source="/api/research/summary census_at" isFetching={summaryQ.isFetching} error={summaryQ.isError} />}
         tight
       >
         {summaryQ.isPending ? (
@@ -546,7 +546,7 @@ export default function ResearchPage(props: ShellPageProps) {
         )}
 
         {tab === "queue" && (
-          <Panel title="Gate queue census" right={<FreshnessCaption timestamp={null} isFetching={queueQ.isFetching} error={queueQ.isError} />} tight>
+          <Panel title="Gate queue census" right={<FreshnessCaption timestamp={(obj(queueQ.data?.queue).census_at as string | null | undefined) ?? null} source="/api/research/queue census_at" isFetching={queueQ.isFetching} error={queueQ.isError} />} tight>
             {queueQ.isPending ? (
               <Skeleton count={3} />
             ) : failed(queueQ) ?? unavailable(queueQ.data) ?? (

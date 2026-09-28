@@ -121,6 +121,19 @@ class ResearchWorker:
     # Restart-safe checkpoint
     # ------------------------------------------------------------------
 
+    def _worker_connection(self) -> Any:
+        """A sqlite3-shaped connection for archive_research_history.
+
+        SQLite keeps its own connection; a pooled provider gets the pooled
+        cursor facade so the archive's ``with conn:`` and
+        ``conn.execute(...).fetchall()`` bodies work unchanged.
+        """
+        if self.audit_repo._is_sqlite:
+            return sqlite3.connect(self.audit_repo._db_path, timeout=10.0)
+        from nexus_scalp.research.observability import _connect
+
+        return _connect(self.audit_repo)
+
     def _load_checkpoint(self) -> None:
         try:
             # RUNTIME-INTEGRITY-001: raw sqlite3 on audit_repo._db_path raises
@@ -383,13 +396,11 @@ class ResearchWorker:
         try:
             from nexus_scalp.research.archive import archive_research_history
 
-            # RUNTIME-INTEGRITY-001: archive_research_history is SQLite-shaped
-            # (it takes a sqlite3.Connection). It must never run against the
-            # pooled PostgreSQL provider — the URI on _db_path is not a file.
-            if not getattr(self.audit_repo, "_is_sqlite", False):
-                logger.debug("[STRATEGY_RESEARCH] event=ARCHIVE_SKIP reason=non_sqlite_provider")
-                return validated > 0
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=10.0)
+            # RUNTIME-INTEGRITY-001: _db_path holds the provider URI under a
+            # pooled provider, so a bare sqlite3.connect() cannot open it.
+            # The pooled cursor facade keeps the archive's ``with conn:`` and
+            # conn.execute(...).fetchall() bodies working unchanged.
+            conn = self._worker_connection()
             try:
                 archive_research_history(conn)
             finally:
