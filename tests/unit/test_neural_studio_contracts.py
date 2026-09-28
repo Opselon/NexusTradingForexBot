@@ -69,9 +69,7 @@ class _FakeScaler:
 
     def transform(self, x: np.ndarray) -> np.ndarray:
         if x.shape[-1] != self._width:
-            raise ContractDimensionError(
-                f"scaler is {self._width}D, input is {int(x.shape[-1])}D"
-            )
+            raise ContractDimensionError(f"scaler is {self._width}D, input is {int(x.shape[-1])}D")
         return np.clip(x, -5.0, 5.0)
 
 
@@ -381,9 +379,7 @@ def test_no_model_reports_not_loaded() -> None:
 
 
 def test_everything_ready_reports_ready() -> None:
-    state = resolve_runtime_state(
-        engine=_Engine(True), hot_loaded_bundle=_Bundle("m70", 70)
-    )
+    state = resolve_runtime_state(engine=_Engine(True), hot_loaded_bundle=_Bundle("m70", 70))
     assert state.engine_state == "RUNNING"
     assert state.inference_state == "READY"
     assert state.inference_available is True
@@ -399,9 +395,7 @@ def test_unready_scaler_blocks_inference() -> None:
 
 
 def test_degraded_engine_blocks_inference() -> None:
-    state = resolve_runtime_state(
-        engine=_Engine(False), hot_loaded_bundle=_Bundle("m70", 70)
-    )
+    state = resolve_runtime_state(engine=_Engine(False), hot_loaded_bundle=_Bundle("m70", 70))
     assert state.engine_state == "DEGRADED"
     assert state.inference_state == "BLOCKED"
 

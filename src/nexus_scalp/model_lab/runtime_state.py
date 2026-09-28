@@ -31,34 +31,34 @@ from typing import Any
 
 # Model lifecycle states (Phase 3) — one meaning per state, no field carries two.
 MODEL_LIFECYCLE_STATES: tuple[str, ...] = (
-    "DISCOVERED",   # checkpoint seen on disk, not yet validated
-    "TRAINING",     # a fit is in progress
-    "TRAINED",      # fit finished, artifact written
-    "VERIFIED",     # passed the verify battery
-    "SERVABLE",     # artifact + scaler + manifest all validated
-    "NOT_LOADED",   # no model resident in the inference slot
-    "LOADED",       # weights resident in the inference slot
-    "WARMING",      # warmup forward in flight
-    "READY",        # warmup passed; inference is possible
-    "ACTIVE",       # the runtime's current serving model
-    "STANDBY",      # loaded but not serving (e.g. hot-load previous model)
-    "FAILED",       # load/train/verify failed
-    "RETIRED",      # operator retired; not eligible to serve
+    "DISCOVERED",  # checkpoint seen on disk, not yet validated
+    "TRAINING",  # a fit is in progress
+    "TRAINED",  # fit finished, artifact written
+    "VERIFIED",  # passed the verify battery
+    "SERVABLE",  # artifact + scaler + manifest all validated
+    "NOT_LOADED",  # no model resident in the inference slot
+    "LOADED",  # weights resident in the inference slot
+    "WARMING",  # warmup forward in flight
+    "READY",  # warmup passed; inference is possible
+    "ACTIVE",  # the runtime's current serving model
+    "STANDBY",  # loaded but not serving (e.g. hot-load previous model)
+    "FAILED",  # load/train/verify failed
+    "RETIRED",  # operator retired; not eligible to serve
 )
 
 ENGINE_STATES: tuple[str, ...] = (
-    "RUNNING",      # process up and healthy
-    "DEGRADED",     # up but a subsystem reports unhealthy
-    "STOPPED",      # no engine process
-    "UNKNOWN",      # could not probe
+    "RUNNING",  # process up and healthy
+    "DEGRADED",  # up but a subsystem reports unhealthy
+    "STOPPED",  # no engine process
+    "UNKNOWN",  # could not probe
 )
 
 INFERENCE_STATES: tuple[str, ...] = (
-    "READY",        # a loaded, warm model can produce a decision
-    "BLOCKED",      # model loaded but inference cannot run (engine stopped)
-    "WARMING",      # model loaded, warmup not yet confirmed
-    "NOT_LOADED",   # no model in the slot
-    "FAILED",       # the loaded model failed its smoke inference
+    "READY",  # a loaded, warm model can produce a decision
+    "BLOCKED",  # model loaded but inference cannot run (engine stopped)
+    "WARMING",  # model loaded, warmup not yet confirmed
+    "NOT_LOADED",  # no model in the slot
+    "FAILED",  # the loaded model failed its smoke inference
     "UNAVAILABLE",  # probe itself failed — never silently "ready"
 )
 
@@ -167,8 +167,7 @@ def resolve_runtime_state(
         runtime_dimension = _safe_int(getattr(selected_model_record, "dimension", None))
         model_state = "STANDBY"
         model_detail = (
-            f"registry champion {runtime_model_id or 'none'} is not resident in the "
-            "inference slot"
+            f"registry champion {runtime_model_id or 'none'} is not resident in the inference slot"
         )
     else:
         model_state = "NOT_LOADED"
@@ -204,8 +203,7 @@ def resolve_runtime_state(
     elif engine_state == "DEGRADED":
         inference_state = "BLOCKED"
         inference_detail = (
-            f"model {runtime_model_id} is loaded but the engine is degraded; "
-            "inference is withheld"
+            f"model {runtime_model_id} is loaded but the engine is degraded; inference is withheld"
         )
     elif engine_state == "UNKNOWN":
         inference_state = "BLOCKED"

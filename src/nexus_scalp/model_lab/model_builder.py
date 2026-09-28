@@ -153,14 +153,11 @@ def get_feature_contract(dimension: int) -> FeatureContract:
         )
     schema_id = DIMENSION_TO_SCHEMA_ID[dimension]
     if not FEATURE_SCHEMAS.is_registered(schema_id):
-        raise ValueError(
-            f"schema {schema_id!r} is not registered in the feature schema registry"
-        )
+        raise ValueError(f"schema {schema_id!r} is not registered in the feature schema registry")
     schema = FEATURE_SCHEMAS.resolve(schema_id)
     if schema.dimension != dimension:
         raise ValueError(
-            f"schema {schema_id!r} declares dimension {schema.dimension}, "
-            f"expected {dimension}"
+            f"schema {schema_id!r} declares dimension {schema.dimension}, expected {dimension}"
         )
 
     names = canonical_feature_names()
@@ -439,13 +436,9 @@ def validate_builder_config(
     if not (1 <= cfg.epochs <= 50):
         findings.append(PreflightFinding("error", "EPOCHS_RANGE", "epochs must be 1..50"))
     if not (16 <= cfg.batch_size <= 2048):
-        findings.append(
-            PreflightFinding("error", "BATCH_RANGE", "batch_size must be 16..2048")
-        )
+        findings.append(PreflightFinding("error", "BATCH_RANGE", "batch_size must be 16..2048"))
     if not (1e-6 <= cfg.learning_rate <= 1e-1):
-        findings.append(
-            PreflightFinding("error", "LR_RANGE", "learning_rate must be 1e-6..1e-1")
-        )
+        findings.append(PreflightFinding("error", "LR_RANGE", "learning_rate must be 1e-6..1e-1"))
     if cfg.optimizer not in SUPPORTED_OPTIMIZERS:
         findings.append(
             PreflightFinding(
@@ -533,9 +526,7 @@ def _registry_dimension_for(
     return rec.dimension if rec else None
 
 
-def preflight_dataset(
-    cfg: ModelBuilderConfig, dataset_loader: Any = None
-) -> PreflightReport:
+def preflight_dataset(cfg: ModelBuilderConfig, dataset_loader: Any = None) -> PreflightReport:
     """Phase 7: is this dataset compatible with this contract, and WHY.
 
     ``dataset_loader`` is injected so tests can supply an in-memory frame; the

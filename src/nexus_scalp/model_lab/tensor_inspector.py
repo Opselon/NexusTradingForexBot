@@ -240,8 +240,6 @@ def _apply_scaler(scaler: Any, x: np.ndarray) -> np.ndarray:
         except Exception as exc:
             raise ValueError(f"scaler transform failed: {exc}") from exc
         if out.shape != x.shape:
-            raise ValueError(
-                f"scaler changed the tensor width: {x.shape[-1]} -> {out.shape[-1]}"
-            )
+            raise ValueError(f"scaler changed the tensor width: {x.shape[-1]} -> {out.shape[-1]}")
         return np.clip(out, -_CLAMP_RANGE, _CLAMP_RANGE)
     return np.clip(x, -_CLAMP_RANGE, _CLAMP_RANGE)

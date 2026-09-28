@@ -3144,9 +3144,7 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
             scaler = bundle.scaler if bundle is not None else None
             model_id = bundle.model_id if bundle is not None else ""
             bundle_dim = bundle.dimension if bundle is not None else None
-            model_source = (
-                f"HOT_LOADED:{model_id}" if bundle is not None else "IN_MEMORY_INSTANCE"
-            )
+            model_source = f"HOT_LOADED:{model_id}" if bundle is not None else "IN_MEMORY_INSTANCE"
 
         if bundle is not None and bundle_dim != dim:
             raise HTTPException(
@@ -3202,7 +3200,9 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
         out["model_source"] = model_source
         out["perturbation_sigma"] = perturbation_sigma
         out["feature_source"] = (
-            "LIVE_TICK" if use_live else ("SYNTHETIC_ZERO" if perturbation_sigma <= 0 else "SYNTHETIC_ZERO+NOISE")
+            "LIVE_TICK"
+            if use_live
+            else ("SYNTHETIC_ZERO" if perturbation_sigma <= 0 else "SYNTHETIC_ZERO+NOISE")
         )
         return {"status": "OK", "inspection": out}
 
@@ -3235,9 +3235,7 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
         )
         out = state.to_dict()
         out["registry_champion_id"] = active_champion.id if active_champion else ""
-        out["registry_champion_dimension"] = (
-            active_champion.dimension if active_champion else None
-        )
+        out["registry_champion_dimension"] = active_champion.dimension if active_champion else None
         return {"status": "OK", "runtime": out}
 
     @app.get("/api/model-studio/models/{model_id}/detail")
@@ -3252,9 +3250,7 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
         detail["artifact_exists"] = bool(
             rec.weights_path and (REPO_ROOT / rec.weights_path).is_file()
         )
-        detail["scaler_exists"] = bool(
-            rec.scaler_path and (REPO_ROOT / rec.scaler_path).is_file()
-        )
+        detail["scaler_exists"] = bool(rec.scaler_path and (REPO_ROOT / rec.scaler_path).is_file())
         detail["manifest_exists"] = bool(
             rec.manifest_path and (REPO_ROOT / rec.manifest_path).is_file()
         )
@@ -3312,6 +3308,7 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
                 else None
             ),
         )
+
         # Live check: can the weights actually be loaded and produce a finite
         # forward pass at the declared width?
         def _smoke() -> None:
@@ -3319,9 +3316,7 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
             from nexus_scalp.models.scalp_net import ScalpNet
 
             head = weights["classifier.weight"].shape[0]
-            model = ScalpNet(
-                num_features=rec.dimension, num_classes=int(head)
-            )
+            model = ScalpNet(num_features=rec.dimension, num_classes=int(head))
             model.load_state_dict(weights)
             model.eval()
             with torch.inference_mode():

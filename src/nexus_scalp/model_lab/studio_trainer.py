@@ -272,8 +272,7 @@ class NeuralStudioTrainer:
         canonical = list(canonical_feature_names())[: cfg.dimension]
         if [str(x) for x in names] != canonical:
             raise ValueError(
-                "feature ordering violation: the extracted matrix is not in "
-                "canonical feature order"
+                "feature ordering violation: the extracted matrix is not in canonical feature order"
             )
 
         labels = self._label(frame, n_rows)
@@ -349,9 +348,7 @@ class NeuralStudioTrainer:
             elif cfg.early_stopping:
                 patience_left -= 1
                 if patience_left <= 0:
-                    logger.info(
-                        "run %s early-stopped (val=%.4f)", run_id, val_loss
-                    )
+                    logger.info("run %s early-stopped (val=%.4f)", run_id, val_loss)
                     break
             if scheduler is not None:
                 scheduler.step()
@@ -528,17 +525,12 @@ class NeuralStudioTrainer:
         return torch.optim.AdamW(params, lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
 
     def _build_criterion(self, cfg: ModelBuilderConfig) -> Any:
-        if (
-            cfg.class_weights is not None
-            and len(cfg.class_weights) == cfg.output_classes
-        ):
+        if cfg.class_weights is not None and len(cfg.class_weights) == cfg.output_classes:
             weights = torch.tensor(list(cfg.class_weights), dtype=torch.float32)
             return torch.nn.CrossEntropyLoss(weight=weights)
         return torch.nn.CrossEntropyLoss()
 
-    def _build_scheduler(
-        self, optimizer: Any, cfg: ModelBuilderConfig, epochs: int
-    ) -> Any | None:
+    def _build_scheduler(self, optimizer: Any, cfg: ModelBuilderConfig, epochs: int) -> Any | None:
         if cfg.scheduler == "cosine":
             return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
         if cfg.scheduler == "step":

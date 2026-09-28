@@ -73,8 +73,7 @@ def assert_tensor_dimension(tensor: Any, expected_dim: int, context: str = "") -
     """Reject a torch/numpy tensor whose LAST axis is not the contract width."""
     if expected_dim not in SUPPORTED_DIMENSIONS:
         raise ContractDimensionError(
-            f"contract {context or 'unknown'} declares unsupported dimension "
-            f"{expected_dim!r}"
+            f"contract {context or 'unknown'} declares unsupported dimension {expected_dim!r}"
         )
     shape = getattr(tensor, "shape", None)
     if shape is None:
@@ -103,8 +102,7 @@ def assert_scaler_compatibility(scaler: Any, model_dim: int, context: str = "") 
     """
     if model_dim not in SUPPORTED_DIMENSIONS:
         raise ContractDimensionError(
-            f"contract {context or 'unknown'} declares unsupported model dimension "
-            f"{model_dim!r}"
+            f"contract {context or 'unknown'} declares unsupported model dimension {model_dim!r}"
         )
 
     width = _scaler_width(scaler)
@@ -122,19 +120,15 @@ def assert_scaler_compatibility(scaler: Any, model_dim: int, context: str = "") 
         )
 
 
-def assert_scaler_file_compatibility(
-    scaler_path: Path, model_dim: int, context: str = ""
-) -> None:
+def assert_scaler_file_compatibility(scaler_path: Path, model_dim: int, context: str = "") -> None:
     """Reject a .scaler.npz whose declared/fitted width mismatches the contract."""
     if model_dim not in SUPPORTED_DIMENSIONS:
         raise ContractDimensionError(
-            f"contract {context or 'unknown'} declares unsupported dimension "
-            f"{model_dim!r}"
+            f"contract {context or 'unknown'} declares unsupported dimension {model_dim!r}"
         )
     if not scaler_path.is_file():
         raise ContractDimensionError(
-            f"contract {context or 'unknown'}: scaler sidecar missing at "
-            f"{scaler_path.name}"
+            f"contract {context or 'unknown'}: scaler sidecar missing at {scaler_path.name}"
         )
     data = np.load(scaler_path)
     declared = data.get("dimension")
@@ -164,8 +158,7 @@ def assert_schema_dimension(schema_id: str, expected_dim: int, context: str = ""
     """Reject a schema id that does not bind to the declared dimension."""
     if expected_dim not in SUPPORTED_DIMENSIONS:
         raise ContractDimensionError(
-            f"contract {context or 'unknown'} declares unsupported dimension "
-            f"{expected_dim!r}"
+            f"contract {context or 'unknown'} declares unsupported dimension {expected_dim!r}"
         )
     if schema_id != _schema_id_for(expected_dim):
         raise ContractDimensionError(
@@ -181,12 +174,13 @@ def assert_schema_dimension(schema_id: str, expected_dim: int, context: str = ""
         )
 
 
-def assert_model_weights_dimension(weights_path: Path, expected_dim: int, context: str = "") -> None:
+def assert_model_weights_dimension(
+    weights_path: Path, expected_dim: int, context: str = ""
+) -> None:
     """Reject a checkpoint whose input projection width is the wrong contract."""
     if expected_dim not in SUPPORTED_DIMENSIONS:
         raise ContractDimensionError(
-            f"contract {context or 'unknown'} declares unsupported dimension "
-            f"{expected_dim!r}"
+            f"contract {context or 'unknown'} declares unsupported dimension {expected_dim!r}"
         )
     if not weights_path.is_file():
         raise ContractDimensionError(
