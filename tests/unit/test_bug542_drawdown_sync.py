@@ -82,9 +82,18 @@ class _DrawdownEngine(_FakeEngine):
 
 
 @pytest.fixture
-def dd_client(tmp_path):
+def dd_client(tmp_path, monkeypatch):
     tok = os.environ.get("NSE_WEB_AUTH_TOKEN")
     os.environ["NSE_WEB_AUTH_TOKEN"] = "web-contract-test-token"
+    # POST /api/config writes configs/live.yaml at the PROCESS cwd. Without
+    # isolating the cwd this fixture clobbers the real checkout's live.yaml and,
+    # under xdist, races sibling workers reading it -- the write can land on a
+    # file another test already moved, surfacing as KeyError 'runtime_applied'
+    # via the route's OPERATION_FAILED branch. Chdir to a tmp tree first, and
+    # create the configs/ dir the route's atomic write needs (it writes
+    # configs/live.yaml.tmp, so a bare tmp cwd raises FileNotFoundError).
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "configs").mkdir(exist_ok=True)
     db = tmp_path / "app_settings.db"
     client = TestClient(create_app(engine_ref=_DrawdownEngine(db)))
     client.headers.update({"Authorization": "Bearer web-contract-test-token"})
