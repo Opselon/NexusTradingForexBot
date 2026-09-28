@@ -36,6 +36,7 @@ from nexus_scalp.research.evidence import (
     ResearchRunSnapshot,
     WorkerHealth,
 )
+from nexus_scalp.research.store import _count_of, _row_as_dict
 
 logger = get_logger("nexus_scalp.research.observability")
 
@@ -71,10 +72,67 @@ def _read_json(text: str | None) -> dict[str, Any]:
         return {}
 
 
-def _connect(repo: AuditRepository) -> sqlite3.Connection:
-    conn = sqlite3.connect(repo._db_path, timeout=5.0)
-    conn.row_factory = sqlite3.Row
-    return conn
+def _reader(repo: AuditRepository) -> Any:
+    """Provider-portable research reader (PG-RESEARCH-READ-001).
+
+    ``_connect`` below opened a raw SQLite connection, which the callers used
+    behind an ``if not repo._is_sqlite`` gate — so under a PostgreSQL provider
+    every observability read (gates / events / evidence / worker / queue /
+    heatmap / families) returned its empty default while the server held the
+    rows. A pooled provider now reads through the same registered fabric READ
+    plane the audit read guard serves.
+    """
+    from nexus_scalp.research.store import _ProviderRead
+
+    return _ProviderRead(repo)
+
+
+class _PooledCursor:
+    """sqlite3-connection-shaped facade over the pooled READ plane.
+
+    The observability read bodies are written as
+    ``conn.execute(sql, args).fetchone()/fetchall()`` against a raw sqlite3
+    connection. Rather than rewriting every call site (and risking a silent
+    regression in the row mapping), the plane is wrapped in the shape the
+    bodies already use. A pooled provider without a resolvable plane raises,
+    so the caller's except-clause logs it instead of answering an empty
+    default.
+    """
+
+    class _Result:
+        __slots__ = ("_rows",)
+
+        def __init__(self, rows: list[dict[str, Any]]) -> None:
+            self._rows = rows
+
+        def fetchall(self) -> list[dict[str, Any]]:
+            return self._rows
+
+        def fetchone(self) -> dict[str, Any] | None:
+            return self._rows[0] if self._rows else None
+
+    def __init__(self, repo: AuditRepository) -> None:
+        self._reader = _reader(repo)
+
+    def close(self) -> None:
+        """Kept for the ``try/finally: conn.close()`` bodies; the pool owns
+        connection lifecycle, not the caller."""
+        return None
+
+    def execute(self, sql: str, args: tuple[Any, ...] = ()) -> _Result:
+        if not self._reader.available:
+            raise RuntimeError("no read plane registered for domain 'audit'")
+        return _PooledCursor._Result(list(self._reader.rows(sql, tuple(args))))
+
+
+def _connect(repo: AuditRepository) -> Any:
+    """Provider-portable connection: SQLite's own connection or a pooled
+    READ-plane cursor (PG-RESEARCH-READ-001)."""
+    if repo._is_sqlite:
+        conn = sqlite3.connect(repo._db_path, timeout=5.0)
+        conn.row_factory = sqlite3.Row
+        return conn
+    return _PooledCursor(repo)
 
 
 class ResearchObservabilityStore:
@@ -294,7 +352,7 @@ class ResearchObservabilityStore:
         cached = self._gates.get(gate_id)
         if cached is not None:
             return cached
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return None
         try:
             conn = _connect(self.audit_repo)
@@ -315,7 +373,7 @@ class ResearchObservabilityStore:
         research_run_id: str | None = None,
         limit: int = 500,
     ) -> list[ResearchGate]:
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return []
         bounded = max(1, min(int(limit), MAX_READ_LIMIT))
         sql = "SELECT * FROM research_gates"
@@ -419,12 +477,29 @@ class ResearchObservabilityStore:
         return event
 
     def _archive_available(self, conn: Any) -> bool:
-        """True when the AUDIT-0009 archive tables exist on this database."""
-        row = conn.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN "
-            "('research_events_archive', 'research_evidence_archive')"
-        ).fetchone()
-        return bool(row and row[0] == 2)
+        """True when the AUDIT-0009 archive tables exist on this database.
+
+        The catalog probe is provider-specific: SQLite keeps its catalog in
+        ``sqlite_master``, PostgreSQL in ``information_schema``. Answering
+        False under the wrong catalog silently zeroed the archived counts on
+        a pooled provider.
+        """
+        if self.audit_repo._is_sqlite:
+            row = conn.execute(
+                "SELECT COUNT(*) AS c FROM sqlite_master WHERE type='table' AND name IN "
+                "('research_events_archive', 'research_evidence_archive')"
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) AS c FROM information_schema.tables "
+                "WHERE table_schema='public' AND table_name IN "
+                "('research_events_archive', 'research_evidence_archive')"
+            ).fetchone()
+        # SQLite answers positionally; the pooled plane answers a dict.
+        if row is None:
+            return False
+        count = row.get("c") if isinstance(row, dict) else row[0]
+        return bool(count == 2)
 
     def history_counts(self) -> dict[str, int]:
         """Live vs archived row counts (archive-only retention visibility).
@@ -437,23 +512,25 @@ class ResearchObservabilityStore:
             "evidence_live": 0,
             "evidence_archived": 0,
         }
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return out
         try:
             conn = _connect(self.audit_repo)
             try:
-                out["events_live"] = int(
-                    conn.execute("SELECT COUNT(*) FROM research_events").fetchone()[0]
+                out["events_live"] = _count_of(
+                    conn.execute("SELECT COUNT(*) AS c FROM research_events").fetchone()
                 )
-                out["evidence_live"] = int(
-                    conn.execute("SELECT COUNT(*) FROM research_evidence").fetchone()[0]
+                out["evidence_live"] = _count_of(
+                    conn.execute("SELECT COUNT(*) AS c FROM research_evidence").fetchone()
                 )
                 if self._archive_available(conn):
-                    out["events_archived"] = int(
-                        conn.execute("SELECT COUNT(*) FROM research_events_archive").fetchone()[0]
+                    out["events_archived"] = _count_of(
+                        conn.execute("SELECT COUNT(*) AS c FROM research_events_archive").fetchone()
                     )
-                    out["evidence_archived"] = int(
-                        conn.execute("SELECT COUNT(*) FROM research_evidence_archive").fetchone()[0]
+                    out["evidence_archived"] = _count_of(
+                        conn.execute(
+                            "SELECT COUNT(*) AS c FROM research_evidence_archive"
+                        ).fetchone()
                     )
             finally:
                 conn.close()
@@ -468,7 +545,7 @@ class ResearchObservabilityStore:
         limit: int = 300,
         include_archive: bool = True,
     ) -> list[dict[str, Any]]:
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return []
         bounded = max(1, min(int(limit), MAX_READ_LIMIT))
         # EDGE ROUND-4: archive-aware read. The archive IS the history, so the
@@ -543,7 +620,7 @@ class ResearchObservabilityStore:
         return artifact.evidence_id
 
     def get_evidence(self, evidence_id: str) -> dict[str, Any] | None:
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return None
         try:
             conn = _connect(self.audit_repo)
@@ -565,7 +642,7 @@ class ResearchObservabilityStore:
         limit: int = 500,
         include_archive: bool = True,
     ) -> list[dict[str, Any]]:
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return []
         bounded = max(1, min(int(limit), MAX_READ_LIMIT))
         # EDGE ROUND-4: archive-aware (see list_events); explicit columns —
@@ -662,7 +739,7 @@ class ResearchObservabilityStore:
         return snapshot.fingerprint()
 
     def get_run_snapshot(self, research_run_id: str) -> dict[str, Any] | None:
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return None
         try:
             conn = _connect(self.audit_repo)
@@ -759,7 +836,7 @@ class ResearchObservabilityStore:
 
     def worker_health(self, scope: str = "research") -> dict[str, Any]:
         """Classifies worker health from the heartbeat (HEALTHY/DEGRADED/STUCK/FAILED)."""
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return {"available": False, "health": "UNKNOWN"}
         try:
             conn = _connect(self.audit_repo)
@@ -771,7 +848,7 @@ class ResearchObservabilityStore:
                 conn.close()
             if row is None:
                 return {"available": True, "health": WorkerHealth.IDLE.value, "heartbeat": None}
-            hb = dict(row)
+            hb = _row_as_dict(row)
             now_sec = time.time()
             beat_ts = _parse_ts(hb.get("last_beat_at") or "")
             beat_age = (now_sec - beat_ts.timestamp()) if beat_ts else float("inf")
@@ -824,7 +901,7 @@ class ResearchObservabilityStore:
             "running": [],
             "last_errors": {},
         }
-        if not self.audit_repo._is_sqlite:
+        if not _reader(self.audit_repo).available:
             return out
         try:
             conn = _connect(self.audit_repo)
@@ -889,7 +966,7 @@ class ResearchObservabilityStore:
                 out["total_failures"] = total
                 reasons: dict[str, int] = {}
                 for r in conn.execute("SELECT result_summary FROM research_runs;").fetchall():
-                    s = _read_json(r[0])
+                    s = _read_json(r.get("result_summary") if isinstance(r, dict) else r[0])
                     lc = s.get("lifecycle", "")
                     if lc == "REJECTED":
                         for key in ("primary_failure", "reason", "rejection_reason"):
@@ -990,7 +1067,7 @@ class ResearchObservabilityStore:
                 conn.close()
             if row is None:
                 return None
-            out = dict(row)
+            out = _row_as_dict(row)
             for col in (
                 "backtest",
                 "walkforward",
@@ -1027,7 +1104,7 @@ class ResearchObservabilityStore:
                     ).fetchall()
             finally:
                 conn.close()
-            return [dict(r) for r in rows]
+            return [_row_as_dict(r) for r in rows]
         except Exception as e:
             logger.error("[RESEARCH_OBS] runs load failed", strategy=strategy_id, error=str(e))
             return []
@@ -1148,7 +1225,7 @@ def _registry_blocked_reason(
         "reason": "",
         "required": "",
     }
-    if not repo._is_sqlite:
+    if not _reader(repo).available:
         return blocker
     try:
         conn = _connect(repo)

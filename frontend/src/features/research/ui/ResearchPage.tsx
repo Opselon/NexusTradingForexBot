@@ -464,7 +464,7 @@ export default function ResearchPage(props: ShellPageProps) {
       {/* ----------------------------------------------- lifecycle rail */}
       <Panel
         title="Lifecycle census (registry summary)"
-        right={<FreshnessCaption timestamp={null} isFetching={summaryQ.isFetching} error={summaryQ.isError} />}
+        right={<FreshnessCaption timestamp={summary?.census_at ?? null} source="/api/research/summary census_at" isFetching={summaryQ.isFetching} error={summaryQ.isError} />}
         tight
       >
         {summaryQ.isPending ? (

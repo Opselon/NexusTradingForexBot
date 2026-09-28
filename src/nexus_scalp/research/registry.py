@@ -75,6 +75,31 @@ class StrategyRegistry:
         self.audit_repo = audit_repo
 
     # ------------------------------------------------------------------
+    # Provider-portable read access (PG-RESEARCH-READ-001)
+    # ------------------------------------------------------------------
+
+    def _reader(self) -> Any:
+        """The research read backend: SQLite's own connection or the fabric's
+        registered READ plane for a pooled provider.
+
+        The historical reads here opened ``sqlite3.connect(_db_path)`` behind
+        an ``if not _is_sqlite`` gate, so a PostgreSQL switch made the whole
+        registry surface answer empty while the rows existed on the server.
+        """
+        from nexus_scalp.research.store import _ProviderRead
+
+        return _ProviderRead(self.audit_repo)
+
+    def _readable(self) -> bool:
+        return self._reader().available
+
+    def _connect(self) -> Any:
+        """sqlite3-shaped connection for the read bodies (see store._connect)."""
+        from nexus_scalp.research.store import _connect
+
+        return _connect(self.audit_repo)
+
+    # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
 
@@ -98,7 +123,7 @@ class StrategyRegistry:
           need an administrative downgrade must pass
           `forbid_lifecycle_regression=False` explicitly (audited exception).
         """
-        if not self.audit_repo._is_sqlite:
+        if not self._readable():
             return False
         existing = self.get(entry.strategy_id, entry.strategy_version)
         if existing is not None:
@@ -158,11 +183,10 @@ class StrategyRegistry:
         self, strategy_id: str, strategy_version: str | None = None
     ) -> StrategyRegistryEntry | None:
         """Loads a registry entry; with no version, the most recent one."""
-        if not self.audit_repo._is_sqlite:
+        if not self._readable():
             return None
         try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
+            conn = self._connect()
             try:
                 if strategy_version:
                     row = conn.execute(
@@ -184,7 +208,7 @@ class StrategyRegistry:
 
     def list(self, lifecycle: str | None = None, limit: int = 200) -> list[StrategyRegistryEntry]:
         """Bounded listing, newest first."""
-        if not self.audit_repo._is_sqlite:
+        if not self._readable():
             return []
         bounded = max(1, min(int(limit), 500))
         sql = "SELECT * FROM strategy_registry"
@@ -195,8 +219,7 @@ class StrategyRegistry:
         sql += " ORDER BY updated_at DESC LIMIT ?;"
         out: list[StrategyRegistryEntry] = []
         try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            conn.row_factory = sqlite3.Row
+            conn = self._connect()
             try:
                 rows = conn.execute(sql, (*args, bounded)).fetchall()
             finally:
@@ -210,21 +233,20 @@ class StrategyRegistry:
         return out
 
     def count(self, lifecycle: str | None = None) -> int:
-        if not self.audit_repo._is_sqlite:
+        if not self._readable():
             return 0
         try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            try:
-                if lifecycle:
-                    row = conn.execute(
-                        "SELECT COUNT(*) FROM strategy_registry WHERE lifecycle=?;",
-                        (lifecycle,),
-                    ).fetchone()
-                else:
-                    row = conn.execute("SELECT COUNT(*) FROM strategy_registry;").fetchone()
-                return int(row[0]) if row else 0
-            finally:
-                conn.close()
+            sql = "SELECT COUNT(*) AS c FROM strategy_registry"
+            args: tuple[Any, ...] = ()
+            if lifecycle:
+                sql += " WHERE lifecycle=?"
+                args = (lifecycle,)
+            row = self._reader().one(sql + ";", args)
+            if row is None:
+                return 0
+            # SQLite answers positionally; the pooled plane answers a dict, so
+            # the count is aliased ``AS c`` and read by name.
+            return int(row.get("c", 0) if isinstance(row, dict) else row[0])
         except Exception:
             return 0
 

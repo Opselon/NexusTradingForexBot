@@ -36,6 +36,7 @@ export interface ResearchSummaryDto {
     by_lifecycle?: Record<string, number>;
     outcome_quality?: Row;
     worker?: Row;
+    census_at?: string | null;
   };
   health?: Row;
 }

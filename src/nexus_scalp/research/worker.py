@@ -34,7 +34,6 @@ TASK-4 (dataset rebuild guard, spec 23):
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -121,17 +120,47 @@ class ResearchWorker:
     # Restart-safe checkpoint
     # ------------------------------------------------------------------
 
+    def _research_reader(self) -> Any:
+        """The provider-portable research reader (PG-DBPATH-BOOT-001).
+
+        SQLite keeps its own connection; a pooled provider reads through the
+        registered fabric READ plane, never through ``_db_path``.
+        """
+        from nexus_scalp.research.store import _ProviderRead
+
+        return _ProviderRead(self.audit_repo)
+
+    def _research_connection(self) -> Any:
+        """A sqlite3-shaped connection for bodies written against
+        ``conn.execute(...).fetchall()`` (see research.store._connect).
+
+        SQLite gets a real sqlite3 connection; a pooled provider gets the
+        pooled cursor facade, which keeps those call sites byte-identical.
+        """
+        from nexus_scalp.research.store import _connect
+
+        return _connect(self.audit_repo)
+
+    # ------------------------------------------------------------------
+    # Checkpoint
+    # ------------------------------------------------------------------
+
     def _load_checkpoint(self) -> None:
+        # PG-DBPATH-BOOT-001: ``_db_path`` holds the PROVIDER URI under a
+        # pooled provider (``postgresql://localhost:5432/nexusdb``), never a
+        # SQLite path. A bare ``sqlite3.connect(_db_path)`` then fails with
+        # "unable to open database file" on every worker cycle. The
+        # provider-portable reader (research.store._ProviderRead) resolves
+        # the registered READ plane for a pooled provider and keeps the
+        # SQLite connection for a SQLite domain, so the checkpoint survives
+        # a provider switch instead of degrading forever.
         try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            try:
-                conn.row_factory = sqlite3.Row
-                row = conn.execute(
-                    "SELECT cycle_count, last_checkpoint FROM research_worker_state "
-                    "WHERE scope = 'research' LIMIT 1;"
-                ).fetchone()
-            finally:
-                conn.close()
+            reader = self._research_reader()
+            row = reader.one(
+                "SELECT cycle_count, last_checkpoint FROM research_worker_state "
+                "WHERE scope = 'research' LIMIT 1;",
+                (),
+            )
             if row is not None:
                 self.cycle_count = max(self.cycle_count, int(row["cycle_count"] or 0))
                 prior = str(row["last_checkpoint"] or "")
@@ -380,7 +409,14 @@ class ResearchWorker:
         try:
             from nexus_scalp.research.archive import archive_research_history
 
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=10.0)
+            # PG-DBPATH-BOOT-001: same inversion as _load_checkpoint —
+            # ``_db_path`` is a provider URI under PostgreSQL, so a bare
+            # ``sqlite3.connect(_db_path)`` cannot work. archive_research_history
+            # needs a connection-shaped object (it uses ``with conn:`` for its
+            # per-table transactions and ``conn.execute(...).fetchall()``), so
+            # route it through the same sqlite3-shaped pooled cursor the
+            # observability reads use; a SQLite domain keeps its own connection.
+            conn = self._research_connection()
             try:
                 archive_research_history(conn)
             finally:
