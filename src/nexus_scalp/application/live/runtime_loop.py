@@ -116,8 +116,12 @@ class RuntimeLoop:
             self.om._account_snapshot = None
         # The peak-equity baseline is the drawdown denominator. On a halted
         # boot _restore_peak_equity() (called only in the armed path) never
-        # runs, so restore it here from the same audit source.
-        if getattr(self.om, "_peak_equity", 0.0) <= 0.0:
+        # runs, so restore it here from the same audit source. Restore only
+        # when the baseline is genuinely absent (a real engine holds a float;
+        # a test double may hold anything, so guard the arithmetic rather than
+        # trusting the attribute to be numeric).
+        peak = getattr(self.om, "_peak_equity", 0.0)
+        if not isinstance(peak, (int, float)) or peak <= 0.0:
             try:
                 self.om._restore_peak_equity(account)
             except Exception as exc:
