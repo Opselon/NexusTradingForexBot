@@ -102,6 +102,15 @@ def test_gate_first_unique_target_resolves(tmp_path: Path, table: str, cols: tup
 # ---------------------------------------------------------------------------
 
 PRODUCER_SQL: dict[str, str] = {
+    # audit_repository._seed_trading_rules / _seed_trading_rules_provider:
+    # the default-rules seed. The audit-domain baseline skeleton creates this
+    # table with only (id, rule_id) and no unique index, so this ON CONFLICT
+    # target was dead on every gate-first install until it was registered in
+    # APP_UNIQUE_TARGETS (the BUG-276 completion fix).
+    "trading_rules_config": (
+        "INSERT INTO trading_rules_config (rule_name, is_enabled, category, parameters) "
+        "VALUES (?, 0, ?, ?) ON CONFLICT (rule_name) DO NOTHING"
+    ),
     # audit_repository._log_guard_telemetry (the 19 rows/s E2E failure)
     "audit_guard_telemetry": (
         "INSERT INTO audit_guard_telemetry (window_start, symbol, reason_code, count) "
@@ -156,6 +165,8 @@ def test_producer_upserts_survive_gate_then_bootstrap(tmp_path: Path, table: str
                 args = ("research", 1)
             elif table == "strategy_registry":
                 args = ("s-1", "1.0.0", "t0", "t1")
+            elif table == "trading_rules_config":
+                args = ("default_rule", "category", "{}")
             else:  # experience_model_registry
                 args = ("m-1", "v-1", "f-1", "t0")
             con.execute(sql, args)
@@ -170,7 +181,18 @@ def test_producer_upserts_survive_gate_then_bootstrap(tmp_path: Path, table: str
                 assert n == 2, f"telemetry upsert did not increment (count={n})"
             else:
                 rows = con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-                assert rows == 1, f"{table}: replay created a duplicate row (rows={rows})"
+                if table == "trading_rules_config":
+                    # AuditRepository's bootstrap also seeds the DEFAULT_TRADING
+                    # rules, so the table holds that set plus this probe row.
+                    # Prove idempotency directly: the replay did not duplicate
+                    # the probe row.
+                    probe = con.execute(
+                        "SELECT COUNT(*) FROM trading_rules_config WHERE rule_name=?",
+                        (args[0],),
+                    ).fetchone()[0]
+                    assert probe == 1, f"replay created a duplicate of {args[0]!r}"
+                else:
+                    assert rows == 1, f"{table}: replay created a duplicate row (rows={rows})"
             # The worker must not have dead-lettered anything.
             dl = con.execute("SELECT COUNT(*) FROM audit_dead_letter").fetchone()[0]
             assert dl == 0, f"{dl} rows dead-lettered on a healthy schema"
