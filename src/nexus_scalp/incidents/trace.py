@@ -409,8 +409,7 @@ def learning_pipeline_rates(db_path: str) -> dict[str, Any]:
 #: shape made even a diagnostic a guaranteed full table scan, not because it
 #: runs at 5Hz.
 _SARGABLE_SIGNAL_LOOKUPS = (
-    "SELECT * FROM audit_signals WHERE request_id = ? "
-    "ORDER BY generated_at DESC, id DESC LIMIT 20",
+    "SELECT * FROM audit_signals WHERE request_id = ? ORDER BY generated_at DESC, id DESC LIMIT 20",
 )
 
 
