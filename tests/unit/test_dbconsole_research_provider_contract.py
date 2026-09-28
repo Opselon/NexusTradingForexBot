@@ -232,9 +232,7 @@ class TestProviderPortableReader:
         rather than returning an empty-shaped success.
         """
         repo = _non_sqlite_repo_without_pool()
-        monkeypatch.setattr(
-            AuditRepository, "research_read_plane", lambda self: None
-        )
+        monkeypatch.setattr(AuditRepository, "research_read_plane", lambda self: None)
         store = ResearchObservabilityStore(audit_repo=repo)
         heatmap = store.gate_failure_heatmap()
         families = store.family_analytics()
@@ -308,13 +306,18 @@ class TestDbConsoleQueryOnSqlite:
 
         monkeypatch.setattr(
             "nexus_scalp.web.db_console._config_for",
-            lambda name: DatabaseConfig.for_sqlite(name, path=str(sqlite_repo._db_path))
-            if name == "audit"
-            else None,
+            lambda name: (
+                DatabaseConfig.for_sqlite(name, path=str(sqlite_repo._db_path))
+                if name == "audit"
+                else None
+            ),
         )
         res = console_app.post(
             "/api/db/console/query",
-            json={"sql": "SELECT count(*) AS row_count FROM strategy_registry", "database": "audit"},
+            json={
+                "sql": "SELECT count(*) AS row_count FROM strategy_registry",
+                "database": "audit",
+            },
         )
         assert res.status_code == 200
         body = res.json()

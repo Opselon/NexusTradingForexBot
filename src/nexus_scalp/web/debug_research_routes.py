@@ -1769,9 +1769,7 @@ def register_debug_research_routes(
                 {
                     "available": analytics_ok,
                     "reason": (
-                        "research observability store unavailable"
-                        if not analytics_ok
-                        else None
+                        "research observability store unavailable" if not analytics_ok else None
                     ),
                     "heatmap": heatmap,
                     "families": families,
