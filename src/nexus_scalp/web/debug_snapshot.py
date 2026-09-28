@@ -1260,11 +1260,23 @@ def _risk_section(engine: Any) -> dict[str, Any]:
         _pending_val: Any = _pending_fn() if callable(_pending_fn) else -1
         out["financial_overflow_pending"] = int(_pending_val)
         out["consecutive_losses"] = int(getattr(engine, "_consecutive_losses", 0) or 0)
-        cfg = engine.config
-        out["risk_per_trade_pct"] = float(cfg.risk.risk_per_trade_pct)
-        out["max_concurrent_positions"] = int(cfg.risk.max_concurrent_positions)
-        out["max_spread_points"] = float(cfg.risk.max_spread_points)
-        out["max_account_drawdown_pct"] = float(cfg.risk.max_account_drawdown_pct)
+        # Drawdown sync (BUG-542): read the AUTHORITATIVE runtime snapshot,
+        # not engine.config (the live.yaml bootstrap) — otherwise a UI save
+        # is persisted and enforced but this surface keeps showing the stale
+        # bootstrap value.
+        _store = getattr(engine, "runtime_config", None)
+        _risk: Any = None
+        if _store is not None:
+            try:
+                _risk = _store.get_snapshot().risk
+            except Exception as exc:
+                logger.warning("debug_snapshot runtime snapshot unreadable", error=str(exc))
+        if _risk is None:
+            _risk = engine.config.risk
+        out["risk_per_trade_pct"] = float(_risk.risk_per_trade_pct)
+        out["max_concurrent_positions"] = int(_risk.max_concurrent_positions)
+        out["max_spread_points"] = float(_risk.max_spread_points)
+        out["max_account_drawdown_pct"] = float(_risk.max_account_drawdown_pct)
         out["hard_max_lots"] = 10.0
     except Exception as exc:
         logger.warning("debug_snapshot risk config error", error=str(exc))

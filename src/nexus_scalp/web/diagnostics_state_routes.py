@@ -367,6 +367,48 @@ def current_execution_mode(engine: Any) -> str | None:
     return text or None
 
 
+def _effective_risk(engine: Any) -> dict[str, Any]:
+    """The risk section the UI must display: the AUTHORITATIVE runtime
+    configuration snapshot, falling back to the bootstrap AppConfig only
+    when the engine is detached.
+
+    Drawdown sync (BUG-542): ``engine.config.risk`` is the BOOTSTRAP
+    (live.yaml) — a UI save to 99% updates the versioned
+    ``RuntimeConfigStore`` snapshot and the risk engine consumes THAT
+    snapshot (``_update_survival_state`` / ``_sync_runtime_config``).
+    Reading the bootstrap here made /api/live/state keep reporting the
+    stale bootstrap (5%) after a successful save, so the header and the
+    risk engine disagreed about the same limit. The snapshot is the
+    single source of truth; bootstrap is boot/export-only.
+    """
+    if engine is None:
+        return {}
+    store = getattr(engine, "runtime_config", None)
+    if store is not None:
+        try:
+            snap = store.get_snapshot()
+            risk = getattr(snap, "risk", None)
+            if risk is not None:
+                return {
+                    "max_account_drawdown_pct": float(risk.max_account_drawdown_pct),
+                    "risk_per_trade_pct": float(risk.risk_per_trade_pct),
+                    "max_concurrent_positions": int(risk.max_concurrent_positions),
+                    "max_spread_points": int(risk.max_spread_points),
+                }
+        except Exception as exc:
+            logger.warning("[LIVE_STATE] runtime snapshot unreadable", exc_info=exc)
+    try:
+        risk = engine.config.risk  # type: ignore[union-attr]
+    except Exception:
+        return {}
+    return {
+        "max_account_drawdown_pct": getattr(risk, "max_account_drawdown_pct", None),
+        "risk_per_trade_pct": getattr(risk, "risk_per_trade_pct", None),
+        "max_concurrent_positions": getattr(risk, "max_concurrent_positions", None),
+        "max_spread_points": getattr(risk, "max_spread_points", None),
+    }
+
+
 def dry_run_config_errors(engine: Any, key: str, value: Any) -> list[str]:
     """Validate one dotted key/value against the apply path's own validator.
 
@@ -978,6 +1020,9 @@ def register_diagnostics_state_routes(
         engine = app.state.engine
         account = state.get("account", {})
         timestamps = state.get("timestamps", {}) or {}
+        # Read the effective risk ONCE so the whole snapshot reports one
+        # configuration version (a concurrent save must not half-update it).
+        risk_now = _effective_risk(engine)
         live = {
             "contract": "LiveUiState.2",
             "state_version": state.get("state_version"),
@@ -1057,15 +1102,11 @@ def register_diagnostics_state_routes(
             "risk": {
                 "equity": account.get("equity"),
                 "balance": account.get("balance"),
-                "risk_pct": (engine.config.risk.risk_per_trade_pct if engine else None),
+                "risk_pct": risk_now.get("risk_per_trade_pct"),
                 "limits": {
-                    "max_drawdown_pct": (
-                        engine.config.risk.max_account_drawdown_pct if engine else None
-                    ),
-                    "max_concurrent_positions": (
-                        engine.config.risk.max_concurrent_positions if engine else None
-                    ),
-                    "max_spread_points": (engine.config.risk.max_spread_points if engine else None),
+                    "max_drawdown_pct": risk_now.get("max_account_drawdown_pct"),
+                    "max_concurrent_positions": risk_now.get("max_concurrent_positions"),
+                    "max_spread_points": risk_now.get("max_spread_points"),
                 },
             },
             "accounting": {
@@ -1200,7 +1241,7 @@ def register_diagnostics_state_routes(
         eff_risk_pct = (
             risk_pct
             if risk_pct is not None
-            else float(getattr(engine.config.risk, "risk_per_trade_pct", 0.5))
+            else float(_effective_risk(engine).get("risk_per_trade_pct") or 0.5)
         )
 
         if eff_equity is None:
@@ -2183,6 +2224,7 @@ def register_diagnostics_state_routes(
                 "max_concurrent_positions",
                 "max_spread_points",
                 "max_allowed_lots",
+                "max_margin_usage_pct",
                 "enforce_stop_loss",
             ):
                 if k in risk_cfg:
