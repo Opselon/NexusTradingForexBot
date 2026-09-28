@@ -44,6 +44,7 @@ Plus regression fixtures (brief 46/47):
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import ClassVar
@@ -496,11 +497,37 @@ class _FakeEngine:
         pass
 
 
-def _make_app(engine) -> TestClient:
+def _make_app(engine, *, token: str | None = None) -> TestClient:
     from nexus_scalp.web.server import create_app as _create_app
 
     app = _create_app(engine)
     return TestClient(app)
+
+
+class _AuthedClient:
+    """TestClient that sends the token the app's middleware actually holds.
+
+    WEB-AUTH-P0 middleware resolves the token ONCE at ``create_app`` time
+    (env > dotenv > secret store > generated+persisted). The harness conftest
+    (AUTH-SESSION-ISOLATION) scrubs every ``NSE_WEB_AUTH_*`` key at collection
+    finish, so an unauthenticated ``create_app()`` in a test resolves a
+    generated token the test cannot know — every headerless GET 401s.
+    Rather than disabling the middleware (which would invert the auth
+    contract the suite exists to protect), this pins a known env token BEFORE
+    app creation and sends it as a Bearer header: the contract under test
+    (200 + truthful payload) is exercised through the real auth path.
+    """
+
+    def __init__(self, engine=None):
+        import os as _os
+
+        self._token = _os.environ["NSE_WEB_AUTH_TOKEN"]
+        self._client = _make_app(engine)
+
+    def get(self, url, **kw):
+        headers = dict(kw.pop("headers", {}) or {})
+        headers.setdefault("Authorization", f"Bearer {self._token}")
+        return self._client.get(url, headers=headers, **kw)
 
 
 # ---------------------------------------------------------------------------
@@ -893,8 +920,14 @@ class TestDebugSections:
 
 
 class TestDebugApi:
+    @pytest.fixture(autouse=True)
+    def _pinned_auth_token(self, monkeypatch):
+        """Pin a known token the middleware can resolve at create_app time."""
+        monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", "phase20-debug-contract-token")
+        yield
+
     def _client(self, engine=None):
-        return _make_app(engine)
+        return _AuthedClient(engine)
 
     def test_api_state_endpoint(self):
         c = self._client(None)
@@ -1021,12 +1054,12 @@ class TestDebugApi:
         assert "status" in contract
         assert "70D CONTRACT" in contract["status"]
         # And the full snapshot + live state endpoints must still return 200.
-        from fastapi.testclient import TestClient
-
         from nexus_scalp.web.server import create_app
 
         app = create_app()
         app.state.engine = None
-        c = TestClient(app)
+        c = _AuthedClient.__new__(_AuthedClient)
+        c._token = os.environ["NSE_WEB_AUTH_TOKEN"]
+        c._client = TestClient(app)
         assert c.get("/api/debug/state").status_code == 200
         assert c.get("/api/live/state").status_code == 200
