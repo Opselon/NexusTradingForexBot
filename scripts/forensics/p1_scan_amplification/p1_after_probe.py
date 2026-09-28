@@ -7,9 +7,9 @@ returns stale zeros — that bug cost two probe rewrites).
 
 Mirrors p1_pg_probe.py (BEFORE) shape-for-shape so the numbers compare.
 """
+
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 
@@ -36,8 +36,7 @@ FIXED_QUERIES: list[tuple[str, str, tuple]] = [
     ),
     (
         "Q2-after operator summary census (bounded tail, one query)",
-        "SELECT action, generated_at FROM audit_signals "
-        "ORDER BY id DESC LIMIT 2000",
+        "SELECT action, generated_at FROM audit_signals ORDER BY id DESC LIMIT 2000",
         (),
     ),
     (
@@ -83,8 +82,7 @@ FIXED_QUERIES: list[tuple[str, str, tuple]] = [
 def stats() -> tuple[int, int]:
     with psycopg.connect(DSN) as c, c.cursor() as cur:
         cur.execute(
-            "SELECT seq_scan, seq_tup_read FROM pg_stat_user_tables "
-            "WHERE relname = 'audit_signals'"
+            "SELECT seq_scan, seq_tup_read FROM pg_stat_user_tables WHERE relname = 'audit_signals'"
         )
         s, t = cur.fetchone()
         return int(s), int(t)
@@ -101,7 +99,7 @@ def main() -> None:
     parts: list[str] = []
 
     parts.append("=== P1 AFTER: fixed query paths on PostgreSQL 17 ===")
-    parts.append(f"table: audit_signals  rows: 9108 (representative fixture)")
+    parts.append("table: audit_signals  rows: 9108 (representative fixture)")
     parts.append("")
 
     # sanity: every fixed path must return rows
@@ -147,9 +145,7 @@ def main() -> None:
             reads += 1
             hw = now_hw
             with psycopg.connect(DSN) as c, c.cursor() as cur:
-                cur.execute(
-                    "SELECT request_id FROM audit_signals ORDER BY id DESC LIMIT 40"
-                )
+                cur.execute("SELECT request_id FROM audit_signals ORDER BY id DESC LIMIT 40")
                 cur.fetchall()
         time.sleep(0.2)
     s1, t1 = stats()

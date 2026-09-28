@@ -5,6 +5,7 @@ the same implicit transaction makes the counters appear frozen at the
 snapshot taken before the queries ran (probed directly: 0 delta while the
 same connection's own seq scans accumulate).
 """
+
 from __future__ import annotations
 
 import sys
@@ -81,7 +82,7 @@ def stats() -> dict[str, int]:
                    FROM pg_stat_user_tables WHERE relname='audit_signals'"""
             )
             keys = ("seq_scan", "seq_tup_read", "idx_scan", "idx_tup_fetch")
-            return dict(zip(keys, (int(v or 0) for v in cur.fetchone())))
+            return dict(zip(keys, (int(v or 0) for v in cur.fetchone()), strict=False))
 
 
 def run_class(name: str, sql: str, args: tuple, rate: float, seconds: float) -> dict:

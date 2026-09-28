@@ -4,6 +4,7 @@ Creates a representative audit_signals table (mirroring the live shape),
 captures pg_stat_user_tables before/after, and runs the four forensic query
 shapes with EXPLAIN (ANALYZE, BUFFERS) where safe.
 """
+
 from __future__ import annotations
 
 import json
@@ -73,9 +74,7 @@ STAGES = [
 
 
 def payload_for(i: int, action: str, ts: datetime) -> str:
-    model_action = action if action == "NO_TRADE" else random.choice(
-        ["BUY_MARKET", "SELL_MARKET"]
-    )
+    model_action = action if action == "NO_TRADE" else random.choice(["BUY_MARKET", "SELL_MARKET"])
     return json.dumps(
         {
             "model_action": model_action,
@@ -118,7 +117,7 @@ def seed(n_rows: int = 9108, days: float = 7.0) -> None:
                 ts.isoformat(),
                 payload_for(i, action, ts),
                 "STANDARD",
-                "MODEL_SIGNAL" if action == "NO_TRADE" else "MODEL_SIGNAL",
+                "MODEL_SIGNAL",
                 stage if action == "NO_TRADE" else "FINAL_DECISION",
                 blocked if action == "NO_TRADE" else None,
                 round(rng.random(), 3),
@@ -138,7 +137,9 @@ def seed(n_rows: int = 9108, days: float = 7.0) -> None:
         )
     with psycopg.connect(DSN_DB) as c:
         c.autocommit = True
-        with c.cursor().copy("COPY audit_signals (request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload, execution_mode, reason_code, decision_stage, blocked_by, htf_score, smc_score, confidence_before_filters, confidence_after_filters, signal_dedup_key, preferred_direction, raw_prob_buy, raw_prob_sell, raw_prob_no_trade, raw_prob_wait, confidence_source, spread_usd, account_source) FROM STDIN") as cp:
+        with c.cursor().copy(
+            "COPY audit_signals (request_id, symbol, action, confidence, proposed_entry, stop_loss, take_profit, regime, generated_at, payload, execution_mode, reason_code, decision_stage, blocked_by, htf_score, smc_score, confidence_before_filters, confidence_after_filters, signal_dedup_key, preferred_direction, raw_prob_buy, raw_prob_sell, raw_prob_no_trade, raw_prob_wait, confidence_source, spread_usd, account_source) FROM STDIN"
+        ) as cp:
             for r in rows:
                 cp.write_row(r)
         with c.cursor() as cur:
@@ -155,7 +156,7 @@ def stats(label: str) -> dict:
                    FROM pg_stat_user_tables WHERE relname='audit_signals'"""
             )
             cols = ("rel", "seq_scan", "seq_tup_read", "idx_scan", "live", "dead")
-            row = dict(zip(cols, cur.fetchone()))
+            row = dict(zip(cols, cur.fetchone(), strict=False))
             cur.execute("SELECT pg_size_pretty(pg_total_relation_size('audit_signals'))")
             row["size"] = cur.fetchone()[0]
             cur.execute("SELECT count(*) FROM audit_signals")
