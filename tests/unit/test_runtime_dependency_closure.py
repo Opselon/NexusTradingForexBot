@@ -37,6 +37,7 @@ import importlib.metadata as md
 import re
 import subprocess
 import sys
+from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 
 import pytest
@@ -275,6 +276,68 @@ def test_gate_fails_closed_with_a_readable_diagnostic(monkeypatch, capsys) -> No
     assert "click" in out
     assert "incomplete or corrupted" in out
     assert "Traceback" not in out
+
+
+def test_accelerator_companions_are_optional_but_click_is_not(monkeypatch) -> None:
+    """Platform-conditional transitive deps must not be false failures.
+
+    torch declares its nvidia-* CUDA wheels behind ``platform_system ==
+    "Linux"``, so they install only on a CUDA Linux host. On a CPU-only or
+    non-Linux runner their import root is unresolvable — reporting that as a
+    broken install would fail CI on every non-GPU host while the real click
+    gap (a mandatory transitive requirement) stayed silent.
+    """
+
+    def _fake_requires(name: str) -> list[str]:
+        if name == "torch":
+            return [
+                "nvidia-cusparselt-cu13==0.4.0; platform_system == 'Linux'",
+                "triton>=3.0; platform_system == 'Linux'",
+                "nvidia-cudnn-cu13; platform_machine == 'x86_64'",
+                "filelock",  # marker-free -> mandatory
+            ]
+        if name == "uvicorn":
+            return ["click>=8", "h11>=0.8"]
+        raise PackageNotFoundError(name)
+
+    monkeypatch.setattr(rdeps._md, "requires", _fake_requires)
+    # This host is not the Linux/CUDA build the markers gate on, so these
+    # companions are optional HERE — but only because the marker says so.
+    assert rdeps._is_optional_companion("nvidia-cusparselt-cu13", parent="torch")
+    assert rdeps._is_optional_companion("triton", parent="torch")
+    assert rdeps._is_optional_companion("nvidia-cudnn-cu13", parent="torch")
+    # A marker-free or plain transitive requirement is NEVER downgraded.
+    assert not rdeps._is_optional_companion("filelock", parent="torch")
+    assert not rdeps._is_optional_companion("click", parent="uvicorn")
+    assert not rdeps._is_optional_companion("h11", parent="uvicorn")
+
+
+def test_real_torch_cuda_companions_classified_if_torch_installed() -> None:
+    """Ground the synthetic test in the actual torch metadata when present."""
+    try:
+        requires = rdeps._md.requires("torch") or []
+    except Exception:
+        pytest.skip("torch not installed in this environment")
+    cuda = [
+        rdeps._parse(raw).name.lower().replace("_", "-")
+        for raw in requires
+        if "nvidia" in raw.lower()
+    ]
+    if not cuda:
+        pytest.skip("torch wheel variant exposes no nvidia-* requirements")
+    for name in cuda:
+        assert rdeps._is_optional_companion(name, parent="torch")
+
+
+def test_no_marker_evidence_stays_mandatory(monkeypatch) -> None:
+    """Fail-safe: unreadable parent metadata -> the package stays required."""
+    assert not rdeps._is_optional_companion("anything", parent=None)
+
+    def _broken_requires(name: str) -> list[str]:
+        raise OSError("metadata unreadable")
+
+    monkeypatch.setattr(rdeps._md, "requires", _broken_requires)
+    assert not rdeps._is_optional_companion("click", parent="uvicorn")
 
 
 def test_gate_never_installs_inside_a_frozen_bundle(monkeypatch) -> None:

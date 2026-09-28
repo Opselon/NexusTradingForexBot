@@ -325,6 +325,56 @@ def _unimportable_modules(name: str) -> list[str]:
     return []
 
 
+def _is_optional_companion(name: str, parent: str | None = None) -> bool:
+    """A transitive dependency whose own requirement is platform-conditional.
+
+    Derived, never listed: the decision comes from the marker the PARENT
+    distribution wrote on this requirement (torch declares its nvidia-* CUDA
+    wheels behind ``platform_system == "Linux"``, so they only install on a
+    CUDA-capable Linux host). A package required only under such a marker
+    cannot be missing on a host that marker excludes — so importability is not
+    demanded for it. Presence and version still are.
+
+    The marker is taken from the parent's own ``requires`` (the caller passes
+    it), because the companion itself is frequently not discoverable through
+    ``packages_distributions()`` — that is precisely the case being judged.
+
+    Absent any marker evidence the package is treated as mandatory (fail-safe
+    direction: over-reporting a genuine gap beats silently accepting one).
+    """
+    if parent is None:
+        return False
+    key = name.lower().replace("_", "-")
+    try:
+        requires = _md.requires(parent) or []
+    except Exception:
+        return False
+    for raw in requires:
+        parsed = _parse(raw)
+        if parsed.name.lower().replace("_", "-") != key:
+            continue
+        marker = parsed.marker.strip()
+        if not marker or "extra" in marker:
+            continue
+        # A marker that excludes THIS host already excluded the install, so
+        # absence or unimportability is not a defect.
+        if not _marker_applies(marker):
+            return True
+        if any(
+            token in marker
+            for token in (
+                "platform_machine",
+                "sys_platform",
+                "platform_system",
+                "os_name",
+                "platform_version",
+                "implementation_name",
+            )
+        ):
+            return True
+    return False
+
+
 def verify_runtime_closure(
     root: Path | None = None,
     *,
@@ -406,6 +456,20 @@ def verify_runtime_closure(
         for raw in children:
             child = _parse(raw)
             if child.is_extra or not _marker_applies(child.marker):
+                continue
+            # Optional accelerator/platform companions (torch's nvidia-* CUDA
+            # wheels, platform-specific shims) are installed only on capable
+            # hosts. Their import root is not resolvable on a CPU-only or
+            # different-OS runner, so a hard importability check would report
+            # a healthy install as broken. They are recorded as inspected-but-
+            # optional: presence/versions are still verified, importability is
+            # not demanded. Only names the project itself declared carry the
+            # strict contract — those are never downgraded.
+            if _is_optional_companion(child.name, parent=req.name):
+                inspected.add(child.name.lower().replace("_", "-"))
+                owned_by.setdefault(
+                    child.name.lower().replace("_", "-"), []
+                ).append(req.name)
                 continue
             queue.append((child, req.name))
 

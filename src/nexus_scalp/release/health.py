@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
+
 from . import environment as envmod
 from . import paths
 from .metadata import get_version_info
@@ -41,14 +43,7 @@ from .state_taxonomy import (
     UNKNOWN,
 )
 
-try:  # observability stays optional so this module remains import-light
-    from nexus_scalp.observability.logging import get_logger
-
-    logger = get_logger("nexus_scalp.release.health")
-except Exception:  # pragma: no cover - fallback keeps health importable
-    import logging
-
-    logger = logging.getLogger("nexus_scalp.release.health")
+logger = get_logger("nexus_scalp.release.health")
 
 # Categories known to the diagnostics/health contract.
 ALL_CATEGORIES = [
