@@ -372,7 +372,6 @@ class ModelBundleStore:
             only writer of CHAMPION rows.
         """
         import hashlib as _hashlib
-        import sqlite3 as _sqlite3
 
         from nexus_scalp.model_lifecycle.load_integrity import (
             ArtifactIntegrityError,
@@ -381,6 +380,7 @@ class ModelBundleStore:
         )
 
         try:
+            from nexus_scalp.adapters.database.provider_store import query_rows
             from nexus_scalp.model_lifecycle.models import ModelStatus
         except Exception:
             return
@@ -389,27 +389,28 @@ class ModelBundleStore:
             audit = getattr(om, "audit", None) if om is not None else None
             if audit is None:
                 audit = getattr(self, "audit", None)
-            if audit is None or not getattr(audit, "_is_sqlite", False):
-                logger.info("[TRUST_ANCHOR] event=REGISTRY_CHECK_INERT reason=no_sqlite_audit")
+            if audit is None:
+                logger.info("[TRUST_ANCHOR] event=REGISTRY_CHECK_INERT reason=no_audit_repo")
                 return
-            db_path = getattr(audit, "_db_path", None)
-            if not db_path:
-                logger.info("[TRUST_ANCHOR] event=REGISTRY_CHECK_INERT reason=no_db_path")
-                return
-            conn = _sqlite3.connect(db_path, timeout=5.0)
-            try:
-                row = conn.execute(
-                    "SELECT model_id, artifact_fingerprint FROM experience_model_registry "
-                    "WHERE lifecycle_status=? ORDER BY registered_at DESC LIMIT 1;",
-                    (ModelStatus.CHAMPION.value,),
-                ).fetchone()
-            finally:
-                conn.close()
+            # Provider-portable (PG-TRUST-ANCHOR-001): this check used to bail
+            # out with `reason=no_sqlite_audit` whenever the audit domain was
+            # not SQLite, so on a pooled provider the governed CHAMPION row was
+            # never consulted at all — the anchor was inert by construction, not
+            # by absence of a champion. The registry read now goes through the
+            # same provider seam the lifecycle registry itself writes through.
+            rows = query_rows(
+                audit,
+                "SELECT model_id, artifact_fingerprint FROM experience_model_registry "
+                "WHERE lifecycle_status=? ORDER BY registered_at DESC LIMIT 1",
+                (ModelStatus.CHAMPION.value,),
+                operation="trust_anchor.champion_row",
+            )
+            row = rows[0] if rows else None
             if not row:
                 logger.info("[TRUST_ANCHOR] event=REGISTRY_CHECK_INERT reason=no_champion_row")
                 return
-            champion_id = str(row[0] or "")
-            governed_fp = str(row[1] or "").strip().lower()
+            champion_id = str(row.get("model_id") or "")
+            governed_fp = str(row.get("artifact_fingerprint") or "").strip().lower()
             if not governed_fp:
                 logger.info(
                     "[TRUST_ANCHOR] event=REGISTRY_CHECK_INERT reason=champion_row_has_no_fingerprint"
