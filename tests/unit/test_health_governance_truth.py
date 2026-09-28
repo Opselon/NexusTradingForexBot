@@ -594,6 +594,9 @@ class TestHealthEngineFailureIsolation:
         # The broken check reports FAIL/ERROR...
         assert names["GPU"].verdict == "FAIL"
         assert names["GPU"].state == ERROR
-        # ...and every OTHER check still ran and is untouched by it.
-        assert names["SYSTEM"].verdict == "PASS"
+        # ...and every OTHER check still ran and is untouched by it. RUNTIME is
+        # the architecture-independent PASS probe (SYSTEM fails by design on
+        # macOS ARM64, which the OS-matrix CI job exercises), so the
+        # isolation assertion must not pin a platform-dependent verdict.
+        assert names["RUNTIME"].verdict == "PASS"
         assert len(entries) > 1
