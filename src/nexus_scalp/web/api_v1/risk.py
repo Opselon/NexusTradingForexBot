@@ -33,21 +33,50 @@ def risk_status(request: Request) -> Any:
         if isinstance(checks, dict):
             risk_checks = sanitize_config(checks)
     config_block: dict[str, Any] | None = None
-    try:
-        risk_cfg = engine.config.risk
-        config_block = sanitize_config(
-            {
-                "max_account_drawdown_pct": getattr(risk_cfg, "max_account_drawdown_pct", None),
-                "risk_per_trade_pct": getattr(risk_cfg, "risk_per_trade_pct", None),
-                "max_concurrent_positions": getattr(risk_cfg, "max_concurrent_positions", None),
-                "max_spread_points": getattr(risk_cfg, "max_spread_points", None),
-                "max_margin_usage_pct": getattr(risk_cfg, "max_margin_usage_pct", None),
-                "max_allowed_lots": getattr(risk_cfg, "max_allowed_lots", None),
-                "enforce_stop_loss": getattr(risk_cfg, "enforce_stop_loss", None),
-            }
-        )
-    except Exception:
-        config_block = None
+    # RISK-LIVE-003: engine.config is the BOOTSTRAP config (live.yaml). The
+    # effective limits live in the runtime config store — the same authority
+    # GET /api/config exposes — and the operator's persisted values (settings
+    # DB, source=WEB_UI) are already rehydrated into it. Reading engine.config
+    # here showed a stale drawdown limit that no longer matched /config, so a
+    # gauge compared the live drawdown against an obsolete budget. Prefer the
+    # runtime snapshot; keep the bootstrap as a diagnostic fallback.
+    risk_cfg = None
+    config_source = "bootstrap"
+    store = getattr(engine, "runtime_config", None)
+    if store is not None:
+        try:
+            risk_cfg = store.get_snapshot().to_app_config().risk
+            config_source = "runtime"
+        except Exception:
+            risk_cfg = None
+    if risk_cfg is None:
+        try:
+            risk_cfg = engine.config.risk
+        except Exception:
+            risk_cfg = None
+    if risk_cfg is not None:
+        try:
+            config_block = sanitize_config(
+                {
+                    "max_account_drawdown_pct": getattr(risk_cfg, "max_account_drawdown_pct", None),
+                    "risk_per_trade_pct": getattr(risk_cfg, "risk_per_trade_pct", None),
+                    "max_concurrent_positions": getattr(risk_cfg, "max_concurrent_positions", None),
+                    "max_spread_points": getattr(risk_cfg, "max_spread_points", None),
+                    "max_margin_usage_pct": getattr(risk_cfg, "max_margin_usage_pct", None),
+                    "max_allowed_lots": getattr(risk_cfg, "max_allowed_lots", None),
+                    "enforce_stop_loss": getattr(risk_cfg, "enforce_stop_loss", None),
+                }
+            )
+        except Exception:
+            config_block = None
+        if config_block is not None:
+            config_block["config_source"] = config_source
+            try:
+                config_block["configuration_version"] = (
+                    store.get_version() if store is not None else None
+                )
+            except Exception:
+                config_block["configuration_version"] = None
     return ok(
         request,
         {

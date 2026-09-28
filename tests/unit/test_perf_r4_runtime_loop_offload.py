@@ -170,3 +170,30 @@ def test_execution_and_freshness_gates_not_moved_to_worker():
     assert "_process_tick_pipeline" not in source
     assert "get_account_info" not in source
     assert "wait_for" not in source
+
+
+def test_observable_account_refresh_tolerates_non_numeric_engine_doubles():
+    """A test-double engine (MagicMock attributes) must not trip the helper.
+
+    Regression for the CI failure on this file: the pre-halt account refresh
+    compared getattr(engine,'_peak_equity') to 0.0, and a MagicMock engine's
+    attribute is not numeric. Real engines hold a float; the helper now guards
+    the arithmetic instead of trusting the attribute type.
+    """
+    engine = MagicMock()
+    engine._peak_equity = MagicMock()  # deliberately not a number
+    engine._account_freshness = "MISSING"
+    engine._last_account_info = None
+    engine._last_account_refresh = 0.0
+    engine._account_last_successful_refresh = 0.0
+    engine._account_snapshot = None
+    engine.adapter.get_account_info.return_value = SimpleNamespace(equity=100.0)
+    engine.adapter.get_account_snapshot.return_value = SimpleNamespace(available=True)
+    engine._restore_peak_equity = MagicMock()
+
+    RuntimeLoop(engine)._refresh_observable_account_state()
+
+    # A non-numeric baseline means "absent", so the restore ran — and no
+    # TypeError escaped the helper (the bug that failed this suite on CI).
+    assert engine._restore_peak_equity.called
+    assert engine._account_freshness == "FRESH"

@@ -968,9 +968,19 @@ def _risk_section(engine: Any) -> dict[str, Any]:
         out["runtime_risk_state"] = str(
             getattr(engine, "_runtime_risk_state", "RUNNING") or "RUNNING"
         )
-        out["runtime_risk_state_effective"] = str(
-            getattr(engine, "runtime_risk_state", "RUNNING") or "RUNNING"
-        )
+        # RISK-LIVE-001: LiveEngine.runtime_risk_state is a METHOD (the
+        # derived "effective" state incl. DEGRADED), not a property, so a bare
+        # getattr() yields a bound-method repr instead of the state string —
+        # the frontend then uppercases garbage and renders UNKNOWN although the
+        # persisted state is HALTED. Resolve it: call when callable, fall back
+        # to the persisted string, and only then to the RUNNING default.
+        _effective = getattr(engine, "runtime_risk_state", "RUNNING")
+        if callable(_effective):
+            try:
+                _effective = _effective()
+            except Exception:
+                _effective = getattr(engine, "_runtime_risk_state", "RUNNING")
+        out["runtime_risk_state_effective"] = str(_effective or "RUNNING")
         out["halt_reason"] = str(getattr(engine, "_halt_reason", "") or "")
         out["halt_triggered_at"] = str(getattr(engine, "_halt_triggered_at", "") or "")
         circuit = getattr(engine, "_hot_path_circuit", None)
