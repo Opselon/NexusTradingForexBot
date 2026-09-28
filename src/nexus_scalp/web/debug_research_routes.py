@@ -1756,11 +1756,25 @@ def register_debug_research_routes(
             from nexus_scalp.research.observability import ResearchObservabilityStore
 
             obs = ResearchObservabilityStore(engine.audit)
+            heatmap = obs.gate_failure_heatmap()
+            families = obs.family_analytics()
+            # A provider/DB fault must NOT be reported as "available with
+            # zeros": the store sets ``available: False`` + the error when a
+            # read actually failed, and empty data stays ``available: True"
+            # with empty aggregates. The UI renders UNAVAILABLE vs NO DATA.
+            analytics_ok = bool(heatmap.get("available", True)) and bool(
+                families.get("available", True)
+            )
             return serialize_enums(
                 {
-                    "available": True,
-                    "heatmap": obs.gate_failure_heatmap(),
-                    "families": obs.family_analytics(),
+                    "available": analytics_ok,
+                    "reason": (
+                        "research observability store unavailable"
+                        if not analytics_ok
+                        else None
+                    ),
+                    "heatmap": heatmap,
+                    "families": families,
                 }
             )
         except Exception as e:

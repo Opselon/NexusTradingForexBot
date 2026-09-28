@@ -917,10 +917,11 @@ class ResearchObservabilityStore:
             out["rejection_reasons"] = dict(
                 sorted(reasons.items(), key=lambda kv: kv[1], reverse=True)
             )
+            out["available"] = True
             return out
         except Exception as e:
             logger.error("[RESEARCH_OBS] heatmap failed", error=str(e))
-            return out
+            return {**out, "available": False, "error": str(e)}
 
     def family_analytics(self) -> dict[str, Any]:
         """Grouped candidate analytics by family / discovery window / tier."""
@@ -946,6 +947,7 @@ class ResearchObservabilityStore:
                 fs = score.get("final_score")
                 if isinstance(fs, (int, float)):
                     bucket["scores"].append(float(fs))
+            out["available"] = True
             for _fam, bucket in out["families"].items():
                 scores = bucket["scores"]
                 bucket["avg_score"] = round(sum(scores) / len(scores), 3) if scores else None
@@ -956,10 +958,11 @@ class ResearchObservabilityStore:
                     else 0.0
                 )
                 del bucket["scores"]
+            out["available"] = True
             return out
         except Exception as e:
             logger.error("[RESEARCH_OBS] family analytics failed", error=str(e))
-            return out
+            return {**out, "available": False, "error": str(e)}
 
     # ==================================================================
     # One-click trace (spec 12)

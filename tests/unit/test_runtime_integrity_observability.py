@@ -199,7 +199,13 @@ def test_unrouted_repo_reports_unavailable_not_fake_zero(
     store = ResearchObservabilityStore(audit_repo=repo)
 
     heatmap = store.gate_failure_heatmap()
-    assert heatmap == {"by_gate": {}, "rejection_reasons": {}}
+    # Aggregates stay empty (no rows were read) AND the failure is marked:
+    # available: False + the error, so the route can tell UNAVAILABLE from a
+    # genuinely empty result instead of a fake-zero success.
+    assert heatmap["by_gate"] == {}
+    assert heatmap["rejection_reasons"] == {}
+    assert heatmap["available"] is False
+    assert heatmap["error"]
 
 
 # ---------------------------------------------------------------------------
