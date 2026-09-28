@@ -453,7 +453,7 @@ def register_debug_research_routes(
                     scaler_ready = bool(getattr(bundle.scaler, "is_ready", lambda: False)())
                     probs = engine._last_probs
                     last_infer_ok = probs is not None
-                    metrics: dict[str, Any] = {
+                    metrics = {
                         "artifact_path": str(getattr(bundle, "artifact_path", "")),
                         "scaler_ready": scaler_ready,
                         "last_inference_available": last_infer_ok,
@@ -516,7 +516,7 @@ def register_debug_research_routes(
                 )
                 halt_reason = str(getattr(engine, "_halt_reason", "") or "")
                 halt_at = str(getattr(engine, "_halt_triggered_at", "") or "")
-                metrics: dict[str, Any] = {
+                metrics = {
                     "kill_switch_active": kill_switch,
                     "max_allowed_lots": float(getattr(risk, "max_allowed_lots", 0.0)),
                     "hard_max_lots": hard_max,
@@ -613,7 +613,7 @@ def register_debug_research_routes(
                     except Exception:
                         tick_age = None
 
-                metrics: dict[str, Any] = {
+                metrics = {
                     "adapter": type(adapter).__name__,
                     "connection_state": state_name,
                     "connected": connected,
@@ -696,7 +696,7 @@ def register_debug_research_routes(
             worker = getattr(repo, "_worker_thread", None)
             worker_alive = bool(worker.is_alive()) if worker is not None else False
 
-            metrics: dict[str, Any] = {
+            metrics = {
                 "db_path": getattr(repo, "_db_path", ""),
                 "write_queue_depth": queue_size,
                 "worker_alive": worker_alive,
@@ -748,13 +748,19 @@ def register_debug_research_routes(
                 # evidence. Non-zero failures/downgrades degrade the verdict;
                 # the detail says WHY (an operator seeing "healthy" over a
                 # silent write loss is the exact failure mode Phase 13 targets).
-                if metrics["write_failures"] > 0 or metrics["dropped_rows"] > 0:
+                # The counters are typed explicitly: this widget's metrics
+                # literal is heterogeneous (mypy infers dict[str, object]), and
+                # the write-path gate compares them, so the comparison reads
+                # the concrete ints rather than an opaque object.
+                _write_failures = int(metrics["write_failures"])
+                _dropped_rows = int(metrics["dropped_rows"])
+                if _write_failures > 0 or _dropped_rows > 0:
                     add(
                         "Audit Database",
                         "DEGRADED",
-                        f"Writer alive but failing: {metrics['write_failures']} batch failures, "
-                        f"{metrics['dropped_rows']} rows dropped "
-                        f"({metrics['salvaged_rows']} salvaged).",
+                        f"Writer alive but failing: {_write_failures} batch failures, "
+                        f"{_dropped_rows} rows dropped "
+                        f"({int(metrics['salvaged_rows'])} salvaged).",
                         metrics,
                     )
                 else:
