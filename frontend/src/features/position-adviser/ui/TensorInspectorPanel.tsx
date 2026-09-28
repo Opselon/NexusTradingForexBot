@@ -92,6 +92,10 @@ export function TensorInspectorPanel({ tensor, atMs, error, unavailable, loading
 
   const v = tensor.validity;
   const dimsAgree = Boolean(v?.dims_match);
+  // Shape guards: a field the backend omitted must not take the whole page down
+  // (BUG-544 lineage) — it renders as an honest dash, never as an invented value.
+  const shape = Array.isArray(tensor.tensor_shape) ? tensor.tensor_shape : [];
+  const features = Array.isArray(tensor.features) ? tensor.features : [];
 
   return (
     <section className="pa-panel pa-tensor">
@@ -103,7 +107,7 @@ export function TensorInspectorPanel({ tensor, atMs, error, unavailable, loading
         </div>
         <div>
           <dt>{t("position-adviser.tensor.shape", "Tensor shape")}</dt>
-          <dd className="pa-mono">[{tensor.tensor_shape.join(", ")}]</dd>
+          <dd className="pa-mono">[{shape.join(", ")}]</dd>
         </div>
         <div>
           <dt>{t("position-adviser.tensor.dtype", "DType")}</dt>
@@ -159,7 +163,7 @@ export function TensorInspectorPanel({ tensor, atMs, error, unavailable, loading
           </tr>
         </thead>
         <tbody>
-          {tensor.features.map((f) => (
+          {features.map((f) => (
             <tr key={f.name} className={f.finite ? "" : "is-invalid"}>
               <td className="pa-mono">{f.index}</td>
               <td className="pa-mono">{f.name}</td>
@@ -175,17 +179,21 @@ export function TensorInspectorPanel({ tensor, atMs, error, unavailable, loading
       </table>
 
       <ul className="pa-tensor-counts">
-        <li className={v.nan_count ? "pa-bad" : "pa-ok"}>
-          {t("position-adviser.tensor.nan", "NaN: {n}", { n: v.nan_count })}
+        <li className={v?.nan_count ? "pa-bad" : "pa-ok"}>
+          {t("position-adviser.tensor.nan", "NaN: {n}", { n: v?.nan_count ?? 0 })}
         </li>
-        <li className={v.inf_count ? "pa-bad" : "pa-ok"}>
-          {t("position-adviser.tensor.inf", "Inf: {n}", { n: v.inf_count })}
-        </li>
-        <li>
-          {t("position-adviser.tensor.zero", "zero/default: {n}", { n: v.zero_default_count })}
+        <li className={v?.inf_count ? "pa-bad" : "pa-ok"}>
+          {t("position-adviser.tensor.inf", "Inf: {n}", { n: v?.inf_count ?? 0 })}
         </li>
         <li>
-          {t("position-adviser.tensor.sat", "clipped/saturated: {n}", { n: v.saturated_count })}
+          {t("position-adviser.tensor.zero", "zero/default: {n}", {
+            n: v?.zero_default_count ?? 0,
+          })}
+        </li>
+        <li>
+          {t("position-adviser.tensor.sat", "clipped/saturated: {n}", {
+            n: v?.saturated_count ?? 0,
+          })}
         </li>
       </ul>
     </section>
