@@ -1,0 +1,28 @@
+{
+  "runtime": {
+    "provider": "postgresql",
+    "settings_db": "C:\\Users\\Capsizer\\AppData\\Local\\NexusScalpEngine\\databases\\app_settings.db",
+    "configured_database": "nexusdb",
+    "pg_reachable": true
+  },
+  "postgresql": [],
+  "sqlite": [
+    {
+      "store": "C:/Users/Capsizer/source/repos/NexusTradingForexBot/artifacts/audit.db",
+      "level": "warning",
+      "check": "multiple_champion_rows",
+      "table": "experience_model_registry",
+      "detail": "primary_scalp_scalp_v3_70d/v1.0 has 9 CHAMPION rows"
+    },
+    {
+      "store": "C:/Users/Capsizer/source/repos/NexusTradingForexBot/artifacts/audit.db",
+      "level": "info",
+      "check": "champion_row_count",
+      "table": "experience_model_registry",
+      "detail": "9 CHAMPION rows across all identities (governed supersession keeps history; verify the latest is served)"
+    }
+  ],
+  "sqlite_stores": [
+    "C:/Users/Capsizer/source/repos/NexusTradingForexBot/artifacts/audit.db"
+  ]
+}

@@ -1,0 +1,720 @@
+{
+  "generated_at": "2026-09-27T23:42:05.146469+00:00",
+  "classification_legend": {
+    "EXPECTED": "by-design: the table belongs to one provider only",
+    "STALE": "rows exist on one side only; the other has not caught up",
+    "INCORRECT": "same logical identity, different truth \u2014 needs operator review",
+    "UNKNOWN": "no evidence to classify; recorded for a human"
+  },
+  "domains": {
+    "DATA": [
+      {
+        "table": "audit_experiences",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 5239,
+        "sqlite_rows": 5239,
+        "pg_latest_ts": "2026-09-23T22:50:57+00:00",
+        "sqlite_latest_ts": "2026-09-23T22:50:57+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "audit_experience_outcomes",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 1715,
+        "sqlite_rows": 1715,
+        "pg_latest_ts": "2026-09-23T16:43:21+00:00",
+        "sqlite_latest_ts": "2026-09-23T16:43:21+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      }
+    ],
+    "FEATURES": [
+      {
+        "table": "audit_signals",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 11302,
+        "sqlite_rows": 11266,
+        "pg_latest_ts": "2026-09-27T03:12:43.964524+00:00",
+        "sqlite_latest_ts": "2026-09-24T18:40:40+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "STALE",
+        "evidence": "row gap +36; postgresql has the newer latest timestamp (pg=2026-09-27T03:12:43.964524+00:00 sqlite=2026-09-24T18:40:40+00:00)"
+      },
+      {
+        "table": "research_run_snapshots",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 4357,
+        "sqlite_rows": 4357,
+        "pg_latest_ts": "2026-09-22T00:33:28.002870+00:00",
+        "sqlite_latest_ts": "2026-09-22T00:33:28.002870+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      }
+    ],
+    "MODEL": [
+      {
+        "table": "experience_model_registry",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 26,
+        "sqlite_rows": 26,
+        "pg_latest_ts": "2026-09-24T18:44:54.783924+00:00",
+        "sqlite_latest_ts": "2026-09-24T22:52:29.348251+00:00",
+        "schema_column_divergence": [
+          "child_model_id",
+          "gate_summary",
+          "lifecycle_status",
+          "parent_model_id",
+          "parent_model_version",
+          "promotion_reason",
+          "training_run_id",
+          "validation_run_ids"
+        ],
+        "unique_divergence": [
+          "(id)",
+          "(model_id, model_version, artifact_fingerprint)",
+          "(model_id,model_version,artifact_fingerprint)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "training_runs",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 6,
+        "sqlite_rows": 6,
+        "pg_latest_ts": "2026-09-07T05:40:05.459373+00:00",
+        "sqlite_latest_ts": "2026-09-07T05:40:05.459373+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "model_comparisons",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 4,
+        "sqlite_rows": 4,
+        "pg_latest_ts": "2026-09-07T05:40:05.490265+00:00",
+        "sqlite_latest_ts": "2026-09-07T05:40:05.490265+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "model_load_history",
+        "pg_present": true,
+        "sqlite_present": false,
+        "classification": "EXPECTED",
+        "evidence": "table exists only on postgresql",
+        "rows_postgresql": 30
+      },
+      {
+        "table": "model_runtime_health",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 1940,
+        "sqlite_rows": 1935,
+        "pg_latest_ts": "2026-09-27T03:12:49.741613+00:00",
+        "sqlite_latest_ts": "2026-09-24T18:40:55.902038+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(checked_at)",
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "STALE",
+        "evidence": "row gap +5; postgresql has the newer latest timestamp (pg=2026-09-27T03:12:49.741613+00:00 sqlite=2026-09-24T18:40:55.902038+00:00)"
+      }
+    ],
+    "STRATEGY": [
+      {
+        "table": "strategy_registry",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 4109,
+        "sqlite_rows": 4109,
+        "pg_latest_ts": "2026-09-24T00:15:27.754619+00:00",
+        "sqlite_latest_ts": "2026-09-24T18:40:55.927223+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)",
+          "(strategy_id, strategy_version)",
+          "(strategy_id,strategy_version)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "strategy_intelligence_registry",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 373,
+        "sqlite_rows": 373,
+        "pg_latest_ts": "2026-09-24T18:13:49.413982+00:00",
+        "sqlite_latest_ts": "2026-09-24T18:40:35.350464+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "strategy_evolution_candidates",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 1,
+        "sqlite_rows": 1,
+        "pg_latest_ts": "2026-09-07T16:58:01.280332+00:00",
+        "sqlite_latest_ts": "2026-09-07T16:58:01.280332+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      }
+    ],
+    "BACKTEST": [
+      {
+        "table": "strategy_registry",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 4109,
+        "sqlite_rows": 4109,
+        "pg_latest_ts": "2026-09-24T00:15:27.754619+00:00",
+        "sqlite_latest_ts": "2026-09-24T18:40:55.927223+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)",
+          "(strategy_id, strategy_version)",
+          "(strategy_id,strategy_version)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "research_runs",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 4357,
+        "sqlite_rows": 4357,
+        "pg_latest_ts": "2026-09-22T00:33:28.060140+00:00",
+        "sqlite_latest_ts": "2026-09-22T00:33:28.060140+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "research_evidence",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 18316,
+        "sqlite_rows": 18316,
+        "pg_latest_ts": "2026-09-22T00:33:28.049604+00:00",
+        "sqlite_latest_ts": "2026-09-22T00:33:28.049604+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      }
+    ],
+    "WALK-FORWARD": [
+      {
+        "table": "strategy_registry",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 4109,
+        "sqlite_rows": 4109,
+        "pg_latest_ts": "2026-09-24T00:15:27.754619+00:00",
+        "sqlite_latest_ts": "2026-09-24T18:40:55.927223+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)",
+          "(strategy_id, strategy_version)",
+          "(strategy_id,strategy_version)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "research_gates",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 26140,
+        "sqlite_rows": 26140,
+        "pg_latest_ts": "2026-09-22T00:33:28.049604+00:00",
+        "sqlite_latest_ts": "2026-09-22T00:33:28.049604+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      }
+    ],
+    "OOS": [
+      {
+        "table": "strategy_registry",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 4109,
+        "sqlite_rows": 4109,
+        "pg_latest_ts": "2026-09-24T00:15:27.754619+00:00",
+        "sqlite_latest_ts": "2026-09-24T18:40:55.927223+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)",
+          "(strategy_id, strategy_version)",
+          "(strategy_id,strategy_version)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "research_gates",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 26140,
+        "sqlite_rows": 26140,
+        "pg_latest_ts": "2026-09-22T00:33:28.049604+00:00",
+        "sqlite_latest_ts": "2026-09-22T00:33:28.049604+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "research_runs",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 4357,
+        "sqlite_rows": 4357,
+        "pg_latest_ts": "2026-09-22T00:33:28.060140+00:00",
+        "sqlite_latest_ts": "2026-09-22T00:33:28.060140+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      }
+    ],
+    "ROBUSTNESS": [
+      {
+        "table": "strategy_registry",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 4109,
+        "sqlite_rows": 4109,
+        "pg_latest_ts": "2026-09-24T00:15:27.754619+00:00",
+        "sqlite_latest_ts": "2026-09-24T18:40:55.927223+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)",
+          "(strategy_id, strategy_version)",
+          "(strategy_id,strategy_version)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "research_gates",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 26140,
+        "sqlite_rows": 26140,
+        "pg_latest_ts": "2026-09-22T00:33:28.049604+00:00",
+        "sqlite_latest_ts": "2026-09-22T00:33:28.049604+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      }
+    ],
+    "COUNTERFACTUAL": [
+      {
+        "table": "research_evidence",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 18316,
+        "sqlite_rows": 18316,
+        "pg_latest_ts": "2026-09-22T00:33:28.049604+00:00",
+        "sqlite_latest_ts": "2026-09-22T00:33:28.049604+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "research_events",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 82726,
+        "sqlite_rows": 82726,
+        "pg_latest_ts": "2026-09-22T00:33:28.060140+00:00",
+        "sqlite_latest_ts": "2026-09-22T00:33:28.060140+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      }
+    ],
+    "REPLAY": [
+      {
+        "table": "audit_broker_orders",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 10648,
+        "sqlite_rows": 10647,
+        "pg_latest_ts": "2026-09-27T12:44:33.868661+00:00",
+        "sqlite_latest_ts": "2026-09-23T22:50:48.920373+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(ticket)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "STALE",
+        "evidence": "row gap +1; postgresql has the newer latest timestamp (pg=2026-09-27T12:44:33.868661+00:00 sqlite=2026-09-23T22:50:48.920373+00:00)"
+      },
+      {
+        "table": "audit_broker_deals",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 8484,
+        "sqlite_rows": 8482,
+        "pg_latest_ts": "2026-09-27T12:44:33.868661+00:00",
+        "sqlite_latest_ts": "2026-09-23T22:50:48.920373+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(ticket)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "STALE",
+        "evidence": "row gap +2; postgresql has the newer latest timestamp (pg=2026-09-27T12:44:33.868661+00:00 sqlite=2026-09-23T22:50:48.920373+00:00)"
+      },
+      {
+        "table": "audit_broker_trades",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 4116,
+        "sqlite_rows": 4115,
+        "pg_latest_ts": "2026-09-27T12:44:33.868661+00:00",
+        "sqlite_latest_ts": "2026-09-23T22:50:48.920373+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "STALE",
+        "evidence": "row gap +1; postgresql has the newer latest timestamp (pg=2026-09-27T12:44:33.868661+00:00 sqlite=2026-09-23T22:50:48.920373+00:00)"
+      },
+      {
+        "table": "position_lifecycle_events",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 3888,
+        "sqlite_rows": 3817,
+        "pg_latest_ts": "2026-09-23T16:43:21+00:00",
+        "sqlite_latest_ts": "2026-09-23T16:43:21+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "STALE",
+        "evidence": "row gap +71; sqlite has the newer latest timestamp (pg=2026-09-23T16:43:21+00:00 sqlite=2026-09-23T16:43:21+00:00)"
+      }
+    ],
+    "VALIDATION": [
+      {
+        "table": "research_runs",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 4357,
+        "sqlite_rows": 4357,
+        "pg_latest_ts": "2026-09-22T00:33:28.060140+00:00",
+        "sqlite_latest_ts": "2026-09-22T00:33:28.060140+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "research_gates",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 26140,
+        "sqlite_rows": 26140,
+        "pg_latest_ts": "2026-09-22T00:33:28.049604+00:00",
+        "sqlite_latest_ts": "2026-09-22T00:33:28.049604+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "research_evidence",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 18316,
+        "sqlite_rows": 18316,
+        "pg_latest_ts": "2026-09-22T00:33:28.049604+00:00",
+        "sqlite_latest_ts": "2026-09-22T00:33:28.049604+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "model_governance_events",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 59169,
+        "sqlite_rows": 59164,
+        "pg_latest_ts": "2026-09-27T23:37:53.971578+00:00",
+        "sqlite_latest_ts": "2026-09-24T22:52:29.369285+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "STALE",
+        "evidence": "row gap +5; postgresql has the newer latest timestamp (pg=2026-09-27T23:37:53.971578+00:00 sqlite=2026-09-24T22:52:29.369285+00:00)"
+      }
+    ],
+    "PROMOTION": [
+      {
+        "table": "model_promotion_audit",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 0,
+        "sqlite_rows": 0,
+        "pg_latest_ts": null,
+        "sqlite_latest_ts": null,
+        "schema_column_divergence": [],
+        "unique_divergence": [],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "model_rollback_audit",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 0,
+        "sqlite_rows": 0,
+        "pg_latest_ts": null,
+        "sqlite_latest_ts": null,
+        "schema_column_divergence": [],
+        "unique_divergence": [],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      },
+      {
+        "table": "model_governance_events",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 59169,
+        "sqlite_rows": 59164,
+        "pg_latest_ts": "2026-09-27T23:37:53.971578+00:00",
+        "sqlite_latest_ts": "2026-09-24T22:52:29.369285+00:00",
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "STALE",
+        "evidence": "row gap +5; postgresql has the newer latest timestamp (pg=2026-09-27T23:37:53.971578+00:00 sqlite=2026-09-24T22:52:29.369285+00:00)"
+      },
+      {
+        "table": "shadow_promotions",
+        "pg_present": true,
+        "sqlite_present": true,
+        "pg_rows": 0,
+        "sqlite_rows": 0,
+        "pg_latest_ts": null,
+        "sqlite_latest_ts": null,
+        "schema_column_divergence": [],
+        "unique_divergence": [
+          "(id)"
+        ],
+        "fk_divergence": {
+          "pg": [],
+          "sqlite": []
+        },
+        "classification": "EXPECTED",
+        "evidence": "identical row count"
+      }
+    ]
+  }
+}

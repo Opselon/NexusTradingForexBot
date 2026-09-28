@@ -1,0 +1,230 @@
+{
+  "relationships": [
+    {
+      "child": [
+        "research_gates",
+        "research_run_id"
+      ],
+      "child_column_not_null": true,
+      "enforcement": "application",
+      "evidence": "no DB constraint; 0 orphan rows in the live store, so the application currently holds the invariant",
+      "guard": "a gate verdict for a run that does not exist is fabricated evidence",
+      "importance": "critical",
+      "invariant": "every gate belongs to a research run that exists",
+      "live_orphan_rows": 0,
+      "name": "research_gates.research_run_id -> research_runs.run_id",
+      "note": "",
+      "orphan_class": "EXPECTED",
+      "parent": [
+        "research_runs",
+        "run_id"
+      ],
+      "stage": "VALIDATION"
+    },
+    {
+      "child": [
+        "research_evidence",
+        "gate_id"
+      ],
+      "child_column_not_null": false,
+      "enforcement": "application",
+      "evidence": "no DB constraint; 0 orphan rows in the live store, so the application currently holds the invariant",
+      "guard": "evidence attributed to a gate that does not exist is forgery",
+      "importance": "critical",
+      "invariant": "every evidence artifact belongs to a gate (or the run, when gate_id is NULL)",
+      "live_orphan_rows": 0,
+      "name": "research_evidence.gate_id -> research_gates.gate_id",
+      "note": "gate_id is nullable by design \u2014 evidence may be per-run",
+      "orphan_class": "EXPECTED",
+      "parent": [
+        "research_gates",
+        "gate_id"
+      ],
+      "stage": "VALIDATION"
+    },
+    {
+      "child": [
+        "shadow_decisions",
+        "run_id"
+      ],
+      "child_column_not_null": true,
+      "enforcement": "application",
+      "evidence": "no DB constraint; 0 orphan rows in the live store, so the application currently holds the invariant",
+      "guard": "replay statistics would count decisions from a run that never happened",
+      "importance": "critical",
+      "invariant": "every shadow decision belongs to a shadow run",
+      "live_orphan_rows": 0,
+      "name": "shadow_decisions.run_id -> shadow_runs.run_id",
+      "note": "",
+      "orphan_class": "EXPECTED",
+      "parent": [
+        "shadow_runs",
+        "run_id"
+      ],
+      "stage": "REPLAY"
+    },
+    {
+      "child": [
+        "shadow_comparisons",
+        "run_id"
+      ],
+      "child_column_not_null": true,
+      "enforcement": "application",
+      "evidence": "no DB constraint; 0 orphan rows in the live store, so the application currently holds the invariant",
+      "guard": "a promotion decision read from a comparison with no run has no basis",
+      "importance": "critical",
+      "invariant": "every comparison belongs to a shadow run",
+      "live_orphan_rows": 0,
+      "name": "shadow_comparisons.run_id -> shadow_runs.run_id",
+      "note": "",
+      "orphan_class": "EXPECTED",
+      "parent": [
+        "shadow_runs",
+        "run_id"
+      ],
+      "stage": "COUNTERFACTUAL"
+    },
+    {
+      "child": [
+        "training_runs",
+        "model_id"
+      ],
+      "child_column_not_null": false,
+      "enforcement": "neither",
+      "evidence": "no DB constraint AND 6 orphan rows live: the invariant is asserted by nothing",
+      "guard": "a model trained but never linked cannot be promoted or rolled back",
+      "importance": "critical",
+      "invariant": "every completed training run produces a model the registry knows",
+      "live_empty_model_id": 6,
+      "live_orphan_rows": 6,
+      "name": "training_runs.model_id -> experience_model_registry.model_id",
+      "note": "model_id is nullable in training_runs; the registry is keyed on (model_id, model_version). LIVE EVIDENCE: all 6 completed training runs persist model_id = '' (empty string, not NULL) while the registry holds 6 distinct model ids \u2014 the training stage completes without recording which model it produced, so no training run can be joined to its model. PRODUCTION DEFECT (owned by Agent 1's runtime scope; reported, not patched).",
+      "nullable_by_design": false,
+      "orphan_class": "INCORRECT",
+      "parent": [
+        "experience_model_registry",
+        "model_id"
+      ],
+      "stage": "MODEL"
+    },
+    {
+      "child": [
+        "research_runs",
+        "strategy_id"
+      ],
+      "child_column_not_null": true,
+      "enforcement": "application",
+      "evidence": "no DB constraint; 0 orphan rows in the live store, so the application currently holds the invariant",
+      "guard": "a run's verdict attached to no strategy cannot be acted on",
+      "importance": "critical",
+      "invariant": "every research run validates a registered strategy",
+      "live_orphan_rows": 0,
+      "name": "research_runs.strategy_id -> strategy_registry.strategy_id",
+      "note": "",
+      "orphan_class": "EXPECTED",
+      "parent": [
+        "strategy_registry",
+        "strategy_id"
+      ],
+      "stage": "STRATEGY"
+    },
+    {
+      "child": [
+        "model_governance_events",
+        "model_id"
+      ],
+      "child_column_not_null": false,
+      "enforcement": "neither",
+      "evidence": "no DB constraint AND 59164 orphan rows live: the invariant is asserted by nothing",
+      "guard": "an audit trail for an unknown model is unverifiable",
+      "importance": "high",
+      "invariant": "every MODEL-scoped governance event describes a model the state table tracks",
+      "live_orphan_rows": 59164,
+      "name": "model_governance_events.model_id -> model_governance_state.model_id",
+      "note": "model_id is nullable in both \u2014 an event may be system-scoped (REGISTRY_RECONCILED / FEATURE_PARITY_FAILURE fire without a model). The probe counts events whose model_id does not appear in the state table, which is EXPECTED for system-scoped events and only a defect for events that claim a specific model.",
+      "nullable_by_design": true,
+      "orphan_class": "EXPECTED",
+      "parent": [
+        "model_governance_state",
+        "model_id"
+      ],
+      "stage": "PROMOTION"
+    }
+  ],
+  "summary": {
+    "check_constraints": 8,
+    "database": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\audit.db",
+    "enforcement_counts": {
+      "application": 5,
+      "both": 0,
+      "database": 0,
+      "neither": 2,
+      "unknown": 0
+    },
+    "foreign_keys": 0,
+    "tables": 74,
+    "unique_indexes": 0
+  },
+  "uniqueness": [
+    {
+      "column": "run_id",
+      "evidence": "no UNIQUE constraint or index on the identity column",
+      "table": "research_runs",
+      "unique": "no"
+    },
+    {
+      "column": "gate_id",
+      "evidence": "no UNIQUE constraint or index on the identity column",
+      "table": "research_gates",
+      "unique": "no"
+    },
+    {
+      "column": "evidence_id",
+      "evidence": "no UNIQUE constraint or index on the identity column",
+      "table": "research_evidence",
+      "unique": "no"
+    },
+    {
+      "column": "run_id",
+      "evidence": "no UNIQUE constraint or index on the identity column",
+      "table": "shadow_runs",
+      "unique": "no"
+    },
+    {
+      "column": "shadow_decision_id",
+      "evidence": "no UNIQUE constraint or index on the identity column",
+      "table": "shadow_decisions",
+      "unique": "no"
+    },
+    {
+      "column": "model_id",
+      "evidence": "no UNIQUE constraint or index on the identity column",
+      "table": "experience_model_registry",
+      "unique": "no"
+    },
+    {
+      "column": "run_id",
+      "evidence": "no UNIQUE constraint or index on the identity column",
+      "table": "training_runs",
+      "unique": "no"
+    },
+    {
+      "column": "strategy_id",
+      "evidence": "no UNIQUE constraint or index on the identity column",
+      "table": "strategy_registry",
+      "unique": "no"
+    },
+    {
+      "column": "event_id",
+      "evidence": "no UNIQUE constraint or index on the identity column",
+      "table": "model_governance_events",
+      "unique": "no"
+    },
+    {
+      "column": "promotion_id",
+      "evidence": "no UNIQUE constraint or index on the identity column",
+      "table": "model_promotion_audit",
+      "unique": "no"
+    }
+  ]
+}
