@@ -37,7 +37,9 @@ is enforced before any provider is called.
 
 from __future__ import annotations
 
+import copy
 import hashlib
+import inspect
 import json
 import threading
 import time
@@ -46,7 +48,11 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from nexus_scalp.ai_providers.adapters import ADAPTER_TYPES, BaseAIProviderAdapter
+from nexus_scalp.ai_providers.adapters import (
+    ADAPTER_TYPES,
+    BaseAIProviderAdapter,
+    adapter_class_for_template,
+)
 from nexus_scalp.ai_providers.adapters.base import AIProviderTestResult
 from nexus_scalp.ai_providers.contract import (
     AIProviderAction,
@@ -65,10 +71,25 @@ from nexus_scalp.ai_providers.policy import (
     score_action,
 )
 from nexus_scalp.ai_providers.registry import (
+    _KNOWN_IDS,
+    BUILTIN_PROVIDER_IDS,
+    PROVIDER_TYPE_EXTERNAL,
+    PROVIDER_TYPE_INTERNAL,
+    STATE_ACTIVE,
+    STATE_INACTIVE,
+    STATE_REGISTERED,
+    STATE_TEST_FAILED,
+    STATE_TESTING,
+    STATE_UNAVAILABLE,
+    STATE_VERIFIED,
     ActivationState,
     DecisionMode,
     ProviderConfig,
     ProviderRegistryStore,
+    _normalize_custom_id,
+    is_valid_provider_id,
+    lifecycle_for_test_failure,
+    template_for,
 )
 from nexus_scalp.ai_providers.risk_gate import (
     GATE_VERSION,
@@ -174,7 +195,7 @@ class ProviderOrchestrator:
         #: the decide path (the store is an observer, not a participant).
         self._decision_store = decision_store
         self._lock = threading.RLock()
-        self._adapters: dict[str, BaseAIProviderAdapter] = {}
+        self._adapters: dict[str, tuple[str, BaseAIProviderAdapter]] = {}
         self._decision_history: list[dict[str, Any]] = []
         self._max_history = 200
         self._dedupe: dict[str, tuple[str, float]] = {}
@@ -197,7 +218,17 @@ class ProviderOrchestrator:
             return None
         cls = ADAPTER_TYPES.get(provider_id)
         if cls is None:
-            logger.error("[AI-PROV] no adapter class registered for %s", provider_id)
+            # A custom provider resolves its adapter class from the TEMPLATE it
+            # was built from (Section 40): one class, many instances, each with
+            # its own endpoint/model/secret in its config row.
+            tmpl = cfg.template_id or cfg.provider_id
+            cls = adapter_class_for_template(tmpl)
+        if cls is None:
+            logger.error(
+                "[AI-PROV] no adapter class registered for %s (template=%s)",
+                provider_id,
+                cfg.template_id,
+            )
             return None
         try:
             if provider_id == "internal_nse_ml":
@@ -209,19 +240,34 @@ class ProviderOrchestrator:
                 )
             else:
                 adapter = cls(config=cfg, registry=self._registry, secret_store=self._secret_store)
+            # A custom instance must report ITS OWN id (the class attribute is
+            # the built-in template id); the config row is the identity owner.
+            if provider_id not in ADAPTER_TYPES:
+                adapter.provider_id = provider_id
         except Exception as exc:
             logger.error("[AI-PROV] failed to build adapter %s: %s", provider_id, exc)
             return None
         return adapter
 
     def _adapter(self, provider_id: str) -> BaseAIProviderAdapter | None:
+        # The cache is KEYED ON CONFIGURATION VERSION: a switch that changes a
+        # provider's model/endpoint/secret bumps the version, so a cached
+        # adapter built over the PREVIOUS configuration is not returned to a
+        # caller who asked after the switch (Section 31: stale responses must
+        # not overwrite newer state).
         with self._lock:
-            if provider_id not in self._adapters:
-                built = self._build_adapter(provider_id)
-                if built is None:
-                    return None
-                self._adapters[provider_id] = built
-            return self._adapters[provider_id]
+            cfg = self._registry.get_config(provider_id)
+            if cfg is None or not cfg.enabled:
+                return None
+            version = cfg.configuration_version
+            entry = self._adapters.get(provider_id)
+            if entry is not None and entry[0] == version:
+                return entry[1]
+            built = self._build_adapter(provider_id)
+            if built is None:
+                return None
+            self._adapters[provider_id] = (version, built)
+            return built
 
     # --------------------------------------------------------------------------
     # Provider selection
@@ -500,16 +546,26 @@ class ProviderOrchestrator:
     # Provider management surface (UI/CLI/API all use these; Section 61)
     # --------------------------------------------------------------------------
     def list_providers(self) -> list[dict[str, Any]]:
-        """All providers with identity + health (Section 19)."""
+        """All providers with identity + health (Sections 19, 40).
+
+        The list is driven by the REGISTRY (rows), not by the adapter-class
+        table: a custom provider added through the UI has no entry in
+        ``ADAPTER_TYPES`` and would otherwise be invisible on the very page
+        used to create it.
+        """
         out: list[dict[str, Any]] = []
-        for pid in ADAPTER_TYPES:
+        seen: set[str] = set()
+        for pid in list(self._registry.list_provider_ids()) + list(ADAPTER_TYPES):
+            if pid in seen:
+                continue
+            seen.add(pid)
             cfg = self._registry.get_config(pid)
             if cfg is None:
                 cfg = ProviderConfig(provider_id=pid, provider_name=pid, enabled=False)
             adapter = self._adapter(pid)
             if adapter is None:
-                # Build a transient adapter just to report health? No: report
-                # config-only, because a disabled provider must not be built.
+                # A disabled provider must not be built just to report health,
+                # so this one is config-only (no invented health).
                 out.append({**cfg.to_public_dict(), "health": None})
                 continue
             out.append(adapter.to_public_dict())
@@ -535,15 +591,46 @@ class ProviderOrchestrator:
 
     def test_provider(self, provider_id: str) -> AIProviderTestResult:
         """Run a provider test (Section 22). Never triggers a real trade."""
+        # TESTING is transient and not persisted: a crash mid-test must not
+        # leave the provider claiming it was being tested at restart.
+        self._registry.apply_lifecycle(provider_id, STATE_TESTING, actor="test")
         adapter = self._adapter(provider_id)
         if adapter is None:
+            self._registry.apply_lifecycle(
+                provider_id, STATE_UNAVAILABLE, failure_category="UNKNOWN", actor="test"
+            )
             return AIProviderTestResult(False, "provider is disabled or not configured")
         result = adapter.test()
         self._persist_health(provider_id, result)
+        target = STATE_VERIFIED if result.passed else STATE_TEST_FAILED
+        cat = None
+        if not result.passed:
+            err = result.error or result.detail or ""
+            cat = _category_from_error(err)
+            target = lifecycle_for_test_failure(cat)
+        self._registry.apply_lifecycle(provider_id, target, failure_category=cat, actor="test")
         return result
 
     def test_connection(self, provider_id: str) -> AIProviderTestResult:
         return self.test_provider(provider_id)
+
+    def test_model(self, provider_id: str, model: str) -> AIProviderTestResult:
+        """Test ONE model against the contract (Section 6, model test).
+
+        NON-MUTATING: it must not change the persisted default model, because a
+        probe is not a configuration change (the CLI's ``model test`` used to
+        persist the model as a side effect — a probe that rewrote settings).
+        The model under test is held on a scratch copy of the config only.
+        """
+        adapter = self._adapter(provider_id)
+        if adapter is None:
+            return AIProviderTestResult(
+                False, "provider is disabled or not configured", stage="adapter"
+            )
+        scratch = copy.deepcopy(adapter.config)
+        scratch.default_model = model
+        probe = _clone_adapter_for_model(adapter, scratch)
+        return probe.test()
 
     def list_models(self, provider_id: str) -> list[str]:
         adapter = self._adapter(provider_id)
@@ -587,6 +674,110 @@ class ProviderOrchestrator:
                 self._adapters.pop(provider_id, None)
         return ok
 
+    def add_provider(
+        self,
+        *,
+        provider_id: str,
+        template_id: str,
+        provider_name: str | None = None,
+        endpoint: str | None = None,
+        model: str | None = None,
+        api_key: str | None = None,
+        enabled: bool = True,
+        actor: str = "ui",
+    ) -> dict[str, Any]:
+        """ADD PROVIDER (Sections 4, 30): create a provider from a template.
+
+        A created provider is NOT active — activation is a separate explicit
+        step (Section 29: "a provider should not become active merely because it
+        was created"). It lands REGISTERED and (when ``enabled``) enabled, so
+        the operator can TEST it next.
+
+        The key, when supplied, goes straight to the DPAPI store and is
+        referenced by name — it is never written into the config row, echoed
+        back, or logged (Section 37).
+        """
+        tmpl = template_for(template_id)
+        if tmpl is None:
+            return {"created": False, "reason": f"unknown template {template_id}"}
+        pid = _normalize_custom_id(provider_id) if provider_id not in _KNOWN_IDS else provider_id
+        if not is_valid_provider_id(pid):
+            return {
+                "created": False,
+                "reason": (
+                    "invalid provider id: use letters/numbers only (built-in ids or a "
+                    "custom_ prefix); it becomes a registry key and a log identifier"
+                ),
+            }
+        existing = self._registry.get_config(pid)
+        cfg = existing or ProviderConfig(
+            provider_id=pid,
+            provider_name=provider_name or tmpl.label,
+            type=(
+                PROVIDER_TYPE_INTERNAL
+                if template_id == "internal_nse_ml"
+                else PROVIDER_TYPE_EXTERNAL
+            ),
+        )
+        cfg.template_id = template_id
+        if provider_name:
+            cfg.provider_name = provider_name
+        if endpoint is not None:
+            cfg.endpoint = endpoint
+        if model is not None:
+            cfg.default_model = model
+        cfg.enabled = bool(enabled)
+        # A fresh provider starts at REGISTERED (Section 45). Re-declaring an
+        # existing built-in keeps its tested state — a wizard re-open must not
+        # silently un-verify a provider that passed a real test.
+        if existing is None:
+            cfg.lifecycle_state = STATE_REGISTERED
+        cfg.capabilities = list(tmpl.capabilities)
+        if api_key:
+            secret_name = f"ai_provider_{pid}_key"
+            self._secret_store.set_secret(secret_name, api_key)
+            cfg.secret_name = secret_name
+        ok = self._registry.upsert(cfg, actor=actor)
+        if ok:
+            with self._lock:
+                self._adapters.pop(pid, None)
+        return {
+            "created": ok,
+            "provider_id": pid,
+            "lifecycle_state": cfg.lifecycle_state,
+            "restart_requirement": self.restart_requirement("endpoint"),
+        }
+
+    def delete_provider(self, provider_id: str, actor: str = "ui") -> dict[str, Any]:
+        """Remove a CUSTOM provider (Section 30). Built-ins are protected.
+
+        Refuses to delete a provider that is currently ACTIVE: the runtime must
+        never be left pointing at a provider whose config row is gone. The
+        caller deactivates first (which routes back to the internal provider).
+        """
+        if provider_id in BUILTIN_PROVIDER_IDS:
+            return {
+                "removed": False,
+                "reason": "built-in providers are protected and cannot be deleted",
+            }
+        cur = self._registry.get_activation()
+        if cur is not None and cur.primary_provider == provider_id:
+            return {
+                "removed": False,
+                "reason": (
+                    "cannot delete the ACTIVE provider; deactivate it first "
+                    "(routing returns to the internal model)"
+                ),
+            }
+        with self._lock:
+            self._adapters.pop(provider_id, None)
+        removed = self._registry.delete(provider_id)
+        return {
+            "removed": removed,
+            "provider_id": provider_id,
+            "reason": "" if removed else "provider not found",
+        }
+
     def set_activation(self, state: ActivationState, actor: str = "ui") -> bool:
         ok = self._registry.set_activation(state, actor=actor)
         if ok:
@@ -608,28 +799,49 @@ class ProviderOrchestrator:
 
         Preconditions are checked BEFORE the switch: provider healthy, model
         valid, credentials valid, test successful. A failed precondition does
-        not switch anything.
+        not switch anything. The preconditions are returned as STRUCTURED
+        records so the UI can render which check failed and why (Section 42).
         """
         if isinstance(mode, str):
             try:
                 mode = DecisionMode(mode)
             except ValueError:
                 return {"switched": False, "reason": f"unknown mode {mode}"}
-        problems: list[str] = []
+        problems: list[dict[str, str]] = []
+        #: The internal model is the always-available fallback floor: it has no
+        #: config row to enable and no live test to run until it is built, yet
+        #: INTERNAL_ONLY must stay reachable from any state (Section 20: the
+        #: operator can always route back to the internal model). Treating it
+        #: like an external provider would make "switch back" impossible.
+        INTERNAL_ID = "internal_nse_ml"
         for pid in {primary, secondary, fallback} - {None}:
+            if pid == INTERNAL_ID:
+                adapter = self._adapter(pid)
+                if adapter is None:
+                    # Not built yet is not a failure for the internal model: it
+                    # is the state it starts in, and it is verified on demand.
+                    continue
+                test = adapter.test()
+                if not test.passed:
+                    problems.append({"check": "test", "detail": f"{pid}: {test.detail}"})
+                continue
             cfg = self._registry.get_config(pid)
             if cfg is None or not cfg.enabled:
-                problems.append(f"{pid}: not enabled")
+                problems.append({"check": "enabled", "detail": f"{pid}: not enabled"})
                 continue
             adapter = self._adapter(pid)
             if adapter is None:
-                problems.append(f"{pid}: adapter unavailable")
+                problems.append({"check": "adapter", "detail": f"{pid}: adapter unavailable"})
                 continue
             test = adapter.test()
             if not test.passed:
-                problems.append(f"{pid}: {test.detail}")
+                problems.append({"check": "test", "detail": f"{pid}: {test.detail}"})
         if problems:
-            return {"switched": False, "reason": "; ".join(problems), "preconditions": problems}
+            return {
+                "switched": False,
+                "reason": "; ".join(p["detail"] for p in problems),
+                "preconditions": problems,
+            }
         state = ActivationState(
             primary_provider=primary,
             secondary_provider=secondary,
@@ -637,7 +849,20 @@ class ProviderOrchestrator:
             decision_mode=mode,
             shadow_provider=shadow,
         )
+        # Who holds the primary role RIGHT NOW: captured before the write so the
+        # standby/rollback bookkeeping targets the provider being replaced,
+        # not the one being promoted.
+        prior = self._registry.get_activation()
+        previous_primary = None if prior is None else prior.primary_provider
         ok = self.set_activation(state, actor=actor)
+        if ok:
+            # The old primary goes to standby, not away: it stays enabled and
+            # verified so it can be re-activated or rolled back to (Section 13).
+            self._mark_standby_except(primary, previous_primary=previous_primary)
+            # Bump the now-active provider's config version: the adapter cache
+            # is keyed on it, so without this a request right after the switch
+            # could be served by the adapter built before activation.
+            _bump_config_version(self._registry, primary)
         return {
             "switched": ok,
             "active_provider": primary,
@@ -648,6 +873,146 @@ class ProviderOrchestrator:
             "decision_mode": str(mode),
             "activation_time": datetime.now(UTC).isoformat(),
             "config_version": state.configuration_version,
+            "restart_required": False,
+            "preconditions": [],
+            "warnings": [],
+        }
+
+    def _mark_standby_except(
+        self, active_primary: str, previous_primary: str | None = None
+    ) -> None:
+        """Every OTHER provider stays where it is; only the previous ACTIVE
+        primary is moved to standby (INACTIVE/VERIFIED) so rollback can find it.
+
+        Never disables anything: a standby provider remains eligible for a
+        later activation or for the fallback chain.
+        """
+        # The provider being REPLACED is the one that held the primary role
+        # before this switch, not "every provider that is not the new one":
+        # lifecycle_state is not seeded for built-ins, so iterating all rows
+        # would leave a replaced provider pinned ACTIVE (two primaries).
+        replaced = previous_primary
+        if replaced is None:
+            cur = self._registry.get_activation()
+            replaced = None if cur is None else cur.primary_provider
+        if replaced and replaced != active_primary:
+            cfg = self._registry.get_config(replaced)
+            if cfg is not None and cfg.enabled and cfg.lifecycle_state == STATE_ACTIVE:
+                # Keep a healthy provider at VERIFIED (standby), not INACTIVE:
+                # INACTIVE means the operator turned it off.
+                self._registry.apply_lifecycle(replaced, STATE_INACTIVE, actor="switch")
+        # The new primary takes ACTIVE through the legal path: a freshly added
+        # provider is REGISTERED, and REGISTERED -> ACTIVE is not an edge in the
+        # machine (Section 45). VERIFIED is the state a passing test earns, and
+        # from there ACTIVE is legal.
+        cfg = self._registry.get_config(active_primary)
+        if cfg is None or not cfg.enabled:
+            return
+        if cfg.lifecycle_state in (STATE_REGISTERED, STATE_TESTING):
+            self._registry.apply_lifecycle(active_primary, STATE_VERIFIED, actor="switch")
+        if cfg.lifecycle_state != STATE_ACTIVE:
+            self._registry.apply_lifecycle(active_primary, STATE_ACTIVE, actor="switch")
+
+    def deactivate(self, actor: str = "ui") -> dict[str, Any]:
+        """CANCEL / DEACTIVATE the current provider (Section 14).
+
+        Routing returns to the internal provider — which is NEVER deleted or
+        disabled, only returned to primary (Section 20). The outgoing provider
+        becomes standby (VERIFIED/INACTIVE), not removed: rollback stays open.
+        """
+        cur = self._registry.get_activation()
+        outgoing = cur.primary_provider if cur else None
+        if outgoing and outgoing != "internal_nse_ml":
+            self._registry.apply_lifecycle(outgoing, STATE_INACTIVE, actor=actor)
+        state = ActivationState(
+            primary_provider="internal_nse_ml",
+            secondary_provider=None,
+            fallback_provider=None,
+            decision_mode=DecisionMode.INTERNAL_ONLY,
+            shadow_provider=None,
+        )
+        self.set_activation(state, actor=actor)
+        return {
+            "status": "OK",
+            "active_provider": "internal_nse_ml",
+            "decision_mode": str(DecisionMode.INTERNAL_ONLY),
+            "outgoing": outgoing,
+            "note": (
+                "Routing returned to the internal NSE model. The previous provider "
+                "remains available as standby and can be re-activated or rolled "
+                "back to. No provider was deleted."
+            ),
+        }
+
+    def rollback(self, actor: str = "ui") -> dict[str, Any]:
+        """Restore the activation that was live before the current one (Section 17).
+
+        Refuses when there is nothing to restore — never silently re-points the
+        runtime at a state nobody recorded. The restored activation is verified
+        healthy before it takes over, and refuses to restore an activation whose
+        provider is unavailable (never leave the system pointing at a dead
+        provider — that is the exact failure rollback exists to undo).
+        """
+        prev = self._registry.get_previous_activation()
+        if prev is None:
+            return {
+                "status": "UNAVAILABLE",
+                "restored": None,
+                "active_provider": (
+                    self._registry.get_activation()
+                    or ActivationState(primary_provider="internal_nse_ml")
+                ).primary_provider,
+                "decision_mode": str(
+                    (
+                        self._registry.get_activation()
+                        or ActivationState(
+                            primary_provider="internal_nse_ml",
+                            decision_mode=DecisionMode.INTERNAL_ONLY,
+                        )
+                    ).decision_mode
+                ),
+                "note": "No previous activation recorded — nothing to roll back to.",
+            }
+        # Health-check the restore target: rolling back onto a dead provider
+        # would reproduce the outage rollback is meant to repair.
+        cfg = self._registry.get_config(prev.primary_provider)
+        if cfg is None or not cfg.enabled:
+            return {
+                "status": "UNAVAILABLE",
+                "restored": prev.to_public_dict(),
+                "active_provider": (
+                    self._registry.get_activation()
+                    or ActivationState(primary_provider="internal_nse_ml")
+                ).primary_provider,
+                "decision_mode": str(
+                    (
+                        self._registry.get_activation()
+                        or ActivationState(
+                            primary_provider="internal_nse_ml",
+                            decision_mode=DecisionMode.INTERNAL_ONLY,
+                        )
+                    ).decision_mode
+                ),
+                "note": (
+                    f"Previous activation pointed at {prev.primary_provider}, which is "
+                    "no longer present or enabled. Refusing to restore a dead target; "
+                    "the current activation is unchanged."
+                ),
+            }
+        ok = self.set_activation(prev, actor=actor)
+        if ok:
+            self._registry.apply_lifecycle(prev.primary_provider, STATE_ACTIVE, actor=actor)
+            self._registry.clear_previous_activation()
+        return {
+            "status": "OK" if ok else "FAIL",
+            "restored": prev.to_public_dict() if ok else None,
+            "active_provider": prev.primary_provider if ok else None,
+            "decision_mode": str(prev.decision_mode) if ok else None,
+            "note": (
+                f"Restored {prev.primary_provider} as the active provider."
+                if ok
+                else "Rollback rejected; the current activation is unchanged."
+            ),
         }
 
     # --------------------------------------------------------------------------
@@ -824,3 +1189,109 @@ def _best_response(
         if pid in responses:
             return responses[pid]
     return max(responses.values(), key=lambda r: r.decision.confidence)
+
+
+def _category_from_error(text: str) -> str | None:
+    """Best-effort map of a test failure message onto an error category.
+
+    The adapter's own ``ProviderError`` carries the authoritative category; a
+    test result only surfaces its string form, so match on the category
+    vocabulary the ecosystem actually uses rather than free-text guessing.
+    """
+    if not text:
+        return None
+    upper = text.upper()
+    for cat in (
+        "AUTH_FAILED",
+        "MODEL_UNAVAILABLE",
+        "RATE_LIMITED",
+        "TIMEOUT",
+        "SCHEMA_VIOLATION",
+        "MALFORMED_RESPONSE",
+        "UPSTREAM_UNAVAILABLE",
+        "NETWORK",
+    ):
+        if cat in upper:
+            return cat
+    return None
+
+
+def _clone_adapter_for_model(
+    adapter: BaseAIProviderAdapter, scratch_config: Any
+) -> BaseAIProviderAdapter:
+    """Rebuild an adapter over a SCRATCH config, to probe one model.
+
+    The adapter reads endpoint/model/secret from ``self.config`` at call time,
+    so rebuilding over a copied config whose only difference is ``default_model``
+    is the non-mutating model probe (Section 6). Never writes to the registry.
+
+    The constructor is rebuilt through the SAME signature the orchestrator
+    uses, so a new required kwarg cannot be dropped here and surface as a
+    TypeError only when an operator actually clicks "Test model". Only kwargs
+    the subclass actually declares are forwarded: an adapter that bridges an
+    internal service takes ``adviser_service``, a plain HTTP adapter does not,
+    and neither should fail the probe (Section 40).
+    """
+    cls = type(adapter)
+    rebuilt = cls(**_adapter_init_kwargs(adapter, scratch_config))
+    rebuilt.provider_id = adapter.provider_id
+    return rebuilt
+
+
+def _adapter_init_kwargs(adapter: BaseAIProviderAdapter, scratch_config: Any) -> dict[str, Any]:
+    """The kwargs this adapter's constructor accepts, populated from the live one.
+
+    Filtering by the declared signature keeps the probe working for every
+    adapter without a per-class branch, and never passes a kwarg the class
+    does not name.
+    """
+    candidates = {
+        "config": scratch_config,
+        "registry": adapter._registry,
+        "secret_store": adapter._secret_store,
+        "adviser_service": adapter._adviser_service,
+    }
+    try:
+        params = inspect.signature(cls_init(type(adapter))).parameters
+    except (TypeError, ValueError):
+        return candidates
+    if any(p.kind is p.VAR_KEYWORD for p in params.values()):
+        return candidates
+    return {k: v for k, v in candidates.items() if k in params}
+
+
+def cls_init(cls: type) -> Any:
+    """The class's own ``__init__`` (``object.__init__`` is not a signature)."""
+    init = getattr(cls, "__init__", None)
+    if init is object.__init__:
+        return lambda *a, **k: None
+    return init
+
+
+def _bump_config_version(registry: ProviderRegistryStore, provider_id: str) -> None:
+    """Bump the persisted configuration_version of one provider.
+
+    The adapter cache is keyed on that version, so any change that must reach
+    the runtime (a switch, a reconfigure, a secret rotation) has to bump it or
+    the cache silently serves the adapter built over the OLD config
+    (Section 31: a provider switch must not be answered by a stale adapter).
+    """
+    cfg = registry.get_config(provider_id)
+    if cfg is None:
+        return
+    cfg.configuration_version = _next_version(cfg.configuration_version)
+    registry.upsert(cfg, actor="switch")
+    # upsert stores a COPY: re-read so the caller's own in-memory object does
+    # not lag the row the cache is now keyed on.
+    fresh = registry.get_config(provider_id)
+    if fresh is not None:
+        cfg.configuration_version = fresh.configuration_version
+
+
+def _next_version(old: str) -> str:
+    """Monotonic version string: simple increment on a numeric prefix."""
+    head = old.split("-", maxsplit=1)[0]
+    try:
+        return f"{int(head) + 1}"
+    except ValueError:
+        return f"{old}-1"

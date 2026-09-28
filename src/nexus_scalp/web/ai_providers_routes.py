@@ -7,15 +7,21 @@ Convention follows the position-adviser lane: raw JSON, server-authoritative
 status words, HTTP 4xx with a ``detail`` string the client surfaces verbatim.
 
 Endpoints (all under /api/ai-providers)
+    GET  /templates                 provider templates (wizard skeletons)
+    POST /providers                 ADD PROVIDER (Section 4)
+    DELETE /providers/{id}          delete a custom provider (built-ins protected)
     GET  /                          providers + activation + versions
     GET  /providers                 provider list with health (Section 19)
     GET  /providers/{id}/status     one provider's detail
     POST /providers/{id}/configure  save config (Sections 20, 27)
     POST /providers/{id}/enable     enable
     POST /providers/{id}/disable    disable
-    POST /providers/{id}/test       test center (Section 22)
-    GET  /providers/{id}/models     model listing (Section 21)
+    POST /providers/{id}/test       test the PROVIDER (Section 22)
+    POST /providers/{id}/test-model test ONE MODEL — non-mutating (Section 6)
+    GET  /providers/{id}/models     model discovery (Section 21)
     POST /switch                    the switch workflow (Section 26)
+    POST /deactivate                cancel/deactivate current (Section 14)
+    POST /rollback                  restore the previous activation (Section 17)
     POST /activate                  set primary/secondary/fallback/mode
     GET  /activation                current activation
     POST /decision/evaluate         evaluate a position snapshot (Section 22)
@@ -39,6 +45,8 @@ from pydantic import BaseModel, Field
 from nexus_scalp.ai_providers.contract import PositionDecisionRequest
 from nexus_scalp.ai_providers.orchestrator import ProviderOrchestrator
 from nexus_scalp.ai_providers.registry import (
+    BUILTIN_PROVIDER_IDS,
+    PROVIDER_TEMPLATES,
     ActivationState,
     ProviderRegistryStore,
 )
@@ -151,9 +159,80 @@ class ImportRequest(BaseModel):
     api_keys: dict[str, str] | None = None
 
 
+class AddProviderRequest(BaseModel):
+    """ADD PROVIDER (Section 4). The key goes to the secure store, never echo."""
+
+    provider_id: str = Field(..., min_length=2, max_length=64)
+    template_id: str
+    provider_name: str | None = None
+    endpoint: str | None = None
+    model: str | None = None
+    #: Secret VALUE — written straight to the DPAPI store, referenced by name.
+    api_key: str | None = None
+    enabled: bool = True
+
+
+class TestModelRequest(BaseModel):
+    """TEST MODEL (Section 6). A probe: does NOT change the default model."""
+
+    model: str = Field(..., min_length=1)
+    simulated: bool = True
+
+
 # ---------------------------------------------------------------------------
 # Provider management
 # ---------------------------------------------------------------------------
+
+
+@router.get("/templates")
+def route_templates() -> dict[str, Any]:
+    """Provider templates (Section 3): safe contract skeletons for the wizard.
+
+    No secrets, no arbitrary code — the UI customizes only the declared fields.
+    """
+    return {
+        "status": "OK",
+        "templates": [t.to_public_dict() for t in PROVIDER_TEMPLATES],
+    }
+
+
+@router.post("/providers")
+def route_add_provider(req: AddProviderRequest) -> dict[str, Any]:
+    """ADD PROVIDER (Sections 4, 30).
+
+    The API key is written to the DPAPI store and referenced by name; it is
+    never stored in the config row and never returned by any endpoint. A
+    created provider is REGISTERED, not ACTIVE (Section 29).
+    """
+    orch = get_ai_provider_orchestrator()
+    result = orch.add_provider(
+        provider_id=req.provider_id,
+        template_id=req.template_id,
+        provider_name=req.provider_name,
+        endpoint=req.endpoint,
+        model=req.model,
+        api_key=req.api_key,
+        enabled=req.enabled,
+        actor="ui",
+    )
+    if not result.get("created"):
+        raise HTTPException(status_code=400, detail=result.get("reason", "provider rejected"))
+    return {"status": "OK", **result}
+
+
+@router.delete("/providers/{provider_id}")
+def route_delete_provider(provider_id: str) -> dict[str, Any]:
+    """Delete a CUSTOM provider (Section 30). Built-ins are protected."""
+    if provider_id in BUILTIN_PROVIDER_IDS:
+        raise HTTPException(
+            status_code=400,
+            detail="built-in providers are protected and cannot be deleted",
+        )
+    orch = get_ai_provider_orchestrator()
+    result = orch.delete_provider(provider_id, actor="ui")
+    if not result.get("removed"):
+        raise HTTPException(status_code=400, detail=result.get("reason", "cannot delete provider"))
+    return {"status": "OK", **result}
 
 
 @router.get("")
@@ -249,11 +328,40 @@ def route_test(provider_id: str) -> dict[str, Any]:
 
 @router.get("/providers/{provider_id}/models")
 def route_models(provider_id: str) -> dict[str, Any]:
-    """Model listing (Section 21). Empty when unsupported."""
+    """Model listing / discovery (Section 21). Empty when unsupported.
+
+    Never invents a capability or a price: only what the provider actually
+    reports. Results are cached by the adapter, so a page refresh does not
+    re-probe the provider (Section 41).
+    """
     return {
         "status": "OK",
         "provider_id": provider_id,
         "models": get_ai_provider_orchestrator().list_models(provider_id),
+    }
+
+
+@router.post("/providers/{provider_id}/test-model")
+def route_test_model(provider_id: str, req: TestModelRequest) -> dict[str, Any]:
+    """TEST MODEL (Section 6) — a probe of ONE model against the contract.
+
+    Distinct from TEST PROVIDER on purpose: a provider can be reachable and
+    authenticated while a specific model is unavailable or returns an invalid
+    contract. This probe does NOT change the persisted default model (a probe
+    is not a configuration change).
+    """
+    result = get_ai_provider_orchestrator().test_model(provider_id, req.model)
+    return {
+        "status": "PASS" if result.passed else "FAIL",
+        "passed": result.passed,
+        "provider_id": provider_id,
+        "model": req.model,
+        "stage": result.stage,
+        "detail": result.detail,
+        "latency_ms": result.latency_ms,
+        "raw_response": result.raw_response,
+        "normalized_response": result.normalized_response,
+        "error": result.error,
     }
 
 
@@ -305,6 +413,33 @@ def route_switch(req: SwitchRequest) -> dict[str, Any]:
         raise HTTPException(
             status_code=412, detail=result.get("reason", "switch preconditions failed")
         )
+    return {"status": "OK", **result}
+
+
+@router.post("/deactivate")
+def route_deactivate() -> dict[str, Any]:
+    """CANCEL / DEACTIVATE the current provider (Section 14).
+
+    Routing returns to the internal NSE model, which is never deleted. The
+    outgoing provider becomes standby, so rollback stays open. This is the
+    "cancel previous" path: new requests stop being routed to the external
+    provider; in-flight work completes according to its own contract.
+    """
+    return {"status": "OK", **get_ai_provider_orchestrator().deactivate(actor="ui")}
+
+
+@router.post("/rollback")
+def route_rollback() -> dict[str, Any]:
+    """Restore the activation that was live before the current one (Section 17).
+
+    412 when there is nothing to roll back to, or the previous target is gone.
+    Never leaves the runtime pointing at an unavailable provider.
+    """
+    result = get_ai_provider_orchestrator().rollback(actor="ui")
+    if result.get("status") == "UNAVAILABLE":
+        raise HTTPException(status_code=412, detail=result.get("note", "nothing to roll back to"))
+    if result.get("status") == "FAIL":
+        raise HTTPException(status_code=400, detail=result.get("note", "rollback rejected"))
     return {"status": "OK", **result}
 
 

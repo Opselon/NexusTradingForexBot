@@ -29,6 +29,39 @@ ADAPTER_TYPES: dict[str, type[BaseAIProviderAdapter]] = {
     OpenRouterAdapter.provider_id: OpenRouterAdapter,
 }
 
+#: Template id -> adapter class, for custom providers (Section 40). A custom
+#: provider is a SECOND INSTANCE of a template adapter class under a new id —
+#: its config row carries its own endpoint, model and secret, and the adapter
+#: reads ``self.config`` for all of them, so one class serves many instances.
+TEMPLATE_ADAPTERS: dict[str, type[BaseAIProviderAdapter]] = {
+    "system_one": SystemOneAdapter,
+    "openrouter": OpenRouterAdapter,
+    "internal_nse_ml": InternalNSEMLAdapter,  # type: ignore[type-abstract]
+}
+
+
+def adapter_class_for(provider_id: str) -> type[BaseAIProviderAdapter] | None:
+    """Resolve the adapter class for a built-in OR custom provider id.
+
+    Custom ids (``custom_*``) carry their template in the config row; the
+    registry looks it up there and falls back to the id prefix so an unknown
+    custom id still resolves deterministically.
+    """
+    cls = ADAPTER_TYPES.get(provider_id)
+    if cls is not None:
+        return cls
+    if provider_id.startswith("custom_"):
+        # Defer to the registry row for the template; the caller (orchestrator)
+        # has the config and passes the template id through.
+        return None
+    return None
+
+
+def adapter_class_for_template(template_id: str) -> type[BaseAIProviderAdapter] | None:
+    """The adapter class a provider TEMPLATE instantiates (Section 3)."""
+    return TEMPLATE_ADAPTERS.get(template_id)
+
+
 __all__ = [
     "ADAPTER_TYPES",
     "AIProviderHealth",
