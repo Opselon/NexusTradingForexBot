@@ -800,13 +800,19 @@ class ProviderOrchestrator:
         Preconditions are checked BEFORE the switch: provider healthy, model
         valid, credentials valid, test successful. A failed precondition does
         not switch anything. The preconditions are returned as STRUCTURED
-        records so the UI can render which check failed and why (Section 42).
+        records so the UI can render which check failed and why (Section 42),
+        and the caller decides the HTTP status — the orchestrator never raises
+        on an expected refusal.
         """
         if isinstance(mode, str):
             try:
                 mode = DecisionMode(mode)
             except ValueError:
-                return {"switched": False, "reason": f"unknown mode {mode}"}
+                return {
+                    "switched": False,
+                    "reason": f"unknown mode {mode}",
+                    "preconditions": [],
+                }
         problems: list[dict[str, str]] = []
         #: The internal model is the always-available fallback floor: it has no
         #: config row to enable and no live test to run until it is built, yet
@@ -871,8 +877,8 @@ class ProviderOrchestrator:
                 or ProviderConfig(provider_id=primary, provider_name=primary)
             ).default_model,
             "decision_mode": str(mode),
-            "activation_time": datetime.now(UTC).isoformat(),
-            "config_version": state.configuration_version,
+            "activated_at": datetime.now(UTC).isoformat(),
+            "configuration_version": state.configuration_version,
             "restart_required": False,
             "preconditions": [],
             "warnings": [],

@@ -368,6 +368,45 @@ class TestActivationFlow:
         for p in r["preconditions"]:
             assert {"check", "detail"} <= set(p)
 
+    def test_a_refused_switch_names_every_failed_check(self, orch, store) -> None:
+        """Section 42: a refusal must say WHICH check failed, not just that one did."""
+        orch.add_provider(provider_id="unchecked", template_id="system_one", enabled=False)
+        r = orch.switch(primary="custom_unchecked")
+        assert r["switched"] is False
+        # The reason is a real string and the failed check is identified by name.
+        assert isinstance(r["reason"], str) and "not enabled" in r["reason"]
+        assert any(p["check"] == "enabled" for p in r["preconditions"])
+
+    def test_an_unknown_mode_refusal_still_carries_preconditions(self, orch) -> None:
+        """Every refusal path returns the structured field, even the early ones."""
+        r = orch.switch(primary="internal_nse_ml", mode="NOT_A_MODE")
+        assert r["switched"] is False
+        assert isinstance(r["preconditions"], list)
+
+    def test_switch_response_uses_the_canonical_contract_names(
+        self, orch, store, monkeypatch
+    ) -> None:
+        """The response keys are the names the frontend binds to (Section 61).
+
+        A spelling drift here is invisible to unit tests on either side and
+        surfaces only as a UI that silently shows nothing after a switch.
+        """
+        orch.add_provider(provider_id="canon", template_id="system_one", enabled=True)
+        monkeypatch.setattr(
+            type(orch),
+            "_adapter",
+            lambda self, pid: _StubAdapter(
+                ProviderConfig(provider_id=pid, provider_name=pid, enabled=True), ok=True
+            ),
+        )
+        r = orch.switch(primary="custom_canon", mode="EXTERNAL_ONLY")
+        assert r["switched"] is True
+        assert "activated_at" in r and isinstance(r["activated_at"], str)
+        assert "configuration_version" in r
+        # The drifted spellings must NOT be present alongside the canonical ones.
+        assert "activation_time" not in r
+        assert "config_version" not in r
+
     def test_switch_refusal_carries_a_reason_string(self, orch) -> None:
         r = orch.switch(primary="custom_missing")
         assert r["switched"] is False

@@ -410,8 +410,16 @@ def route_switch(req: SwitchRequest) -> dict[str, Any]:
         actor="ui",
     )
     if not result.get("switched"):
+        # Return the refusal IN-BODY with the structured preconditions. Raising
+        # 412 with a bare reason string would leave the UI unable to tell the
+        # operator WHICH check failed (Section 42: every refusal must name its
+        # cause). 422 = well-formed but semantically unprocessable.
         raise HTTPException(
-            status_code=412, detail=result.get("reason", "switch preconditions failed")
+            status_code=422,
+            detail={
+                "reason": result.get("reason", "switch preconditions failed"),
+                "preconditions": result.get("preconditions", []),
+            },
         )
     return {"status": "OK", **result}
 

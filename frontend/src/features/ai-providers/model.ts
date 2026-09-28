@@ -329,12 +329,10 @@ export interface SwitchResponse {
   active_provider: string;
   active_model: string | null;
   decision_mode: DecisionMode;
-  /** The frozen contract names this `activation_time`; the orchestrator's own
-   *  dict names it `activated_at`. Read either so a switch works against
-   *  either spelling. */
+  /** The canonical contract field (Section 42). The backend returns this name;
+   *  an older server's `activation_time` is accepted as a legacy alias only. */
   activated_at: string;
-  /** Same situation: `configuration_version` (contract) / `config_version`
-   *  (orchestrator). Optional because a refused switch omits it. */
+  /** Canonical contract field; `config_version` is a legacy alias only. */
   configuration_version?: number;
   restart_required: boolean;
   preconditions: Array<{ check: string; passed: boolean; detail: string }>;
