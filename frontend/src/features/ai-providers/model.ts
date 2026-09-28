@@ -63,11 +63,54 @@ export interface ProviderHealth {
   last_error: string | null;
 }
 
+/** Lifecycle states the registry reports (Section 19). The UI only ever READS
+ *  these — it never assigns one. Failure states are distinct from INACTIVE so
+ *  an operator can tell "switched off" from "tried and broke". */
+export type LifecycleState =
+  | "REGISTERED"
+  | "TESTING"
+  | "VERIFIED"
+  | "LOADED"
+  | "ACTIVE"
+  | "INACTIVE"
+  | "TEST_FAILED"
+  | "CONTRACT_FAILED"
+  | "AUTH_FAILED"
+  | "UNAVAILABLE";
+
+/** Lifecycle states the registry may report — the legend the operator reads.
+ *  Rendered as static text so the page documents the vocabulary it displays. */
+export const LIFECYCLE_STATES = [
+  "REGISTERED",
+  "TESTING",
+  "VERIFIED",
+  "LOADED",
+  "ACTIVE",
+  "INACTIVE",
+  "TEST_FAILED",
+  "CONTRACT_FAILED",
+  "AUTH_FAILED",
+  "UNAVAILABLE",
+] as const;
+
+/** True only for the backend's own failure tokens (used for badge colouring). */
+export function isFailureLifecycle(state: string | null | undefined): boolean {
+  return !!state && ["TEST_FAILED", "CONTRACT_FAILED", "AUTH_FAILED", "UNAVAILABLE"].includes(state.toUpperCase());
+}
+
+/** True for a state the registry actively reached and kept (not a failure). */
+export function isHealthyLifecycle(state: string | null | undefined): boolean {
+  return !!state && ["VERIFIED", "LOADED", "ACTIVE"].includes(state.toUpperCase());
+}
+
 /** One provider row (Sections 19, 31). */
 export interface ProviderEntry {
   provider_id: string;
   provider_name: string;
   type: string;
+  template_id?: string | null;
+  /** Per-provider lifecycle the backend owns (added to GET /). */
+  lifecycle_state?: LifecycleState | string | null;
   endpoint: string;
   auth_type: string;
   enabled: boolean;
@@ -86,6 +129,8 @@ export interface ProviderEntry {
   rate_limit_state: string | null;
   circuit_breaker_state: CircuitBreakerState | null;
   configuration_version: number;
+  /** True when the provider is a built-in the operator may not delete. */
+  is_builtin?: boolean;
   /** Present only when a secret is configured; the VALUE never leaves the backend. */
   has_secret?: boolean;
   health?: ProviderHealth;
@@ -266,7 +311,10 @@ export interface ProviderConfigRequest {
   timeout?: number;
   max_retries?: number;
   enabled?: boolean;
-  secret_name?: string;
+  /** Secret VALUE for the configure endpoint — written straight to the secure
+   *  store and never echoed back (Section 37). The UI never retains it past the
+   *  request and never renders it. */
+  api_key?: string;
 }
 
 export interface SwitchRequest {
@@ -281,9 +329,86 @@ export interface SwitchResponse {
   active_provider: string;
   active_model: string | null;
   decision_mode: DecisionMode;
+  /** The frozen contract names this `activation_time`; the orchestrator's own
+   *  dict names it `activated_at`. Read either so a switch works against
+   *  either spelling. */
   activated_at: string;
-  configuration_version: number;
+  /** Same situation: `configuration_version` (contract) / `config_version`
+   *  (orchestrator). Optional because a refused switch omits it. */
+  configuration_version?: number;
   restart_required: boolean;
   preconditions: Array<{ check: string; passed: boolean; detail: string }>;
   warnings: string[];
+}
+
+/* =====================================================================
+ * Operational control-plane shapes (frozen backend contract).
+ * ===================================================================== */
+
+/** GET /templates — an adapter the operator may instantiate. */
+export interface ProviderTemplate {
+  template_id: string;
+  label: string;
+  adapter_type: string;
+  capabilities: string[];
+  supports_model_listing: boolean;
+  supports_usage: boolean;
+  defaults: {
+    endpoint: string;
+    auth_type: string;
+    default_model: string;
+  };
+  fields: string[];
+}
+
+/** GET /templates envelope. */
+export interface TemplatesResponse {
+  status: string;
+  templates: ProviderTemplate[];
+}
+
+/** POST /providers — the create response. `restart_requirement` is the
+ *  backend's own classification of what the change needs to take effect. */
+export interface AddProviderResponse {
+  status: string;
+  provider_id: string;
+  lifecycle_state: string;
+  restart_requirement: string;
+}
+
+/** POST /providers/{id}/test-model — a TEST RESULT for one model. */
+export interface TestModelResponse extends ProviderTestResult {
+  model: string;
+}
+
+/** DELETE /providers/{id}. */
+export interface RemoveProviderResponse {
+  status: string;
+  provider_id: string;
+  removed: boolean;
+}
+
+/** POST /deactivate. */
+export interface DeactivateResponse {
+  status: string;
+  active_provider: string;
+  decision_mode: DecisionMode;
+  note: string;
+}
+
+/** POST /rollback — null when there is nothing to restore (412 with detail). */
+export interface RollbackResponse {
+  status: string;
+  restored: ActivationState | null;
+  active_provider: string;
+  decision_mode: DecisionMode;
+  note: string;
+}
+
+/** A persisted value the UI keeps for the rollback guard: only the backend's
+ *  own answer decides whether a rollback exists, so this is a HINT the UI uses
+ *  to disable the button — never a verdict it acts on without asking. */
+export interface RollbackHint {
+  available: boolean;
+  reason: string | null;
 }
