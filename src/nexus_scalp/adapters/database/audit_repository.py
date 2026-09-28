@@ -2763,6 +2763,32 @@ class AuditRepository:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def provision_sqlite_schema(self, statements: list[str]) -> bool:
+        """Apply extra DDL on the audit SQLite file (domain provisioning).
+
+        Domain modules (position_adviser) own tables that are not part of the
+        audit schema itself. They must not import sqlite3 (guard 1 / Phase 32),
+        so this is the single sanctioned entry point: the connect site and the
+        URI contract stay in the infrastructure layer.
+
+        No-op and True on a non-SQLite provider — PostgreSQL domains are
+        provisioned by the fabric. Idempotent by construction
+        (``IF NOT EXISTS``), so re-running after a provider switch is safe.
+        """
+        if not self._is_sqlite:
+            return True
+        try:
+            conn = self._connect_sqlite(10.0)
+            try:
+                conn.executescript(";".join(statements))
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning("provision_sqlite_schema failed: %s", e)
+            return False
+        return True
+
     def _provider_write_backend(self) -> Any:
         """The fabric's pooled WRITE backend for the audit domain, else None.
 

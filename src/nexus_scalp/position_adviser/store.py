@@ -23,7 +23,6 @@ from __future__ import annotations
 import json
 import math
 import re
-import sqlite3
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
@@ -227,7 +226,7 @@ def _pa_upsert_sql(table: str, columns: list[str], sqlite_sql: str) -> tuple[str
             f"upsert_columns: no PRIMARY KEY/UNIQUE constraint declared for {table!r} "
             "in position_adviser_schema_statements"
         )
-    declared = set()
+    declared: set[str] = set()
     for cols in constraint:
         declared.update(cols)
     if not set(key).issubset(declared):
@@ -333,19 +332,12 @@ class PositionAdviserStore:
         (``IF NOT EXISTS``), and a store must never open a SQLite connection on
         a PostgreSQL box.
         """
-        if not self.audit_repo or not self.audit_repo._is_sqlite:
+        if not self.audit_repo:
             return True
-        try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            try:
-                conn.executescript(";".join(position_adviser_schema_statements()))
-                conn.commit()
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.error("[PA-STORE] schema init failed", error=str(e))
-            return False
-        return True
+        # Domain code must not import sqlite3 (guard 1 / Phase 32): the audit
+        # adapter owns the single connect site and the URI contract. On a
+        # PostgreSQL provider this is a no-op (the fabric provisions it).
+        return self.audit_repo.provision_sqlite_schema(list(position_adviser_schema_statements()))
 
     # ------------------------------------------------------------------
     # Writes

@@ -52,6 +52,20 @@ class _FakeAuditRepo:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def provision_sqlite_schema(self, statements: list[str]) -> bool:
+        """The sanctioned domain-provisioning seam (mirrors AuditRepository)."""
+        try:
+            conn = self._connect_sqlite(10.0)
+            try:
+                conn.executescript(";".join(statements))
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as e:
+            print(f"[fake] provision failed: {e}")
+            return False
+        return True
+
 
 class _ImmediateQueue:
     """A queue that executes synchronously so a test can read right back."""
