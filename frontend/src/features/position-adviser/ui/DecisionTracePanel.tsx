@@ -76,7 +76,12 @@ export function DecisionTracePanel({ trace, atMs, error, unavailable, loading }:
   }
 
   const d = trace.decision;
-  const probs = Object.entries(d.probabilities).sort((a, b) => b[1] - a[1]);
+  // Guard: a payload missing decision/probabilities/latency must degrade to an
+  // honest empty panel, not crash the page (BUG-544 lineage).
+  const probs = d?.probabilities
+    ? Object.entries(d.probabilities).sort((a, b) => b[1] - a[1])
+    : [];
+  const lat = trace.latency;
 
   return (
     <section className="pa-panel pa-tensor">
@@ -85,8 +90,9 @@ export function DecisionTracePanel({ trace, atMs, error, unavailable, loading }:
         <li>
           <span className="pa-trace-stage">{t("position-adviser.trace.position", "POSITION")}</span>
           <span className="pa-mono">
-            #{trace.position.ticket} · snapshot {trace.position.snapshot_id ?? "—"} ·{" "}
-            {trace.position.snapshot_age_ms !== null
+            #{trace.position?.ticket ?? "—"} · snapshot{" "}
+            {trace.position?.snapshot_id ?? "—"} ·{" "}
+            {trace.position?.snapshot_age_ms != null
               ? `${Math.round(trace.position.snapshot_age_ms)} ms old`
               : "—"}
           </span>
@@ -94,15 +100,22 @@ export function DecisionTracePanel({ trace, atMs, error, unavailable, loading }:
         <li>
           <span className="pa-trace-stage">{t("position-adviser.trace.model", "MODEL")}</span>
           <span className="pa-mono">
-            {trace.model.model_id} · {trace.model.model_dimension}D · {trace.model.activation}
+            {trace.model?.model_id ?? "—"} · {trace.model?.model_dimension ?? "--"}D ·{" "}
+            {trace.model?.activation ?? "—"}
           </span>
         </li>
         <li>
           <span className="pa-trace-stage">{t("position-adviser.trace.decision", "DECISION")}</span>
-          <span className="pa-decision-action" data-action={d.action}>
-            {d.action}
-          </span>
-          <span className="pa-mono">conf {(d.confidence * 100).toFixed(1)}%</span>
+          {d ? (
+            <>
+              <span className="pa-decision-action" data-action={d.action}>
+                {d.action}
+              </span>
+              <span className="pa-mono">conf {((d.confidence ?? 0) * 100).toFixed(1)}%</span>
+            </>
+          ) : (
+            <span className="pa-mono">—</span>
+          )}
         </li>
         <li>
           <span className="pa-trace-stage">{t("position-adviser.trace.policy", "POLICY")}</span>
@@ -136,17 +149,17 @@ export function DecisionTracePanel({ trace, atMs, error, unavailable, loading }:
       <ul className="pa-tensor-counts">
         <li>
           {t("position-adviser.latency.total", "total: {ms} ms", {
-            ms: trace.latency.total_ms.toFixed(3),
+            ms: lat?.total_ms != null ? lat.total_ms.toFixed(3) : "—",
           })}
         </li>
         <li>
           {t("position-adviser.latency.feature", "feature build: {ms} ms", {
-            ms: trace.latency.feature_ms !== null ? trace.latency.feature_ms.toFixed(3) : "—",
+            ms: lat?.feature_ms != null ? lat.feature_ms.toFixed(3) : "—",
           })}
         </li>
         <li>
           {t("position-adviser.latency.inference", "inference: {ms} ms", {
-            ms: trace.latency.inference_ms !== null ? trace.latency.inference_ms.toFixed(3) : "—",
+            ms: lat?.inference_ms != null ? lat.inference_ms.toFixed(3) : "—",
           })}
         </li>
       </ul>

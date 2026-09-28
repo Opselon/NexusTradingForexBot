@@ -75,11 +75,29 @@ export const positionAdviserApi = {
   rollback: (): Promise<AdviserGenericResponse> =>
     send<AdviserGenericResponse>(`${BASE}/rollback`, {}),
 
-  /** GET /api/position-adviser/tensor/current-input — the actual last input. */
-  tensor: (signal?: AbortSignal): Promise<TensorInspectorResponse> =>
-    getLegacy<TensorInspectorResponse>(`${BASE}/tensor/current-input`, signal),
+  /**
+   * GET /api/position-adviser/tensor/current-input — the actual last input.
+   *
+   * The route answers `{"status": "OK", "tensor": {...}}` (legacy raw JSON, not
+   * a v1 envelope, so getLegacy cannot unwrap it). Unwrap here: every consumer
+   * (TensorInspectorPanel + the page state) is typed to the inner payload, and
+   * the envelope stored as the payload made `tensor_shape` undefined, crashing
+   * the whole page on `.join()` (BUG-544).
+   */
+  tensor: async (signal?: AbortSignal): Promise<TensorInspectorResponse> => {
+    const env = await getLegacy<{ status: string; tensor: TensorInspectorResponse }>(
+      `${BASE}/tensor/current-input`,
+      signal,
+    );
+    return env?.tensor ?? null;
+  },
 
-  /** GET /api/position-adviser/decision/current — the last advisory + latencies. */
+  /**
+   * GET /api/position-adviser/decision/current — the last advisory + latencies.
+   * Same envelope shape (`{"status": "OK", "decision": ...}` is NOT used; this
+   * route returns position/model/decision/latency at the top level) — kept
+   * explicit for symmetry with `tensor`.
+   */
   decision: (signal?: AbortSignal): Promise<DecisionTraceResponse> =>
     getLegacy<DecisionTraceResponse>(`${BASE}/decision/current`, signal),
 
