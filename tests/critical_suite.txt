@@ -511,3 +511,4 @@ tests/unit/test_ml_qa_019_parity_coverage_cpu_budget.py
 tests/unit/test_bug542_drawdown_sync.py
 tests/unit/test_neural_studio_contracts.py
 tests/unit/test_neural_studio_endpoints.py
+tests/unit/test_bug543_live_yaml_schema.py
