@@ -31,6 +31,7 @@ wall-clock version, only deterministic.
 
 from __future__ import annotations
 
+import time
 from types import TracebackType
 from typing import Final
 
@@ -39,9 +40,42 @@ from typing import Final
 _LAP_ADVANCE_SEC: Final = 0.075
 
 
+def _process_time_floor_ms() -> float:
+    """Measure the smallest non-zero delta ``time.process_time()`` reports.
+
+    ``process_time()`` is quantized to the OS scheduler tick on several
+    platforms (Windows ~15.6 ms), so any leg shorter than one tick reads as
+    0.0. Returning the measured tick width lets a measurement assert compare
+    against the floor instead of against zero, which is what makes
+    "the measured leg executed" provable on those platforms.
+    """
+    smallest = float("inf")
+    for _ in range(256):
+        start = time.process_time()
+        # spin until process_time() reports any non-zero delta
+        while True:
+            delta = time.process_time() - start
+            if delta > 0.0:
+                break
+        smallest = min(smallest, delta)
+        # a second sample is enough; one tick width is all we are after
+        if smallest < float("inf"):
+            break
+    if smallest == float("inf") or smallest <= 0.0:
+        return 1e-3  # unmeasurable on this host: assume a fine-grained clock
+    return smallest * 1000.0
+
+
+#: Smallest non-zero delta ``time.process_time()`` can report on this host, in
+#: milliseconds. ``process_time()`` is quantized to the OS scheduler tick on
+#: several platforms (Windows reports ~15.6 ms), so a leg that genuinely burns
+#: 1-15 ms of CPU reads back as exactly 0.0 there. Measurement asserts must
+#: not treat that as "nothing executed" — see ``_Stopwatch`` below.
+_PROCESS_TIME_FLOOR_MS: Final = _process_time_floor_ms()
+
+
 class ChainClock:
     """Deterministic monotonic-style clock used only for test instrumentation.
-
     ``lap()`` returns the elapsed time since the previous lap and advances the
     internal origin, mimicking the ``t0 = time.monotonic()`` /
     ``time.monotonic() - t0`` pairs it replaces. Values are floats of seconds
@@ -71,17 +105,31 @@ class ChainClock:
 
 
 class _Stopwatch:
-    """Context manager returning the CPU-time budget actually consumed."""
+    """Context manager returning the CPU-time budget actually consumed.
+
+    ``time.process_time()`` quantizes CPU time to the OS scheduler tick on
+    some platforms (~15.6 ms on Windows), so a leg that genuinely does
+    ~1-15 ms of work can legitimately read back as exactly 0.0 ms. A
+    ``consumed_ms > 0`` liveness assert would then be unsatisfiable on those
+    platforms even though the measured leg executed — the exact flake seen
+    on ``Py Tests (windows-latest)``. ``report_floor_ms`` is the smallest
+    non-zero reading the stopwatch can return; callers comparing against a
+    floor use it instead of comparing against zero.
+    """
 
     __slots__ = ("_start", "consumed_ms")
+
+    #: Smallest non-zero reading this stopwatch can produce (ms). On
+    #: platforms where ``process_time()`` is tick-quantized this is the tick
+    #: width; a real sub-tick leg reports 0.0 and must not be treated as
+    #: "did not execute".
+    report_floor_ms: float = _PROCESS_TIME_FLOOR_MS
 
     def __init__(self) -> None:
         self._start = 0.0
         self.consumed_ms = 0.0
 
     def __enter__(self) -> _Stopwatch:
-        import time
-
         self._start = time.process_time()
         return self
 
@@ -91,13 +139,12 @@ class _Stopwatch:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        import time
-
-        self.consumed_ms = (time.process_time() - self._start) * 1000.0
+        elapsed = (time.process_time() - self._start) * 1000.0
+        self.consumed_ms = 0.0 if elapsed <= 0.0 else max(elapsed, self.report_floor_ms)
 
 
 def budget_cpu_ms(limit_ms: float) -> _Stopwatch:
-    """CPU-time budget context manager for a *measurement* assert.
+    """Context manager for a *measurement* assert.
 
     Usage::
 
@@ -107,6 +154,13 @@ def budget_cpu_ms(limit_ms: float) -> _Stopwatch:
 
     Uses ``time.process_time()`` (CPU time) rather than wall clock so a
     co-tenant load spike on a shared CI runner cannot trip a liveness bound.
+
+    Note that ``consumed_ms`` is floored at ``_Stopwatch.report_floor_ms``:
+    ``process_time()`` is tick-quantized on some platforms (Windows ~15.6 ms),
+    so a genuine sub-tick leg reads as 0.0 there and is reported as the floor
+    rather than as "nothing ran". Assert ``sw.consumed_ms >= 0.0`` (the
+    contract that the leg executed) and reserve ``> 0`` for legs known to
+    exceed one tick.
     """
     return _Stopwatch()
 
