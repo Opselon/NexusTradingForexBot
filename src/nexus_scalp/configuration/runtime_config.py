@@ -1121,6 +1121,65 @@ class RuntimeConfigStore:
             except Exception:
                 logger.exception("[RUNTIME_CONFIG] listener error (isolated)")
 
+    def _sync_user_config_file(self, snapshot: RuntimeConfiguration) -> None:
+        """Best-effort projection of the authoritative snapshot to nexus.yaml.
+
+        RUNTIME-INTEGRITY-001. The file is a compatibility cache read by
+        health/doctor, the launcher and update orchestration; the settings DB
+        and the in-memory snapshot remain authoritative. A failed write is
+        logged and swallowed — the engine never blocks on a projection, and a
+        stale file no longer diverges from the runtime once this runs.
+
+        Only written when the file ALREADY EXISTS: a first-run install with no
+        user config must not gain one from this path (the engine's own
+        bootstrap owns that)."""
+        try:
+            from nexus_scalp.release import paths as rpaths
+
+            target = rpaths.get_user_config_path()
+            if not target.exists():
+                return
+            flat = snapshot_to_flat(snapshot)
+            cfg = AppConfig.load_from_yaml(target)
+            for key, flat_value in flat.items():
+                section, _, field = key.partition(".")
+                holder = getattr(cfg, section, None)
+                if holder is None or not hasattr(holder, field):
+                    continue
+                # Coerce to the target field's declared type. The snapshot is
+                # flat (str/int/float/bool), but AppConfig fields are Enums and
+                # bounded numerics; assigning a raw str to an Enum field makes
+                # model_dump() emit a Pydantic serializer warning and the
+                # projected file then round-trips noisily.
+                # Pydantic v2 deprecates `__fields__` (a warning per lookup);
+                # model_fields is the v2 attribute, __fields__ the v1 fallback.
+                fields = getattr(type(holder), "model_fields", None)
+                if fields is None:
+                    fields = getattr(type(holder), "__fields__", None)
+                target_field = fields.get(field) if fields is not None else None
+                applied = flat_value
+                if target_field is not None and isinstance(flat_value, str):
+                    coerced = _coerce_setting_value(target_field.annotation, flat_value)
+                    applied = flat_value if coerced is None else coerced
+                setattr(holder, field, applied)
+            data = cfg.model_dump(mode="python") if hasattr(cfg, "model_dump") else dict(cfg)
+            tmp = target.with_name(target.name + ".tmp")
+            try:
+                import yaml  # type: ignore
+
+                tmp.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+            except Exception:
+                # Same degraded emitter the wizard uses; still a loadable file.
+                import json
+
+                tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            tmp.replace(target)
+        except Exception:
+            logger.warning(
+                "[RUNTIME_CONFIG] nexus.yaml projection write failed (non-blocking)",
+                exc_info=True,
+            )
+
     # ------------------------------------------------------------ apply
     def apply(
         self,
@@ -1218,6 +1277,10 @@ class RuntimeConfigStore:
             # 4. notify subscribers (engine service re-sync, UI refresh, ...)
             self._notify(snapshot, event)
 
+            # 5. keep the on-disk user config in step with the authoritative
+            # store (RUNTIME-INTEGRITY-001 — see _sync_user_config_file).
+            self._sync_user_config_file(snapshot)
+
             return ConfigurationApplyReport(
                 success=True,
                 persisted=persisted,
@@ -1261,3 +1324,30 @@ def config_file_hash(path: Path | str) -> str:
         return hashlib.sha256(p.read_bytes()).hexdigest()[:16]
     except OSError:
         return ""
+
+
+def _coerce_setting_value(annotation: Any, raw: str) -> Any:
+    """Coerce a flat snapshot string to its AppConfig field type.
+
+    Used by ``_sync_user_config_file`` so the projected nexus.yaml holds the
+    field's real type (Enum/number), not the flat string the snapshot carries.
+    Returns ``None`` when no safe coercion applies; the caller keeps the raw
+    value rather than dropping the setting.
+    """
+    try:
+        import enum
+
+        if annotation is None:
+            return None
+        if isinstance(annotation, type) and issubclass(annotation, enum.Enum):
+            for member in annotation:  # accept the enum's name OR its value
+                if raw == member.name or raw == str(member.value):
+                    return member
+            return None
+        if annotation is bool:
+            return raw.strip().lower() in ("1", "true", "yes", "on")
+        if annotation in (int, float):
+            return annotation(raw) if raw.strip() else None
+    except Exception:
+        return None
+    return None

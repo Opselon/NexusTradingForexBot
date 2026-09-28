@@ -123,15 +123,18 @@ class ResearchWorker:
 
     def _load_checkpoint(self) -> None:
         try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            try:
-                conn.row_factory = sqlite3.Row
-                row = conn.execute(
-                    "SELECT cycle_count, last_checkpoint FROM research_worker_state "
-                    "WHERE scope = 'research' LIMIT 1;"
-                ).fetchone()
-            finally:
-                conn.close()
+            # RUNTIME-INTEGRITY-001: raw sqlite3 on audit_repo._db_path raises
+            # "unable to open database file" under the pooled PostgreSQL
+            # provider (the URI lives on _db_path). Use the provider-portable
+            # READ plane the research surface shares; SQLite keeps its own path.
+            plane = self.audit_repo.research_read_plane()
+            if plane is None:
+                return
+            rows = plane.query(
+                "SELECT cycle_count, last_checkpoint FROM research_worker_state "
+                "WHERE scope = 'research' LIMIT 1"
+            )
+            row = rows[0] if rows else None
             if row is not None:
                 self.cycle_count = max(self.cycle_count, int(row["cycle_count"] or 0))
                 prior = str(row["last_checkpoint"] or "")
@@ -380,6 +383,12 @@ class ResearchWorker:
         try:
             from nexus_scalp.research.archive import archive_research_history
 
+            # RUNTIME-INTEGRITY-001: archive_research_history is SQLite-shaped
+            # (it takes a sqlite3.Connection). It must never run against the
+            # pooled PostgreSQL provider — the URI on _db_path is not a file.
+            if not getattr(self.audit_repo, "_is_sqlite", False):
+                logger.debug("[STRATEGY_RESEARCH] event=ARCHIVE_SKIP reason=non_sqlite_provider")
+                return validated > 0
             conn = sqlite3.connect(self.audit_repo._db_path, timeout=10.0)
             try:
                 archive_research_history(conn)
