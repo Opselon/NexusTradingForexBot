@@ -496,8 +496,12 @@ def test_no_module_installs_packages_merely_by_being_imported() -> None:
         r"(?:subprocess\.(?:run|Popen|call|check_call|check_output)|os\.system|os\.popen)$"
     )
     offenders: list[str] = []
+    fast_check = ("subprocess", "os.system", "os.popen")
     for path in (REPO_ROOT / "src" / "nexus_scalp").rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if not any(token in text for token in fast_check):
+            continue
+        tree = ast.parse(text)
         # Module-level statements only: skip every function/class body.
         top_level = [
             stmt
