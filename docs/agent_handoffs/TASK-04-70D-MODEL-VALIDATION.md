@@ -122,7 +122,7 @@ When you take over (TASK-5: 70D Shadow runtime / drift / champion-safe deploymen
    d. The Shadow runtime then consumes the CHALLENGER (if any) — strict
       observer; nothing flows back into execution/risk (INV-002/014/018).
 4. Commit discipline: agent-label commit (`Hermes-*: <imperative>`), body with
-   Agent/Role/Scope/Why/Implementation/Verification/Risk/Handoff, regression
+   agents/Role/Scope/Why/Implementation/Verification/Risk/Handoff, regression
    tests in the same commit, full Telegram report in Persian with SHA+files+
    push result+remote verification.
 5. If any parity gate fails at ANY point: stop, record BUG-NNN with evidence,

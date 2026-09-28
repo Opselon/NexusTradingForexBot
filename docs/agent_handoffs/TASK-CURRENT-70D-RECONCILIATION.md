@@ -77,7 +77,7 @@ validation) are evidence, not truth. Fix only PROVEN gaps. No promotion.
    it, do not resolve it.
 7. Quality gates: ruff check/format src tests, mypy src, pytest unit +
    integration, beforePush.ps1 — separate your failures from parallel WIP.
-8. Commit contract: `AGENT-<N>: <imperative>` with Agent/Role/Task/Scope/
+8. Commit contract: `AGENT-<N>: <imperative>` with agents/Role/Task/Scope/
    Current HEAD/Evidence/Fix/Tests/Risk/Handoff. Stage only owned files.
    Re-verify `git diff --cached --name-only` before commit (parallel agents
    can wipe the index).

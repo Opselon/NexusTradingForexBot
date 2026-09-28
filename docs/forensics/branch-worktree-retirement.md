@@ -221,7 +221,7 @@ git diff --check       → clean
 Protected branches     → pinc-stash-rescue + nse/checkpoint intact, reachable (git show-ref)
 Valuable/docs branch   → hermes-subagent/subagent-sa-0-8c5a9a11 + its .worktrees entry intact
 Forensic branches      → 4 explicit heads verified (adf2d687, dcdc229f, d3d8e11e, 9c6a2370)
-Links                  → docs/forensics/README.md (21 relative links) + Agent/README.md (8) → all targets exist
+Links                  → docs/forensics/README.md (21 relative links) + docs/governance/legacy-agent-directory.md (8) → all targets exist
 ```
 
 ---

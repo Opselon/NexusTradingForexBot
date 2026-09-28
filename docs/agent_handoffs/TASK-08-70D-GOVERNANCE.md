@@ -135,7 +135,7 @@ TASK-9 — 70D governance continuation:
 7. Quality gates: `.venv\Scripts\python.exe -m ruff check src tests`,
    `ruff format --check`, `mypy src`, `pytest tests/unit -q`,
    `pytest tests/integration -q`, then `beforePush.ps1`.
-8. Commit contract: `<AGENT-NAME>: <imperative summary>` with Agent/Role/
+8. Commit contract: `<AGENT-NAME>: <imperative summary>` with agents/Role/
    Scope/Why/Implementation/Verification/Risk/Handoff body; update
    registries additively; check `git diff --cached --name-only` before
    commit.
