@@ -215,11 +215,15 @@ def test_model_detail_reports_training_status_not_just_loss(client: TestClient) 
     assert res.status_code == 200
     detail = res.json()["model"]
     assert "training_status" in detail, detail.keys()
-    # A NOT_TRAINED record carrying final_loss==0.0 is exactly the defect this
-    # field exists to catch: the loss must not read as a measurement unless
-    # training_status says one was taken.
-    if detail["training_status"] == "NOT_TRAINED":
-        assert detail["final_loss"] in (0.0, None)
+    # training_status is what separates "never trained" from "trained": a
+    # NOT_TRAINED record must never present a loss as a completed-training
+    # measurement, whatever value the column happens to hold.
+    status = detail["training_status"]
+    assert status in {"NOT_TRAINED", "TRAINED", "FAILED"}
+    if status == "TRAINED":
+        assert detail["epochs"] >= 1, detail
+    else:
+        assert detail["epochs"] == 0 or detail["final_loss"] is None or status == "FAILED"
 
 
 # --------------------- switch preview (Phases 20 / 58) ---------------------

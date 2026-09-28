@@ -26,11 +26,9 @@ from pathlib import Path
 from typing import Any
 
 from nexus_scalp.model_lab.model_builder import (
+    DIMENSION_TO_SCHEMA_ID,
     ModelBuilderConfig,
     SavedBuilderConfig,
-)
-from nexus_scalp.model_lab.model_builder import (
-    DIMENSION_TO_SCHEMA_ID,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
