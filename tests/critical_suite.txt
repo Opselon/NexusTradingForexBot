@@ -442,6 +442,7 @@ tests/unit/test_recon_requote_and_reconcile.py
 tests/unit/test_recon_risk_boundary_battery.py
 tests/unit/test_recon_wal_crash_durability.py
 tests/unit/test_regime_calibration_bug132.py
+tests/unit/test_runtime_dependency_closure.py
 tests/unit/test_release_system.py
 tests/unit/test_release_update_phase17.py
 tests/unit/test_replay_toggle_guard.py

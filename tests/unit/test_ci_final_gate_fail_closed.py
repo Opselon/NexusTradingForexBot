@@ -42,6 +42,7 @@ CHECKS = (
     "coverage",
     "critical_coverage",
     "runtime_gate",
+    "runtime_deps",
     "layered_smoke",
 )
 

@@ -50,6 +50,38 @@ from nexus_scalp.database.review_lock import install_review_write_guard
 
 install_review_write_guard()
 
+# ==============================================================================
+# Runtime dependency gate: verify the DECLARED closure BEFORE importing the
+# third-party runtime stack below.
+# ==============================================================================
+# The launcher imports uvicorn/rich/fastapi/torch/polars at module import time.
+# When the environment is incomplete, the process previously died here with a
+# raw `ModuleNotFoundError: No module named 'click'` traceback (uvicorn's
+# transitive requirement) and no repair path — an opaque failure the operator
+# could not act on. The gate below walks the declared runtime closure (derived
+# transitively from pyproject.toml / installed metadata, never a hand-copied
+# list), and in a DEVELOPER SOURCE CHECKOUT repairs it through the repository's
+# own workflow (`uv pip install -e .`). It never runs inside a frozen bundle,
+# is disabled by NSE_NO_AUTO_INSTALL=1, and never suppresses the ImportError:
+# an installation that stays incomplete still exits non-zero with a readable
+# diagnostic. Scope is dependency closure ONLY — no application behaviour.
+try:
+    from nexus_scalp.release.runtime_deps import run_startup_dependency_gate
+
+    run_startup_dependency_gate()
+except SystemExit:
+    raise
+except Exception as _dep_gate_err:  # pragma: no cover - defensive, never silent
+    import sys as _sys_gate
+
+    print(
+        "NSE runtime dependency gate could not run: "
+        f"{type(_dep_gate_err).__name__}: {_dep_gate_err}\n"
+        f"Interpreter: {_sys_gate.executable}\n"
+        "Verify the checkout and rerun `python -m nexus_scalp.release.runtime_deps`.",
+        file=_sys_gate.stderr,
+    )
+
 import uvicorn
 from rich import box
 from rich.align import Align

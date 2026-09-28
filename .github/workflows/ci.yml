@@ -139,7 +139,13 @@ jobs:
   quality:
     name: Code Quality & Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # pytest alone runs ~1010s under `-n auto` on a loaded shared runner, which
+    # left only ~190s of the previous 20m budget for ruff/mypy/coverage/runtime
+    # gate/smoke. A loaded runner then crossed the cap and GitHub cancelled the
+    # JOB with "The operation was canceled" (not "timeout"), aborting gates that
+    # had not yet run and masking a green pytest as a red check. The cap measures
+    # test correctness, not runner contention.
+    timeout-minutes: 30
 
     # No PostgreSQL service container here, by operator decision. The
     # database-backed arms need a MIGRATED server (scratch databases, a
@@ -193,6 +199,28 @@ jobs:
         run: |
           python scripts/ci/make_ci_results.py init "$CI_RESULTS_DIR" \
             --json "$CI_RESULTS_DIR/run-info/env-digest.json"
+
+      # Runtime dependency closure gate (NSE rt-deps lane): the installed
+      # environment must actually satisfy every declared runtime
+      # requirement, transitively. Guards the uvicorn->click defect class,
+      # where the install succeeds while a transitive requirement stays
+      # absent and the app dies on `import uvicorn`. `pip check` cannot see
+      # it (metadata-only), so this probe resolves the real modules.
+      # continue-on-error + results-tree, then the final fail-closed
+      # aggregator decides: a dependency probe may never abort ruff/mypy/
+      # pytest in this job (same contract as runtime_gate/layered-smoke).
+      - name: Runtime dependency closure
+        id: runtime_deps
+        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
+        continue-on-error: true
+        run: |
+          set +e
+          mkdir -p "$CI_RESULTS_DIR"
+          python -m nexus_scalp.release.runtime_deps --json > "$CI_RESULTS_DIR/runtime_deps.json" 2> "$CI_RESULTS_DIR/runtime_deps.log"
+          rc=$?
+          cat "$CI_RESULTS_DIR/runtime_deps.json"
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" runtime_deps "$rc" "dependency closure incomplete (see runtime_deps.json + runtime_deps.log)" || true
+          exit 0
 
       # -------- Telegram: workflow started (advisory; never fails CI) --------
       - name: Telegram - CI started
