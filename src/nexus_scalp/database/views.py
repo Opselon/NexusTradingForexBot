@@ -32,6 +32,24 @@ def _expr(columns: set[str], name: str, alias: str, fallback: str = "NULL") -> s
     return f'{source} AS "{alias}"'
 
 
+def _view_verb(driver: Any) -> str:
+    """The CREATE VIEW verb the driver's dialect accepts.
+
+    ``CREATE VIEW IF NOT EXISTS`` is SQLite syntax (PostgreSQL has no such
+    form — it rejects the statement at ``NOT`` and the view is never created,
+    so every analytics view silently went missing on a PostgreSQL box).
+    PostgreSQL relies on the caller's existence check instead.
+    """
+    config = getattr(driver, "config", None)
+    if config is not None and hasattr(config, "is_sqlite"):
+        return "CREATE VIEW IF NOT EXISTS " if config.is_sqlite else "CREATE VIEW "
+    return (
+        "CREATE VIEW IF NOT EXISTS "
+        if getattr(driver, "name", "sqlite") == "sqlite"
+        else "CREATE VIEW "
+    )
+
+
 def _definitions(driver: Any) -> dict[str, str]:
     """Build DDL from the live column contract, without dialect-specific ordering."""
     ledger = _columns(driver, "audit_ledger")
@@ -106,11 +124,12 @@ def _definitions(driver: Any) -> dict[str, str]:
             _expr(rules, "updated_at", "updated_at"),
         ]
     )
+    create = _view_verb(driver)
     return {
-        "v_trade_timeline": f"CREATE VIEW IF NOT EXISTS v_trade_timeline AS SELECT {ledger_expr} FROM audit_ledger",
-        "v_equity_curve": f"CREATE VIEW IF NOT EXISTS v_equity_curve AS SELECT {snap_expr} FROM audit_account_snapshots",
+        "v_trade_timeline": f"{create}v_trade_timeline AS SELECT {ledger_expr} FROM audit_ledger",
+        "v_equity_curve": f"{create}v_equity_curve AS SELECT {snap_expr} FROM audit_account_snapshots",
         "v_broker_reconciliation": (
-            "CREATE VIEW IF NOT EXISTS v_broker_reconciliation AS SELECT "
+            f"{create}v_broker_reconciliation AS SELECT "
             f'o.ticket AS local_ticket, o.symbol, o."{order_type}" AS order_type, '
             f'o."{requested_volume}" AS requested_volume, bo.volume_current AS broker_volume, '
             "bo.state AS broker_state, bd.profit AS broker_deal_profit, "
@@ -118,9 +137,9 @@ def _definitions(driver: Any) -> dict[str, str]:
             "FROM audit_orders o LEFT JOIN audit_broker_orders bo ON o.ticket = bo.ticket "
             f"LEFT JOIN audit_broker_deals bd ON o.ticket = {broker_join}"
         ),
-        "v_risk_summary": f"CREATE VIEW IF NOT EXISTS v_risk_summary AS SELECT {risk_expr} FROM trading_rules_config",
+        "v_risk_summary": f"{create}v_risk_summary AS SELECT {risk_expr} FROM trading_rules_config",
         "v_dashboard_summary": (
-            "CREATE VIEW IF NOT EXISTS v_dashboard_summary AS SELECT COUNT(*) AS total_trades, "
+            f"{create}v_dashboard_summary AS SELECT COUNT(*) AS total_trades, "
             "COALESCE(SUM(pnl), 0.0) AS total_pnl, COALESCE(SUM(commission), 0.0) AS total_commission, "
             "COALESCE(SUM(swap), 0.0) AS total_swap, COALESCE(AVG(duration_sec), 0.0) AS avg_duration_sec "
             "FROM audit_ledger WHERE status != 'OPENED'"
@@ -138,6 +157,8 @@ def ensure_analytics_views(driver: Any) -> dict[str, dict[str, str]]:
         return {name: {"status": "FAILED", "error": reason} for name in _VIEW_TABLES}
     for name, ddl in definitions.items():
         try:
+            # SQLite accepts CREATE VIEW IF NOT EXISTS; PostgreSQL does not, so
+            # existence is probed here (and the verb omitted there).
             if driver.table_exists(name):
                 results[name] = {"status": "exists"}
             else:
