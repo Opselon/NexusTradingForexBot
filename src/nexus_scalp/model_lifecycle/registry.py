@@ -17,7 +17,6 @@ gate results, parent model and child model. Promotion lineage is immutable.
 from __future__ import annotations
 
 import json
-import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +25,7 @@ from nexus_scalp.adapters.database.provider_store import (
     query_one,
     query_rows,
     queue_write,
+    queue_write_batch,
 )
 from nexus_scalp.experience.provenance import ModelRegistry, fingerprint_artifact
 from nexus_scalp.features.schema import FEATURE_SCHEMAS
@@ -70,26 +70,54 @@ class ModelLifecycleRegistry:
     # ------------------------------------------------------------------
 
     def ensure_schema(self) -> None:
-        """Additive migration: appends lifecycle columns if missing (idempotent)."""
-        if not self.audit_repo._is_sqlite:
-            return
+        """Additive migration: appends lifecycle columns if missing (idempotent).
+
+        Provider-portable (PG-TRUST-ANCHOR-001). This used to guard on
+        ``not self.audit_repo._is_sqlite: return``, which silently did nothing
+        under PostgreSQL — so the 8 extension columns (``lifecycle_status``
+        among them) were never added to a pooled database and every governed
+        lifecycle read saw a table that could not express CHAMPION. The read
+        side of this module already routes through ``provider_store``; the
+        migration now does too, instead of talking to ``sqlite3`` directly with
+        ``_db_path`` (which holds the DSN under a pooled provider, not a path).
+        """
         try:
-            conn = sqlite3.connect(self.audit_repo._db_path, timeout=5.0)
-            try:
-                existing = {
-                    r[1]
-                    for r in conn.execute(
-                        "PRAGMA table_info(experience_model_registry);"
-                    ).fetchall()
-                }
-                for col, ctype in _EXTENSION_COLUMNS:
-                    if col not in existing:
-                        conn.execute(
-                            f"ALTER TABLE experience_model_registry ADD COLUMN {col} {ctype};"
-                        )
-                conn.commit()
-            finally:
-                conn.close()
+            existing = {
+                str(r["column_name"])
+                for r in query_rows(
+                    self.audit_repo,
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'experience_model_registry'"
+                    if not self.audit_repo._is_sqlite
+                    else "SELECT name AS column_name FROM pragma_table_info"
+                    "('experience_model_registry')",
+                    (),
+                    operation="model_registry.ensure_schema.columns",
+                )
+            }
+            missing = [(col, ctype) for col, ctype in _EXTENSION_COLUMNS if col not in existing]
+            if not missing:
+                return
+            stmts = [
+                (
+                    f"ALTER TABLE experience_model_registry ADD COLUMN {col} {ctype};",
+                    (),
+                )
+                for col, ctype in missing
+            ]
+            if not queue_write_batch(
+                self.audit_repo, stmts, operation="model_registry.ensure_schema"
+            ):
+                logger.error(
+                    "[MODEL_REGISTRY] schema migration failed",
+                    error="write batch rejected",
+                )
+                return
+            logger.info(
+                "[MODEL_REGISTRY] schema migrated",
+                columns=[c for c, _t in missing],
+                provider="sqlite" if self.audit_repo._is_sqlite else "pooled",
+            )
         except Exception as e:
             logger.error("[MODEL_REGISTRY] schema migration failed", error=str(e))
 
