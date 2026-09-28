@@ -576,22 +576,28 @@ class ProtectionEngine:
         breakeven_sl: float,
     ) -> None:
         """
-        Emits a breakeven-failure warning at most once every
-        `TELEMETRY_CONSOLE_INTERVAL_SEC` per ticket so a persistent broker rejection
-        cannot flood the console. The audit record is written every time.
+        Emits a breakeven-failure warning AND audit record at most once every
+        `TELEMETRY_CONSOLE_INTERVAL_SEC` per ticket so a persistent broker
+        rejection cannot flood either the console or the audit table.
+
+        Previously only the console log was throttled while the audit row was
+        written on every management tick. On the live path that produced
+        6,685 BREAKEVEN_FAILED audit rows from 190 tickets (up to 377 retries
+        for a single ticket): one retry-distinct row per tick for hours.
         """
         TELEMETRY_CONSOLE_INTERVAL_SEC = _om_protection_symbols()[13]
         now = time.monotonic()
-        if (now - state.last_be_failure_log_time) >= TELEMETRY_CONSOLE_INTERVAL_SEC:
-            logger.warning(
-                message,
-                ticket=pos.ticket,
-                breakeven_sl=breakeven_sl,
-                actual_sl=pos.sl,
-                pnl=f"${pos.profit:+.2f}",
-            )
-            state.last_be_failure_log_time = now
+        if (now - state.last_be_failure_log_time) < TELEMETRY_CONSOLE_INTERVAL_SEC:
+            return
+        state.last_be_failure_log_time = now
 
+        logger.warning(
+            message,
+            ticket=pos.ticket,
+            breakeven_sl=breakeven_sl,
+            actual_sl=pos.sl,
+            pnl=f"${pos.profit:+.2f}",
+        )
         self.om._log_protection_audit(
             pos,
             action="BREAKEVEN_FAILED",
