@@ -56,6 +56,7 @@ import json
 import sqlite3
 from collections import Counter
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import Depends
@@ -94,6 +95,37 @@ _OPTIONAL_SIGNAL_COLUMNS = (
 
 _MAX_LIMIT = 500
 _MAX_WINDOW = 50000
+
+#: P1: columns the summary census needs, in dependency order. Only the ones
+#: the ledger actually has are projected (an older audit DB may predate
+#: ``decision_stage`` / ``blocked_by``), so the bounded read stays valid
+#: across schema generations.
+_SUMMARY_COLUMNS = ("action", "generated_at", "decision_stage", "blocked_by")
+
+#: P1 (scan-amplification fix): the summary census window. The pre-fix value
+#: was 20000, which is LARGER than the whole 7-day-retention ledger (~9,108
+#: rows live), so the "bound" was vacuous — the ``WHERE id IN (LIMIT 20000)``
+#: semi-join covered the entire table on every 15s poll and PostgreSQL
+#: correctly seq-scanned it. The census feeds a summary strip that renders a
+#: recent action distribution; a 2000-row latest-N slice is a representative
+#: sample at every realistic decision rate, and the bounded ``ORDER BY id
+#: DESC LIMIT n`` shape is index-served (it reads the table's tail, never the
+#: history). ``scanned_rows`` in the response discloses the actual count.
+_SUMMARY_WINDOW = 2000
+
+#: P1: the funnel's terminal-stage distribution window (same defect as the
+#: summary; the funnel's pre-fix window was 50000 — 5x the whole table).
+_FUNNEL_WINDOW = 2000
+
+#: P1: columns the funnel distribution needs. Adapted to the ledger's actual
+#: schema the same way the summary projection is.
+_FUNNEL_COLUMNS = ("action", "generated_at", "decision_stage", "blocked_by")
+
+#: P1: the NO_TRADE forensics window. The pre-fix endpoint ran five separate
+#: unbounded ``WHERE action='NO_TRADE'`` queries; NO_TRADE is ~92% of rows, so
+#: every one was a full scan. One bounded tail fetch supplies all five
+#: distributions (gates/regimes/reasons/hourly-trend/recent examples).
+_NO_TRADE_WINDOW = 2000
 
 
 def _audit_db_path() -> str | None:
@@ -264,35 +296,45 @@ def register_operator_routes(
             return serialize_enums(summary)
         try:
             con.row_factory = sqlite3.Row
-            window = 20000
-            ids = [
-                r[0]
-                for r in con.execute(
-                    "SELECT id FROM audit_signals ORDER BY id DESC LIMIT ?", (window,)
-                )
-            ]
-            scanned = len(ids)
+            # P1 (scan-amplification fix): this used to be a two-step
+            # ``SELECT id ... LIMIT 20000`` followed by ``WHERE id IN (...)``,
+            # a semi-join whose window (20000) is LARGER than the table
+            # (~9,108 rows over 7 days), so the window covered the whole
+            # table on every call and the planner correctly seq-scanned it.
+            # The summary only needs a bounded recent census, so the window
+            # is now a real bound, and the census is read in ONE query
+            # (no IN-list round-trip, no second pass over the same rows).
+            # The projection adapts to the columns the ledger actually has
+            # (an older audit DB may predate decision_stage/blocked_by) so
+            # the bounded read stays valid across schema generations.
+            avail = [c for c in _SUMMARY_COLUMNS if _has_column(con, "audit_signals", c)]
+            proj = ", ".join(avail)
+            window = _SUMMARY_WINDOW
+            rows = con.execute(
+                f"SELECT {proj} FROM audit_signals ORDER BY id DESC LIMIT ?",
+                (window,),
+            ).fetchall()
+            scanned = len(rows)
             stats: dict[str, Any] = {"scanned_rows": scanned, "window": window}
             if scanned:
-                ph = ",".join("?" * scanned)
-                rows = con.execute(
-                    f"SELECT action, decision_stage, blocked_by, generated_at FROM audit_signals WHERE id IN ({ph})",
-                    ids,
-                ).fetchall()
                 actions = Counter(r["action"] for r in rows)
                 stats["actions"] = dict(actions)
                 stats["total"] = scanned
-                # LATEST, not first-returned: the IN (...) fetch is unordered,
-                # so rows[0] is an arbitrary row — it was reporting the OLDEST
-                # timestamp in the window as "latest decision". Take the max
-                # over the ledger's own timestamps (never the wall clock).
+                # LATEST, not first-returned: the rows come back newest-first
+                # (ORDER BY id DESC), but this stays robust to any row order —
+                # take the max over the ledger's own timestamps (never the
+                # wall clock). The pre-fix code read rows[0] as "latest" while
+                # the IN-list fetch was unordered and returned the OLDEST row
+                # of the window.
                 stats["latest_decision_at"] = max(
                     (r["generated_at"] for r in rows if r["generated_at"] is not None),
                     default=None,
                 )
-                # Simple 1h recency split (no clock fabrication: bounded by
-                # ledger timestamps themselves).
-                stats["actions_1h"] = {}
+                # 1h recency split from the same fetched rows (no re-query).
+                cutoff_1h = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+                stats["actions_1h"] = dict(
+                    Counter(r["action"] for r in rows if (r["generated_at"] or "") >= cutoff_1h)
+                )
             summary["ledger"] = {"available": True, **stats}
 
             # Model/health-derived warnings are appended by the frontend from
@@ -472,14 +514,18 @@ def register_operator_routes(
             return _err("RESOURCE_UNAVAILABLE", extra={"reason": "LEDGER_UNAVAILABLE"})
         try:
             con.row_factory = sqlite3.Row
-            window = _MAX_WINDOW
-            ids = [
-                r[0]
-                for r in con.execute(
-                    "SELECT id FROM audit_signals ORDER BY id DESC LIMIT ?", (window,)
-                )
-            ]
-            if not ids:
+            # P1: same vacuous-window defect as the summary — the pre-fix code
+            # fetched ``LIMIT 50000`` ids then ``WHERE id IN (...)``: a window
+            # 5x larger than the whole table, so it semi-joined the entire
+            # ledger on every call. One bounded query reads the same tail.
+            avail = [c for c in _FUNNEL_COLUMNS if _has_column(con, "audit_signals", c)]
+            proj = ", ".join(avail)
+            window = _FUNNEL_WINDOW
+            rows = con.execute(
+                f"SELECT {proj} FROM audit_signals ORDER BY id DESC LIMIT ?",
+                (window,),
+            ).fetchall()
+            if not rows:
                 return serialize_enums(
                     {
                         "available": True,
@@ -492,17 +538,12 @@ def register_operator_routes(
                         "note": "TERMINAL distributions: the ledger records the final blocking stage per decision, not every interim pass.",
                     }
                 )
-            ph = ",".join("?" * len(ids))
-            params: list[Any] = list(ids)
-            time_clause = ""
+            # Time filter is applied AFTER the bounded fetch (in Python) so the
+            # query stays a bounded tail read; a ``generated_at >= ?`` in SQL
+            # would select ~100% of a 7-day table and the planner seq-scans.
             if hours is not None and hours > 0:
-                time_clause = " AND generated_at >= datetime('now', ?)"
-                params.append(f"-{float(hours)} hours")
-            rows = con.execute(
-                f"SELECT action, decision_stage, blocked_by, generated_at FROM audit_signals "
-                f"WHERE id IN ({ph}){time_clause}",
-                params,
-            ).fetchall()
+                cutoff = (datetime.now(UTC) - timedelta(hours=float(hours))).isoformat()
+                rows = [r for r in rows if (r["generated_at"] or "") >= cutoff]
             stages = Counter((r["decision_stage"] or "NOT_RECORDED") for r in rows)
             gates = Counter((r["blocked_by"] or "NOT_BLOCKED") for r in rows)
             actions = Counter(r["action"] for r in rows)
@@ -510,7 +551,7 @@ def register_operator_routes(
                 {
                     "available": True,
                     "window": window,
-                    "scanned_rows": len(ids),
+                    "scanned_rows": len(rows),
                     "total": len(rows),
                     "stages": [{"stage": k, "count": v} for k, v in stages.most_common()],
                     "gates": [{"gate": k, "count": v} for k, v in gates.most_common()],
@@ -538,43 +579,40 @@ def register_operator_routes(
             optional_cols = [
                 c for c in _OPTIONAL_SIGNAL_COLUMNS if _has_column(con, "audit_signals", c)
             ]
-            where = ["UPPER(action) = 'NO_TRADE'"]
-            params: list[Any] = []
-            if hours is not None and hours > 0:
-                where.append("generated_at >= datetime('now', ?)")
-                params.append(f"-{float(hours)} hours")
-            clause = " AND ".join(where)
-            total_rows = con.execute(
-                f"SELECT COUNT(*) FROM audit_signals WHERE {clause}", params
-            ).fetchone()[0]
-            gates = Counter(
-                (r[0] or "NOT_BLOCKED")
-                for r in con.execute(f"SELECT blocked_by FROM audit_signals WHERE {clause}", params)
-            )
-            regimes = Counter(
-                (r[0] or "NOT_RECORDED")
-                for r in con.execute(f"SELECT regime FROM audit_signals WHERE {clause}", params)
-            )
-            reasons = Counter(
-                (r[0] or "NOT_RECORDED")
-                for r in con.execute(
-                    f"SELECT reason_code FROM audit_signals WHERE {clause}", params
-                )
-            )
-            # Hourly trend over the last 12 ledger hours (bounded buckets).
-            trend = con.execute(
-                f"SELECT substr(generated_at, 1, 13) AS hour_bucket, COUNT(*) AS n "
-                f"FROM audit_signals WHERE {clause} "
-                f"GROUP BY hour_bucket ORDER BY hour_bucket DESC LIMIT 12",
-                params,
-            ).fetchall()
-            recent_rows = con.execute(
+            # P1: the pre-fix code ran FIVE separate full-table queries here
+            # (COUNT + blocked_by + regime + reason_code + hourly GROUP BY),
+            # each ``WHERE action='NO_TRADE'`` — a predicate selecting ~92% of
+            # rows, so the planner seq-scanned the whole table five times per
+            # call. No index can serve a majority predicate. The panel renders
+            # distributions over recent history, so one bounded latest-N fetch
+            # of the NO_TRADE tail supplies every distribution, and the hourly
+            # trend is derived from the rows already in memory.
+            window = _NO_TRADE_WINDOW
+            fetched = con.execute(
                 "SELECT id, request_id, symbol, action, confidence, regime, generated_at, "
                 "execution_mode, reason_code, decision_stage, blocked_by, payload"
                 + (", " + ", ".join(optional_cols) if optional_cols else "")
-                + f" FROM audit_signals WHERE {clause} ORDER BY id DESC LIMIT ?",
-                (*params, limit),
+                + " FROM audit_signals WHERE UPPER(action) = 'NO_TRADE'"
+                " ORDER BY id DESC LIMIT ?",
+                (window,),
             ).fetchall()
+            if hours is not None and hours > 0:
+                cutoff = (datetime.now(UTC) - timedelta(hours=float(hours))).isoformat()
+                rows = [r for r in fetched if (r["generated_at"] or "") >= cutoff]
+            else:
+                rows = fetched
+            total_rows = len(rows)
+            gates = Counter((r["blocked_by"] or "NOT_BLOCKED") for r in rows)
+            regimes = Counter((r["regime"] or "NOT_RECORDED") for r in rows)
+            reasons = Counter((r["reason_code"] or "NOT_RECORDED") for r in rows)
+            # Hourly trend over the fetched rows (bounded buckets, no re-query).
+            buckets: Counter[str] = Counter()
+            for r in rows:
+                ts = r["generated_at"] or ""
+                if len(ts) >= 13:
+                    buckets[ts[:13]] += 1
+            trend = sorted(buckets.items(), key=lambda kv: kv[0], reverse=True)[:12]
+            recent_rows = rows[:limit]
             unresolved_direction = 0
             recent = []
             for r in recent_rows:
@@ -589,11 +627,13 @@ def register_operator_routes(
                 {
                     "available": True,
                     "total": total_rows,
+                    "window": window,
+                    "scanned_rows": total_rows,
                     "gates": [{"gate": k, "count": v} for k, v in gates.most_common()],
                     "regimes": [{"regime": k, "count": v} for k, v in regimes.most_common()],
                     "reasons": [{"reason": k, "count": v} for k, v in reasons.most_common()],
                     "reasons_top_n": 10 if len(reasons) > 10 else len(reasons),
-                    "hourly_trend": [{"hour": r["hour_bucket"], "count": r["n"]} for r in trend],
+                    "hourly_trend": [{"hour": h, "count": n} for h, n in trend],
                     "model_direction_unresolved": unresolved_direction,
                     "model_direction_unresolved_note": (
                         "Rows where the recorded model_action carries no directional candidate (e.g. GUARDIAN rows where the model abstained). The counterfactual direction is NOT reconstructable - kept honest per TICK_COUNTERFACTUAL v1."

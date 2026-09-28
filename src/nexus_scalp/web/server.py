@@ -233,6 +233,57 @@ def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _recent_predictions_cached(app: Any, engine: Any) -> list[dict[str, Any]]:
+    """Recent prediction history, recomputed only when the ledger moved.
+
+    P1 (scan-amplification fix): ``get_system_state()`` runs on every SSE
+    cycle (200ms) and on every dashboard poll, and its predictions section
+    reads ``get_recent_predictions(40)`` — a bounded, index-served tail read
+    that costs ~11 heap pages. Bounded as it is, asking for it 5 times per
+    second per connected client is still ~all of the audit read volume: it
+    dominates ``idx_scan`` and it is the query the operator most often sees
+    in the slow log once the table grows.
+
+    The section is a pure function of the ledger's newest rows, so it is
+    memoized on the ledger's HIGH-WATER MARK (max id). A cheap
+    ``SELECT MAX(id)`` decides whether the 40-row tail read is worth doing;
+    on a 1Hz decision cadence the tail read happens ~1/sec instead of 5/sec
+    per client, and it is skipped entirely whenever the ledger did not move
+    (which is the case for most of the 5Hz cycles on an idle or
+    NO_TRADE-dominated market). The memo is per-app (per server lifetime),
+    never per-request, and the ledger is append-only with monotonic ids, so
+    the memo cannot serve a stale tail: a new row always bumps max(id).
+
+    ``engine is None`` (no engine attached — the standalone UI server) still
+    reads the same authoritative audit repository directly.
+    """
+    from nexus_scalp.adapters.database.audit_repository import AuditRepository
+
+    store = getattr(app.state, "_predictions_memo", None)
+    if not isinstance(store, dict):
+        store = {"high_water": -1, "rows": []}
+        app.state._predictions_memo = store
+    repo = engine.audit if engine is not None else AuditRepository()
+    try:
+        hw = repo.ledger_high_water_mark()
+    except Exception:
+        hw = None
+    if hw is not None and hw == store["high_water"]:
+        # The ledger did not move since the last computation, so the
+        # memoized tail is still the truth. ``hw is None`` is NOT a cache
+        # hit: it means "no rows now" (or unreadable), and the memo may hold
+        # rows from BEFORE a truncate — a real, observed stale-cache bug.
+        return list(store["rows"])
+    if hw is None:
+        store["high_water"] = None
+        store["rows"] = []
+        return []
+    rows = repo.get_recent_predictions(limit=40)
+    store["high_water"] = hw
+    store["rows"] = rows
+    return list(rows)
+
+
 def _liquidity_state_section(engine: Any) -> dict[str, Any]:
     """Canonical liquidity section embedded in /api/status + live/state + SSE.
 
@@ -2125,13 +2176,18 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         # Real prediction history from audit_signals (NEVER fabricated). When
         # the DB has rows, the UI table shows real model decisions; empty DB
         # renders an explicit empty state.
+        # P1 (scan-amplification fix): this is the single hottest audit_signals
+        # read in the system — the SSE loop (``/api/ticks/stream``) calls
+        # get_system_state() every 200ms, and this section is part of every
+        # full-state event. The query is already bounded and index-served
+        # (ORDER BY id DESC LIMIT 40), so it does not scan; the fix here is to
+        # stop ASKING for it when nothing changed. A memo keyed on the
+        # ledger's high-water mark (max id) is recomputed only when a new
+        # decision row actually lands — on a 1Hz decision cadence that is
+        # ~1 recomputation per second instead of 5 fetches per second, and
+        # each recomputation is a bounded tail read.
         try:
-            if engine is not None:
-                real_predictions = engine.audit.get_recent_predictions(limit=40)
-            else:
-                from nexus_scalp.adapters.database.audit_repository import AuditRepository
-
-                real_predictions = AuditRepository().get_recent_predictions(limit=40)
+            real_predictions = _recent_predictions_cached(app, engine)
         except Exception as e:
             log_web_error(
                 logger,

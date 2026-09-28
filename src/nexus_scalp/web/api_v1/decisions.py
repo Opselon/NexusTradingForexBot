@@ -162,57 +162,55 @@ def decisions_stats(
     request: Request,
     hours_back: int = Query(default=168, ge=1, le=720),
 ) -> Any:
+    # P1 (scan-amplification fix): this used to run
+    # ``SELECT action, decision_stage, COUNT(*) ... GROUP BY ...`` over the
+    # whole table, which is a full scan on a 7-day-retention table (the 7-day
+    # predicate selects ~100% of rows; no index can help). The panel renders a
+    # distribution chart, which needs a representative recent sample, not an
+    # exhaustive count. The repository now computes the distribution over a
+    # bounded latest-N slice (index-served) and discloses the slice.
     repo = get_audit_repo(request)
-    rows = fetch_rows_bounded(
-        repo,
-        "SELECT action, decision_stage, COUNT(*) AS n FROM audit_signals"
-        " WHERE generated_at >= ? GROUP BY action, decision_stage ORDER BY n DESC",
-        (_cutoff(hours_back),),
-        500,
-    )
-    by_action: dict[str, int] = {}
-    by_stage: dict[str, int] = {}
-    for r in rows:
-        by_action[r["action"]] = by_action.get(r["action"], 0) + int(r["n"])
-        stage = r["decision_stage"] or "UNKNOWN"
-        by_stage[stage] = by_stage.get(stage, 0) + int(r["n"])
+    stats = repo.get_decision_stats(hours_back=float(hours_back))
     return ok(
         request,
         {
             "window_hours": hours_back,
-            "total": sum(by_action.values()),
-            "by_action": by_action,
-            "by_stage": by_stage,
+            "total": stats["total"],
+            "by_action": stats["by_action"],
+            "by_stage": stats["by_group"],
+            "group_key": stats["group_key"],
+            "sampled_rows": stats["sampled_rows"],
+            # True only when the bounded slice covered the whole window; the
+            # UI uses this to decide whether to label the numbers approximate.
+            "exhaustive": stats["exhaustive"],
         },
     )
 
 
 @router.get("/no-trade/reasons", summary="NO_TRADE rejection reason distribution")
 def decisions_no_trade_reasons(request: Request) -> Any:
-    reasons = fetch_rows_bounded(
-        get_audit_repo(request),
-        "SELECT COALESCE(reason_code, 'UNKNOWN') AS reason, COUNT(*) AS n FROM audit_signals"
-        " WHERE action = 'NO_TRADE' GROUP BY reason ORDER BY n DESC",
-        (),
-        100,
-    )
-    total = fetch_rows_bounded(
-        get_audit_repo(request),
-        "SELECT COUNT(*) AS n FROM audit_signals WHERE action = 'NO_TRADE'",
-        (),
-        1,
-    )
+    # P1: the reason distribution is now computed over the same bounded
+    # latest-N slice as the stats endpoint (full-table GROUP BY over the whole
+    # ledger was the scan). NO_TRADE is ~92% of rows, so no index path can
+    # ever serve an exhaustive count — the slice is the fix, not an index.
+    repo = get_audit_repo(request)
+    stats = repo.get_decision_stats(group_by_reason=True)
     return ok(
         request,
         {
-            "total": int(total[0]["n"]) if total else 0,
-            "reasons": {r["reason"]: int(r["n"]) for r in reasons},
+            "total": stats["by_action"].get("NO_TRADE", 0),
+            "reasons": stats["by_group"],
+            "group_key": stats["group_key"],
+            "sampled_rows": stats["sampled_rows"],
+            "exhaustive": stats["exhaustive"],
         },
     )
 
 
 @router.get("/no-trade", summary="NO_TRADE analytics")
 def decisions_no_trade(request: Request) -> Any:
+    # P1: ``COUNT(*) WHERE action='NO_TRADE'`` was an unbounded full scan
+    # (majority predicate). Bounded to a latest-N slice via the repository.
     page = _query_signals(
         request,
         where=" WHERE action = 'NO_TRADE'",
@@ -220,24 +218,11 @@ def decisions_no_trade(request: Request) -> Any:
         page=1,
         page_size=1,
     )
-    total = fetch_rows_bounded(
-        get_audit_repo(request),
-        "SELECT COUNT(*) AS n FROM audit_signals WHERE action = 'NO_TRADE'",
-        (),
-        1,
-    )
-    reasons = fetch_rows_bounded(
-        get_audit_repo(request),
-        "SELECT COALESCE(reason_code, 'UNKNOWN') AS reason, COUNT(*) AS n FROM audit_signals"
-        " WHERE action = 'NO_TRADE' GROUP BY reason ORDER BY n DESC",
-        (),
-        100,
-    )
+    total = get_audit_repo(request).count_decisions(action="NO_TRADE")
     return ok(
         request,
         {
-            "total": int(total[0]["n"]) if total else 0,
-            "reasons": [{"reason": r["reason"], "count": int(r["n"])} for r in reasons],
+            "total": total,
             "latest": page["items"][0] if page["items"] else None,
         },
     )

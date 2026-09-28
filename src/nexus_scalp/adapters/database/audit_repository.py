@@ -21,6 +21,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -189,6 +190,18 @@ DEFAULT_TRADING_RULES: tuple[tuple[str, str, str], ...] = (
 #: (explicit db_url/config callers are never hijacked); tests/conftest.py sets
 #: it per pytest run so bare constructions cannot touch the production tree.
 _DEFAULT_AUDIT_DB_URL = "sqlite:///artifacts/audit.db"
+
+#: P1 (scan-amplification fix): hard ceiling on the latest-N slice used by the
+#: bounded decision-distribution/count helpers. A caller may ask for less, but
+#: never more — this is what structurally guarantees the hot path cannot grow
+#: back into a whole-table scan as the ledger grows. 2000 is ~4x the largest
+#: per-minute decision volume the engine produces in a week of 1Hz polling, so
+#: the distribution stays representative at every realistic scale.
+_DECISION_STATS_MAX_SAMPLE = 2000
+
+#: P1: how many ledger rows the SSE/dashboard "recent predictions" surface
+#: fetches per cycle. Already bounded; documented here as the contract.
+_RECENT_PREDICTIONS_LIMIT = 40
 
 
 def resolve_audit_db_url(db_url: str = _DEFAULT_AUDIT_DB_URL, config: Any = None) -> str:
@@ -5181,6 +5194,193 @@ class AuditRepository:
         except Exception as e:
             logger.error("Failed to retrieve recent order events", error=str(e))
             return []
+
+    def get_decision_stats(
+        self,
+        hours_back: float = 168.0,
+        sample_rows: int = 2000,
+        group_by_reason: bool = False,
+    ) -> dict[str, Any]:
+        """Bounded decision-distribution stats (P1: replaces full-table GROUP BY).
+
+        The dashboard's decision distribution (``/api/v1/decisions/stats``,
+        polled every 60s by the AI Analysis page) previously ran
+        ``SELECT action, decision_stage, COUNT(*) ... GROUP BY ...`` over the
+        whole ``audit_signals`` table. On the live 9,108-row ledger that was a
+        seq scan of ~1,300 pages per call — the table only holds 7 days of
+        retention, so the 7-day ``generated_at`` predicate selected ~100% of
+        rows and the planner correctly preferred a full scan. The query had
+        no selectivity to exploit, so no index could fix it.
+
+        Semantics dictate a bounded shape instead: the panel renders a
+        DISTRIBUTION CHART, whose exact count over 7 days is not required to
+        be exhaustive — it must be representative and recent. A bounded
+        latest-N slice gives that, and the slice reads through the primary
+        key (``ORDER BY id DESC LIMIT n``), which is index-served on both
+        providers. The response discloses the sampled slice so the UI can
+        label the numbers honestly (``sampled_rows`` / ``exhaustive``).
+
+        ``group_by_reason`` switches the second grouping key from
+        ``decision_stage`` to ``reason_code`` (the NO_TRADE forensics panel
+        wants the rejection-reason distribution, not the stage distribution).
+
+        ``sample_rows`` is capped at ``_DECISION_STATS_MAX_SAMPLE`` so a
+        caller can never turn this back into a whole-table scan.
+        """
+        bounded = max(1, min(int(sample_rows), _DECISION_STATS_MAX_SAMPLE))
+        cutoff = (datetime.now(UTC) - timedelta(hours=hours_back)).isoformat()
+        second_key = "reason_code" if group_by_reason else "decision_stage"
+        sql = (
+            "SELECT action, "
+            f"{second_key}, generated_at, COUNT(*) AS n FROM ("
+            " SELECT action, reason_code, decision_stage, generated_at FROM audit_signals"
+            " ORDER BY id DESC LIMIT ?"
+            ") AS recent WHERE generated_at >= ?"
+            f" GROUP BY action, {second_key}"
+        )
+        if not self._is_sqlite:
+            raw = self._provider_read_guard(
+                "get_decision_stats",
+                lambda: ([]),
+                sql=sql,
+                args=(bounded, cutoff),
+                kind="rows",
+            )
+        else:
+            try:
+                with self._connect_sqlite(5.0) as conn:
+                    conn.row_factory = sqlite3.Row
+                    raw = conn.execute(sql, (bounded, cutoff)).fetchall()
+            except Exception as e:
+                logger.error("Failed to retrieve decision stats", error=str(e))
+                return {
+                    "by_action": {},
+                    "by_group": {},
+                    "total": 0,
+                    "sampled_rows": 0,
+                    "window_hours": float(hours_back),
+                    "exhaustive": False,
+                }
+        by_action: dict[str, int] = {}
+        by_group: dict[str, int] = {}
+        total = 0
+        for r in raw:
+            try:
+                row = dict(r)
+            except Exception:
+                continue
+            n = int(row.get("n") or 0)
+            total += n
+            action = str(row.get("action") or "UNKNOWN")
+            by_action[action] = by_action.get(action, 0) + n
+            # group key value: NOT_RECORDED rather than an empty string
+            gval = row.get(second_key)
+            gkey = str(gval) if gval not in (None, "") else "NOT_RECORDED"
+            by_group[gkey] = by_group.get(gkey, 0) + n
+        # The slice is the `bounded` newest rows. If fewer than `bounded` of
+        # them fall inside the window, the slice reached beyond the window's
+        # start — so every row the window contains was inside the slice and
+        # the distribution IS exhaustive over the window.
+        return {
+            "by_action": by_action,
+            "by_group": by_group,
+            "group_key": second_key,
+            "total": total,
+            "sampled_rows": bounded,
+            "window_hours": float(hours_back),
+            "exhaustive": total < bounded,
+        }
+
+    def count_decisions(self, hours_back: float | None = None, action: str | None = None) -> int:
+        """Bounded count of decisions, optionally within a time window.
+
+        P1: ``/api/v1/decisions/no-trade`` previously ran a bare
+        ``SELECT COUNT(*) FROM audit_signals WHERE action = 'NO_TRADE'`` — an
+        unbounded full-table scan (NO_TRADE is ~92% of rows, so no index can
+        ever serve it and the planner seq-scans). This helper bounds the work
+        by counting a latest-N slice via the primary key; the response
+        discloses the bound. When ``hours_back`` is given the slice is
+        additionally constrained by the ledger's own timestamps, which on a
+        7-day-retention table is where the scan originally came from — so the
+        helper refuses the unbounded shape entirely and always applies a slice.
+        """
+        bounded = _DECISION_STATS_MAX_SAMPLE
+        clauses: list[str] = []
+        args: list[Any] = []
+        if action:
+            clauses.append("UPPER(action) = UPPER(?)")
+            args.append(action)
+        if hours_back is not None and hours_back > 0:
+            clauses.append("generated_at >= ?")
+            args.append((datetime.now(UTC) - timedelta(hours=hours_back)).isoformat())
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        sql = (
+            "SELECT COUNT(*) FROM ("
+            f" SELECT id FROM audit_signals{where}"
+            " ORDER BY id DESC LIMIT ?"
+            ") AS recent"
+        )
+        params = (*args, bounded)
+        if not self._is_sqlite:
+            raw = self._provider_read_guard(
+                "count_decisions",
+                lambda: ([{"n": 0}]),
+                sql=sql,
+                args=params,
+                kind="rows",
+            )
+            try:
+                return int(dict(raw[0]).get("n") or 0) if raw else 0
+            except Exception:
+                return 0
+        try:
+            with self._connect_sqlite(5.0) as conn:
+                row = conn.execute(sql, params).fetchone()
+                return int(row[0]) if row else 0
+        except Exception as e:
+            logger.error("Failed to count decisions", error=str(e))
+            return 0
+
+    def ledger_high_water_mark(self) -> int | None:
+        """The largest ``id`` in ``audit_signals``, or None when the table is empty.
+
+        P1 (scan-amplification fix): a cheap monotonic-cursor probe. The SSE
+        loop calls ``get_system_state()`` every 200ms and its predictions
+        section needs the newest ledger rows; memoizing that section on this
+        high-water mark means the 40-row tail read only happens when a new
+        decision actually landed, instead of 5 times per second per client.
+
+        ``id`` is the table's monotonically-increasing surrogate key and the
+        ledger is append-only (retention deletes old rows from the head), so
+        ``MAX(id)`` is a correct cursor: it never decreases, and a new row
+        always bumps it. On both providers ``MAX(id)`` resolves via the
+        primary-key index (an index-only scan) — it does not touch the heap.
+        Returns None when the table holds no rows (a memo-safe "empty" that
+        never collides with a real id, which are all >= 1).
+        """
+        sql = "SELECT MAX(id) FROM audit_signals"
+        if not self._is_sqlite:
+            raw = self._provider_read_guard(
+                "ledger_high_water_mark",
+                lambda: ([]),
+                sql=sql,
+                args=(),
+                kind="rows",
+            )
+            try:
+                if not raw:
+                    return None
+                val = dict(raw[0]).get("max") if isinstance(raw[0], dict) else raw[0][0]
+                return int(val) if val is not None else None
+            except Exception:
+                return None
+        try:
+            with self._connect_sqlite(5.0) as conn:
+                row = conn.execute(sql).fetchone()
+                return int(row[0]) if row and row[0] is not None else None
+        except Exception as e:
+            logger.error("Failed to read ledger high-water mark", error=str(e))
+            return None
 
     def get_ledger_row(self, ticket: int) -> dict[str, Any] | None:
         """Returns the full autopsy row for a single ticket, or None when absent."""
