@@ -120,19 +120,24 @@ class UpdateDiscovery:
                     continue
                 raise last_err from last_err
             except urllib.error.URLError as e:
-                last_err = GitHubDiscoveryError("", str(e.reason or e))
-                if attempt < max_retries:
-                    time.sleep(min(2**attempt * 2, 30))
-                    attempt += 1
-                    continue
-                raise last_err from last_err
+                # RETRY-DISCIPLINE: a URLError means NO HTTP response was ever
+                # received (connection refused, DNS failure, unreachable route).
+                # The endpoint is not slowly recovering behind a transient 5xx
+                # — it is not serving at all. Retrying it 3x with exponential
+                # backoff (2s+4s+8s) only multiplies a wall-clock the caller
+                # already paid via `timeout`, on every update check, and can
+                # never turn a refused socket into a release list. Only
+                # TRANSIENT HTTP CODES (see _RETRYABLE_CODES above, where the
+                # server explicitly answered) justify a retry. Measured cost of
+                # the old behavior: 18.0s for a dead endpoint at timeout=1
+                # (4 x 1s socket waits + 14s of sleeps), and it dominated the
+                # slowest tests in the push gate. (UPD-RETRY-001.)
+                raise GitHubDiscoveryError("", str(e.reason or e)) from e
             except TimeoutError:
-                last_err = GitHubDiscoveryError("", "timeout contacting GitHub")
-                if attempt < max_retries:
-                    time.sleep(min(2**attempt * 2, 30))
-                    attempt += 1
-                    continue
-                raise last_err from last_err
+                # Same class: no response reached us. A timeout is a dead or
+                # pathologically slow endpoint, and re-attempting immediately
+                # re-binds the same timeout against the same unreachable peer.
+                raise GitHubDiscoveryError("", "timeout contacting GitHub") from None
             try:
                 data = json.loads(raw.decode("utf-8"))
             except (ValueError, UnicodeDecodeError) as e:
