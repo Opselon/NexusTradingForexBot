@@ -514,3 +514,5 @@ tests/unit/test_neural_studio_contracts.py
 tests/unit/test_neural_studio_endpoints.py
 tests/unit/test_bug543_live_yaml_schema.py
 tests/unit/test_database_views.py
+tests/unit/test_health_db_reason.py
+tests/unit/test_health_news_cycle.py

@@ -26,6 +26,44 @@ CRITICAL_TABLES: dict[str, tuple[str, ...]] = {
 }
 
 
+def _connection_reason(exc: BaseException) -> str:
+    """The operator-facing reason a connection attempt failed.
+
+    psycopg's message embeds the server's own diagnostic (``fe_sendauth: no
+    password supplied``, ``FATAL: password authentication failed for user
+    "postgres"``, ``Connection refused``, ``database "nexusdb" does not
+    exist``). That is exactly the fact that separates a credential rotation
+    from a service start from a provisioning step, so it is surfaced with the
+    failure class prefixed for the health UI. The message is never logged or
+    echoed in full to a UI: a driver exception carries no credential material
+    (the password travels out of band via the secret store, and the libpq
+    error text reports the AUTH OUTCOME, never the secret itself).
+    """
+    kind = type(exc).__name__
+    text = str(exc).strip().replace("\n", " ")
+    if not text:
+        return kind
+    # psycopg prefixes "connection failed:" itself; keep one layer.
+    if text.lower().startswith("connection failed:"):
+        text = text.split(":", 1)[1].strip()
+    return f"{kind}: {text}"[:300]
+
+
+def _last_connection_error(driver: Any) -> str:
+    """Best-effort reason when ``ping()`` returned False without raising."""
+    failure = getattr(driver, "last_failure", None)
+    if isinstance(failure, BaseException) and str(failure).strip():
+        return _connection_reason(failure)
+    # Legacy drivers without the attribute: fall back to anything they expose.
+    for attr in ("_last_error", "last_error", "_last_connection_error"):
+        candidate = getattr(driver, attr, None)
+        if isinstance(candidate, BaseException) and str(candidate).strip():
+            return _connection_reason(candidate)
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate
+    return ""
+
+
 class DatabaseHealthService:
     """Snapshot health of every persistent domain for the active provider."""
 
@@ -73,13 +111,29 @@ class DatabaseHealthService:
                 out["health"] = "Warning"
                 return out
 
+            # HEALTH-DBREASON: a failed connection must report the driver's
+            # OWN exception, not a fixed "connection failed" string. The real
+            # message distinguishes the actionable cases an operator must
+            # separate: ``fe_sendauth: no password supplied`` /
+            # ``password authentication failed`` (rotate the credential in the
+            # secret store) vs ``Connection refused`` (start the service) vs
+            # ``database "x" does not exist`` (provision it). The fixed string
+            # collapsed all of them into one useless red, so the box looked
+            # merely "down" while the real defect was a bad password.
             t0 = time.perf_counter()
-            ping = driver.ping()
+            try:
+                ping = driver.ping()
+            except Exception as ping_exc:  # never raises to the caller
+                out["latency_ms"] = round((time.perf_counter() - t0) * 1000, 2)
+                out["status"] = "DISCONNECTED"
+                out["health"] = "Error"
+                out["error"] = _connection_reason(ping_exc)
+                return out
             out["latency_ms"] = round((time.perf_counter() - t0) * 1000, 2)
             if not ping:
                 out["status"] = "DISCONNECTED"
                 out["health"] = "Error"
-                out["error"] = "connection failed"
+                out["error"] = _last_connection_error(driver) or "connection failed"
                 return out
             out["connected"] = True
             out["status"] = "CONNECTED"

@@ -231,6 +231,13 @@ class NewsWorker:
                 self.engine.context.refresh()
             except Exception as ctx_err:
                 logger.debug("[NEWS_CONTEXT] worker refresh failed", error=str(ctx_err))
+            # HEALTH-NEWS-CYCLE: the engine-level cycle stamp is the telemetry
+            # /api/news/health reports as ``last_cycle_at``. Without it the
+            # subsystem advertised cycle_count=55 with an empty timestamp —
+            # indistinguishable from a worker that stopped cycling long ago
+            # while it was in fact live. The worker is the single owner of the
+            # cycle loop, so it owns this stamp.
+            self.engine.last_cycle_at = self.last_cycle_start
             self._save_checkpoint()
             logger.info(
                 "[NEWS_WORKER] event=UPDATE",
