@@ -127,7 +127,7 @@ def _write(frame: object, *segments: str) -> Path:
 # 1. The gate is never weakened
 # ---------------------------------------------------------------------------
 class TestMissingParquetStillFails:
-    def test_missing_parquet_is_fail_not_initialized(self, tmp_path, monkeypatch):
+    def test_missing_parquet_is_fail_not_initialized(self, tmp_path, monkeypatch, repo_root_no_csv):
         eng = _engine(tmp_path, monkeypatch)
         entry = eng.check_data()
         assert entry.category == "DATA"
@@ -136,7 +136,7 @@ class TestMissingParquetStillFails:
         assert "canonical bars file missing" in entry.reason
         assert "XAUUSD_M1.parquet" in entry.reason
 
-    def test_missing_parquet_keeps_legacy_remedy(self, tmp_path, monkeypatch):
+    def test_missing_parquet_keeps_legacy_remedy(self, tmp_path, monkeypatch, repo_root_no_csv):
         eng = _engine(tmp_path, monkeypatch)
         entry = eng.check_data()
         assert entry.verdict == "FAIL"
@@ -145,14 +145,14 @@ class TestMissingParquetStillFails:
         assert "restore a data/raw backup" in entry.suggestion
 
     def test_missing_parquet_has_no_restore_hint_when_no_source(
-        self, tmp_path, monkeypatch, repo_root
+        self, tmp_path, monkeypatch, repo_root_no_csv
     ):
         eng = _engine(tmp_path, monkeypatch)
         entry = eng.check_data()
         assert entry.verdict == "FAIL"
         assert "data-restore" not in entry.suggestion
 
-    def test_fail_still_blocks_ready(self, tmp_path, monkeypatch):
+    def test_fail_still_blocks_ready(self, tmp_path, monkeypatch, repo_root_no_csv):
         eng = _engine(tmp_path, monkeypatch)
         entries = [e for e in eng.run_all() if e.category == "DATA"]
         assert entries and entries[0].verdict == "FAIL"
@@ -160,7 +160,9 @@ class TestMissingParquetStillFails:
         # A DATA FAIL degrades the aggregate; it must never read READY.
         assert verdict != "READY"
 
-    def test_missing_parquet_reports_documented_relative_path(self, tmp_path, monkeypatch):
+    def test_missing_parquet_reports_documented_relative_path(
+        self, tmp_path, monkeypatch, repo_root_no_csv
+    ):
         eng = _engine(tmp_path, monkeypatch)
         entry = eng.check_data()
         assert "XAUUSD_M1.parquet" in entry.reason
@@ -171,8 +173,10 @@ class TestMissingParquetStillFails:
 # 2. Actionable repair command when a bars source exists
 # ---------------------------------------------------------------------------
 class TestRepairHintForAvailableSource:
-    def test_csv_sibling_yields_exact_restore_command(self, tmp_path, monkeypatch, repo_root):
-        raw = repo_root / "data" / "raw"
+    def test_csv_sibling_yields_exact_restore_command(
+        self, tmp_path, monkeypatch, repo_root_no_csv
+    ):
+        raw = repo_root_no_csv / "data" / "raw"
         raw.mkdir(parents=True, exist_ok=True)
         csv = raw / "XAUUSD_M1.csv"
         _bars(50).write_csv(csv)
@@ -183,7 +187,7 @@ class TestRepairHintForAvailableSource:
         assert f"nexus data-restore --source {csv}" in entry.suggestion
         assert "canonicalize it into data/raw/XAUUSD_M1.parquet" in entry.suggestion
 
-    def test_csv_sibling_cwd_relative_is_found(self, tmp_path, monkeypatch, repo_root):
+    def test_csv_sibling_cwd_relative_is_found(self, tmp_path, monkeypatch, repo_root_no_csv):
         raw = tmp_path / "data" / "raw"
         raw.mkdir(parents=True, exist_ok=True)
         _bars(50).write_csv(raw / "XAUUSD_M1.csv")
@@ -205,8 +209,8 @@ class TestRepairHintForAvailableSource:
         assert entry.verdict == "FAIL"
         assert f"nexus data-restore --source {backup}" in entry.suggestion
 
-    def test_empty_sibling_is_not_a_source(self, tmp_path, monkeypatch, repo_root):
-        raw = repo_root / "data" / "raw"
+    def test_empty_sibling_is_not_a_source(self, tmp_path, monkeypatch, repo_root_no_csv):
+        raw = repo_root_no_csv / "data" / "raw"
         raw.mkdir(parents=True, exist_ok=True)
         (raw / "XAUUSD_M1.csv").write_text("", encoding="utf-8")
         eng = _engine(tmp_path, monkeypatch)

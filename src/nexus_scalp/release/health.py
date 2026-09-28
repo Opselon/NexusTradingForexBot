@@ -382,6 +382,46 @@ class HealthEngine:
             # reports no configured artifact, picks a bundle by tiebreak
             # alone, and can contradict the bundle the engine actually
             # serves. An explicit user config (or --config) still wins.
+            #
+            # RUNTIME-INTEGRITY-001: the persisted settings DB is the
+            # operator's authoritative store (settings/service.py: SYSTEM
+            # DEFAULTS (code) < INSTALLATION SETTINGS (app_settings.db) <
+            # RUNTIME CONFIG), and the engine rehydrates execution.mode from
+            # it at boot. A stale nexus.yaml left by an earlier wizard run
+            # still reads PAPER, so a health/doctor probe that resolves only
+            # the YAML reports a DIFFERENT mode than the running engine for
+            # the same install — the probe becomes a second, divergent
+            # source of truth. Resolve the settings DB first (the same store
+            # the engine rehydrates) and only fall back to the YAML chain
+            # when no settings DB row exists, so the probe and the engine
+            # can never disagree about execution.mode.
+            from nexus_scalp.settings import paths as settings_paths
+            from nexus_scalp.settings.service import SettingsDatabase
+
+            try:
+                sdb = SettingsDatabase(settings_paths.settings_db_path())
+                persisted_mode = sdb.get("execution.mode")
+                sdb.close()
+            except Exception:
+                persisted_mode = None
+            if persisted_mode is not None and str(persisted_mode.value).strip():
+                # The persisted operator mode is authoritative; the YAML chain
+                # below is the fallback for an unconfigured install (no
+                # settings row yet — the first-run case).
+                for cand in (
+                    paths.get_user_config_path(),
+                    Path("configs/live.yaml"),
+                    Path("configs/base.yaml"),
+                ):
+                    if cand.exists():
+                        try:
+                            base_cfg = AppConfig.load_from_yaml(cand)
+                        except Exception:
+                            continue
+                        base_cfg.execution.mode = str(persisted_mode.value).strip()
+                        self._config = base_cfg
+                        return self._config
+
             candidates: list[Path] = []
             if self.config_path is not None:
                 candidates.append(self.config_path)

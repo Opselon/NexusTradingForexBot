@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import sqlite3
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -879,14 +878,17 @@ def register_debug_research_routes(
 
         lifecycle_counts: dict[str, int] = {}
         try:
-            with sqlite3.connect(engine.audit._db_path, timeout=5.0) as conn:
-                rows = conn.execute(
-                    """
-                    SELECT lifecycle_state, COUNT(*) FROM strategy_intelligence_registry
-                    GROUP BY lifecycle_state;
-                    """
-                ).fetchall()
-                lifecycle_counts = {str(r[0]): int(r[1]) for r in rows}
+            # RUNTIME-INTEGRITY-002: raw sqlite3.connect on engine.audit._db_path
+            # raises "unable to open database file" under the pooled PostgreSQL
+            # provider (the URI lives on _db_path). Use the same provider-portable
+            # READ plane the research surface uses; keep the SQLite fast path.
+            plane = engine.audit.research_read_plane()
+            if plane is not None:
+                rows = plane.query(
+                    "SELECT lifecycle_state, COUNT(*) AS n"
+                    " FROM strategy_intelligence_registry GROUP BY lifecycle_state"
+                )
+                lifecycle_counts = {str(r["lifecycle_state"]): int(r["n"]) for r in rows}
         except Exception:
             lifecycle_counts = {}
 
@@ -905,13 +907,15 @@ def register_debug_research_routes(
 
         bounded = max(1, min(int(limit), 500))
         try:
-            with sqlite3.connect(engine.audit._db_path, timeout=5.0) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.execute(
-                    "SELECT * FROM strategy_intelligence_registry ORDER BY updated_at DESC LIMIT ?;",
+            plane = engine.audit.research_read_plane()
+            if plane is None:
+                return []
+            return list(
+                plane.query(
+                    "SELECT * FROM strategy_intelligence_registry ORDER BY updated_at DESC LIMIT ?",
                     (bounded,),
                 )
-                return [dict(r) for r in cursor.fetchall()]
+            )
         except Exception as e:
             log_web_error(
                 logger, "/api", None, e, context={"msg": "Failed to retrieve experience strategies"}
@@ -1764,20 +1768,15 @@ def register_debug_research_routes(
                 out["worker"]["runtime"] = format_research_worker_status(worker)
             blocked: list[dict[str, Any]] = []
             try:
-                import sqlite3 as _sqlite3
-
-                conn = _sqlite3.connect(engine.audit._db_path, timeout=5.0)
-                conn.row_factory = _sqlite3.Row
-                try:
-                    for r in conn.execute(
+                plane = engine.audit.research_read_plane()
+                if plane is not None:
+                    for r in plane.query(
                         "SELECT gate_id, strategy_id, research_run_id, gate_type, "
                         "status, failure_reason, failure_class, evidence_id "
                         "FROM research_gates WHERE status IN ('BLOCKED','FAILED','ERROR') "
-                        "ORDER BY completed_at DESC LIMIT 25;"
-                    ).fetchall():
+                        "ORDER BY completed_at DESC LIMIT 25"
+                    ):
                         blocked.append(dict(r))
-                finally:
-                    conn.close()
             except Exception:
                 blocked = []
             out["blocked_gates"] = blocked
