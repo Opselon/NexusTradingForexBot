@@ -33,10 +33,10 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
+from nexus_scalp.adapters.database import provider_store
 from nexus_scalp.experience.decision_evidence import (
     EVIDENCE_GATE_REJECTION,
     resolve_decision_evidence,
@@ -202,29 +202,21 @@ class ResearchDatasetBuilder:
         called at most once per build/audit.
         """
         repo = self.ledger.audit_repo
-        if not repo._is_sqlite:
-            return {}
         out: dict[str, str] = {}
-        try:
-            conn = sqlite3.connect(repo._db_path, timeout=10.0)
-            conn.row_factory = sqlite3.Row
+        rows = provider_store.query_rows(
+            repo,
+            "SELECT idempotency_key, payload FROM audit_experience_outcomes "
+            "WHERE is_closed = 1 LIMIT 100000;",
+            operation="research_dataset.load_reconstruction_sources",
+        )
+        for r in rows:
             try:
-                rows = conn.execute(
-                    "SELECT idempotency_key, payload FROM audit_experience_outcomes "
-                    "WHERE is_closed = 1 LIMIT 100000;"
-                ).fetchall()
-            finally:
-                conn.close()
-            for r in rows:
-                try:
-                    payload = json.loads(r["payload"] or "{}")
-                    bo = payload.get("broker_outcome") or {}
-                    src = bo.get("reconstruction_source", "") if isinstance(bo, dict) else ""
-                except Exception:
-                    src = ""
-                out[str(r["idempotency_key"])] = str(src or "")
-        except Exception as e:
-            logger.warning("[STRATEGY_RESEARCH] reconstruction source load failed", error=str(e))
+                payload = json.loads(r["payload"] or "{}")
+                bo = payload.get("broker_outcome") or {}
+                src = bo.get("reconstruction_source", "") if isinstance(bo, dict) else ""
+            except Exception:
+                src = ""
+            out[str(r["idempotency_key"])] = str(src or "")
         return out
 
     def _reconstruction_source(self, rec: ExperienceRecord) -> str:
@@ -242,21 +234,11 @@ class ResearchDatasetBuilder:
         blending invisibly into native outcomes.
         """
         repo = self.ledger.audit_repo
-        if not repo._is_sqlite:
-            return 0
-        try:
-            conn = sqlite3.connect(repo._db_path, timeout=10.0)
-            conn.row_factory = sqlite3.Row
-            try:
-                rows = conn.execute(
-                    "SELECT payload FROM audit_experience_outcomes "
-                    "WHERE is_closed = 1 LIMIT 100000;"
-                ).fetchall()
-            finally:
-                conn.close()
-        except Exception as e:
-            logger.warning("[STRATEGY_RESEARCH] recovery marker load failed", error=str(e))
-            return 0
+        rows = provider_store.query_rows(
+            repo,
+            "SELECT payload FROM audit_experience_outcomes WHERE is_closed = 1 LIMIT 100000;",
+            operation="research_dataset.count_recovered_outcomes",
+        )
         marker = RECOVERY_SOURCE_BROKER_HISTORY
         n = 0
         for r in rows:
@@ -281,13 +263,11 @@ class ResearchDatasetBuilder:
         the ledger/recovery sweep use (single DB path — proven identical) and
         delegates to experience.decision_evidence.resolve_decision_evidence,
         the ONE resolver shared with the recovery sweep (P0-M parity).
-        Returns None when the backend is not SQLite (no evidence possible).
+        Returns None when no evidence could be resolved (honest unknown).
         """
         repo = self.ledger.audit_repo
-        if not getattr(repo, "_is_sqlite", False):
-            return None
         try:
-            conn = sqlite3.connect(repo._db_path, timeout=10.0)
+            conn = provider_store.read_connection(repo)
             try:
                 return resolve_decision_evidence(conn, rec.request_id)
             finally:

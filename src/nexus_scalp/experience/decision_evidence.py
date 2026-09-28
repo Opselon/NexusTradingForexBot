@@ -106,9 +106,13 @@ def resolve_decision_evidence(
 ) -> TerminalStateEvidence:
     """Single-source dispatch-provenance resolution for one decision.
 
-    ``conn`` is a read-only SQLite connection to the audit DB (row_factory
-    not required). Deterministic: the same rows always produce the same
-    verdict. Never raises for missing evidence — absence is NO_EVIDENCE.
+    ``conn`` is a read-only connection to the audit DB (row_factory not
+    required). It may be either a ``sqlite3`` connection or a DB-API
+    connection from the fabric's pooled read backend (PostgreSQL): only
+    ``execute(...).fetchone()`` and positional ``row[0]`` / ``row[1]`` access
+    are used, which both support. Deterministic: the same rows always produce
+    the same verdict. Never raises for missing evidence — absence is
+    NO_EVIDENCE.
     """
     rid = str(request_id or "")
     if not rid:
@@ -129,7 +133,8 @@ def resolve_decision_evidence(
                ORDER BY id LIMIT 1""",
             (rid,),
         ).fetchone()
-    except sqlite3.OperationalError:
+    except Exception:
+        # Both providers: a missing/unreadable signals table is not evidence.
         row = None
     if row is not None:
         return TerminalStateEvidence(
@@ -149,7 +154,7 @@ def resolve_decision_evidence(
                WHERE order_id = ? AND ticket != 0 ORDER BY id LIMIT 1""",
             (rid,),
         ).fetchone()
-    except sqlite3.OperationalError:
+    except Exception:
         row = None
     if row is not None:
         return TerminalStateEvidence(
