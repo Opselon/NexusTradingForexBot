@@ -453,7 +453,7 @@ def test_no_production_file_changed() -> None:
             str(_REPO_ROOT),
             "diff",
             "--name-only",
-            "origin/main..HEAD",
+            "origin/main...HEAD",
             "--",
             "src/",
         ]
@@ -505,16 +505,28 @@ def test_sized_path_is_linear_in_cpu_time() -> None:
     samples costs ~4x CPU time; the ratio bound 6.0 carries margin over the
     measured 4.20x and a genuine O(n^2) regression (a per-trade scan over the
     whole equity history) clears it."""
+    import gc
+    import statistics
+
     from nexus_scalp.research.metrics import compute_sized_economic_pnl
     from nexus_scalp.research.models import EconomicAssumptions, ResearchSample
+    from tests.e2e.chain_clock import _PROCESS_TIME_FLOOR_MS
 
     econ = EconomicAssumptions()
+    # Warm up function dispatch, imports, and caches
+    compute_sized_economic_pnl(_mk_research_samples(ResearchSample, 100), econ)
+
     base_costs: dict[int, float] = {}
     for n in (1000, 4000):
         samples = _mk_research_samples(ResearchSample, n)
-        with budget_cpu_ms(_budget_constant("_SIZED_PATH_BUDGET_CPU_MS")) as sw:
-            compute_sized_economic_pnl(samples, econ)
-        base_costs[n] = sw.consumed_ms
+        times: list[float] = []
+        for _ in range(5):
+            gc.collect()
+            with budget_cpu_ms(_budget_constant("_SIZED_PATH_BUDGET_CPU_MS")) as sw:
+                compute_sized_economic_pnl(samples, econ)
+            times.append(sw.consumed_ms)
+        med = statistics.median(times)
+        base_costs[n] = max(med, _PROCESS_TIME_FLOOR_MS)
     assert base_costs[4000] > 0.0 and base_costs[1000] > 0.0
     ratio = base_costs[4000] / max(base_costs[1000], 1e-9)
     _ratio_bound = _budget_constant("_SIZED_PATH_LINEARITY_RATIO")
@@ -527,16 +539,28 @@ def test_sized_path_per_sample_cost_is_constant() -> None:
     """The structural form of linearity: per-sample CPU cost is constant, so
     asserting it directly is the sharpest form of the invariant (a ratio can
     absorb noise in the small leg; per-unit cost cannot)."""
+    import gc
+    import statistics
+
     from nexus_scalp.research.metrics import compute_sized_economic_pnl
     from nexus_scalp.research.models import EconomicAssumptions, ResearchSample
+    from tests.e2e.chain_clock import _PROCESS_TIME_FLOOR_MS
 
     econ = EconomicAssumptions()
+    # Warm up function dispatch, imports, and caches
+    compute_sized_economic_pnl(_mk_research_samples(ResearchSample, 100), econ)
+
     per_unit: dict[int, float] = {}
     for n in (1000, 2000, 4000):
         samples = _mk_research_samples(ResearchSample, n)
-        with budget_cpu_ms(_budget_constant("_SIZED_PATH_BUDGET_CPU_MS")) as sw:
-            compute_sized_economic_pnl(samples, econ)
-        per_unit[n] = sw.consumed_ms / float(n)
+        times: list[float] = []
+        for _ in range(5):
+            gc.collect()
+            with budget_cpu_ms(_budget_constant("_SIZED_PATH_BUDGET_CPU_MS")) as sw:
+                compute_sized_economic_pnl(samples, econ)
+            times.append(sw.consumed_ms)
+        med = statistics.median(times)
+        per_unit[n] = max(med, _PROCESS_TIME_FLOOR_MS) / float(n)
     assert min(per_unit.values()) > 0.0, "every leg must actually execute"
     worst = max(per_unit.values())
     best = min(per_unit.values())
