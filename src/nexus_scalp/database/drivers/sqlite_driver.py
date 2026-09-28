@@ -420,7 +420,9 @@ class SQLiteDriver(DatabaseDriver):
     def ping(self, conn: Any = None) -> bool:
         try:
             return self.scalar("SELECT 1", conn=conn) == 1
-        except Exception:
+        except Exception as exc:
+            # HEALTH-DBREASON: preserve the reason (parity with the PG driver).
+            self.last_failure = exc
             return False
 
     def integrity_check(self, conn: Any = None) -> list[str]:

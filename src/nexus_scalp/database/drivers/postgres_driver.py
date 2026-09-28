@@ -1134,7 +1134,10 @@ class PostgreSQLDriver(DatabaseDriver):
     def ping(self, conn: Any = None) -> bool:
         try:
             return self.scalar("SELECT 1", conn=conn) == 1
-        except Exception:
+        except Exception as exc:
+            # HEALTH-DBREASON: preserve the reason so a health probe can
+            # distinguish auth failure from a dead server (see base).
+            self.last_failure = exc
             return False
 
     def integrity_check(self, conn: Any = None) -> list[str]:

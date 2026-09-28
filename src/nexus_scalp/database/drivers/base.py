@@ -41,6 +41,13 @@ class DatabaseDriver(ABC):
     def __init__(self, config: DatabaseConfig) -> None:
         self.config = config
         self._last_auto_conn: Any = None
+        #: HEALTH-DBREASON: the most recent exception swallowed by a boolean
+        #: driver method (``ping`` / ``closed`` / ``exists``). A caller that
+        #: only learns "False" cannot tell a refused connection from a rejected
+        #: credential, so the failure is preserved for a health probe to read.
+        #: Never carries a secret: the password is resolved out of band from
+        #: the secret store and libpq reports the auth OUTCOME, not the value.
+        self.last_failure: BaseException | None = None
 
     # -- helpers ----------------------------------------------------------
 
