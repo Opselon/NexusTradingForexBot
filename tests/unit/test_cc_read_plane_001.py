@@ -260,7 +260,12 @@ class TestSQLitePathPreserved:
             registry = StrategyRegistry(repo)
             assert registry.count() == 2
             entries = registry.list()
+            # CC-READ-PLANE-002: a duplicate read path appended the same rows twice
+            # (4 entries for 2 DB rows). The row count must match the database, and
+            # each strategy_id must appear exactly once.
+            assert len(entries) == 2, f"duplicate reads: {len(entries)} entries for 2 DB rows"
             assert [e.strategy_id for e in entries] == ["STRAT-B", "STRAT-A"]
+            assert sorted(e.strategy_id for e in entries) == ["STRAT-A", "STRAT-B"]
 
             entry = registry.get("STRAT-A")
             assert entry is not None
