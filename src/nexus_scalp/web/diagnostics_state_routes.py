@@ -2201,11 +2201,28 @@ def register_diagnostics_state_routes(
             # live.yaml (pairs with mask_config_secrets on GET).
             restore_masked_mt5_password(raw_config, live_config_path)
 
+            # BUG-543: filter the projection through the AppConfig schema. The
+            # request body is operator-supplied and may carry keys that are not
+            # part of the bootstrap schema (top-level `configuration_version` /
+            # `runtime_applied` belong to the runtime snapshot, not live.yaml).
+            # AppConfig is extra-forbidden, so writing them made the bootstrap
+            # file invalid and pre-flight halted the engine at the next boot.
+            from nexus_scalp.configuration.config import AppConfig as _AppConfig
+
+            _valid_top = set(_AppConfig.model_fields.keys())
+            _projection = {k: v for k, v in raw_config.items() if k in _valid_top}
+            _dropped = sorted(set(raw_config) - set(_projection))
+            if _dropped:
+                logger.warning(
+                    "[RUNTIME_CONFIG] live.yaml projection dropped non-schema keys: %s",
+                    _dropped,
+                )
+
             # Write to disk atomically (compatibility projection; the
             # authoritative runtime state lives in the runtime config store)
             tmp = live_config_path.with_suffix(".yaml.tmp")
             with open(tmp, "w", encoding="utf-8") as f:
-                yaml.safe_dump(raw_config, f, default_flow_style=False)
+                yaml.safe_dump(_projection, f, default_flow_style=False)
             tmp.replace(live_config_path)
 
             # RUNTIME CONFIGURATION: apply execution/risk/model sections

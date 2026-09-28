@@ -3199,13 +3199,36 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             live_path = Path("configs/live.yaml")
             if not live_path.exists():
                 live_path = Path("configs/base.yaml")
+            # BUG-543: do NOT round-trip the file's own raw dict. An earlier
+            # projection (or a hand edit) may contain keys that are NOT part of
+            # the AppConfig schema — e.g. top-level `configuration_version` and
+            # `runtime_applied`, which belong to the runtime snapshot, not the
+            # bootstrap. Re-dumping them verbatim made the poisoning permanent:
+            # `AppConfig.load_from_yaml` is extra-forbidden, so the bootstrap
+            # file became invalid and pre-flight halted the engine at boot.
+            # The projection is rebuilt from a validated AppConfig so only
+            # schema fields can ever reach disk.
             with open(live_path, encoding="utf-8") as f:
                 raw_data = yaml.safe_load(f) or {}
             snap = engine.runtime_config.get_snapshot()
             raw_data["algo"] = snap.to_algo_config().model_dump()
+            # Drop any top-level key AppConfig cannot accept. This both heals
+            # an already-poisoned file and guarantees the projection stays
+            # loadable. Unknown keys inside known sections are impossible here
+            # (to_algo_config builds a validated AlgoConfig).
+            from nexus_scalp.configuration.config import AppConfig
+
+            valid_keys = set(AppConfig.model_fields.keys())
+            cleaned = {k: v for k, v in raw_data.items() if k in valid_keys}
+            removed = set(raw_data) - set(cleaned)
+            if removed:
+                logger.warning(
+                    "[RUNTIME_CONFIG] live.yaml projection dropped non-schema keys: %s",
+                    sorted(removed),
+                )
             tmp = Path("configs/live.yaml").with_suffix(".yaml.tmp")
             with open(tmp, "w", encoding="utf-8") as f:
-                yaml.safe_dump(raw_data, f, default_flow_style=False)
+                yaml.safe_dump(cleaned, f, default_flow_style=False)
             tmp.replace(Path("configs/live.yaml"))
         except Exception as e:
             logger.warning("[RUNTIME_CONFIG] live.yaml projection failed (non-fatal): %s", e)
