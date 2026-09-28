@@ -27,7 +27,6 @@ from nexus_scalp.position_adviser.store import (
 )
 from nexus_scalp.position_adviser.trainer import AdviserTrainingResult
 
-
 # ---------------------------------------------------------------- fixtures
 #
 # A fake audit repository with the exact seam the provider helpers consume:
@@ -354,7 +353,9 @@ def test_summary_reports_counts(store, training_result, advisory) -> None:
     assert st.save_training_run(training_result) is True
     _seed_model(st)
     st.record_model_lifecycle("pa_test_001", "ACTIVE")
-    st.record_load_event("pa_test_001", "LOAD", success=True, created_at="2026-09-28T10:00:00+00:00")
+    st.record_load_event(
+        "pa_test_001", "LOAD", success=True, created_at="2026-09-28T10:00:00+00:00"
+    )
     st.save_advisory(advisory)
 
     s = st.summary()
@@ -483,7 +484,6 @@ def test_upsert_keys_are_registered() -> None:
     DDL the schema actually declares, so a key the schema does not back raises.
     """
     from nexus_scalp.database.upsert import UpsertKeyError
-
     from nexus_scalp.position_adviser.store import (
         _PA_UPSERT_KEYS,
         _pa_primary_key_columns,
@@ -492,9 +492,9 @@ def test_upsert_keys_are_registered() -> None:
     for table, expected_key in _PA_UPSERT_KEYS.items():
         declared = _pa_primary_key_columns(table)
         assert declared, f"{table} declares no PK/UNIQUE constraint"
-        assert set(expected_key).issubset(
-            {c for cols in declared for c in cols}
-        ), f"{table}: key {expected_key} not covered by DDL {declared}"
+        assert set(expected_key).issubset({c for cols in declared for c in cols}), (
+            f"{table}: key {expected_key} not covered by DDL {declared}"
+        )
         # A table the schema does not declare has no key, so the builder's own
         # key lookup raises (it is keyed by table name).
         assert _pa_primary_key_columns("pa_does_not_exist") == []
@@ -575,9 +575,7 @@ def _sql_for_pg(store: PositionAdviserStore, table: str) -> str:
         "pa_load_events": ("_SQLITE_LOAD_EVENT_SQL", "_PG_LOAD_EVENT_SQL"),
         "pa_advisories": ("_SQLITE_ADVISORY_SQL", "_PG_ADVISORY_SQL"),
     }
-    mod = __import__(
-        "nexus_scalp.position_adviser.store", fromlist=["PositionAdviserStore"]
-    )
+    mod = __import__("nexus_scalp.position_adviser.store", fromlist=["PositionAdviserStore"])
     _sqlite_name, _pg_name = pairs[table]
     sqlite_sql = getattr(mod, _sqlite_name)
     pg_sql = getattr(mod, _pg_name)
@@ -597,9 +595,7 @@ def _sqlite_sql(table: str) -> str:
         "pa_load_events": "_SQLITE_LOAD_EVENT_SQL",
         "pa_advisories": "_SQLITE_ADVISORY_SQL",
     }
-    mod = __import__(
-        "nexus_scalp.position_adviser.store", fromlist=["PositionAdviserStore"]
-    )
+    mod = __import__("nexus_scalp.position_adviser.store", fromlist=["PositionAdviserStore"])
     return str(getattr(mod, pairs[table]))
 
 

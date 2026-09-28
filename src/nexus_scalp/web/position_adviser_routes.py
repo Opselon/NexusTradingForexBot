@@ -36,7 +36,10 @@ from nexus_scalp.position_adviser.paths import (
     sanitize_repo_relative,
 )
 from nexus_scalp.position_adviser.service import PositionAdviserService
-from nexus_scalp.position_adviser.settings_store import AdviserSettingsStore
+from nexus_scalp.position_adviser.settings_store import (
+    AdviserSettings,
+    AdviserSettingsStore,
+)
 from nexus_scalp.position_adviser.trainer import (
     OOS_SPLITS,
     train_position_adviser,
@@ -401,7 +404,9 @@ def route_settings_update(req: AdviserSettingsUpdate) -> dict[str, Any]:
                 persisted.append(f"config:{req.config_key}")
     except Exception as exc:
         logger.warning("[ADVISER] event=SETTINGS_WRITE_FAILED err=%s", exc)
-        raise HTTPException(status_code=500, detail="settings write failed (see server logs)")
+        raise HTTPException(
+            status_code=500, detail="settings write failed (see server logs)"
+        ) from exc
     return {"status": "OK", "persisted": persisted, "settings": store.load().to_dict()}
 
 
@@ -430,7 +435,7 @@ def route_tensor_current_input() -> dict[str, Any]:
         logger.warning("[ADVISER] event=INSPECT_BUILD_FAILED err=%s", exc)
         raise HTTPException(
             status_code=409, detail="inspector could not build the vector (see server logs)"
-        )
+        ) from exc
     return {"status": "OK", "tensor": inspection.to_dict()}
 
 

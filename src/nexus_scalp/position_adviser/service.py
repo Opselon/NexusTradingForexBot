@@ -727,8 +727,8 @@ class PositionAdviserService:
         self,
         *,
         model_id: str,
-        weights_path: "Path | str",
-        scaler_path: "Path | str",
+        weights_path: Path | str,
+        scaler_path: Path | str,
         activation: str = "DISABLED",
     ) -> dict[str, Any]:
         """Restart recovery (mission §4/§41): reload the persisted selection.

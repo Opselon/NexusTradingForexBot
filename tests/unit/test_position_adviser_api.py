@@ -223,9 +223,7 @@ def test_tensor_inspector_404_before_any_evaluation(client: TestClient) -> None:
     assert "no evaluation has run yet" in r.json()["detail"]
 
 
-def test_tensor_inspector_shows_raw_and_normalized(
-    client: TestClient, artifact_dir: Path
-) -> None:
+def test_tensor_inspector_shows_raw_and_normalized(client: TestClient, artifact_dir: Path) -> None:
     _seed_evaluation(client, artifact_dir, "pa_api_tensor_001")
     r = client.get("/api/position-adviser/tensor/current-input")
     assert r.status_code == 200, r.text
@@ -251,9 +249,7 @@ def test_decision_trace_404_without_a_decision(client: TestClient) -> None:
     assert r.status_code == 404
 
 
-def test_decision_trace_reports_measured_latencies(
-    client: TestClient, artifact_dir: Path
-) -> None:
+def test_decision_trace_reports_measured_latencies(client: TestClient, artifact_dir: Path) -> None:
     _seed_evaluation(client, artifact_dir, "pa_api_decision_001")
     r = client.get("/api/position-adviser/decision/current")
     assert r.status_code == 200, r.text

@@ -21,6 +21,7 @@ database problem.
 from __future__ import annotations
 
 import json
+import math
 import re
 import sqlite3
 from typing import Any
@@ -34,10 +35,10 @@ from nexus_scalp.adapters.database.provider_store import (
     queue_write,
 )
 from nexus_scalp.database.upsert import (
+    _TABLE_HEADER,
     UpsertKeyError,
     _constraint_columns,
     _quote,
-    _TABLE_HEADER,
 )
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.position_adviser.schema import position_adviser_schema_statements
@@ -197,9 +198,7 @@ def _pa_primary_key_columns(table: str) -> list[tuple[str, ...]]:
             continue
         mi = _PA_INDEX_COLUMNS.match(statement.strip())
         if mi and mi.group(1) == table:
-            cols = tuple(
-                c.strip().strip('"') for c in mi.group(2).split(",") if c.strip()
-            )
+            cols = tuple(c.strip().strip('"') for c in mi.group(2).split(",") if c.strip())
             if cols:
                 out.append(cols)
     return out
@@ -262,9 +261,7 @@ def _pa_upsert_sql(table: str, columns: list[str], sqlite_sql: str) -> tuple[str
     return sqlite_sql, pg_sql
 
 
-_SQLITE_RUN_SQL, _PG_RUN_SQL = _pa_upsert_sql(
-    "pa_training_runs", _RUN_COLUMNS, _INSERT_RUN_SQL
-)
+_SQLITE_RUN_SQL, _PG_RUN_SQL = _pa_upsert_sql("pa_training_runs", _RUN_COLUMNS, _INSERT_RUN_SQL)
 _SQLITE_MODEL_SQL, _PG_MODEL_SQL = _pa_upsert_sql(
     "pa_model_registry", _MODEL_COLUMNS, _INSERT_MODEL_SQL
 )
@@ -305,7 +302,8 @@ def _float_or_none(value: Any) -> float | None:
         f = float(value)
     except (TypeError, ValueError):
         return None
-    return f if f == f else None  # NaN/inf -> NULL, never a poison metric
+    # NaN/inf -> NULL, never a poison metric in the registry.
+    return f if math.isfinite(f) else None
 
 
 class PositionAdviserStore:
@@ -625,7 +623,9 @@ class PositionAdviserStore:
             operation="position_adviser.get_training_run",
         )
 
-    def list_load_events(self, model_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    def list_load_events(
+        self, model_id: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
         """Load/activation events, newest first, optionally for one model."""
         if not self.audit_repo:
             return []
@@ -633,8 +633,7 @@ class PositionAdviserStore:
         if model_id:
             return query_rows(
                 self.audit_repo,
-                "SELECT * FROM pa_load_events WHERE model_id=? "
-                "ORDER BY created_at DESC LIMIT ?;",
+                "SELECT * FROM pa_load_events WHERE model_id=? ORDER BY created_at DESC LIMIT ?;",
                 (model_id, bounded),
                 operation="position_adviser.list_load_events",
             )

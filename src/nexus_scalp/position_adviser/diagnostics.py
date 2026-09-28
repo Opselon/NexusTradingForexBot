@@ -31,11 +31,10 @@ import torch
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.position_adviser.features import (
     ADVISER_FEATURE_DIM,
-    ADVISER_FEATURE_ORDER,
     AdviserFeatureError,
     build_live_vector,
 )
-from nexus_scalp.position_adviser.service import AdviserScaler, PositionAdviserService
+from nexus_scalp.position_adviser.service import PositionAdviserService
 
 logger = get_logger("nexus_scalp.position_adviser.diagnostics")
 
@@ -106,9 +105,7 @@ class TensorInspection:
         }
 
 
-def _validity(
-    raw: np.ndarray, normalized: np.ndarray, model_input_dim: int
-) -> dict[str, Any]:
+def _validity(raw: np.ndarray, normalized: np.ndarray, model_input_dim: int) -> dict[str, Any]:
     """Raw-vs-normalized-vs-model dimension and cleanliness checks (§12)."""
     raw_dim = int(raw.shape[-1]) if raw.size else 0
     norm_dim = int(normalized.shape[-1]) if normalized.size else 0
@@ -143,12 +140,12 @@ def inspect_current_input(
     ``integration.build_position_state_for_adviser`` (same semantics). When it
     is absent the inspector falls back to the last sample the service saw.
     """
-    with service._lock:  # noqa: SLF001 — read the serving bundle atomically
-        model = service._state._model  # noqa: SLF001
-        scaler = service._state._scaler  # noqa: SLF001
+    with service._lock:
+        model = service._state._model
+        scaler = service._state._scaler
         model_id = service._state.model_id
         feature_dim = service._state.feature_dim
-        last_state = dict(service._last_inspected_state or {})  # noqa: SLF001
+        last_state = dict(service._last_inspected_state or {})
 
     if model is None or scaler is None:
         return TensorInspection(
@@ -171,9 +168,7 @@ def inspect_current_input(
         source = "live_position"
         state = dict(live_position_state)
         position_summary = {
-            k: state[k]
-            for k in ("ticket", "snapshot_id", "snapshot_observed_at")
-            if k in state
+            k: state[k] for k in ("ticket", "snapshot_id", "snapshot_observed_at") if k in state
         }
     elif last_state:
         source = "last_sample"
