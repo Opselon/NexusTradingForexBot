@@ -94,6 +94,37 @@ function errText(e: unknown): string {
   return String(e);
 }
 
+/** A failed switch now returns a STRUCTURED 422 body: {reason, preconditions}.
+ *  Surfacing only the bare reason would hide WHICH check failed (Section 42:
+ *  every refusal must name its cause), so pull the per-check details out and
+ *  render them verbatim. Never invents a cause the backend did not send. */
+function switchRefusalText(e: unknown): string {
+  const detail = httpDetail(e) as SwitchRefusalDetail | null;
+  if (detail) {
+    const reason = typeof detail.reason === "string" ? detail.reason : "";
+    const rows = Array.isArray(detail.preconditions)
+      ? detail.preconditions.filter((p) => p && typeof p.detail === "string")
+      : [];
+    const parts = rows.map((p) => p.detail);
+    if (reason && parts.length) return `${reason} — ${parts.join("; ")}`;
+    if (reason) return reason;
+    if (parts.length) return parts.join("; ");
+  }
+  return errText(e);
+}
+
+/** The structured refusal the backend sends on a failed switch. */
+type SwitchRefusalDetail = {
+  reason?: string;
+  preconditions?: Array<{ check: string; detail: string }>;
+};
+
+/** FastAPI error payloads arrive as {detail: ...}; pull the payload out. */
+function httpDetail(e: unknown): unknown {
+  const any = e as { response?: { data?: { detail?: unknown } }; detail?: unknown };
+  return any?.response?.data?.detail ?? any?.detail ?? null;
+}
+
 /** Health dot class for the provider list (Section 19). Derived only from
  *  backend fields. */
 function healthClass(p: ProviderEntry): string {
@@ -536,7 +567,7 @@ function AddProviderWizard({
       }
     } catch (e) {
       set("switchRes", null);
-      set("error", errText(e));
+      set("error", "switch refused: " + switchRefusalText(e));
     } finally {
       set("activating", false);
     }

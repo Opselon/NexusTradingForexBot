@@ -60,16 +60,20 @@ async function deleteRaw<T>(path: string): Promise<T> {
   return body as T;
 }
 
-/** Normalise a switch response onto the contract's field names. The
- *  orchestrator's own dict spells `config_version`/`activation_time` and
- *  returns a bare `detail` string instead of a structured problem on a hard
- *  4xx; both spellings are accepted so a switch renders either way. */
+/** Normalise a switch response onto the contract's field names.
+ *
+ *  The backend returns the canonical `configuration_version` / `activated_at`.
+ *  A legacy spelling (`config_version` / `activation_time`) is accepted ONLY as
+ *  a typed alias so an older server still renders; it is not a silent dual
+ *  contract, and the canonical names are what the UI binds to. */
 function normaliseSwitch(res: SwitchResponse): SwitchResponse {
   const raw = res as unknown as Record<string, unknown>;
   const configVersion =
     res.configuration_version ??
     (typeof raw["config_version"] === "number" ? (raw["config_version"] as number) : undefined);
-  const activatedAt = res.activated_at ?? (typeof raw["activation_time"] === "string" ? (raw["activation_time"] as string) : "");
+  const activatedAt =
+    res.activated_at ??
+    (typeof raw["activation_time"] === "string" ? (raw["activation_time"] as string) : "");
   return { ...res, configuration_version: configVersion, activated_at: activatedAt };
 }
 
