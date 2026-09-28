@@ -29,7 +29,7 @@ validation) are evidence, not truth. Fix only PROVEN gaps. No promotion.
 
 - `docs/70D_CURRENT_STATE_RECONCILIATION.md` — full reconciled state with
   VALUE/SOURCE/VERIFIED_AT/CONFIDENCE table.
-- `docs/70D_SCHEMA_REFERENCE_MATRIX.md` — every schema reference classified
+- `docs/research/70d-program/70D_SCHEMA_REFERENCE_MATRIX.md` — every schema reference classified
   (ACTIVE_RUNTIME/TRAINING/DATASET/SHADOW/GOVERNANCE/LEGACY/INVALID) +
   exact scalp_v3-vs-scalp_v4 comparison.
 - `artifacts/validation/70d_current_state.json` — machine-readable current
@@ -63,7 +63,7 @@ validation) are evidence, not truth. Fix only PROVEN gaps. No promotion.
 2. The single upstream blocker is a REAL trained 70D candidate. Run the
    A/B/C benchmark (scratch/bench_70d_abc_driver.py) + walk-forward training
    on ds_d3f35b12d63148da (scalp_v3, 1146 rows) with the fair-benchmark
-   protocol (docs/MODEL_BENCHMARK_70D_LIQUIDITY.md). The driver trains via
+   protocol (docs/research/70d-program/MODEL_BENCHMARK_70D_LIQUIDITY.md). The driver trains via
    CandidateTrainer with "ds_70d_abc" datasets.
 3. The trained candidate must: schema_id=scalp_v3 (NOT scalp_v4), manifest
    with feature_schema_hash=235b8fccc96b7e0e, artifact_hash, scaler_hash,

@@ -62,7 +62,7 @@ input (runtime manifest dimension gate) and vice versa.
 ## 4. FEATURE QUALITY RESULTS (spec 5, real M5 dataset)
 
 Computed via `feature_quality_report()` on the real 60D frame (see
-`docs/task5_feature_quality_report.md`). Detectors: DEAD / NEAR_CONSTANT /
+`docs/historical/task-reports/task5_feature_quality_report.md`). Detectors: DEAD / NEAR_CONSTANT /
 OUTLIER_DOMINATED / duplicate groups.
 
 ## 5. NEWS FEATURE RESULTS (spec 6/33)
@@ -206,7 +206,7 @@ candidate ids; no promotion path exists; LiveEngine continues to load
 - tests/unit/test_model_generation_phase13.py (TASK-5 tests)
 - scratch/task5_experiment_60d_vs_50d.py + .out.txt (controlled experiment)
 - scratch/task5_freezing_champion_snapshot.py + docs/task5_champion_baseline.json
-- docs/task5_experiment_report.md, docs/task5_feature_quality_report.md
+- docs/task5_experiment_report.md, docs/historical/task-reports/task5_feature_quality_report.md
 - docs/agent_handoffs/TASK-5-model-intelligence.md (this file)
 - agents/taskboard.md, agents/change_control.md, agents/contracts.md,
   agents/runtime_invariants.md (if changed), agents/repository_state.md,

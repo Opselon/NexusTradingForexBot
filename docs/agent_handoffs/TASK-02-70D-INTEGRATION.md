@@ -61,7 +61,7 @@
   NO hot-path regression
 - PROVEN bottleneck: `_bars_to_arrays`/`_bar_times` re-derivation (~40% of
   time); designed fix (thread arrays once) documented in
-  docs/LIQUIDITY_60D_FROZEN.md — NOT applied (engine frozen)
+  docs/research/70d-program/LIQUIDITY_60D_FROZEN.md — NOT applied (engine frozen)
 
 ## TESTS (136 passed)
 - tests/unit/test_liquidity_engine_{contract,causality,features}.py: 60
@@ -109,7 +109,7 @@
   + tests + golden; the swarm owns the governor's 70D semantics.
 
 ## NEXT AGENT (TASK-03 / TASK-04-70D-MODEL-VALIDATION)
-1. Read docs/LIQUIDITY_60D_FROZEN.md + docs/LIQUIDITY_60D.md +
+1. Read docs/research/70d-program/LIQUIDITY_60D_FROZEN.md + docs/research/70d-program/LIQUIDITY_60D.md +
    tests/golden/liquidity_70d_reference.json (the frozen contract).
 2. TASK-04: run the real A/B — BASELINE 50D scalp_v1 vs CANDIDATE 60D
    scalp_liquidity_v1 on the SAME dataset/timestamps/split/purge/embargo/

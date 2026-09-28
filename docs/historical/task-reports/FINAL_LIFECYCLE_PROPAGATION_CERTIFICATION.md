@@ -51,7 +51,7 @@ The rejection rate is **legitimate quality filtering** (0 candidates pass *both*
 - `Web/command_center_ui.js` — overview/fleet/inspector render, eval-metrics panel with explicit `SCOPE: TRANSIENT RUNS`, research-bottleneck panel, "CAN THIS STRATEGY TRADE" verdict banner driven only by backend `eligibility_state`.
 - `Web/command_center_spatial.js` — 2.5D renderer; eval shown as internal indicator, no zone move.
 - `Web/command_center_console.js` — 5-family event classification, real-fleet bottleneck viz.
-- `docs/LIFECYCLE_PROPAGATION_FORENSIC.md` and architecture docs.
+- `docs/forensics/LIFECYCLE_PROPAGATION_FORENSIC.md` and architecture docs.
 
 ---
 

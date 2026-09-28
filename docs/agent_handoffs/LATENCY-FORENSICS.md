@@ -51,7 +51,7 @@ Output equivalence: maxdiff 0.0 (byte-identical logits).
 - `src/nexus_scalp/web/server.py` — `latency_breakdown` in model_meta + debug
   endpoint staged timing
 - `Web/app.js` + `Web/index.html` — honest latency stage panel
-- `docs/INFERENCE_LATENCY_FORENSIC_FINAL.md` — final report
+- `docs/forensics/INFERENCE_LATENCY_FORENSIC_FINAL.md` — final report
 - `docs/agent_handoffs/LATENCY-FORENSICS.md` — this handoff
 
 ## 5. EXACT NEXT-AGENT INSTRUCTIONS

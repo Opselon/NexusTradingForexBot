@@ -28,13 +28,13 @@ documentation phase (NO_CANDIDATE verdict). This session:
 
 | Item | Where |
 | :--- | :--- |
-| BUG-106 profile + parity evidence | artifacts/benchmarks/bug106_profile.json (gitignored) + scratch/bug106_*.py/.out.txt (committed) + docs/AGENT-09-EVIDENCE-EXECUTION.md |
+| BUG-106 profile + parity evidence | artifacts/benchmarks/bug106_profile.json (gitignored) + scratch/bug106_*.py/.out.txt (committed) + docs/forensics/AGENT-09-EVIDENCE-EXECUTION.md |
 | Incremental builder parity test | tests/unit/test_70d_bug106_incremental_phase19.py (4 passed) |
 | Temporal OOS result | artifacts/validation/70d_oos_results.json (LOCKED) |
 | Robustness sweep | artifacts/validation/70d_oos_results.json (robustness_sweep block) |
 | Manifest provenance fix | src/nexus_scalp/model_generation/{models.py, training.py} — BUG-117 |
 | Governance preview | artifacts/validation/70d_governance_preview.json + 70d_governance_readiness.json (updated) |
-| Evidence report | docs/AGENT-09-EVIDENCE-EXECUTION.md |
+| Evidence report | docs/forensics/AGENT-09-EVIDENCE-EXECUTION.md |
 | Bug ledger | agents/bugs.md BUG-117 |
 
 ## Honest verdict
@@ -73,7 +73,7 @@ API was called.
 ## EXACT NEXT-AGENT INSTRUCTIONS (TASK-10)
 
 1. Do NOT promote any 70D candidate — the evidence is negative
-   (docs/AGENT-09-EVIDENCE-EXECUTION.md §10, OOS LOCKED).
+   (docs/forensics/AGENT-09-EVIDENCE-EXECUTION.md §10, OOS LOCKED).
 2. If 70D science is revisited: first scale the incremental builder
    (bounded pool-state recompute) so a 100K-row dataset is buildable in
    minutes, THEN re-run A/B/C on the full history, THEN a true temporal OOS

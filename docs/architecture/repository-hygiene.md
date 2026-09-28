@@ -39,7 +39,7 @@
 
 ### P0 — act before next build/release (no code change done by this audit)
 1. **CLEANUP-001 · Undeclared imports.** `networkx` (`dependency_intelligence/analysis.py:19`, used by the `/api/dependency` web routes AND `nexus dependency` CLI) and `psycopg` (`database/drivers/postgres_driver.py`) are imported but declared nowhere. Dev venv masks this; a clean install / Docker / PyInstaller build can fail at import. *Fix owner: Coder/DevOps.*
-2. **CLEANUP-002 · Authoritative-doc dead paths.** `agents/skill.md` documents the critical-suite runner as `tests/helpers/run_critical.py` — which does not exist (actual: `tests/critical_suite.txt` consumed directly by pytest). `docs/ci-telegram-operations.md` cites two deleted test files. 25 dead refs total. *Fix owner: Docs.*
+2. **CLEANUP-002 · Authoritative-doc dead paths.** `agents/skill.md` documents the critical-suite runner as `tests/helpers/run_critical.py` — which does not exist (actual: `tests/critical_suite.txt` consumed directly by pytest). `docs/engineering/ops/ci-telegram-operations.md` cites two deleted test files. 25 dead refs total. *Fix owner: Docs.*
 
 ### P1 — could cause wrong behavior later
 3. **CLEANUP-003 · Manifest conflict.** requirements.txt (`structlog<25`, `rich<14`, `ruff>=0.2`) vs pyproject (`<27`, `<16`, `==0.16.3`). The installed tree satisfies pyproject and violates requirements.txt. Docker caches on both files; CI installs from pyproject only.

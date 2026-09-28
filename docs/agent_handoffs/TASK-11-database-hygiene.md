@@ -26,7 +26,7 @@ verification. When the worker is not 100% certain a row is safe, it keeps it.
 | candle_intel.db | 1.0 MB + 4.2 MB WAL | 13 | derived mirrors, rebuildable |
 
 Per-table TIER classification (TIER-0..8), retention, owner, rebuildability,
-delete safety: `docs/DATABASE_HYGIENE_MATRIX.md`.
+delete safety: `docs/architecture/database/DATABASE_HYGIENE_MATRIX.md`.
 
 ## Files changed (TASK-11 scope)
 
@@ -44,7 +44,7 @@ delete safety: `docs/DATABASE_HYGIENE_MATRIX.md`.
 | `src/nexus_scalp/web/server.py` | `GET /api/db/hygiene` (real data) |
 | `src/nexus_scalp/application/live_engine.py` | 6h hygiene cycle via asyncio.to_thread (AUDIT_ONLY first run, LIVE-safe) |
 | `tests/unit/test_database_hygiene_task11.py` | 37 tests (TEST-HYG-01..36 + real-DB copy) |
-| `docs/DATABASE_HYGIENE_MATRIX.md`, `docs/DATABASE_HYGIENE.md` | classification + policy |
+| `docs/architecture/database/DATABASE_HYGIENE_MATRIX.md`, `docs/DATABASE_HYGIENE.md` | classification + policy |
 | `docs/agent_handoffs/TASK-11-database-hygiene.md` | this handoff |
 | `agents/*` registries | BUG-099, INV-017, CHG-0006, contracts DATABASE_HYGIENE/RETENTION_POLICY v1, skill §15l, taskboard, repository_state |
 

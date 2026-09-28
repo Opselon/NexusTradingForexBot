@@ -20,7 +20,7 @@ is mid-flight in parallel TASK-01..04 (uncommitted WIP at bootstrap:
 liquidity_engine.py + scalp_liquidity_v1 schema + tests, 12 failing tests on
 its own moving contract). The 70D shadow layer was therefore built
 CONTRACT-FIRST against the parallel series' own published spec
-(docs/POST_70D_RUNTIME_INVARIANTS.md) so it is correct before AND after the
+(docs/forensics/POST_70D_RUNTIME_INVARIANTS.md) so it is correct before AND after the
 series lands.
 
 ## 2. Shadow model (fixture path, TEST-SHADOW-01)
@@ -177,7 +177,7 @@ See commit message at repo HEAD (agent-labelled
 1. READ BEFORE ANY EDIT: agents/skill.md, agents/bugs.md (head — BUG-100 is
    the latest ledger entry), agents/contracts.md (SHADOW_70D rows),
    agents/runtime_invariants.md (INV-018), docs/70D_SHADOW_RUNTIME.md,
-   docs/POST_70D_RUNTIME_INVARIANTS.md, agents/taskboard.md (TASK-05-70D-
+   docs/forensics/POST_70D_RUNTIME_INVARIANTS.md, agents/taskboard.md (TASK-05-70D-
    SHADOW row), agents/locks.yaml.
 2. First Gate: check `experience_model_registry` for a scalp_v3/70D row with
    lifecycle_status containing VALIDATED. If present: `POST

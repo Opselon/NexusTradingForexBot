@@ -64,8 +64,8 @@ Current direction: see the [Roadmap](roadmap.md).
 | Milestone | Evidence |
 | :--- | :--- |
 | Multi-agent contract v2 | `agents/multi-agent-git-contract.md` |
-| 70D parity acceptance | `docs/TASK-03-70D-PARITY-FINAL-REPORT.md` |
-| 70D candidate validation (negative OOS) | `docs/TASK-05-70D-SHADOW-FINAL.md`, `docs/TASK-09-70D-CANDIDATE-VALIDATION-FINAL.md` |
+| 70D parity acceptance | `docs/historical/task-reports/TASK-03-70D-PARITY-FINAL-REPORT.md` |
+| 70D candidate validation (negative OOS) | `docs/historical/task-reports/TASK-05-70D-SHADOW-FINAL.md`, `docs/historical/task-reports/TASK-09-70D-CANDIDATE-VALIDATION-FINAL.md` |
 | Release pipeline v9.0.x | `docs/RELEASE.md`, GitHub Releases |
 | Research execution stack | `docs/` CHG-0035 artifacts, `agents/change_control.md` |
 | Counterfactual engine | `agents/taskboard.md` TASK-NO-TRADE-CF-ENGINE |

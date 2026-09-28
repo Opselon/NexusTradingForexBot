@@ -11,7 +11,7 @@
 
 This certification report provides an adversarial review and QA verification of the search-space evolution fixes, adaptive probability balancing, reproducibility guarantees, and command-center evaluation projections implemented in `NexusTradingForexBot`.
 
-All requirements from forensic audits (`docs/STRATEGY_SEARCH_SPACE_FORENSIC.md`, `docs/SEARCH_LEARNING_BOUNDARIES.md`, `docs/FAILURE_CLUSTERING.md`) and the G28 Coder Handoff Contract (`docs/G28_CODER_HANDOFF.md`) have been verified against real execution state and passing test suites.
+All requirements from forensic audits (`docs/forensics/STRATEGY_SEARCH_SPACE_FORENSIC.md`, `docs/research/70d-program/SEARCH_LEARNING_BOUNDARIES.md`, `docs/forensics/FAILURE_CLUSTERING.md`) and the G28 Coder Handoff Contract (`docs/historical/task-reports/G28_CODER_HANDOFF.md`) have been verified against real execution state and passing test suites.
 
 ---
 
@@ -21,7 +21,7 @@ All requirements from forensic audits (`docs/STRATEGY_SEARCH_SPACE_FORENSIC.md`,
 - **Audit Question:** Do final Out-Of-Sample (OOS) test scores or OOS profitability metrics leak back into mutation or search operator weights?
 - **Verification Result:** **NO LEAKAGE.**
   - `adapt_probabilities()` in `evolution.py` relies exclusively on historical operator survival statistics (`operator_success` derived from Walk-Forward / validation-tier success rates).
-  - OOS metrics are strictly isolated as final validation gates and never fed into the generation probability feedback loop, fully satisfying `docs/SEARCH_LEARNING_BOUNDARIES.md`.
+  - OOS metrics are strictly isolated as final validation gates and never fed into the generation probability feedback loop, fully satisfying `docs/research/70d-program/SEARCH_LEARNING_BOUNDARIES.md`.
   - Operator shifts are bounded by $\pm 0.05$ clamps per step with normalized summation to 1.0, preserving exploration floors.
 
 ### B. Reproducibility & State Persistence

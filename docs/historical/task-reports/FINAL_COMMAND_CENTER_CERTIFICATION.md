@@ -4,7 +4,7 @@
 ## 1. CURRENT HEAD
 - Backend: `d761f6c` (Strategy Command Center backend certification)
 - Frontend: `Web/command_center.html`, `Web/command_center_ui.js`, `command_center_spatial.js`, `command_center_console.js`, `command_center_timemachine.js`, `api_client.js` (new + integrated)
-- Documentation: `docs/FRONTEND_AUDIT.md` + this certification
+- Documentation: `docs/architecture/FRONTEND_AUDIT.md` + this certification
 
 ## 2. FILES CHANGED
 **Frontend (new):**

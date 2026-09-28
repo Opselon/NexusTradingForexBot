@@ -31,7 +31,7 @@ OBSERVE -> CLASSIFY -> PLAN -> VALIDATE -> CLEAN -> VERIFY
 | TIER-7 | Temporary / job state | Short retention |
 | TIER-8 | Legacy artifact | Only after TASK-10 migration verified |
 
-Full per-table classification: `docs/DATABASE_HYGIENE_MATRIX.md`.
+Full per-table classification: `docs/architecture/database/DATABASE_HYGIENE_MATRIX.md`.
 
 ## 3. Approved cleanup classes (confidence must be 1.0)
 

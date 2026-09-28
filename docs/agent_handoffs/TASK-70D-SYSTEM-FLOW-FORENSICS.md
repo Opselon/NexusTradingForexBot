@@ -13,16 +13,16 @@ matrix, and this report.
 
 ## 2. Deliverables (all committed)
 
-- docs/70D_SYSTEM_FLOW_FORENSIC_MAP.md — real Data/Worker/Chart flows +
+- docs/forensics/70D_SYSTEM_FLOW_FORENSIC_MAP.md — real Data/Worker/Chart flows +
   dimension classification + bug matrix + risks
-- docs/70D_WORKER_FLOW_FORENSICS.md — 9-worker inventory + state machine +
+- docs/forensics/70D_WORKER_FLOW_FORENSICS.md — 9-worker inventory + state machine +
   no-progress detection
-- docs/70D_CHART_FLOW.md — broker-first chart + overlays + SSE
-- docs/70D_DATA_FLOW.md — one market event end-to-end
-- docs/70D_API_UI_FLOW.md — UI element → endpoint map + 200-but-wrong checks
-- docs/70D_FULL_APPLICATION_FLOW.md — full app flow + error paths
-- docs/70D_POST_MIGRATION_BUG_MATRIX.md — proven bugs + dimension audit
-- docs/70D_FULL_SYSTEM_FORENSIC_FINAL_REPORT.md — final report
+- docs/research/70d-program/70D_CHART_FLOW.md — broker-first chart + overlays + SSE
+- docs/research/70d-program/70D_DATA_FLOW.md — one market event end-to-end
+- docs/research/70d-program/70D_API_UI_FLOW.md — UI element → endpoint map + 200-but-wrong checks
+- docs/research/70d-program/70D_FULL_APPLICATION_FLOW.md — full app flow + error paths
+- docs/research/70d-program/70D_POST_MIGRATION_BUG_MATRIX.md — proven bugs + dimension audit
+- docs/forensics/70D_FULL_SYSTEM_FORENSIC_FINAL_REPORT.md — final report
 - scratch/repro_shadow70_hook_dead_code.py — BUG-105 proof
 - scratch/trace_70d_vector_assembly.py — 70D assembly determinism
 - artifacts/forensics/feature_vector_trace.json — per-index mapping

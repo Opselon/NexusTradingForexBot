@@ -9,7 +9,7 @@
 
 1. **SCHEMA RECONCILIATION** — `scalp_v3` canonical (dim 70, hash
    `235b8fccc96b7e0e`); `scalp_v4` legacy-blocked. Doc:
-   `docs/70D_SCHEMA_RECONCILIATION.md`. Tests TEST-SCHEMA-70D-01..08
+   `docs/research/70d-program/70D_SCHEMA_RECONCILIATION.md`. Tests TEST-SCHEMA-70D-01..08
    (`tests/unit/test_schema_70d_reconciliation.py`).
 2. **ACTIVE-RUNTIME CANONICALIZATION** — liquidity_runtime.SCHEMA_70D +
    web/server.py error path + snapshot indices → scalp_v3/60..69;
@@ -57,8 +57,8 @@
 ## 5. Traceability
 
 - TASK-ID: TASK-11-70D-CANONICAL-CANDIDATE (AGENT-11)
-- Reports: docs/70D_SCHEMA_RECONCILIATION.md,
-  docs/TASK-11-70D-CANONICAL-CANDIDATE-FINAL.md
+- Reports: docs/research/70d-program/70D_SCHEMA_RECONCILIATION.md,
+  docs/historical/task-reports/TASK-11-70D-CANONICAL-CANDIDATE-FINAL.md
 - Evidence: scratch/task11_1_schema_reconciliation_probe(.out),
   task11_2_build_real_70d_dataset(.out), task11_3_walkforward_70d(.out,
   _result.json)

@@ -14,7 +14,7 @@
 
 - **CANONICAL_70D_SCHEMA = `scalp_v3`**, dimension 70, hash
   `235b8fccc96b7e0e`.
-- Full rationale + explicit diff vs scalp_v4: docs/70D_SCHEMA_RECONCILIATION.md.
+- Full rationale + explicit diff vs scalp_v4: docs/research/70d-program/70D_SCHEMA_RECONCILIATION.md.
 - Legacy `scalp_v4` classified LEGACY; governance alignment excludes it;
   TEST-SCHEMA-70D-01..08 enforce the canonical contract.
 

@@ -147,13 +147,13 @@ state graph. No synthetic bars.
 
 ## 16. References
 
-- docs/70D_SYSTEM_FLOW_FORENSIC_MAP.md
-- docs/70D_WORKER_FLOW_FORENSICS.md
-- docs/70D_CHART_FLOW.md
-- docs/70D_DATA_FLOW.md
-- docs/70D_API_UI_FLOW.md
-- docs/70D_FULL_APPLICATION_FLOW.md
-- docs/70D_POST_MIGRATION_BUG_MATRIX.md
+- docs/forensics/70D_SYSTEM_FLOW_FORENSIC_MAP.md
+- docs/forensics/70D_WORKER_FLOW_FORENSICS.md
+- docs/research/70d-program/70D_CHART_FLOW.md
+- docs/research/70d-program/70D_DATA_FLOW.md
+- docs/research/70d-program/70D_API_UI_FLOW.md
+- docs/research/70d-program/70D_FULL_APPLICATION_FLOW.md
+- docs/research/70d-program/70D_POST_MIGRATION_BUG_MATRIX.md
 - scratch/repro_shadow70_hook_dead_code.py · scratch/trace_70d_vector_assembly.py
 - artifacts/forensics/feature_vector_trace.json
 - agents/bugs.md (BUG-105/106)

@@ -7,6 +7,13 @@ Base: `origin/main` @ 77eb21b1
 
 ## Owned files (exhaustive — every file this branch adds)
 
+> Historical record of the branch's original output paths. The reports and this
+> document have since been relocated under the canonical documentation root:
+> `docs/forensics/phase2-audit/` (generated reports) and `docs/governance/`
+> (this contract). The generators in `scripts/diagnostics/phase2/` now write
+> to `docs/forensics/phase2-audit/`. Paths below are the branch's original
+> layout and are preserved as provenance.
+
 Only untracked, NEW files. `git status --porcelain --untracked-files=no` on this
 branch returns nothing: zero tracked production files are modified.
 

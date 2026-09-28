@@ -2219,11 +2219,18 @@ def register_diagnostics_state_routes(
                 )
 
             # Write to disk atomically (compatibility projection; the
-            # authoritative runtime state lives in the runtime config store)
+            # authoritative runtime state lives in the runtime config store).
+            # BUG-545: configs/live.yaml is resolved as a RELATIVE path, so the
+            # temp file lands wherever the process CWD is. Create the parent
+            # directory before the swap: os.replace() requires the tmp file to
+            # exist and its directory to be present, and a missing parent
+            # surfaced as FileNotFoundError on the atomic swap (the route then
+            # returned OPERATION_FAILED and the runtime apply never ran).
+            live_config_path.parent.mkdir(parents=True, exist_ok=True)
             tmp = live_config_path.with_suffix(".yaml.tmp")
             with open(tmp, "w", encoding="utf-8") as f:
                 yaml.safe_dump(_projection, f, default_flow_style=False)
-            tmp.replace(live_config_path)
+            os.replace(tmp, live_config_path)
 
             # RUNTIME CONFIGURATION: apply execution/risk/model sections
             # through the authoritative versioned store (validate -> persist

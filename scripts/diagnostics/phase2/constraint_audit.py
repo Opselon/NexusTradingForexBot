@@ -20,7 +20,7 @@ from pathlib import Path
 
 MAIN_CHECKOUT = Path(r"C:/Users/Capsizer/source/repos/NexusTradingForexBot")
 LIVE_AUDIT_DB = MAIN_CHECKOUT / "artifacts" / "audit.db"
-OUT_DIR = Path(__file__).resolve().parents[3] / "phase2"
+OUT_DIR = Path(__file__).resolve().parents[3] / "docs/forensics/phase2-audit"
 
 
 # ---------------------------------------------------------------------------

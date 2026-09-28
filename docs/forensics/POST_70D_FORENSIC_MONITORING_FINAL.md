@@ -20,7 +20,7 @@
 | Databases | audit.db v6 (41 tables), news.db v2 (17), candle_intel.db v2 (15) — integrity ok, WAL |
 | 70D stack | REGISTERED as candidate (scalp_v4 70D) + shadow70 runtime landing in parallel; NO 70D model/dataset/frozen-liquidity-reference yet |
 
-## INVARIANT MATRIX (docs/POST_70D_RUNTIME_INVARIANTS.md)
+## INVARIANT MATRIX (docs/forensics/POST_70D_RUNTIME_INVARIANTS.md)
 
 | Invariant | Status | Evidence | Last check |
 | :--- | :--- | :--- | :--- |
@@ -177,8 +177,8 @@ Required tests are selected by changed file — no human memory needed.
 
 - NEW src/nexus_scalp/forensics/ (models.py, references.py, checks.py,
   engine.py, __init__.py) — the centralized continuous forensic health engine.
-- NEW docs/POST_70D_RUNTIME_INVARIANTS.md (INV-70D-001..020 + m47xj8).
-- NEW docs/POST_70D_INITIAL_HEALTH_REPORT.md (baseline, §57-59).
+- NEW docs/forensics/POST_70D_RUNTIME_INVARIANTS.md (INV-70D-001..020 + m47xj8).
+- NEW docs/forensics/POST_70D_INITIAL_HEALTH_REPORT.md (baseline, §57-59).
 - NEW tests/unit/test_forensic_monitoring_task11.py (TEST-MONITOR-01..36).
 - NEW scratch/post70d_1_baseline_probe.py (+ .out.txt) — read-only probe.
 - src/nexus_scalp/cli/main.py — `nexus forensic` command.

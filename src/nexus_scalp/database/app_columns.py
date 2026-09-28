@@ -204,6 +204,14 @@ APP_REQUIRED_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
         ("build_identity", "TEXT DEFAULT ''"),
         ("was_replacement", "INTEGER DEFAULT 0"),
         ("registered_at", "TEXT"),
+        ("lifecycle_status", "TEXT DEFAULT 'CANDIDATE'"),
+        ("training_run_id", "TEXT DEFAULT ''"),
+        ("parent_model_id", "TEXT DEFAULT ''"),
+        ("parent_model_version", "TEXT DEFAULT ''"),
+        ("child_model_id", "TEXT DEFAULT ''"),
+        ("promotion_reason", "TEXT DEFAULT ''"),
+        ("gate_summary", "TEXT DEFAULT '{}'"),
+        ("validation_run_ids", "TEXT DEFAULT '[]'"),
     ),
     # NOTE: UNIQUE(model_id, model_version, artifact_fingerprint) is a table
     # CONSTRAINT in the app DDL, not a column — healing a skeleton with plain

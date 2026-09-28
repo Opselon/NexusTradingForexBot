@@ -78,6 +78,6 @@
 ```bash
 git fetch --prune && git status --branch --short && git log -10 --oneline
 ```
-Read: docs/TASK-09-70D-CANDIDATE-VALIDATION-FINAL.md (this task), docs/BUG-106-PERFORMANCE-FIX.md,
+Read: docs/historical/task-reports/TASK-09-70D-CANDIDATE-VALIDATION-FINAL.md (this task), docs/forensics/BUG-106-PERFORMANCE-FIX.md,
 docs/agent_handoffs/TASK-03-70D-PARITY.md, TASK-08-70D-GOVERNANCE.md,
 docs/CHAMPION_ARTIFACT_INCIDENT_20260819.md. Then follow NEXT-AGENT ACTIONS above.

@@ -81,11 +81,11 @@ Legend — status: M=modified tracked, U=untracked (new). owner: 01=TASK-01-60D-
 | src/nexus_scalp/cli/main.py | M | 12 | incident CLI wiring | L |
 | src/nexus_scalp/cli/incident_commands.py | U | 12 | `nexus incidents` commands | L |
 | docs/LIQUIDITY_60D_50D_CONTRACT_SNAPSHOT.json | U | 01 | contract snapshot | L |
-| docs/LIQUIDITY_60D_FORENSIC_BASELINE.md | U | 01 | baseline | L |
-| docs/MODEL_BENCHMARK_70D_LIQUIDITY.md | U | 04 | benchmark protocol + BLOCKED report | L |
-| docs/POST_70D_INITIAL_HEALTH_REPORT.md | U | 11 | health baseline | L |
-| docs/POST_70D_RUNTIME_INVARIANTS.md | U | 11 | INV-70D-001..004 | L |
-| docs/TASK_13_GIT_SURVEILLANCE_FINAL.md | U | 13 | THIS REPORT | L |
+| docs/forensics/LIQUIDITY_60D_FORENSIC_BASELINE.md | U | 01 | baseline | L |
+| docs/research/70d-program/MODEL_BENCHMARK_70D_LIQUIDITY.md | U | 04 | benchmark protocol + BLOCKED report | L |
+| docs/forensics/POST_70D_INITIAL_HEALTH_REPORT.md | U | 11 | health baseline | L |
+| docs/forensics/POST_70D_RUNTIME_INVARIANTS.md | U | 11 | INV-70D-001..004 | L |
+| docs/historical/task-reports/TASK_13_GIT_SURVEILLANCE_FINAL.md | U | 13 | THIS REPORT | L |
 | docs/agent_handoffs/TASK-13-git-surveillance.md | U | 13 | handoff (this task) | L |
 | scratch/{_never_copy_watchdog,liq_tests_scan,post70d_1_baseline_probe.*,probe_liq23_*,probe_liq24plus_*,s70_runtime_tests.out,forensic_cli.out.json}.py/.txt/.out | U | 11/01/05 | scratch probes (evidence, untracked by convention) | L |
 
@@ -155,7 +155,7 @@ Scope (exactly these files — explicit staging, no `git add .`):
 - agents/bugs.md, agents/change_control.md, agents/contracts.md, agents/runtime_invariants.md,
   agents/taskboard.md, agents/repository_state.md (registry state — includes the swarm's
   additive rows, landing them durably)
-- docs/TASK_13_GIT_SURVEILLANCE_FINAL.md, docs/agent_handoffs/TASK-13-git-surveillance.md
+- docs/historical/task-reports/TASK_13_GIT_SURVEILLANCE_FINAL.md, docs/agent_handoffs/TASK-13-git-surveillance.md
   (new)
 NOT committed: all production code / tests / docs / scratch owned by TASK-01/02/04/05/08/
 11/12 — left exactly as found for their owners (post-commit worktree audited).
