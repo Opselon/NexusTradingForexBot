@@ -1,0 +1,218 @@
+{
+  "contract_tests": {
+    "BACKTEST": true,
+    "COUNTERFACTUAL": true,
+    "DATA": true,
+    "FEATURES": true,
+    "MODEL": true,
+    "OOS": true,
+    "PROMOTION": true,
+    "REPLAY": true,
+    "ROBUSTNESS": true,
+    "STRATEGY": true,
+    "VALIDATION": true,
+    "WALK-FORWARD": true
+  },
+  "counts": {
+    "decisions_without_run": 0,
+    "distinct_model_fingerprints": 16,
+    "distinct_model_rows": 26,
+    "experience_model_registry": 26,
+    "gates_without_run": 0,
+    "model_governance_events": 59164,
+    "model_governance_state": 0,
+    "model_promotion_audit": 0,
+    "research_evidence": 18316,
+    "research_gates": 26140,
+    "research_runs": 4357,
+    "runs_without_strategy": 0,
+    "shadow_comparisons": 61,
+    "shadow_decisions": 55342,
+    "shadow_runs": 63,
+    "strategy_registry": 4109,
+    "training_runs": 6,
+    "training_runs_empty_model_id": 6
+  },
+  "generated_at": "2026-09-28T01:41:37.852781+00:00",
+  "lineage_findings": [
+    {
+      "action": "reported \u2014 production file not modified",
+      "column": "model_id",
+      "constraint_enforcement": "neither (nullable, no FK, no application guard on this path)",
+      "finding": "6 of 6 completed training runs persist model_id = '' (empty string, not NULL). The registry holds 6 distinct model ids, so no training run can be joined to the model it produced.",
+      "id": "model_identity_missing_on_training_runs",
+      "owner": "Agent 1 (runtime training path)",
+      "severity": "high",
+      "stage": "MODEL",
+      "table": "training_runs"
+    },
+    {
+      "action": "reported \u2014 production file not modified",
+      "column": "artifact_fingerprint",
+      "constraint_enforcement": "neither (no UNIQUE constraint or index)",
+      "finding": "26 registry rows carry only 16 distinct artifact_fingerprint values (10 reuse). A reader treating the fingerprint as a global identity key collides.",
+      "id": "model_fingerprint_not_globally_unique",
+      "owner": "Agent 1 (registry identity)",
+      "severity": "medium",
+      "stage": "MODEL",
+      "table": "experience_model_registry"
+    },
+    {
+      "action": "reported \u2014 production file not modified",
+      "column": "strategy_id",
+      "constraint_enforcement": "application-only (no FK)",
+      "finding": "0 research_runs reference a strategy_id that is not in strategy_registry",
+      "id": "runs_without_registered_strategy",
+      "owner": "Agent 1 (research pipeline)",
+      "severity": "low",
+      "stage": "STRATEGY",
+      "table": "research_runs"
+    },
+    {
+      "action": "documented in phase2_constraint_audit.md",
+      "column": "n/a",
+      "constraint_enforcement": "application",
+      "finding": "the live SQLite store declares 0 foreign keys across 74 tables; every parent/child relationship in the lifecycle is held by application code only",
+      "id": "cross_table_lineage_is_application_only",
+      "owner": "schema (cross-cutting)",
+      "severity": "structural",
+      "stage": "ALL",
+      "table": "schema-wide"
+    }
+  ],
+  "live_database": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\audit.db",
+  "stage_matrix": [
+    {
+      "contract": "yes",
+      "lineage": "dataset_id persisted on research_runs (NOT NULL)",
+      "orphans": "0 runs without a registered strategy",
+      "read_pg": "yes",
+      "read_sqlite": "yes",
+      "stage": "DATA",
+      "status": "VERIFIED",
+      "write_pg": "yes",
+      "write_sqlite": "yes"
+    },
+    {
+      "contract": "yes",
+      "lineage": "feature_schema_id + feature_dimension on training_runs (NULLABLE)",
+      "orphans": "0 (all 6 training runs carry their feature lineage)",
+      "read_pg": "yes",
+      "read_sqlite": "partial",
+      "stage": "FEATURES",
+      "status": "VERIFIED \u2014 schema nullable; application holds it",
+      "write_pg": "yes",
+      "write_sqlite": "partial"
+    },
+    {
+      "contract": "yes",
+      "lineage": "model_id on training_runs (NULLABLE); registry keyed on (model_id, model_version)",
+      "orphans": "6/6 training runs persist an EMPTY model_id \u2014 no run can be joined to its model",
+      "read_pg": "yes",
+      "read_sqlite": "yes",
+      "stage": "MODEL",
+      "status": "DEFECT FOUND \u2014 reported, not patched",
+      "write_pg": "yes",
+      "write_sqlite": "yes"
+    },
+    {
+      "contract": "yes",
+      "lineage": "strategy_id on research_runs; strategy_registry.lifecycle",
+      "orphans": "0 runs without a registered strategy",
+      "read_pg": "partial",
+      "read_sqlite": "yes",
+      "stage": "STRATEGY",
+      "status": "VERIFIED",
+      "write_pg": "partial",
+      "write_sqlite": "yes"
+    },
+    {
+      "contract": "yes",
+      "lineage": "research_runs.run_id <- research_gates.research_run_id",
+      "orphans": "0 gates without a parent run",
+      "read_pg": "yes",
+      "read_sqlite": "yes",
+      "stage": "BACKTEST",
+      "status": "VERIFIED",
+      "write_pg": "yes",
+      "write_sqlite": "yes"
+    },
+    {
+      "contract": "yes",
+      "lineage": "gate_type=WALK_FORWARD on research_gates, keyed to its run",
+      "orphans": "n/a (fold identity is the gate id)",
+      "read_pg": "yes",
+      "read_sqlite": "yes",
+      "stage": "WALK-FORWARD",
+      "status": "VERIFIED",
+      "write_pg": "yes",
+      "write_sqlite": "yes"
+    },
+    {
+      "contract": "yes",
+      "lineage": "gate_type=OOS on research_gates; evidence keyed on gate_id",
+      "orphans": "evidence is per-gate; 43 runs lack evidence (see orphan report)",
+      "read_pg": "yes",
+      "read_sqlite": "yes",
+      "stage": "OOS",
+      "status": "VERIFIED",
+      "write_pg": "yes",
+      "write_sqlite": "yes"
+    },
+    {
+      "contract": "yes",
+      "lineage": "gate_type=ROBUSTNESS on research_gates; evidence keyed on gate_id",
+      "orphans": "evidence is per-gate (corrected from a per-run assumption)",
+      "read_pg": "yes",
+      "read_sqlite": "yes",
+      "stage": "ROBUSTNESS",
+      "status": "VERIFIED",
+      "write_pg": "yes",
+      "write_sqlite": "yes"
+    },
+    {
+      "contract": "yes",
+      "lineage": "shadow_comparisons.run_id -> shadow_runs.run_id",
+      "orphans": "0 comparisons without a parent run",
+      "read_pg": "no",
+      "read_sqlite": "yes",
+      "stage": "COUNTERFACTUAL",
+      "status": "VERIFIED \u2014 SQLite-only (ops_shadow domain)",
+      "write_pg": "no",
+      "write_sqlite": "yes"
+    },
+    {
+      "contract": "yes",
+      "lineage": "shadow_decisions.run_id -> shadow_runs.run_id",
+      "orphans": "0 decisions without a parent run",
+      "read_pg": "no",
+      "read_sqlite": "yes",
+      "stage": "REPLAY",
+      "status": "VERIFIED \u2014 SQLite-only (ops_shadow domain)",
+      "write_pg": "no",
+      "write_sqlite": "yes"
+    },
+    {
+      "contract": "yes",
+      "lineage": "research_gates.research_run_id -> research_runs.run_id; governance events",
+      "orphans": "43 COMPLETED runs without evidence (see orphan report)",
+      "read_pg": "yes",
+      "read_sqlite": "yes",
+      "stage": "VALIDATION",
+      "status": "VERIFIED",
+      "write_pg": "yes",
+      "write_sqlite": "yes"
+    },
+    {
+      "contract": "yes",
+      "lineage": "model_promotion_audit (0 rows); governance state machine",
+      "orphans": "0 promotion records (no promotion has ever been run)",
+      "read_pg": "no",
+      "read_sqlite": "yes",
+      "stage": "PROMOTION",
+      "status": "VERIFIED \u2014 no LIVE promotion exists, by design",
+      "write_pg": "no",
+      "write_sqlite": "yes"
+    }
+  ]
+}
