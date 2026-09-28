@@ -26,6 +26,8 @@ export const MESSAGES: FeatureMessages = {
   "audit.db.k": { fa: "پایگاه داده", de: "Datenbank", es: "base de datos", ar: "قاعدة البيانات" },
   "audit.db.summary": { fa: "{mb} مگابایت · {tables} جدول", de: "{mb} MB · {tables} Tabellen", es: "{mb} MB · {tables} tablas", ar: "{mb} ميغابايت · {tables} جدول" },
   "audit.db.not_present": { fa: "موجود نیست", de: "nicht vorhanden", es: "no presente", ar: "غير موجودة" },
+  "audit.db.provider": { fa: "ارائه‌دهنده: {p}", de: "Anbieter: {p}", es: "proveedor: {p}", ar: "المزوّد: {p}" },
+  "audit.db.reachable": { fa: "سرور در دسترس است", de: "Server erreichbar", es: "servidor alcanzable", ar: "الخادم متاح" },
   "audit.metric.quick_check": { fa: "quick_check", de: "quick_check", es: "quick_check", ar: "quick_check" },
   "audit.metric.rows_signals": { fa: "ردیف‌های audit_signals", de: "audit_signals-Zeilen", es: "filas de audit_signals", ar: "سجلات audit_signals" },
   "audit.metric.rows_ledger": { fa: "ردیف‌های audit_ledger", de: "audit_ledger-Zeilen", es: "filas de audit_ledger", ar: "سجلات audit_ledger" },

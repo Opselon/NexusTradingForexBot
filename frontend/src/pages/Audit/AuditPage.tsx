@@ -136,7 +136,7 @@ export default function AuditPage() {
   // replaces: a string payload passes through as the backend sent it, an
   // object payload is serialized, an absent payload renders as an empty cell.
   const eventCsvRows = useMemo(
-    () => eventRows.map((r) => [r.id, r.created_at ?? "", r.event_type ?? "", typeof r.payload === "string" ? r.payload : JSON.stringify(r.payload ?? "")]),
+    () => eventRows.map((r) => [r.id, (r.occurred_at ?? r.created_at) ?? "", r.event_type ?? "", typeof r.payload === "string" ? r.payload : JSON.stringify(r.payload ?? "")]),
     [eventRows],
   );
 
@@ -148,13 +148,18 @@ export default function AuditPage() {
     () =>
       eventRows.map((row: AuditEventRow) => {
         const payload = parsePayload(row.payload);
+        const when = row.occurred_at ?? row.created_at;
         return (
           <tr key={String(row.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } }} className="l4-clickable" onClick={() => setDrawer({ title: t("audit.drawer.event_title", "audit_event #{id} · {type}", { id: row.id, type: row.event_type ?? "" }), body: payload ?? row.payload })}>
             <td>{String(row.id)}</td>
-            <td>{row.created_at ? formatDateTime(row.created_at) : "—"}</td>
+            <td>{when ? formatDateTime(when) : "—"}</td>
             <td>{row.event_type ?? "—"}</td>
-            <td className="small" style={{ maxWidth: 520, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {payload ? Object.entries(payload).slice(0, 5).map(([k, v]) => `${k}=${String(v).slice(0, 40)}`).join(" ") : "—"}
+            <td className="small" style={{ maxWidth: 520, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={row.message ?? ""}>
+              {row.message
+                ? row.message
+                : payload
+                  ? Object.entries(payload).slice(0, 5).map(([k, v]) => `${k}=${String(v).slice(0, 40)}`).join(" ")
+                  : "—"}
             </td>
             <td><span className="l4-chip accent">⤢</span></td>
           </tr>
@@ -210,7 +215,16 @@ export default function AuditPage() {
           <div className="metric">
             <div className="k">{t("audit.db.k", "database")}</div>
             <div className="v dim small" style={{ fontSize: 13 }}>{String(dbStatusQuery.data?.filename ?? "—")}</div>
-            <div className="s">{dbStatusQuery.data?.exists ? t("audit.db.summary", "{mb} MB · {tables} tables", { mb: formatNumber(Number(dbStatusQuery.data.size_bytes ?? 0) / 1024 / 1024, 2), tables: String(dbStatusQuery.data.table_count ?? "?") }) : t("audit.db.not_present", "not present")}</div>
+            <div className="s">
+              {dbStatusQuery.data?.provider
+                ? t("audit.db.provider", "provider: {p}", { p: String(dbStatusQuery.data.provider) })
+                : null}
+              {dbStatusQuery.data?.exists
+                ? dbStatusQuery.data.provider === "sqlite"
+                  ? t("audit.db.summary", "{mb} MB · {tables} tables", { mb: formatNumber(Number(dbStatusQuery.data.size_bytes ?? 0) / 1024 / 1024, 2), tables: String(dbStatusQuery.data.table_count ?? "?") })
+                  : t("audit.db.reachable", "server reachable")
+                : t("audit.db.not_present", "not present")}
+            </div>
           </div>
           <MetricCard label={t("audit.metric.quick_check", "quick_check")} value={String(dbIntegrityQuery.data?.quick_check ?? "—")} tone={dbIntegrityQuery.data?.quick_check === "ok" ? "pos" : "dim"} />
           <MetricCard label={t("audit.metric.rows_signals", "audit_signals rows")} value={String((dbIntegrityQuery.data?.row_counts as Record<string, number> | undefined)?.audit_signals ?? "—")} tone="dim" />
@@ -249,7 +263,7 @@ export default function AuditPage() {
                   onClick={() =>
                     downloadCsv({
                       filename: `nse-audit-events-p${eventPage}-${stampForFilename()}.csv`,
-                      headers: ["id", "created_at", "event_type", "payload"],
+                      headers: ["id", "occurred_at", "event_type", "payload"],
                       rows: eventCsvRows,
                     })
                   }

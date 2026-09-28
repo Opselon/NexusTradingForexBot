@@ -287,6 +287,7 @@ tests/unit/test_agent5_bug249_251_252.py
 tests/unit/test_agent6_execution_contract.py
 tests/unit/test_audit_flush_contract.py
 tests/unit/test_audit_legacy4_surface.py
+tests/unit/test_audit_pg_read_plane.py
 tests/unit/test_backtest_report.py
 tests/unit/test_backtest_report_asset.py
 tests/unit/test_backtest_report_integration.py
