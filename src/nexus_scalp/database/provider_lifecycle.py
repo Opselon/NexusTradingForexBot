@@ -356,7 +356,22 @@ class ProviderLifecycleManager:
         return True
 
     def _build_target_pg_config(self, overrides: dict[str, Any] | None = None) -> DatabaseConfig:
-        raw = overrides or {}
+        """Resolve the TARGET PostgreSQL config.
+
+        Precedence: explicit caller overrides (the UI's test/migrate forms
+        pass what the operator typed) > the PERSISTED PostgreSQL config in
+        the settings database (what the operator actually configured - this
+        is the live engine's connection and the only source that can ever
+        match a running server) > the packaged defaults.
+
+        Without the persisted row the transition always tested
+        ``nse_user@nse_audit`` while the engine connects as
+        ``postgres@nexusdb``, so the connection test failed on EVERY attempt
+        and the transition stayed FAILED forever.
+        """
+        raw = dict(self._load_persisted_pg_config())
+        if overrides:
+            raw.update({k: v for k, v in overrides.items() if v not in (None, "")})
         from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
 
         return DatabaseConfig.for_postgres(
@@ -368,3 +383,28 @@ class ProviderLifecycleManager:
             ssl_mode=str(raw.get("ssl_mode") or ""),
             password_secret=PG_PASSWORD_SECRET_KEY,
         )
+
+    def _load_persisted_pg_config(self) -> dict[str, Any]:
+        """The persisted PostgreSQL connection settings, or ``{}`` when none.
+
+        ``load_database_config`` is the canonical reader of the persisted
+        database settings; this reuses it so the transition and the engine
+        can never disagree about which server is the target.
+        """
+        try:
+            cfg = load_database_config("audit", settings_db_path=self.settings_db_path)
+            if not cfg.is_postgresql:
+                return {}
+            return {
+                "host": cfg.host,
+                "port": cfg.port,
+                "database": cfg.database,
+                "username": cfg.username,
+                "ssl_mode": cfg.ssl_mode or "",
+            }
+        except Exception as exc:
+            # No persisted PG config (fresh install, SQLite-only box) is a
+            # normal state, not an error: the caller falls back to the
+            # packaged defaults.
+            logger.debug("No persisted PostgreSQL config resolved: %s", exc)
+            return {}
