@@ -293,14 +293,15 @@ def test_no_wall_clock_now_in_module_source() -> None:
     regression stays explained.
     """
     code = _code_lines(_source())
-    # the ONLY wall-clock read left is the single capture that defines the
-    # frozen instant — everything else must read _now(). One call is the
-    # contract: zero would mean the module hardcoded a calendar date (which
-    # the runtime freshness gate would reject), two would mean the flake
-    # class is back.
-    assert _count_calls(code, "datetime.now") == 1, (
-        "the module must read the wall clock exactly once, to capture "
-        "_FIXED_NOW; per-call reads belong to the removed flake class"
+    # the ONLY wall-clock reads left are the capture that defines the frozen
+    # instant and its single indirection helper — everything else must read
+    # _now(). Zero would mean the module hardcoded a calendar date (which
+    # the runtime freshness gate would reject); a read inside scenario code
+    # would mean the flake class is back.
+    assert _count_calls(code, "datetime.now") == 2, (
+        "the module must read the wall clock only via the _FIXED_NOW capture "
+        "and its _recapture_now indirection; per-call reads belong to the "
+        "removed flake class"
     )
     capture = _call_spans(code, "datetime.now")[0][0]
     line_start = code.rfind("\n", 0, capture) + 1
@@ -324,10 +325,13 @@ def test_single_frozen_instant_defined() -> None:
         "hardcoded calendar date would age past FEATURE_FRESHNESS_SEC (300s) "
         "and silently mark every vector SHADOW_STALE_FEATURES"
     )
-    # exactly ONE wall-clock read in the whole module: the capture itself
-    assert _count_calls(code, "datetime.now") == 1, (
-        "expected exactly 1 wall-clock read (the capture), got more — every "
-        "scenario must read _now() instead"
+    # exactly TWO wall-clock reads in the whole module: the capture itself
+    # and its single indirection helper (the per-scenario refresh); no
+    # scenario reads the clock directly.
+    assert _count_calls(code, "datetime.now") == 2, (
+        "expected exactly 2 wall-clock reads (the capture plus the "
+        "_recapture_now indirection), got more — every scenario must read "
+        "_now() instead"
     )
 
 

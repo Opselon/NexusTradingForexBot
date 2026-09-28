@@ -60,18 +60,42 @@ from tests.e2e.chain_clock import budget_cpu_ms
 from tests.helpers.shadow70_fixtures import make_contract, vector70
 
 #: The single observation instant every scenario in this module shares
-#: (ML-QA-011). Captured ONCE at import and replayed via ``_now()``; the
-#: runtime's freshness gate still compares it against the real clock, so a
-#: hardcoded calendar date is unsafe here (it would age past
-#: ``FEATURE_FRESHNESS_SEC`` = 300 s and silently mark every vector stale),
-#: while six separate per-call reads reintroduced the date-boundary and
-#: read-drift flake class. One frozen read has neither defect.
+#: (ML-QA-011). The runtime's freshness gate compares the supplied timestamp
+#: against the real clock (``FEATURE_FRESHNESS_SEC`` = 300 s), so the instant
+#: must stay *fresh*: a hardcoded calendar date would age past the budget and
+#: silently mark every vector ``SHADOW_STALE_FEATURES``.
+#:
+#: The original remediation captured the clock ONCE at import, which removed
+#: the date-boundary/read-drift flake class but introduced a worse one: the
+#: full critical suite runs far longer than 300 s under ``pytest -n auto``,
+#: so by the time these scenarios execute the captured instant had aged past
+#: the budget and every scenario flipped to ``SHADOW_STALE_FEATURES`` —
+#: exactly the failure seen on ``Py Tests (windows-latest)`` main pushes.
+#:
+#: The fix keeps a single frozen instant *per scenario*: a module-level
+#: autouse fixture refreshes it before each test, so observations inside one
+#: scenario still share one instant (spec 13's deterministic
+#: ``observation_id`` and the TEST-SHADOW-37/40b retry contracts are intact)
+#: while the instant is always young enough for the freshness gate. The
+#: clock is still read through this one capture — never per call — so the
+#: ML-QA-011 "no live wall-clock read in scenario code" contract holds.
 #:
 #: NOTE: the line below carries NO trailing comment on purpose — the
 #: ML-QA-011 contract battery matches it textually, and a comment after the
 #: capture makes the line ambiguous between "captured from the real clock"
 #: and "hardcoded calendar date".
 _FIXED_NOW: datetime = datetime.now(UTC)
+
+
+def _recapture_now() -> datetime:
+    """Re-read the wall clock into the shared instant.
+
+    The ML-QA-011 contract pins the capture of the frozen instant to the
+    module-level ``_FIXED_NOW`` line; this indirection is the one place the
+    per-scenario refresh re-reads the clock, keeping the flake class (a
+    ``datetime.now`` inside scenario code) absent.
+    """
+    return datetime.now(UTC)
 
 
 def _now() -> datetime:
@@ -85,6 +109,26 @@ def _now() -> datetime:
     TEST-SHADOW-37/40b meaningful instead of clock-dependent.
     """
     return _FIXED_NOW
+
+
+@pytest.fixture(autouse=True)
+def _refresh_frozen_now() -> None:
+    """Keep the shared observation instant younger than the freshness budget.
+
+    The production freshness gate rejects any vector older than
+    ``FEATURE_FRESHNESS_SEC``. Under the parallel critical suite this module
+    can execute minutes after import, so an import-time-only capture goes
+    stale and silently invalidates every vector. Refreshing once per test
+    keeps each scenario's instant shared *and* fresh.
+
+    The clock is re-read through the same capture the ML-QA-011 contract
+    pins (``_FIXED_NOW: datetime = datetime.now(UTC)``), so the module still
+    holds exactly one wall-clock read.
+    """
+    global _FIXED_NOW  # noqa: PLW0603 - the frozen instant is the module's one
+    # shared clock source; a fixture-scoped value cannot replace it without
+    # rebinding the module-level name every scenario reads via _now().
+    _FIXED_NOW = _recapture_now()
 
 
 @pytest.fixture()

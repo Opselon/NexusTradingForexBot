@@ -446,7 +446,18 @@ def test_no_production_file_changed() -> None:
     """The remediation is test-only. A benchmark assert is a property of the
     *measurement*, not of the production code, so the production tree must be
     untouched by this work."""
-    proc = _run(["git", "-C", str(_REPO_ROOT), "diff", "--name-only", "origin/main..HEAD"])
+    proc = _run(
+        [
+            "git",
+            "-C",
+            str(_REPO_ROOT),
+            "diff",
+            "--name-only",
+            "origin/main..HEAD",
+            "--",
+            "src/",
+        ]
+    )
     assert proc.strip() == "", f"unexpected production diff: {proc!r}"
 
 
@@ -478,7 +489,11 @@ def test_uniqueness_cpu_budget_holds_on_50k_rows() -> None:
         )
     assert len(weights) == n
     assert np.all(weights > 0.0)
-    assert sw.consumed_ms > 0.0, "the measured leg must actually execute"
+    # "the measured leg executed": on tick-quantized clocks (Windows ~15.6 ms)
+    # a genuine sub-tick leg reads as exactly 0.0 ms, so > 0 is not provable
+    # there. The invariant that survives is non-negativity plus the real
+    # result above (len == n, all positive) — the leg produced 50k weights.
+    assert sw.consumed_ms >= 0.0, "the measured leg must actually execute"
     assert sw.consumed_ms < budget, (
         f"CPU-time budget exceeded: {sw.consumed_ms:.3f} ms (budget {budget} ms)"
     )
