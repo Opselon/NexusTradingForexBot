@@ -34,8 +34,11 @@ import type {
   AdviserAdvisoryDto,
 } from "../model";
 import { ACTIVATION_HELP, ACTIVATION_LADDER, errorDetailText } from "../model";
+import type { DecisionTraceResponse, TensorInspectorResponse } from "../model";
 import { useI18n } from "@/stores/i18nStore";
 import "./position-adviser.css";
+import { DecisionTracePanel } from "./DecisionTracePanel";
+import { TensorInspectorPanel } from "./TensorInspectorPanel";
 
 /** Callback-safe translator: reads the live language at call time, so event
  *  handlers never render a message in a language that has since changed. */
@@ -139,6 +142,20 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
   const [tuneSeeds, setTuneSeeds] = useState<string>("42, 1337, 2024");
   const [tuneResult, setTuneResult] = useState<AdviserAutoTuneResponse | null>(null);
 
+  // ---- live diagnostics (mission §11/§12/§33 + §34) ---------------------------
+  // Each diagnostic carries its own availability + staleness verdict, because
+  // the two routes are additive: an unwired build must degrade to an honest
+  // "unavailable" panel instead of failing the whole page's refresh.
+  const [tensor, setTensor] = useState<TensorInspectorResponse | null>(null);
+  const [tensorAtMs, setTensorAtMs] = useState<number | null>(null);
+  const [tensorError, setTensorError] = useState<string>("");
+  const [tensorMissing, setTensorMissing] = useState<boolean>(false);
+  const [trace, setTrace] = useState<DecisionTraceResponse | null>(null);
+  const [traceAtMs, setTraceAtMs] = useState<number | null>(null);
+  const [traceError, setTraceError] = useState<string>("");
+  const [traceMissing, setTraceMissing] = useState<boolean>(false);
+  const [diagLoading, setDiagLoading] = useState<boolean>(true);
+
   const firstDataset = datasets.length > 0 ? datasets[0] : null;
   const effectiveDataset = trainDataset || (firstDataset ? firstDataset.path : "");
 
@@ -167,6 +184,78 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       setLoading(false);
     }
   }, []);
+
+  /**
+   * Fetch ONE additive diagnostic route. On the first 404 the route is marked
+   * not-wired (the panel renders its permanent "unavailable" state and we stop
+   * polling it). Any other failure keeps the LAST GOOD payload and records the
+   * server's message verbatim so the panel can flag itself stale.
+   */
+  const refreshDiagnostic = useCallback(
+    async <T,>(args: {
+      fetcher: (signal: AbortSignal) => Promise<T>;
+      setData: (v: T | null) => void;
+      setAtMs: (v: number | null) => void;
+      setError: (v: string) => void;
+      setMissing: (v: boolean) => void;
+      missing: boolean;
+      signal: AbortSignal;
+    }): Promise<void> => {
+      if (args.missing) return; // 404 already recorded — do not hammer the route
+      try {
+        const value = await args.fetcher(args.signal);
+        args.setData(value);
+        args.setAtMs(Date.now());
+        args.setError("");
+        args.setMissing(false);
+      } catch (err) {
+        const status = (err as { status?: number }).status;
+        if (status === 404) {
+          // The route genuinely does not exist on this build. Nothing to show.
+          args.setMissing(true);
+          args.setData(null);
+          return;
+        }
+        // 409 = the route exists but has no sample yet (no model loaded or no
+        // evaluation has run). Keep the last payload if there was one and
+        // surface the server's reason verbatim; the panel flags itself.
+        args.setError(errorDetailText(err));
+      }
+    },
+    [],
+  );
+
+  // The diagnostics refresh on the SAME cadence as the page, but independently:
+  // a diagnostic failure must never darken the status/models panels, and a
+  // status failure must never clear the last inspected tensor.
+  useEffect(() => {
+    const ac = new AbortController();
+    void (async () => {
+      await Promise.all([
+        refreshDiagnostic({
+          fetcher: (signal) => positionAdviserApi.tensor(signal),
+          setData: setTensor,
+          setAtMs: setTensorAtMs,
+          setError: setTensorError,
+          setMissing: setTensorMissing,
+          missing: tensorMissing,
+          signal: ac.signal,
+        }),
+        refreshDiagnostic({
+          fetcher: (signal) => positionAdviserApi.decision(signal),
+          setData: setTrace,
+          setAtMs: setTraceAtMs,
+          setError: setTraceError,
+          setMissing: setTraceMissing,
+          missing: traceMissing,
+          signal: ac.signal,
+        }),
+      ]);
+      setDiagLoading(false);
+    })();
+    return () => ac.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [advisories.length, status?.evaluated_count, tensorMissing, traceMissing]);
 
   useEffect(() => {
     void refresh();
@@ -1052,6 +1141,26 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
           )}
         </div>
       </section>
+
+      {/* Live diagnostics (mission §11/§12/§33/§34). Both panels read real
+          backend endpoints; a build without those routes degrades to an honest
+          "unavailable" panel instead of an invented tensor or decision. */}
+      <div className="pa-diagnostics-grid">
+        <TensorInspectorPanel
+          tensor={tensor}
+          atMs={tensorAtMs}
+          error={tensorError}
+          unavailable={tensorMissing}
+          loading={diagLoading}
+        />
+        <DecisionTracePanel
+          trace={trace}
+          atMs={traceAtMs}
+          error={traceError}
+          unavailable={traceMissing}
+          loading={diagLoading}
+        />
+      </div>
     </div>
   );
 }

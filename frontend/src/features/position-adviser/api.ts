@@ -25,6 +25,8 @@ import type {
   AdviserTrainRequest,
   AdviserTrainResponse,
   AdvisoriesResponse,
+  DecisionTraceResponse,
+  TensorInspectorResponse,
 } from "./model";
 
 const BASE = "/api/position-adviser";
@@ -65,6 +67,21 @@ export const positionAdviserApi = {
   /** POST /api/position-adviser/unload — unload and disable. */
   unload: (): Promise<AdviserGenericResponse> =>
     send<AdviserGenericResponse>(`${BASE}/unload`, {}),
+
+  /**
+   * POST /api/position-adviser/rollback — restore the model replaced by the
+   * most recent load. 409 when nothing is retained.
+   */
+  rollback: (): Promise<AdviserGenericResponse> =>
+    send<AdviserGenericResponse>(`${BASE}/rollback`, {}),
+
+  /** GET /api/position-adviser/tensor/current-input — the actual last input. */
+  tensor: (signal?: AbortSignal): Promise<TensorInspectorResponse> =>
+    getLegacy<TensorInspectorResponse>(`${BASE}/tensor/current-input`, signal),
+
+  /** GET /api/position-adviser/decision/current — the last advisory + latencies. */
+  decision: (signal?: AbortSignal): Promise<DecisionTraceResponse> =>
+    getLegacy<DecisionTraceResponse>(`${BASE}/decision/current`, signal),
 
   /** POST /api/position-adviser/activate — move along the activation ladder. */
   activate: (req: AdviserActivateRequest): Promise<AdviserGenericResponse> =>

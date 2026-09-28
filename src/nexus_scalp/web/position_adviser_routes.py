@@ -36,6 +36,7 @@ from nexus_scalp.position_adviser.paths import (
     sanitize_repo_relative,
 )
 from nexus_scalp.position_adviser.service import PositionAdviserService
+from nexus_scalp.position_adviser.settings_store import AdviserSettingsStore
 from nexus_scalp.position_adviser.trainer import (
     OOS_SPLITS,
     train_position_adviser,
@@ -304,7 +305,179 @@ def route_load(req: AdviserLoadRequest) -> dict[str, Any]:
         # from an exception must not reach the client (CodeQL: information
         # exposure through an exception). The real cause is in the server log.
         raise HTTPException(status_code=400, detail="adviser load rejected (see server logs)")
+    # Persist the selection so a restart rehydrates this exact model
+    # (mission §4/§41). A failed write must not turn the load into a failure —
+    # the model IS in memory — so it is reported, not raised.
+    try:
+        settings = AdviserSettingsStore(_settings_database())
+        settings.save_selection(
+            model_id=out["model_id"],
+            weights_path=str(wp),
+            scaler_path=str(sp),
+        )
+        out["persisted_selection"] = True
+    except Exception as exc:  # pragma: no cover - depends on the settings DB
+        logger.warning("[ADVISER] event=SELECTION_PERSIST_FAILED err=%s", exc)
+        out["persisted_selection"] = False
     return out
+
+
+@router.post("/rollback")
+def route_rollback() -> dict[str, Any]:
+    """Restore the model replaced by the most recent successful load.
+
+    Returns REJECTED when nothing was retained or the retained model no longer
+    serves; in both cases the currently active model is left untouched.
+    """
+    out = get_position_adviser_service().rollback()
+    if out["status"] != "OK":
+        raise HTTPException(status_code=409, detail=out.get("reason", "rollback rejected"))
+    return out
+
+
+def _settings_database() -> Any:
+    """The application settings DB (SQLite). Late import keeps the route module
+    import-clean; ``SettingsDatabase()`` resolves the configured path itself."""
+    from nexus_scalp.settings.service import SettingsDatabase
+
+    return SettingsDatabase()
+
+
+@router.get("/settings")
+def route_settings() -> dict[str, Any]:
+    """The persisted adviser settings (SQLite), or the documented defaults."""
+    try:
+        store = AdviserSettingsStore(_settings_database())
+        s = store.load()
+    except Exception as exc:  # a corrupt settings DB must not 500 the page
+        logger.warning("[ADVISER] event=SETTINGS_READ_FAILED err=%s", exc)
+        s = AdviserSettings.defaults()
+        return {"status": "OK", "settings": s.to_dict(), "degraded": True}
+    return {"status": "OK", "settings": s.to_dict(), "degraded": False}
+
+
+class AdviserSettingsUpdate(BaseModel):
+    """A partial settings edit. Omitted fields keep their current value."""
+
+    activation: str | None = None
+    model_id: str | None = None
+    weights_path: str | None = None
+    scaler_path: str | None = None
+    auto_load: bool | None = None
+    #: One documented config key (stale gate, decision thresholds, ...).
+    config_key: str | None = None
+    config_value: Any | None = None
+
+
+@router.put("/settings")
+def route_settings_update(req: AdviserSettingsUpdate) -> dict[str, Any]:
+    """Persist adviser settings to SQLite (mission §5/§38).
+
+    Every write is reported individually: a field that did not reach disk shows
+    up as absent from ``persisted`` instead of being reported as saved.
+    """
+    store = AdviserSettingsStore(_settings_database())
+    persisted: list[str] = []
+    try:
+        if (
+            req.model_id is not None
+            and req.weights_path is not None
+            and req.scaler_path is not None
+        ):
+            if store.save_selection(
+                model_id=req.model_id,
+                weights_path=req.weights_path,
+                scaler_path=req.scaler_path,
+            ):
+                persisted.append("selection")
+        if req.activation is not None:
+            if store.save_activation(req.activation):
+                persisted.append("activation")
+        if req.auto_load is not None:
+            if store.save_auto_load(req.auto_load):
+                persisted.append("auto_load")
+        if req.config_key is not None and req.config_value is not None:
+            if store.set_config_value(req.config_key, req.config_value):
+                persisted.append(f"config:{req.config_key}")
+    except Exception as exc:
+        logger.warning("[ADVISER] event=SETTINGS_WRITE_FAILED err=%s", exc)
+        raise HTTPException(status_code=500, detail="settings write failed (see server logs)")
+    return {"status": "OK", "persisted": persisted, "settings": store.load().to_dict()}
+
+
+@router.get("/tensor/current-input")
+def route_tensor_current_input() -> dict[str, Any]:
+    """Tensor inspector (mission §11/§12/§33): the actual last model input.
+
+    Reads the position state that was REALLY fed to inference, rebuilds the raw
+    vector, applies the loaded scaler, and reports both — so the operator can see
+    raw vs normalized and confirm the dimensions agree at every stage. 404 when
+    no evaluation has happened yet rather than an invented sample.
+    """
+    from nexus_scalp.position_adviser.diagnostics import inspect_current_input
+
+    svc = get_position_adviser_service()
+    if svc._last_inspected_state is None:
+        raise HTTPException(
+            status_code=404,
+            detail="no evaluation has run yet; the tensor inspector needs a real sample",
+        )
+    if svc._state._scaler is None:
+        raise HTTPException(status_code=409, detail="no adviser model is loaded")
+    try:
+        inspection = inspect_current_input(svc)
+    except Exception as exc:  # a state that no longer parses is a diagnosis, not a 500
+        logger.warning("[ADVISER] event=INSPECT_BUILD_FAILED err=%s", exc)
+        raise HTTPException(
+            status_code=409, detail="inspector could not build the vector (see server logs)"
+        )
+    return {"status": "OK", "tensor": inspection.to_dict()}
+
+
+@router.get("/decision/current")
+def route_current_decision() -> dict[str, Any]:
+    """Decision trace (mission §34): the last completed advisory + its input.
+
+    Each stage carries the timestamps and measured latencies the service
+    recorded, so the trace shows the real pipeline rather than a reconstruction.
+    """
+    svc = get_position_adviser_service()
+    with svc._lock:
+        advisory = svc._last_advisory
+        inspected = svc._last_inspected_state
+    if advisory is None:
+        raise HTTPException(
+            status_code=404,
+            detail="no decision has been produced yet; enable the adviser to run one",
+        )
+    d = advisory.diagnostics
+    return {
+        "status": "OK",
+        "position": {
+            "ticket": advisory.ticket,
+            "snapshot_id": d.get("snapshot_id"),
+            "snapshot_age_ms": d.get("snapshot_age_ms"),
+            "inspected_state": inspected or {},
+        },
+        "model": {
+            "model_id": advisory.model_id,
+            "model_dimension": advisory.model_dimension,
+            "activation": str(advisory.activation),
+        },
+        "decision": {
+            "action": advisory.action,
+            "confidence": advisory.confidence,
+            "probabilities": advisory.probabilities,
+            "evaluated_at": advisory.evaluated_at,
+            "applied": advisory.applied,
+            "not_applied_reason": advisory.not_applied_reason,
+        },
+        "latency": {
+            "total_ms": advisory.latency_ms,
+            "feature_ms": d.get("latency_feature_ms"),
+            "inference_ms": d.get("latency_inference_ms"),
+        },
+    }
 
 
 @router.post("/unload")
