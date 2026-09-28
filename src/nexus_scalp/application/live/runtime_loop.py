@@ -174,6 +174,15 @@ class RuntimeLoop:
         # SEES the retry in progress (perfect-UI-UX requirement).
         import time as _time  # noqa: F401 - reserved for backoff timing telemetry
 
+        # HEALTH-TRUTH-001: boot phase markers so the health surface can tell
+        # a boot in flight from a stable stopped engine. ``_run_loop_alive``
+        # marks "a run_loop task exists and has not returned"; ``_boot_state``
+        # names the phase. Both are cleared on every exit path below so they
+        # can never outlive the loop. Observable ONLY — no gate reads them.
+        self.om._run_loop_alive = True
+        self.om._boot_state = "CONNECTING"
+        self.om._boot_detail = "connecting to the broker terminal"
+
         mt5_connected = False
         for attempt in range(1, 4):
             logger.info(
@@ -203,6 +212,9 @@ class RuntimeLoop:
 
         if not mt5_connected:
             logger.critical("MT5 connect() failed after 3 attempts. Engine shutting down.")
+            self.om._run_loop_alive = False
+            self.om._boot_state = "CONNECT_FAILED"
+            self.om._boot_detail = "MT5 connect() failed after 3 attempts"
             self.om.emit_incident_telemetry(
                 event_type="MT5_CONNECT_FAILED",
                 component="mt5",
@@ -241,6 +253,8 @@ class RuntimeLoop:
             # Fail closed: never enter the trading loop. The engine stays
             # observable (web/UI reflect the persisted state) and the
             # operator must explicitly release before LIVE resumes.
+            self.om._boot_state = "BLOCKED"
+            self.om._boot_detail = f"persisted safety state {boot_decision.state} refuses trading"
             logger.critical(
                 "[SAFETY_STATE] startup trading REFUSED state=%s detail=%s — "
                 "engine idle until explicit release (nexus risk release --confirm)",
@@ -250,8 +264,15 @@ class RuntimeLoop:
             while self.om._runtime_risk_state in ("HALTED", "KILL_SWITCH"):
                 await asyncio.sleep(1.0)
             await self.om._shutdown_async()
+            self.om._run_loop_alive = False
+            self.om._boot_state = "STOPPED"
+            self.om._boot_detail = "released after persisted halt"
             return
 
+        # Boot prerequisites satisfied: the safety gate allowed trading, so
+        # the arming phases (workers, warmup) follow.
+        self.om._boot_state = "ARMING"
+        self.om._boot_detail = "arming the engine and starting workers"
         self.om._running = True
         symbol = self.om.config.execution.symbol
 
@@ -361,6 +382,12 @@ class RuntimeLoop:
             digits=self.om._symbol_info.digits if self.om._symbol_info else 2,
             model_path=str(self.om.config.model.model_artifact_path),
         )
+
+        # Boot complete: the loop is armed and every prerequisite phase
+        # (connect -> safety gate -> workers) has succeeded. From here the
+        # engine is RUNNING for real and the health surface may say so.
+        self.om._boot_state = "RUNNING"
+        self.om._boot_detail = "engine armed · workers started · tick loop live"
 
         self.om._last_tick_processed_time = time.time()
 
@@ -689,4 +716,10 @@ class RuntimeLoop:
                     self.om.notifier.notify_error("Real-Time Execution Loop", str(e))
                 await asyncio.sleep(1.0)
 
+        # The loop exited: ``_running`` was flipped false by a stop request or
+        # a shutdown. The boot markers must not survive the loop — a later
+        # START creates a fresh task with fresh phases.
+        self.om._run_loop_alive = False
+        self.om._boot_state = "STOPPED"
+        self.om._boot_detail = "run loop exited"
         await self.om._shutdown_async()

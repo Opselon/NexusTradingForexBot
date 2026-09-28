@@ -652,6 +652,114 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         except (TypeError, ValueError):
             return None
 
+    def _safe_get(obj: Any, name: str, default: Any = None) -> Any:
+        """``getattr`` that treats a raising property as a missing value.
+
+        HEALTH-TRUTH-009: a corrupt engine object must degrade the health
+        verdict to evidence, never raise out of the status endpoint.
+        """
+        try:
+            return getattr(obj, name, default)
+        except Exception:
+            return default
+
+    def _attr_read_ok(obj: Any, name: str) -> bool:
+        """True when ``getattr(obj, name)`` succeeds (corrupt-object guard)."""
+        try:
+            getattr(obj, name)
+            return True
+        except Exception:
+            return False
+
+    def _call_ok(obj: Any, name: str) -> bool:
+        """True when ``getattr(obj, name)()`` returns (corrupt-call guard)."""
+        try:
+            getattr(obj, name)()
+            return True
+        except Exception:
+            return False
+
+    def _worker_recent_success(reg: dict[str, Any]) -> bool:
+        """True when a worker's last SUCCESS is at least as recent as its last
+        FAILURE — i.e. the worker is recovering, not dying.
+
+        HEALTH-TRUTH-007: a worker that logs a transient error but then
+        completes a cycle is healthy; one whose last event is a failure is
+        degraded. Both can carry a non-empty ``last_error``.
+        """
+        ls = reg.get("last_success")
+        lf = reg.get("last_failure")
+        if ls is None:
+            return False
+        if lf is None:
+            return True
+
+        def _as_dt(v: Any) -> datetime | None:
+            if v is None:
+                return None
+            try:
+                if hasattr(v, "isoformat"):
+                    dt = v
+                else:
+                    dt = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+                return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+            except (TypeError, ValueError):
+                return None
+
+        ls_dt, lf_dt = _as_dt(ls), _as_dt(lf)
+        if ls_dt is None:
+            return False
+        if lf_dt is None:
+            return True
+        return ls_dt >= lf_dt
+
+    def _safety_block(engine: Any) -> dict[str, Any]:
+        """Persisted safety state for the health block (never raises).
+        HEALTH-TRUTH-001: the engine loop is idled by a *persisted* safety
+        halt long after the START button was pressed. ``_running`` alone
+        cannot distinguish "operator stopped the engine" from "the engine is
+        alive and trading is refused by a durable risk gate" — both read
+        ``_running=False``. This block resolves the persisted state from the
+        engine's own in-memory mirror (restored from the audit store BEFORE
+        the loop arms, ``_restore_runtime_risk_state``) so the health surface
+        reports the real cause instead of a generic STOPPED. It never clears,
+        bypasses or re-derives the gate; it only *reads* it.
+        """
+        block: dict[str, Any] = {
+            "persisted_state": None,
+            "effective_state": None,
+            "reason": "",
+            "triggered_at": "",
+            "trading_blocked": False,
+            "read_failed": "",
+        }
+        if engine is None:
+            return block
+        try:
+            persisted = str(getattr(engine, "_runtime_risk_state", "RUNNING") or "RUNNING").upper()
+            # ``runtime_risk_state`` is a METHOD on LiveEngine (the effective
+            # state merges session-local DEGRADED in). Call it, never str() it
+            # — str() of a bound method rendered the whole halt invisible in
+            # the debug snapshot (the reason the dashboard could not explain
+            # the STOPPED state for hours).
+            effective_attr = getattr(engine, "runtime_risk_state", None)
+            if callable(effective_attr):
+                effective = str(effective_attr() or "RUNNING").upper()
+            else:
+                effective = str(effective_attr or persisted).upper()
+            block["persisted_state"] = persisted
+            block["effective_state"] = effective
+            block["trading_blocked"] = persisted in ("HALTED", "KILL_SWITCH")
+            reason = str(getattr(engine, "_halt_reason", "") or "")
+            if reason:
+                block["reason"] = reason
+            elif block["trading_blocked"]:
+                block["reason"] = f"PERSISTED_{persisted} (explicit release required)"
+            block["triggered_at"] = str(getattr(engine, "_halt_triggered_at", "") or "")
+        except Exception as exc:  # observability only — never blocks health
+            block["read_failed"] = f"{type(exc).__name__}: {exc}"
+        return block
+
     def _build_health_section(state_obj: Any, mono_now: float) -> dict[str, Any]:
         """Live subsystem health derived from REAL engine/DB state.
 
@@ -661,22 +769,81 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         engine = state_obj.engine
         subsystems: dict[str, Any] = {}
         details: dict[str, Any] = {}
+        safety = _safety_block(engine)
+        # ``safety`` is the WHY for a non-running engine; keep it on the
+        # payload (not on a subsystem status) so it explains every state the
+        # engine subsystem can report, not just one.
+        details["safety"] = safety
 
         # --- engine ---
-        running = bool(getattr(engine, "_running", False)) if engine else False
+        # HEALTH-TRUTH-009: every engine read here is individually guarded —
+        # a corrupt engine object must degrade the health verdict to
+        # evidence, not raise out of the only endpoint that reports it.
+        try:
+            running = bool(getattr(engine, "_running", False)) if engine else False
+        except Exception:
+            running = False
         mode = None
         try:
             mode = engine.config.execution.mode.value if engine else None
         except Exception:
             mode = None
-        warmup = getattr(engine, "warmup_state", None) if engine else None
-        inference_enabled = bool(getattr(engine, "_inference_enabled", False)) if engine else False
+        try:
+            warmup = getattr(engine, "warmup_state", None) if engine else None
+        except Exception:
+            warmup = None
+        try:
+            inference_enabled = (
+                bool(getattr(engine, "_inference_enabled", False)) if engine else False
+            )
+        except Exception:
+            inference_enabled = False
+        try:
+            loop_alive = bool(getattr(engine, "_run_loop_alive", False)) if engine else False
+        except Exception:
+            loop_alive = False
+        try:
+            boot_state = str(getattr(engine, "_boot_state", "") or "").upper()
+        except Exception:
+            boot_state = ""
+        try:
+            boot_reason = str(getattr(engine, "_boot_detail", "") or "")
+        except Exception:
+            boot_reason = ""
         if engine is None:
             engine_status = "UNAVAILABLE"
             details["engine"] = "engine reference not attached to web server"
+        elif running and safety["trading_blocked"]:
+            # Running loop under a persisted halt: the process is consuming
+            # ticks but trading is refused. Report the honest hybrid, not
+            # READY and not STOPPED.
+            engine_status = "BLOCKED"
+            details["engine"] = (
+                f"engine loop running but trading REFUSED by persisted "
+                f"{safety['persisted_state']} ({mode}) — {safety['reason']}"
+            )
+        elif safety["trading_blocked"]:
+            # The observed STOPPED: the startup gate refused trading before
+            # the loop armed, or a mid-session halt dropped the loop. STOPPED
+            # is *true* but unactionable; BLOCKED names the operator step.
+            engine_status = "BLOCKED"
+            details["engine"] = (
+                f"engine stopped · persisted safety {safety['persisted_state']} "
+                f"refuses trading ({mode}) — {safety['reason']} "
+                f"(explicit release required: nexus risk release --confirm)"
+            )
         elif not running:
-            engine_status = "STOPPED"
-            details["engine"] = "engine loop is not running"
+            if boot_state == "STARTING" or (not boot_state and loop_alive):
+                # A boot in flight (connect -> safety gate -> arm) must not be
+                # painted as a stable STOPPED: it is a transient state.
+                engine_status = "STARTING"
+                details["engine"] = (
+                    f"engine starting up ({boot_reason or 'boot in progress'}) "
+                    f"· run_loop task alive={loop_alive}"
+                )
+            else:
+                engine_status = "STOPPED"
+                details["engine"] = f"engine loop is not running (run_loop_alive={loop_alive})"
         elif warmup == "READY" and inference_enabled:
             # BUGFIX-G29: process liveness (warmup READY + inference ENABLED)
             # is NOT proof of live market data. If the engine's own freshness
@@ -709,6 +876,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         subsystems["engine"] = engine_status
 
         # --- mt5 / adapter ---
+        # HEALTH-TRUTH-002: the engine's ``_last_tick`` is written ONLY by the
+        # tick pipeline (post-policy stages) after a full feature/inference
+        # cycle. When the engine loop is not armed, no pipeline runs, so a
+        # perfectly live broker feed reads "connected but no tick received
+        # yet" forever — a *worker state* presented as a *market data* state.
+        # The authoritative source is the ADAPTER: its broker-tick snapshot is
+        # a direct MT5 CopyTicks read with its own freshness/stale flags.
         adapter_status = "UNAVAILABLE"
         adapter_detail = "no engine"
         tick_age: float | None = None
@@ -716,24 +890,52 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             try:
                 is_conn = getattr(engine.adapter, "is_connected", None)
                 connected = bool(is_conn()) if callable(is_conn) else True
-                tick = getattr(engine, "_last_tick", None)
-                if tick is not None and getattr(tick, "timestamp", None) is not None:
-                    try:
-                        tick_age = max(0.0, (datetime.now(UTC) - tick.timestamp).total_seconds())
-                    except Exception:
-                        tick_age = None
+                symbol_name: str | None = None
+                try:
+                    symbol_name = engine.config.execution.symbol
+                except Exception:
+                    symbol_name = None
+                tick = None
+                broker_tick = None
+                # 1) the adapter's live broker-tick snapshot (authoritative)
+                try:
+                    if symbol_name:
+                        broker_tick = engine.adapter.get_broker_tick(symbol_name)
+                except Exception:
+                    broker_tick = None
+                if broker_tick is not None and getattr(broker_tick, "available", False):
+                    tick_age_val = getattr(broker_tick, "freshness_ms", None)
+                    if tick_age_val is not None:
+                        tick_age = float(tick_age_val) / 1000.0
+                    if getattr(broker_tick, "stale", False):
+                        tick_age = 999999.0  # force the STALE branch below
+                # 2) the engine's synchronized last tick (post-pipeline)
+                if tick_age is None:
+                    tick = getattr(engine, "_last_tick", None)
+                    if tick is not None and getattr(tick, "timestamp", None) is not None:
+                        try:
+                            tick_age = max(
+                                0.0, (datetime.now(UTC) - tick.timestamp).total_seconds()
+                            )
+                        except Exception:
+                            tick_age = None
                 if not connected:
                     adapter_status = "DISCONNECTED"
                     adapter_detail = "broker adapter reports disconnected"
                 elif tick_age is None:
                     adapter_status = "WAITING_TICK"
-                    adapter_detail = "connected but no tick received yet"
+                    adapter_detail = f"connected but no tick received yet (symbol={symbol_name})"
                 elif tick_age > 15.0:
                     adapter_status = "STALE"
-                    adapter_detail = f"tick stream stale ({tick_age:.1f}s since last tick)"
+                    adapter_detail = (
+                        f"tick stream stale ({tick_age:.1f}s since last tick) "
+                        f"(symbol={symbol_name})"
+                    )
                 else:
                     adapter_status = "READY"
-                    adapter_detail = f"live tick stream ({tick_age:.1f}s ago)"
+                    adapter_detail = (
+                        f"live tick stream ({tick_age:.1f}s ago) (symbol={symbol_name})"
+                    )
             except Exception as e:
                 log_web_error(
                     logger, "/api", None, e, context={"msg": "Health: adapter introspection failed"}
@@ -744,6 +946,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         details["mt5"] = adapter_detail
 
         # --- database ---
+        # HEALTH-TRUTH-003: worker-liveness proves the WRITE PATH only. It
+        # says nothing about the persistence layer itself: under a
+        # ``database.provider=postgresql`` setting the engine talks to a
+        # PostgreSQL server, and a WAL-queue probe of an SQLite-shaped
+        # attribute would describe a database that is not the one in use.
+        # Probe the ACTIVE provider (same resolution the engine uses) and only
+        # then report READY, with the provider + database named in the detail.
         db_status = "UNAVAILABLE"
         db_detail = "no engine"
         if engine is not None:
@@ -753,15 +962,59 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 worker_alive = bool(worker.is_alive()) if worker is not None else False
                 queue_obj = getattr(repo, "_queue", None)
                 queue_size = int(queue_obj.qsize()) if queue_obj is not None else 0
-                if worker_alive and queue_size <= 5000:
+                # Provider truth (fail-closed: an unresolvable provider is
+                # reported, never silently treated as a healthy SQLite file).
+                # The label and the probe below resolve the SAME config
+                # object (DatabaseHealthService.resolve_config) so the
+                # reported provider can never disagree with the probed one.
+                provider_name = "unknown"
+                db_label = ""
+                try:
+                    from nexus_scalp.database.health import DatabaseHealthService
+
+                    db_cfg = DatabaseHealthService().resolve_config("audit")
+                    provider_name = (
+                        "postgresql" if getattr(db_cfg, "is_postgresql", False) else "sqlite"
+                    )
+                    if provider_name == "postgresql":
+                        db_label = (
+                            f"postgresql://{getattr(db_cfg, 'host', 'localhost')}:"
+                            f"{getattr(db_cfg, 'port', 5432)}/"
+                            f"{getattr(db_cfg, 'database', '')}"
+                        )
+                    else:
+                        db_label = str(getattr(db_cfg, "sqlite_connect_path", "") or "")
+                except Exception as cfg_err:
+                    db_label = f"config resolution failed: {type(cfg_err).__name__}"
+                probe_ok = False
+                probe_note = ""
+                try:
+                    from nexus_scalp.database.health import DatabaseHealthService
+
+                    snap = DatabaseHealthService().check_domain("audit")
+                    probe_ok = bool(snap.get("connected"))
+                    probe_note = (
+                        f"provider={snap.get('provider') or provider_name} "
+                        f"tables={snap.get('table_count')} "
+                        f"health={snap.get('health')}"
+                    )
+                except Exception as probe_err:
+                    probe_note = f"probe failed: {type(probe_err).__name__}"
+                if not probe_ok:
+                    db_status = "DEGRADED"
+                    db_detail = (
+                        f"{db_label or provider_name}: provider probe reports NOT "
+                        f"connected ({probe_note})"
+                    )
+                elif worker_alive and queue_size <= 5000:
                     db_status = "READY"
-                    db_detail = f"WAL worker alive · queue {queue_size}"
+                    db_detail = f"{db_label} · WAL worker alive · queue {queue_size} ({probe_note})"
                 elif worker_alive:
                     db_status = "DEGRADED"
-                    db_detail = f"write queue backing up ({queue_size} pending)"
+                    db_detail = f"{db_label} · write queue backing up ({queue_size} pending)"
                 else:
                     db_status = "DEGRADED"
-                    db_detail = "background write worker not running"
+                    db_detail = f"{db_label} · background write worker not running"
             except Exception as e:
                 log_web_error(
                     logger,
@@ -776,6 +1029,15 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         details["database"] = db_detail
 
         # --- model ---
+        # HEALTH-TRUTH-004: ``_last_probs is None`` is a *pipeline progress*
+        # signal, not a model state. It stays None whenever the engine loop is
+        # not armed (no tick -> no inference), even for a fully loaded,
+        # integrity-verified champion bundle — the label read as an infinite
+        # "warming up" for hours on a stopped engine. The model is READY when
+        # the bundle is loaded + scaler fitted + the serving contract is
+        # consistent; the awaiting-first-inference case is reported as
+        # READY with a note when the engine is running and WARMING_UP only
+        # while the engine is actually cycling.
         if engine is None:
             model_status = "UNAVAILABLE"
             model_detail = "engine offline; no model bundle"
@@ -788,15 +1050,49 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                     model_detail = "model bundle not initialized"
                 else:
                     scaler_ready = bool(getattr(bundle.scaler, "is_ready", lambda: False)())
+                    artifact_path = str(getattr(bundle, "artifact_path", "") or "")
+                    # Serving contract: the loaded bundle's dimension must
+                    # match the manifest/model declaration (never 50D vs 70D
+                    # silently — the artifact, the registry and the runtime
+                    # instance must agree).
+                    contract_note = ""
+                    try:
+                        import numpy as _np
+
+                        scaler_mean = getattr(bundle.scaler, "mean", None)
+                        if scaler_mean is not None:
+                            contract_note = f"scaler_dim={len(_np.asarray(scaler_mean))}"
+                    except Exception:
+                        contract_note = "scaler_dim=? (read failed)"
                     if not scaler_ready:
                         model_status = "DEGRADED"
-                        model_detail = "weights loaded but scaler not fitted"
+                        model_detail = f"weights loaded but scaler not fitted ({artifact_path})"
+                    elif not artifact_path:
+                        model_status = "DEGRADED"
+                        model_detail = "bundle loaded without an artifact path"
                     elif getattr(engine, "_last_probs", None) is None:
-                        model_status = "WARMING_UP"
-                        model_detail = "model ready; awaiting first live inference"
+                        if running:
+                            model_status = "WARMING_UP"
+                            model_detail = (
+                                f"model ready; awaiting first live inference "
+                                f"({contract_note}) · {artifact_path}"
+                            )
+                        else:
+                            # The engine is not cycling: no inference can ever
+                            # be produced. The bundle is provably ready; the
+                            # missing first inference is an ENGINE consequence,
+                            # not a model warmup.
+                            model_status = "READY"
+                            model_detail = (
+                                f"bundle loaded · scaler fitted · {contract_note} "
+                                f"· no live inference yet (engine not running) · "
+                                f"{artifact_path}"
+                            )
                     else:
                         model_status = "READY"
-                        model_detail = "model loaded · inference flowing"
+                        model_detail = (
+                            f"model loaded · inference flowing · {contract_note} · {artifact_path}"
+                        )
             except Exception as e:
                 log_web_error(
                     logger, "/api", None, e, context={"msg": "Health: model introspection failed"}
@@ -811,6 +1107,21 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         # feature->inference->decision chain is live. A frozen chain (ticks
         # move but features/inference are stale) must surface as STALE here,
         # independent of uptime / state_version / HTTP 200.
+        # HEALTH-TRUTH-005: the service's UNKNOWN is overloaded. A stage whose
+        # stamp is None can mean "no inference ever" (fresh install), "no
+        # inference this session" (engine never armed) or "evidence
+        # unavailable" (the read itself failed). Those carry different
+        # operator actions, so the health surface must distinguish them:
+        #   NO_INFERENCE_EVER  — every stage stamp is None and every sequence
+        #                        counter is 0 (the pipeline has never produced
+        #                        anything, in this process or recorded history)
+        #   WAITING_FOR_DATA   — ticks are landing but no feature/inference
+        #                        stage has fired yet (startup ramp)
+        #   STALE              — a stage was produced but is past max_age_sec
+        #   FRESH              — every stage inside the threshold
+        #   UNKNOWN            — only when the evidence genuinely could not be
+        #                        read (reserved; a failing read must not be
+        #                        presented as healthy)
         inference_fresh_status = "UNKNOWN"
         inference_fresh_detail = "engine not attached"
         if engine is not None:
@@ -819,11 +1130,27 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 inf = fresh.get("inference", {}).get("state")
                 dec = fresh.get("decision", {}).get("state")
                 overall_fresh = fresh.get("overall")
+                seqs = fresh.get("sequences", {}) or {}
+                inf_seq = int(seqs.get("inference") or 0)
+                tick_seq = int(seqs.get("tick") or 0)
+                feat_seq = int(seqs.get("feature") or 0)
+                # UNKNOWN refinement — only applied when NO stage has evidence
+                if str(overall_fresh) == "UNKNOWN":
+                    if inf_seq == 0 and feat_seq == 0 and tick_seq == 0:
+                        overall_fresh = "NO_INFERENCE_EVER"
+                        inf = "NO_INFERENCE_EVER"
+                        dec = "NO_INFERENCE_EVER"
+                    elif tick_seq > 0 and inf_seq == 0:
+                        overall_fresh = "WAITING_FOR_DATA"
+                        inf = "WAITING_FOR_DATA"
+                        dec = "WAITING_FOR_DATA"
                 inference_fresh_status = str(overall_fresh)
                 inference_fresh_detail = (
                     f"inference={inf} decision={dec} "
                     f"(features_age_ms={fresh.get('features', {}).get('age_ms')}, "
-                    f"inference_age_ms={fresh.get('inference', {}).get('age_ms')})"
+                    f"inference_age_ms={fresh.get('inference', {}).get('age_ms')}, "
+                    f"seq: tick={tick_seq} feature={feat_seq} "
+                    f"inference={inf_seq} decision={seqs.get('decision')})"
                 )
             except Exception as e:
                 inference_fresh_status = "UNKNOWN"
@@ -834,17 +1161,58 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         details["inference_freshness"] = inference_fresh_detail
 
         # --- news ---
-        if engine is None or not getattr(engine, "_news_enabled", False):
+        # HEALTH-TRUTH-006: "news engine enabled" is a CONFIGURATION fact.
+        # The subsystem is only READY when the live context is built, not
+        # stale past its decay window, and recent evidence exists. A context
+        # that has never been built (worker never ran) or whose newest event
+        # is older than the configured stale_after_sec is STALE, with the
+        # newest-event timestamp and the ingestion watermark in the detail so
+        # the operator can see exactly how stale.
+        if engine is None or not _safe_get(engine, "_news_enabled", False):
             news_status = "DISABLED"
             news_detail = "news subsystem not enabled in config"
         else:
             news_status = "READY"
             news_detail = "news engine enabled"
             try:
-                ctx = engine.news_engine.current_context()
-                if ctx is not None and getattr(ctx, "stale", False):
-                    news_status = "STALE"
-                    news_detail = "news context stale (no recent fetch)"
+                ne = getattr(engine, "news_engine", None)
+                ctx = ne.current_context() if ne is not None else None
+                if ctx is None:
+                    news_status = "UNAVAILABLE"
+                    news_detail = "news engine enabled but context is unavailable"
+                else:
+                    newest_ts = getattr(ctx, "timestamp", None)
+                    newest_txt = newest_ts.isoformat() if newest_ts is not None else "never"
+                    evidence_ts = getattr(ctx, "newest_event_at", None)
+                    evidence_txt = (
+                        evidence_ts.isoformat()
+                        if evidence_ts is not None
+                        else "no contributing events"
+                    )
+                    analyses_n = int(getattr(ctx, "analyses_used", 0) or 0)
+                    if getattr(ctx, "stale", False):
+                        news_status = "STALE"
+                        news_detail = (
+                            f"news context stale — newest event {newest_txt} "
+                            f"(state={getattr(ctx.state, 'value', 'NORMAL')})"
+                        )
+                    elif not bool(getattr(ctx, "available", False)):
+                        # No evidence at all: the worker has never produced a
+                        # usable context. Not READY — report the real state.
+                        news_status = "WARMING_UP"
+                        news_detail = (
+                            f"news enabled but no usable context yet "
+                            f"(state={getattr(ctx.state, 'value', 'NORMAL')})"
+                        )
+                    else:
+                        news_status = "READY"
+                        news_detail = (
+                            f"news context live (state="
+                            f"{getattr(ctx.state, 'value', 'NORMAL')}, "
+                            f"context_ts={newest_txt}, "
+                            f"newest_event={evidence_txt}, "
+                            f"analyses={analyses_n})"
+                        )
             except Exception as e:
                 log_web_error(
                     logger, "/api", None, e, context={"msg": "Health: news introspection failed"}
@@ -855,36 +1223,103 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         details["news"] = news_detail
 
         # --- workers ---
+        # HEALTH-TRUTH-007: a *started flag* proves a worker was LAUNCHED, not
+        # that it is alive. The per-worker runtime registry (last cycle, last
+        # error) is the evidence. A worker whose flag is False is STOPPED
+        # (not "IDLE", which implies a live worker with an empty queue) when
+        # the engine is running, and STARTING when the engine itself is
+        # cycling. A started worker with a recent failure is DEGRADED so a
+        # dead worker can never be reported as healthy.
+        worker_flags = (
+            ("accounting", "_accounting_worker_started"),
+            ("intelligence", "_intelligence_worker_started"),
+            ("research", "_research_worker_started"),
+            ("training", "_training_worker_started"),
+            ("shadow", "_shadow_worker_started"),
+            ("news", "_news_worker_started"),
+        )
         worker_states: dict[str, Any] = {}
-        for name, flag, started in (
-            ("accounting", "_accounting_worker_started", engine is not None),
-            ("intelligence", "_intelligence_worker_started", engine is not None),
-            ("research", "_research_worker_started", engine is not None),
-            ("training", "_training_worker_started", engine is not None),
-            ("shadow", "_shadow_worker_started", engine is not None),
-            ("news", "_news_worker_started", engine is not None),
-        ):
-            worker_states[name] = bool(getattr(engine, flag, False)) if started else False
-        subsystems["workers"] = "READY" if any(worker_states.values()) else "IDLE"
-        details["workers"] = worker_states
+        worker_evidence: dict[str, Any] = {}
+        # The per-worker runtime registry (debug snapshot's worker block) has
+        # the real last-cycle/last-error telemetry.
+        worker_registry: dict[str, Any] = {}
+        try:
+            from nexus_scalp.web.debug_snapshot import build_worker_states
+
+            worker_registry = build_worker_states(engine) or {}
+        except Exception:
+            worker_registry = {}
+        for name, flag in worker_flags:
+            started = bool(_safe_get(engine, flag, False)) if engine is not None else False
+            reg = worker_registry.get(name) if isinstance(worker_registry, dict) else None
+            reg = reg if isinstance(reg, dict) else {}
+            state = "STOPPED" if not started else "RUNNING"
+            last_err = str(reg.get("last_error") or "")
+            last_success = reg.get("last_success")
+            last_failure = reg.get("last_failure")
+            if started and last_err and not last_success:
+                # Launched but every cycle has failed: report the failure,
+                # never a clean RUNNING.
+                state = "FAILED"
+            elif started and last_err and last_failure and not _worker_recent_success(reg):
+                state = "DEGRADED"
+            worker_states[name] = state
+            worker_evidence[name] = {
+                "started": started,
+                "state": state,
+                "cycle": reg.get("cycle"),
+                "last_start": reg.get("last_start"),
+                "last_success": last_success,
+                "last_failure": last_failure,
+                "last_error": last_err[:200],
+            }
+        alive_count = sum(1 for v in worker_states.values() if v not in ("STOPPED", "FAILED"))
+        if alive_count == 0:
+            # No worker running: distinguish "engine never armed" (STARTING)
+            # from a genuine stopped state (the engine is down or has not
+            # reached the worker-start phase of the boot sequence).
+            subsystems["workers"] = "STARTING" if running else "STOPPED"
+            details["workers"] = worker_evidence
+        else:
+            # A worker in FAILED/DEGRADED must colour the aggregate: the old
+            # logic counted only the started flag, so a worker whose every
+            # cycle errored read READY.
+            bad = [v for v in worker_states.values() if v == "FAILED"]
+            degraded = [v for v in worker_states.values() if v == "DEGRADED"]
+            if bad:
+                subsystems["workers"] = "FAILED"
+            elif degraded:
+                subsystems["workers"] = "DEGRADED"
+            else:
+                subsystems["workers"] = "READY"
+            details["workers"] = worker_evidence
 
         # --- overall (worst wins) ---
         rank = {
             "READY": 0,
             "IDLE": 0,
+            "FRESH": 0,
+            "STARTING": 1,
             "WARMING_UP": 1,
             "STALE": 1,
+            "WAITING_FOR_DATA": 1,
+            "NO_INFERENCE_EVER": 1,
             "DEGRADED": 2,
             "DISCONNECTED": 3,
             "ERROR": 3,
             "UNAVAILABLE": 3,
             "STOPPED": 3,
+            "BLOCKED": 3,
+            "FAILED": 3,
             "DISABLED": 0,
         }
         overall = "READY"
         for sub_status in subsystems.values():
-            if rank.get(sub_status, 0) > rank.get(overall, 0):
+            if rank.get(sub_status, 3) > rank.get(overall, 0):
                 overall = sub_status
+        # A BLOCKED engine is the honest headline: the platform is up, the
+        # market data is live, but an active safety gate refuses trading.
+        # Reporting STOPPED here would hide the one fact the operator needs.
 
         return {
             "overall": overall,
@@ -1043,13 +1478,21 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         adapter_class: str | None = None
         data_source: str | None = None
         mode_source_mismatch = False
+        engine_running_read_failed = False
         if engine is not None:
             symbol = None
             try:
                 symbol = engine.config.execution.symbol or "XAUUSD"
             except Exception:
                 symbol = None
-            engine_running = bool(getattr(engine, "_running", False))
+            try:
+                engine_running = bool(getattr(engine, "_running", False))
+            except Exception:
+                # HEALTH-TRUTH-009: a corrupt engine object must degrade the
+                # status read to evidence, not 500 the only endpoint the
+                # operator has to diagnose it.
+                engine_running = False
+                engine_running_read_failed = True
             try:
                 execution_mode = engine.config.execution.mode.value
             except Exception:
@@ -1545,8 +1988,19 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                         },
                     )
 
-            fv = engine._last_fv
-            proposal = engine._last_proposal
+            # HEALTH-TRUTH-009: every engine attribute read in this long
+            # status builder must tolerate a corrupt engine object, or the
+            # only endpoint the operator has to diagnose a broken runtime
+            # becomes a 500. The health block already degrades to evidence;
+            # mirror that contract here.
+            try:
+                fv = engine._last_fv
+            except Exception:
+                fv = None
+            try:
+                proposal = engine._last_proposal
+            except Exception:
+                proposal = None
 
             if not rectangles and fv and bid is not None and atr is not None:
                 # Fallback to fv currently forming bar attributes if we have no unmitigated historical ones
@@ -1713,6 +2167,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "snapshot_timestamp": now_iso,
             "generated_at": now_iso,
             "engine_running": engine_running,
+            # HEALTH-TRUTH-009: surface the read failure so a corrupt engine
+            # state is visible in the payload itself, not just the health block.
+            "engine_running_read_failed": engine_running_read_failed,
             "symbol": symbol,
             "execution_mode": execution_mode,
             "runtime_mode": runtime_mode,
@@ -1739,9 +2196,14 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             "bid": bid,
             "ask": ask,
             "spread": spread,
-            "price_digits": getattr(getattr(engine, "_symbol_info", None), "digits", None)
-            if engine
-            else None,
+            # HEALTH-TRUTH-009: same corrupt-engine contract as the reads
+            # above — a broken ``_symbol_info`` must not 500 the status
+            # endpoint that exists to report the breakage.
+            "price_digits": (
+                getattr(getattr(engine, "_symbol_info", None), "digits", None)
+                if engine is not None and _attr_read_ok(engine, "_symbol_info")
+                else None
+            ),
             "atr": atr,
             "regime": regime,
             "account": account_data,
@@ -1759,7 +2221,11 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             # never compute setups. Included in the canonical snapshot so REST
             # (/api/live/state), SSE (/api/ticks/stream) and WebSocket all carry
             # the SAME authoritative radar object (single source of truth).
-            "radar": (getattr(engine, "_last_market_radar", None) if engine is not None else None),
+            "radar": (
+                getattr(engine, "_last_market_radar", None)
+                if engine is not None and _attr_read_ok(engine, "_last_market_radar")
+                else None
+            ),
             "algo_config": algo_config_data,
             "liquidity": _liquidity_state_section(app.state.engine),
             "visual_overlays": {
@@ -1775,7 +2241,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             # FRESH|STALE|UNKNOWN independent of process uptime / state_version.
             "live_freshness": (
                 engine.compute_live_freshness()
-                if engine is not None and hasattr(engine, "compute_live_freshness")
+                if engine is not None
+                and _attr_read_ok(engine, "compute_live_freshness")
+                and _call_ok(engine, "compute_live_freshness")
                 else None
             ),
             # UI stale-state flag: lets the frontend show an explicit STALE
@@ -1783,7 +2251,9 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             # even when intelligence is frozen).
             "is_stale": (
                 bool(engine.compute_live_freshness().get("overall") == "STALE")
-                if engine is not None and hasattr(engine, "compute_live_freshness")
+                if engine is not None
+                and _attr_read_ok(engine, "compute_live_freshness")
+                and _call_ok(engine, "compute_live_freshness")
                 else False
             ),
             "versioning": _runtime_version_block_stateful(app.state),

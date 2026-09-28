@@ -15,8 +15,14 @@ import type { DebugSubsystem, HealthCheck, WorkerRow } from "./api";
 export type HealthLevel = "good" | "warn" | "bad" | "neutral";
 
 const GOOD = new Set(["HEALTHY", "PASS", "OK", "READY", "FRESH", "RUNNING", "CONNECTED", "ACTIVE", "VALID", "SUCCESS", "COMPLETED", "UP"]);
-const WARN = new Set(["DEGRADED", "WARNING", "STALE", "WARMING_UP", "PENDING", "CONNECTING", "PARTIAL", "ELEVATED"]);
-const BAD = new Set(["UNHEALTHY", "FAIL", "FAILED", "ERROR", "DISCONNECTED", "NOT READY", "UNAVAILABLE", "CRITICAL", "NAN", "INF", "HALTED", "TIMEOUT", "BLOCKED"]);
+// HEALTH-TRUTH: transient boot/ramp states are WARN — the platform is not
+// broken and not ready either. "NO_INFERENCE_EVER" and "WAITING_FOR_DATA"
+// are the honest replacement for an overloaded UNKNOWN on the inference
+// freshness cell: they name a real, expected phase instead of an absence
+// of evidence. BLOCKED stays BAD because it names an operator action
+// (an explicit safety release) that is overdue.
+const WARN = new Set(["DEGRADED", "WARNING", "STALE", "WARMING_UP", "PENDING", "CONNECTING", "PARTIAL", "ELEVATED", "STARTING", "WAITING_FOR_DATA", "NO_INFERENCE_EVER", "WAITING_TICK", "IDLE", "DISABLED"]);
+const BAD = new Set(["UNHEALTHY", "FAIL", "FAILED", "ERROR", "DISCONNECTED", "NOT READY", "UNAVAILABLE", "CRITICAL", "NAN", "INF", "HALTED", "TIMEOUT", "BLOCKED", "CONNECT_FAILED"]);
 
 export function healthLevel(status: string | null | undefined): HealthLevel {
   const s = (status ?? "").toUpperCase();

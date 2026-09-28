@@ -721,6 +721,16 @@ class LiveEngine:
         self._runtime_risk_detail: str = ""
         self._halt_reason: str = ""
         self._halt_triggered_at: str = ""
+        # HEALTH-TRUTH-001: boot-phase markers for the health surface. A
+        # STOPPED engine is not a *stable* state while a boot is in flight
+        # (connect / safety gate / worker phases), and a persisted safety
+        # halt that refuses trading is its own state (BLOCKED) — neither is
+        # discoverable from ``_running`` alone. Owned here (the composition
+        # root) because only the run loop writes them and only the web
+        # health block reads them; no gate consults them.
+        self._boot_state: str = ""
+        self._boot_detail: str = ""
+        self._run_loop_alive: bool = False
         # BUG-279 (2026-09-14 wave): feed-stall fail-loud state. The tick
         # watchdog (live/runtime_loop.py) feeds these; the STALL EPISODE is
         # owned by the engine so a frozen feed escalates into the canonical
