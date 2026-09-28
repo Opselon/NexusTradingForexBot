@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-28
 **Branch:** `perf/postgresql-phase4-observability`
-**Worktree:** `C:/Users/Capsizer/source/repos/nse-pg-observability` (from clean `origin/main` @ `77eb21b1`)
+**Worktree:** `C:/Users/Capsizer/source/repos/nse-pg-observability` (created from clean `origin/main` @ `77eb21b1`, rebased onto `26f70f44` before publication)
 **Phase:** MEASUREMENT ONLY — no optimization implemented, no PostgreSQL configuration changed.
 
 ---
@@ -45,7 +45,7 @@ against a throwaway database created and dropped on the local instance.
 | Timezone | `Asia/Tehran` |
 | Encoding | UTF8 |
 | Application venv | `NexusTradingForexBot/.venv` (psycopg v3) |
-| Worktree HEAD | `77eb21b1` = clean `origin/main` |
+| Worktree HEAD | `77eb21b1` (clean `origin/main` at measurement time) |
 
 ---
 
@@ -354,7 +354,7 @@ No trading was triggered, no risk state touched, no orders placed.
 * **Database identity during measurement:** throwaway
   `nse_p4_prof_5f3a5cf66ea1`, PostgreSQL 17.10, `enable_seqscan=on`,
   `work_mem=4MB`, `jit` disabled by the driver's session settings.
-* **Application commit:** worktree HEAD `77eb21b1` (clean `origin/main`).
+* **Application commit:** worktree HEAD `77eb21b1` (clean `origin/main` at measurement time).
 
 ---
 
