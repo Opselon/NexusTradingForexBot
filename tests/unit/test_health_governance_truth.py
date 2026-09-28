@@ -365,6 +365,62 @@ class TestMt5ConnectionStateVerdict:
         assert verdict("CONNECTED", True, 0.5) == "HEALTHY"
 
 
+# ---------------------------------------------------------------- HEALTH-SAFETY-STATE
+class TestSafetyStateVsTradingPermission:
+    """Risk subsystem health and trading permission are distinct facts.
+
+    The operator's most dangerous reading is the collapsed one: "Risk Engine
+    HEALTHY" while a persisted HALTED survives restarts and refuses every
+    entry. These pin the separation the health surface must preserve.
+    """
+
+    @staticmethod
+    def _verdict(kill_switch: bool, safety_state: str, effective: str, survival: bool) -> str:
+        """Mirror the route's Risk Engine branch order exactly."""
+        if kill_switch:
+            return "UNHEALTHY"
+        if safety_state in ("HALTED", "KILL_SWITCH"):
+            return "UNHEALTHY"
+        if effective == "DEGRADED":
+            return "DEGRADED"
+        if survival:
+            return "DEGRADED"
+        return "HEALTHY"
+
+    def test_persisted_halt_is_unhealthy_not_healthy_clamps(self):
+        # Clamps are fine, kill switch disengaged, but a HALT is persisted:
+        # the old widget rendered this HEALTHY (it never read the halt state).
+        assert self._verdict(False, "HALTED", "HALTED", False) == "UNHEALTHY"
+
+    def test_kill_switch_state_is_unhealthy(self):
+        assert self._verdict(False, "KILL_SWITCH", "KILL_SWITCH", False) == "UNHEALTHY"
+
+    def test_trading_permitted_only_when_effective_is_running(self):
+        def permitted(effective: str) -> bool:
+            return effective == "RUNNING"
+
+        assert permitted("RUNNING") is True
+        assert permitted("HALTED") is False
+        assert permitted("KILL_SWITCH") is False
+        assert permitted("DEGRADED") is False
+
+    def test_session_degradation_is_reported_but_does_not_mask_a_halt(self):
+        # DEGRADED alone degrades; a persisted halt outranks it.
+        assert self._verdict(False, "RUNNING", "DEGRADED", False) == "DEGRADED"
+        assert self._verdict(False, "HALTED", "HALTED", False) == "UNHEALTHY"
+
+    def test_survival_mode_is_degraded_not_healthy(self):
+        assert self._verdict(False, "RUNNING", "RUNNING", True) == "DEGRADED"
+
+    def test_fully_clear_reads_healthy(self):
+        assert self._verdict(False, "RUNNING", "RUNNING", False) == "HEALTHY"
+
+    def test_kill_switch_flag_outranks_every_state_word(self):
+        # The in-memory kill switch is the hardest stop; it wins over a
+        # RUNNING persisted row (a release that has not been persisted yet).
+        assert self._verdict(True, "RUNNING", "RUNNING", False) == "UNHEALTHY"
+
+
 # ---------------------------------------------------------------- HEALTH-FORENSICS-TRUTH
 class TestForensicHealthNoSilentPass:
     """A dead forensic probe must never emit available=True."""

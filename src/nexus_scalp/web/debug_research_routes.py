@@ -503,18 +503,53 @@ def register_debug_research_routes(
                     hard_max = float(_om_dispatch_symbols()[0])
                 except Exception:
                     pass
+                # HEALTH-SAFETY-STATE: the CANONICAL persisted safety state
+                # (RUNNING/HALTED/KILL_SWITCH) plus the session-local DEGRADED
+                # derivation. "Risk engine healthy" (clamps armed, kill switch
+                # disengaged) is NOT the same claim as "trading permitted": a
+                # persisted HALTED/KILL_SWITCH survives restarts and refuses
+                # every entry while every clamp still reads fine. The health
+                # surface must carry BOTH, never collapse them.
+                safety_state = str(getattr(engine, "_runtime_risk_state", "RUNNING") or "RUNNING")
+                safety_effective = str(
+                    getattr(engine, "runtime_risk_state", safety_state) or safety_state
+                )
+                halt_reason = str(getattr(engine, "_halt_reason", "") or "")
+                halt_at = str(getattr(engine, "_halt_triggered_at", "") or "")
                 metrics = {
                     "kill_switch_active": kill_switch,
                     "max_allowed_lots": float(getattr(risk, "max_allowed_lots", 0.0)),
                     "hard_max_lots": hard_max,
                     "min_risk_reward_ratio": float(getattr(risk, "min_risk_reward_ratio", 0.0)),
                     "survival_mode": bool(getattr(engine, "_survival_mode_active", False)),
+                    "safety_state": safety_state,
+                    "trading_permitted": safety_effective == "RUNNING",
+                    "halt_reason": halt_reason,
+                    "halt_triggered_at": halt_at,
                 }
                 if kill_switch:
                     add(
                         "Risk Engine",
                         "UNHEALTHY",
                         "EMERGENCY KILL SWITCH ACTIVE — all execution rejected.",
+                        metrics,
+                    )
+                elif safety_state in ("HALTED", "KILL_SWITCH"):
+                    # The persisted halt is the operator's most important
+                    # safety fact: report it as UNHEALTHY, never as healthy
+                    # clamps. The reason/trigger time ride the metrics.
+                    add(
+                        "Risk Engine",
+                        "UNHEALTHY",
+                        f"SAFETY HALT ACTIVE ({safety_state}) — trading refused. {halt_reason}".strip(),
+                        metrics,
+                    )
+                elif safety_effective == "DEGRADED":
+                    add(
+                        "Risk Engine",
+                        "DEGRADED",
+                        "Runtime safety DEGRADED (session-local): circuit/account "
+                        "freshness/loss freeze — new entries restricted.",
                         metrics,
                     )
                 elif metrics["survival_mode"]:
@@ -528,7 +563,8 @@ def register_debug_research_routes(
                     add(
                         "Risk Engine",
                         "HEALTHY",
-                        f"Clamps armed (HARD_MAX_LOTS = {hard_max}), kill switch disengaged.",
+                        f"Clamps armed (HARD_MAX_LOTS = {hard_max}), kill switch "
+                        f"disengaged, trading permitted ({safety_effective}).",
                         metrics,
                     )
             except Exception as e:
