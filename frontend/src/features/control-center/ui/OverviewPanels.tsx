@@ -29,19 +29,14 @@ interface OverviewPanelsProps {
 
 export function OverviewPanels({ summary, pending, error, errorMessage, onRetry }: OverviewPanelsProps) {
   const t = useI18n((s) => s.t);
-  if (pending) return <Skeleton count={6} />;
-  if (error) return <ErrorState message={errorMessage} onRetry={onRetry} />;
-
-  const s = summary;
-  const rt = obj(s?.runtime);
-  const idt = obj(s?.identity);
-  const health = obj(rt.health);
-  const subs = obj(health.subsystems);
-  const engineField = bool(rt.engine_running);
-  const engineStatus = engineField === null ? "UNKNOWN" : engineField ? "RUNNING" : "STOPPED";
 
   // perf: ledger action census is a DOT-map over the summary payload — derive
   // once per summary identity (15s poll) instead of every render.
+  // RULES OF HOOKS (React #310 crash): hooks run unconditionally BEFORE any
+  // early return. Deriving from `summary` while it may still be pending/error
+  // is safe — obj()/arr()/num() return empty/null for undefined input, so the
+  // memoized values are inert and simply never read on those render paths.
+  const s = summary;
   const actionRows = useMemo(
     () => Object.entries(obj(s?.ledger?.actions)).map(([k, v]) => ({ label: k, count: num(v) ?? 0 })),
     [s?.ledger?.actions],
@@ -50,6 +45,16 @@ export function OverviewPanels({ summary, pending, error, errorMessage, onRetry 
   // every 15s poll; row markup uses .ctl-warn* classes so no style object is
   // re-allocated per warning per render.
   const warnings = useMemo(() => arr(s?.warnings), [s?.warnings]);
+
+  if (pending) return <Skeleton count={6} />;
+  if (error) return <ErrorState message={errorMessage} onRetry={onRetry} />;
+
+  const rt = obj(s?.runtime);
+  const idt = obj(s?.identity);
+  const health = obj(rt.health);
+  const subs = obj(health.subsystems);
+  const engineField = bool(rt.engine_running);
+  const engineStatus = engineField === null ? "UNKNOWN" : engineField ? "RUNNING" : "STOPPED";
 
   return (
     <>
