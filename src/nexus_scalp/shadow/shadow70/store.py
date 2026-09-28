@@ -489,8 +489,20 @@ class Shadow70Store(Shadow70Persistence):
         BUG-221: read path — ensure_schema() first so a fresh database
         reports an honest empty summary (available=True, zero counts)
         instead of '[SHADOW70] summary failed: no such table'.
+
+        ML-RUNTIME-TRUTH D2 (Phases 23/33): the summary now carries an
+        explicit ``monitor_state`` so the UI can distinguish "the monitor ran
+        and flagged nothing" from "the monitor never wrote anything" and from
+        "the store could not answer". Zero counts are NOT evidence of a healthy
+        monitor by themselves; a store that was never written to is
+        ``NOT_RUN``, not ``NO_ALERTS``.
         """
-        out: dict[str, Any] = {"available": False, "observations": 0, "agreements": 0}
+        out: dict[str, Any] = {
+            "available": False,
+            "observations": 0,
+            "agreements": 0,
+            "monitor_state": "UNAVAILABLE",
+        }
         if not self.audit_repo:
             return out
         self.ensure_schema()
@@ -535,10 +547,67 @@ class Shadow70Store(Shadow70Persistence):
                 )
                 or 0
             )
+            out["drift_alerts"] = int(
+                ops_query_scalar(
+                    self.audit_repo,
+                    OPS_SHADOW_DOMAIN,
+                    "SELECT COUNT(*) FROM shadow70_drift_alerts;",
+                    (),
+                    operation="shadow70.summary.drift_alerts",
+                )
+                or 0
+            )
+            out["feature_health_rows"] = int(
+                ops_query_scalar(
+                    self.audit_repo,
+                    OPS_SHADOW_DOMAIN,
+                    "SELECT COUNT(*) FROM shadow70_feature_health;",
+                    (),
+                    operation="shadow70.summary.feature_health",
+                )
+                or 0
+            )
+            out["latest_event_at"] = self._latest_event_timestamp()
             out["available"] = True
+            # Evidence ordering (ML-RUNTIME-TRUTH D2, Phase 23). Only a row
+            # that actually compared proves the pipeline ran and produced a
+            # vector. A SHADOW_BLOCKED row is the runtime's explicit "I did not
+            # observe" marker (runtime not READY, vector rejected, inference
+            # failed): valid=0 and error_code set. Counting it as a run would
+            # dress a never-compared attempt up as a clean bill of health.
+            compared = int(
+                ops_query_scalar(
+                    self.audit_repo,
+                    OPS_SHADOW_DOMAIN,
+                    "SELECT COUNT(*) FROM shadow70_observations WHERE valid = 1 AND error_code = '';",
+                    (),
+                    operation="shadow70.summary.compared",
+                )
+                or 0
+            )
+            out["compared"] = compared
+            if compared > 0 or out["events"] > 0:
+                out["monitor_state"] = "NO_ALERTS" if out["drift_alerts"] == 0 else "EVALUATED"
+            else:
+                out["monitor_state"] = "NOT_RUN"
         except Exception as e:
             logger.error("[SHADOW70] summary failed", error=str(e))
         return out
+
+    def _latest_event_timestamp(self) -> str | None:
+        """Timestamp of the most recent persisted [SHADOW70] event, or None.
+
+        Proves recency (or absence) of worker activity without inferring it
+        from row counts. Read-only; never raises.
+        """
+        rows = self._query(
+            "SELECT timestamp FROM shadow70_events ORDER BY timestamp DESC LIMIT 1;",
+            (),
+        )
+        for row in rows:
+            value = row.get("timestamp")
+            return str(value) if value is not None else None
+        return None
 
     def _query(self, sql: str, args: tuple[Any, ...]) -> list[dict[str, Any]]:
         if not self.audit_repo:
