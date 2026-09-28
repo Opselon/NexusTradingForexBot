@@ -21,8 +21,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
-import threading
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -655,7 +653,7 @@ def resolve_dataset_for_training(dataset_path: str) -> Path | None:
 # =============================================================================
 
 
-@dataclass
+@dataclass(frozen=True)
 class SavedBuilderConfig:
     config_id: str
     config_name: str
@@ -671,162 +669,20 @@ class SavedBuilderConfig:
         return d
 
 
-class BuilderConfigStore:
-    """SQLite store for saved model-builder configurations.
+def _dead_code_removed() -> None:
+    """Placeholder removed: the SQLite store now lives in the database layer.
 
-    Lives in the same artifacts root as the model registry (``artifacts/models.db``
-    by default) so the registry stays the single authoritative inventory and no
-    competing store appears. The tables are NEW and additive — the registry's own
-    schema is untouched.
+    ``BuilderConfigStore`` and ``get_builder_config_store`` moved to
+    ``nexus_scalp.database.builder_config_store``. The database fabric guards
+    forbid a raw ``sqlite3`` import in domain code, so the persistence mechanics
+    belong to the infrastructure layer; this module keeps the contract only.
     """
 
-    def __init__(self, db_path: str | Path | None = None) -> None:
-        if db_path is None:
-            db_path = REPO_ROOT / "artifacts" / "models.db"
-        self._db_path = Path(db_path) if str(db_path) != ":memory:" else db_path
-        self._lock = threading.RLock()
-        self._mem_conn: sqlite3.Connection | None = None
-        if self._db_path == ":memory:":
-            self._mem_conn = sqlite3.connect(":memory:", check_same_thread=False)
-            self._mem_conn.row_factory = sqlite3.Row
-        self._ensure_schema()
 
-    def _conn(self) -> sqlite3.Connection:
-        if self._mem_conn is not None:
-            return self._mem_conn
-        assert isinstance(self._db_path, Path)
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(self._db_path), timeout=15.0)
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    def _close(self, conn: sqlite3.Connection) -> None:
-        if conn is not self._mem_conn:
-            conn.close()
-
-    def _ensure_schema(self) -> None:
-        with self._lock:
-            conn = self._conn()
-            try:
-                with conn:
-                    conn.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS model_builder_configs (
-                            config_id TEXT PRIMARY KEY,
-                            config_name TEXT NOT NULL,
-                            dimension INTEGER NOT NULL,
-                            schema_id TEXT NOT NULL,
-                            config_json TEXT NOT NULL,
-                            config_sha256 TEXT NOT NULL,
-                            created_at TEXT NOT NULL
-                        );
-                        """
-                    )
-                    conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_builder_cfg_name "
-                        "ON model_builder_configs(config_name);"
-                    )
-            finally:
-                self._close(conn)
-
-    @staticmethod
-    def _hash_config(payload: dict[str, Any]) -> str:
-        return hashlib.sha256(
-            json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
-        ).hexdigest()
-
-    def save(self, cfg: ModelBuilderConfig) -> SavedBuilderConfig:
-        payload = cfg.to_dict()
-        payload_sha = self._hash_config(payload)
-        config_id = f"cfg_{int(datetime.now(UTC).timestamp())}_{payload_sha[:8]}"
-        row = SavedBuilderConfig(
-            config_id=config_id,
-            config_name=cfg.config_name,
-            dimension=cfg.dimension,
-            schema_id=cfg.schema_id or DIMENSION_TO_SCHEMA_ID.get(cfg.dimension, ""),
-            config_json=json.dumps(payload, sort_keys=True, default=str),
-            config_sha256=payload_sha,
-            created_at=_now(),
-        )
-        with self._lock:
-            conn = self._conn()
-            try:
-                with conn:
-                    conn.execute(
-                        """
-                        INSERT INTO model_builder_configs (
-                            config_id, config_name, dimension, schema_id,
-                            config_json, config_sha256, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(config_id) DO UPDATE SET
-                            config_name=excluded.config_name,
-                            dimension=excluded.dimension,
-                            schema_id=excluded.schema_id,
-                            config_json=excluded.config_json,
-                            config_sha256=excluded.config_sha256;
-                        """,
-                        (
-                            row.config_id,
-                            row.config_name,
-                            row.dimension,
-                            row.schema_id,
-                            row.config_json,
-                            row.config_sha256,
-                            row.created_at,
-                        ),
-                    )
-                return row
-            finally:
-                self._close(conn)
-
-    def list_configs(self, limit: int = 100) -> list[SavedBuilderConfig]:
-        with self._lock:
-            conn = self._conn()
-            try:
-                rows = conn.execute(
-                    """
-                    SELECT * FROM model_builder_configs
-                    ORDER BY created_at DESC LIMIT ?;
-                    """,
-                    (limit,),
-                ).fetchall()
-                return [self._row_to_config(r) for r in rows]
-            finally:
-                self._close(conn)
-
-    def get_config(self, config_id: str) -> SavedBuilderConfig | None:
-        with self._lock:
-            conn = self._conn()
-            try:
-                row = conn.execute(
-                    "SELECT * FROM model_builder_configs WHERE config_id = ?;",
-                    (config_id,),
-                ).fetchone()
-                return self._row_to_config(row) if row else None
-            finally:
-                self._close(conn)
-
-    @staticmethod
-    def _row_to_config(row: sqlite3.Row) -> SavedBuilderConfig:
-        return SavedBuilderConfig(
-            config_id=str(row["config_id"]),
-            config_name=str(row["config_name"]),
-            dimension=int(row["dimension"]),
-            schema_id=str(row["schema_id"]),
-            config_json=str(row["config_json"]),
-            config_sha256=str(row["config_sha256"]),
-            created_at=str(row["created_at"]),
-        )
-
-
-_STORE: BuilderConfigStore | None = None
-_STORE_LOCK = threading.Lock()
-
-
-def get_builder_config_store() -> BuilderConfigStore:
-    global _STORE  # noqa: PLW0603  # singleton, double-checked under _STORE_LOCK
-    if _STORE is None:
-        with _STORE_LOCK:
-            if _STORE is None:
-                _STORE = BuilderConfigStore()
-    return _STORE
+# Re-exported so existing callers (`from ...model_builder import
+# get_builder_config_store`) keep working while the sqlite3 import stays in the
+# database layer.
+from nexus_scalp.database.builder_config_store import (  # noqa: E402,F401
+    BuilderConfigStore,
+    get_builder_config_store,
+)
