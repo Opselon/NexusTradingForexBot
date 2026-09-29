@@ -42,10 +42,13 @@ masking discipline in the codebase, not two.
 
 from __future__ import annotations
 
+import random
 import re
 import threading
 import time
+from array import array
 from collections.abc import Callable
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 from nexus_scalp.database.config import mask_url_password
@@ -727,6 +730,120 @@ def note_degraded_read(
 # process, so a production run that never enables them pays one ``getattr``.
 
 
+#: Driver-boundary verbs that are NOT business operations. When one of these is
+#: the only attribution available, a bound operation scope replaces it; these
+#: names are kept in ``driver_operation`` so the SQL verb is never lost.
+_DRIVER_OPS = frozenset({"query", "query_one", "query_readonly", "execute", "executemany", "scalar"})
+
+#: Operation-level attribution context. The driver boundary knows the SQL but
+#: not the business operation; the fabric/repository layer knows the operation
+#: but not the statement. This ContextVar carries the operation name down to the
+#: driver so one statement can be attributed to BOTH (contract sec.51:
+#: "WHAT CODE CAUSED IT?" and "WHAT DID POSTGRESQL PAY?").
+_QueryContext: ContextVar[tuple[str, str, str]] = ContextVar(
+    "nse_query_context", default=("", "", "")
+)
+
+
+def set_query_context(
+    operation: str = "", *, domain: str = "", repository: str = ""
+) -> Any:
+    """Bind the current operation for statements issued inside this scope.
+
+    Returns the token to pass to :func:`reset_query_context`. Cheap: one
+    ContextVar set. Callers should use :func:`query_context` instead of
+    managing the token by hand.
+    """
+    return _QueryContext.set((operation or "", domain or "", repository or ""))
+
+
+def reset_query_context(token: Any) -> None:
+    """Restore the previous operation context (never raises)."""
+    try:
+        _QueryContext.reset(token)
+    except Exception:
+        pass
+
+
+def current_query_context() -> tuple[str, str, str]:
+    """Read the current ``(operation, domain, repository)`` attribution.
+
+    Falls back to empty strings when unset, so a statement issued outside any
+    operation scope is still recorded (under the driver's own operation label)
+    rather than dropped.
+    """
+    try:
+        return _QueryContext.get()
+    except Exception:
+        return ("", "", "")
+
+
+class _LatencyReservoir:
+    """Bounded reservoir sample for percentile estimation (contract sec.15).
+
+    ``pg_stat_statements`` gives mean/min/max per statement shape but NO
+    percentiles, and the driver boundary needs p50/p95/p99 per hot path. A full
+    sample list per query name would grow without bound, so this keeps a fixed
+    capacity reservoir:
+
+      * the first ``capacity`` samples are stored exactly;
+      * after that each sample replaces a uniformly random slot.
+
+    That is uniform reservoir sampling: every observation has equal probability
+    of being retained, so percentiles stay unbiased as the sample count grows.
+    Memory is ``capacity`` floats per query name — bounded by construction, which
+    is the property sec.49/sec.77 require of an observability layer.
+
+    Deliberately NOT used for correctness decisions: this estimates a
+    distribution, it is not a ledger.
+    """
+
+    __slots__ = ("_buf", "_capacity", "_seen")
+
+    def __init__(self, capacity: int) -> None:
+        self._capacity = max(1, int(capacity))
+        self._seen = 0
+        # array('d') stores raw doubles: ~8 bytes/sample with no per-float
+        # object overhead, so the reservoir costs kilobytes, not megabytes.
+        self._buf: array[float] = array("d")
+
+    @property
+    def seen(self) -> int:
+        """Total observations offered (not the retained sample size)."""
+        return self._seen
+
+    def add(self, value: float) -> None:
+        """Offer one observation to the reservoir."""
+        self._seen += 1
+        if len(self._buf) < self._capacity:
+            self._buf.append(value)
+            return
+        # Random replacement keeps the retained sample uniform over all seen
+        # observations. random.randrange is documented as thread-safe enough
+        # here because the caller already holds the metrics lock.
+        idx = random.randrange(self._seen)
+        if idx < self._capacity:
+            self._buf[idx] = value
+
+    def percentiles(self, points: tuple[float, ...] = (0.5, 0.95, 0.99)) -> dict[str, float]:
+        """Return ``{"p50": .., "p95": .., "p99": ..}`` from the retained sample.
+
+        Returns an empty dict when nothing was sampled, so a caller cannot
+        mistake "no data" for "zero latency".
+        """
+        if not self._buf:
+            return {}
+        ordered = sorted(self._buf)
+        n = len(ordered)
+        out: dict[str, float] = {}
+        for p in points:
+            # Nearest-rank on the retained sample: bounded work, no interpolation
+            # claim beyond what the sample size supports.
+            k = min(n - 1, max(0, int(round(p * (n - 1)))))
+            out[f"p{int(p * 100)}"] = ordered[k]
+        return out
+
+
 class _QueryMetrics:
     """Provider-agnostic per-query-name aggregation (process-local, opt-in).
 
@@ -741,15 +858,38 @@ class _QueryMetrics:
     failure.
     """
 
-    __slots__ = ("_enabled", "_lock", "_max_query_names", "_stats")
+    __slots__ = (
+        "_by_operation",
+        "_by_repository",
+        "_enabled",
+        "_lock",
+        "_max_query_names",
+        "_percentiles_capacity",
+        "_samples",
+        "_stats",
+    )
 
-    def __init__(self, *, max_query_names: int = 4096) -> None:
+    def __init__(
+        self, *, max_query_names: int = 4096, percentiles_capacity: int = 512
+    ) -> None:
         import threading
 
         self._enabled = False
         self._lock = threading.Lock()
         self._max_query_names = max_query_names
+        #: Per-query-name reservoir capacity. Bounded memory by construction:
+        #: worst case is ``max_query_names * percentiles_capacity * 8`` bytes of
+        #: sampled doubles (16.8 MB at the defaults, and only for names that are
+        #: actually observed). Reported in the snapshot so the contract's
+        #: "measurement must not become memory pressure" check (sec.45) can be
+        #: verified rather than asserted.
+        self._percentiles_capacity = percentiles_capacity
         self._stats: dict[str, dict[str, Any]] = {}
+        self._samples: dict[str, _LatencyReservoir] = {}
+        #: sec.51 attribution: the same statements rolled up by business
+        #: operation and by repository, answerable without re-reading the log.
+        self._by_operation: dict[str, dict[str, Any]] = {}
+        self._by_repository: dict[str, dict[str, Any]] = {}
 
     @property
     def enabled(self) -> bool:
@@ -765,11 +905,17 @@ class _QueryMetrics:
         with self._lock:
             self._enabled = False
             self._stats.clear()
+            self._samples.clear()
+            self._by_operation.clear()
+            self._by_repository.clear()
 
     def reset(self) -> None:
         """Clear the accumulated profile without changing the enabled state."""
         with self._lock:
             self._stats.clear()
+            self._samples.clear()
+            self._by_operation.clear()
+            self._by_repository.clear()
 
     def record(
         self,
@@ -786,6 +932,18 @@ class _QueryMetrics:
         """Accumulate one executed statement against ``query_name``."""
         if not self._enabled or not query_name:
             return
+        # sec.51 attribution: a bound business operation outranks the driver's
+        # generic verb ("query"/"execute"), because the business operation is what
+        # the cost model needs. The driver verb is retained separately so nothing
+        # is lost. Un-scoped statements keep the driver verb and empty repo.
+        op_ctx, dom_ctx, repo_ctx = current_query_context()
+        driver_operation = operation
+        if op_ctx and (not operation or operation in _DRIVER_OPS):
+            operation = op_ctx
+        if not domain:
+            domain = dom_ctx
+        if not repository:
+            repository = repo_ctx
         try:
             with self._lock:
                 stats = self._stats.get(query_name)
@@ -814,12 +972,59 @@ class _QueryMetrics:
                 stats["rows"] += int(rows or 0)
                 if error:
                     stats["errors"] += 1
+                if driver_operation and not stats.get("driver_operation"):
+                    stats["driver_operation"] = driver_operation
                 if not stats["sql_shape"] and sql_shape:
                     stats["sql_shape"] = mask_query_text(sql_shape)
                 if repository and not stats["repository"]:
                     stats["repository"] = repository
                 if domain and not stats["domain"]:
                     stats["domain"] = domain
+                # Percentile reservoir (sec.15). Cheap: one append, or one
+                # indexed assignment on the hot path.
+                res = self._samples.get(query_name)
+                if res is None:
+                    res = _LatencyReservoir(self._percentiles_capacity)
+                    self._samples[query_name] = res
+                res.add(duration_ms)
+                # sec.51 rollups: attribute the SAME observation to the business
+                # operation and to the repository, so the caller can answer
+                # "which code path caused this cost" without correlating logs.
+                if repository:
+                    r_stats = self._by_repository.get(repository)
+                    if r_stats is None:
+                        r_stats = {
+                            "calls": 0,
+                            "total_ms": 0.0,
+                            "rows": 0,
+                            "errors": 0,
+                            "operations": set(),
+                        }
+                        self._by_repository[repository] = r_stats
+                    r_stats["calls"] += 1
+                    r_stats["total_ms"] += duration_ms
+                    r_stats["rows"] += int(rows or 0)
+                    if error:
+                        r_stats["errors"] += 1
+                    if operation:
+                        r_stats["operations"].add(operation)
+                if operation:
+                    o_stats = self._by_operation.get(operation)
+                    if o_stats is None:
+                        o_stats = {
+                            "calls": 0,
+                            "total_ms": 0.0,
+                            "rows": 0,
+                            "errors": 0,
+                            "query_names": set(),
+                        }
+                        self._by_operation[operation] = o_stats
+                    o_stats["calls"] += 1
+                    o_stats["total_ms"] += duration_ms
+                    o_stats["rows"] += int(rows or 0)
+                    if error:
+                        o_stats["errors"] += 1
+                    o_stats["query_names"].add(query_name)
         except Exception:
             return
 
@@ -836,9 +1041,55 @@ class _QueryMetrics:
                         **v,
                         "query_name": k,
                         "mean_ms": (v["total_ms"] / v["calls"] if v["calls"] else 0.0),
+                        # sec.15: p50/p95/p99 from the bounded reservoir.
+                        **(
+                            self._samples[k].percentiles()
+                            if k in self._samples
+                            else {}
+                        ),
+                        # How many observations the percentiles stand on. A p99
+                        # from 8 samples is not the same claim as one from 5000,
+                        # so the sample size travels with the number.
+                        "sampled": (self._samples[k].seen if k in self._samples else 0),
+                        "percentiles_basis": (
+                            min(self._samples[k].seen, self._percentiles_capacity)
+                            if k in self._samples
+                            else 0
+                        ),
                     }
                     for k, v in self._stats.items()
                 ]
+                by_operation = [
+                    {
+                        **v,
+                        "operation": k,
+                        "operations": None,
+                        "query_names": sorted(v.get("query_names") or ()),
+                        "mean_ms": (v["total_ms"] / v["calls"] if v["calls"] else 0.0),
+                    }
+                    for k, v in self._by_operation.items()
+                ]
+                by_repository = [
+                    {
+                        **v,
+                        "repository": k,
+                        "operations": sorted(v.get("operations") or ()),
+                        "query_names": None,
+                        "mean_ms": (v["total_ms"] / v["calls"] if v["calls"] else 0.0),
+                    }
+                    for k, v in self._by_repository.items()
+                ]
+                sampled_bytes = sum(len(r._buf) for r in self._samples.values()) * 8
+                footprint = {
+                    "query_names": len(self._stats),
+                    "query_names_max": self._max_query_names,
+                    "reservoir_capacity": self._percentiles_capacity,
+                    "reservoir_entries": sum(len(r._buf) for r in self._samples.values()),
+                    "sample_bytes": sampled_bytes,
+                    "worst_case_sample_bytes": self._max_query_names
+                    * self._percentiles_capacity
+                    * 8,
+                }
         except Exception:
             return {"enabled": self._enabled, "queries": [], "rankings": {}}
         rankings: dict[str, list[dict[str, Any]]] = {
@@ -850,8 +1101,23 @@ class _QueryMetrics:
             "mean_latency": sorted(items, key=lambda s: s["mean_ms"], reverse=True),
             # Rank E — rows processed/transferred
             "rows": sorted(items, key=lambda s: s["rows"], reverse=True),
+            # Rank F — tail latency (sec.15): a query that is fast on average but
+            # has a bad p95/p99 is the one that hurts a hot path.
+            "p95": sorted(
+                [s for s in items if s.get("p95") is not None],
+                key=lambda s: s["p95"],
+                reverse=True,
+            ),
         }
-        return {"enabled": self._enabled, "queries": items, "rankings": rankings}
+        return {
+            "enabled": self._enabled,
+            "queries": items,
+            "rankings": rankings,
+            "by_operation": by_operation,
+            "by_repository": by_repository,
+            # sec.61: the measurement cost is itself a reported quantity.
+            "footprint": footprint,
+        }
 
 
 #: Process-global query metrics recorder. Disabled until a profiling harness
@@ -945,6 +1211,48 @@ class QueryMetricsRecorder:
 
 #: Call-site name: reads as the context-manager helper it is.
 query_metrics_recorder = QueryMetricsRecorder
+
+
+class query_context:
+    """Bind the business operation for statements issued inside this scope (sec.51).
+
+    ``with query_context("audit.log_signal", repository="audit_repository"):``
+    makes every statement executed inside the block attribute to that operation
+    in :func:`query_metrics_snapshot`, which is what links a PostgreSQL statement
+    back to the code path that caused it.
+
+    Cost: one ContextVar set/reset on enter/exit. When metrics are disabled the
+    block still runs but nothing is recorded — the scope binding is unconditional
+    so call sites do not need to know whether collection is on, and a single env
+    flag can therefore start collection without touching call sites.
+    """
+
+    __slots__ = ("_token", "_operation", "_domain", "_repository")
+
+    def __init__(self, operation: str, *, domain: str = "", repository: str = "") -> None:
+        self._operation = operation
+        self._domain = domain
+        self._repository = repository
+        self._token: Any = None
+
+    def __enter__(self) -> query_context:
+        try:
+            self._token = set_query_context(
+                self._operation, domain=self._domain, repository=self._repository
+            )
+        except Exception:
+            self._token = None
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        if self._token is not None:
+            reset_query_context(self._token)
+        return None
 
 
 # -- connection / pool failure classification ------------------------------

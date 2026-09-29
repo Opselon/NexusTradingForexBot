@@ -33,6 +33,7 @@ nothing — INV-001):
 from __future__ import annotations
 
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -665,3 +666,204 @@ def test_query_metrics_bounded_query_name_cardinality() -> None:
             pass
     snap = metrics.snapshot()
     assert len(snap["queries"]) <= 8
+
+
+# ---------------------------------------------------------------------------
+# Percentile reservoir (contract sec.15: p50/p95/p99 per hot path).
+# pg_stat_statements supplies mean/min/max but never percentiles, so the driver
+# boundary has to estimate the tail itself from a bounded sample.
+# ---------------------------------------------------------------------------
+
+
+def test_reservoir_percentiles_exact_when_not_subsampling() -> None:
+    """With capacity >= sample count the reservoir is the full sample: exact.
+
+    Percentiles must be right when nothing is being discarded — this is the
+    deterministic case, so a tight tolerance is legitimate here.
+    """
+    res = ql._LatencyReservoir(16_384)
+    for i in range(10_000):
+        res.add(i / 1000.0)
+    pct = res.percentiles()
+    assert abs(pct["p50"] - 5.0) / 5.0 < 0.02
+    assert abs(pct["p95"] - 9.5) / 9.5 < 0.02
+    assert abs(pct["p99"] - 9.9) / 9.9 < 0.02
+    assert res.seen == 10_000
+    assert len(res._buf) == 10_000  # nothing discarded
+
+
+def test_reservoir_percentiles_stay_close_under_subsampling() -> None:
+    """Under subsampling the estimate is statistical, so the bound is looser.
+
+    Reservoir sampling of 10,000 observations into 4096 slots gives the median a
+    standard error of ~0.078 ms on this uniform(0,10) input, i.e. ~1.6% of the
+    median. A 5% tolerance is therefore a real regression bound: it fails if the
+    sampling is biased, not merely if it is random.
+    """
+    res = ql._LatencyReservoir(4096)
+    for i in range(10_000):
+        res.add(i / 1000.0)
+    pct = res.percentiles()
+    assert res.seen == 10_000
+    assert len(res._buf) == 4096  # bounded
+    assert abs(pct["p50"] - 5.0) / 5.0 < 0.05
+    assert abs(pct["p95"] - 9.5) / 9.5 < 0.05
+    assert abs(pct["p99"] - 9.9) / 9.9 < 0.05
+    # Ordering must hold regardless of sampling noise.
+    assert pct["p50"] <= pct["p95"] <= pct["p99"]
+
+
+def test_reservoir_memory_is_bounded_at_capacity() -> None:
+    """A reservoir never grows past capacity, however many samples arrive."""
+    res = ql._LatencyReservoir(64)
+    for i in range(100_000):
+        res.add(float(i))
+    assert len(res._buf) == 64
+    assert res.seen == 100_000
+    # The bounded sample is still usable, not just silently truncated.
+    assert 0.0 <= res.percentiles()["p50"] <= 100_000.0
+
+
+def test_empty_reservoir_reports_nothing_not_zero() -> None:
+    """No samples must read as absent, never as a fake 0.0 ms latency."""
+    assert ql._LatencyReservoir(16).percentiles() == {}
+
+
+def test_metrics_snapshot_reports_percentiles_and_basis() -> None:
+    """Each query carries p50/p95/p99 plus how many samples back them."""
+    metrics = ql._QueryMetrics(max_query_names=64, percentiles_capacity=128)
+    metrics.enable()
+    for i in range(300):
+        metrics.record(query_name="SELECT slow", duration_ms=float(i) / 10.0, operation="query")
+    snap = metrics.snapshot()
+    row = next(q for q in snap["queries"] if q["query_name"] == "SELECT slow")
+    assert row["p50"] is not None and row["p95"] is not None and row["p99"] is not None
+    assert row["p50"] <= row["p95"] <= row["p99"]
+    assert row["sampled"] == 300
+    assert row["percentiles_basis"] == 128  # capped at capacity
+    assert "p95" in snap["rankings"]
+
+
+def test_footprint_is_reported_and_bounded() -> None:
+    """sec.61: the measurement's own memory cost is a reported quantity."""
+    metrics = ql._QueryMetrics(max_query_names=32, percentiles_capacity=64)
+    metrics.enable()
+    for i in range(200):
+        metrics.record(query_name=f"q{i}", duration_ms=1.0, operation="query")
+    fp = metrics.snapshot()["footprint"]
+    # The name cap is enforced: 200 distinct names collapse to the 32 allowed.
+    assert fp["query_names"] == 32 and fp["query_names_max"] == 32
+    assert fp["sample_bytes"] <= fp["worst_case_sample_bytes"]
+    # Every retained name owns at most `percentiles_capacity` samples.
+    assert fp["reservoir_entries"] <= 32 * 64
+
+
+def test_percentile_basis_never_exceeds_capacity() -> None:
+    """A percentile must never claim more samples than the reservoir can hold."""
+    metrics = ql._QueryMetrics(max_query_names=8, percentiles_capacity=16)
+    metrics.enable()
+    for i in range(500):
+        metrics.record(query_name="q", duration_ms=float(i), operation="query")
+    row = next(q for q in metrics.snapshot()["queries"] if q["query_name"] == "q")
+    assert row["sampled"] == 500
+    assert row["percentiles_basis"] == 16
+
+
+# ---------------------------------------------------------------------------
+# Operation / repository attribution (contract sec.51).
+# The driver knows the SQL; the fabric knows the business operation. Binding the
+# two is what makes "which code path caused this PostgreSQL cost" answerable.
+# ---------------------------------------------------------------------------
+
+
+def test_bound_operation_outranks_the_driver_verb() -> None:
+    """A business operation must replace the generic driver verb in attribution."""
+    metrics = ql._QueryMetrics(max_query_names=64)
+    metrics.enable()
+    with ql.query_context("audit.log_signal", domain="audit", repository="audit_repository"):
+        metrics.record(query_name="INSERT INTO t", duration_ms=1.0, operation="execute")
+    snap = metrics.snapshot()
+    ops = {r["operation"] for r in snap["by_operation"]}
+    assert "audit.log_signal" in ops
+    assert "execute" not in ops  # the driver verb did not shadow the real operation
+    # The driver verb is retained, not discarded.
+    row = next(q for q in snap["queries"] if q["query_name"] == "INSERT INTO t")
+    assert row["driver_operation"] == "execute"
+
+
+def test_repository_rollup_aggregates_its_operations() -> None:
+    """One repository's statements are attributable without re-reading the log."""
+    metrics = ql._QueryMetrics(max_query_names=64)
+    metrics.enable()
+    with ql.query_context("audit.log_signal", domain="audit", repository="audit_repository"):
+        metrics.record(query_name="q1", duration_ms=1.0, rows=1, operation="audit.log_signal")
+    with ql.query_context("audit.read_recent", domain="audit", repository="audit_repository"):
+        metrics.record(query_name="q2", duration_ms=2.0, rows=5, operation="audit.read_recent")
+    repos = metrics.snapshot()["by_repository"]
+    assert len(repos) == 1
+    repo = repos[0]
+    assert repo["repository"] == "audit_repository"
+    assert repo["calls"] == 2 and repo["rows"] == 6
+    assert set(repo["operations"]) == {"audit.log_signal", "audit.read_recent"}
+
+
+def test_unscoped_statement_is_still_recorded() -> None:
+    """A statement issued outside any operation scope is not dropped."""
+    metrics = ql._QueryMetrics(max_query_names=64)
+    metrics.enable()
+    metrics.record(query_name="SELECT 1", duration_ms=0.1, operation="query")
+    assert any(q["query_name"] == "SELECT 1" for q in metrics.snapshot()["queries"])
+
+
+def test_query_context_nests_and_restores() -> None:
+    """Nested scopes restore the outer attribution on exit."""
+    metrics = ql._QueryMetrics(max_query_names=64)
+    metrics.enable()
+    with ql.query_context("outer", repository="r_outer"):
+        with ql.query_context("inner", repository="r_inner"):
+            metrics.record(query_name="q", duration_ms=1.0, operation="query")
+        metrics.record(query_name="q2", duration_ms=1.0, operation="query")
+    by_repo = {r["repository"]: r for r in metrics.snapshot()["by_repository"]}
+    assert set(by_repo) == {"r_outer", "r_inner"}
+    assert by_repo["r_inner"]["calls"] == 1
+    assert by_repo["r_outer"]["calls"] == 1
+
+
+def test_concurrent_records_are_not_lost() -> None:
+    """sec.41: concurrent writers must not lose updates."""
+    metrics = ql._QueryMetrics(max_query_names=16, percentiles_capacity=64)
+    metrics.enable()
+    threads = 8
+    per = 4000
+
+    def worker(tid: int) -> None:
+        for i in range(per):
+            metrics.record(
+                query_name=f"shape_{i % 4}",
+                duration_ms=float(i % 50),
+                rows=i % 5,
+                operation=f"op_{tid}",
+                repository=f"repo_{tid % 3}",
+            )
+
+    ths = [threading.Thread(target=worker, args=(t,)) for t in range(threads)]
+    for t in ths:
+        t.start()
+    for t in ths:
+        t.join()
+    total = sum(q["calls"] for q in metrics.snapshot()["queries"])
+    assert total == threads * per
+
+
+def test_aggregator_never_persists_per_query() -> None:
+    """sec.49: the aggregator must stay in-memory; it must not become a workload."""
+    src = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "nexus_scalp"
+        / "database"
+        / "query_logging.py"
+    ).read_text(encoding="utf-8")
+    seg = src[src.index("class _QueryMetrics") : src.index("#: Process-global query metrics recorder")]
+    for forbidden in ("_persist_event", "DatabaseLogStore", "INSERT INTO", "commit("):
+        assert forbidden not in seg, f"aggregator must not persist per query: {forbidden}"
