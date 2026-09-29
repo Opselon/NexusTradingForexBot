@@ -104,6 +104,13 @@ def test_scanner_still_catches_a_real_bot_token(tmp_path: Path, helpers_module: 
         encoding="utf-8",
     )
     rc = helpers_module.action_scan_tree([str(root)])
+    # The fixture line must match the Telegram rule itself (TOKEN_RE), so the
+    # pin is non-vacuous rather than firing on some unrelated heuristic.
+    line = (root / "live.yaml").read_text(encoding="utf-8").splitlines()[0]
+    assert helpers_module.TOKEN_RE.search(line) is not None, (
+        "synthetic fixture must match the Telegram token rule"
+    )
+
     assert rc != 0, "a real telegram bot token MUST fail the secrets scan"
 
 
