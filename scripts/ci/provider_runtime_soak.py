@@ -69,12 +69,12 @@ HOT_ENDPOINTS = (
     "/api/models/integrity",
     "/openapi.json",
 )
-SEVERITY_RE = re.compile(r"\\b(CRITICAL|FATAL|ERROR|WARNING|WARN)\\b", re.IGNORECASE)
-TRACEBACK_RE = re.compile(r"Traceback \\(most recent call last\\):")
+SEVERITY_RE = re.compile(r"\b(CRITICAL|FATAL|ERROR|WARNING|WARN)\b", re.IGNORECASE)
+TRACEBACK_RE = re.compile(r"Traceback \(most recent call last\):")
 SOURCE_RE = re.compile(
-    r"((?:[A-Za-z]:[\\\\/]|/)?[\\w.\\-\\\\/]+\\.py):(\\d+)(?::(\\d+))?"
+    r"((?:[A-Za-z]:[\\/]|/)?[\w.\-\\/]+\.py):(\d+)(?::(\d+))?"
 )
-ANSI_RE = re.compile(r"\\x1B\\[[0-?]*[ -/]*[@-~]")
+ANSI_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 
 
 def set_env(name: str, value: str) -> None:
@@ -83,7 +83,7 @@ def set_env(name: str, value: str) -> None:
 
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\\n", encoding="utf-8")
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
 
 
 class LogCollector:
@@ -139,8 +139,8 @@ class LogCollector:
                 if severity == "WARN":
                     severity = "WARNING"
                 source = SOURCE_RE.search(line)
-                normalized = re.sub(r"\\d{4}-\\d{2}-\\d{2}[T ][0-9:.+-]+", "<ts>", line)
-                normalized = re.sub(r"\\bpid[= ]\\d+\\b", "pid=<n>", normalized, flags=re.IGNORECASE)
+                normalized = re.sub(r"\d{4}-\d{2}-\d{2}[T ][0-9:.+-]+", "<ts>", line)
+                normalized = re.sub(r"\bpid[= ]\d+\b", "pid=<n>", normalized, flags=re.IGNORECASE)
                 event = {
                     "severity": severity,
                     "line_no": len(self.lines),
@@ -167,7 +167,7 @@ class LogCollector:
                 source = {"file": m.group(1), "line": int(m.group(2))}
                 break
         payload = {
-            "traceback_id": hashlib.sha256("\\n".join(lines).encode("utf-8", "replace")).hexdigest()[:16],
+            "traceback_id": hashlib.sha256("\n".join(lines).encode("utf-8", "replace")).hexdigest()[:16],
             "start_line_no": start_line,
             "elapsed_sec": round(now - self.started, 3),
             "source": source,
