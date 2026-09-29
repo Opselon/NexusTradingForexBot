@@ -655,7 +655,7 @@ jobs:
       # (aggregate does not run).
       - name: Upload CI results artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0aa # v7.0.1
         with:
           name: ci-results-quality-${{ github.workflow }}-${{ github.run_number }}-${{ github.sha }}
           path: ci-results/
@@ -881,7 +881,7 @@ jobs:
 
       - name: Upload full runtime evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0aa # v7.0.1
         with:
           name: ci-full-runtime-${{ matrix.provider }}-${{ github.run_id }}
           path: |
@@ -986,7 +986,7 @@ jobs:
 
       - name: Upload MT5/Wine evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0aa # v7.0.1
         with:
           name: ci-mt5-wine-runtime-${{ github.run_id }}
           path: |
@@ -1023,7 +1023,7 @@ jobs:
 
       - name: Upload provider overall runtime evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-provider-runtime-overall-${{ github.run_id }}
           path: runtime-provider-overall.json
@@ -1112,7 +1112,7 @@ jobs:
 
       - name: Upload extended results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0aa # v7.0.1
         with:
           name: ci-results-extended-${{ github.run_number }}-${{ github.sha }}
           path: ci-results-extended/
@@ -1268,7 +1268,7 @@ jobs:
 
       - name: Upload suite artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0aa # v7.0.1
         with:
           name: ci-results-${{ matrix.suite }}-${{ github.run_number }}-${{ github.sha }}
           path: ci-results/
@@ -1343,7 +1343,7 @@ jobs:
           find ci-results/run-info -type f | sort
 
       - name: Upload canonical aggregate artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0aa # v7.0.1
         with:
           name: ci-results-${{ github.workflow }}-${{ github.run_number }}-${{ github.sha }}
           path: ci-results/
