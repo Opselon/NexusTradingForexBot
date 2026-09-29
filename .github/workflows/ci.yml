@@ -880,13 +880,83 @@ jobs:
             --host 127.0.0.1 \
             --port "$NSE_RUNTIME_SOAK_PORT"
 
+      - name: Render full runtime verdict
+        if: always()
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "nse-runtime-${{ matrix.provider }}"
+          report_path = root / "full_runtime_report.json"
+          query_path = root / "query_matrix.json"
+          try:
+              report = json.loads(report_path.read_text(encoding="utf-8"))
+          except Exception as exc:
+              report = {"status": "FAIL", "runtime_error": f"report unreadable: {exc}"}
+          try:
+              query = json.loads(query_path.read_text(encoding="utf-8"))
+          except Exception:
+              query = {}
+
+          diagnostics = report.get("diagnostics", {})
+          lines = [
+              "## Full NSE Runtime Soak — ${{ matrix.provider }}",
+              "",
+              f"**Verdict:** `{report.get('status', 'FAIL')}`",
+              f"**Duration:** {report.get('elapsed_sec', 'n/a')}s / requested {report.get('requested_duration_sec', 'n/a')}s",
+              f"**Process exit:** {report.get('process_exit_code', 'n/a')}",
+              f"**Queries:** {query.get('queries_ok', 0)}/{query.get('queries_total', 0)} successful",
+              f"**Query failures:** {query.get('queries_failed', 0)}",
+              f"**Warnings:** {diagnostics.get('warning_count', 0)}",
+              f"**Errors:** {diagnostics.get('error_count', 0)}",
+              f"**Tracebacks:** {diagnostics.get('traceback_count', 0)}",
+              "",
+          ]
+          if report.get("runtime_error"):
+              lines += ["### Runtime failure", "", str(report["runtime_error"]), ""]
+          warnings = diagnostics.get("warnings", [])
+          if warnings:
+              lines += ["### Warnings (deduplicated)", ""]
+              lines += [f"- line {w['line']}: {w['message']}" for w in warnings[:20]]
+              lines += [""]
+          errors = diagnostics.get("errors", [])
+          if errors:
+              lines += ["### Errors (deduplicated)", ""]
+              lines += [f"- line {e['line']}: {e['message']}" for e in errors[:20]]
+              lines += [""]
+          traces = diagnostics.get("tracebacks", [])
+          if traces:
+              lines += ["### Traceback frames", ""]
+              for trace in traces[:10]:
+                  frames = ", ".join(
+                      f"{frame['file']}:{frame['line']}" +
+                      (f" ({frame['function']})" if frame.get("function") else "")
+                      for frame in trace.get("frames", [])
+                  )
+                  lines.append(
+                      f"- lines {trace.get('start_line')}-{trace.get('end_line')}: "
+                      f"{frames or 'no parsed frames'}"
+                  )
+              lines += [""]
+          summary = "\n".join(lines)
+          print(summary)
+          if os.environ.get("GITHUB_STEP_SUMMARY"):
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+                  fh.write(summary + "\n")
+          PY
+
       - name: Upload provider runtime evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-runtime-soak-${{ matrix.provider }}-${{ github.run_number }}-${{ github.sha }}
           path: |
-            ${{ runner.temp }}/nse-runtime-${{ matrix.provider }}/provider_runtime_soak.json
+            ${{ runner.temp }}/nse-runtime-${{ matrix.provider }}/full_runtime_report.json
+            ${{ runner.temp }}/nse-runtime-${{ matrix.provider }}/query_matrix.json
+            ${{ runner.temp }}/nse-runtime-${{ matrix.provider }}/runtime.log
           if-no-files-found: error
           retention-days: 7
 
