@@ -147,7 +147,15 @@ class ArchiveManager:
             if missing_ok:
                 return []
             raise RuntimeError(f"[DB_HYGIENE] archive missing: {rel}")
-        if manifest.get("sha256") and not self.verify_archive(manifest):
+        # FAIL CLOSED on an absent checksum: a manifest without a sha256
+        # cannot be verified, and "cannot verify" must never read as
+        # "verified".
+        if not manifest.get("sha256"):
+            raise RuntimeError(
+                f"[DB_HYGIENE] archive manifest for {rel} has no sha256 - refusing "
+                "to parse unverifiable bytes (pass missing_ok=True to opt out)"
+            )
+        if not self.verify_archive(manifest):
             raise RuntimeError(f"[DB_HYGIENE] archive checksum MISMATCH: {rel}")
         rows: list[dict[str, Any]] = []
         for raw in p.read_text(encoding="utf-8").splitlines():
@@ -172,6 +180,200 @@ class ArchiveManager:
         if not p.exists():
             return 0
         return sum(1 for line in p.read_text(encoding="utf-8").splitlines() if line.strip())
+
+
+DEFAULT_PAGE_SIZE = 500
+
+#: Reproducible chunked export of a news table (R-11 retirement).
+#: Chunking is on the PRIMARY KEY ordering with a keyset cursor (``WHERE
+#: key > ?``), never LIMIT/OFFSET: an OFFSET scan re-walks every preceding row,
+#: so a 25k-row export would cost O(n^2) reads. One JSONL chunk per page also
+#: bounds memory to a single chunk.
+DEFAULT_CHUNK_ROWS = 2_000
+
+
+def _sqlite_ro(db_path: str | Path) -> sqlite3.Connection:
+    """Read-only connection; NEVER creates the file (a missing DB must raise)."""
+    conn = sqlite3.connect(f"file:{Path(db_path).as_posix()}?mode=ro", uri=True, timeout=5.0)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def table_and_columns(conn: sqlite3.Connection, table: str) -> list[str]:
+    """Real (non-generated) column names for a table, in declaration order."""
+    return [
+        str(r[1])
+        for r in conn.execute(f'PRAGMA table_info("{table}")')
+        # hidden=2/3 rows are generated columns; they cannot be inserted back.
+        if len(r) < 7 or int(r[6] or 0) in (0, 1)
+    ]
+
+
+def sqlite_tables(conn: sqlite3.Connection) -> list[str]:
+    """User tables of a SQLite database, excluding FTS/shadow internals."""
+    return sorted(
+        str(r[0])
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '%_fts_%' ORDER BY name"
+        )
+    )
+
+
+def _paging_key(conn: sqlite3.Connection, table: str) -> str:
+    """Column to page on: the single-column primary key, else ``rowid``."""
+    pk = [str(r[1]) for r in conn.execute(f'PRAGMA table_info("{table}")') if r[5]]
+    return pk[0] if len(pk) == 1 else "rowid"
+
+
+def enumerate_dataset(
+    db_path: str | Path,
+    *,
+    tables: list[str] | None = None,
+) -> dict[str, Any]:
+    """Count every table without loading a row into memory.
+
+    The purpose is a *transcript* of what a retirement would move: per table,
+    the exact row count, column count and primary-key span, measured read-only,
+    so a later "0 rows lost" claim has a number to compare against.
+    """
+    conn = _sqlite_ro(db_path)
+    try:
+        names = tables if tables is not None else sqlite_tables(conn)
+        out: dict[str, Any] = {}
+        for t in names:
+            try:
+                count = int(conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0])
+            except sqlite3.Error as exc:
+                out[t] = {"error": f"{type(exc).__name__}: {exc}"}
+                continue
+            pk = [str(r[1]) for r in conn.execute(f'PRAGMA table_info("{t}")') if r[5]]
+            entry: dict[str, Any] = {"rows": count, "columns": len(table_and_columns(conn, t))}
+            if pk:
+                entry["pk_columns"] = pk
+                try:
+                    lo, hi = conn.execute(
+                        f'SELECT MIN("{pk[0]}"), MAX("{pk[0]}") FROM "{t}"'
+                    ).fetchone()
+                    entry["pk_min"], entry["pk_max"] = lo, hi
+                except sqlite3.Error:
+                    pass
+            out[t] = entry
+        return out
+    finally:
+        conn.close()
+
+
+def archive_news_dataset(
+    db_path: str | Path,
+    archive_root: str | Path,
+    *,
+    software_version: str,
+    retention_reason: str,
+    tables: list[str] | None = None,
+    chunk_rows: int = DEFAULT_CHUNK_ROWS,
+) -> dict[str, Any]:
+    """Archive every row of a news SQLite dataset as verified JSONL chunks.
+
+    Writes ``archive/news/<table>/<archive_id>.jsonl`` through the shipped
+    :class:`ArchiveManager`, so each chunk carries a sha256 that
+    ``read_archive`` re-verifies before parsing. **Nothing is deleted here** —
+    this produces the artifact a retirement needs in order to be reversible,
+    and returns a manifest that can be verified and re-read independently.
+
+    Re-runnable: an existing ``_complete.json`` marker for a table is reported
+    as ``SKIPPED``, so an interrupted run resumes instead of duplicating the
+    tree. A table whose archived line count does not equal the row count it
+    read raises rather than reporting a partial success.
+    """
+    db = Path(db_path)
+    root = Path(archive_root)
+    conn = _sqlite_ro(db)
+    am = ArchiveManager(root)
+    try:
+        names = tables if tables is not None else sqlite_tables(conn)
+        result: dict[str, Any] = {"source": str(db), "tables": {}}
+        for t in names:
+            marker = root / ARCHIVE_ROOT_NAME / "news" / t / "_complete.json"
+            if marker.exists():
+                result["tables"][t] = {"status": "SKIPPED", "marker": str(marker)}
+                continue
+            cols = table_and_columns(conn, t)
+            if not cols:
+                result["tables"][t] = {"status": "SKIPPED", "reason": "NO_COLUMNS"}
+                continue
+            key = _paging_key(conn, t)
+            quoted = ", ".join(f'"{c}"' for c in cols)
+            select_cols = quoted if key != "rowid" else f"rowid AS _rowid_, {quoted}"
+            manifests: list[dict[str, Any]] = []
+            total = 0
+            cursor: Any = None
+            while True:
+                sql = f'SELECT {select_cols} FROM "{t}"'
+                params: tuple[Any, ...] = ()
+                if cursor is not None:
+                    sql += f' WHERE "{key}" > ?'
+                    params = (cursor,)
+                sql += f' ORDER BY "{key}" LIMIT ?'
+                rows = [dict(r) for r in conn.execute(sql, (*params, chunk_rows)).fetchall()]
+                if not rows:
+                    break
+                cursor = rows[-1]["_rowid_" if key == "rowid" else key]
+                for r in rows:
+                    r.pop("_rowid_", None)
+                manifests.append(
+                    am.archive_rows(
+                        "news",
+                        t,
+                        rows,
+                        retention_reason=retention_reason,
+                        software_version=software_version,
+                    )
+                )
+                total += len(rows)
+                if len(rows) < chunk_rows:
+                    break
+            verified = all(am.verify_archive(m) for m in manifests if m)
+            counted = sum(am.row_count_on_disk(m) for m in manifests if m)
+            if not verified or counted != total:
+                raise RuntimeError(
+                    f"[DB_HYGIENE] archive verify FAILED for {t}: "
+                    f"rows={total} lines={counted} verified={verified}"
+                )
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(
+                json.dumps(
+                    {
+                        "table": t,
+                        "source": str(db),
+                        "row_count": total,
+                        "lines_on_disk": counted,
+                        "chunks": [
+                            {
+                                "path": m.get("path"),
+                                "sha256": m.get("sha256"),
+                                "rows": m.get("row_count"),
+                            }
+                            for m in manifests
+                            if m
+                        ],
+                        "created_at": _now_iso(),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            result["tables"][t] = {
+                "status": "ARCHIVED",
+                "row_count": total,
+                "lines_on_disk": counted,
+                "chunks": len(manifests),
+                "verified": verified,
+            }
+        return result
+    finally:
+        conn.close()
 
 
 class CleanupJournal:
