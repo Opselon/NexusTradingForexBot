@@ -848,6 +848,20 @@ def configure_logging(
     for quiet in _QUIET_LOGGERS:
         logging.getLogger(quiet).setLevel(logging.WARNING)
 
+    # App-wide DB sink (PG-LOG-SINK): persist every WARNING/ERROR/CRITICAL the
+    # app emits to the log table, with the full traceback, de-duplicated by
+    # provenance. Installed on the root logger so it sees every subsystem —
+    # engine, web, drivers, fabric, workers — with no call-site change. The
+    # sink is failure-isolated: a DB that is down/misconfigured drops records
+    # to the debug level and never disturbs the console/file handlers, so
+    # logging itself stays authoritative (BUG-122 discipline).
+    try:
+        from nexus_scalp.database.log_store import install_database_log_handler
+
+        install_database_log_handler()
+    except Exception:
+        pass
+
     _prune_old_logs(base_dir, _current_retention_days)
 
 

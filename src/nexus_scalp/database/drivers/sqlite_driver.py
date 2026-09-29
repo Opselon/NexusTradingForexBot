@@ -29,7 +29,32 @@ from nexus_scalp.database.drivers._sql_guard import (
     assert_safe_sql,
 )
 from nexus_scalp.database.drivers.base import DatabaseDriver
-from nexus_scalp.database.query_logging import QueryMetricsRecorder
+from nexus_scalp.database.query_logging import QueryMetricsRecorder, log_query_failure
+
+
+def _log_sqlite_failure(operation: str, exc: BaseException, sql: Any, args: Any) -> None:
+    """ERROR for one failed SQLite statement — provider parity, never raises.
+
+    The PostgreSQL driver has had this seam since DB-FABRIC-OBS; SQLite had
+    none, so a SQLite failure was traceable only through whatever the caller
+    happened to log — usually nothing, and never the failing statement. This
+    mirrors the PG path exactly (same fields, same masking via
+    ``mask_query_text`` inside ``log_query_failure``) so a failure is
+    equally traceable under either provider. Domain is ``sqlite`` so the two
+    providers stay distinguishable in the log table.
+    """
+    try:
+        log_query_failure(
+            operation=f"driver.{operation}",
+            exc=exc,
+            sql=sql,
+            args=args,
+            domain="sqlite",
+            kind="write" if operation.startswith("execute") else "read",
+        )
+    except Exception:
+        pass
+
 
 #: Case-insensitive map: SQLite type name -> portable logical type.
 SQLITE_TYPE_MAP: dict[str, str] = {
@@ -207,6 +232,10 @@ class SQLiteDriver(DatabaseDriver):
                 # works on PG is lost on SQLite.
                 c.commit()
             return result
+        except Exception as exc:
+            self.last_failure = exc
+            _log_sqlite_failure("execute", exc, sql, args)
+            raise
         finally:
             if own and not self.is_in_memory:
                 c.close()
@@ -226,6 +255,10 @@ class SQLiteDriver(DatabaseDriver):
                 # See execute(): commit when we own the connection, else the
                 # batched writes are silently discarded on close.
                 c.commit()
+        except Exception as exc:
+            self.last_failure = exc
+            _log_sqlite_failure("executemany", exc, sql, seq)
+            raise
         finally:
             if own and not self.is_in_memory:
                 c.close()
@@ -288,6 +321,10 @@ class SQLiteDriver(DatabaseDriver):
                 rows = [dict(r) for r in cur.fetchall()]
                 metrics.rows = len(rows)
                 return rows
+            except Exception as exc:
+                self.last_failure = exc
+                _log_sqlite_failure("query", exc, sql, args)
+                raise
             finally:
                 if own:
                     c.close()
@@ -337,6 +374,10 @@ class SQLiteDriver(DatabaseDriver):
                     return None
                 metrics.rows = 1
                 return dict(row)
+            except Exception as exc:
+                self.last_failure = exc
+                _log_sqlite_failure("query_one", exc, sql, args)
+                raise
             finally:
                 if own:
                     c.close()
@@ -348,6 +389,10 @@ class SQLiteDriver(DatabaseDriver):
             cur = c.execute(assert_safe_sql(sql), tuple(args))
             row = cur.fetchone()
             return row[0] if row is not None else None
+        except Exception as exc:
+            self.last_failure = exc
+            _log_sqlite_failure("scalar", exc, sql, args)
+            raise
         finally:
             if own:
                 c.close()
