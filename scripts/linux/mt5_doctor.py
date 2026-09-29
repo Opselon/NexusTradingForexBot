@@ -25,12 +25,34 @@ from pathlib import Path
 
 ROOT = Path(os.environ.get("NEXUS_MT5_ROOT", "/home/ubuntu/nexus-mt5"))
 PREFIX = ROOT / "test" / "prefix"
-TERMINAL = PREFIX / "drive_c" / "Program Files" / "MetaTrader 5" / "terminal64.exe"
+DEFAULT_TERMINAL = PREFIX / "drive_c" / "Program Files" / "MetaTrader 5" / "terminal64.exe"
 WINE = os.environ.get("NEXUS_MT5_WINE", "/opt/wine-staging/bin/wine")
 LAUNCH_LOG = ROOT / "logs" / "terminal_launch.log"
 
 PASS, WARN, FAIL = "PASS", "WARN", "FAIL"
 results: list[tuple[str, str, str]] = []
+
+
+def resolve_terminal() -> Path:
+    """Locate the terminal regardless of MetaQuotes install-directory variation."""
+    if DEFAULT_TERMINAL.exists():
+        return DEFAULT_TERMINAL
+    candidates = sorted(
+        p
+        for p in PREFIX.glob("drive_c/**/terminal64.exe")
+        if p.is_file()
+    )
+    if candidates:
+        return candidates[0]
+    candidates = sorted(
+        p
+        for p in PREFIX.glob("drive_c/**/terminal.exe")
+        if p.is_file()
+    )
+    return candidates[0] if candidates else DEFAULT_TERMINAL
+
+
+TERMINAL = resolve_terminal()
 
 
 def check(name: str, ok: bool | None, detail: str = "") -> None:
