@@ -585,6 +585,76 @@ def make_db_app(
         if failed:
             raise typer.Exit(1)
 
+    @app.command("compact-summary-echo")
+    def db_compact_summary_echo(
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+        dry_run: bool = typer.Option(
+            False, "--dry-run", help="Report the reclaimable bytes WITHOUT changing anything."
+        ),
+    ) -> None:
+        """DEEP-OPT L2: clear the AI-analysis summary echo (operator action).
+
+        The AI analysis row re-persisted the source article's summary verbatim
+        (~45.0 MB of a 45.0 MB column on production data). This clears only
+        rows whose summary is the source text or starts with it; a summary the
+        model actually authored is untouched. Read-only check first, then a
+        bounded UPDATE in one transaction. Never automatic: purge is an explicit
+        operator action (Part 5 rules 43/93).
+        """
+        from nexus_scalp.release.paths import get_runtime_workspace
+
+        ws = workspace or get_runtime_workspace()
+        news_db = ws / "artifacts" / "news.db"
+        if not news_db.exists():
+            _print_error(f"news database not found: {news_db}")
+            raise typer.Exit(1)
+
+        import sqlite3
+
+        con = sqlite3.connect(f"file:{news_db}?mode=ro", uri=True)
+        try:
+            total = con.execute(
+                "SELECT COUNT(*) FROM news_ai_analysis a "
+                "JOIN news_articles n ON n.article_id = a.article_id "
+                "WHERE a.summary IS NOT NULL AND a.summary <> '' "
+                "AND (a.summary = n.summary OR a.summary LIKE n.summary || '%')"
+            ).fetchone()[0]
+            rows = con.execute(
+                "SELECT a.ai_analysis_id, a.summary FROM news_ai_analysis a "
+                "JOIN news_articles n ON n.article_id = a.article_id "
+                "WHERE a.summary IS NOT NULL AND a.summary <> '' "
+                "AND (a.summary = n.summary OR a.summary LIKE n.summary || '%')"
+            ).fetchall()
+        finally:
+            con.close()
+
+        payload = {
+            "database": "news",
+            "echo_rows": total,
+            "echo_bytes": sum(len(s.encode("utf-8")) for _, s in rows),
+            "dry_run": dry_run,
+        }
+        if dry_run or not rows:
+            _emit(payload, json_mode, plain_title="SUMMARY ECHO (dry-run — no changes made)")
+            return
+
+        rw = sqlite3.connect(news_db)
+        try:
+            rw.execute("BEGIN")
+            cur = rw.executemany(
+                "UPDATE news_ai_analysis SET summary = '' WHERE ai_analysis_id = ?",
+                [(aid,) for aid, _ in rows],
+            )
+            rw.commit()
+            payload["cleared_rows"] = cur.rowcount or len(rows)
+        except sqlite3.Error as e:
+            rw.rollback()
+            _print_error(f"failed: {e}")
+            raise typer.Exit(1) from e
+        finally:
+            rw.close()
+        _emit(payload, json_mode, plain_title="SUMMARY ECHO CLEARED")
+
     @app.command("doctor")
     def db_doctor(
         database: str = typer.Option(None, "--database", "-d", help="audit|news|candle_intel"),
