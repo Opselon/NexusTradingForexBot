@@ -182,6 +182,87 @@ class ArchiveManager:
         return sum(1 for line in p.read_text(encoding="utf-8").splitlines() if line.strip())
 
 
+# ---------------------------------------------------------------------------
+# R-11 — the managed-database decision (which SQLite files are still walked)
+# ---------------------------------------------------------------------------
+#
+# The worker's allowlist was a literal dict, so a dataset whose writes had moved
+# to PostgreSQL stayed on the walked set forever: the cycle kept scanning a
+# frozen file, found the same duplicates every time, and produced no delete
+# candidates. `artifacts/news.db` measured exactly that (1,551 ms of a 1,627 ms
+# cycle for 0 actionable rows), so the set is now DERIVED rather than literal.
+#
+# Retirement is deliberately provider-aware, not a deletion: under PostgreSQL
+# the file is frozen and the domain lives in PG, so walking it is pure cost;
+# under SQLite it is the live store and MUST stay managed. A static removal
+# would silently un-manage the default install.
+
+#: SQLite datasets retired from the walked set, with the evidence that retired
+#: them. The entry is kept (not deleted) so the decision is auditable and
+#: reversible: ``include_retired=True`` restores the pre-retirement set exactly.
+RETIRED_MANAGED_DATABASES: dict[str, dict[str, str]] = {
+    "news": {
+        "path": "artifacts/news.db",
+        "retired_by": "R-11 (db-lifecycle-2 / lane L7)",
+        "reason": (
+            "domain writes moved to PostgreSQL; the SQLite file is frozen (newest row "
+            "2026-09-25 vs PG 2026-09-29) and every cycle re-derived the same 21,553 "
+            "duplicates with delete_candidates=0"
+        ),
+        "remains_valid_under": "sqlite",
+    },
+}
+
+#: The live managed set as it stood before R-11 (spec §4).
+_MANAGED_DATABASES_BASE: dict[str, str] = {
+    "audit": "artifacts/audit.db",
+    "news": "artifacts/news.db",
+    "candle_intel": "artifacts/candle_intel.db",
+}
+
+
+def managed_sqlite_databases(
+    *,
+    provider: str | None = None,
+    include_retired: bool = False,
+) -> dict[str, str]:
+    """The hygiene worker's managed SQLite set, honoring R-11 retirements.
+
+    ``provider`` is the ACTIVE database provider (``"sqlite"`` / ``"postgresql"``).
+    When omitted the persisted setting is resolved through the same
+    ``load_database_config`` path the rest of the runtime uses, and a resolution
+    failure falls back to ``"sqlite"`` — the fail-safe direction, because
+    keeping a dataset managed costs only scan time while un-managing a live
+    store silently stops its maintenance.
+
+    A retired dataset is EXCLUDED only while the provider that retired it is
+    still active; flipping the box back to SQLite restores it automatically, so
+    this is a provider-aware gate rather than a one-way removal.
+    """
+    if provider is None:
+        try:
+            from nexus_scalp.database.config import load_database_config
+
+            cfg = load_database_config("audit")
+            provider = "postgresql" if cfg.is_postgresql else "sqlite"
+        except Exception:  # pragma: no cover - settings DB unavailable
+            provider = "sqlite"
+    normalized = str(provider or "sqlite").strip().lower()
+    out = dict(_MANAGED_DATABASES_BASE)
+    if include_retired:
+        return out
+    # Only a RECOGNIZED provider may retire a dataset. Comparing for
+    # "not sqlite" instead would let a typo or a provider this module has never
+    # heard of silently un-manage a live store, which is the failure mode the
+    # whole function exists to prevent.
+    if normalized not in ("sqlite", "postgresql"):
+        return out
+    for key, meta in RETIRED_MANAGED_DATABASES.items():
+        if meta.get("remains_valid_under", "sqlite") != normalized and key in out:
+            out.pop(key, None)
+    return out
+
+
 DEFAULT_PAGE_SIZE = 500
 
 #: Reproducible chunked export of a news table (R-11 retirement).

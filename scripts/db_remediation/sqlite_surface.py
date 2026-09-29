@@ -153,6 +153,18 @@ _SQLITE_MAGIC = b"SQLite format 3\x00"
 # ---------------------------------------------------------------------------
 
 
+def _default_artifacts(repo: Path) -> Path:
+    """The artifacts tree the live engine writes into.
+
+    Prefers the MAIN checkout (a worktree's artifacts/ is pristine and empty),
+    falling back to the repo under test.
+    """
+    main = Path(r"C:/Users/Capsizer/source/repos/NexusTradingForexBot/artifacts")
+    if main.is_dir():
+        return main
+    return repo / "artifacts"
+
+
 def _file_size(p: Path) -> int:
     try:
         return p.stat().st_size
@@ -456,16 +468,64 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--artifacts", default="")
     ap.add_argument("--json", default="")
     ap.add_argument("--md", default="")
+    ap.add_argument(
+        "--archive-news",
+        default="",
+        metavar="TARGET_DB",
+        help=(
+            "Archive a news SQLite dataset (R-11 retirement) to verified JSONL under "
+            "<TARGET_DB>-archive/. Reads only; deletes NOTHING."
+        ),
+    )
+    ap.add_argument(
+        "--archive-root",
+        default="",
+        help="Archive destination for --archive-news (default: beside the target DB).",
+    )
+    ap.add_argument("--chunk-rows", type=int, default=2000)
     args = ap.parse_args(argv)
 
     repo = Path(args.repo).resolve()
-    artifacts = (
-        Path(args.artifacts).resolve()
-        if args.artifacts
-        else Path(r"C:/Users/Capsizer/source/repos/NexusTradingForexBot/artifacts")
-    )
+    artifacts = Path(args.artifacts).resolve() if args.artifacts else _default_artifacts(repo)
     if not artifacts.is_dir():
         artifacts = repo / "artifacts"
+
+    if args.archive_news:
+        # R-11: the retirement's prerequisite. Deliberately ALWAYS works on the
+        # path given, so the operator must name the file explicitly and can
+        # point it at a copy first.
+        from nexus_scalp.hygiene.archive import archive_news_dataset, enumerate_dataset
+
+        target = Path(args.archive_news)
+        actual = target
+        if not actual.exists() and not actual.is_absolute():
+            # `git`-style relative path used against the artifacts tree.
+            candidate = _default_artifacts(repo) / actual
+            if candidate.exists():
+                actual = candidate
+        root = (
+            Path(args.archive_root)
+            if args.archive_root
+            else actual.parent / (actual.name + "-archive")
+        )
+        counted = enumerate_dataset(actual)
+        result = archive_news_dataset(
+            actual,
+            root,
+            software_version="db-lifecycle-2/L7",
+            retention_reason="R-11 SQLite news dataset retirement",
+            chunk_rows=max(1, args.chunk_rows),
+        )
+        payload = {
+            "source": str(actual),
+            "bytes": actual.stat().st_size,
+            "enumerated_tables": len(counted),
+            "enumerated_rows": sum(v.get("rows", 0) for v in counted.values()),
+            "archive": result,
+            "archive_root": str(root),
+        }
+        sys.stdout.write(json.dumps(payload, indent=2, default=str))
+        return 0
 
     report = build(repo, artifacts)
     md = to_markdown(report)
