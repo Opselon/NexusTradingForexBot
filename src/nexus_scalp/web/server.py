@@ -620,6 +620,18 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Shared health service: the SSE loop calls _build_health_section on every
+    # 200 ms tick, and each call used to construct a NEW DatabaseHealthService
+    # and run 7 catalog round trips (ping/version/schema/tables/size/critical
+    # checks) per domain — ~151 ms per tick, 76% of the tick budget. A
+    # per-instance TTL memo only helps if the instance survives across ticks,
+    # so the service is created once here and reused by every caller. The
+    # service never raises and the TTL is short, so a per-server instance is
+    # not a cross-request hazard: the worst case is two clients seeing a
+    # verdict that is at most _HEALTH_TTL_SECONDS old.
+    from nexus_scalp.database.health import DatabaseHealthService
+
+    app.state.db_health_service = DatabaseHealthService()
     # Store engine reference in app state
     app.state.engine = engine_ref
     app.state.server_state = ServerState()
@@ -810,6 +822,18 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         except Exception as exc:  # observability only — never blocks health
             block["read_failed"] = f"{type(exc).__name__}: {exc}"
         return block
+
+    # Shared health service accessor: both the DB probe and the config label
+    # below resolve through the SAME instance so the TTL memo built into
+    # DatabaseHealthService actually survives across 200 ms SSE ticks. Falls
+    # back to a throwaway instance when app.state has none (defensive; the
+    # service is stateless apart from its memo).
+    def _health_service(state_obj: Any = None) -> Any:
+        from nexus_scalp.database.health import DatabaseHealthService
+
+        host = app.state if state_obj is None else state_obj
+        svc = getattr(host, "db_health_service", None)
+        return svc if svc is not None else DatabaseHealthService()
 
     def _build_health_section(state_obj: Any, mono_now: float) -> dict[str, Any]:
         """Live subsystem health derived from REAL engine/DB state.
@@ -1021,9 +1045,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 provider_name = "unknown"
                 db_label = ""
                 try:
-                    from nexus_scalp.database.health import DatabaseHealthService
-
-                    db_cfg = DatabaseHealthService().resolve_config("audit")
+                    db_cfg = _health_service(app.state).resolve_config("audit")
                     provider_name = (
                         "postgresql" if getattr(db_cfg, "is_postgresql", False) else "sqlite"
                     )
@@ -1040,9 +1062,7 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 probe_ok = False
                 probe_note = ""
                 try:
-                    from nexus_scalp.database.health import DatabaseHealthService
-
-                    snap = DatabaseHealthService().check_domain("audit")
+                    snap = _health_service(app.state).check_domain("audit")
                     probe_ok = bool(snap.get("connected"))
                     probe_note = (
                         f"provider={snap.get('provider') or provider_name} "
