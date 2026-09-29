@@ -886,8 +886,8 @@ jobs:
         with:
           name: ci-runtime-soak-${{ matrix.provider }}-${{ github.run_number }}-${{ github.sha }}
           path: |
-            ${{ runner.temp }}/nse-runtime-${{ matrix.provider }}/
-          if-no-files-found: warn
+            ${{ runner.temp }}/nse-runtime-${{ matrix.provider }}/provider_runtime_soak.json
+          if-no-files-found: error
           retention-days: 7
 
   # ---------------------------------------------------------------------------
