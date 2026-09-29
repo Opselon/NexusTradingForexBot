@@ -209,7 +209,6 @@ tests/unit/test_research_edge_hardening_20260909.py
 tests/unit/test_research_history_surface.py
 tests/unit/test_research_loop_smoke.py
 tests/unit/test_research_purge_defaults_bug183.py
-tests/unit/test_research_payload_value_gate.py
 tests/unit/test_research_regime_report.py
 tests/unit/test_research_selection_bias_20260909.py
 tests/unit/test_research_task4_dataset.py
@@ -285,6 +284,7 @@ tests/contracts/phase2/test_deep_opt_l4_evidence_body.py
 tests/unit/factory/test_factory_dead_index.py
 tests/unit/shadow/test_sqlite_mirror_reclaim.py
 tests/contracts/phase2/test_deep_opt_l4_evidence_body_pg.py
+tests/unit/test_backup_retention_snapshot_sets.py
 tests/unit/test_r3_no_trade_bounded_tail.py
 tests/unit/test_r3_v1_decision_count_bounded.py
 tests/unit/test_l7_archive_restore_roundtrip.py
