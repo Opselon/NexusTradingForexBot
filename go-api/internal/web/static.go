@@ -146,6 +146,8 @@ func repoRoot() string {
 	if resolved, err := filepath.EvalSymlinks(file); err == nil {
 		file = resolved
 	}
+	// Walk up from .../go-api/internal/web to the repo root: three parents.
+	// The loop guards a volume root instead of trusting a fixed depth.
 	dir := filepath.Dir(file) // .../go-api/internal/web
 	for i := 0; i < 3; i++ {
 		parent := filepath.Dir(dir)
@@ -159,22 +161,46 @@ func repoRoot() string {
 
 // resolveFrontendDist resolves the built React dist directory (contract #9
 // frozen order). It is a line-for-line port of
-// frontend_assets.resolve_frontend_dist, with the two packaged candidates
+// frontend_assets.resolve_frontend_dist, with the packaged candidate
 // expressed against the Go BINARY's directory instead of sys.executable
 // (the Python seam's onedir layout is <exe>/_internal/frontend/dist; a Go
 // build ships the same data tree next to the nexus-api binary).
 //
 // Search order (FROZEN — never reorder, never add slots):
-//  1. env NEXUS_ALT_UI_DIR          — authoritative; invalid -> no dist
-//  2. <exe_dir>/_internal/Web       — packaged release (PyInstaller onedir)
-//  3. <exe_dir>/Web                 — packaged portable release
-//  4. <repo>/frontend/dist          — dev checkout (vite build output)
-//  5. <repo>/Web                    — dev checkout legacy bundle
+//  1. env NEXUS_ALT_UI_DIR               — authoritative; invalid -> no dist
+//  2. <exe_dir>/_internal/frontend/dist  — packaged release (PyInstaller
+//     onedir; THE RELEASE LAYOUT)
+//  3. <repo>/frontend/dist               — dev checkout (vite build output)
+//  4. <cwd>/frontend/dist                — dev checkout, cwd form
+//  5. <exe_dir>/_internal/Web            — legacy HTML bundle (packaged)
+//  6. <exe_dir>/Web                      — legacy HTML bundle (portable)
+//  7. <repo>/Web                         — legacy HTML bundle (dev tree)
+//
+// SLOTS 2-4 mirror the Python seam EXACTLY (contract #9): in a packaged tree
+// that ships BOTH _internal/Web/index.html (the legacy bundle) and
+// _internal/frontend/dist/index.html (the React Control Center), the REACT
+// console wins — the two servers must never serve two different bundles.
+// The legacy `Web/` candidates are deliberately DEMOTED below every
+// frontend/dist candidate: they stay reachable only when no React dist
+// exists anywhere (an old release shipping the legacy bundle alone), so
+// this resolver never flips a release that used to serve the React console.
+//
+// There is no sys._MEIPASS slot (PyInstaller onefile) — a Go binary is its
+// own executable, so the onedir slot is its frozen counterpart.
 //
 // Returns "" when no candidate is servable; callers treat that as "do not
 // mount the SPA". Never raises: every probe is error-guarded (this runs on
 // the request path, like the Python seam).
 func resolveFrontendDist() string {
+	return resolveFrontendDistWith(executableDir(), repoRoot(), mustGetwd())
+}
+
+// resolveFrontendDistWith is the frozen resolver over injectable slots.
+// resolveFrontendDist passes the real derivations; the test suite pins every
+// slot to a fixture tree so the packaged candidates can be probed on disk
+// (the live resolution is process-wide and memoized). Slots 2-4 (the React
+// dist) are probed strictly before the legacy Web/ bundle (parity fix).
+func resolveFrontendDistWith(exeDir, repo, cwd string) string {
 	override := strings.TrimSpace(os.Getenv(DistEnvVar))
 	if override != "" {
 		if hasIndex(override) {
@@ -184,8 +210,31 @@ func resolveFrontendDist() string {
 		return ""
 	}
 
-	if exeDir := executableDir(); exeDir != "" {
-		for _, cand := range []string{
+	// Slots 2-4: the React Control Center. Slot 2 is the PACKAGED RELEASE
+	// layout (<exe>/_internal/frontend/dist); slots 3-4 are the dev-checkout
+	// forms. None of them may be preempted by the legacy Web/ bundle — that
+	// was the parity bug: Go checked _internal/Web and Web/ FIRST, so a tree
+	// shipping both bundles served the legacy UI while Python served the
+	// React console (contract #9 mirrors frontend_assets.py exactly).
+	if exeDir != "" {
+		if cand := filepath.Join(exeDir, "_internal", "frontend", "dist"); hasIndex(cand) {
+			return cand
+		}
+	}
+	for _, base := range [...]string{repo, cwd} {
+		if base == "" {
+			continue
+		}
+		if cand := filepath.Join(base, "frontend", "dist"); hasIndex(cand) {
+			return cand
+		}
+	}
+
+	// Legacy fallback slots 5-7: the pre-React HTML bundle, strictly BELOW
+	// every frontend/dist candidate (parity fix; zero regression for old
+	// releases that shipped only the legacy bundle).
+	if exeDir != "" {
+		for _, cand := range [...]string{
 			filepath.Join(exeDir, "_internal", "Web"),
 			filepath.Join(exeDir, "Web"),
 		} {
@@ -194,18 +243,22 @@ func resolveFrontendDist() string {
 			}
 		}
 	}
-
-	if root := repoRoot(); root != "" {
-		for _, cand := range []string{
-			filepath.Join(root, "frontend", "dist"),
-			filepath.Join(root, "Web"),
-		} {
-			if hasIndex(cand) {
-				return cand
-			}
+	if repo != "" {
+		if cand := filepath.Join(repo, "Web"); hasIndex(cand) {
+			return cand
 		}
 	}
 	return ""
+}
+
+// mustGetwd is the CWD slot derivation: "" on any OS failure, so the
+// candidate is skipped rather than probed against an empty path.
+func mustGetwd() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return wd
 }
 
 // ResolveFrontendDist is the exported seam: the dist directory that actually

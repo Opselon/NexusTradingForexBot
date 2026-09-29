@@ -296,3 +296,190 @@ func TestServeSPAWrapsNext(t *testing.T) {
 			rec.Body.String(), apiMarker)
 	}
 }
+
+// emptyRepo is the pinned repo slot for the resolver tests: this worktree
+// ships a REAL frontend/dist, so the tests pass an empty directory as the
+// repo root and only ever assert on fixtures they stage themselves.
+func emptyRepo(t *testing.T) string {
+	t.Helper()
+	return t.TempDir()
+}
+
+// resolveSlots pins every filesystem slot to a fixture tree: exe dir, repo
+// root and cwd. Only what the test stages exists, so the assertion measures
+// exactly the candidate under test (never the real worktree dist).
+func resolveSlots(exeDir, repo, cwd string) string {
+	return resolveFrontendDistWith(exeDir, repo, cwd)
+}
+
+// makeDist writes a minimal dist tree (an index.html carrying BODY) inside
+// dir, returning dir. A test can tell WHICH candidate the resolver picked by
+// the title in the index document.
+func makeDist(t *testing.T, dir, body string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", dir, err)
+	}
+	full := filepath.Join(dir, "index.html")
+	if err := os.WriteFile(full, []byte("<title>"+body+"</title>"), 0o644); err != nil {
+		t.Fatalf("write %s: %v", full, err)
+	}
+	return dir
+}
+
+// TestResolveFrontendDistPackagedReactWinsLegacy is the PARITY BUG gate: a
+// packaged tree shipping BOTH _internal/Web/index.html (the legacy HTML
+// bundle) and _internal/frontend/dist/index.html (the React Control Center)
+// must resolve to the REACT dist — exactly what
+// frontend_assets.resolve_frontend_dist does (contract #9). Before the fix,
+// Go checked _internal/Web and Web/ FIRST and served the legacy bundle while
+// Python served the React console.
+func TestResolveFrontendDistPackagedReactWinsLegacy(t *testing.T) {
+	tree := t.TempDir()
+	legacy := makeDist(t, filepath.Join(tree, "_internal", "Web"),
+		"LEGACY-WEB-BUNDLE")
+	react := makeDist(t, filepath.Join(tree, "_internal", "frontend", "dist"),
+		"REACT-CONTROL-CENTER")
+	if legacy == react {
+		t.Fatalf("fixture collision: legacy == react")
+	}
+
+	t.Setenv(DistEnvVar, "")
+	resetCache()
+	defer resetCache()
+
+	if got := resolveSlots(tree, emptyRepo(t), t.TempDir()); got != react {
+		t.Errorf("packaged tree with both bundles: resolved %q, want the React "+
+			"dist %q (parity with frontend_assets.resolve_frontend_dist; the "+
+			"legacy Web/ bundle must never preempt it)", got, react)
+	}
+}
+
+// TestResolveFrontendDistPackagedReactOnly covers the modern release: only
+// the React console is staged. The resolver must find it.
+func TestResolveFrontendDistPackagedReactOnly(t *testing.T) {
+	tree := t.TempDir()
+	react := makeDist(t, filepath.Join(tree, "_internal", "frontend", "dist"),
+		"REACT-CONTROL-CENTER")
+
+	t.Setenv(DistEnvVar, "")
+	resetCache()
+	defer resetCache()
+
+	if got := resolveSlots(tree, emptyRepo(t), t.TempDir()); got != react {
+		t.Errorf("react-only packaged tree: resolved %q, want %q", got, react)
+	}
+}
+
+// TestResolveFrontendDistLegacyOnly covers an OLD release that shipped only
+// the legacy HTML bundle: it still resolves (zero regression — nothing
+// flips a release that never had a React dist).
+func TestResolveFrontendDistLegacyOnly(t *testing.T) {
+	tree := t.TempDir()
+	legacy := makeDist(t, filepath.Join(tree, "_internal", "Web"),
+		"LEGACY-WEB-BUNDLE")
+
+	t.Setenv(DistEnvVar, "")
+	resetCache()
+	defer resetCache()
+
+	if got := resolveSlots(tree, emptyRepo(t), t.TempDir()); got != legacy {
+		t.Errorf("legacy-only packaged tree: resolved %q, want the legacy "+
+			"bundle %q (zero regression for old releases)", got, legacy)
+	}
+}
+
+// TestResolveFrontendDistPortableLegacy covers the non-_internal portable
+// layout (<exe>/Web) and the repo-Web form: both resolve when they are all
+// the tree has.
+func TestResolveFrontendDistPortableLegacy(t *testing.T) {
+	t.Setenv(DistEnvVar, "")
+	resetCache()
+	defer resetCache()
+
+	tree := t.TempDir()
+	portable := makeDist(t, filepath.Join(tree, "Web"), "LEGACY-PORTABLE")
+	if got := resolveSlots(tree, emptyRepo(t), t.TempDir()); got != portable {
+		t.Errorf("portable legacy tree: resolved %q, want %q", got, portable)
+	}
+}
+
+// TestResolveFrontendDistExactFrozenOrder asserts the whole order in one
+// sweep: every higher-ranked candidate wins over every lower-ranked one.
+func TestResolveFrontendDistExactFrozenOrder(t *testing.T) {
+	t.Setenv(DistEnvVar, "")
+	resetCache()
+	defer resetCache()
+
+	exeTree := t.TempDir()
+	reactPackaged := makeDist(t, filepath.Join(exeTree, "_internal", "frontend", "dist"),
+		"REACT-PACKAGED")
+	legacyInternal := makeDist(t, filepath.Join(exeTree, "_internal", "Web"),
+		"LEGACY-INTERNAL")
+	legacyPortable := makeDist(t, filepath.Join(exeTree, "Web"),
+		"LEGACY-PORTABLE")
+	cwdTree := t.TempDir()
+	reactCwd := makeDist(t, filepath.Join(cwdTree, "frontend", "dist"),
+		"REACT-CWD")
+
+	// rank 1: env override beats every filesystem candidate.
+	valid := writeFixture(t)
+	t.Setenv(DistEnvVar, valid)
+	resetCache()
+	if got := resolveSlots(exeTree, emptyRepo(t), cwdTree); got != valid {
+		t.Errorf("order: env override lost to %q (want %q)", got, valid)
+	}
+
+	// rank 2: packaged React dist beats the cwd dev dist AND both legacy
+	// bundles (all four present at once).
+	t.Setenv(DistEnvVar, "")
+	resetCache()
+	if got := resolveSlots(exeTree, emptyRepo(t), cwdTree); got != reactPackaged {
+		t.Errorf("order: packaged react lost to %q (want %q)", got, reactPackaged)
+	}
+
+	// rank 3: with the packaged react gone, the cwd dev dist wins over both
+	// legacy bundles (still present).
+	if err := os.RemoveAll(reactPackaged); err != nil {
+		t.Fatalf("remove %s: %v", reactPackaged, err)
+	}
+	resetCache()
+	if got := resolveSlots(exeTree, emptyRepo(t), cwdTree); got != reactCwd {
+		t.Errorf("order: cwd react lost to %q (want %q)", got, reactCwd)
+	}
+
+	// rank 5: with both react dists gone, the legacy _internal/Web bundle
+	// wins over the portable Web/ bundle.
+	if err := os.RemoveAll(reactCwd); err != nil {
+		t.Fatalf("remove %s: %v", reactCwd, err)
+	}
+	resetCache()
+	if got := resolveSlots(exeTree, emptyRepo(t), cwdTree); got != legacyInternal {
+		t.Errorf("order: legacy _internal/Web lost to %q (want %q)",
+			got, legacyInternal)
+	}
+
+	// rank 6: and without _internal/Web, the portable Web/ bundle resolves.
+	if err := os.RemoveAll(legacyInternal); err != nil {
+		t.Fatalf("remove %s: %v", legacyInternal, err)
+	}
+	resetCache()
+	if got := resolveSlots(exeTree, emptyRepo(t), cwdTree); got != legacyPortable {
+		t.Errorf("order: portable Web lost to %q (want %q)", got, legacyPortable)
+	}
+}
+
+// TestResolveFrontendDistNoCandidates is the no-bundle-at-all case: the
+// resolver returns "" and the SPA layer stays inactive (contract #4).
+func TestResolveFrontendDistNoCandidates(t *testing.T) {
+	t.Setenv(DistEnvVar, "")
+	resetCache()
+	defer resetCache()
+
+	tree := t.TempDir()
+	cwdTree := t.TempDir()
+	if got := resolveSlots(tree, emptyRepo(t), cwdTree); got != "" {
+		t.Errorf("empty tree: resolved %q, want %q (no dist -> no SPA mount)",
+			got, "")
+	}
+}
