@@ -121,11 +121,32 @@ _FUNNEL_WINDOW = 2000
 #: schema the same way the summary projection is.
 _FUNNEL_COLUMNS = ("action", "generated_at", "decision_stage", "blocked_by")
 
-#: P1: the NO_TRADE forensics window. The pre-fix endpoint ran five separate
-#: unbounded ``WHERE action='NO_TRADE'`` queries; NO_TRADE is ~92% of rows, so
-#: every one was a full scan. One bounded tail fetch supplies all five
-#: distributions (gates/regimes/reasons/hourly-trend/recent examples).
+#: P1 + R-3: the NO_TRADE forensics window. The pre-fix endpoint ran five
+#: separate unbounded ``WHERE action='NO_TRADE'`` queries; NO_TRADE is ~92% of
+#: rows, so every one was a full scan. P1 collapsed them into one bounded tail
+#: fetch, but left the majority predicate INSIDE the bounded query (matrix
+#: R-3): ``WHERE UPPER(action) = 'NO_TRADE' ORDER BY id DESC LIMIT n`` selects
+#: ~92% of the ledger, so no index can serve it and the LIMIT is unreachable -
+#: the measured plan is a Seq Scan of the whole table.
+#: OUTSIDE the slice (the shape the sibling ``get_decision_stats`` already
+#: uses, measured O(1) in ledger size by L5 at 10K→10M rows): one bare
+#: ``ORDER BY id DESC LIMIT n`` primary-key tail read, every predicate
+#: evaluated in Python.
 _NO_TRADE_WINDOW = 2000
+
+#: R-3: oversampling factor for the NO_TRADE tail read. The pre-fix shape
+#: returned "the newest ``_NO_TRADE_WINDOW`` NO_TRADE rows"; filtering AFTER a
+#: bare primary-key tail read reproduces that exactly whenever NO_TRADE makes
+#: up at least ``1/_NO_TRADE_SCAN_FACTOR`` of the recent tail - and the
+#: measured NO_TRADE share is 92-94.6% (matrix R-3 / DO-NOT-CHANGE evidence),
+#: so a factor of 2 clears the 50% threshold with 42 points of margin while
+#: keeping the read a constant ``_NO_TRADE_WINDOW * 2`` rows. A larger factor
+#: would buy nothing at the measured mix and would multiply the payload bytes
+#: fetched per 15 s poll; a factor of 1 would silently shrink ``total`` from
+#: 2,000 to ~1,840. Adaptive re-scanning until ``window`` NO_TRADE rows are
+#: collected is deliberately NOT used: it is unbounded in a low-NO_TRADE tail,
+#: which is the pathology this route exists to remove.
+_NO_TRADE_SCAN_FACTOR = 2
 
 
 def _audit_db_path() -> str | None:
@@ -694,23 +715,37 @@ def register_operator_routes(
             # distributions over recent history, so one bounded latest-N fetch
             # of the NO_TRADE tail supplies every distribution, and the hourly
             # trend is derived from the rows already in memory.
+            #
+            # R-3 (matrix): P1 left the majority predicate INSIDE the bounded
+            # query, so the LIMIT never bound — ``ORDER BY id DESC LIMIT n``
+            # with ``WHERE UPPER(action)='NO_TRADE'`` is still a plan that must
+            # consider ~92% of rows (measured: Seq Scan over the whole table,
+            # 8,313 rows examined to return 2,000). The filter is now applied
+            # OUTSIDE the slice, which is exactly the shape the sibling
+            # ``get_decision_stats`` uses and which L5 measured O(1) in ledger
+            #: size (SQLite median 1.41->1.22 ms across 10K->10M rows, ratio
+            #: <=1.11x; the bound reads 2,000 of ~9.7M rows at the top scale
+            # point). The scan is per-call constant again.
             window = _NO_TRADE_WINDOW
             proj = (
                 "id, request_id, symbol, action, confidence, regime, generated_at, "
                 "execution_mode, reason_code, decision_stage, blocked_by, payload"
                 + (", " + ", ".join(optional_cols) if optional_cols else "")
             )
-            fetched = ledger.select(
-                proj,
-                "audit_signals",
-                window,
-                where="UPPER(action) = 'NO_TRADE'",
-            )
+            # Bare primary-key tail read: ``is no-trade`` is evaluated in
+            # Python below, never in SQL, so no majority predicate can reach
+            # the planner. ``_NO_TRADE_SCAN_FACTOR`` bounds the oversample so
+            # the slice can still be filled with ``window`` NO_TRADE rows when
+            # the tail is mixed.
+            scan = window * _NO_TRADE_SCAN_FACTOR
+            fetched = ledger.select(proj, "audit_signals", scan)
+            # The ledger's ``action`` is a plain-text column; the pre-fix
+            # predicate was ``UPPER(action) = 'NO_TRADE'`` (case-insensitive),
+            # so the Python filter mirrors that comparison exactly.
+            rows = [r for r in fetched if str(r.get("action") or "").upper() == "NO_TRADE"][:window]
             if hours is not None and hours > 0:
                 cutoff = (datetime.now(UTC) - timedelta(hours=float(hours))).isoformat()
-                rows = [r for r in fetched if (r["generated_at"] or "") >= cutoff]
-            else:
-                rows = fetched
+                rows = [r for r in rows if (r["generated_at"] or "") >= cutoff]
             total_rows = len(rows)
             gates = Counter((r["blocked_by"] or "NOT_BLOCKED") for r in rows)
             regimes = Counter((r["regime"] or "NOT_RECORDED") for r in rows)
