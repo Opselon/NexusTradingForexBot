@@ -87,9 +87,7 @@ def test_sqlite_connection_takes_the_historical_path(sqlite_db: sqlite3.Connecti
     assert result.evidence_archived == 2
     live = sqlite_db.execute("SELECT COUNT(*) FROM research_events").fetchone()[0]
     assert live == 0
-    archived = sqlite_db.execute(
-        "SELECT COUNT(*) FROM research_events_archive"
-    ).fetchone()[0]
+    archived = sqlite_db.execute("SELECT COUNT(*) FROM research_events_archive").fetchone()[0]
     assert archived == 2
 
 
@@ -143,9 +141,7 @@ def _make_repo(monkeypatch: pytest.MonkeyPatch, backend: Any, plane: Any) -> Any
 
     monkeypatch.setattr(ps, "_write_backend", lambda repo, domain: backend)
     # store_mod is where the executor's lazy import resolves _ProviderRead.
-    monkeypatch.setattr(
-        store_mod, "_ProviderRead", lambda repo: _FakeProviderRead(plane)
-    )
+    monkeypatch.setattr(store_mod, "_ProviderRead", lambda repo: _FakeProviderRead(plane))
     return _Repo()
 
 
@@ -200,9 +196,7 @@ def test_provider_executor_reads_columns_from_information_schema(
 ) -> None:
     """Column discovery is provider-native — no PRAGMA reaches the plane."""
     backend = _RecordingWriteBackend()
-    plane = _FakeReadPlane(
-        {"research_events_archive": ["id", "event_id", "archived_at"]}
-    )
+    plane = _FakeReadPlane({"research_events_archive": ["id", "event_id", "archived_at"]})
     repo = _make_repo(monkeypatch, backend, plane)
 
     ex = _ProviderArchiveExecutor(repo)

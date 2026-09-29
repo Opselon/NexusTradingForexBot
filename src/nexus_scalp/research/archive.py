@@ -118,10 +118,7 @@ class _SqliteArchiveExecutor:
         return [tuple(r) for r in self._conn.execute(sql, args).fetchall()]
 
     def table_columns(self, table: str) -> list[str]:
-        return [
-            str(row[1])
-            for row in self._conn.execute(f"PRAGMA table_info({table})").fetchall()
-        ]
+        return [str(row[1]) for row in self._conn.execute(f"PRAGMA table_info({table})").fetchall()]
 
     def transaction(self) -> Any:
         return self._conn  # ``with conn:`` — SQLite's native transaction
