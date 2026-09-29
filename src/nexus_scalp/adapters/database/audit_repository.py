@@ -2548,6 +2548,15 @@ class AuditRepository:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_registry_lifecycle ON strategy_registry(lifecycle);"
             )
+            # Ordered tail read for the registry list paths
+            # (research.registry.list / why_no_strategy): without an index
+            # starting at updated_at the planner seq-scans the whole table and
+            # sorts in a temp b-tree (live probe: 610-875ms per call). Mirrors
+            # migration/indexes.py AUDIT-0010 for the SQLite provider.
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_strategy_registry_updated_at "
+                "ON strategy_registry(updated_at DESC);"
+            )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_research_runs_strategy ON research_runs(strategy_id);"
             )
@@ -5234,9 +5243,16 @@ class AuditRepository:
         bounded = max(1, min(int(sample_rows), _DECISION_STATS_MAX_SAMPLE))
         cutoff = (datetime.now(UTC) - timedelta(hours=hours_back)).isoformat()
         second_key = "reason_code" if group_by_reason else "decision_stage"
+        # The subquery selects generated_at ONLY to carry the window predicate
+        # (`WHERE generated_at >= ?`) outside the slice; it is NOT a grouping
+        # key. PostgreSQL (unlike SQLite) refuses to SELECT a bare column that
+        # is neither grouped nor aggregated ("column recent.generated_at must
+        # appear in the GROUP BY clause"), so the outer projection takes the
+        # MAX of the column per group instead — same rows, one pass, and the
+        # value is only used for the window filter, never as a result.
         sql = (
             "SELECT action, "
-            f"{second_key}, generated_at, COUNT(*) AS n FROM ("
+            f"{second_key}, MAX(generated_at) AS generated_at, COUNT(*) AS n FROM ("
             " SELECT action, reason_code, decision_stage, generated_at FROM audit_signals"
             " ORDER BY id DESC LIMIT ?"
             ") AS recent WHERE generated_at >= ?"

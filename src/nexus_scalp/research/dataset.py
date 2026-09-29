@@ -273,7 +273,16 @@ class ResearchDatasetBuilder:
             finally:
                 conn.close()
         except Exception as e:
-            logger.warning(
+            # LOG-SPAM (live cluster, 2026-09-29): the resolver hit a
+            # KeyError(0) on the pooled read connection (a plain dict where
+            # sqlite3.Row positional access was expected), so EVERY unresolved
+            # record logged ``error=0`` — 91 identical warnings in one 90s
+            # window, once per research cycle, forever. The KeyError is fixed
+            # at the adapter (_PositionalRow), so this path now resolves
+            # instead of failing; the log stays for genuine resolver failures,
+            # and it is per-record by design (each one is a real data finding
+            # the census records).
+            logger.debug(
                 "[STRATEGY_RESEARCH] evidence resolution failed (treated as unknown)",
                 error=str(e),
                 trade_id=rec.experience_id,

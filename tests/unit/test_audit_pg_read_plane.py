@@ -83,8 +83,16 @@ class _AuditReadPlane:
     def query(self, sql: str, args: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
         self.calls.append(("query", sql, tuple(args)))
         s = sql.strip().upper()
+        # Emulate a real server's LIMIT: the pooled path pushes the bound into
+        # the statement (once it did not, and this fake returned every row,
+        # hiding that behind the caller's Python-side slice).
+        limit = None
+        for a in args:
+            if isinstance(a, int) and a > 0 and "LIMIT" in s:
+                limit = a
+                break
         if "RESEARCH_EVENTS" in s and "WHERE" in s:
-            return [
+            rows = [
                 {
                     "id": 3,
                     "event_type": "GATE_FAILED",
@@ -93,8 +101,9 @@ class _AuditReadPlane:
                     "payload": None,
                 }
             ]
+            return rows[:limit] if limit else rows
         if "RESEARCH_EVENTS" in s:
-            return [
+            rows = [
                 {
                     "id": 2,
                     "event_type": "GATE_STARTED",
@@ -110,6 +119,7 @@ class _AuditReadPlane:
                     "payload": None,
                 },
             ]
+            return rows[:limit] if limit else rows
         if "AUDIT_LEDGER" in s:
             return [
                 {
@@ -260,6 +270,48 @@ def test_bounded_read_limits_the_result(pg_repo: AuditRepository) -> None:
     """The server-side cap is still enforced on the pooled path."""
     rows = fetch_rows_bounded(pg_repo, "SELECT id FROM research_events ORDER BY id DESC", (), 1)
     assert len(rows) == 1
+
+
+def test_bounded_read_pushes_limit_into_the_sql(pg_repo: AuditRepository) -> None:
+    """The LIMIT reaches the SERVER, not a Python-side slice.
+
+    The pooled branch used to run the unbounded statement and keep ``bounded``
+    rows afterwards — which fetched the whole table for every page
+    (audit_signals 6,152 full-width rows for a 50-row page; research_events
+    88,019 rows at 500ms on the live cluster) and surfaced each one as a
+    "[PG-QUERY] slow query" warning. The bound must appear in the statement
+    the plane received, and its bind value must be the capped limit.
+    """
+    from nexus_scalp.web.api_v1.common import _repo_read_plane
+
+    plane = _repo_read_plane(pg_repo)
+    assert plane is not None
+    fetch_rows_bounded(
+        pg_repo,
+        "SELECT id, event_type FROM research_events ORDER BY id DESC",
+        (),
+        37,
+    )
+    # The last query the plane saw is ours, and it carries the LIMIT + bind.
+    last = plane.calls[-1]
+    sql = last[1]
+    args = last[2]
+    assert "LIMIT" in sql.upper(), sql
+    assert 37 in args, args
+
+
+def test_bounded_read_pushes_limit_past_a_trailing_semicolon(pg_repo: AuditRepository) -> None:
+    """Callers compose ``WHERE ... ORDER BY ...;``; the LIMIT is inserted
+    before the terminator, not appended after it (a statement after ``;`` is
+    a stacked statement the driver guard rejects)."""
+    from nexus_scalp.web.api_v1.common import _repo_read_plane
+
+    plane = _repo_read_plane(pg_repo)
+    assert plane is not None
+    fetch_rows_bounded(pg_repo, "SELECT id FROM research_events ORDER BY id DESC;", (), 5)
+    sql = plane.calls[-1][1].strip()
+    assert sql.upper().endswith("LIMIT ?"), sql
+    assert sql.count(";") == 0, sql
 
 
 def test_bounded_read_raises_when_no_read_plane(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -158,7 +158,11 @@ AUDIT_TABLES: tuple[SchemaTable, ...] = (
     SchemaTable(name="intelligence_worker_state"),
     SchemaTable(
         name="strategy_registry",
-        indexes=("idx_registry_id", "idx_registry_lifecycle"),
+        indexes=(
+            "idx_registry_id",
+            "idx_registry_lifecycle",
+            "idx_strategy_registry_updated_at",
+        ),
     ),
     SchemaTable(
         name="research_runs",
