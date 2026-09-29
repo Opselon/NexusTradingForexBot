@@ -92,7 +92,14 @@ CREATE TABLE IF NOT EXISTS shadow_decisions (
     shadow_exit_reason TEXT DEFAULT '',
     delta_r REAL,
     outcome_status TEXT DEFAULT 'NOT_RECORDED',
-    payload TEXT DEFAULT '{}'
+    champion_probabilities TEXT DEFAULT '[]',
+    challenger_probabilities TEXT DEFAULT '[]',
+    champion_strategy_id TEXT DEFAULT '',
+    challenger_strategy_id TEXT DEFAULT '',
+    hypothetical_risk_pct REAL DEFAULT 0.0,
+    hypothetical_volume REAL DEFAULT 0.0,
+    hypothetical_entry REAL DEFAULT 0.0,
+    hypothetical_exit REAL DEFAULT 0.0
 );
 """
 
