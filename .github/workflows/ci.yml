@@ -858,16 +858,16 @@ jobs:
           if report.get("runtime_error"):
               print("RUNTIME_ERROR:", report["runtime_error"])
           for item in diag.get("warnings", [])[:50]:
-              print(f"[WARN] line={item['line']} {item['message']}")
+              print(f"[WARN] line={item.get('line_no', '?')} {item.get('message', item.get('error', ''))}")
           for item in diag.get("errors", [])[:50]:
-              print(f"[ERROR] line={item['line']} {item['message']}")
+              print(f"[ERROR] line={item.get('line_no', '?')} {item.get('message', item.get('error', ''))}")
           for trace in diag.get("tracebacks", [])[:25]:
               frames = " -> ".join(
                   f"{frame['file']}:{frame['line']}" +
                   (f"::{frame['function']}" if frame.get("function") else "")
                   for frame in trace.get("frames", [])
               )
-              print(f"[TRACE] lines={trace.get('start_line')}-{trace.get('end_line')} {frames or 'no parsed frames'}")
+              print(f"[TRACE] lines={trace.get('start_line_no')}-{trace.get('end_line_no')} {frames or 'no parsed frames'}")
           for item in query.get("failure_samples", [])[:50]:
               print(f"[QUERY-FAIL] {item.get('label', 'unknown')}: {item.get('error', '')}")
           PY
