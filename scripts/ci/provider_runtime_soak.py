@@ -484,9 +484,21 @@ def run_queries(
     if provider == "postgres":
         if str(REPO_ROOT / "src") not in sys.path:
             sys.path.insert(0, str(REPO_ROOT / "src"))
-        from nexus_scalp.database.config import build_postgres_url, load_database_config
+        from nexus_scalp.database.config import (
+            PG_PASSWORD_SECRET_KEY,
+            DatabaseConfig,
+            build_postgres_url,
+        )
 
-        cfg = load_database_config("audit")
+        cfg = DatabaseConfig.for_postgres(
+            domain="audit",
+            host=env.get("NSE_DATABASE__PG_HOST", "127.0.0.1"),
+            port=int(env.get("NSE_DATABASE__PG_PORT", "5432")),
+            database=env.get("NSE_DATABASE__PG_DATABASE", "nse_audit"),
+            username=env.get("NSE_DATABASE__PG_USER", "nse_user"),
+            password_secret=PG_PASSWORD_SECRET_KEY,
+            ssl_mode="disable",
+        )
         dsn = build_postgres_url(cfg)
         import psycopg
 
