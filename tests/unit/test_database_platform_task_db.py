@@ -56,7 +56,10 @@ class TestManifestRegistryAgreement:
         # AUDIT bumped 8 -> 9 with AUDIT-0009-research-archive-tables
         # (31cc2003); manifest alignment landed in the PERF-DEADLETTER wave
         # (2026-09-10) after 31cc2003 skipped it (SSOT drift).
-        assert MANIFESTS[DatabaseDomain.AUDIT].schema_version == 9
+        # 2026-09-29 (wave db-lifecycle-2, lane L4): AUDIT-0010
+        # -evidence-reader-indexes + AUDIT-0011-drop-duplicate-release-metadata
+        # -key extended the chain 9 -> 11, manifest bumped in the same change.
+        assert MANIFESTS[DatabaseDomain.AUDIT].schema_version == 11
         assert MANIFESTS[DatabaseDomain.NEWS].schema_version == 2
         assert MANIFESTS[DatabaseDomain.CANDLE_INTEL].schema_version == 2
 

@@ -363,12 +363,12 @@ def _audit_0007_release_metadata(conn: sqlite3.Connection, db_path: Path) -> Non
         conn.execute(
             "ALTER TABLE release_metadata ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))"
         )
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_release_metadata_key
-        ON release_metadata(key)
-        """
-    )
+    # NOTE (R-8, wave db-lifecycle-2 L4): the old `CREATE INDEX
+    # idx_release_metadata_key ON release_metadata(key)` is GONE — it duplicated
+    # the PK's implicit unique index (sqlite_autoindex_release_metadata_1) on
+    # the same column. AUDIT-0011 drops it on existing databases; this apply
+    # no longer re-creates it on fresh ones. The autoindex serves every
+    # `WHERE key = ?` lookup (MEASURED: unchanged plan after the drop).
 
 
 def _audit_0007_verify(conn: sqlite3.Connection, db_path: Path) -> bool:
@@ -529,6 +529,103 @@ def _audit_0009_rollback(conn: sqlite3.Connection, db_path: Path) -> None:
             n = conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
             if n == 0:
                 conn.execute(f"DROP TABLE {name}")
+
+
+# ---------------------------------------------------------------------------
+# AUDIT-0010: the two indexes the Phase-2 matrix justified (R-6 + R-7)
+# ---------------------------------------------------------------------------
+# Wave db-lifecycle-2, lane L4 (2026-09-29). Both are measured gates in
+# docs/forensic-docs/remediation/phase2/PHASE2-RANKED-REMEDIATION-MATRIX.md §2:
+#
+#   R-7  idx_audit_signals_request_id — request_id is UNIQUE (n_distinct=-1.0,
+#        avg_width 36) with NO serving index, probed in an N+1 loop from
+#        experience/decision_evidence.py (and 4 further order_id/order-shape
+#        readers). MEASURED on the live artifact: every probe is
+#        'SCAN audit_signals' over 11,266 rows; on a 20K-row synthetic corpus
+#        3.52 ms/probe before -> 0.046 ms/probe after (76x). The matrix's
+#        PREFERRED fix (resolve request_id from an in-memory ledger) was
+#        PROVEN IMPOSSIBLE: the write path is async-queued
+#        (AuditRepository.log_signal -> _enqueue_financial -> background
+#        worker) and persists NOTHING in memory, and _signal_dedup_key is
+#        deliberately request_id-INDEPENDENT ("stable across restart,
+#        independent of request_id; UUIDs differ every call"), so the write
+#        path cannot reconstruct the mapping. The consumer side is
+#        cross-process/restart recovery — an in-memory map cannot serve it.
+#        A ~410 KB index on an append-only ~1 Hz table is the honest cost.
+#   R-6  idx_orders_order_id — near-unique (566 distinct / 2,379 rows on the
+#        live artifact), 4 reader shapes seq-scan today, ~53 KB, negligible
+#        write cost on an IMMUTABLE table.
+#
+# Both are IF NOT EXISTS + a verify + a rollback, mirroring AUDIT-0002's
+# contract. The idempotent CREATE means the app bootstrap's own DDL (if a
+# future one appears) can never race or double-create.
+
+
+def _audit_0010_evidence_reader_indexes(conn: sqlite3.Connection, db_path: Path) -> None:
+    """R-6 + R-7: the two request_id/order_id evidence-reader indexes.
+
+    Phase-2 matrix §2 (wave db-lifecycle-2, lane L4): only these two index
+    candidates passed the measured gate. Everything else the matrix rejected
+    ((generated_at, action) composite, partitioning, SQLite VACUUM) is
+    deliberately NOT here.
+    """
+    _ensure_index(conn, "idx_audit_signals_request_id", "audit_signals", "(request_id)")
+    _ensure_index(conn, "idx_orders_order_id", "audit_orders", "(order_id)")
+
+
+def _audit_0010_verify(conn: sqlite3.Connection, db_path: Path) -> bool:
+    return _index_exists(conn, "idx_audit_signals_request_id") and _index_exists(
+        conn, "idx_orders_order_id"
+    )
+
+
+def _audit_0010_rollback(conn: sqlite3.Connection, db_path: Path) -> None:
+    for name in ("idx_audit_signals_request_id", "idx_orders_order_id"):
+        if _index_exists(conn, name):
+            conn.execute(f"DROP INDEX {name}")
+
+
+# ---------------------------------------------------------------------------
+# AUDIT-0011: drop the duplicate idx_release_metadata_key (R-8, L4's pair)
+# ---------------------------------------------------------------------------
+# release_metadata declares `key TEXT PRIMARY KEY` (AUDIT-0007's own DDL), so
+# SQLite already maintains the implicit unique index
+# sqlite_autoindex_release_metadata_1 over the same column (MEASURED on the
+# live artifact: `EXPLAIN QUERY PLAN SELECT value FROM release_metadata WHERE
+# key = ?` chose the AUTOINDEX before the drop and still does after). The
+# named index is a redundant second b-tree: 1 page today on an empty table,
+# growing 1:1 with the autoindex on every write. MEASURED drop on a copy of
+# the live artifact: PRAGMA index_list 2 -> 1, plan unchanged, values read
+# back identical.
+
+
+def _audit_0011_drop_duplicate_release_metadata_key(
+    conn: sqlite3.Connection, db_path: Path
+) -> None:
+    """Drop idx_release_metadata_key — the duplicate of release_metadata's PK."""
+    if _index_exists(conn, "idx_release_metadata_key"):
+        conn.execute("DROP INDEX idx_release_metadata_key")
+
+
+def _audit_0011_verify(conn: sqlite3.Connection, db_path: Path) -> bool:
+    # The DROP is the change: the duplicate must be ABSENT, while the PK's
+    # implicit unique index must still serve the lookup.
+    if _index_exists(conn, "idx_release_metadata_key"):
+        return False
+    if not _table_exists(conn, "release_metadata"):
+        # A DB where the AUDIT-0007 apply has not run yet (baseline skeleton
+        # without the table) has nothing to drop — not a failure.
+        return True
+    return _index_exists(conn, "sqlite_autoindex_release_metadata_1")
+
+
+def _audit_0011_rollback(conn: sqlite3.Connection, db_path: Path) -> None:
+    # Re-create the redundant index verbatim (the pre-drop shape) so a
+    # rollback reproduces the exact prior schema.
+    if _table_exists(conn, "release_metadata") and not _index_exists(
+        conn, "idx_release_metadata_key"
+    ):
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_release_metadata_key ON release_metadata(key)")
 
 
 # ---------------------------------------------------------------------------
@@ -718,6 +815,37 @@ AUDIT_MIGRATIONS: tuple[Migration, ...] = (
         risk=MigrationRisk.LOW,
         transaction_kind=TransactionKind.NON_TRANSACTIONAL_WITH_SAFETY_PROTOCOL,
         rollback=_audit_0009_rollback,
+    ),
+    Migration(
+        migration_id="AUDIT-0010-evidence-reader-indexes",
+        domain=DatabaseDomain.AUDIT,
+        from_version=9,
+        to_version=10,
+        description=(
+            "add the two measured evidence-reader indexes: "
+            "audit_signals(request_id) [R-7] + audit_orders(order_id) [R-6] "
+            "(phase-2 matrix §2; wave db-lifecycle-2 L4)"
+        ),
+        apply=_audit_0010_evidence_reader_indexes,
+        verify=_audit_0010_verify,
+        risk=MigrationRisk.LOW,
+        transaction_kind=TransactionKind.NON_TRANSACTIONAL_WITH_SAFETY_PROTOCOL,
+        rollback=_audit_0010_rollback,
+    ),
+    Migration(
+        migration_id="AUDIT-0011-drop-duplicate-release-metadata-key",
+        domain=DatabaseDomain.AUDIT,
+        from_version=10,
+        to_version=11,
+        description=(
+            "drop idx_release_metadata_key — a duplicate of the PRIMARY KEY's "
+            "implicit unique index (R-8; phase-2 matrix §1; wave db-lifecycle-2 L4)"
+        ),
+        apply=_audit_0011_drop_duplicate_release_metadata_key,
+        verify=_audit_0011_verify,
+        risk=MigrationRisk.LOW,
+        transaction_kind=TransactionKind.TRANSACTIONAL,
+        rollback=_audit_0011_rollback,
     ),
 )
 
