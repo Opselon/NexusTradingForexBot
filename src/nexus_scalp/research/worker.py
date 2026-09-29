@@ -34,7 +34,6 @@ TASK-4 (dataset rebuild guard, spec 23):
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -120,19 +119,6 @@ class ResearchWorker:
     # ------------------------------------------------------------------
     # Restart-safe checkpoint
     # ------------------------------------------------------------------
-
-    def _worker_connection(self) -> Any:
-        """A sqlite3-shaped connection for archive_research_history.
-
-        SQLite keeps its own connection; a pooled provider gets the pooled
-        cursor facade so the archive's ``with conn:`` and
-        ``conn.execute(...).fetchall()`` bodies work unchanged.
-        """
-        if self.audit_repo._is_sqlite:
-            return sqlite3.connect(self.audit_repo._db_path, timeout=10.0)
-        from nexus_scalp.research.observability import _connect
-
-        return _connect(self.audit_repo)
 
     def _load_checkpoint(self) -> None:
         try:
@@ -396,15 +382,13 @@ class ResearchWorker:
         try:
             from nexus_scalp.research.archive import archive_research_history
 
-            # RUNTIME-INTEGRITY-001: _db_path holds the provider URI under a
-            # pooled provider, so a bare sqlite3.connect() cannot open it.
-            # The pooled cursor facade keeps the archive's ``with conn:`` and
-            # conn.execute(...).fetchall() bodies working unchanged.
-            conn = self._worker_connection()
-            try:
-                archive_research_history(conn)
-            finally:
-                conn.close()
+            # PG-ARCHIVE-WRITE-001: pass the repository, not a connection. The
+            # pooled cursor facade here was the READ plane (read-only), so the
+            # archive's CREATE TABLE / INSERT / DELETE always failed with
+            # ReadOnlySqlTransaction under PostgreSQL and research history was
+            # never archived. The archive resolves the WRITE plane itself;
+            # SQLite still receives its own raw connection via the executor.
+            archive_research_history(self.audit_repo)
         except Exception as e:
             logger.warning("[STRATEGY_RESEARCH] event=ARCHIVE_SKIP error=%s", e)
         return validated > 0

@@ -290,3 +290,4 @@ tests/unit/test_r3_v1_decision_count_bounded.py
 tests/unit/test_l7_archive_restore_roundtrip.py
 tests/unit/test_l7_news_archive_retirement.py
 tests/unit/test_l7_managed_db_retirement.py
+tests/unit/test_research_archive_pg_write_plane.py
