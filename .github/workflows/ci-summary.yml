@@ -1,19 +1,9 @@
 name: CI Final Summary (AI)
 
-# BUG-300 — THE VERY LAST WORD OF EVERY PIPELINE.
-# workflow_run fires AFTER each watched workflow finishes, so this job runs
-# at the absolute end of CI / release / security / OS-matrix / JS / docs /
-# dependency lanes. It collects the WHOLE-run evidence (jobs, failed steps,
-# junit/coverage from the ci-results artifact, PR diff + review state +
-# comments), sends it through the reachability-gated AI triage, and delivers
-# the verdict block three ways: Telegram, the run's step summary, and a
-# PR review comment (when the run belongs to a PR).
-#
-# Advisory by construction: permissions are read-only for repo content
-# (pull-requests: write only to comment), the job NEVER fails CI (it runs
-# after everything), and the AI lane degrades to deterministic rules when
-# AI_HOST/AI_KEY are absent, unreachable, or slow (see docs/
-# ci-telegram-operations.md §1a).
+# BUG-300/303/304 — FINAL EVIDENCE + AI TRIAGE + DELIVERY.
+# workflow_run fires AFTER each watched workflow finishes. This lane owns the
+# final evidence and fan-out to GitHub Step Summary, Telegram and the
+# associated PR conversation. It is advisory and never gates the watched job.
 
 on:
   push:
@@ -50,11 +40,9 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.11"
-  # Telegram feed (advisory; values never printed).
   TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
   TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   USER_ID: ${{ secrets.USER_ID }}
-  # BUG-300 AI triage endpoint (OpenAI-compatible); presence-gated.
   AI_HOST: ${{ secrets.AI_HOST }}
   AI_KEY: ${{ secrets.AI_KEY }}
 
@@ -62,8 +50,8 @@ jobs:
   final-summary:
     name: AI Final Summary
     if: ${{ github.event_name == 'workflow_run' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 8
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
@@ -74,116 +62,401 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Resolve target run + PR
-        id: target
+      - name: Prepare isolated summary environment
+        id: env
+        shell: bash
         run: |
-          set +e
-          echo "run_id=${{ github.event.workflow_run.id }}" >> "$GITHUB_OUTPUT"
-          echo "workflow=${{ github.event.workflow_run.name }}" >> "$GITHUB_OUTPUT"
-          echo "conclusion=${{ github.event.workflow_run.conclusion }}" >> "$GITHUB_OUTPUT"
-          echo "event=${{ github.event.workflow_run.event }}" >> "$GITHUB_OUTPUT"
-          echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
-          echo "branch=${{ github.event.workflow_run.head_branch }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          python -m venv .ci-summary-venv
+          CI_PYTHON="$PWD/.ci-summary-venv/bin/python"
+          echo "python=$CI_PYTHON" >> "$GITHUB_OUTPUT"
+
+          "$CI_PYTHON" -m pip install --disable-pip-version-check --quiet -e . --no-deps
+          "$CI_PYTHON" -m pip install --disable-pip-version-check --quiet \
+            "pydantic>=2.6.0,<3.0.0" \
+            "pydantic-settings>=2.1.0,<3.0.0" \
+            "pyyaml>=6.0.1,<7.0.0" \
+            "structlog>=24.1.0,<27.0.0" \
+            "numpy>=1.26.0,<3.0.0"
+
+          "$CI_PYTHON" - <<'PY'
+          import importlib
+
+          required = {
+              "pydantic": "pydantic",
+              "pydantic_settings": "pydantic_settings",
+              "yaml": "yaml",
+              "structlog": "structlog",
+              "numpy": "numpy",
+          }
+          missing = []
+          for module, label in required.items():
+              try:
+                  importlib.import_module(module)
+              except Exception as exc:
+                  missing.append(f"{label}: {type(exc).__name__}: {exc}")
+          if missing:
+              raise SystemExit("Summary environment import failure:\n" + "\n".join(missing))
+          print("Summary environment: READY")
+          PY
+
+      - name: Resolve target run + associated PR
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RUN_ID: ${{ github.event.workflow_run.id }}
+          TARGET_WORKFLOW: ${{ github.event.workflow_run.name }}
+          TARGET_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          TARGET_EVENT: ${{ github.event.workflow_run.event }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          TARGET_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "run_id=$TARGET_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "workflow=$TARGET_WORKFLOW" >> "$GITHUB_OUTPUT"
+          echo "conclusion=$TARGET_CONCLUSION" >> "$GITHUB_OUTPUT"
+          echo "event=$TARGET_EVENT" >> "$GITHUB_OUTPUT"
+          echo "sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
+          echo "branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
+
           PR="${{ github.event.workflow_run.pull_requests[0].number }}"
+          PR_SOURCE="workflow_run.pull_requests"
+          PR_REASON="resolved_from_workflow_run_payload"
+
+          if [[ -z "$PR" ]]; then
+            PR_SOURCE="commit_pulls_api"
+            ASSOCIATED_JSON="$(gh api --paginate \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "/repos/${GITHUB_REPOSITORY}/commits/${TARGET_SHA}/pulls" 2>/dev/null || echo '[]')"
+
+            PR="$(printf '%s' "$ASSOCIATED_JSON" | jq -r '
+              [ .[] | select(.number != null) |
+                {number, state, merged_at}
+              ] |
+              sort_by(
+                (if .state == "open" then 0 else 1 end),
+                (.merged_at // "")
+              ) |
+              .[0].number // empty
+            ')"
+
+            if [[ -n "$PR" ]]; then
+              PR_REASON="resolved_from_exact_commit_association"
+            else
+              PR_REASON="no_pull_request_associated_with_exact_target_sha"
+            fi
+          fi
+
           echo "pr=$PR" >> "$GITHUB_OUTPUT"
+          echo "pr_source=$PR_SOURCE" >> "$GITHUB_OUTPUT"
+          echo "pr_reason=$PR_REASON" >> "$GITHUB_OUTPUT"
+
+          python - "$TARGET_RUN_ID" "$TARGET_WORKFLOW" "$TARGET_CONCLUSION" "$TARGET_EVENT" \
+            "$TARGET_SHA" "$TARGET_BRANCH" "$PR" "$PR_SOURCE" "$PR_REASON" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          keys = [
+              "run_id", "workflow", "conclusion", "event", "sha",
+              "branch", "pr", "pr_source", "pr_reason",
+          ]
+          Path("ci-target.json").write_text(
+              json.dumps(dict(zip(keys, sys.argv[1:])), indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+          echo "Target run=$TARGET_RUN_ID sha=$TARGET_SHA pr=${PR:-none} source=$PR_SOURCE reason=$PR_REASON"
 
       - name: Collect whole-run evidence
         env:
+          CI_PYTHON: ${{ steps.env.outputs.python }}
           GH_TOKEN: ${{ github.token }}
           TARGET_RUN_ID: ${{ steps.target.outputs.run_id }}
           TARGET_WORKFLOW: ${{ steps.target.outputs.workflow }}
           TARGET_EVENT: ${{ steps.target.outputs.event }}
           PR_NUMBER: ${{ steps.target.outputs.pr }}
+        shell: bash
         run: |
           set +e
           mkdir -p ci-results/run-info
-          PYTHONPATH=src python scripts/ci/ci_summary.py \
-            --out ci-results/run-info/summary-evidence.json || true
+          "$CI_PYTHON" scripts/ci/ci_summary.py \
+            --out ci-results/run-info/summary-evidence.json
+          RC=$?
+          printf '{"exit_code":%s,"status":"%s"}\n' "$RC" \
+            "$([[ $RC -eq 0 ]] && echo OK || echo FAILED)" \
+            > ci-results/run-info/evidence-collector.json
+          if [[ $RC -ne 0 ]]; then
+            echo "::warning::Whole-run evidence collector exited $RC; continuing with explicit evidence status."
+          fi
+          exit 0
 
-      - name: AI analysis -> Telegram block (reachability-gated, rules fallback)
+      - name: AI analysis + Telegram delivery
+        id: ai
+        if: ${{ always() }}
+        continue-on-error: true
         env:
+          CI_PYTHON: ${{ steps.env.outputs.python }}
           GH_TOKEN: ${{ github.token }}
           TARGET_RUN_ID: ${{ steps.target.outputs.run_id }}
           TARGET_WORKFLOW: ${{ steps.target.outputs.workflow }}
           TARGET_EVENT: ${{ steps.target.outputs.event }}
           PR_NUMBER: ${{ steps.target.outputs.pr }}
+        shell: bash
         run: |
           set +e
-          KIND=$(python - <<'PY' || echo ci-failure
-          import json, os
+          mkdir -p ci-results/run-info
+          KIND="$("$CI_PYTHON" - <<'PY'
+          import json
           try:
               print(json.load(open("ci-results/run-info/summary-evidence.json", encoding="utf-8")).get("kind", "ci-failure"))
           except Exception:
               print("ci-failure")
           PY
-          )
-          PYTHONPATH=src python scripts/ci/telegram_notify.py --results ci-results \
-            ai-triage --kind "$KIND" \
-            --context ci-results/run-info/summary-evidence.json || true
+          )"
 
-      - name: Write step summary (why failed / why succeeded / merge checks)
-        run: |
-          set +e
-          python - <<'PY' || true
-          import html, json, os
-          try:
-              art = json.load(open("ci-results/run-info/ai-analysis.json", encoding="utf-8"))
-          except Exception:
-              art = {}
-          run = ("${{ steps.target.outputs.workflow }}")
-          concl = ("${{ steps.target.outputs.conclusion }}")
-          sha = ("${{ steps.target.outputs.sha }}")[:10]
-          lines = [
-              f"## Final summary — {run} @ {sha} → `{concl}`",
-              f"- AI provenance: `{art.get('provenance','?')}` (model `{art.get('model') or 'n/a'}`)",
-              "",
-          ]
-          if art.get("text"):
-              lines.append("```text")
-              lines.append(str(art["text"])[:4000])
-              lines.append("```")
-          else:
-              lines.append("_No analysis produced (rules found nothing and AI unavailable)._")
-          with open(os.environ.get("GITHUB_STEP_SUMMARY", os.devnull), "a", encoding="utf-8") as fh:
-              fh.write("\n".join(lines) + "\n")
+          "$CI_PYTHON" scripts/ci/telegram_notify.py \
+            --results ci-results \
+            --no-env-repair \
+            ai-triage \
+            --kind "$KIND" \
+            --context ci-results/run-info/summary-evidence.json \
+            > ci-results/run-info/ai-triage.stdout 2>&1
+          RC=$?
+
+          "$CI_PYTHON" - "$RC" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          rc = int(sys.argv[1])
+          root = Path("ci-results/run-info")
+          raw = (root / "ai-triage.stdout").read_text(encoding="utf-8", errors="replace")
+
+          (root / "ai-triage-exit.json").write_text(
+              json.dumps({"exit_code": rc, "status": "OK" if rc == 0 else "FAILED"}, indent=2) + "\n",
+              encoding="utf-8",
+          )
+
+          decoder = json.JSONDecoder()
+          objects = []
+          pos = 0
+          while pos < len(raw):
+              start = raw.find("{", pos)
+              if start < 0:
+                  break
+              try:
+                  obj, end = decoder.raw_decode(raw[start:])
+              except json.JSONDecodeError:
+                  pos = start + 1
+                  continue
+              if isinstance(obj, dict):
+                  objects.append(obj)
+              pos = start + end
+
+          payload = objects[-1] if objects else {}
+          telegram = payload.get("telegram") or {}
+          result = payload.get("result") or {}
+          ledger = {
+              "exit_code": rc,
+              "process_status": "OK" if rc == 0 else "FAILED",
+              "ai_provenance": result.get("provenance"),
+              "ai_delivered": bool(result.get("delivered")),
+              "telegram": telegram,
+          }
+          (root / "telegram-delivery.json").write_text(
+              json.dumps(ledger, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(ledger, indent=2, sort_keys=True))
           PY
 
-      - name: PR review comment (auto summary for the authors)
-        if: ${{ steps.target.outputs.pr != '' }}
+          cat ci-results/run-info/ai-triage.stdout
+          exit 0
+
+      - name: Write canonical final summary
+        if: ${{ always() }}
+        env:
+          CI_PYTHON: ${{ steps.env.outputs.python }}
+          TARGET_WORKFLOW: ${{ steps.target.outputs.workflow }}
+          TARGET_CONCLUSION: ${{ steps.target.outputs.conclusion }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          TARGET_BRANCH: ${{ steps.target.outputs.branch }}
+          TARGET_PR: ${{ steps.target.outputs.pr }}
+          PR_SOURCE: ${{ steps.target.outputs.pr_source }}
+          PR_REASON: ${{ steps.target.outputs.pr_reason }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$CI_PYTHON" - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("ci-results/run-info")
+
+          try:
+              art = json.loads((root / "ai-analysis.json").read_text(encoding="utf-8"))
+          except Exception:
+              art = {}
+
+          try:
+              tg = json.loads((root / "telegram-delivery.json").read_text(encoding="utf-8"))
+          except Exception:
+              tg = {}
+
+          ai_text = (art.get("text") or "").strip()
+          provenance = art.get("provenance") or "UNAVAILABLE"
+          model = art.get("model") or "n/a"
+          telegram_ok = bool((tg.get("telegram") or {}).get("ok"))
+
+          lines = [
+              "# NSE Final CI Summary",
+              "",
+              f"Workflow: {os.environ.get('TARGET_WORKFLOW','?')}",
+              f"Target conclusion: {os.environ.get('TARGET_CONCLUSION','?')}",
+              f"SHA: {os.environ.get('TARGET_SHA','?')[:12]}",
+              f"Branch: {os.environ.get('TARGET_BRANCH','?')}",
+              f"Associated PR: {os.environ.get('TARGET_PR') or 'none'}",
+              f"PR resolution: {os.environ.get('PR_SOURCE','?')} / {os.environ.get('PR_REASON','?')}",
+              f"AI provenance: {provenance}",
+              f"AI model: {model}",
+              f"Telegram delivery: {'SENT' if telegram_ok else 'FAILED/SKIPPED'}",
+              "",
+              "## Analysis",
+              "",
+          ]
+
+          if ai_text:
+              lines.extend(["AI ANALYSIS BEGIN", ai_text[:6000], "AI ANALYSIS END"])
+          else:
+              lines.append("No AI text was produced. See evidence and delivery ledger for the exact reason.")
+
+          (root / "final-summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          print((root / "final-summary.md").read_text(encoding="utf-8"))
+          PY
+
+      - name: Publish GitHub Step Summary
+        if: ${{ always() }}
+        env:
+          CI_PYTHON: ${{ steps.env.outputs.python }}
+        shell: bash
+        run: |
+          set +e
+          if [[ -s ci-results/run-info/final-summary.md ]]; then
+            cat ci-results/run-info/final-summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "# NSE Final CI Summary" >> "$GITHUB_STEP_SUMMARY"
+            echo "Canonical summary generation failed; inspect job logs and artifacts." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          "$CI_PYTHON" - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+
+          root = Path("ci-results/run-info")
+          print("")
+          print("## Delivery ledger")
+          for name in ("evidence-collector.json", "ai-triage-exit.json", "telegram-delivery.json"):
+              p = root / name
+              if p.exists():
+                  try:
+                      data = json.loads(p.read_text(encoding="utf-8"))
+                  except Exception:
+                      data = {"status": "UNREADABLE"}
+                  print(f"- {name}: {json.dumps(data, sort_keys=True)[:1400]}")
+          PY
+          exit 0
+
+      - name: PR review comment (verified delivery)
+        id: pr-comment
+        if: ${{ always() && steps.target.outputs.pr != '' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ steps.target.outputs.pr }}
-          TARGET_WORKFLOW: ${{ steps.target.outputs.workflow }}
-          TARGET_CONCLUSION: ${{ steps.target.outputs.conclusion }}
+        shell: bash
         run: |
           set +e
-          python - <<'PY' || true
-          import json, os, subprocess
+          BODY_FILE="ci-results/run-info/final-summary.md"
+          if [[ ! -s "$BODY_FILE" ]]; then
+            echo '{"ok":false,"category":"PR_SUMMARY_MISSING","status":"FAILED"}' \
+              > ci-results/run-info/pr-delivery.json
+            echo "::warning::PR comment skipped because canonical summary is missing."
+            exit 0
+          fi
+
+          {
+            echo "**NSE final CI summary (advisory — evidence, not merge authorization)**"
+            echo
+            cat "$BODY_FILE"
+          } > ci-results/run-info/pr-comment.md
+
+          gh pr comment "$PR_NUMBER" \
+            --body-file ci-results/run-info/pr-comment.md \
+            --repo "$GITHUB_REPOSITORY"
+          RC=$?
+
+          if [[ $RC -eq 0 ]]; then
+            printf '{"ok":true,"status":"SENT","pr":%s}\n' "$PR_NUMBER" \
+              > ci-results/run-info/pr-delivery.json
+            echo "PR delivery: SENT (PR #$PR_NUMBER)"
+          else
+            printf '{"ok":false,"status":"FAILED","pr":%s,"exit_code":%s}\n' "$PR_NUMBER" "$RC" \
+              > ci-results/run-info/pr-delivery.json
+            echo "::warning::PR comment delivery failed with exit code $RC."
+          fi
+          exit 0
+
+      - name: Finalize delivery ledger
+        if: ${{ always() }}
+        env:
+          CI_PYTHON: ${{ steps.env.outputs.python }}
+          TARGET_PR: ${{ steps.target.outputs.pr }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$CI_PYTHON" - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("ci-results/run-info")
+
           try:
-              art = json.load(open("ci-results/run-info/ai-analysis.json", encoding="utf-8"))
+              tg = json.loads((root / "telegram-delivery.json").read_text(encoding="utf-8"))
+              tg_status = "SENT" if (tg.get("telegram") or {}).get("ok") else "FAILED"
           except Exception:
-              raise SystemExit(0)
-          text = (art.get("text") or "").strip()
-          if not text:
-              raise SystemExit(0)
-          run = os.environ.get("TARGET_WORKFLOW", "CI")
-          concl = os.environ.get("TARGET_CONCLUSION", "")
-          body = (
-              "**NSE final CI summary (AI, advisory — not a merge authorization)**\n\n"
-              f"Watched run: `{run}` → `{concl}` · provenance: `{art.get('provenance','?')}`\n\n"
-              + text
-          )
-          subprocess.run(
-              ["gh", "pr", "comment", os.environ["PR_NUMBER"], "--body", body],
-              timeout=60, check=False,
-          )
+              tg_status = "NOT_RECORDED"
+
+          try:
+              pr = json.loads((root / "pr-delivery.json").read_text(encoding="utf-8"))
+              pr_status = pr.get("status", "FAILED")
+          except Exception:
+              pr_status = "SKIPPED — no associated PR" if not os.environ.get("TARGET_PR") else "NOT_RECORDED"
+
+          print("")
+          print("## Final delivery")
+          print(f"Telegram: **{tg_status}**")
+          print(f"PR review/comment: **{pr_status}**")
           PY
+
+      - name: Upload final summary artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-final-summary-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.head_sha }}
+          path: ci-results/run-info
+          if-no-files-found: warn
+          retention-days: 30
 
   event-feed:
     name: Push/PR event feed
     if: ${{ github.event_name == 'push' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout repository
@@ -196,6 +469,12 @@ jobs:
 
       - name: Telegram push event summary + AI note
         continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          USER_ID: ${{ secrets.USER_ID }}
+          AI_HOST: ${{ secrets.AI_HOST }}
+          AI_KEY: ${{ secrets.AI_KEY }}
         run: |
           set +e
           mkdir -p ci-results/run-info
@@ -226,4 +505,6 @@ jobs:
                     open("ci-results/run-info/summary-evidence.json", "w", encoding="utf-8"),
                     indent=2, sort_keys=True)
           PY
-          PYTHONPATH=src python scripts/ci/telegram_notify.py --results ci-results             ai-triage --kind push-summary             --context ci-results/run-info/summary-evidence.json || true
+          PYTHONPATH=src python scripts/ci/telegram_notify.py --results ci-results \
+            ai-triage --kind push-summary \
+            --context ci-results/run-info/summary-evidence.json || true

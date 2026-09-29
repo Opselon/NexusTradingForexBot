@@ -100,8 +100,25 @@ def test_no_secret_values_in_workflow_text():
 def test_summary_writes_all_three_outputs():
     body = _summary_body()
     assert "ai-triage" in body and "--context ci-results/run-info/summary-evidence.json" in body
-    assert "GITHUB_STEP_SUMMARY" in body  # run-page summary
-    assert 'gh", "pr", "comment' in body  # PR review comment path
+    assert "GITHUB_STEP_SUMMARY" in body
+    assert 'gh pr comment "$PR_NUMBER"' in body
+    assert "commits/${TARGET_SHA}/pulls" in body
+    assert "resolved_from_exact_commit_association" in body
+    assert "runs-on: ubuntu-24.04" in body
+    assert "python -m venv .ci-summary-venv" in body
+    assert "--no-env-repair" in body
+    assert "telegram-delivery.json" in body
+    assert "pr-delivery.json" in body
+
+
+def test_summary_final_ai_step_does_not_swallow_command_failure():
+    body = _summary_body()
+    ai_block = body.split("name: AI analysis + Telegram delivery", 1)[1].split(
+        "name: Write canonical final summary", 1
+    )[0]
+    assert "telegram_notify.py" in ai_block
+    assert "continue-on-error: true" in ai_block
+    assert "|| true" not in ai_block
 
 
 def test_make_ci_results_presence_registry_updated():
