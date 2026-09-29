@@ -490,6 +490,7 @@ def run_queries(
     env: dict[str, str],
     evidence_dir: Path,
     deadline: float,
+    stop_event: threading.Event | None = None,
 ) -> dict[str, Any]:
     if provider == "postgres":
         if str(REPO_ROOT / "src") not in sys.path:
@@ -536,6 +537,8 @@ def run_queries(
             tables = _discover_tables_sqlite(connection)
 
         for round_no in range(1, QUERY_ROUNDS + 1):
+            if stop_event is not None and stop_event.is_set():
+                break
             if time.monotonic() > deadline:
                 break
             report = run_query_round(provider, connection, tables, round_no)
@@ -554,7 +557,10 @@ def run_queries(
                     ]
                 )
             if time.monotonic() + QUERY_INTERVAL_SECONDS < deadline:
-                time.sleep(QUERY_INTERVAL_SECONDS)
+                if stop_event is not None:
+                    stop_event.wait(QUERY_INTERVAL_SECONDS)
+                else:
+                    time.sleep(QUERY_INTERVAL_SECONDS)
     finally:
         close()
 
@@ -565,6 +571,8 @@ def run_queries(
     if total_queries < MIN_QUERY_TOTAL and time.monotonic() < deadline:
         filler_index = 0
         while total_queries < MIN_QUERY_TOTAL and time.monotonic() < deadline:
+            if stop_event is not None and stop_event.is_set():
+                break
             filler_index += 1
             if tables:
                 table = tables[filler_index % len(tables)]
@@ -705,11 +713,23 @@ def run_full(provider: str, duration: int, port: int, evidence_dir: Path) -> dic
     token = env["NSE_WEB_AUTH_TOKEN"]
     log_capture = LogCapture(evidence_dir / "runtime.log")
 
+    config_path = REPO_ROOT / "configs" / "live.yaml"
+    if not config_path.exists():
+        # Fresh GitHub checkouts intentionally do not contain operator-local
+        # live.yaml. Use the tracked base contract rather than bypassing the
+        # launcher/doctor path or inventing a configuration.
+        fallback_config = REPO_ROOT / "configs" / "base.yaml"
+        if not fallback_config.exists():
+            raise RuntimeError(
+                f"runtime config missing: {config_path} and fallback {fallback_config}"
+            )
+        config_path = fallback_config
+
     command = [
         sys.executable,
         str(REPO_ROOT / "NexusTradingForexBot.py"),
         "--config",
-        str(REPO_ROOT / "configs" / "live.yaml"),
+        str(config_path),
         "--mode",
         "paper",
         "--no-animate",
@@ -761,11 +781,18 @@ def run_full(provider: str, duration: int, port: int, evidence_dir: Path) -> dic
 
         query_deadline = time.monotonic() + duration
         query_thread_result: dict[str, Any] = {}
+        query_stop = threading.Event()
 
         def _queries() -> None:
             try:
                 query_thread_result.update(
-                    run_queries(provider, env, evidence_dir, query_deadline)
+                    run_queries(
+                        provider,
+                        env,
+                        evidence_dir,
+                        query_deadline,
+                        stop_event=query_stop,
+                    )
                 )
             except Exception as exc:
                 query_thread_result.update(
@@ -783,7 +810,10 @@ def run_full(provider: str, duration: int, port: int, evidence_dir: Path) -> dic
                     }
                 )
 
-        query_thread = threading.Thread(target=_queries, name=f"nse-db-queries-{provider}")
+        query_thread: threading.Thread | None = threading.Thread(
+            target=_queries,
+            name=f"nse-db-queries-{provider}",
+        )
         query_thread.start()
 
         soak_deadline = time.monotonic() + duration
@@ -824,6 +854,18 @@ def run_full(provider: str, duration: int, port: int, evidence_dir: Path) -> dic
     except Exception as exc:
         report["runtime_error"] = f"{type(exc).__name__}: {exc}"
     finally:
+        # Stop the query worker before tearing down the process. This makes an
+        # early runtime/API failure bounded instead of leaving a non-daemon
+        # thread alive behind the harness.
+        query_stop.set()
+        if query_thread is not None:
+            query_thread.join(timeout=20)
+            if query_thread.is_alive():
+                report["runtime_error"] = report.get(
+                    "runtime_error",
+                    "database query worker did not stop within 20s",
+                )
+
         # Graceful shutdown is part of the certification, not cleanup trivia.
         if process.poll() is None:
             try:
