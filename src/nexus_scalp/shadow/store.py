@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import sqlite3
 from datetime import datetime
 from typing import Any
@@ -67,9 +68,12 @@ _INSERT_DECISION_SQL = """
         champion_entry, champion_sl, champion_tp, shadow_entry, shadow_sl, shadow_tp,
         spread_usd, shadow_r, shadow_mfe_r, shadow_mae_r, shadow_pnl_usd,
         shadow_holding_sec, shadow_exit_reason, delta_r, outcome_status,
-        payload
+        champion_probabilities, challenger_probabilities, champion_strategy_id,
+        challenger_strategy_id, hypothetical_risk_pct, hypothetical_volume,
+        hypothetical_entry, hypothetical_exit
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?, ?, ?);
 """
 
 _INSERT_COMPARISON_SQL = """
@@ -99,12 +103,10 @@ _INSERT_PROMOTION_SQL = """
 #: version-dependent across legacy databases).
 #:
 #: NOTE: the resolved ENTRY/EXIT prices (apply_to_record_fields returns
-#: hypothetical_entry / hypothetical_exit) have no DB columns — the
-#: CHG-0046 additive migration added the shadow_* outcome columns but never
-#: the champion side's price pair, and save_decision does not write them
-#: either. The realized-R contract (hypothetical_r / shadow_r / delta_r +
-#: mfe/mae/holding/exit_reason/status) is fully persisted; persisting the
-#: entry/exit pair is a separate additive-migration change outside this task.
+#: hypothetical_entry / hypothetical_exit) previously had NO DB columns, so the
+#: resolver computed them and dropped them. DEEP-OPT L1 gave them real columns
+#: (part of the minimal representation that replaced the JSON mirror), so the
+#: realized-R contract is now complete: R + geometry + the resolved price pair.
 _UPDATE_OUTCOME_SQL = """
     UPDATE shadow_decisions SET
         hypothetical_pnl_usd = ?,
@@ -120,7 +122,9 @@ _UPDATE_OUTCOME_SQL = """
         shadow_holding_sec = ?,
         shadow_exit_reason = ?,
         delta_r = ?,
-        outcome_status = ?
+        outcome_status = ?,
+        hypothetical_entry = ?,
+        hypothetical_exit = ?
     WHERE shadow_decision_id = ? AND outcome_status = 'PENDING';
 """
 
@@ -198,7 +202,19 @@ _DECISION_COLUMNS = [
     "shadow_exit_reason",
     "delta_r",
     "outcome_status",
-    "payload",
+    # Minimal durable representation (DEEP-OPT L1, Part 5 rule 8).
+    # The whole-record JSON mirror was removed: 46.6% of it duplicated these
+    # columns byte-for-byte, and the remainder is reconstructed below from the
+    # fields these five columns plus the run row carry. Probabilities are the
+    # only model output with no column, so they earn two small TEXT vectors.
+    "champion_probabilities",
+    "challenger_probabilities",
+    "champion_strategy_id",
+    "challenger_strategy_id",
+    "hypothetical_risk_pct",
+    "hypothetical_volume",
+    "hypothetical_entry",
+    "hypothetical_exit",
 ]
 _SHADOW_COMPARISON_COLUMNS = [
     "run_id",
@@ -263,6 +279,60 @@ def _sql_for(repo: AuditRepository, sqlite_sql: str, pg_sql: str) -> str:
     pooled write backend can execute.
     """
     return sqlite_sql if getattr(repo, "_is_sqlite", False) else pg_sql
+
+
+def _compact_vector(values: Any) -> str:
+    """Compact JSON vector for a probability list.
+
+    ``json.dumps`` default separators insert a space after every comma; a
+    3-class probability vector is written once per decision, so the separators
+    are worth tightening. Non-numeric entries are dropped rather than
+    serialized (they would be unreadable to every consumer anyway).
+    """
+    try:
+        seq = [float(v) for v in (values or [])]
+    except (TypeError, ValueError):
+        seq = []
+    return json.dumps(seq, separators=(",", ":")) if seq else "[]"
+
+
+def _as_float(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def compact_database(db_path: str) -> dict[str, Any]:
+    """Reclaims the space a retired column left behind (explicit, one-shot).
+
+    SQLite keeps freed pages on its freelist, so migrating 108 MB of mirror out
+    of ``shadow_decisions`` shrinks the FILE only after a ``VACUUM``. That is a
+    full-file rewrite, so it never runs automatically at boot — the operator (or
+    a scheduled maintenance job) calls it when convenient.
+
+    Idempotent and safe to re-run: it reports the same sizes when there is
+    nothing to reclaim.
+    """
+    if not os.path.exists(db_path):
+        return {"ok": False, "error": "database not found", "path": db_path}
+    before = os.path.getsize(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
+    try:
+        reclaimable = ShadowStore.pending_mirror_bytes(conn)
+        conn.execute("VACUUM;")
+        conn.commit()
+        after = os.path.getsize(db_path)
+        return {
+            "ok": True,
+            "path": db_path,
+            "bytes_before": before,
+            "bytes_after": after,
+            "bytes_reclaimed": max(0, before - after),
+            "retired_mirror_bytes": reclaimable,
+        }
+    finally:
+        conn.close()
 
 
 class ShadowStore:
@@ -458,8 +528,21 @@ class ShadowStore:
                             ("shadow_exit_reason", "TEXT DEFAULT ''"),
                             ("delta_r", "REAL"),
                             ("outcome_status", "TEXT DEFAULT 'NOT_RECORDED'"),
+                            # DEEP-OPT L1: minimal-representation columns. An
+                            # existing database gains them empty; the backfill
+                            # below migrates the data out of the retired JSON
+                            # mirror and the caller compacts the table.
+                            ("champion_probabilities", "TEXT DEFAULT '[]'"),
+                            ("challenger_probabilities", "TEXT DEFAULT '[]'"),
+                            ("champion_strategy_id", "TEXT DEFAULT ''"),
+                            ("challenger_strategy_id", "TEXT DEFAULT ''"),
+                            ("hypothetical_risk_pct", "REAL DEFAULT 0.0"),
+                            ("hypothetical_volume", "REAL DEFAULT 0.0"),
+                            ("hypothetical_entry", "REAL DEFAULT 0.0"),
+                            ("hypothetical_exit", "REAL DEFAULT 0.0"),
                         ],
                     )
+                    self._backfill_minimal_representation(conn)
                     self._add_missing_columns(
                         conn,
                         "shadow_runs",
@@ -499,6 +582,94 @@ class ShadowStore:
                     logger.error(
                         "[SHADOW] add column failed", table=table, column=name, error=str(e)
                     )
+
+    def _backfill_minimal_representation(self, conn: sqlite3.Connection) -> None:
+        """Migrates the retired JSON mirror into the minimal columns.
+
+        DEEP-OPT L1, contract rule 86 (rollback + retained legacy reader):
+        legacy rows carry ``payload`` and empty minimal columns. The extraction
+        runs ONCE per row — the guard is "this row has a live mirror and no
+        probabilities yet", so a re-run is a no-op.
+
+        Only the fields with no column are migrated (probabilities + the four
+        scalars). Everything else in the mirror is byte-identical to a column
+        that is already populated, so nothing is lost by leaving it behind.
+
+        The retired ``payload`` column is RETIRED, NOT DROPPED: a SQLite
+        ``DROP COLUMN`` rewrites every row, which is exactly the write
+        amplification the contract forbids. The reclaimable bytes are reported
+        instead and the file is compacted explicitly via :func:`compact_database`.
+        """
+        try:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(shadow_decisions);")}
+        except Exception:
+            return
+        if not {"payload", "champion_probabilities"} <= cols:
+            return
+        try:
+            pending = conn.execute(
+                "SELECT id, payload FROM shadow_decisions "
+                "WHERE payload IS NOT NULL AND payload != '' AND payload != '{}' "
+                "AND (champion_probabilities IS NULL OR champion_probabilities IN ('', '[]'))"
+            ).fetchall()
+        except Exception:
+            return
+        if not pending:
+            return
+        migrated = 0
+        for row_id, raw in pending:
+            try:
+                data = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            champion = data.get("champion") or {}
+            challenger = data.get("challenger") or {}
+            hyp = data.get("hypothetical") or {}
+            try:
+                conn.execute(
+                    "UPDATE shadow_decisions SET "
+                    "champion_probabilities = ?, challenger_probabilities = ?, "
+                    "champion_strategy_id = ?, challenger_strategy_id = ?, "
+                    "hypothetical_risk_pct = ?, hypothetical_volume = ?, "
+                    "hypothetical_entry = ?, hypothetical_exit = ? "
+                    "WHERE id = ?",
+                    (
+                        _compact_vector(data.get("champion_probabilities") or []),
+                        _compact_vector(data.get("challenger_probabilities") or []),
+                        data.get("champion_strategy_id") or champion.get("strategy_id") or "",
+                        data.get("challenger_strategy_id") or challenger.get("strategy_id") or "",
+                        _as_float(hyp.get("risk_pct", data.get("hypothetical_risk_pct", 0.0))),
+                        _as_float(hyp.get("volume", data.get("hypothetical_volume", 0.0))),
+                        _as_float(hyp.get("entry", data.get("hypothetical_entry", 0.0))),
+                        _as_float(hyp.get("exit", data.get("hypothetical_exit", 0.0))),
+                        row_id,
+                    ),
+                )
+                migrated += 1
+            except Exception as e:
+                logger.error("[SHADOW] payload backfill row failed", row=row_id, error=str(e))
+        if migrated:
+            logger.info(
+                "[SHADOW] minimal-representation backfill complete",
+                rows=migrated,
+                reclaimable_bytes=self.pending_mirror_bytes(conn),
+            )
+
+    @staticmethod
+    def pending_mirror_bytes(conn: sqlite3.Connection) -> int:
+        """Retired-mirror bytes still on disk (0 once the column is dropped)."""
+        try:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(shadow_decisions);")}
+            if "payload" not in cols:
+                return 0
+            row = conn.execute(
+                "SELECT COALESCE(SUM(LENGTH(payload)), 0) FROM shadow_decisions"
+            ).fetchone()
+            return int(row[0] or 0) if row else 0
+        except Exception:
+            return 0
 
     # ------------------------------------------------------------------
     # Writes
@@ -583,7 +754,22 @@ class ShadowStore:
             decision.shadow_exit_reason,
             decision.delta_r,
             decision.outcome_status,
-            json.dumps(decision.model_dump(mode="json"), default=str),
+            # DEEP-OPT L1: minimal durable representation. The whole-record
+            # json.dumps(model_dump()) mirror is gone — it duplicated the
+            # columns above (46.6% of its bytes, measured) and its unique
+            # remainder is these nine fields plus the run row. Probabilities
+            # are stored as compact JSON vectors; the scalar pair
+            # (entry/exit) gets real columns so the outcome resolver's UPDATE
+            # rewrites scalars instead of re-serializing the whole record
+            # (Part 5 rule 41: no update amplification).
+            _compact_vector(decision.champion_probabilities),
+            _compact_vector(decision.challenger_probabilities),
+            decision.champion_strategy_id,
+            decision.challenger_strategy_id,
+            decision.hypothetical_risk_pct,
+            decision.hypothetical_volume,
+            decision.hypothetical_entry,
+            decision.hypothetical_exit,
         )
         return ops_queue_write(
             self.audit_repo,
@@ -659,6 +845,68 @@ class ShadowStore:
     # ------------------------------------------------------------------
     # ML-OBS-001: outcome resolution (bar-close cadence, never per-tick)
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def read_decision_row(row: dict[str, Any]) -> dict[str, Any]:
+        """Legacy reader for a shadow_decisions row (contract rule 86).
+
+        The retired ``payload`` mirror is no longer written, but a database that
+        has not been compacted still carries it on historical rows. Any consumer
+        that used to reach into the mirror for a field this store no longer
+        splits into a column gets it back here, from either source, with the
+        column winning (the column is the canonical representation now).
+
+        Returns the row augmented with ``probability_vectors`` and
+        ``strategy_ids`` — the only mirror content that is not a column —
+        reconstructed from the minimal columns, or from the mirror when the row
+        predates the backfill.
+        """
+        out: dict[str, Any] = dict(row)
+        raw = out.pop("payload", None)
+        mirror: dict[str, Any] = {}
+        if isinstance(raw, str) and raw and raw != "{}":
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    mirror = parsed
+            except (TypeError, ValueError):
+                mirror = {}
+        champion = mirror.get("champion") or {}
+        challenger = mirror.get("challenger") or {}
+
+        def _vector(column: str, mirror_key: str) -> list[float]:
+            stored = out.get(column)
+            if stored not in (None, "", "[]"):
+                try:
+                    seq = json.loads(stored)
+                    if isinstance(seq, list) and seq:
+                        return [float(v) for v in seq]
+                except (TypeError, ValueError):
+                    pass
+            seq = mirror.get(mirror_key) or []
+            try:
+                return [float(v) for v in seq]
+            except (TypeError, ValueError):
+                return []
+
+        out["champion_probabilities"] = _vector("champion_probabilities", "champion_probabilities")
+        out["challenger_probabilities"] = _vector(
+            "challenger_probabilities", "challenger_probabilities"
+        )
+        out["champion_strategy_id"] = (
+            out.get("champion_strategy_id")
+            or mirror.get("champion_strategy_id")
+            or champion.get("strategy_id")
+            or ""
+        )
+        out["challenger_strategy_id"] = (
+            out.get("challenger_strategy_id")
+            or mirror.get("challenger_strategy_id")
+            or challenger.get("strategy_id")
+            or ""
+        )
+        out["mirror_present"] = bool(mirror)
+        return out
 
     def list_pending_decisions(
         self,
@@ -738,6 +986,8 @@ class ShadowStore:
             str(fields.get("shadow_exit_reason", "") or ""),
             _nullable_float(fields.get("delta_r")),
             str(fields.get("outcome_status", STATUS_RESOLVED) or STATUS_RESOLVED),
+            _nullable_float(fields.get("hypothetical_entry")),
+            _nullable_float(fields.get("hypothetical_exit")),
             str(decision_id),
         )
         return ops_queue_write(
