@@ -381,6 +381,7 @@ tests/unit/test_liquidity_engine_causality.py
 tests/unit/test_liquidity_engine_contract.py
 tests/unit/test_live_freshness_characterization.py
 tests/unit/test_live_shadow_outcome_resolution.py
+tests/unit/shadow/test_shadow_minimal_representation.py
 tests/unit/test_logging_correlation_ids.py
 tests/unit/test_logging_redaction.py
 # OBSERVABILITY GUARDRAILS (2026-09-01, Agent 2): the frozen log contract's
