@@ -61,7 +61,7 @@ def main() -> int:
 
     for event in warnings[:30]:
         source = event.get("source") or {}
-        suffix = " [{}:{}]".format(source.get("file"), source.get("line")) if source else ""
+        suffix = f" [{source.get('file')}:{source.get('line')}]" if source else ""
         message = str(event.get("message") or event.get("error") or event)
         print(f"::warning title=Provider runtime warning::{message[:3000]}{suffix}")
 
@@ -74,7 +74,7 @@ def main() -> int:
 
     for tb in tracebacks[:10]:
         source = tb.get("source") or {}
-        suffix = " [{}:{}]".format(source.get("file"), source.get("line")) if source else ""
+        suffix = f" [{source.get('file')}:{source.get('line')}]" if source else ""
         trace = "\n".join(str(x) for x in tb.get("lines", [])[-12:])
         print(
             f"::error title=Runtime traceback {tb.get('traceback_id', '?')}::"
