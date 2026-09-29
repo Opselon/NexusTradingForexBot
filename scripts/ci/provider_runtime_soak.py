@@ -863,6 +863,7 @@ def main() -> int:
                 )
             )
 
+        actual_soak = time.monotonic() - soak_started
         startup_evidence["hot_probe_count"] = len(hot_probes)
     except Exception as exc:
         failure = f"{type(exc).__name__}: {exc}"
