@@ -736,6 +736,8 @@ def run_full(provider: str, duration: int, port: int, evidence_dir: Path) -> dic
     ]
 
     started_at = time.time()
+    query_stop = threading.Event()
+    query_thread: threading.Thread | None = None
     process = subprocess.Popen(
         command,
         cwd=str(REPO_ROOT),
@@ -753,6 +755,7 @@ def run_full(provider: str, duration: int, port: int, evidence_dir: Path) -> dic
     report: dict[str, Any] = {
         "provider": provider,
         "status": "FAIL",
+        "config_path": str(config_path),
         "command": [str(x) for x in command],
         "started_at": datetime.now(UTC).isoformat(),
         "requested_duration_sec": duration,
@@ -781,8 +784,6 @@ def run_full(provider: str, duration: int, port: int, evidence_dir: Path) -> dic
 
         query_deadline = time.monotonic() + duration
         query_thread_result: dict[str, Any] = {}
-        query_stop = threading.Event()
-
         def _queries() -> None:
             try:
                 query_thread_result.update(
@@ -810,7 +811,7 @@ def run_full(provider: str, duration: int, port: int, evidence_dir: Path) -> dic
                     }
                 )
 
-        query_thread: threading.Thread | None = threading.Thread(
+        query_thread = threading.Thread(
             target=_queries,
             name=f"nse-db-queries-{provider}",
         )
