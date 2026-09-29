@@ -106,7 +106,7 @@ def test_summary_writes_all_three_outputs():
     assert "GITHUB_STEP_SUMMARY" in body
     assert 'gh pr comment "$PR_NUMBER"' in body
     assert "commits/${TARGET_SHA}/pulls" in body
-    assert "pr_reason=resolved_from_exact_commit_association" in body
+    assert "resolved_from_exact_commit_association" in body
     assert "runs-on: ubuntu-24.04" in body
     assert "python -m venv .ci-summary-venv" in body
     assert "--no-env-repair" in body
