@@ -266,6 +266,8 @@ class NewsIngestor:
             "admitted": 0,
             "quarantined": 0,
             "rejected": 0,
+            "payload_deduped": 0,
+            "payload_deduped_bytes": 0,
         }
         source_id = source_config["source_id"]
         source_name = source_config.get("name", source_id)
@@ -279,6 +281,10 @@ class NewsIngestor:
                 continue
 
             article_hash = canonical["article_hash"]
+            # Raw (pre-gate) body: only for sizing the storage the payload
+            # value gate avoided. The canonical dict's ``body`` is already
+            # the gated (possibly empty) value.
+            body_raw = str(item.get("body") or "")
             # Tombstone: previously pruned junk OR already-analyzed stories never re-enter
             # (re-analysis would confuse the AI decision layer — analyze once, never again).
             with contextlib.suppress(Exception):
@@ -439,6 +445,14 @@ class NewsIngestor:
                 article_id=article_id,
             )
             stats["new"] += 1
+            if canonical.get("body_deduped"):
+                # The pre-insert payload value gate dropped a body that was a
+                # verbatim restatement of the summary. Telemetry proves the
+                # gate is working and sizes the storage it avoided — this is
+                # the observability contract for a value gate (per the
+                # database-lifecycle remediation: a gate must be observable).
+                stats["payload_deduped"] += 1
+                stats["payload_deduped_bytes"] += len(body_raw)
             logger.info(
                 "[NEWS] event=INGESTED canonical_id=%s title=%.60s",
                 article_id,

@@ -31,6 +31,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from nexus_scalp.news.body_resolution import resolve_article_body
 from nexus_scalp.news.models import NewsDirection, NewsTopic
 
 # ---------------------------------------------------------------------------
@@ -416,14 +417,14 @@ def _iter_texts(articles: Iterable[Any]) -> Iterable[str]:
         title = _field(a, "title")
         summary = _field(a, "summary")
         body = _field(a, "body")
-        yield " ".join([title, summary, body]).upper()
+        yield " ".join([title, summary, resolve_article_body(body, summary)]).upper()
 
 
 def _text_of(article: Any) -> str:
     title = _field(article, "title")
     summary = _field(article, "summary")
     body = _field(article, "body")
-    return " ".join([title, summary, body]).upper()
+    return " ".join([title, summary, resolve_article_body(body, summary)]).upper()
 
 
 def _count_mentions(

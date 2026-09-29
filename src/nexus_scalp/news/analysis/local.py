@@ -25,6 +25,7 @@ import re
 from datetime import timedelta
 from typing import Any
 
+from nexus_scalp.news.body_resolution import resolve_article_body
 from nexus_scalp.news.models import (
     NewsDirection,
     NewsEntity,
@@ -271,7 +272,7 @@ def _title_and_text(article: Any) -> str:
     title = getattr(article, "title", "") or ""
     summary = getattr(article, "summary", "") or ""
     body = getattr(article, "body", "") or ""
-    return " ".join([title, summary, body]).upper()
+    return " ".join([title, summary, resolve_article_body(body, summary)]).upper()
 
 
 class LocalNewsAnalyzer:

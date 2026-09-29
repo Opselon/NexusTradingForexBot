@@ -29,6 +29,7 @@ from typing import Any
 
 from nexus_scalp.news.analysis.decay import NewsDecayEngine
 from nexus_scalp.news.analysis.local import LocalNewsAnalyzer
+from nexus_scalp.news.body_resolution import resolve_article_body
 from nexus_scalp.news.database import NewsDatabase
 from nexus_scalp.news.models import (
     NewsAnalysisResult,
@@ -136,7 +137,9 @@ class DefaultExternalAnalyzer(ExternalNewsAnalyzer):
         user = {
             "title": getattr(article, "title", ""),
             "summary": getattr(article, "summary", ""),
-            "body": getattr(article, "body", "")[:2000],
+            "body": resolve_article_body(
+                getattr(article, "body", "")[:2000], getattr(article, "summary", "")
+            ),
             "source": context.get("source_name", ""),
             "published": context.get("published_at", ""),
             "known_entities": [e.name for e in getattr(article, "entities", [])],
