@@ -40,9 +40,9 @@ func Build(py *python.Client) http.Handler {
 	r.HandleFunc("GET", "/api/v1/system/health", sys.Health)
 	r.HandleFunc("GET", "/api/v1/system/status", sys.Status)
 	r.HandleFunc("GET", "/api/v1/system/readiness", sys.Readiness)
-	r.HandleFunc("GET", "/api/v1/system/version", sys.Version)
+	r.HandleFunc("GET", "/api/v1/system/version", sys.VersionDirect)
 	r.HandleFunc("GET", "/api/v1/system/runtime", sys.Runtime)
-	r.HandleFunc("GET", "/api/v1/system/capabilities", sys.Capabilities)
+	r.HandleFunc("GET", "/api/v1/system/capabilities", sys.CapabilitiesDirect)
 	r.HandleFunc("GET", "/api/v1/system/workers", sys.Workers)
 	r.HandleFunc("GET", "/api/v1/system/diagnostics", sys.Diagnostics)
 	r.HandleFunc("POST", "/api/v1/system/diagnostics/run", sys.DiagnosticsRun)
@@ -92,6 +92,19 @@ func Build(py *python.Client) http.Handler {
 	// declaration-order priority, which Go's ServeMux cannot express for the
 	// ambiguous {id}+literal pairs the surface contains. ----
 	proxy := handlers.NewProxy(py)
+
+	// Wave 4: direct Go candidate serving with automatic Python fallback
+	cnt := handlers.NewContracts(py)
+	proxy.RegisterDirect("GET", "/api/v1/features/contract", cnt.FeatureContract)
+	proxy.RegisterDirect("GET", "/api/v1/features/groups", cnt.FeatureGroups)
+	proxy.RegisterDirect("GET", "/api/v1/config/schema", cnt.ConfigSchema)
+
+	platStatic := web.NewPlatformStatic(py)
+	proxy.RegisterDirect("GET", "/openapi.json", platStatic.ServeOpenAPI)
+	proxy.RegisterDirect("GET", "/docs", platStatic.ServeDocs)
+	proxy.RegisterDirect("GET", "/docs/oauth2-redirect", platStatic.ServeOAuth2Redirect)
+	proxy.RegisterDirect("GET", "/redoc", platStatic.ServeReDoc)
+
 	registerGenerated(r, proxy)
 
 	// ---- fallback: unknown /api/v1 path -> canonical v1 404 envelope ----

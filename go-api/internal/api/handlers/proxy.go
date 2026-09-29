@@ -18,14 +18,28 @@ import (
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/routing"
 )
 
-// Proxy forwards requests to the Python runtime unchanged.
+// Proxy forwards requests to the Python runtime unchanged, or executes
+// registered direct handlers for Candidate routes with automatic fallback.
 type Proxy struct {
-	py *python.Client
+	py             *python.Client
+	directHandlers map[string]http.HandlerFunc
 }
 
 // NewProxy returns a proxy bound to the given Python client.
 func NewProxy(py *python.Client) *Proxy {
-	return &Proxy{py: py}
+	return &Proxy{
+		py:             py,
+		directHandlers: make(map[string]http.HandlerFunc),
+	}
+}
+
+// RegisterDirect registers a Go handler to be served directly for a candidate route,
+// with automatic fallback to Python proxying on error or if direct serving is disabled.
+func (p *Proxy) RegisterDirect(method, path string, h http.HandlerFunc) {
+	if p.directHandlers == nil {
+		p.directHandlers = make(map[string]http.HandlerFunc)
+	}
+	p.directHandlers[method+" "+path] = h
 }
 
 // Handler returns an http.Handler for the given proxied operation.
@@ -46,58 +60,67 @@ func (p *Proxy) Handler(method, path string) http.Handler {
 			full += "?" + r.URL.RawQuery
 		}
 
-		// Wave 3: dependency-aware routing. Record the classification the
-		// table holds for this route on every proxied response, so an
-		// operator can see in flight which routes carry a real Python/DB
-		// dependency and which are Go-serving candidates. The decision does
-		// NOT change behaviour yet - every route still forwards to Python -
-		// but it is visible and testable now, and a later wave flips the
-		// switch only for Candidate routes.
+		// Fallback/direct forwarder to Python.
+		forwardToPython := func(rw http.ResponseWriter, req *http.Request) {
+			raw, err := p.py.DoRaw(req.Context(), method, full, req.Body)
+			if err != nil {
+				if be, ok := python.AsBoundary(err); ok {
+					respond.ReplayBoundary(rw, req, be)
+					return
+				}
+				// Legacy 4xx/5xx: Python ANSWERED. Replay its status + body
+				// verbatim. Upgrading this to a synthesized v1 503 would report
+				// an outage the upstream never had.
+				if lr, ok := python.AsLegacy(err); ok {
+					writeRawJSONStatus(rw, lr.Status, lr.Body)
+					return
+				}
+				respond.FailDependencyUnavailable(rw, req, "upstream unavailable")
+				return
+			}
+
+			// 204 No Content and empty bodies: nothing to decode. Serve the
+			// upstream status as-is so DELETE etc. keep their contract.
+			if len(raw) == 0 {
+				rw.WriteHeader(http.StatusNoContent)
+				return
+			}
+
+			if respond.IsV1Path(req.URL.Path) {
+				var env pyEnvelope[json.RawMessage]
+				if err := json.Unmarshal(raw, &env); err != nil {
+					// Python did not return the v1 envelope. Serve the bytes
+					// through rather than fabricating one, so a downstream format
+					// change surfaces at the client instead of being masked.
+					writeRawJSON(rw, http.StatusOK, raw)
+					return
+				}
+				respond.OKWithMeta(rw, req, env.Data, env.Meta)
+				return
+			}
+
+			// Legacy surface: bare payload, no envelope.
+			writeRawJSON(rw, http.StatusOK, raw)
+		}
+
+		key := method + " " + path
+		directH, hasDirect := p.directHandlers[key]
+		target := routing.Route(method, path)
+
+		// Wave 4: if direct serving is enabled and this candidate route has a registered direct handler,
+		// serve it directly in Go with automatic fallback.
+		if target == routing.TargetGoDirect && hasDirect {
+			directH(w, r)
+			return
+		}
+
+		// Non-candidate or candidate without direct handler: forward to Python with routing headers.
+		reason := "unclassified"
 		if d := routing.Decide(method, path); d.Classified {
-			w.Header().Set("X-NSE-Routing-Reason", d.Why)
-		} else {
-			w.Header().Set("X-NSE-Routing-Reason", "unclassified")
+			reason = d.Why
 		}
-
-		raw, err := p.py.DoRaw(r.Context(), method, full, r.Body)
-		if err != nil {
-			if be, ok := python.AsBoundary(err); ok {
-				respond.ReplayBoundary(w, r, be)
-				return
-			}
-			// Legacy 4xx/5xx: Python ANSWERED. Replay its status + body
-			// verbatim. Upgrading this to a synthesized v1 503 would report
-			// an outage the upstream never had.
-			if lr, ok := python.AsLegacy(err); ok {
-				writeRawJSONStatus(w, lr.Status, lr.Body)
-				return
-			}
-			respond.FailDependencyUnavailable(w, r, "upstream unavailable")
-			return
-		}
-
-		// 204 No Content and empty bodies: nothing to decode. Serve the
-		// upstream status as-is so DELETE etc. keep their contract.
-		if len(raw) == 0 {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
-		if respond.IsV1Path(r.URL.Path) {
-			var env pyEnvelope[json.RawMessage]
-			if err := json.Unmarshal(raw, &env); err != nil {
-				// Python did not return the v1 envelope. Serve the bytes
-				// through rather than fabricating one, so a downstream format
-				// change surfaces at the client instead of being masked.
-				writeRawJSON(w, http.StatusOK, raw)
-				return
-			}
-			respond.OKWithMeta(w, r, env.Data, env.Meta)
-			return
-		}
-
-		// Legacy surface: bare payload, no envelope.
-		writeRawJSON(w, http.StatusOK, raw)
+		routing.SetRoutingHeaders(w, routing.TargetPythonProxy, reason)
+		forwardToPython(w, r)
 	})
 }
 
