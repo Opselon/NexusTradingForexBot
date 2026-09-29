@@ -282,6 +282,22 @@ class CheckRunCollector:
             if anno.level != "FAILURE":
                 continue
             failures.append(self._failure_from_annotation(check, anno))
+        # If we collected specific code-level failures from the repository,
+        # drop redundant runner-level step exit markers ("Process completed with exit code 1")
+        # that point to .github/workflows/*.yml so they don't crowd out the real source locations.
+        has_repo_failures = any(
+            f.location.path != UNKNOWN and not f.location.path.startswith(".github/")
+            for f in failures
+        )
+        if has_repo_failures:
+            failures = [
+                f
+                for f in failures
+                if not (
+                    f.location.path.startswith(".github/")
+                    and "process completed with exit code" in f.message.lower()
+                )
+            ]
         # 2) A failed check with no annotations still yields a located failure
         #    when its summary/title/output text carries a file reference.
         text_blob = self._check_text(check)
@@ -319,6 +335,10 @@ class CheckRunCollector:
     def _failure_from_annotation(self, check: CheckResult, anno: CheckAnnotation) -> Failure:
         path = normalize_or_unknown(anno.path, self.repo_root)
         loc = self._locate(check, path, anno.start_line, anno.start_column)
+        if loc.path in (UNKNOWN, check.workflow_file) and (anno.title or anno.message):
+            embedded_locs = extract_locations(f"{anno.title}\n{anno.message}", self.repo_root)
+            if embedded_locs:
+                loc = embedded_locs[0]
         rule = self._extract_rule(anno.title, anno.message)
         category = self._classify_check(check, anno, rule)
         return Failure(
@@ -386,7 +406,8 @@ class CheckRunCollector:
     def _classify_check(
         self, check: CheckResult, anno: CheckAnnotation | None, rule: str
     ) -> FailureCategory:
-        name = f"{check.name} {check.workflow} {rule}".lower()
+        anno_text = f"{anno.title} {anno.message}" if anno else ""
+        name = f"{check.name} {check.workflow} {rule} {anno_text}".lower()
         if "codeql" in name:
             return FailureCategory.CODEQL_FINDING
         if "trivy" in name or "osv" in name or "security" in name or "secret" in name:

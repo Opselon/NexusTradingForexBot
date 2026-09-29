@@ -179,6 +179,36 @@ class TestFailingStepResolvesUnknownPaths:
         assert failures[0].step == UNKNOWN
         assert failures[0].location.path == _WORKFLOW_FILE
 
+    def test_runner_exit_code_dropped_when_repo_file_failures_present(self):
+        annos = [
+            {
+                "path": "src/nexus_scalp/risk/risk_engine.py",
+                "start_line": 42,
+                "start_column": 5,
+                "annotation_level": "failure",
+                "title": "ruff_lint (F401)",
+                "message": "'sys' imported but unused",
+            },
+            {
+                "path": ".github",
+                "annotation_level": "failure",
+                "title": "Process completed with exit code 1.",
+                "message": "Process completed with exit code 1.",
+            },
+        ]
+        client = self._client(
+            annotations=annos,
+            steps=[{"name": "Fail job if any check failed", "conclusion": "failure"}],
+        )
+        client._transport.responses["check-runs/9001/annotations"] = lambda *_: list(annos)
+        collector = CheckRunCollector(client)
+        _checks, failures = collector.collect(_SHA, fetch_annotations=True)
+        assert len(failures) == 1
+        assert failures[0].location.path == "src/nexus_scalp/risk/risk_engine.py"
+        assert failures[0].location.line == 42
+        assert failures[0].error_type == "F401"
+        assert failures[0].category.value == "LINT_FAILURE"
+
 
 class TestRendererSurfacesStepAndWorkflowFile:
     def _report(self, location, **failure_kwargs) -> str:
