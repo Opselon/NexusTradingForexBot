@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 import re
+import secrets
 import signal
 import sqlite3
 import subprocess
@@ -32,7 +33,6 @@ import threading
 import time
 import urllib.error
 import urllib.request
-import secrets
 from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
@@ -184,14 +184,14 @@ def _http_get(url: str, token: str) -> dict[str, Any]:
         with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
             body = response.read(128 * 1024)
             return {
-                "status": int(getattr(response, "status", 200) or 200),
+                "status": getattr(response, "status", 200) or 200,
                 "bytes": len(body),
                 "latency_ms": round((time.perf_counter() - started) * 1000, 3),
             }
     except urllib.error.HTTPError as exc:
         body = exc.read(16 * 1024).decode("utf-8", errors="replace")
         return {
-            "status": int(exc.code),
+            "status": exc.code,
             "bytes": len(body.encode("utf-8")),
             "latency_ms": round((time.perf_counter() - started) * 1000, 3),
             "error": body[:1000],
@@ -230,7 +230,7 @@ def _query_metrics(latencies: list[float]) -> dict[str, Any]:
     if not latencies:
         return {"count": 0}
     ordered = sorted(latencies)
-    p95_index = min(len(ordered) - 1, max(0, int(round(0.95 * len(ordered))) - 1))
+    p95_index = min(len(ordered) - 1, max(0, round(0.95 * len(ordered)) - 1))
     return {
         "count": len(ordered),
         "p50_ms": round(float(median(ordered)), 3),
