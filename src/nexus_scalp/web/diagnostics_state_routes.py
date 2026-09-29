@@ -2076,7 +2076,18 @@ def register_diagnostics_state_routes(
                     dest.close()
             finally:
                 conn.close()
-            return {"success": True, "backup_path": backup_path}
+            # Same retention as the CLI command (section 66): keep the newest
+            # few, delete the rest. Both writers target the same directory and
+            # the same audit_backup_*.db family, so either one enforces the
+            # bound; without it the directory grew to 2.55 GB in a week.
+            from nexus_scalp.cli.db_commands import AUDIT_BACKUP_RETENTION, _prune_audit_backups
+
+            pruned = _prune_audit_backups("artifacts/backups", keep=AUDIT_BACKUP_RETENTION)
+            return {
+                "success": True,
+                "backup_path": backup_path,
+                "retention": {"keep": AUDIT_BACKUP_RETENTION, "pruned": len(pruned)},
+            }
         except Exception as e:
             log_web_error(logger, "/api/db/manage/backup", None, e)
             return _err("DB_MIGRATION_BACKUP_FAILED")

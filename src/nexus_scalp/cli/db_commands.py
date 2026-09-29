@@ -26,6 +26,61 @@ logger = get_logger("nexus_scalp.cli.db")
 _ALL_DOMAINS = ("audit", "news", "candle_intel")
 
 
+#: Retention for ``nexus db backup`` (section 66: the owner is the backup
+#: command itself, the policy is keep-N-newest). A backup insures the
+#: migration that follows it, so the newest few carry the whole value.
+AUDIT_BACKUP_RETENTION = 3
+
+
+def _prune_audit_backups(directory: str, keep: int) -> list[str]:
+    """Delete the oldest ``audit_backup_*.db`` copies beyond ``keep``.
+
+    The contract for the purge (section 66) is that it touches ONLY this
+    command's own backup family. The filename pattern is the one
+    ``portability_backup`` writes, so a foreign file in the same directory —
+    a ``audit_v7_*.bak`` migration snapshot, a ``news_v0_*.bak``, anything a
+    human placed there — is never selected. A SQLite backup is a main file
+    plus its ``-wal``/``-shm`` sidecars; those are removed alongside the main
+    file because a stale sidecar on a retained backup is harmless, and a
+    dangling one is clutter. Sidecars are only removed when the main file
+    they belong to is pruned.
+
+    Returns the paths actually removed (main files), newest-first excluded —
+    the caller reports the count so an operator sees the space reclaimed.
+    """
+    import glob
+    import os
+
+    if keep < 0:
+        return []
+    root = Path(directory)
+    if not root.is_dir():
+        return []
+    # glob, not a full directory scan: only the backup family matches.
+    mains = sorted(
+        glob.glob(str(root / "audit_backup_*.db")),
+        key=os.path.getmtime,
+        reverse=True,
+    )
+    if len(mains) <= keep:
+        return []
+    removed: list[str] = []
+    for stale in mains[keep:]:
+        try:
+            os.remove(stale)
+        except OSError:
+            continue
+        removed.append(stale)
+        for suffix in ("-wal", "-shm"):
+            sidecar = f"{stale}{suffix}"
+            if os.path.exists(sidecar):
+                try:
+                    os.remove(sidecar)
+                except OSError:
+                    pass
+    return removed
+
+
 def _domain(value: str) -> DatabaseDomain:
     try:
         return DatabaseDomain(value.lower())
@@ -381,7 +436,19 @@ def make_portability_app() -> typer.Typer:
                 dst.close()
         finally:
             src.close()
-        payload = {"success": True, "backup_path": backup_path}
+        # Retention (section 66: no purge without a retention owner — the owner
+        # is this command, the policy is keep-N-newest). A backup is insurance
+        # against the migration that follows it, so keeping the newest few is
+        # the whole value; an unbounded directory silently grew to 2.55 GB
+        # (three 436 MB copies of audit.db plus sidecars, all from one week).
+        # Prune only this command's own audit_backup_*.db family, newest first,
+        # and never touch a file that is not one of ours.
+        pruned = _prune_audit_backups("artifacts/backups", keep=AUDIT_BACKUP_RETENTION)
+        payload = {
+            "success": True,
+            "backup_path": backup_path,
+            "retention": {"keep": AUDIT_BACKUP_RETENTION, "pruned": pruned},
+        }
         _emit(payload, json_mode, plain_title="SQLITE BACKUP CREATED")
 
     return app
