@@ -99,10 +99,7 @@ def test_no_secret_values_in_workflow_text():
 
 def test_summary_writes_all_three_outputs():
     body = _summary_body()
-    assert (
-        "ai-triage" in body
-        and "--context ci-results/run-info/summary-evidence.json" in body
-    )
+    assert "ai-triage" in body and "--context ci-results/run-info/summary-evidence.json" in body
     assert "GITHUB_STEP_SUMMARY" in body
     assert 'gh pr comment "$PR_NUMBER"' in body
     assert "commits/${TARGET_SHA}/pulls" in body
