@@ -790,15 +790,20 @@ def console_rows(
             # sqlite_master, and fails closed (ValueError) on an unknown name or
             # an unreadable catalog. So the caller can only NAME a table that
             # already exists; it contributes no characters to SQL text.
-            # LIMIT/OFFSET stay bound placeholders (driver.query translates
-            # ? -> %s for PostgreSQL).
+            # LIMIT/OFFSET stay bound placeholders. Placeholders are
+            # provider-native (drivers/base.py): qmark ? for SQLite, pyformat
+            # %s for PostgreSQL — driver.query does NOT translate them.
             try:
                 resolved_table = driver.resolve_table_name(table)
                 table_sql = driver.quote_ident(resolved_table)
             except ValueError:
                 return {"success": False, "error": f"invalid table name '{table}'"}
             if cfg and cfg.is_postgresql:
-                sql = f"SELECT * FROM {table_sql} ORDER BY 1 LIMIT ? OFFSET ?"
+                # %s, not ?: psycopg uses the pyformat paramstyle and
+                # rejects a literal '?' with "the query has 0 placeholders
+                # but 2 parameters were passed", which broke this browser on
+                # PostgreSQL (verified against live nexusdb).
+                sql = f"SELECT * FROM {table_sql} ORDER BY 1 LIMIT %s OFFSET %s"
             else:
                 sql = f"SELECT * FROM {table_sql} ORDER BY rowid LIMIT ? OFFSET ?"
             rows = driver.query(sql, (limit, offset))
