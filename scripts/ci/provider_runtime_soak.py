@@ -138,7 +138,10 @@ class LogCollector:
                 match = SEVERITY_RE.search(line)
                 if not match:
                     continue
-                severity = match.group(1).upper()
+                severity = next(
+                    (group.upper() for group in match.groups() if group),
+                    "ERROR",
+                )
                 if severity == "WARN":
                     severity = "WARNING"
                 source = SOURCE_RE.search(line)
@@ -780,36 +783,79 @@ def main() -> int:
         soak_started = time.monotonic()
         next_db_pass = soak_started + 60
         next_api_sweep = soak_started + 30
+        runtime_findings: list[dict[str, Any]] = []
+        hot_probes: list[dict[str, Any]] = []
+
         while time.monotonic() - soak_started < args.duration:
             if proc.poll() is not None:
-                failure = f"launcher exited during soak with rc={proc.returncode}"
-                break
-            now = time.monotonic()
-            for path in HOT_ENDPOINTS:
-                probe = http_request(base_url, path)
-                probe["sweep"] = "hot"
-                if probe.get("status", 0) >= 500 or probe.get("status") == 0:
-                    failure = f"hot endpoint failure: {probe}"
-                    break
-            if failure:
+                runtime_findings.append(
+                    {
+                        "type": "process-exit",
+                        "message": f"launcher exited during soak with rc={proc.returncode}",
+                        "exit_code": proc.returncode,
+                    }
+                )
                 break
 
+            now = time.monotonic()
+            # Exercise the hot control-plane surface concurrently so one slow
+            # endpoint cannot serially steal the entire 5s heartbeat window.
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=len(HOT_ENDPOINTS)
+            ) as pool:
+                hot_batch = list(pool.map(lambda p: http_request(base_url, p), HOT_ENDPOINTS))
+            for probe in hot_batch:
+                probe["sweep"] = "hot"
+                hot_probes.append(probe)
+                if probe.get("status", 0) >= 500 or probe.get("status") == 0:
+                    runtime_findings.append({"type": "api", **probe})
+
             if now >= next_api_sweep:
-                api_sweeps.append(api_battery(base_url, routes, f"repeat-{len(api_sweeps)}"))
+                api_result = api_battery(
+                    base_url, routes, f"repeat-{len(api_sweeps)}"
+                )
+                api_sweeps.append(api_result)
+                for result in api_result["results"]:
+                    status_code = int(result.get("status", 0))
+                    if status_code >= 500 or status_code == 0:
+                        runtime_findings.append(
+                            {
+                                "type": "api",
+                                "sweep": api_result["sweep"],
+                                **result,
+                            }
+                        )
                 next_api_sweep += 30
 
             if now >= next_db_pass:
                 try:
-                    db_runs.append(run_db_battery(args.provider, "late-boot", max_tables=40))
+                    db_result = run_db_battery(
+                        args.provider, "late-boot", max_tables=40
+                    )
+                    db_runs.append(db_result)
+                    for query in db_result["queries"]:
+                        if query["status"] == "FAIL":
+                            runtime_findings.append(
+                                {
+                                    "type": "database-query",
+                                    "phase": db_result["phase"],
+                                    **query,
+                                }
+                            )
                 except Exception as exc:
-                    failure = f"late-boot database battery crashed: {type(exc).__name__}: {exc}"
-                    break
+                    runtime_findings.append(
+                        {
+                            "type": "database-battery-crash",
+                            "message": f"late-boot database battery crashed: {type(exc).__name__}: {exc}",
+                        }
+                    )
                 next_db_pass += 60
 
             remaining = args.duration - (time.monotonic() - soak_started)
             time.sleep(min(SOAK_PROBE_EVERY_SEC, max(0.25, remaining)))
 
         actual_soak = time.monotonic() - soak_started
+        startup_evidence["hot_probe_count"] = len(hot_probes)
     except Exception as exc:
         failure = f"{type(exc).__name__}: {exc}"
         actual_soak = 0.0
@@ -829,6 +875,14 @@ def main() -> int:
     if failure:
         findings.insert(0, {"type": "harness", "message": failure})
         status = "FAIL"
+
+    # Runtime failures discovered during the window are retained instead of
+    # prematurely killing the process; classification still makes them fatal.
+    # This gives operators the complete 120s evidence window.
+    if "runtime_findings" in locals():
+        findings = runtime_findings + findings
+        if runtime_findings:
+            status = "FAIL"
 
     # Treat the minimum API/database battery as a certification contract:
     # a tiny number of queries means the lane did not actually exercise the
@@ -883,6 +937,7 @@ def main() -> int:
         "observability": final_log,
         "shutdown": shutdown,
         "findings": findings[:500],
+        "hot_probes": hot_probes[-200:] if "hot_probes" in locals() else [],
     }
 
     evidence_dir.mkdir(parents=True, exist_ok=True)
