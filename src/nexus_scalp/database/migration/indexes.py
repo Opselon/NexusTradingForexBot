@@ -197,6 +197,30 @@ _NO_INDEX_RUNTIME_RISK_STATE = (
     "runtime_risk_state WHERE id=1 is covered by the CHECK-guarded PRIMARY KEY (no index needed)"
 )
 
+#: strategy_registry list paths sort ``ORDER BY updated_at DESC LIMIT n``
+#: (research.registry.list default 200/500, incidents trace why_no_strategy).
+#: Only idx_registry_id(strategy_id, updated_at) and idx_registry_lifecycle
+#: exist, neither starts with updated_at, so every list reads + sorts the
+#: whole table. Live probe (2026-09-29): 4,109 rows, 610-875ms, repeated each
+#: 60s research cycle -> the repeated "[PG-QUERY] slow query" warnings.
+_INDEX_STRATEGY_REGISTRY_UPDATED_AT_REASON = (
+    "strategy_registry ORDER BY updated_at DESC LIMIT n list paths (PK-only seq scan + "
+    "temp b-tree sort; live probe 4,109 rows / 610-875ms per call on the research cycle)"
+)
+
+#: audit_signals time-window reads (decision browser / stats panel) filter
+#: ``generated_at >= ?``. This is deliberately NOT an index: the table holds
+#: 7 days of retention, so a 7-day window selects ~100% of rows and no index
+#: can ever be selective on it (the Phase-2 matrix measured and rejected the
+#: ``(generated_at, action)`` composite for exactly this reason). The honest
+#: fix for these queries is the bounded latest-N slice the callers already
+#: apply (``ORDER BY id DESC LIMIT n``), plus the LIMIT push-down into the
+#: pooled read path. Recorded so the next index audit does not re-derive it.
+_NO_INDEX_AUDIT_SIGNALS_GENERATED_AT = (
+    "audit_signals WHERE generated_at >= ? selects ~100% of a 7-day-retention table "
+    "(Phase-2 matrix R-rejected: no index can be selective; bounded slices are the fix)"
+)
+
 
 #: The ordered set of missing indexes. Order is hot-path-first; the migration
 #: is idempotent as a whole, so the ordering is readability, not dependency.
@@ -263,6 +287,19 @@ MISSING_INDEXES: tuple[MissingIndex, ...] = (
         table="factory_generations",
         definition="(number DESC)",
         predicate=_INDEX_FACTORY_GENERATIONS_REASON,
+    ),
+    MissingIndex(
+        name="idx_strategy_registry_updated_at",
+        table="strategy_registry",
+        # The registry list path (research.registry.list / incidents trace)
+        # is ``ORDER BY updated_at DESC LIMIT n``: with only
+        # idx_registry_id / idx_registry_lifecycle present the planner seq-scans
+        # every row and sorts in a temp b-tree (live probe: 4,109 rows,
+        # 610-875ms per call, repeated on every 60s research cycle). An
+        # ordered index makes the tail read index-served: LIMIT n stops after
+        # n index entries instead of touching the whole table.
+        definition="(updated_at DESC)",
+        predicate=_INDEX_STRATEGY_REGISTRY_UPDATED_AT_REASON,
     ),
 )
 

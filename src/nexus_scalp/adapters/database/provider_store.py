@@ -322,8 +322,20 @@ def queue_write_batch(
     if backend is None:
         _not_provisioned(operation or "queue_write_batch")
         return False
+    # CONTRACT: callers pass ``(query, args)`` pairs — ONE execution per
+    # statement, ``args`` the bind tuple for that execution (see every caller:
+    # learning_cycle, model registry, training worker). The pooled write
+    # backend's ``execute_batch`` instead speaks ``(query, rows)`` where
+    # ``rows`` is a sequence of ROWS (audit_repository's own
+    # ``_provider_execute_write`` already wraps with ``[tuple(args)]``).
+    # Passing the args tuple through unwrapped made the backend treat the
+    # BIND VALUES as rows: a single string argument was iterated character by
+    # character into N parameters — the live "the query has 1 placeholders
+    # but 18 parameters" error from shadow_worker's restart-time
+    # ``UPDATE shadow_runs``. Normalize at this boundary so the public
+    # contract stays "(query, args)" for every caller.
     try:
-        backend.execute_batch(list(statements))
+        backend.execute_batch([(query, [tuple(args)]) for query, args in statements])
         return True
     except Exception as exc:
         # The failing QUERY is the one thing the live log was missing: a
@@ -491,8 +503,12 @@ def ops_queue_write_batch(
     if backend is None:
         _not_provisioned(operation or "ops_queue_write_batch", domain)
         return False
+    # Same (query, args) -> (query, rows) normalization as queue_write_batch:
+    # ``execute_batch`` treats the second element as a sequence of ROWS, so
+    # an unwrapped bind tuple explodes a single string argument into its
+    # characters ("1 placeholders but 18 parameters" on the live cluster).
     try:
-        backend.execute_batch(list(statements))
+        backend.execute_batch([(query, [tuple(args)]) for query, args in statements])
         return True
     except Exception as exc:
         try:
@@ -800,6 +816,7 @@ class _BorrowedRows:
     """
 
     def __init__(self, rows: Sequence[dict[str, Any]], columns: Sequence[str]) -> None:
+        self._columns = list(columns)
         self._rows = [dict(zip(columns, (r.get(c) for c in columns), strict=False)) for r in rows]
         self._index = 0
 
@@ -810,7 +827,17 @@ class _BorrowedRows:
         if idx >= len(self._rows):
             raise IndexError(key)
         row = self._rows[idx]
-        return row[key] if isinstance(key, str) else list(row.values())[key]
+        if isinstance(key, str):
+            return row[key]
+        # Positional access must mirror sqlite3.Row: ``row[0]`` is the first
+        # SELECT column. ``list(row.values())[key]`` assumes an ordered dict
+        # which is true for dict-from-zip, but a caller that received a plain
+        # dict (a column-name lookup) must still resolve positionally through
+        # the DECLARED column order — that is what ``columns`` is for.
+        cols = self._columns
+        if 0 <= key < len(cols):
+            return row.get(cols[key])
+        raise IndexError(key)
 
     def keys(self) -> list[str]:
         if self._index < len(self._rows):
@@ -822,12 +849,55 @@ class _BorrowedRows:
             return None
         row = self._rows[self._index]
         self._index += 1
-        return row
+        return _PositionalRow(row, self._columns)
 
     def fetchall(self) -> list[Any]:
         rest = self._rows[self._index :]
         self._index = len(self._rows)
-        return rest
+        return [_PositionalRow(r, self._columns) for r in rest]
+
+
+class _PositionalRow:
+    """A row that behaves like ``sqlite3.Row`` over a dict from the read pool.
+
+    ``sqlite3.Row`` supports BOTH ``row[0]`` (positional, by SELECT column
+    order) and ``row["col"]`` (by name), and ``dict(row)``. The pooled read
+    backend returns plain dicts, which support name access but raise
+    ``KeyError(0)`` on positional access — the live ``error=0`` behind 91
+    ``[STRATEGY_RESEARCH] evidence resolution failed`` warnings in one
+    90-second window (``resolve_decision_evidence`` reads ``row[0]`` /
+    ``row[1]``). This wrapper restores the positional contract without
+    changing any caller.
+    """
+
+    __slots__ = ("_columns", "_row")
+
+    def __init__(self, row: dict[str, Any], columns: Sequence[str]) -> None:
+        self._row = row
+        self._columns = list(columns)
+
+    def __getitem__(self, key: str | int) -> Any:
+        if isinstance(key, str):
+            return self._row[key]
+        # Positional: resolve through the DECLARED column order, exactly like
+        # sqlite3.Row maps an index to the SELECT's n-th column.
+        if 0 <= key < len(self._columns):
+            return self._row.get(self._columns[key])
+        raise IndexError(key)
+
+    def keys(self) -> list[str]:
+        return list(self._columns)
+
+    def __iter__(self):
+        # ``dict(row)`` iterates KEYS first (like sqlite3.Row's dict()
+        # support via the keys()/__iter__ pair used by dict(row)).
+        return iter(self._columns)
+
+    def __len__(self) -> int:
+        return len(self._columns)
+
+    def __repr__(self) -> str:
+        return f"_PositionalRow({self._row!r})"
 
 
 class _BorrowedConnection:

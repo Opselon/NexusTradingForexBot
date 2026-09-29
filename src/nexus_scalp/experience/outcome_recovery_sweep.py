@@ -39,7 +39,6 @@ Safety properties:
 from __future__ import annotations
 
 import contextlib
-import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -171,10 +170,19 @@ class HistoricalOutcomeRecoverySweep:
     # Evidence queries (read-only, bounded)
     # ------------------------------------------------------------------
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.repo._db_path, timeout=10.0)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _connect(self) -> Any:
+        """A read connection on the ACTIVE provider.
+
+        Under PostgreSQL ``_db_path`` names the server-side database, not a
+        file: opening ``sqlite3.connect`` on it produced the live
+        ``ORPHAN_RECOVERY_SWEEP failed (isolated) ... 'unable to open database
+        file'`` on every startup. The fabric's read connection exposes the
+        same ``execute(...).fetchone()/fetchall()`` surface this sweep uses,
+        and routes through the audit domain's pooled read plane instead.
+        """
+        from nexus_scalp.adapters.database import provider_store
+
+        return provider_store.read_connection(self.repo)
 
     def _missing_outcome_decisions(self) -> list[dict[str, Any]]:
         """Orphan decisions enriched with the CANONICAL evidence verdict.
@@ -210,7 +218,7 @@ class HistoricalOutcomeRecoverySweep:
             conn.close()
         return out
 
-    def _dispatch_tickets(self, conn: sqlite3.Connection, request_id: str) -> list[str]:
+    def _dispatch_tickets(self, conn: Any, request_id: str) -> list[str]:
         """Broker tickets recorded by the engine's own dispatch log."""
         if not request_id:
             return []
@@ -225,7 +233,7 @@ class HistoricalOutcomeRecoverySweep:
                 out.append(t)
         return out
 
-    def _broker_orders(self, conn: sqlite3.Connection, tickets: list[str]) -> list[dict[str, Any]]:
+    def _broker_orders(self, conn: Any, tickets: list[str]) -> list[dict[str, Any]]:
         ph = ",".join("?" * len(tickets))
         rows = conn.execute(
             f"""SELECT ticket, position_id, state, volume_initial, volume_current,
@@ -236,7 +244,7 @@ class HistoricalOutcomeRecoverySweep:
         return [dict(r) for r in rows]
 
     def _deals_for(
-        self, conn: sqlite3.Connection, tickets: list[str], position_ids: list[int]
+        self, conn: Any, tickets: list[str], position_ids: list[int]
     ) -> list[dict[str, Any]]:
         """Close-deal evidence, position_id join first, deals."order" fallback.
 
@@ -341,7 +349,7 @@ class HistoricalOutcomeRecoverySweep:
 
     def _recover_one(
         self,
-        conn: sqlite3.Connection,
+        conn: Any,
         dec: dict[str, Any],
         result: RecoverySweepResult,
         *,
@@ -404,7 +412,7 @@ class HistoricalOutcomeRecoverySweep:
 
     def _recover_filled(
         self,
-        conn: sqlite3.Connection,
+        conn: Any,
         dec: dict[str, Any],
         tickets: list[str],
         position_ids: list[int],

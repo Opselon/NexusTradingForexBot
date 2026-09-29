@@ -369,7 +369,17 @@ def fetch_rows_bounded(
     plane = _repo_read_plane(repo)
     if plane is None:
         raise ProviderReadUnavailableError("audit read plane unavailable for a pooled provider")
-    return list(plane.query(sql, tuple(args)))[:bounded]
+    # LIMIT is pushed INTO the statement here, not sliced in Python: ``sql``
+    # arrives without a LIMIT by contract, and the previous pooled branch ran
+    # the unbounded query and kept only ``bounded`` rows afterwards — the
+    # live slow-query spam (audit_signals 6,152 full-width rows for a 50-row
+    # page; research_events 88,019 rows). The SQL may already contain a
+    # trailing ``;`` (callers compose WHERE + ORDER BY), so the LIMIT is
+    # inserted before it when present.
+    stmt = sql.strip()
+    if stmt.endswith(";"):
+        stmt = stmt[:-1]
+    return list(plane.query(f"{stmt} LIMIT ?", (*args, bounded)))
 
 
 def iso_or_none(value: Any) -> str | None:
