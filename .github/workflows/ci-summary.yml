@@ -35,21 +35,21 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: ci-summary-\${{ github.event.workflow_run.id }}
+  group: ci-summary-${{ github.event.workflow_run.id }}
   cancel-in-progress: false
 
 env:
   PYTHON_VERSION: "3.11"
-  TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
-  TELEGRAM_CHAT_ID: \${{ secrets.TELEGRAM_CHAT_ID }}
-  USER_ID: \${{ secrets.USER_ID }}
-  AI_HOST: \${{ secrets.AI_HOST }}
-  AI_KEY: \${{ secrets.AI_KEY }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  USER_ID: ${{ secrets.USER_ID }}
+  AI_HOST: ${{ secrets.AI_HOST }}
+  AI_KEY: ${{ secrets.AI_KEY }}
 
 jobs:
   final-summary:
     name: AI Final Summary
-    if: \${{ github.event_name == 'workflow_run' }}
+    if: ${{ github.event_name == 'workflow_run' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -103,13 +103,13 @@ jobs:
       - name: Resolve target run + associated PR
         id: target
         env:
-          GH_TOKEN: \${{ github.token }}
-          TARGET_RUN_ID: \${{ github.event.workflow_run.id }}
-          TARGET_WORKFLOW: \${{ github.event.workflow_run.name }}
-          TARGET_CONCLUSION: \${{ github.event.workflow_run.conclusion }}
-          TARGET_EVENT: \${{ github.event.workflow_run.event }}
-          TARGET_SHA: \${{ github.event.workflow_run.head_sha }}
-          TARGET_BRANCH: \${{ github.event.workflow_run.head_branch }}
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RUN_ID: ${{ github.event.workflow_run.id }}
+          TARGET_WORKFLOW: ${{ github.event.workflow_run.name }}
+          TARGET_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          TARGET_EVENT: ${{ github.event.workflow_run.event }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          TARGET_BRANCH: ${{ github.event.workflow_run.head_branch }}
         shell: bash
         run: |
           set -euo pipefail
@@ -121,7 +121,7 @@ jobs:
           echo "sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
           echo "branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
 
-          PR="\${{ github.event.workflow_run.pull_requests[0].number }}"
+          PR="${{ github.event.workflow_run.pull_requests[0].number }}"
           PR_SOURCE="workflow_run.pull_requests"
           PR_REASON="resolved_from_workflow_run_payload"
 
@@ -130,7 +130,7 @@ jobs:
             ASSOCIATED_JSON="$(gh api --paginate \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              "/repos/\${GITHUB_REPOSITORY}/commits/\${TARGET_SHA}/pulls" 2>/dev/null || echo '[]')"
+              "/repos/${GITHUB_REPOSITORY}/commits/${TARGET_SHA}/pulls" 2>/dev/null || echo '[]')"
 
             PR="$(printf '%s' "$ASSOCIATED_JSON" | jq -r '
               [ .[] | select(.number != null) |
@@ -170,16 +170,16 @@ jobs:
           )
           PY
 
-          echo "Target run=$TARGET_RUN_ID sha=$TARGET_SHA pr=\${PR:-none} source=$PR_SOURCE reason=$PR_REASON"
+          echo "Target run=$TARGET_RUN_ID sha=$TARGET_SHA pr=${PR:-none} source=$PR_SOURCE reason=$PR_REASON"
 
       - name: Collect whole-run evidence
         env:
-          CI_PYTHON: \${{ steps.env.outputs.python }}
-          GH_TOKEN: \${{ github.token }}
-          TARGET_RUN_ID: \${{ steps.target.outputs.run_id }}
-          TARGET_WORKFLOW: \${{ steps.target.outputs.workflow }}
-          TARGET_EVENT: \${{ steps.target.outputs.event }}
-          PR_NUMBER: \${{ steps.target.outputs.pr }}
+          CI_PYTHON: ${{ steps.env.outputs.python }}
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RUN_ID: ${{ steps.target.outputs.run_id }}
+          TARGET_WORKFLOW: ${{ steps.target.outputs.workflow }}
+          TARGET_EVENT: ${{ steps.target.outputs.event }}
+          PR_NUMBER: ${{ steps.target.outputs.pr }}
         shell: bash
         run: |
           set +e
@@ -197,15 +197,15 @@ jobs:
 
       - name: AI analysis + Telegram delivery
         id: ai
-        if: \${{ always() }}
+        if: ${{ always() }}
         continue-on-error: true
         env:
-          CI_PYTHON: \${{ steps.env.outputs.python }}
-          GH_TOKEN: \${{ github.token }}
-          TARGET_RUN_ID: \${{ steps.target.outputs.run_id }}
-          TARGET_WORKFLOW: \${{ steps.target.outputs.workflow }}
-          TARGET_EVENT: \${{ steps.target.outputs.event }}
-          PR_NUMBER: \${{ steps.target.outputs.pr }}
+          CI_PYTHON: ${{ steps.env.outputs.python }}
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RUN_ID: ${{ steps.target.outputs.run_id }}
+          TARGET_WORKFLOW: ${{ steps.target.outputs.workflow }}
+          TARGET_EVENT: ${{ steps.target.outputs.event }}
+          PR_NUMBER: ${{ steps.target.outputs.pr }}
         shell: bash
         run: |
           set +e
@@ -279,16 +279,16 @@ jobs:
           exit 0
 
       - name: Write canonical final summary
-        if: \${{ always() }}
+        if: ${{ always() }}
         env:
-          CI_PYTHON: \${{ steps.env.outputs.python }}
-          TARGET_WORKFLOW: \${{ steps.target.outputs.workflow }}
-          TARGET_CONCLUSION: \${{ steps.target.outputs.conclusion }}
-          TARGET_SHA: \${{ steps.target.outputs.sha }}
-          TARGET_BRANCH: \${{ steps.target.outputs.branch }}
-          TARGET_PR: \${{ steps.target.outputs.pr }}
-          PR_SOURCE: \${{ steps.target.outputs.pr_source }}
-          PR_REASON: \${{ steps.target.outputs.pr_reason }}
+          CI_PYTHON: ${{ steps.env.outputs.python }}
+          TARGET_WORKFLOW: ${{ steps.target.outputs.workflow }}
+          TARGET_CONCLUSION: ${{ steps.target.outputs.conclusion }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          TARGET_BRANCH: ${{ steps.target.outputs.branch }}
+          TARGET_PR: ${{ steps.target.outputs.pr }}
+          PR_SOURCE: ${{ steps.target.outputs.pr_source }}
+          PR_REASON: ${{ steps.target.outputs.pr_reason }}
         shell: bash
         run: |
           set -euo pipefail
@@ -341,9 +341,9 @@ jobs:
           PY
 
       - name: Publish GitHub Step Summary
-        if: \${{ always() }}
+        if: ${{ always() }}
         env:
-          CI_PYTHON: \${{ steps.env.outputs.python }}
+          CI_PYTHON: ${{ steps.env.outputs.python }}
         shell: bash
         run: |
           set +e
@@ -373,11 +373,11 @@ jobs:
 
       - name: PR review comment (verified delivery)
         id: pr-comment
-        if: \${{ always() && steps.target.outputs.pr != '' }}
+        if: ${{ always() && steps.target.outputs.pr != '' }}
         continue-on-error: true
         env:
-          GH_TOKEN: \${{ github.token }}
-          PR_NUMBER: \${{ steps.target.outputs.pr }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.target.outputs.pr }}
         shell: bash
         run: |
           set +e
@@ -412,10 +412,10 @@ jobs:
           exit 0
 
       - name: Finalize delivery ledger
-        if: \${{ always() }}
+        if: ${{ always() }}
         env:
-          CI_PYTHON: \${{ steps.env.outputs.python }}
-          TARGET_PR: \${{ steps.target.outputs.pr }}
+          CI_PYTHON: ${{ steps.env.outputs.python }}
+          TARGET_PR: ${{ steps.target.outputs.pr }}
         shell: bash
         run: |
           set -euo pipefail
@@ -445,17 +445,17 @@ jobs:
           PY
 
       - name: Upload final summary artifacts
-        if: \${{ always() }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ci-final-summary-\${{ github.event.workflow_run.id }}-\${{ github.event.workflow_run.head_sha }}
+          name: ci-final-summary-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.head_sha }}
           path: ci-results/run-info
           if-no-files-found: warn
           retention-days: 30
 
   event-feed:
     name: Push/PR event feed
-    if: \${{ github.event_name == 'push' }}
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -470,11 +470,11 @@ jobs:
       - name: Telegram push event summary + AI note
         continue-on-error: true
         env:
-          TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: \${{ secrets.TELEGRAM_CHAT_ID }}
-          USER_ID: \${{ secrets.USER_ID }}
-          AI_HOST: \${{ secrets.AI_HOST }}
-          AI_KEY: \${{ secrets.AI_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          USER_ID: ${{ secrets.USER_ID }}
+          AI_HOST: ${{ secrets.AI_HOST }}
+          AI_KEY: ${{ secrets.AI_KEY }}
         run: |
           set +e
           mkdir -p ci-results/run-info
