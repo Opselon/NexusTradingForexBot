@@ -849,6 +849,13 @@ def run_full(provider: str, duration: int, port: int, evidence_dir: Path) -> dic
             "runtime_error",
             f"{query_result['queries_failed']} database queries failed",
         )
+    if query_result and not query_result.get("query_floor_met", False):
+        report["runtime_error"] = report.get(
+            "runtime_error",
+            "database query workload floor was not reached: "
+            f"{query_result.get('queries_total', 0)} < "
+            f"{query_result.get('minimum_query_floor', MIN_QUERY_TOTAL)}",
+        )
 
     # The launcher should shut down cleanly after SIGINT. A non-zero exit code
     # is retained as hard evidence even if the process otherwise survived.
