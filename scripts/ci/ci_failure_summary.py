@@ -234,13 +234,36 @@ def collect(root_dir: Path, *, max_failures: int = MAX_FAILURES) -> dict[str, An
         record["first_meaningful_line"] = excerpts.get(record["test_id"], "")
 
     # ruff/mypy: the violations are the excerpt (bounded, in the log).
-    ruff_violations = _tail_lines(root_dir / "ruff" / "lint.txt", 15)
-    format_files = _tail_lines(root_dir / "format" / "format.txt", 15)
-    mypy_errors = [
-        redact(ln)
-        for ln in _read_text(root_dir / "mypy" / "mypy.txt").splitlines()
-        if "error:" in ln
-    ][-15:]
+    # Only emit an excerpt for a check that actually failed — format.txt on a
+    # passing run ends with "N files already formatted", which is not a
+    # violation list and must not be rendered as one.
+    def _failed(check: str) -> bool:
+        p = info / f"{check}.json"
+        if not p.is_file():
+            return False
+        try:
+            return str(json.loads(p.read_text(encoding="utf-8")).get("status", "")).lower() in (
+                "failed",
+                "errored",
+            )
+        except Exception:
+            return False
+
+    ruff_violations = (
+        _tail_lines(root_dir / "ruff" / "lint.txt", 15) if _failed("ruff_lint") else ""
+    )
+    format_files = (
+        _tail_lines(root_dir / "format" / "format.txt", 15) if _failed("ruff_format") else ""
+    )
+    mypy_errors = (
+        [
+            redact(ln)
+            for ln in _read_text(root_dir / "mypy" / "mypy.txt").splitlines()
+            if "error:" in ln
+        ][-15:]
+        if _failed("mypy")
+        else []
+    )
 
     return {
         "checks_failed": checks,
@@ -294,7 +317,7 @@ def render_log(report: dict[str, Any]) -> str:
             lines.append(f"│   {ln}")
     if fmt:
         lines.append("│")
-        lines.append("│ RUFF FORMAT (would reformat):")
+        lines.append("│ RUFF FORMAT (files that would be reformatted):")
         for ln in fmt.splitlines():
             lines.append(f"│   {ln}")
     lines.append("│")
