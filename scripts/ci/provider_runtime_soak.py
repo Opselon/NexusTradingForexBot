@@ -151,10 +151,14 @@ class LogCollector:
                     "message": line,
                     "fingerprint": hashlib.sha256(normalized.encode("utf-8", "replace")).hexdigest()[:16],
                     "source": (
-                        {"file": source.group(1), "line": int(source.group(2)), "column": int(source.group(3))}
+                        {
+                            "file": source.group(1),
+                            "line": int(source.group(2)),
+                            "column": int(source.group(3)),
+                        }
                         if source
                         else None
-    
+                    ),
                 }
                 with self.lock:
                     self.events.append(event)
@@ -181,6 +185,7 @@ class LogCollector:
         payload = {
             "traceback_id": hashlib.sha256("\n".join(lines).encode("utf-8", "replace")).hexdigest()[:16],
             "start_line_no": start_line,
+            "end_line_no": start_line + len(lines) - 1,
             "elapsed_sec": round(now - self.started, 3),
             "source": source,
             "frames": frames,
