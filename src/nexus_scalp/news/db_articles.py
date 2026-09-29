@@ -369,5 +369,142 @@ class ArticlesMixin(_NewsDbCoreProto):
             return int(row["c"]) if row else 0
 
     # ------------------------------------------------------------------
+    # DB-LIFECYCLE: cold-payload archival (existing rows)
+    # ------------------------------------------------------------------
+
+    #: Only an ANALYZED article's payload is archival-eligible. An unanalyzed
+    #: article has not yet contributed its decision value (entities/topics/
+    #: impacts are still absent), so its raw text is the only evidence that
+    #: value can be derived from. Archiving it would destroy capability.
+    _ARCHIVE_REQUIRES_ANALYSIS = True
+
+    def archive_duplicate_payloads(
+        self,
+        *,
+        batch_size: int = 500,
+        max_rows: int | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, int]:
+        """Reclaim the duplicate ``body`` already persisted on existing rows.
+
+        This is the read-side twin of the pre-insert payload gate
+        (``ingest.deduplicator._gate_duplicate_payload``): it applies the
+        exact same ``body == summary`` contract retroactively, so rows that
+        predate the gate stop paying for a body that duplicates their own
+        summary.
+
+        Semantics (lossless by construction):
+
+        * only rows whose body carries NO information beyond the summary are
+          touched — the same ``_payload_eq`` test the ingest gate uses, so
+          the decision is one rule, not two;
+        * only ANALYZED articles are eligible: the analysis (entities,
+          topics, impacts) is the decision value, and it is already
+          extracted — the raw body has become cold evidence;
+        * ``summary`` is NEVER touched. It is the surviving canonical text
+          and every read consumer already falls back to it, so the article
+          remains fully readable and re-analyzable;
+        * the row is marked ``payload_archived = 1`` with a timestamp, so the
+          read side renders an honest ARCHIVED provenance marker rather than
+          silently presenting an empty body.
+
+        Lifecycle properties required by the purge contract:
+
+        * **idempotent** — a second run reports 0 newly archived rows;
+        * **bounded** — a single call processes at most ``batch_size`` rows
+          per round and stops at ``max_rows``;
+        * **resumable** — the eligible scan is ordered by ``article_id`` and
+          only ever looks at un-archived rows, so an interrupted run resumes
+          exactly where it stopped;
+        * **observable** — the returned dict carries eligible/archived/skipped
+          counters plus the bytes reclaimed;
+        * **dry-run** — ``dry_run=True`` selects and measures candidates
+          without mutating anything (shadow mode).
+
+        Returns a dict with keys: ``eligible``, ``archived``, ``skipped``,
+        ``bytes_before``, ``bytes_after``, ``rounds``.
+        """
+        from nexus_scalp.news.ingest.deduplicator import _payload_eq
+
+        bsize = max(1, int(batch_size))
+        max_rows = None if max_rows is None else max(0, int(max_rows))
+        counters: dict[str, int] = {
+            "eligible": 0,
+            "archived": 0,
+            "skipped": 0,
+            "bytes_before": 0,
+            "bytes_after": 0,
+            "rounds": 0,
+        }
+        analyzed_clause = (
+            "AND article_id IN (SELECT article_id FROM news_analysis) "
+            if self._ARCHIVE_REQUIRES_ANALYSIS
+            else ""
+        )
+        # Eligible: an un-archived row that still carries a non-empty body.
+        # The normalized body==summary test itself runs in Python (SQL has no
+        # cheap cross-column normalized equality), so the scan projects only
+        # (article_id, summary, body) — never the whole row.
+        #
+        # KEYSET CURSOR, not OFFSET: a row whose body carries real content is
+        # *skipped* (not archived), so it stays payload_archived=0 with a
+        # non-empty body and would be re-selected by an OFFSET/LIMIT window
+        # forever. The cursor advances strictly past every processed id, so
+        # one pass terminates exactly once and an interrupted run resumes at
+        # the id where it stopped (the high-water mark).
+        sql = (
+            "SELECT article_id, summary, body FROM news_articles "
+            "WHERE payload_archived = 0 AND coalesce(body, '') <> '' "
+            f"AND article_id > ? {analyzed_clause} "
+            "ORDER BY article_id LIMIT ?"
+        )
+        last_id = ""
+        while True:
+            remaining = None if max_rows is None else max(0, max_rows - counters["eligible"])
+            if remaining is not None and remaining == 0:
+                break
+            # The last partial round fetches only what the cap still allows, so
+            # a bounded call never processes one row more than max_rows.
+            fetch = bsize if remaining is None else min(bsize, remaining)
+            with self._connect() as conn:
+                rows = conn.execute(sql, (last_id, fetch)).fetchall()
+                if not rows:
+                    break
+                to_archive: list[str] = []
+                for r in rows:
+                    aid = r["article_id"]
+                    last_id = aid
+                    summary = r["summary"] if "summary" in r.keys() else ""
+                    body = r["body"] if "body" in r.keys() else ""
+                    if not _payload_eq(str(body), str(summary)):
+                        counters["skipped"] += 1
+                        continue
+                    counters["eligible"] += 1
+                    counters["bytes_before"] += len(str(body).encode("utf-8"))
+                    to_archive.append(aid)
+                if dry_run:
+                    counters["rounds"] += 1
+                    continue
+                for aid in to_archive:
+                    conn.execute(
+                        "UPDATE news_articles SET body = '', payload_archived = 1, "
+                        "payload_archived_at = ? WHERE article_id = ?;",
+                        (self._now(), aid),
+                    )
+                    counters["archived"] += 1
+                counters["rounds"] += 1
+            if max_rows is not None and counters["eligible"] >= max_rows:
+                break
+        return counters
+
+    def count_payload_archived(self) -> int:
+        """Rows whose duplicate body has been archived out of the table."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS c FROM news_articles WHERE payload_archived = 1;",
+            ).fetchone()
+            return int(row["c"]) if row else 0
+
+    # ------------------------------------------------------------------
     # Entities / topics
     # ------------------------------------------------------------------
