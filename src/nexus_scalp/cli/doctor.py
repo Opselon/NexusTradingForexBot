@@ -745,12 +745,20 @@ def _running_product_state() -> dict[str, Any]:
     the recorded URL reported, so `nexus status` tells a user both the answer
     and how it was obtained.
     """
-    from nexus_scalp.cli.engine_boot import _dashboard_url, _probe_dashboard
+    from nexus_scalp.cli.engine_boot import (
+        _effective_dashboard_url,
+        _probe_dashboard,
+    )
     from nexus_scalp.release.product_state import derive_product_state
 
+    # GO-API-GATE (Wave 5): when the Go plane is up it is the single origin
+    # serving BOTH the API and the React UI, so that is the dashboard address
+    # this command must report and probe. When it is down the recorded Python
+    # origin is used exactly as before — the probe still runs against it, so
+    # `nexus doctor` / `nexus status` never regress.
     url = ""
     with contextlib.suppress(Exception):
-        url = _dashboard_url()
+        url = _effective_dashboard_url()
     probe: dict[str, Any] = (
         _probe_dashboard(url) if url else {"url": "", "reachable": False, "http_status": None}
     )

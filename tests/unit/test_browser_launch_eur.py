@@ -373,8 +373,11 @@ class TestReadinessGateWiring:
         assert "_open_control_center_when_ready" in src, "CONTRACT #6: gate wired into start"
         assert "ShutdownSupervisor" in src and "wait_for_shutdown" in src
         assert "KeyboardInterrupt" in src
-        # The gate reads the resolved bind host/port — never a hardcoded 8080/8081.
-        assert "_browser_host(bind_host)" in src and ", port)" in src
+        # The gate reads the resolved host/port — never a hardcoded 8080/8081.
+        # Wave 5: when the Go API plane is up, both resolve from its origin.
+        assert "_open_control_center_when_ready(" in src
+        assert "_effective_launch_host(go_origin)" in src
+        assert "_effective_launch_port(go_origin, int(uvicorn_config.port))" in src
 
     def test_probe_requires_health_200_and_html_index(self) -> None:
         """The probe contract itself: a 200-html gate, not a bare connect."""

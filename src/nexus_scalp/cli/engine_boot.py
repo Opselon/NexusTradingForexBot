@@ -133,6 +133,68 @@ def _dashboard_url(bind_host: str | None = None, port: int | None = None) -> str
     return f"http://{_dashboard_host(bind_host)}:{int(port)}"
 
 
+def _effective_dashboard_url(
+    go_origin: str | None = None, bind_host: str | None = None, port: int | None = None
+) -> str:
+    """The URL a HUMAN should open: the Go origin when its plane is up.
+
+    GO-API-GATE (Wave 5): the Go API server is the product's single origin —
+    it serves BOTH the API and the React UI, proxying Python for facts it does
+    not own. When it is live for this process, that origin is the real product
+    entrypoint and the URL every operator-facing surface must point at. When
+    it is not (no toolchain, build failure, never became ready) the answer is
+    byte-identical to ``_dashboard_url`` — the Python origin, exactly as
+    before this plane existed.
+
+    ``go_origin`` is normally the supervisor origin from
+    ``go_api_bootstrap.api_origin()`` (i.e. the env this boot wrote); callers
+    may omit it and the same resolver is read here. An empty/garbage value is
+    ignored rather than trusted: never open a URL the plane is not listening
+    on.
+    """
+    try:
+        origin = (go_origin if go_origin is not None else _go_api_origin()) or ""
+    except Exception:  # pragma: no cover - observation must never raise
+        origin = ""
+    origin = origin.strip()
+    if origin:
+        # An origin is only meaningful with a scheme. A bare host
+        # ("127.0.0.1:8081") must not collapse into "127.0.0.1/" —
+        # urlparse would treat the whole thing as a path.
+        if "://" not in origin:
+            origin = f"http://{origin}"
+        # Normalize: exactly one trailing slash, nothing else — callers
+        # compose paths onto this string.
+        return f"{origin.rstrip('/')}/"
+    # Python fallback: BUG-267 precedence — the ACTUAL bound port wins over
+    # the caller's hint. Only THIS PROCESS's NSE_WEB_ACTUAL_PORT counts: it is
+    # the in-flight truth written by the boot that is still running. The .env
+    # file is deliberately NOT consulted here — it can hold a port from a
+    # previous boot, and a stale value must not override the port this very
+    # process is binding (resolved_web_port() would read that file).
+    actual_raw = os.environ.get("NSE_WEB_ACTUAL_PORT", "").strip()
+    if actual_raw:
+        try:
+            port = int(actual_raw)
+        except ValueError:
+            pass
+    return _dashboard_url(bind_host, port)
+
+
+def _go_api_origin() -> str:
+    """Origin the Go API plane is listening on, or "" when it is not up.
+
+    Pure observation of the env ``boot_go_api`` wrote when the child became
+    ready; never raises and never guesses an origin that was not earned.
+    """
+    try:
+        from nexus_scalp.web.go_api_bootstrap import api_origin
+
+        return api_origin() or ""
+    except Exception:  # pragma: no cover - observation must never raise
+        return ""
+
+
 def _boot_go_api_plane(bind_host: str, python_port: int) -> Any:
     """GO-API-GATE: build + launch the Go API server as a supervised child.
 
@@ -246,7 +308,7 @@ def dashboard_cmd(
     """
     from nexus_scalp.release.product_state import derive_product_state
 
-    target = (url or _dashboard_url()).strip()
+    target = (url or _effective_dashboard_url()).strip()
     if not target.startswith(("http://", "https://")):
         console.print(
             _error_panel(
@@ -1033,6 +1095,56 @@ def _browser_host(bind_host: str) -> str:
     return bind_host
 
 
+def _effective_launch_host(go_origin: str | None) -> str:
+    """Host the readiness gate should probe: the Go origin's, when it is up.
+
+    GO-API-GATE (Wave 5): the gate proves the origin the browser will open is
+    actually serving. When the Go plane is live that origin — not Python's —
+    is what gets opened, so that is what must be probed. An unparseable or
+    loopback-less Go origin degrades to the host the caller would have used
+    otherwise; it never yields a URL that cannot be reached.
+    """
+    host = _origin_host(go_origin)
+    return host if host else ""
+
+
+def _effective_launch_port(go_origin: str | None, python_port: int) -> int:
+    """Port the readiness gate should probe (Go origin's when it is up)."""
+    port = _origin_port(go_origin)
+    return port if port else python_port
+
+
+def _origin_host(go_origin: str | None) -> str:
+    """``http://127.0.0.1:8087`` -> ``127.0.0.1``; ``""`` when unresolvable."""
+    try:
+        from urllib.parse import urlparse
+
+        raw = (go_origin or "").strip()
+        if not raw:
+            return ""
+        netloc = urlparse(raw if "://" in raw else f"http://{raw}").netloc
+        host = netloc.rsplit(":", 1)[0].strip("[]")
+        return host or ""
+    except Exception:  # pragma: no cover - parsing must never raise
+        return ""
+
+
+def _origin_port(go_origin: str | None) -> int:
+    """``http://127.0.0.1:8087`` -> ``8087``; 0 when absent/unparseable."""
+    try:
+        from urllib.parse import urlparse
+
+        raw = (go_origin or "").strip()
+        if not raw:
+            return 0
+        netloc = urlparse(raw if "://" in raw else f"http://{raw}").netloc
+        if ":" not in netloc:
+            return 0
+        return int(netloc.rsplit(":", 1)[1])
+    except Exception:  # pragma: no cover - parsing must never raise
+        return 0
+
+
 def _verdict_of(resp: Any) -> str:
     """Best-effort ``verdict`` read from a /health body (never raises).
 
@@ -1340,6 +1452,13 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
     # dependency the product cannot boot without.
     go_api_supervisor = _boot_go_api_plane(bind_host, port)
 
+    # GO-API-GATE (Wave 5): the Go plane is the product's single origin when it
+    # is up — read the origin HERE, once, so the readiness gate, the "Web
+    # dashboard" panel and the browser open all agree on ONE address. Empty
+    # means Go is not serving and every consumer falls back to Python's own
+    # origin (byte-identical to the pre-Wave-5 behavior).
+    go_origin = _go_api_origin()
+
     uvicorn_config = uvicorn.Config(
         app=app_obj,
         host=bind_host,
@@ -1370,7 +1489,10 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
         # /health and / (HTML) are live. ``uvicorn_config.port`` (not the
         # remembered 8080/8081 default) is the port uvicorn really binds.
         launch_task = asyncio.create_task(
-            _open_control_center_when_ready(_browser_host(bind_host), int(uvicorn_config.port))
+            _open_control_center_when_ready(
+                _effective_launch_host(go_origin),
+                _effective_launch_port(go_origin, int(uvicorn_config.port)),
+            )
         )
         try:
             await asyncio.gather(server.serve(), engine.run_loop(), return_exceptions=False)
@@ -1396,7 +1518,7 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
         # them exactly where the product's real UI lives, and open it when
         # the launch is interactive. A daemonized/silent run never opens
         # anything (_browser_allowed gates it), so automation is unaffected.
-        dash = _dashboard_url(bind_host, port)
+        dash = _effective_dashboard_url(go_origin, bind_host, port)
         console.print(
             Panel(
                 f"[bold green]Web dashboard:[/bold green] [bold]{dash}[/bold]\n"
