@@ -55,6 +55,8 @@ class Transport(Protocol):
 
     def patch(self, url: str, body: Any, *, timeout: float = _TIMEOUT_SEC) -> dict[str, Any]: ...
 
+    def get_bytes(self, url: str, *, timeout: float = _TIMEOUT_SEC) -> bytes: ...
+
 
 class HttpxTransport:
     """``httpx``-backed transport. Reused because httpx is already a dependency."""
@@ -107,6 +109,17 @@ class HttpxTransport:
 
     def patch(self, url: str, body: Any, *, timeout: float = _TIMEOUT_SEC) -> dict[str, Any]:
         return self._request("PATCH", url, body, timeout)
+
+    def get_bytes(self, url: str, *, timeout: float = _TIMEOUT_SEC) -> bytes:
+        """Binary GET (artifact zip download). Raises on failure."""
+        full = url if url.startswith("http") else f"{self._api_base}{url}"
+        import httpx  # local import: CLI startup stays fast when offline
+
+        with httpx.Client(timeout=timeout, follow_redirects=True, headers=self._headers) as client:
+            resp = client.get(full, timeout=timeout)
+        if resp.status_code in (200, 201):
+            return resp.content
+        raise OSError(f"artifact download failed: HTTP {resp.status_code}")
 
 
 class SubprocessTransport:
@@ -162,6 +175,19 @@ class SubprocessTransport:
     def patch(self, url: str, body: Any, *, timeout: float = _TIMEOUT_SEC) -> dict[str, Any]:
         return self._invoke(["-X", "PATCH", url, "--input", "-"], timeout, body)
 
+    def get_bytes(self, url: str, *, timeout: float = _TIMEOUT_SEC) -> bytes:
+        """Binary GET via ``gh api`` (artifact zip download). Raises on failure."""
+        proc = subprocess.run(
+            ["gh", "api", url],
+            capture_output=True,
+            timeout=timeout,
+            cwd=self._cwd,
+            check=False,
+        )
+        if proc.returncode != 0:
+            raise OSError((proc.stderr or "").strip()[:200] or f"gh exit {proc.returncode}")
+        return proc.stdout
+
 
 @dataclass
 class FakeTransport:
@@ -197,6 +223,27 @@ class FakeTransport:
 
     def put(self, url: str, body: Any, *, timeout: float = _TIMEOUT_SEC) -> dict[str, Any]:
         return self._lookup("PUT", url, body)
+
+    def get_bytes(self, url: str, *, timeout: float = _TIMEOUT_SEC) -> bytes:
+        """Binary GET: scripted bytes keyed by URL, recorded like the rest."""
+        self.recorded.append(("GET-BYTES", url, None))
+        key_url = url.split("?", 1)[0]
+        payload = self.responses.get(key_url)
+        if payload is None:
+            for key in self.responses:
+                if key in key_url:
+                    payload = self.responses[key]
+                    break
+        if payload is None:
+            raise OSError(f"no scripted bytes for {url}")
+        if isinstance(payload, bytes):
+            return payload
+        if callable(payload):
+            result = payload("GET-BYTES", key_url, None)
+            return result if isinstance(result, bytes) else str(result).encode("utf-8")
+        if isinstance(payload, str):
+            return payload.encode("utf-8")
+        raise OSError(f"scripted response for {url} is not bytes")
 
     def _lookup(self, method: str, url: str, body: Any) -> dict[str, Any]:
         self.recorded.append((method, url, body))
@@ -541,6 +588,38 @@ class GitHubClient:
                     key = alert.get("number") or alert.get("html_url") or id(alert)
                     found[key] = alert
         return list(found.values())
+
+    def get_artifacts_for_run(self, run_id: int) -> list[dict[str, Any]]:
+        """Workflow-run artifacts (spec §10 deep-diagnostics surface).
+
+        The quality job uploads ONE canonical ``ci-results-quality-*`` zip
+        per run holding the real per-check diagnostics (ruff/lint.json,
+        format/format.txt, pytest/junit.xml, mypy/mypy.txt, ...) that the
+        check-run API surface throws away. Returns ``[]`` when the run has
+        no artifacts or the list is unreadable.
+        """
+        if not run_id:
+            return []
+        payload = self._get(f"/repos/{self._repo}/actions/runs/{run_id}/artifacts")
+        if isinstance(payload, dict):
+            artifacts = payload.get("artifacts")
+            if isinstance(artifacts, list):
+                return [a for a in artifacts if isinstance(a, dict)]
+        return []
+
+    def get_artifact_zip(self, artifact_id: int) -> bytes | None:
+        """Download one artifact's zip bytes (binary endpoint).
+
+        ``None`` when the download is unreachable so the collector degrades
+        to "no deep diagnostics" instead of raising.
+        """
+        if not artifact_id:
+            return None
+        url = f"{self._api_base}/repos/{self._repo}/actions/artifacts/{artifact_id}/zip"
+        try:
+            return self._transport.get_bytes(url)
+        except Exception:
+            return None
 
     def get_annotations(self, check_run_id: int) -> list[dict[str, Any]]:
         """Annotations for one check run — file/line/column evidence (spec §4/§11)."""

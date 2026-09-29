@@ -17,6 +17,10 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.pr_evidence.artifact_collector import (
+    ArtifactCollector,
+    ArtifactDiagnostics,
+)
 from nexus_scalp.pr_evidence.github_client import GitHubClient
 from nexus_scalp.pr_evidence.locations import (
     extract_error_type,
@@ -42,6 +46,8 @@ from nexus_scalp.pr_evidence.parsers import (
 
 __all__ = [
     "AnnotationCollector",
+    "ArtifactCollector",
+    "ArtifactDiagnostics",
     "CheckRunCollector",
     "CodeQLCollector",
     "LocalTestCollector",
@@ -711,6 +717,12 @@ class EvidenceOptions:
     log_max_bytes: int = 6000
     #: Read base-branch protection → the merge verdict's required gates.
     fetch_merge_preconditions: bool = True
+    #: Download the canonical CI results artifact and extract the REAL
+    #: per-check diagnostics (ruff/lint.json, pytest/junit.xml, mypy/mypy.txt)
+    #: that the check-run surface discards. This is what turns a red report
+    #: that says ".github/workflows/ci.yml — Process completed with exit
+    #: code 1" into one that names the source file, the line and the rule.
+    fetch_artifacts: bool = True
 
 
 def collect_evidence(
@@ -858,7 +870,67 @@ def collect_evidence(
         required_checks=required_checks,
         required_reviews=required_reviews,
         require_up_to_date=require_up_to_date,
+        artifact_failures=_collect_artifact_failures(
+            client=client,
+            checks=checks,
+            options=options,
+            repo_root=repo_root,
+            errors=errors,
+        ),
     )
+
+
+def _collect_artifact_failures(
+    *,
+    client: GitHubClient,
+    checks: list[CheckResult],
+    options: EvidenceOptions,
+    repo_root: str | None,
+    errors: list[str],
+) -> list[Failure]:
+    """Deep diagnostics from the canonical CI results artifact.
+
+    The check-run API discards everything the gates actually computed: a
+    failed ``Code Quality & Tests`` job carries only synthetic ``.github``
+    annotations. The artifact keeps the real evidence (ruff/lint.json with
+    row/column, pytest junit.xml with tracebacks, mypy.txt with
+    path:line:col). This stage downloads it for each FAILED Actions job and
+    merges those diagnostics into the failure list — replacing the
+    uninformative workflow-file rows, not adding duplicates.
+    """
+    if not options.fetch_artifacts or not checks:
+        return []
+    out: list[Failure] = []
+    for check in checks:
+        if not check.is_failure:
+            continue
+        run_id = _collect_artifact_run_id(check.url)
+        if run_id is None:
+            continue
+        try:
+            diags = ArtifactCollector(client=client, repo_root=repo_root).collect(run_id)
+        except Exception as exc:
+            errors.append(f"Artifact diagnostics failed for {check.name}: {exc}")
+            continue
+        for diag in diags:
+            out.extend(diag.failures)
+    return out
+
+
+def _collect_artifact_run_id(url: str) -> int | None:
+    """Extract the Actions run id from a check-run or workflow-run URL."""
+    if not url or url == UNKNOWN:
+        return None
+    match = _ACTIONS_RUN_ID_RE.search(url)
+    if match is None:
+        return None
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+_ACTIONS_RUN_ID_RE = re.compile(r"/actions/runs/(\d{1,20})(?:/|$)")
 
 
 def local_head_sha(repo_dir: Path) -> str:
