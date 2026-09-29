@@ -285,3 +285,4 @@ tests/unit/shadow/test_sqlite_mirror_reclaim.py
 tests/contracts/phase2/test_deep_opt_l4_evidence_body_pg.py
 tests/unit/test_r3_no_trade_bounded_tail.py
 tests/unit/test_r3_v1_decision_count_bounded.py
+tests/unit/test_l7_archive_restore_roundtrip.py

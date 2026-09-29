@@ -119,6 +119,60 @@ class ArchiveManager:
         digest = self._sha256_hex(p.read_bytes())
         return digest == manifest.get("sha256")
 
+    def read_archive(
+        self, manifest: dict[str, Any], *, missing_ok: bool = False
+    ) -> list[dict[str, Any]]:
+        """Read an archive back into rows — the RESTORE half of the contract.
+
+        ``archive_rows`` + ``verify_archive`` prove an archive was written
+        correctly; neither can prove it can be READ back, which is the only
+        thing that makes "archive before delete" a recoverable action rather
+        than a deferred delete. A retirement or purge whose archive has no
+        reader is an unverifiable deletion, so this method exists to close
+        that loop.
+
+        Verifies the checksum BEFORE parsing (never trust a corrupt file) and
+        raises ``RuntimeError`` on a mismatch rather than returning partial
+        rows. ``missing_ok=True`` returns ``[]`` for an absent archive, so a
+        caller can distinguish "nothing was archived" from "the archive is
+        corrupt" — those must not collapse into the same result.
+        """
+        rel = manifest.get("path", "")
+        if not rel:
+            if missing_ok:
+                return []
+            raise RuntimeError("[DB_HYGIENE] archive manifest has no path")
+        p = self.root / rel
+        if not p.exists():
+            if missing_ok:
+                return []
+            raise RuntimeError(f"[DB_HYGIENE] archive missing: {rel}")
+        if manifest.get("sha256") and not self.verify_archive(manifest):
+            raise RuntimeError(f"[DB_HYGIENE] archive checksum MISMATCH: {rel}")
+        rows: list[dict[str, Any]] = []
+        for raw in p.read_text(encoding="utf-8").splitlines():
+            stripped = raw.strip()
+            if not stripped:
+                continue
+            rows.append(json.loads(stripped))
+        return rows
+
+    def row_count_on_disk(self, manifest: dict[str, Any]) -> int:
+        """Non-empty LINE count of an archive, independent of the manifest.
+
+        A manifest's ``row_count`` is a claim made by the writer. Counting the
+        lines actually present is the independent measurement that catches a
+        truncated write, so verification compares the two rather than trusting
+        either alone.
+        """
+        rel = manifest.get("path", "")
+        if not rel:
+            return 0
+        p = self.root / rel
+        if not p.exists():
+            return 0
+        return sum(1 for line in p.read_text(encoding="utf-8").splitlines() if line.strip())
+
 
 class CleanupJournal:
     """Append-only JSONL journal of every destructive action (spec §44)."""
