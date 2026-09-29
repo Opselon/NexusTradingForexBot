@@ -798,12 +798,16 @@ def main() -> int:
                 break
 
             now = time.monotonic()
-            # Exercise the hot control-plane surface concurrently so one slow
-            # endpoint cannot serially steal the entire 5s heartbeat window.
+
+            # Exercise the hot control-plane surface concurrently. Request
+            # failures are collected as evidence; they do NOT shorten the
+            # fixed 120-second observation window.
             with concurrent.futures.ThreadPoolExecutor(
                 max_workers=len(HOT_ENDPOINTS)
             ) as pool:
-                hot_batch = list(pool.map(lambda p: http_request(base_url, p), HOT_ENDPOINTS))
+                hot_batch = list(
+                    pool.map(lambda path: http_request(base_url, path), HOT_ENDPOINTS)
+                )
             for probe in hot_batch:
                 probe["sweep"] = "hot"
                 hot_probes.append(probe)
@@ -852,9 +856,13 @@ def main() -> int:
                 next_db_pass += 60
 
             remaining = args.duration - (time.monotonic() - soak_started)
-            time.sleep(min(SOAK_PROBE_EVERY_SEC, max(0.25, remaining)))
+            time.sleep(
+                min(
+                    SOAK_PROBE_EVERY_SEC,
+                    max(0.25, remaining),
+                )
+            )
 
-        actual_soak = time.monotonic() - soak_started
         startup_evidence["hot_probe_count"] = len(hot_probes)
     except Exception as exc:
         failure = f"{type(exc).__name__}: {exc}"
