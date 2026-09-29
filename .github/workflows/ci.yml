@@ -739,7 +739,6 @@ jobs:
   # ---------------------------------------------------------------------------
   full-runtime-provider:
     name: Full NSE Runtime (${{ matrix.provider }})
-    needs: quality
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -883,7 +882,6 @@ jobs:
   # ---------------------------------------------------------------------------
   mt5-wine-runtime:
     name: MetaTrader 5 Wine Runtime
-    needs: quality
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -949,6 +947,36 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # ---------------------------------------------------------------------------
+  # ONE OVERALL FULL-RUNTIME VERDICT — matrix + MT5/Wine.
+  # Explicitly waits on the separate runtime lines and converts either a
+  # failed matrix leg or failed MT5 terminal lifecycle into one required CI
+  # result. Warning-only runtime results remain visible in each provider
+  # summary/artifact; errors always fail their originating line.
+  # ---------------------------------------------------------------------------
+  full-runtime-verdict:
+    name: Full Runtime Overall Verdict
+    if: always()
+    needs:
+      - full-runtime-provider
+      - mt5-wine-runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Aggregate runtime certification
+        run: |
+          echo "Full NSE provider matrix: ${{ needs.full-runtime-provider.result }}"
+          echo "MetaTrader 5 Wine runtime: ${{ needs.mt5-wine-runtime.result }}"
+          if [ "${{ needs.full-runtime-provider.result }}" != "success" ]; then
+            echo "::error::Full SQLite/PostgreSQL runtime matrix failed"
+            exit 1
+          fi
+          if [ "${{ needs.mt5-wine-runtime.result }}" != "success" ]; then
+            echo "::error::MetaTrader 5 Wine runtime failed"
+            exit 1
+          fi
+          echo "FULL RUNTIME CERTIFICATION: PASS"
   # ---------------------------------------------------------------------------
   # TIER 2 — EXTENDED validation (brief section 19). Runs on MAIN PUSH
   # (post-merge evidence) and explicit dispatch, never on the PR lane. Holds
