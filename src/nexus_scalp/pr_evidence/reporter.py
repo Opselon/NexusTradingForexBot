@@ -274,6 +274,9 @@ class _GhOrHttpx:
     def patch(self, url: str, body: Any, *, timeout: float = 30.0) -> dict[str, Any]:
         return self._impl.patch(url, body, timeout=timeout)
 
+    def get_bytes(self, url: str, *, timeout: float = 30.0) -> bytes:
+        return self._impl.get_bytes(url, timeout=timeout)
+
 
 def make_client(
     repo: str | None = None,

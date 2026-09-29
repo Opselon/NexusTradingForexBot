@@ -375,10 +375,23 @@ class EvidenceCollection:
     required_reviews: int | None = None
     #: Base requires branches up to date (``None`` = protection unreadable).
     require_up_to_date: bool | None = None
+    #: Deep per-check diagnostics extracted from the canonical CI results
+    #: artifact (ruff/lint.json, pytest/junit.xml, mypy/mypy.txt, ...). These
+    #: are the file/line/rule facts the check-run API throws away, and they
+    #: SUPERSEDE the synthetic ``.github`` workflow-file failures a red job
+    #: otherwise reduces to.
+    artifact_failures: list[Failure] = field(default_factory=list)
 
     def all_failures(self) -> list[Failure]:
-        """CI-collected + locally-collected failures."""
-        return [*self.failures, *self.local_failures]
+        """CI-collected + artifact-collected + locally-collected failures.
+
+        Artifact failures supersede synthetic workflow-file rows: when deep
+        diagnostics exist for a check, the uninformative
+        ``.github/workflows/ci.yml — Process completed with exit code 1``
+        rows that same check produced are noise that hides them.
+        """
+        merged = _supersede_artifact_failures(self.failures, self.artifact_failures)
+        return [*merged, *self.artifact_failures, *self.local_failures]
 
     @property
     def settled(self) -> bool:
@@ -613,3 +626,27 @@ class EvidenceCollection:
         if self.all_failures():
             return Status.BLOCKED
         return Status.PASS
+
+
+def _supersede_artifact_failures(base: list[Failure], artifact: list[Failure]) -> list[Failure]:
+    """Drop base rows a deep artifact diagnosis replaces.
+
+    A failed ``Code Quality & Tests`` job yields one synthetic
+    ``.github/workflows/ci.yml`` row per step ("Process completed with exit
+    code 1."). Once the artifact has produced real file/line/rule failures
+    for that same job, the synthetic rows carry no information that the deep
+    rows do not already cover, so they are dropped.
+
+    Matching: artifact rows carry the GATE name (``ruff_lint``, ``pytest``)
+    while a base row carries the JOB name (``Code Quality & Tests``), so a
+    direct name match is impossible. Instead, a base row is superseded when
+    ANY deep row resolved a real location — a red quality job that yielded
+    deep diagnostics has nothing left to explain. Base rows pointing at a
+    real repo file are NEVER dropped (they are located evidence themselves).
+    """
+    if not artifact:
+        return list(base)
+    has_located_deep = any(f.location.path != UNKNOWN for f in artifact)
+    if not has_located_deep:
+        return list(base)
+    return [f for f in base if not f.location.path.startswith(".github/")]
