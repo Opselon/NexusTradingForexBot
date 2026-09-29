@@ -7,7 +7,7 @@
 # Drift is enforced by scripts/ci/check_dependency_drift.py (CI + local).
 # =============================================================================
 
-fastapi==0.141.1
+fastapi==0.142.0
 feedparser==6.0.14
 httpx==0.28.1
 metatrader5==5.0.6231 ; sys_platform == 'win32'
