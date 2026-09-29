@@ -280,6 +280,7 @@ tests/unit/test_accounting_pnl_regression.py
 tests/unit/test_accounting_timezone.py
 tests/unit/test_agent11_execution_risk_forensic.py
 tests/unit/test_agent12_execution_forensic.py
+tests/unit/test_agent13_methodology_integrity.py
 tests/unit/test_agent14_dataset_integrity.py
 tests/unit/test_agent16_walkforward_purge_embargo_leakage.py
 tests/unit/test_agent17_oos_hard_gate.py
@@ -290,6 +291,8 @@ tests/unit/test_audit_legacy4_surface.py
 tests/unit/test_backtest_report.py
 tests/unit/test_backtest_report_asset.py
 tests/unit/test_backtest_report_integration.py
+tests/unit/test_broker_identity_ownership.py
+tests/unit/test_broker_valuation_forensics.py
 tests/unit/test_bug185_terminal_state_resolver.py
 tests/unit/test_bug217_news_state_bounds.py
 tests/unit/test_bug225_untrained_champion_canary.py
@@ -402,6 +405,7 @@ tests/unit/test_order_manager_exit_bugs.py
 tests/unit/test_order_write_uncertainty.py
 tests/unit/test_outcome_flush_race_bug140.py
 tests/unit/test_p0_producer_regression.py
+tests/unit/test_paper_broker_honesty.py
 tests/unit/test_paper_live_training_lineage.py
 tests/unit/test_paper_persistence.py
 tests/unit/test_paper_replay_mode.py

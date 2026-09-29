@@ -118,7 +118,27 @@ def test_oos_all_nan_window_fails_gate() -> None:
 
 
 def test_oos_partially_nan_window_still_passes_when_edge_positive() -> None:
-    samples = [_mk(i, 0.5) for i in range(10)] + [_mk(i, 0.2) for i in range(10, 15)]
+    # R-BT-4 (2026-09-30): this test went RED on clean main for ~3 weeks and was
+    # invisible to CI because it sat in no suite manifest (now wired into
+    # tests/critical_suite.txt). Two DELIBERATE, correct gate changes both landed
+    # and the fixture never tracked either:
+    #   1. 23378273 (2026-09-09) de-zero-costed the research engines via the
+    #      canonical costs artifact -> spread_ticks 15 + slippage_ticks 5 = 20
+    #      friction points, price_tick 0.01 (provenance CANONICAL_COSTS).
+    #   2. b4ad856a (2026-09-10) raised the OOS floor to
+    #      MIN_ECONOMIC_OOS_EXPECTANCY_R = 0.02R, the documented tightening
+    #      direction: an edge below the friction model's own noise is not a
+    #      tradable economic edge.
+    # The 15-sample split yields a 3-sample OOS window. At realized_r=0.2 with
+    # risk_distance=1.0 the modeled friction is exactly
+    # min(20 * 0.01 / 1.0, 0.5) = 0.2R, cancelling the edge to 0.0 -> below the
+    # floor. That is the gate working as designed, not a source regression.
+    # FIX: the fixture's intent is "a partially-NaN OOS window with genuine
+    # positive edge still PASSES". Genuine edge must clear the canonical
+    # per-trade friction AND the economic floor with margin, so the OOS samples
+    # carry 1.0R, leaving 0.8R net of the 0.2R cost. No gate threshold is
+    # touched and no assertion is weakened.
+    samples = [_mk(i, 0.5) for i in range(10)] + [_mk(i, 1.0) for i in range(10, 15)]
     result = OOSGate().evaluate(_ds(samples, "d_ok"), "probe", "v1")
     assert result.status == "PASS"
 
