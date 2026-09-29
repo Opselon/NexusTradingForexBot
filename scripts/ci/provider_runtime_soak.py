@@ -53,6 +53,7 @@ MAX_TABLES = 100
 QUERY_ROUNDS = 7
 SOAK_SECONDS = 120
 QUERY_INTERVAL_SECONDS = 15.0
+MIN_QUERY_TOTAL = 500
 HTTP_TIMEOUT_SECONDS = 6.0
 SHUTDOWN_TIMEOUT_SECONDS = 35.0
 
@@ -127,6 +128,7 @@ def _env_provider(provider: str, evidence_dir: Path) -> dict[str, str]:
             "NSE_NO_AUTO_INSTALL": "1",
             "NSE_WEB_HOST": "127.0.0.1",
             "NSE_WEB_PORT": os.environ.get("NSE_RUNTIME_SOAK_PORT", "18080"),
+            "NSE_WEB_ACTUAL_PORT": os.environ.get("NSE_RUNTIME_SOAK_PORT", "18080"),
             "NSE_WEB_AUTH_TOKEN": secrets.token_urlsafe(32),
             "PYTHONUNBUFFERED": "1",
             "PYTHONFAULTHANDLER": "1",
@@ -534,6 +536,43 @@ def run_queries(
     finally:
         close()
 
+    # Hard floor: a runtime certification must exercise a substantial read
+    # workload even on a newly-created database with only a few tables. Use
+    # real provider queries, not a synthetic counter, and stop before the soak
+    # deadline.
+    if total_queries < MIN_QUERY_TOTAL and time.monotonic() < deadline:
+        filler_index = 0
+        while total_queries < MIN_QUERY_TOTAL and time.monotonic() < deadline:
+            filler_index += 1
+            if tables:
+                table = tables[filler_index % len(tables)]
+                quoted = _safe_identifier(table)
+                label = f"{table}.floor_{filler_index}"
+                sql = f"SELECT COUNT(*) FROM {quoted}"
+            elif provider == "postgres":
+                label = f"pg.floor_{filler_index}"
+                sql = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'"
+            else:
+                label = f"sqlite.floor_{filler_index}"
+                sql = "SELECT COUNT(*) FROM sqlite_master WHERE type='table'"
+            try:
+                if provider == "postgres":
+                    _, latency = _run_pg_query(connection, sql)
+                else:
+                    _, latency = _run_sqlite_query(connection, sql)
+                total_queries += 1
+                total_ok += 1
+                latencies = all_latencies
+                latencies.append(latency)
+            except Exception as exc:
+                total_queries += 1
+                failures.append(
+                    {
+                        "label": label,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+        # The floor is evidence, not an excuse to run past the soak window.
     result = {
         "provider": provider,
         "table_count": len(tables),
@@ -542,6 +581,8 @@ def run_queries(
         "queries_total": total_queries,
         "queries_ok": total_ok,
         "queries_failed": len(failures),
+        "minimum_query_floor": MIN_QUERY_TOTAL,
+        "query_floor_met": total_queries >= MIN_QUERY_TOTAL,
         "failure_samples": failures[:200],
         "rounds": reports,
         "aggregate": _query_metrics(all_latencies),
