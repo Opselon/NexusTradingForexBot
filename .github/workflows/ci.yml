@@ -847,7 +847,6 @@ jobs:
     timeout-minutes: 15
 
     env:
-      NEXUS_MT5_ROOT: ${{ runner.temp }}/nexus-mt5
       NEXUS_MT5_DISPLAY: "99"
       NEXUS_MT5_WINEDEBUG: "-all"
 
@@ -861,6 +860,10 @@ jobs:
           sudo dpkg --add-architecture i386
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends wine winbind xvfb x11-utils
+
+      - name: Prepare isolated MT5 runtime root
+        run: |
+          echo "NEXUS_MT5_ROOT=$RUNNER_TEMP/nexus-mt5" >> "$GITHUB_ENV"
 
       - name: Start Xvfb
         run: |
