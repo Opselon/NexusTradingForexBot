@@ -498,17 +498,17 @@ class _OwnershipGatedAdapter:
 
     def close_position(self, ticket: int, volume: float | None = None, **kw: Any) -> bool:
         action = "PARTIAL_CLOSE" if volume else "CLOSE"
-        self._om._ownership_gate.authorize_or_raise(
-            ticket=ticket, action=action, actor="legacy"
-        )
+        self._om._ownership_gate.authorize_or_raise(ticket=ticket, action=action, actor="legacy")
         return bool(self._inner.close_position(ticket=ticket, volume=volume, **kw))
 
     def modify_position(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
         pos = None
         try:
-            pos = self._om._tickets_cache.get_position(ticket) if hasattr(
-                self._om, "_tickets_cache"
-            ) else None
+            pos = (
+                self._om._tickets_cache.get_position(ticket)
+                if hasattr(self._om, "_tickets_cache")
+                else None
+            )
         except Exception:
             pos = None
         cur_sl = float(getattr(pos, "sl", 0.0) or 0.0)
@@ -519,10 +519,10 @@ class _OwnershipGatedAdapter:
             action = "MODIFY_TP"
         else:
             action = "MODIFY_SL_TP"
-        self._om._ownership_gate.authorize_or_raise(
-            ticket=ticket, action=action, actor="legacy"
+        self._om._ownership_gate.authorize_or_raise(ticket=ticket, action=action, actor="legacy")
+        return bool(
+            self._inner.modify_position(ticket=ticket, stop_loss=stop_loss, take_profit=take_profit)
         )
-        return bool(self._inner.modify_position(ticket=ticket, stop_loss=stop_loss, take_profit=take_profit))
 
     # ---- everything else: transparent delegation ------------------------
 
