@@ -98,9 +98,7 @@ def _script_pr(number, responses=None, *, checks=(), **pr_kw):
     out = dict(responses or {})
     _common(out)
     out[f"Opselon/NexusTradingForexBot/pulls/{number}"] = payload
-    out[
-        f"Opselon/NexusTradingForexBot/commits/{head}/check-runs"
-    ] = {"check_runs": list(checks)}
+    out[f"Opselon/NexusTradingForexBot/commits/{head}/check-runs"] = {"check_runs": list(checks)}
     return out
 
 
@@ -183,7 +181,8 @@ def test_two_lanes_one_fails_wave():
     res = _script_pr(1, checks=ok)
     res2 = _script_pr(2, res, checks=bad)
     board = wave_status(
-        _client(res2), repo=REPO,
+        _client(res2),
+        repo=REPO,
         lanes=[{"name": "a", "pr": 1}, {"name": "b", "pr": 2}],
     )
     assert board.state == "BLOCKED"
@@ -207,7 +206,8 @@ def test_evidence_failure_is_unknown_lane_not_crash():
     res = {"x": 1}
     board = wave_status(
         GitHubClient(REPO, FakeTransport(responses=res)),
-        repo=REPO, lanes=[{"name": "a", "pr": 1}],
+        repo=REPO,
+        lanes=[{"name": "a", "pr": 1}],
     )
     assert board.lanes[0].state == "UNKNOWN"
     assert board.lanes[0].blockers
@@ -246,9 +246,7 @@ def test_no_drift_when_base_matches():
 
 def test_drift_ahead_count():
     res = _script_pr(1)
-    res[
-        "Opselon/NexusTradingForexBot/compare/basesha...main"
-    ] = {"ahead_by": 3}
+    res["Opselon/NexusTradingForexBot/compare/basesha...main"] = {"ahead_by": 3}
     report = drift_report(_client(res), repo=REPO, lane={"name": "a", "pr": 1})
     assert report.ahead_of_base == 3
 
@@ -270,7 +268,10 @@ def test_lane_spec_accepts_branch_optional():
 
 def test_wave_board_blockers_are_prefixed_by_lane():
     state = LaneState(
-        name="a", pr=1, branch="br", state="RED",
+        name="a",
+        pr=1,
+        branch="br",
+        state="RED",
         failed_required=("Code Quality & Tests",),
         blockers=("required checks failed: Code Quality & Tests",),
     )

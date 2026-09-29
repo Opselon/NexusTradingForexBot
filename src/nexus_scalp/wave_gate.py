@@ -108,8 +108,9 @@ class WaveBoard:
     required_checks: tuple[str, ...] = ()
     base_branch: str = "main"
     base_sha: str = UNKNOWN
-    collected_at: str = field(default_factory=lambda: time.strftime(
-        "%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    collected_at: str = field(
+        default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    )
 
     @property
     def state(self) -> str:
@@ -146,9 +147,7 @@ def _to_str_tuple(items: Any) -> tuple[str, ...]:
     return tuple(str(i) for i in items if i)
 
 
-def _classify(
-    evidence: Any, required: tuple[str, ...]
-) -> LaneState:
+def _classify(evidence: Any, required: tuple[str, ...]) -> LaneState:
     """Turn one PR's evidence into a LaneState (never raises)."""
     meta = evidence.meta
     pr = meta.pr
@@ -258,11 +257,13 @@ def wave_status(
         if isinstance(lane, LaneSpec):
             specs.append(lane)
             continue
-        specs.append(LaneSpec(
-            name=str(lane["name"]),
-            pr=int(lane["pr"]),
-            branch=str(lane.get("branch") or UNKNOWN),
-        ))
+        specs.append(
+            LaneSpec(
+                name=str(lane["name"]),
+                pr=int(lane["pr"]),
+                branch=str(lane.get("branch") or UNKNOWN),
+            )
+        )
 
     # Required contexts come from branch protection, same as the evidence
     # report, so the wave gate can never disagree with the merge gate.
@@ -289,10 +290,15 @@ def wave_status(
             # tag the evidence with the lane name for _classify
             object.__setattr__(evidence, "_lane_name", spec.name)
         except Exception as exc:  # collection failure is a lane gap, not a crash
-            lane_states.append(LaneState(
-                name=spec.name, pr=spec.pr, branch=spec.branch, state="UNKNOWN",
-                blockers=(f"evidence collection failed: {type(exc).__name__}: {exc}",),
-            ))
+            lane_states.append(
+                LaneState(
+                    name=spec.name,
+                    pr=spec.pr,
+                    branch=spec.branch,
+                    state="UNKNOWN",
+                    blockers=(f"evidence collection failed: {type(exc).__name__}: {exc}",),
+                )
+            )
             continue
         state = _classify(evidence, required)
         # keep the declared lane name even when the PR branch differs
@@ -346,7 +352,8 @@ def drift_report(
     spec = lane
     if isinstance(spec, dict):
         spec = LaneSpec(
-            name=str(spec["name"]), pr=int(spec["pr"]),
+            name=str(spec["name"]),
+            pr=int(spec["pr"]),
             branch=str(spec.get("branch") or UNKNOWN),
         )
     pr_payload = client.get_pr(spec.pr)
@@ -354,10 +361,7 @@ def drift_report(
     head_sha = str((pr_payload.get("head") or {}).get("sha") or UNKNOWN)
     base_current = _base_tip(client, base_branch)
     ahead = _ahead_count(client, base_branch, base_recorded)
-    behind = (
-        UNKNOWN not in (base_recorded, base_current)
-        and base_recorded != base_current
-    )
+    behind = UNKNOWN not in (base_recorded, base_current) and base_recorded != base_current
     return DriftReport(
         lane=spec.name,
         pr=spec.pr,
