@@ -124,9 +124,7 @@ class MLPositionControllerLifecycle:
                 scaler_path=rec.scaler_path,
             )
             store.save_activation(
-                MLLifecycleState.ACTIVE.value
-                if rec.enabled
-                else MLLifecycleState.DISABLED.value
+                MLLifecycleState.ACTIVE.value if rec.enabled else MLLifecycleState.DISABLED.value
             )
             return
         # test/fake settings service: generic get/set
@@ -163,9 +161,7 @@ class MLPositionControllerLifecycle:
             rec.model_path = s.weights_path
             rec.scaler_path = s.scaler_path
             rec.schema_version = self._schema_version
-            rec.controller_mode = (
-                Controller.ML.value if rec.enabled else Controller.LEGACY.value
-            )
+            rec.controller_mode = Controller.ML.value if rec.enabled else Controller.LEGACY.value
             return rec
         # generic get/set fallback (tests)
         p = _SETTINGS_PREFIX

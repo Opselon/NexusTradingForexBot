@@ -6,7 +6,7 @@ broker mutation. Not mocks of the gate — the actual OrderManager wrapper.
 
 from __future__ import annotations
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -33,7 +33,6 @@ from nexus_scalp.position_adviser.ownership import (
     PositionOwnershipGate,
 )
 from nexus_scalp.position_adviser.tensorizer import MLFeatureTensorizer, TensorizationError
-
 
 # ---------------------------------------------------------------- fakes
 
@@ -90,7 +89,9 @@ def settings() -> FakeSettings:
     return FakeSettings()
 
 
-def make_lifecycle(settings: FakeSettings, gate: PositionOwnershipGate) -> MLPositionControllerLifecycle:
+def make_lifecycle(
+    settings: FakeSettings, gate: PositionOwnershipGate
+) -> MLPositionControllerLifecycle:
     return MLPositionControllerLifecycle(
         settings_service=settings,
         gate=gate,
@@ -110,7 +111,7 @@ def test_schema_v2_dimension_and_contract() -> None:
 
 
 def test_schema_v2_feature_count_math() -> None:
-    # 12 position-state + 3 timeframes × 104 indicator features
+    # 12 position-state + 3 timeframes x 104 indicator features
     assert POSITION_FEATURE_DIM == 12 + 3 * 104
     assert POSITION_FEATURE_DIM == 324
 
@@ -182,9 +183,7 @@ def test_lifecycle_activate_persists_and_sets_owner(
     settings: FakeSettings, gate: PositionOwnershipGate
 ) -> None:
     lc = make_lifecycle(settings, gate)
-    lc.wire_model_runtime(
-        loader=lambda m, s: None, unloader=lambda: None
-    )
+    lc.wire_model_runtime(loader=lambda m, s: None, unloader=lambda: None)
     out = lc.activate(model_id="m1", model_path="a.pt", scaler_path="a.npz")
     assert out["status"] == "OK"
     assert lc.state is MLLifecycleState.ACTIVE
@@ -213,18 +212,14 @@ def test_lifecycle_disable_unloads_and_restores_legacy(
     assert lc.read_persisted().enabled is False
 
 
-def test_lifecycle_restart_restores_ml(
-    settings: FakeSettings, gate: PositionOwnershipGate
-) -> None:
+def test_lifecycle_restart_restores_ml(settings: FakeSettings, gate: PositionOwnershipGate) -> None:
     lc = make_lifecycle(settings, gate)
     lc.wire_model_runtime(loader=lambda m, s: None, unloader=lambda: None)
     lc.activate(model_id="m1", model_path="a.pt", scaler_path="a.npz")
     # NEW lifecycle instance = process restart against the SAME settings DB
     lc2 = make_lifecycle(settings, gate)
     loaded: list[str] = []
-    lc2.wire_model_runtime(
-        loader=lambda m, s: loaded.append(m), unloader=lambda: None
-    )
+    lc2.wire_model_runtime(loader=lambda m, s: loaded.append(m), unloader=lambda: None)
     out = lc2.restore_from_persistence()
     assert out["status"] == "OK" and out["restored"] is True
     assert lc2.state is MLLifecycleState.ACTIVE
@@ -253,22 +248,38 @@ def test_lifecycle_schema_mismatch_rejected_loudly(
 
 def test_tensorizer_rejects_lookahead() -> None:
     t = MLFeatureTensorizer()
-    pos_state = {k: 1.0 for k in (
-        "unrealized_pnl_r", "current_r_net", "current_return",
-        "distance_to_stop_r", "distance_to_target_r", "position_age_bars",
-        "atr", "spread", "estimated_slippage", "model_probability",
-        "model_confidence", "signal_age",
-    )}
+    pos_state = {
+        k: 1.0
+        for k in (
+            "unrealized_pnl_r",
+            "current_r_net",
+            "current_return",
+            "distance_to_stop_r",
+            "distance_to_target_r",
+            "position_age_bars",
+            "atr",
+            "spread",
+            "estimated_slippage",
+            "model_probability",
+            "model_confidence",
+            "signal_age",
+        )
+    }
     decision_time = datetime.now(UTC)
 
     class Snap:
         snapshot_time = None
-        oscillators: list[Any] = []
-        moving_averages: list[Any] = []
+        oscillators: list[Any]
+        moving_averages: list[Any]
         pivots = None
-        gauges: dict[str, Any] = {}
+        gauges: dict[str, Any]
         last_close = None
         bar_count = 0
+
+        def __init__(self) -> None:
+            self.oscillators = []
+            self.moving_averages = []
+            self.gauges = {}
 
     snaps = {tf: Snap() for tf in ("M1", "M5", "M15")}
     # no timestamps -> fail loud
@@ -282,7 +293,7 @@ def test_tensorizer_rejects_lookahead() -> None:
     # future snapshot -> look-ahead refused
     from datetime import timedelta
 
-    for tf, s in snaps.items():
+    for _tf, s in snaps.items():
         s.snapshot_time = decision_time + timedelta(seconds=1)
     with pytest.raises(TensorizationError, match="look-ahead"):
         t.tensorize(
@@ -299,15 +310,27 @@ def test_tensorizer_full_vector_shape() -> None:
     from nexus_scalp.indicators.service import IndicatorService
 
     t = MLFeatureTensorizer()
-    pos_state = {k: 1.0 for k in (
-        "unrealized_pnl_r", "current_r_net", "current_return",
-        "distance_to_stop_r", "distance_to_target_r", "position_age_bars",
-        "atr", "spread", "estimated_slippage", "model_probability",
-        "model_confidence", "signal_age",
-    )}
+    pos_state = {
+        k: 1.0
+        for k in (
+            "unrealized_pnl_r",
+            "current_r_net",
+            "current_return",
+            "distance_to_stop_r",
+            "distance_to_target_r",
+            "position_age_bars",
+            "atr",
+            "spread",
+            "estimated_slippage",
+            "model_probability",
+            "model_confidence",
+            "signal_age",
+        )
+    }
     now = datetime.now(UTC)
     svc = IndicatorService()
     snap = svc.snapshot("XAUUSD", [], "M1")  # empty bars -> None values
+
     # snapshot_time lives on the tensorizer input contract, not the frozen
     # snapshot — provenance is attached by the runtime wrapper (engine layer).
     class TimedSnap:
@@ -335,7 +358,7 @@ def test_tensorizer_full_vector_shape() -> None:
     # fabricated zeros. Only value/action/valid triples must be zeroed.
     non_zero = [(i, v) for i, v in enumerate(vec[12:], start=12) if v != 0.0]
     # expected nonzero: per tf, osc counts (neutral=11, total=11) + ma counts
-    # (neutral=15, total=15) = 4 features per timeframe × 3 = 12
+    # (neutral=15, total=15) = 4 features per timeframe x 3 = 12
     assert len(non_zero) == 12, non_zero
 
 
@@ -344,14 +367,20 @@ def test_build_timeframe_block_preserves_engine_values() -> None:
     from nexus_scalp.indicators.ports import IndicatorResult
 
     class Snap:
-        oscillators = [
-            IndicatorResult("Relative Strength Index (14)", 30.0, "Sell"),
-        ]
-        moving_averages: list[IndicatorResult] = []
+        snapshot_time = None
+        oscillators: list[IndicatorResult]
+        moving_averages: list[IndicatorResult]
         pivots = None
-        gauges: dict[str, Any] = {}
+        gauges: dict[str, Any]
         last_close = 4157.0
         bar_count = 10
+
+        def __init__(self) -> None:
+            self.oscillators = [
+                IndicatorResult("Relative Strength Index (14)", 30.0, "Sell"),
+            ]
+            self.moving_averages = []
+            self.gauges = {}
 
     block = build_timeframe_block("M1", Snap(), atr=1.0)
     # rsi14 block: value_norm (30->-0.4), action (Sell=-0.5), valid=1
@@ -390,9 +419,7 @@ def test_ml_controller_executes_through_raw_adapter() -> None:
     raw = FakeAdapter()
     gate = PositionOwnershipGate()
     gate.set_ml_active(True)
-    ctrl = MLPositionController(
-        raw_adapter=raw, gate=gate, model_version="m1", schema_version="v2"
-    )
+    ctrl = MLPositionController(raw_adapter=raw, gate=gate, model_version="m1", schema_version="v2")
     d = MLPositionDecision(
         ticket=5,
         position_action=PositionAction.KEEP,
@@ -417,9 +444,7 @@ def test_ml_controller_failure_surfaces_without_legacy_takeover() -> None:
     raw = FailingAdapter()
     gate = PositionOwnershipGate()
     gate.set_ml_active(True)
-    ctrl = MLPositionController(
-        raw_adapter=raw, gate=gate, model_version="m1", schema_version="v2"
-    )
+    ctrl = MLPositionController(raw_adapter=raw, gate=gate, model_version="m1", schema_version="v2")
     d = MLPositionDecision(ticket=5, position_action=PositionAction.CLOSE)
     with pytest.raises(Exception, match="CUDA OOM"):
         ctrl.execute(d)

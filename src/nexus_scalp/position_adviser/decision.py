@@ -13,7 +13,7 @@ from typing import Any
 
 from nexus_scalp.position_adviser.ownership import OwnershipViolation
 
-__all__ = ["PositionAction", "CloseMode", "MLPositionDecision"]
+__all__ = ["CloseMode", "MLPositionDecision", "PositionAction"]
 
 
 class PositionAction:
@@ -135,9 +135,7 @@ class MLPositionDecision:
             "model_version": self.model_version,
             "feature_schema_version": self.feature_schema_version,
             "decision_timestamp": self.decision_timestamp,
-            "mutations": [
-                {"action": a, "params": dict(p)} for a, p in self.broker_mutations()
-            ],
+            "mutations": [{"action": a, "params": dict(p)} for a, p in self.broker_mutations()],
         }
 
 

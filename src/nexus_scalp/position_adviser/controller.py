@@ -16,7 +16,7 @@ from nexus_scalp.position_adviser.ownership import OwnershipViolation
 
 logger = get_logger("nexus_scalp.position_adviser.controller")
 
-__all__ = ["MLPositionController", "ControllerExecutionError"]
+__all__ = ["ControllerExecutionError", "MLPositionController"]
 
 
 class ControllerExecutionError(RuntimeError):
@@ -26,7 +26,9 @@ class ControllerExecutionError(RuntimeError):
 class MLPositionController:
     """Executes ML decisions against the broker, ownership-enforced."""
 
-    def __init__(self, *, raw_adapter: Any, gate: Any, model_version: str, schema_version: str) -> None:
+    def __init__(
+        self, *, raw_adapter: Any, gate: Any, model_version: str, schema_version: str
+    ) -> None:
         self._adapter = raw_adapter
         self._gate = gate
         self.model_version = model_version

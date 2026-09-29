@@ -18,12 +18,12 @@ explicit, never a fabricated raw zero masquerading as a real reading.
 Layout (all float32, deterministic order):
     [0:12]    position-state block (v1 ADVISER_FEATURE_ORDER, unchanged)
     then per timeframe tf in (M1, M5, M15):
-        osc block:  11 × (value_norm, action_score, valid)   = 33
+        osc block:  11 x (value_norm, action_score, valid)   = 33
         osc counts: strong_sell, sell, neutral, buy, strong_buy, total = 6
-        ma block:   15 × (distance_atr, action_score, valid)  = 45
+        ma block:   15 x (distance_atr, action_score, valid)  = 45
         ma counts:  strong_sell, sell, neutral, buy, strong_buy, total = 6
-        pivots:     7 levels × (distance_atr, valid)          = 14
-    = 104 per timeframe × 3 timeframes = 312
+        pivots:     7 levels x (distance_atr, valid)          = 14
+    = 104 per timeframe x 3 timeframes = 312
     [12:324]  indicator blocks
     TOTAL D = 324
 
@@ -34,7 +34,7 @@ own action strings are authoritative):
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from nexus_scalp.position_adviser.features import ADVISER_FEATURE_ORDER
@@ -127,11 +127,11 @@ class TimeframeFeatures:
 
 
 # Per-timeframe block layout (documented; verified by test):
-#   oscillators: 11 indicators × 3 (value_norm, action, valid) = 33
+#   oscillators: 11 indicators x 3 (value_norm, action, valid) = 33
 #   osc counts: 5 votes + total = 6
-#   moving averages: 15 × 3 (dist_atr, action, valid) = 45
+#   moving averages: 15 x 3 (dist_atr, action, valid) = 45
 #   ma counts: 5 votes + total = 6
-#   pivots: 7 levels × 2 (dist_atr, valid) = 14
+#   pivots: 7 levels x 2 (dist_atr, valid) = 14
 _OSC_FEATS = len(_OSCILLATOR_IDS) * 3  # 33
 _MA_FEATS = len(_MA_IDS) * 3  # 45
 _PIVOT_FEATS = len(_PIVOT_LEVELS) * 2  # 14
@@ -250,7 +250,7 @@ def build_timeframe_block(tf: str, snap: Any, atr: float) -> TimeframeFeatures:
 
     vals: list[float] = []
 
-    # --- oscillators: 11 × (value_norm, action, valid) ---
+    # --- oscillators: 11 x (value_norm, action, valid) ---
     for oid in _OSCILLATOR_IDS:
         r = osc_results.get(_display_name(oid))
         if r is None or r.value is None:
@@ -275,7 +275,7 @@ def build_timeframe_block(tf: str, snap: Any, atr: float) -> TimeframeFeatures:
     else:
         vals.extend([0.0] * 6)
 
-    # --- moving averages: 15 × (dist_atr, action, valid) ---
+    # --- moving averages: 15 x (dist_atr, action, valid) ---
     atr_safe = max(float(atr), _ATR_EPS)
     last_close = snap.last_close
     for mid in _MA_IDS:
@@ -302,7 +302,7 @@ def build_timeframe_block(tf: str, snap: Any, atr: float) -> TimeframeFeatures:
     else:
         vals.extend([0.0] * 6)
 
-    # --- pivots: 7 levels × (dist_atr, valid) ---
+    # --- pivots: 7 levels x (dist_atr, valid) ---
     for lvl in _PIVOT_LEVELS:
         row = pivots.get(lvl, {}) if pivots else {}
         classic = row.get("Classic") if isinstance(row, dict) else None

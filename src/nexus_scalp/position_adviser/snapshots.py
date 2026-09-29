@@ -16,14 +16,14 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.position_adviser.snapshots")
 
-__all__ = ["TimedSnapshot", "SnapshotProvider"]
+__all__ = ["SnapshotProvider", "TimedSnapshot"]
 
 
 @dataclass(frozen=True)

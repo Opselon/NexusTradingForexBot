@@ -15,7 +15,9 @@ from nexus_scalp.position_adviser.feature_schema import schema_contract
 
 router = APIRouter(prefix="/api/position-ml", tags=["position-ml"])
 
-_LIFECYCLE: Any = None  # wired by register_position_ml_routes
+
+class _Holder:
+    lifecycle: Any = None
 
 
 def _ml_lifecycle() -> Any:
@@ -26,16 +28,19 @@ def _ml_lifecycle() -> Any:
     process-wide adviser service singleton. Built lazily on first use; the
     OrderManager's ownership gate is wired when the engine composes it.
     """
-    global _LIFECYCLE
-    if _LIFECYCLE is None:
-        from nexus_scalp.position_adviser.feature_schema import POSITION_FEATURE_SCHEMA_VERSION
-        from nexus_scalp.position_adviser.ml_lifecycle import MLPositionControllerLifecycle
+    if _Holder.lifecycle is None:
+        from nexus_scalp.position_adviser.feature_schema import (
+            POSITION_FEATURE_SCHEMA_VERSION,
+        )
+        from nexus_scalp.position_adviser.ml_lifecycle import (
+            MLPositionControllerLifecycle,
+        )
         from nexus_scalp.position_adviser.ownership import PositionOwnershipGate
+        from nexus_scalp.position_adviser.settings_store import AdviserSettingsStore
         from nexus_scalp.web.position_adviser_routes import (
             _settings_database,
             get_position_adviser_service,
         )
-        from nexus_scalp.position_adviser.settings_store import AdviserSettingsStore
 
         svc = get_position_adviser_service()
         lc = MLPositionControllerLifecycle(
@@ -46,17 +51,16 @@ def _ml_lifecycle() -> Any:
         # the adviser service's own state machine remains the model holder;
         # the lifecycle delegates load/unload to it so there is ONE runtime.
         lc.wire_model_runtime(
-            loader=lambda w, s: svc.load(w, s),
+            loader=svc.load,
             unloader=svc.unload,
         )
-        _LIFECYCLE = lc
-    return _LIFECYCLE
+        _Holder.lifecycle = lc
+    return _Holder.lifecycle
 
 
 def register_position_ml_routes(app: Any, lifecycle: Any | None = None) -> None:
-    global _LIFECYCLE
     if lifecycle is not None:
-        _LIFECYCLE = lifecycle
+        _Holder.lifecycle = lifecycle
     app.include_router(router)
 
 

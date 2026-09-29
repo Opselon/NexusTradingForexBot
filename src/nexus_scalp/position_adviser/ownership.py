@@ -37,8 +37,9 @@ from typing import Any
 
 __all__ = [
     "Controller",
-    "OwnershipViolation",
     "OwnershipDecision",
+    "OwnershipViolation",
+    "OwnershipViolationError",
     "PositionOwnershipGate",
 ]
 
@@ -68,8 +69,12 @@ _LEGACY_MUTATION_ACTIONS = frozenset(
 )
 
 
-class OwnershipViolation(RuntimeError):
+class OwnershipViolationError(RuntimeError):
     """Legacy code tried to mutate an ML-owned position. Blocked."""
+
+
+# Backwards-compat alias
+OwnershipViolation = OwnershipViolationError
 
 
 @dataclass(frozen=True)
