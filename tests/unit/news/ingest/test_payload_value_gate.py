@@ -190,9 +190,7 @@ def test_analysis_text_is_identical_after_gate():
         summary = _SRC["summary"]
         body = ""  # the gated, persisted value
 
-    pre_gate_text = " ".join(
-        [_SRC["title"], _SRC["summary"], _SRC["summary"]]
-    ).upper()
+    pre_gate_text = " ".join([_SRC["title"], _SRC["summary"], _SRC["summary"]]).upper()
     assert _title_and_text(_Art()) == pre_gate_text
 
 
