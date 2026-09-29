@@ -134,6 +134,27 @@ either dialect's JSON operators). It needs the same run against this file.
 2. `shadow_decisions` 230 MB heap reservoir on PostgreSQL — intentionally not
    compacted (repo forbids VACUUM FULL; `never_delete=True`). Reclaimed
    organically as new inserts reuse the pages.
+3. **The remaining large payload columns are justified, not duplicate.** The
+   rescan measured every TEXT/JSONB value column over 200 rows:
+
+   | Table.Column | Rows | Avg | Total | Verdict |
+   |---|---|---|---|---|
+   | `research_evidence.content` | 19,228 | 1,837 B | 35.3 MB | V3 research evidence; read by `observability.py:643` |
+   | `factory_events.payload` | 4,745 | 4,859 B | 23.1 MB | unique structured metrics, 0% column-duplicated; read by `factory/store.py:1005` |
+   | `audit_experiences.payload` | 9,941 | 1,944 B | 19.3 MB | **authoritative** — `experience/ledger.py:479` reconstructs `ExperienceRecord` from it; columns are the projection |
+   | `audit_experience_outcomes.payload` | 3,491 | 1,342 B | 4.7 MB | authoritative outcome half of the same merged projection |
+   | `model_governance_events.payload` | 59,180 | 166 B | 9.8 MB | small per-event metrics |
+
+   The key distinction: `shadow_decisions.payload` was a *mirror* (a
+   whole-record serialization duplicating values already in columns), which is
+   why removing it was lossless. `audit_experiences.payload` is the *source* —
+   `ledger.py:479` does `ExperienceRecord.model_validate(json.loads(payload))`
+   and the columns are derived from it. Removing that would destroy the record,
+   not reclaim space. Only ~3.1 MB of its 29.9 MB is the duplicated portion,
+   and that duplication is the price of a projection that forensics reads
+   without re-parsing JSON.
+
+   No further payload reclamation is available.
 
 Everything else is either flat under load, protected, or has a real consumer.
 The cumulative `audit_signals` counter should be reset-aware in any future
