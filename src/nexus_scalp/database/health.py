@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any
+from typing import Any, ClassVar
 
 from nexus_scalp.database.config import DatabaseConfig, load_database_config
 from nexus_scalp.database.drivers import get_driver
@@ -20,6 +20,12 @@ from nexus_scalp.database.views import ensure_analytics_views
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.database.health")
+
+#: Identity sentinel for the R-1 memo's driver-injection bypass: if
+#: ``get_driver`` on this module has been replaced (tests and diagnostics
+#: inject their own driver), the memo is bypassed so an injected failure can
+#: never read a cached healthy snapshot for the same target.
+_ORIGINAL_GET_DRIVER = get_driver
 
 #: Tables whose availability matters for trading safety.
 CRITICAL_TABLES: dict[str, tuple[str, ...]] = {
@@ -70,6 +76,38 @@ def _last_connection_error(driver: Any) -> str:
 class DatabaseHealthService:
     """Snapshot health of every persistent domain for the active provider."""
 
+    #: R-1 HOT-PATH MEMO (Phase-2 remediation R-1). ``check_domain`` costs up
+    #: to ~152 ms per call (7 catalog round trips on PostgreSQL), and
+    #: ``get_system_state()`` calls it for the "audit" domain on EVERY SSE
+    #: tick — 5 times per second per connected client — via
+    #: ``_build_health_section``. Both call sites construct a FRESH
+    #: ``DatabaseHealthService`` per call, so the memo cannot live on the
+    #: instance; it is class-level and keyed by the RESOLVED CONFIG (provider
+    #: + target), which is what actually identifies the thing being probed.
+    #:
+    #: Correctness contract (see test_r1_health_domain_hot_path_memo):
+    #:   * failures are NEVER memoized — an Error/Warning/disconnected
+    #:     result is recomputed on every call so the operator sees the
+    #:     recovery the instant it happens (errors must stay retryable, the
+    #:     same rule the PERF-DB-STATUS cache pins);
+    #:   * a healthy CONNECTED snapshot is replayed within the TTL, with its
+    #:     original latency_ms preserved and the memo hit disclosed;
+    #:   * the memo is bypassed whenever ``get_driver`` has been replaced on
+    #:     this module (tests and diagnostics inject their own driver), so an
+    #:     injected failure can never read a cached healthy snapshot;
+    #:   * ``_memo_allow_injected_drivers`` is a TEST HOOK to exercise the
+    #:     memo against a counting driver; production never sets it.
+    DOMAIN_HEALTH_TTL_SECONDS: float = 5.0
+
+    _domain_health_cache: ClassVar[dict[tuple, tuple[float, dict[str, Any]]]] = {}
+
+    #: TEST HOOK ONLY. The driver-injection bypass disables the memo whenever
+    #: ``get_driver`` has been replaced, which is how every test installs its
+    #: own driver — so without this hook the memo path would be untestable.
+    #: Tests set it to observe replay behaviour with a driver; production
+    #: leaves it False, where the bypass is the only guard.
+    _memo_allow_injected_drivers: bool = False
+
     def __init__(self, workspace: str | None = None, settings_db_path: str | None = None) -> None:
         self.workspace = workspace
         self.settings_db_path = settings_db_path
@@ -78,8 +116,69 @@ class DatabaseHealthService:
     def resolve_config(self, domain: str) -> DatabaseConfig:
         return load_database_config(domain, settings_db_path=self.settings_db_path, env=None)
 
+    @staticmethod
+    def _config_identity(cfg: Any) -> tuple:
+        """Stable key for the database being probed (provider + target).
+
+        Two services resolving to the same provider pointing at the same
+        target share one memo entry; a config change (provider switch, path
+        change) gets a fresh entry. Reads ``sqlite_connect_path`` (URI or
+        path, whichever the driver actually opens) so a path-only config and
+        a URI config for the same file do not get two entries, and a URI
+        pointing elsewhere does not collide with the default path.
+        """
+        if getattr(cfg, "is_postgresql", False):
+            return (
+                "postgresql",
+                str(getattr(cfg, "host", "")),
+                int(getattr(cfg, "port", 0) or 0),
+                str(getattr(cfg, "database", "")),
+            )
+        return ("sqlite", str(getattr(cfg, "sqlite_connect_path", "") or ":memory:"))
+
+    @classmethod
+    def invalidate_domain_cache(cls, domain: str | None = None) -> None:
+        """Drop memoized health (after a provider switch or migration)."""
+        if domain is None:
+            cls._domain_health_cache.clear()
+            return
+        for key in [k for k in cls._domain_health_cache if k[0] == domain]:
+            cls._domain_health_cache.pop(key, None)
+
     def check_domain(self, domain: str) -> dict[str, Any]:
         """Health snapshot for one domain (never raises)."""
+        # R-1: replay a healthy snapshot within the TTL instead of re-running
+        # ~7 catalog round trips at 5 Hz per client. The memo is keyed by the
+        # RESOLVED CONFIG (provider + target) — the identity of the thing
+        # actually being probed — and is bypassed whenever the resolution
+        # surface has been overridden for this domain, because a test (or a
+        # diagnostic) that installs its own driver must never read a cached
+        # healthy snapshot for the same target.
+        cfg = None
+        try:
+            cfg = self.resolve_config(domain)
+        except Exception:
+            cfg = None
+        memo_enabled = cfg is not None and (
+            get_driver is _ORIGINAL_GET_DRIVER or type(self)._memo_allow_injected_drivers
+        )
+        if memo_enabled:
+            key = (domain, *self._config_identity(cfg))
+            now_mono = time.monotonic()
+            cached = type(self)._domain_health_cache.get(key)
+            if cached is not None and (now_mono - cached[0]) < self.DOMAIN_HEALTH_TTL_SECONDS:
+                snap = dict(cached[1])
+                snap["memo"] = True
+                return snap
+        out = self._compute_domain_snapshot(domain)
+        # Memoize only the healthy connected result; failures must stay live.
+        if memo_enabled and out.get("connected") and out.get("health") == "Healthy":
+            key = (domain, *self._config_identity(cfg))
+            type(self)._domain_health_cache[key] = (time.monotonic(), dict(out))
+        return out
+
+    def _compute_domain_snapshot(self, domain: str) -> dict[str, Any]:
+        """The uncached probe (never raises)."""
         out: dict[str, Any] = {
             "domain": domain,
             "provider": "UNKNOWN",

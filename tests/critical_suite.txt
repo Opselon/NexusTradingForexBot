@@ -541,3 +541,5 @@ tests/unit/test_bug544_audit_pg_bootstrap.py
 tests/unit/test_sec_codeql_secret_remediation.py
 tests/unit/shadow/test_payload_mirror_reclaim.py
 tests/unit/governance/test_gov_dead_index.py
+tests/unit/test_r1_health_domain_hot_path_memo.py
+tests/unit/test_r9_backup_retention.py

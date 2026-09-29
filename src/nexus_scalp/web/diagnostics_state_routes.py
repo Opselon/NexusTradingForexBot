@@ -2076,7 +2076,17 @@ def register_diagnostics_state_routes(
                     dest.close()
             finally:
                 conn.close()
-            return {"success": True, "backup_path": backup_path}
+            # R-9: the backup directory has no pruner of its own, so the
+            # producer applies retention right after writing (bounded +
+            # best-effort; a prune failure never fails the backup).
+            from nexus_scalp.hygiene.backup_retention import prune_backups
+
+            retention = prune_backups()
+            return {
+                "success": True,
+                "backup_path": backup_path,
+                "retention": retention.as_payload(),
+            }
         except Exception as e:
             log_web_error(logger, "/api/db/manage/backup", None, e)
             return _err("DB_MIGRATION_BACKUP_FAILED")

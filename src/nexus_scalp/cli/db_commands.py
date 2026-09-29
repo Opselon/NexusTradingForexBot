@@ -381,7 +381,16 @@ def make_portability_app() -> typer.Typer:
                 dst.close()
         finally:
             src.close()
-        payload = {"success": True, "backup_path": backup_path}
+        # R-9: the backup directory has no pruner of its own, so the producer
+        # applies retention immediately after writing (bounded + best-effort).
+        from nexus_scalp.hygiene.backup_retention import prune_backups
+
+        retention = prune_backups()
+        payload = {
+            "success": True,
+            "backup_path": backup_path,
+            "retention": retention.as_payload(),
+        }
         _emit(payload, json_mode, plain_title="SQLITE BACKUP CREATED")
 
     return app
