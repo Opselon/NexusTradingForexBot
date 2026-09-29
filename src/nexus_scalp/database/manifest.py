@@ -29,7 +29,7 @@ from nexus_scalp.database.models import (
 # AUDIT domain (audit.db)
 # ---------------------------------------------------------------------------
 
-# AUDIT_SCHEMA_VERSION must equal baseline(1) + len(AUDIT_MIGRATIONS) = 9.
+# AUDIT_SCHEMA_VERSION must equal baseline(1) + len(AUDIT_MIGRATIONS) = 11.
 # TASK-DB-PLATFORM (2026-09-02): the engine's expected_version() is derived
 # from the migration REGISTRY (registry.expected_version_for_domain); this
 # constant is the manifest-side mirror used by docs/drift tooling. A
@@ -40,7 +40,10 @@ from nexus_scalp.database.models import (
 # 2026-09-10: AUDIT-0009-research-archive-tables (31cc2003) extended the
 # chain to v9 but skipped this bump (SSOT drift, PERF-DEADLETTER wave) —
 # aligned here in the same wave that heals the baseline skeletons.
-AUDIT_SCHEMA_VERSION: int = 9
+# 2026-09-29: AUDIT-0010-evidence-reader-indexes + AUDIT-0011
+# -drop-duplicate-release-metadata-key (wave db-lifecycle-2, lane L4)
+# extend the chain to v11 — manifest bumped in the same change.
+AUDIT_SCHEMA_VERSION: int = 11
 
 AUDIT_TABLES: tuple[SchemaTable, ...] = (
     SchemaTable(
@@ -50,6 +53,7 @@ AUDIT_TABLES: tuple[SchemaTable, ...] = (
     SchemaTable(
         name="audit_signals",
         unique_indexes=("idx_audit_signals_dedup",),
+        indexes=("idx_audit_signals_request_id",),
     ),
     SchemaTable(
         name="audit_guard_telemetry",
@@ -57,7 +61,7 @@ AUDIT_TABLES: tuple[SchemaTable, ...] = (
     ),
     SchemaTable(
         name="audit_orders",
-        indexes=("idx_orders_ticket",),
+        indexes=("idx_orders_ticket", "idx_orders_order_id"),
     ),
     SchemaTable(
         name="audit_ledger",
