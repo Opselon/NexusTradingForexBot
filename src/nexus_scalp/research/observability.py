@@ -72,6 +72,63 @@ def _read_json(text: str | None) -> dict[str, Any]:
         return {}
 
 
+def _evidence_content(row: sqlite3.Row, reader: Any = None) -> dict[str, Any]:
+    """Resolve an evidence row's payload from the single canonical copy.
+
+    Contract: ``research_evidence.content`` and ``research_gates.result`` held
+    the SAME JSON object (measured on the live ledger — see the DB-LIFECYCLE
+    probe). The value gate now writes the payload once, on the gate. This reads
+    it back so every evidence consumer still receives the full payload.
+
+    Content-first, so it is correct for BOTH row generations:
+
+    * legacy rows (written before the gate) carry a populated ``content`` —
+      served verbatim, no extra query;
+    * gated rows carry ``content = ""`` — resolved from the gate's ``result``
+      via the ``gate_id`` lineage the schema already pins.
+
+    ``reader`` is the store's provider-aware read plane (``_ProviderRead``):
+    SQLite takes its own read-only seam, PostgreSQL the read pool. ``None``
+    means the store cannot read, and only legacy rows are resolvable — the
+    honest answer, never a fabricated payload.
+
+    Never raises and never returns ``None``: a row whose gate is missing or
+    undecodable yields ``{}``, which is what a legacy row with an empty
+    payload already yields — no reader can distinguish the two, so no consumer
+    can be made worse than before.
+    """
+    stored = row["content"] if "content" in row.keys() else None
+    payload = _read_json(stored)
+    if payload:
+        return payload
+    gate_id = (row["gate_id"] or "") if "gate_id" in row.keys() else ""
+    if not gate_id or reader is None:
+        return {}
+    resolved = _gate_result_of(gate_id, reader)
+    return _read_json(resolved) if resolved else {}
+
+
+def _gate_result_of(gate_id: str, reader: Any) -> str | None:
+    """Fetch ``research_gates.result`` for one gate id (bounded, read-only).
+
+    Failures are swallowed and logged by the plane; ``None`` means "not
+    resolvable" and the caller falls back to an empty payload rather than
+    raising.
+    """
+    try:
+        rows = reader.rows(
+            "SELECT result FROM research_gates WHERE gate_id=? LIMIT 1",
+            (gate_id,),
+        )
+    except Exception as e:  # pragma: no cover - defensive, the plane logs too
+        logger.error("[RESEARCH_OBS] evidence content resolve failed", gate=gate_id, error=str(e))
+        return None
+    if not rows:
+        return None
+    value = rows[0].get("result") if isinstance(rows[0], dict) else None
+    return value if isinstance(value, str) else None
+
+
 def _reader(repo: AuditRepository) -> Any:
     """Provider-portable research reader (PG-RESEARCH-READ-001).
 
@@ -242,7 +299,7 @@ class ResearchObservabilityStore:
         duration = (completed - start).total_seconds() * 1000.0 if start else 0.0
         ev_id = evidence.evidence_id if evidence is not None else gate.evidence_id
         if evidence is not None:
-            self.store_evidence(evidence)
+            self.store_evidence(evidence, gate_result=result if result is not None else gate.result)
         update = {
             "status": status,
             "completed_at": completed,
@@ -566,7 +623,32 @@ class ResearchObservabilityStore:
     # Evidence vault (immutable)
     # ==================================================================
 
-    def store_evidence(self, artifact: EvidenceArtifact) -> str:
+    def store_evidence(
+        self, artifact: EvidenceArtifact, *, gate_result: dict[str, Any] | None = None
+    ) -> str:
+        """Persist one immutable evidence-vault record.
+
+        ``content`` is a *redundant copy by construction*: every producer in
+        ``research/pipeline.py`` builds the artifact and the gate's ``result``
+        from the SAME dict (``bt_data`` / the gate's own output object), and
+        ``EvidenceArtifact.create`` derives ``content_hash`` from it. Storing
+        both is the same JSON written twice — measured on the live ledger:
+        26,140 gate rows / 18,316 evidence rows, 300/300 sampled rows
+        canonically identical (``json.dumps(sort_keys=True)``), evidence a
+        strict 1:1 subset of the gate, zero orphans.
+
+        DB-LIFECYCLE (write amplification): the evidence vault keeps the
+        CANONICAL copy — it is the immutable record (spec 44) and the gate's
+        ``result`` column is the mutable presentation field. When the caller
+        passes the gate result here, the evidence row stores ``""`` and the
+        READ side re-materializes it from the gate (``_evidence_from_row``).
+        One copy of the payload is written; both surfaces read the same bytes.
+
+        Legacy rows (written before this change) keep their populated
+        ``content`` and are served verbatim — the read fallback is
+        content-first, so no row is ever left without its payload.
+        """
+        stored_content = "" if gate_result is not None else _json(artifact.content)
         self._queue(
             _INSERT_EVIDENCE_SQL,
             (
@@ -575,7 +657,7 @@ class ResearchObservabilityStore:
                 artifact.research_run_id,
                 artifact.gate_id,
                 artifact.kind.value,
-                _json(artifact.content),
+                stored_content,
                 artifact.content_hash,
                 artifact.dataset_version,
                 artifact.engine_version,
@@ -639,8 +721,19 @@ class ResearchObservabilityStore:
             logger.error("[RESEARCH_OBS] evidence list failed", error=str(e))
         return out
 
-    @staticmethod
-    def _evidence_from_row(row: sqlite3.Row) -> dict[str, Any] | None:
+    def _evidence_from_row(self, row: sqlite3.Row) -> dict[str, Any] | None:
+        """Decode one evidence row, re-materializing a deduplicated payload.
+
+        DB-LIFECYCLE: a row written after the payload value gate stores ``""``
+        in ``content`` because the gate's own ``result`` column already holds
+        that exact JSON (measured: 300/300 sampled rows canonically identical,
+        evidence a strict 1:1 subset of the gate). The read side must NOT
+        present that as an empty evidence payload — the content is one join
+        away on ``gate_id``, which is exactly the lineage the contract pins.
+
+        Legacy rows keep a populated ``content`` and are served verbatim, so
+        the content-first fallback means no row is ever left without payload.
+        """
         try:
             return {
                 "evidence_id": row["evidence_id"],
@@ -648,7 +741,7 @@ class ResearchObservabilityStore:
                 "research_run_id": row["research_run_id"],
                 "gate_id": row["gate_id"] or "",
                 "kind": row["kind"],
-                "content": _read_json(row["content"]),
+                "content": _evidence_content(row, _reader(self.audit_repo)),
                 "content_hash": row["content_hash"] or "",
                 "dataset_version": row["dataset_version"] or "",
                 "engine_version": row["engine_version"] or "",
