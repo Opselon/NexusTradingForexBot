@@ -120,11 +120,7 @@ jobs:
           echo "NSE_NEWS__ENABLED=false" >> "$GITHUB_ENV"
           echo "NSE_TELEGRAM__ENABLED=false" >> "$GITHUB_ENV"
           echo "NSE_NO_AUTO_INSTALL=1" >> "$GITHUB_ENV"
-          echo "NSE_WEB_AUTH_TOKEN=$(python - <<'PY'
-import secrets
-print(secrets.token_urlsafe(32))
-PY
-)" >> "$GITHUB_ENV"
+          echo "NSE_WEB_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" >> "$GITHUB_ENV"
           if [ "${{ matrix.provider }}" = "postgres" ]; then
             echo "NSE_DATABASE__PROVIDER=postgresql" >> "$GITHUB_ENV"
           else
