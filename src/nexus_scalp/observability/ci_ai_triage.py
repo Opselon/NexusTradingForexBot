@@ -610,8 +610,9 @@ def notify_triage(
                 model=analysis.model,
                 probe=analysis.probe,
             )
-            out["result"] = analysis.to_result(True)
-            out["telegram"] = reporter._send_text(html_text, event_type="AI_TRIAGE")
+            delivery = reporter._send_text(html_text, event_type="AI_TRIAGE")
+            out["telegram"] = delivery
+            out["result"] = analysis.to_result(bool(delivery.get("ok")))
         except Exception as err:
             out["telegram"] = {"ok": False, "error": str(err)[:200]}
     return out
