@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from nexus_scalp.observability import ci_ai_triage as triage
 
