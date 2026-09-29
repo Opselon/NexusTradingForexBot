@@ -415,10 +415,20 @@ def _failed_tests(failures: list[Failure]) -> str:
             lines.append(f"**Function:** `{f.location.function}()`\n")
         if f.category != FailureCategory.UNKNOWN:
             lines.append(f"**Kind:** {f.category}\n")
+        if f.infrastructure:
+            lines.append(
+                "**Infrastructure failure:** this check failed on CI/service "
+                "side, not on this PR's code. Re-run the job or wait for the "
+                "service to recover before changing code.\n"
+            )
         if f.error_type != UNKNOWN:
             lines.append(f"**Error / rule:** `{f.error_type}`\n")
         if f.message != UNKNOWN:
             lines.append(f"**Why:**\n\n```text\n{sanitize(f.message[:_MAX_MSG])}\n```\n")
+        if f.traceback and f.traceback != UNKNOWN:
+            tb_lines = [ln for ln in f.traceback.splitlines() if ln.strip()][:_MAX_TB_LINES]
+            if tb_lines:
+                lines.append("**Trace:**\n\n```text\n" + "\n".join(tb_lines) + "\n```\n")
         if f.remediation != UNKNOWN:
             lines.append(f"**How to fix (the scanner's own wording):** {sanitize(f.remediation)}\n")
         if f.rule_url != UNKNOWN:
