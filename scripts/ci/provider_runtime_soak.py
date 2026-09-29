@@ -178,10 +178,13 @@ def _task_failure(task: asyncio.Task[Any], name: str) -> str | None:
 async def run_soak(provider: str, duration_sec: int, host: str, port: int) -> dict[str, Any]:
     """Boot the real app graph, soak it, probe it, then drain it."""
     import uvicorn
+    from nexus_scalp.adapters.database.audit_repository import AuditRepository
     from nexus_scalp.adapters.paper.paper_data import build_paper_adapter
     from nexus_scalp.application.live_engine import LiveEngine
     from nexus_scalp.configuration.config import AppConfig
-    from nexus_scalp.domain.enums import ExecutionMode
+    from nexus_scalp.database.config import build_postgres_url, load_database_config
+    from nexus_scalp.domain.enums import ActionType, ExecutionMode
+    from nexus_scalp.domain.models import TradeProposal
     from nexus_scalp.web.server import create_app
 
     if not MODEL_ARTIFACT.exists():
@@ -201,6 +204,16 @@ async def run_soak(provider: str, duration_sec: int, host: str, port: int) -> di
     config = AppConfig.model_validate(raw)
 
     db_evidence = database_probe(provider)
+    db_cfg = load_database_config("audit")
+    if provider == "sqlite":
+        audit_path = Path(os.environ["NEXUS_AUDIT_DB"]).resolve()
+        audit_repo = AuditRepository(
+            db_url=f"sqlite:///{audit_path}",
+            flush_interval_sec=0.1,
+        )
+    else:
+        audit_repo = AuditRepository(config=db_cfg, flush_interval_sec=0.1)
+
     adapter = build_paper_adapter(
         symbol=config.execution.symbol,
         paper_data=getattr(config, "paper_data", None),
@@ -208,6 +221,7 @@ async def run_soak(provider: str, duration_sec: int, host: str, port: int) -> di
     engine = LiveEngine(
         config=config,
         adapter=adapter,
+        audit_repo=audit_repo,
         mode_override=ExecutionMode.PAPER,
     )
     engine._preflight_or_raise()
@@ -281,12 +295,60 @@ async def run_soak(provider: str, duration_sec: int, host: str, port: int) -> di
             pass
 
     elapsed = time.monotonic() - started
+    persistence_evidence: dict[str, Any] = {}
+    if not failure:
+        # Force one harmless NO_TRADE audit write so the matrix proves the
+        # running engine can persist through the selected provider.
+        try:
+            engine.audit.log_signal(
+                TradeProposal(
+                    request_id=f"ci-runtime-soak-{provider}",
+                    symbol="XAUUSD",
+                    generated_at=__import__("datetime").datetime.now(__import__("datetime").UTC),
+                    action=ActionType.NO_TRADE,
+                    confidence=0.0,
+                    proposed_entry=2000.0,
+                    stop_loss=1990.0,
+                    take_profit=2020.0,
+                    risk_reward_ratio=2.0,
+                    reason_code="CI_RUNTIME_SOAK",
+                )
+            )
+            if not engine.audit.flush(timeout_sec=10.0):
+                raise RuntimeError("audit flush returned false")
+            if provider == "postgres":
+                import psycopg
+
+                with psycopg.connect(build_postgres_url(db_cfg), connect_timeout=5) as connection:
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            "SELECT COUNT(*) FROM audit_signals WHERE request_id = %s",
+                            (f"ci-runtime-soak-{provider}",),
+                        )
+                        count = int(cursor.fetchone()[0])
+            else:
+                with sqlite3.connect(
+                    os.environ["NEXUS_AUDIT_DB"], timeout=5
+                ) as connection:
+                    row = connection.execute(
+                        "SELECT COUNT(*) FROM audit_signals WHERE request_id = ?",
+                        (f"ci-runtime-soak-{provider}",),
+                    ).fetchone()
+                    count = int(row[0]) if row else 0
+            if count != 1:
+                raise RuntimeError(f"expected one persisted soak probe row, got {count}")
+            persistence_evidence = {"audit_probe_rows": count}
+        except Exception as exc:
+            failure = f"persistence verification failed: {type(exc).__name__}: {exc}"
+
     if not failure:
         failure = _task_failure(server_task, "web") or _task_failure(engine_task, "engine")
     if not failure and (not server_task.done() or not engine_task.done()):
         failure = "runtime tasks did not terminate during graceful shutdown"
     if not failure and not engine.shutdown_completed:
         failure = "LiveEngine shutdown did not reach CLOSED state"
+    if not failure and provider == "postgres" and Path(os.environ["NEXUS_AUDIT_DB"]).exists():
+        failure = "unexpected SQLite audit DB was created during PostgreSQL runtime soak"
 
     report = {
         "provider": provider,
@@ -295,6 +357,7 @@ async def run_soak(provider: str, duration_sec: int, host: str, port: int) -> di
         "db": db_evidence,
         "probe_count": len(probes),
         "last_probes": probes[-10:],
+        "persistence": persistence_evidence,
         "shutdown": {
             "web_task_done": server_task.done(),
             "engine_task_done": engine_task.done(),
