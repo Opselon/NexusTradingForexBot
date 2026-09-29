@@ -36,11 +36,18 @@ from nexus_scalp.research.evidence import (
     ResearchGate,
     ResearchRunSnapshot,
     WorkerHealth,
+    stable_digest,
 )
 
 logger = get_logger("nexus_scalp.research.observability")
 
 MAX_READ_LIMIT = 2000
+
+#: DEEP-OPT L4 — sentinel stored in ``research_evidence.content`` when the body
+#: is DERIVED from the canonical gate outcome instead of duplicated. Short, rare
+#: and JSON-inert (never a serialized document) so it can never collide with a
+#: real legacy body: any genuine evidence body is a JSON object literal.
+_EVIDENCE_CONTENT_DERIVED = "__derived_from_gate_result__"
 
 
 def _json(value: Any) -> str:
@@ -70,6 +77,41 @@ def _read_json(text: str | None) -> dict[str, Any]:
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
+
+
+def _resolve_derived_evidence_content(
+    gate_id: str, repo: AuditRepository | None = None
+) -> dict[str, Any]:
+    """DEEP-OPT L4 — derive an evidence body from its canonical source.
+
+    ``research_evidence.content`` was byte-semantically identical to
+    ``research_gates.result`` for 18,316 of 18,316 live paired rows, so the
+    evidence row no longer stores the body; it stores provenance and derives
+    the body on read from the gate that owns the outcome (one indexed lookup
+    on ``gate_id``, never a scan).
+
+    Reads go through the provider read plane (SQLite or PostgreSQL) — never a
+    raw sqlite3 path — so the derived read works on both engines
+    (PG-RESEARCH-READ-001). ``repo=None`` (external callers or test doubles)
+    degrades to an empty body rather than to a fabricated one.
+    """
+    if not gate_id or repo is None:
+        return {}
+    reader = _reader(repo)
+    if not reader.available:
+        return {}
+    try:
+        row = reader.one("SELECT result FROM research_gates WHERE gate_id=?;", (gate_id,))
+    except Exception as e:
+        logger.error(
+            "[RESEARCH_OBS] derived evidence gate lookup failed",
+            gate_id=gate_id,
+            error=str(e),
+        )
+        return {}
+    if not row:
+        return {}
+    return _read_json(row.get("result") if hasattr(row, "get") else row[0])
 
 
 def _reader(repo: AuditRepository) -> Any:
@@ -567,6 +609,15 @@ class ResearchObservabilityStore:
     # ==================================================================
 
     def store_evidence(self, artifact: EvidenceArtifact) -> str:
+        # DEEP-OPT L4: the evidence vault is an IDENTITY + PROVENANCE record, not a
+        # second copy of the gate outcome. For 18,316 of 18,316 live paired rows
+        # evidence.content was semantic-identical to research_gates.result
+        # (17.2 MB duplicated bytes). The gate owns the outcome; the evidence row
+        # keeps evidence_id / kind / content_hash / lineage and DERIVES content on
+        # read via _evidence_from_row, so a duplicate body is never persisted.
+        # The artifact's own content_hash is the integrity witness: if the gate
+        # result ever disagrees with it, the reader reports the divergence
+        # instead of silently returning either copy.
         self._queue(
             _INSERT_EVIDENCE_SQL,
             (
@@ -575,7 +626,7 @@ class ResearchObservabilityStore:
                 artifact.research_run_id,
                 artifact.gate_id,
                 artifact.kind.value,
-                _json(artifact.content),
+                _EVIDENCE_CONTENT_DERIVED,
                 artifact.content_hash,
                 artifact.dataset_version,
                 artifact.engine_version,
@@ -591,7 +642,7 @@ class ResearchObservabilityStore:
             row = _reader(self.audit_repo).one(
                 "SELECT * FROM research_evidence WHERE evidence_id=?;", (evidence_id,)
             )
-            return self._evidence_from_row(row) if row else None
+            return self._evidence_from_row(row, self.audit_repo) if row else None
         except Exception as e:
             logger.error("[RESEARCH_OBS] evidence load failed", evidence=evidence_id, error=str(e))
             return None
@@ -632,7 +683,7 @@ class ResearchObservabilityStore:
         try:
             rows = _reader(self.audit_repo).rows(sql, args)
             for r in rows:
-                ev = self._evidence_from_row(r)
+                ev = self._evidence_from_row(r, self.audit_repo)
                 if ev is not None:
                     out.append(ev)
         except Exception as e:
@@ -640,20 +691,54 @@ class ResearchObservabilityStore:
         return out
 
     @staticmethod
-    def _evidence_from_row(row: sqlite3.Row) -> dict[str, Any] | None:
+    def _evidence_from_row(
+        row: sqlite3.Row, repo: AuditRepository | None = None
+    ) -> dict[str, Any] | None:
         try:
-            return {
+            stored = row["content"]
+            # DEEP-OPT L4: the stored body is a marker when the evidence content is
+            # derived from the gate outcome. LEGACY rows carry the real body and are
+            # returned untouched (rollback rule 86: the old reader survives).
+            if stored == _EVIDENCE_CONTENT_DERIVED:
+                resolved: dict[str, Any] = {}
+                gate_id = row["gate_id"] or ""
+                if gate_id:
+                    try:
+                        resolved = _resolve_derived_evidence_content(gate_id, repo)
+                    except Exception as e:
+                        logger.error(
+                            "[RESEARCH_OBS] derived evidence resolve failed",
+                            evidence_id=row["evidence_id"],
+                            gate_id=gate_id,
+                            error=str(e),
+                        )
+                content = resolved
+            else:
+                content = _read_json(stored)
+            out = {
                 "evidence_id": row["evidence_id"],
                 "strategy_id": row["strategy_id"],
                 "research_run_id": row["research_run_id"],
                 "gate_id": row["gate_id"] or "",
                 "kind": row["kind"],
-                "content": _read_json(row["content"]),
+                "content": content,
                 "content_hash": row["content_hash"] or "",
                 "dataset_version": row["dataset_version"] or "",
                 "engine_version": row["engine_version"] or "",
                 "created_at": row["created_at"] or "",
             }
+            # Integrity witness: a derived row whose canonical gate outcome no
+            # longer matches the artifact's recorded hash is REPORTED, never
+            # silently swallowed (fail-safe, rule: observable + testable).
+            if stored == _EVIDENCE_CONTENT_DERIVED and resolved:
+                expected = row["content_hash"] or ""
+                if expected and stable_digest(resolved) != expected:
+                    logger.error(
+                        "[RESEARCH_OBS] derived evidence diverged from recorded hash",
+                        evidence_id=row["evidence_id"],
+                        gate_id=gate_id,
+                    )
+            return out
         except Exception as e:
             logger.error("[RESEARCH_OBS] evidence row decode failed", error=str(e))
             return None
