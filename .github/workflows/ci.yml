@@ -820,6 +820,58 @@ jobs:
             --port "$NSE_RUNTIME_SOAK_PORT" \
             --evidence-dir "$RUNNER_TEMP/nse-full-runtime-${{ matrix.provider }}"
 
+      - name: Print full runtime warnings, errors, tracebacks and query verdict
+        if: always()
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "nse-full-runtime-${{ matrix.provider }}"
+          report = {}
+          query = {}
+          for name, target in (("report", root / "full_runtime_report.json"), ("query", root / "query_matrix.json")):
+              try:
+                  payload = json.loads(target.read_text(encoding="utf-8"))
+              except Exception as exc:
+                  print(f"{name.upper()}_REPORT_ERROR: {type(exc).__name__}: {exc}")
+                  continue
+              if name == "report":
+                  report = payload
+              else:
+                  query = payload
+          diag = report.get("diagnostics", {})
+          print("=== FULL RUNTIME RESULT ===")
+          print("STATUS:", report.get("status", "FAIL"))
+          print("CONFIG:", report.get("config_path", "unknown"))
+          print("SOAK_SECONDS:", report.get("elapsed_sec", "n/a"))
+          print("PROCESS_RC:", report.get("process_exit_code", "n/a"))
+          print("QUERIES:", f"{query.get('queries_ok', 0)}/{query.get('queries_total', 0)}")
+          print("QUERY_FAILURES:", query.get("queries_failed", 0))
+          print("QUERY_FLOOR:", query.get("minimum_query_floor", "n/a"))
+          print("QUERY_FLOOR_MET:", query.get("query_floor_met", False))
+          print("WARNINGS:", diag.get("warning_count", 0))
+          print("ERRORS:", diag.get("error_count", 0))
+          print("TRACEBACKS:", diag.get("traceback_count", 0))
+          if report.get("runtime_error"):
+              print("RUNTIME_ERROR:", report["runtime_error"])
+          for item in diag.get("warnings", [])[:50]:
+              print(f"[WARN] line={item['line']} {item['message']}")
+          for item in diag.get("errors", [])[:50]:
+              print(f"[ERROR] line={item['line']} {item['message']}")
+          for trace in diag.get("tracebacks", [])[:25]:
+              frames = " -> ".join(
+                  f"{frame['file']}:{frame['line']}" +
+                  (f"::{frame['function']}" if frame.get("function") else "")
+                  for frame in trace.get("frames", [])
+              )
+              print(f"[TRACE] lines={trace.get('start_line')}-{trace.get('end_line')} {frames or 'no parsed frames'}")
+          for item in query.get("failure_samples", [])[:50]:
+              print(f"[QUERY-FAIL] {item.get('label', 'unknown')}: {item.get('error', '')}")
+          PY
+
       - name: Upload full runtime evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
