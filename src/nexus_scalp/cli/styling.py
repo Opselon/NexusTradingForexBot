@@ -276,6 +276,23 @@ def _error_panel(
     return Panel(body, title=f"[bold red]{title}[/bold red]", border_style="red", box=box.ROUNDED)
 
 
+def _go_api_banner_line(origin: str | None) -> str:
+    """Additive Go API banner line — shown ONLY when the plane is actually up.
+
+    WHERE/WHY (GO-API-GATE): the launcher and ``nexus start`` both surface the
+    Go API origin so the operator knows which entrypoint to open. Both callers
+    pass the resolved origin (``go_api_bootstrap.api_origin()``), which is None
+    whenever the plane did not boot — in that case this returns "" and the
+    banner keeps its legacy layout byte-for-byte. Never raises.
+    """
+    try:
+        if not origin or not str(origin).strip():
+            return ""
+        return f"  [dim]>[/dim] [dim]Go API plane:[/dim] [cyan]{origin}[/cyan]"
+    except Exception:
+        return ""
+
+
 def _success_panel(title: str, body: str, *, border: str = "green") -> Panel:
     # UX polish: success panels now carry a subtle check prefix so "green
     # border" isn't the only success signal for light terminals.

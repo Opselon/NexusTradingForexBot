@@ -257,8 +257,31 @@ def _alt_ui_banner_line(port: int) -> str:
     return "[dim]Alternative console: build frontend/ (npm run build) to enable /alt/[/dim]"
 
 
-def print_startup_banner(port: int, mode: str, symbol: str) -> None:
-    """Bloomberg/Terminal welcome — mode-aware, endpoint-rich."""
+def _go_api_banner_line(go_supervisor: object | None) -> str:
+    """Additive Go API banner line: shown ONLY when the Go plane is actually up.
+
+    Returns "" when the plane is down, so the launcher banner keeps its exact
+    legacy layout byte-for-byte. Never raises.
+    """
+    try:
+        if go_supervisor is None:
+            return ""
+        from nexus_scalp.cli.styling import _go_api_banner_line as _shared_line
+        from nexus_scalp.web.go_api_bootstrap import api_origin
+
+        return _shared_line(api_origin())
+    except Exception:
+        return ""
+
+
+def print_startup_banner(
+    port: int, mode: str, symbol: str, go_supervisor: object | None = None
+) -> None:
+    """Bloomberg/Terminal welcome — mode-aware, endpoint-rich.
+
+    ``go_supervisor`` is additive: when the Go API plane actually booted, one
+    extra line surfaces its origin (the entrypoint the end user should open).
+    """
     tag = _version_tag()
     mode_u = mode.upper()
     live = mode_u == "LIVE"
@@ -276,6 +299,8 @@ def print_startup_banner(port: int, mode: str, symbol: str) -> None:
     except Exception:
         pass
     ep_str = "\n".join(f"  [cyan]> {ep}[/cyan]" for ep in endpoints)
+    go_line = _go_api_banner_line(go_supervisor)
+    go_block = f"{go_line}\n" if go_line else ""
     tip = (
         "Kill-switch on dashboard — real orders are live."
         if live
@@ -287,6 +312,7 @@ def print_startup_banner(port: int, mode: str, symbol: str) -> None:
         f"  [dim]·[/dim]  [bold]{symbol}[/bold]  [dim]·[/dim]  [dim]port {port}[/dim]\n\n"
         f"[bold]Web Control Center[/bold]\n{ep_str}\n\n"
         f"{_alt_ui_banner_line(port)}\n"
+        f"{go_block}"
         f"[dim italic]{tip}[/dim italic]\n"
         f"[dim]Press Ctrl+C to stop safely  ·  nexus doctor --fix for health[/dim]"
     )
@@ -831,8 +857,70 @@ def main() -> None:
                     box=box.ROUNDED,
                 )
             )
+
+        # WEB-AUTH-P0 / first-boot guard: publish() resolves WITHOUT
+        # generating ("publish must never mint a competing value"), so on the
+        # FIRST boot (empty secret store + no .env) it returns token=None and
+        # leaves NSE_WEB_AUTH_TOKEN unset in os.environ. The token only comes
+        # into existence inside install_web_auth, which create_app() already
+        # ran above. The Go child INHERITS this process's env and reads
+        # NSE_WEB_AUTH_TOKEN fail-closed — a child spawned with no token
+        # answers AUTH_CONFIG_ERROR 500 on everything. Re-export the token
+        # the middleware actually ENFORCED (never mint one here) so the Go
+        # plane sees the same credential on first boot and steady state.
+        try:
+            from nexus_scalp.web.auth import web_auth_token_in_process as _live_token
+
+            _enforced = _live_token()
+            if _enforced and not os.environ.get("NSE_WEB_AUTH_TOKEN", "").strip():
+                os.environ["NSE_WEB_AUTH_TOKEN"] = _enforced
+                logger.info("[WEB-AUTH] re-exported enforced token for the go api child")
+        except Exception as token_err:
+            # Never block a boot over the handoff: a Go plane that cannot
+            # see a token degrades loudly on its own (fail-closed).
+            logger.warning("[WEB-AUTH] token re-export isolated: %s", token_err)
+
+        # GO-API-GATE: the Go API server is the product's API entrypoint —
+        # every request reaches Go, which proxies this Python process for the
+        # facts it does not own. The double-click launcher never booted it, so
+        # the packaged .exe served Python-only and the end user never saw the
+        # Go origin. Boot it now — AFTER publish() (the auth token
+        # NSE_WEB_AUTH_TOKEN is already in os.environ, so the Go child
+        # inherits it and reads it fail-closed) and BEFORE uvicorn binds,
+        # mirroring engine_boot.py's create_app -> boot_go_api -> uvicorn
+        # ordering.
+        #
+        # Failure-isolated by contract (same as `nexus start`): a missing
+        # toolchain, a build failure, a taken port or a readiness timeout all
+        # log a clear warning and continue Python-only. The product boots
+        # either way; this never raises out of the launcher.
+        go_api_supervisor: object | None = None
+        try:
+            from nexus_scalp.web.go_api_bootstrap import boot_go_api
+
+            bind_host = os.getenv("NSE_WEB_HOST", "127.0.0.1")
+            go_api_supervisor = boot_go_api(
+                python_host=bind_host,
+                python_port=web_port,
+                preferred_api_port=web_port + 1,
+            )
+        except Exception as go_err:
+            logger.warning("[GO-API] plane disabled (isolated): %s", go_err)
+            console.print(
+                Panel(
+                    "[yellow]Go API plane disabled[/yellow]"
+                    f"\n[dim]{go_err}[/dim]\n"
+                    "[dim]The Python API continues to serve the full surface.[/dim]",
+                    border_style="yellow",
+                )
+            )
+            go_api_supervisor = None
+
         print_startup_banner(
-            port=web_port, mode=config.execution.mode.value, symbol=config.execution.symbol
+            port=web_port,
+            mode=config.execution.mode.value,
+            symbol=config.execution.symbol,
+            go_supervisor=go_api_supervisor,
         )
 
         uvicorn_config = uvicorn.Config(
@@ -856,6 +944,25 @@ def main() -> None:
         from nexus_scalp.application.shutdown import ShutdownSupervisor
 
         supervisor = ShutdownSupervisor(engine=engine, server=server)
+
+        # CONTRACT #10 (browser origin): when the Go plane is up it serves the
+        # same UI single-origin, so the browser is pointed AT the Go origin —
+        # that is the entrypoint the operator should actually reach. When the
+        # plane is down (no toolchain / build fail / port taken), fall back to
+        # the Python origin; the FastAPI app serves the identical surface.
+        try:
+            from nexus_scalp.web.go_api_bootstrap import api_origin as _go_api_origin
+
+            browser_origin = _go_api_origin() or f"http://127.0.0.1:{web_port}"
+        except Exception:
+            browser_origin = f"http://127.0.0.1:{web_port}"
+        try:
+            from nexus_scalp.cli import browser_launch as _browser_launch
+
+            _browser_launch.start_browser_worker(browser_origin)
+        except Exception as browser_err:
+            # A browser problem must never fail the launch (section 27).
+            logger.warning("[LAUNCHER] browser auto-open worker isolated: %s", browser_err)
 
         async def run_concurrently() -> None:
             try:
@@ -920,6 +1027,14 @@ def main() -> None:
         )
         sys.exit(1)
     finally:
+        # GO-API-GATE: the Go child is a supervised subprocess of THIS
+        # process. If it is still alive it must be torn down here — a leaked
+        # nexus-api.exe would hold the API port after the launcher exits and
+        # the next boot would bind the wrong one (mirrors engine_boot.py).
+        with contextlib.suppress(Exception):
+            _go_sup = locals().get("go_api_supervisor")
+            if _go_sup is not None:
+                _go_sup.stop()
         # Honest final report: never claim a clean exit without evidence
         # that the drain actually completed.
         try:

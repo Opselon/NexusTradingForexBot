@@ -513,8 +513,13 @@ def test_engine_boot_gate_is_wired_into_the_serve_loop() -> None:
     # The gate must be scheduled on the real loop, and the ACTUAL bind port
     # (uvicorn_config.port) must be what is opened — never a literal 8080/8081.
     assert "asyncio.create_task(" in src
+    # The gate reads the resolved host/port — never a literal 8080/8081. When
+    # the Go API plane is up (Wave 5) both resolve from ITS origin; otherwise
+    # they fall back to the Python bind host/port.
     assert (
-        "_open_control_center_when_ready(_browser_host(bind_host), int(uvicorn_config.port))" in src
+        "_open_control_center_when_ready(" in src
+        and "_effective_launch_host(go_origin)" in src
+        and "_effective_launch_port(go_origin, int(uvicorn_config.port))" in src
     )
     assert 'f"http://{host}:{port}/"' in src
     # No hardcoded canonical URL anywhere in the start path.
@@ -531,10 +536,14 @@ def test_engine_boot_records_and_forwards_the_flag() -> None:
 
 def test_legacy_launcher_wires_the_same_gate() -> None:
     src = _read("NexusTradingForexBot.py")
-    assert '"--no-browser"' in src
-    assert "request_no_browser" in src
+    # Wave 5: the launcher boots the Go API plane and, when it is up, opens the
+    # Go origin (single-origin UI) — falling back to the Python origin.
+    assert "boot_go_api" in src
+    assert "api_origin" in src
     assert "start_browser_worker" in src
-    assert "canonical_root_url(int(uvicorn_config.port))" in src
+    # CONTRACT #10: the worker is handed a resolved origin, never a hardcoded
+    # canonical URL.
+    assert "canonical_root_url(" not in src
     assert "http://127.0.0.1:8080/" not in src
 
 
