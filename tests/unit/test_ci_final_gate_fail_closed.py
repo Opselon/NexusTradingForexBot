@@ -173,3 +173,140 @@ def test_gate_script_checks_stay_in_sync_with_workflow(tmp_path: Path) -> None:
     assert not not_gated, (
         f"ci.yml records {sorted(not_gated)} but the final gate does not verdict them"
     )
+
+
+def test_ruff_lint_diagnostic_extraction_and_annotations(tmp_path: Path) -> None:
+    root = _init_tree(tmp_path)
+    for check in CHECKS:
+        _record(root, check, "0")
+    _record(root, "ruff_lint", "1", "violations found")
+
+    ruff_dir = root / "ruff"
+    ruff_dir.mkdir(parents=True, exist_ok=True)
+    lint_payload = [
+        {
+            "filename": "src/nexus_scalp/risk/risk_engine.py",
+            "location": {"row": 42, "column": 5},
+            "code": "F401",
+            "message": "'sys' imported but unused",
+        }
+    ]
+    (ruff_dir / "lint.json").write_text(json.dumps(lint_payload), encoding="utf-8")
+
+    r = _run_gate(root)
+    assert r.returncode == 1
+    assert "src/nexus_scalp/risk/risk_engine.py" in r.stdout
+    assert "42" in r.stdout
+    assert "F401" in r.stdout
+    assert "imported but unused" in r.stdout
+    # Emits GitHub Actions annotation with file and line
+    assert (
+        "::error file=src/nexus_scalp/risk/risk_engine.py,line=42,col=5,title=ruff_lint (F401)"
+        in r.stdout
+    )
+
+
+def test_ruff_format_diagnostic_extraction(tmp_path: Path) -> None:
+    root = _init_tree(tmp_path)
+    for check in CHECKS:
+        _record(root, check, "0")
+    _record(root, "ruff_format", "1", "files would be reformatted")
+
+    fmt_dir = root / "format"
+    fmt_dir.mkdir(parents=True, exist_ok=True)
+    (fmt_dir / "format.txt").write_text(
+        "Would reformat: src/nexus_scalp/core.py\n", encoding="utf-8"
+    )
+
+    r = _run_gate(root)
+    assert r.returncode == 1
+    assert "src/nexus_scalp/core.py" in r.stdout
+    assert "::error file=src/nexus_scalp/core.py,title=ruff_format (FormatViolation)" in r.stdout
+
+
+def test_mypy_diagnostic_extraction(tmp_path: Path) -> None:
+    root = _init_tree(tmp_path)
+    for check in CHECKS:
+        _record(root, check, "0")
+    _record(root, "mypy", "1", "type errors found")
+
+    mypy_dir = root / "mypy"
+    mypy_dir.mkdir(parents=True, exist_ok=True)
+    (mypy_dir / "mypy.txt").write_text(
+        "src/nexus_scalp/order.py:108:12: error: Incompatible types in assignment [assignment]\n",
+        encoding="utf-8",
+    )
+
+    r = _run_gate(root)
+    assert r.returncode == 1
+    assert "src/nexus_scalp/order.py" in r.stdout
+    assert "108" in r.stdout
+    assert "Mypy[assignment]" in r.stdout
+    assert (
+        "::error file=src/nexus_scalp/order.py,line=108,col=12,title=mypy (Mypy[assignment])"
+        in r.stdout
+    )
+
+
+def test_pytest_diagnostic_extraction_with_traceback(tmp_path: Path) -> None:
+    root = _init_tree(tmp_path)
+    for check in CHECKS:
+        _record(root, check, "0")
+    _record(root, "pytest", "1", "see pytest/junit.xml")
+
+    pt_dir = root / "pytest"
+    pt_dir.mkdir(parents=True, exist_ok=True)
+    junit_xml = """<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1">
+    <testcase classname="tests.unit.test_trade" name="test_order_dispatch" file="tests/unit/test_trade.py" line="88">
+      <failure message="assert status == 'FILLED'" type="AssertionError">Traceback (most recent call last):
+  File "tests/unit/test_trade.py", line 88, in test_order_dispatch
+    assert status == 'FILLED'
+AssertionError: assert 'REJECTED' == 'FILLED'</failure>
+    </testcase>
+  </testsuite>
+</testsuites>"""
+    (pt_dir / "junit.xml").write_text(junit_xml, encoding="utf-8")
+
+    summary_file = tmp_path / "step_summary.md"
+    r = _run_gate(root, env_extra={"GITHUB_STEP_SUMMARY": str(summary_file)})
+    assert r.returncode == 1
+    assert "tests/unit/test_trade.py" in r.stdout
+    assert "88" in r.stdout
+    assert "AssertionError" in r.stdout
+    assert "Traceback" in r.stdout or "test_order_dispatch" in r.stdout
+    assert "::error file=tests/unit/test_trade.py,line=88,title=pytest (AssertionError)" in r.stdout
+    # Verify GITHUB_STEP_SUMMARY markdown was written with traceback
+    assert summary_file.is_file()
+    md = summary_file.read_text(encoding="utf-8")
+    assert "CI Gate Diagnostics Report" in md
+    assert "tests/unit/test_trade.py" in md
+    assert "AssertionError" in md
+
+
+def test_classify_gate_covers_all_downstream_checks(tmp_path: Path) -> None:
+    """When ruff_format fails, all gated downstream checks must become BLOCKED, none missing."""
+    root = _init_tree(tmp_path)
+    _record(root, "ruff_lint", "0")
+    _record(root, "ruff_format", "1", "files would be reformatted")
+    subprocess.run(
+        [_py(), str(RESULTS), "classify-gate", str(root), "--root-failure", "ruff_format"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    r = _run_gate(root)
+    assert r.returncode == 1
+    assert "ruff_format=failed" in r.stdout
+    # All downstream checks are blocked:
+    assert "mypy=blocked" in r.stdout
+    assert "pytest=blocked" in r.stdout
+    assert "smoke=blocked" in r.stdout
+    assert "coverage=blocked" in r.stdout
+    assert "critical_coverage=blocked" in r.stdout
+    assert "runtime_gate=blocked" in r.stdout
+    assert "runtime_deps=blocked" in r.stdout
+    assert "layered_smoke=blocked" in r.stdout
+    # Crucially, zero missing results!
+    assert "MISSING RESULTS" not in r.stdout

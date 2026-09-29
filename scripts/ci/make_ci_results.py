@@ -472,7 +472,16 @@ def cmd_check(args: argparse.Namespace) -> int:
 #: CANCELS the downstream steps, so their result JSONs never appear. A missing
 #: JSON is NOT an "errored" check — it is BLOCKED by the named root failure
 #: when one exists, and only "skipped" when nothing failed upstream.
-DOWNSTREAM_CHECKS = ("mypy", "pytest", "coverage")
+DOWNSTREAM_CHECKS = (
+    "mypy",
+    "pytest",
+    "smoke",
+    "coverage",
+    "critical_coverage",
+    "runtime_gate",
+    "runtime_deps",
+    "layered_smoke",
+)
 
 
 def classify_gate(root: Path, root_failure: str = "") -> int:
