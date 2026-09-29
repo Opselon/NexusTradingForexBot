@@ -291,3 +291,5 @@ tests/unit/test_l7_archive_restore_roundtrip.py
 tests/unit/test_l7_news_archive_retirement.py
 tests/unit/test_l7_managed_db_retirement.py
 tests/unit/test_research_archive_pg_write_plane.py
+||||||| parent of 4b503d27 (feat(db): evidence-reader indexes (R-7 + R-6) and the duplicate release-metadata index drop (R-8) — AUDIT-0010/0011 through the registry)
+tests/unit/test_l4_schema_lifecycle_indexes.py
