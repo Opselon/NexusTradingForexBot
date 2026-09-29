@@ -118,8 +118,7 @@ cmd_install() {
     local found=""
     for _ in $(seq 1 180); do
         found="$(find "$PREFIX/drive_c" -type f \(
-            -iname "terminal64.exe" -o -iname "terminal.exe"
-        \) -print -quit 2>/dev/null)"
+            -iname "terminal64.exe" -o -iname "terminal.exe" \) -print -quit 2>/dev/null)"
         if [ -n "$found" ]; then
             break
         fi
