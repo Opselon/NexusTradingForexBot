@@ -89,9 +89,9 @@ def test_go_origin_wins_when_the_plane_is_up(
 
     # bind_host/port are IGNORED when Go is up: the Go origin is authoritative,
     # so a stale Python port can never be advertised alongside a live plane.
-    assert (
-        eb._effective_dashboard_url(None, "127.0.0.1", 9999) == expected
-    ), "a live Go plane must win over the Python origin"
+    assert eb._effective_dashboard_url(None, "127.0.0.1", 9999) == expected, (
+        "a live Go plane must win over the Python origin"
+    )
 
 
 def test_go_origin_is_read_from_api_origin(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -127,25 +127,17 @@ def test_an_explicit_origin_argument_wins(monkeypatch: pytest.MonkeyPatch) -> No
 def test_go_down_matches_legacy_dashboard_url() -> None:
     """No plane -> _effective_dashboard_url IS _dashboard_url's answer."""
     assert eb._effective_dashboard_url() == _py_url()
-    assert eb._effective_dashboard_url("", "127.0.0.1", 8081) == _py_url(
-        "127.0.0.1", 8081
-    )
+    assert eb._effective_dashboard_url("", "127.0.0.1", 8081) == _py_url("127.0.0.1", 8081)
     # ``None`` is the same statement: no origin was supplied, so the resolver
     # is consulted and reports no Go plane.
-    assert eb._effective_dashboard_url(None, "127.0.0.1", 8081) == _py_url(
-        "127.0.0.1", 8081
-    )
+    assert eb._effective_dashboard_url(None, "127.0.0.1", 8081) == _py_url("127.0.0.1", 8081)
 
 
 @pytest.mark.parametrize("junk", ["", "   ", "\n\t"])
-def test_go_down_ignores_a_whitespace_origin(
-    monkeypatch: pytest.MonkeyPatch, junk: str
-) -> None:
+def test_go_down_ignores_a_whitespace_origin(monkeypatch: pytest.MonkeyPatch, junk: str) -> None:
     """An empty/whitespace origin is ignored, never trusted (no dead URL)."""
     monkeypatch.setattr(eb, "_go_api_origin", lambda: junk)
-    assert eb._effective_dashboard_url(None, "127.0.0.1", 8080) == _py_url(
-        "127.0.0.1", 8080
-    )
+    assert eb._effective_dashboard_url(None, "127.0.0.1", 8080) == _py_url("127.0.0.1", 8080)
 
 
 def test_origin_lookup_failure_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -155,9 +147,7 @@ def test_origin_lookup_failure_falls_back(monkeypatch: pytest.MonkeyPatch) -> No
         raise RuntimeError("go_api_bootstrap unavailable")
 
     monkeypatch.setattr(eb, "_go_api_origin", _boom)
-    assert eb._effective_dashboard_url(None, "127.0.0.1", 8080) == _py_url(
-        "127.0.0.1", 8080
-    )
+    assert eb._effective_dashboard_url(None, "127.0.0.1", 8080) == _py_url("127.0.0.1", 8080)
 
 
 def test_wildcard_bind_is_still_reported_on_loopback() -> None:
@@ -178,9 +168,7 @@ def test_wildcard_bind_is_still_reported_on_loopback() -> None:
         ("http://0.0.0.0:8088/", "0.0.0.0", 8088),
     ],
 )
-def test_launch_host_port_follow_the_go_origin(
-    origin: str, host: str, port: int
-) -> None:
+def test_launch_host_port_follow_the_go_origin(origin: str, host: str, port: int) -> None:
     assert eb._effective_launch_host(origin) == host
     assert eb._effective_launch_port(origin, 8080) == port
 
@@ -221,9 +209,7 @@ def test_start_paths_agree_on_python_when_go_is_down() -> None:
     # the origin it resolved (empty when the plane never came up) into both
     # the gate and the panel.
     panel_url = eb._effective_dashboard_url("", "127.0.0.1", 8081)
-    gate_url = (
-        f"http://{eb._browser_host('127.0.0.1')}:{eb._effective_launch_port('', 8081)}/"
-    )
+    gate_url = f"http://{eb._browser_host('127.0.0.1')}:{eb._effective_launch_port('', 8081)}/"
     # The gate URL keeps its trailing slash (it is the readiness root); the
     # panel keeps the legacy no-slash shape. The origin:port agrees.
     assert (panel_url, gate_url) == ("http://127.0.0.1:8081", "http://127.0.0.1:8081/")

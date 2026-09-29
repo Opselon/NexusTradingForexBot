@@ -461,3 +461,37 @@ func TestLiveModeAlwaysRequiresAuth(t *testing.T) {
 		t.Error("LIVE + no token reached the handler")
 	}
 }
+
+// TestReactConsoleAssetsArePublic pins the Wave 5 fix proven by a real Chrome
+// load of the React console through the Go origin: the dist's index.html
+// references root-level static assets (manifest + icons) that the browser
+// fetches WITHOUT a token. On Python they are public only because the console
+// is mounted under the public /alt/ prefix; when Go serves the SAME dist at
+// the root, a 401 on these broke the browser bootstrap (the manifest fetch
+// failed visibly in the console). They carry no state or credentials.
+func TestReactConsoleAssetsArePublic(t *testing.T) {
+	for _, p := range []string{
+		"/manifest.json",
+		"/manifest.webmanifest",
+		"/apple-touch-icon.png",
+		"/favicon-16x16.png",
+		"/favicon-32x32.png",
+		"/icon-192.png",
+		"/icon-512.png",
+		"/icon-512-maskable.png",
+	} {
+		if !IsPublicPath(p) {
+			t.Errorf("IsPublicPath(%q) = false, want true (React console root asset)", p)
+		}
+		// GET/HEAD widen the shell rule; these must hold under the method
+		// check the middleware actually uses.
+		if !IsPublicPathMethod(p, http.MethodGet) {
+			t.Errorf("IsPublicPathMethod(%q, GET) = false, want true", p)
+		}
+	}
+
+	// The API surface stays gated — this widened only the static shell.
+	if IsPublicPath("/api/v1/system/health") == false && IsPublicPath("/api/status") == true {
+		t.Error("/api/status must never be public")
+	}
+}

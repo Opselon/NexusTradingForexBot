@@ -78,6 +78,25 @@ var PublicPaths = map[string]bool{
 	"/dependency":           true,
 	"/command_center.html":  true,
 	"/first_setup.html":     true,
+	// React console root-level static assets (parity with the /alt/ prefix,
+	// which is public as a whole). The React index.html references these at
+	// the ROOT: /manifest.json, /apple-touch-icon.png, /favicon-16x16.png,
+	// /favicon-32x32.png and the other root icons. On Python they are only
+	// reachable without a token because the console is mounted at /alt/
+	// (public prefix); when Go serves the SAME dist at the root, an
+	// unauthenticated 401 on them breaks the browser bootstrap (the manifest
+	// fetch fails, which is a visible console error). They are static binary
+	// resources carrying no state or credentials.
+	"/manifest.json":         true,
+	"/manifest.webmanifest":  true,
+	"/apple-touch-icon.png":  true,
+	"/favicon-16x16.png":     true,
+	"/favicon-32x32.png":     true,
+	"/icon-192.png":          true,
+	"/icon-512.png":          true,
+	"/icon-512-maskable.png": true,
+	"/legacy":                true,
+	"/legacy.html":           true,
 }
 
 // PublicPrefixes mirrors PUBLIC_PREFIXES. A trailing slash is mandatory on
