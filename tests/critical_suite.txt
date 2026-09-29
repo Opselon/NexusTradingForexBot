@@ -544,3 +544,4 @@ tests/unit/governance/test_gov_dead_index.py
 tests/unit/test_r1_health_domain_hot_path_memo.py
 tests/unit/test_r9_backup_retention.py
 tests/contracts/phase2/test_deep_opt_l4_evidence_body.py
+tests/unit/factory/test_factory_dead_index.py

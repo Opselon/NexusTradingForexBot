@@ -2467,9 +2467,13 @@ class AuditRepository:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_factory_cand_gen ON factory_candidates(generation_id, population_index);"
             )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_factory_cand_hash ON factory_candidates(definition_hash);"
-            )
+            # idx_factory_cand_hash (definition_hash) REMOVED: 0 scans on the
+            # live ledger and definition_hash is never a lookup key anywhere in
+            # the tree — it is written and read as a plain value (marketplace
+            # packs, evidence snapshots) but no query ever does
+            # WHERE definition_hash = ?. The index was pure write cost on
+            # factory_candidates (4,108 rows) with no read benefit. Re-add it
+            # if a real hash-lookup consumer appears.
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_factory_fail_gen ON factory_failures(generation_id);"
             )
