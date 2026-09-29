@@ -196,6 +196,10 @@ async def run_soak(provider: str, duration_sec: int, host: str, port: int) -> di
     raw["execution"]["mode"] = ExecutionMode.PAPER.value
     raw["execution"]["symbol"] = "XAUUSD"
     raw["model"]["model_artifact_path"] = str(MODEL_ARTIFACT)
+    if raw.get("news") is not None:
+        raw["news"]["enabled"] = False
+    if raw.get("candle_intel") is not None:
+        raw["candle_intel"]["enabled"] = False
     raw["telegram"] = {
         **raw.get("telegram", {}),
         "enabled": False,
@@ -390,6 +394,12 @@ def main() -> int:
         sys.path.insert(0, str(REPO_ROOT / "src"))
 
     configure_provider(args.provider)
+    evidence_dir = Path(
+        os.environ.get("RUNNER_TEMP", str(REPO_ROOT / ".ci-runtime"))
+    ).resolve() / f"nse-runtime-{args.provider}"
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    evidence_path = evidence_dir / "provider_runtime_soak.json"
+
     started = time.perf_counter()
     try:
         report = asyncio.run(run_soak(args.provider, args.duration, args.host, args.port))
@@ -400,10 +410,18 @@ def main() -> int:
             "error": str(exc),
             "elapsed_sec": round(time.perf_counter() - started, 2),
         }
+        evidence_path.write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\\n",
+            encoding="utf-8",
+        )
         print(json.dumps(report, indent=2, sort_keys=True))
         return 1
 
     report["status"] = "PASS"
+    evidence_path.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\\n",
+        encoding="utf-8",
+    )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 
