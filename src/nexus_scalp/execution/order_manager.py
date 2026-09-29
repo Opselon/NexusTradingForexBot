@@ -476,6 +476,67 @@ class _FastReversalDecision:
 # =============================================================================
 
 
+class _OwnershipGatedAdapter:
+    """Broker-adapter wrapper enforcing the position-ownership gate (TASK-ML-CTRL §2).
+
+    Every legacy close/modify goes through here, so an old code path that
+    forgets to check ownership is STILL blocked at the last execution layer.
+    The ML controller bypasses the wrapper by calling the raw adapter it
+    holds directly (it IS the owner); the hard emergency guard calls
+    ``authorize`` with actor='emergency', which the gate always allows.
+    """
+
+    def __init__(self, inner: Any, om: Any) -> None:
+        self._inner = inner
+        self._om = om
+
+    @property
+    def ownership_gate(self) -> Any:
+        return self._om._ownership_gate
+
+    # ---- gated mutations (the ONLY paths that touch a live position) ----
+
+    def close_position(self, ticket: int, volume: float | None = None, **kw: Any) -> bool:
+        action = "PARTIAL_CLOSE" if volume else "CLOSE"
+        self._om._ownership_gate.authorize_or_raise(
+            ticket=ticket, action=action, actor="legacy"
+        )
+        return bool(self._inner.close_position(ticket=ticket, volume=volume, **kw))
+
+    def modify_position(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
+        pos = None
+        try:
+            pos = self._om._tickets_cache.get_position(ticket) if hasattr(
+                self._om, "_tickets_cache"
+            ) else None
+        except Exception:
+            pos = None
+        cur_sl = float(getattr(pos, "sl", 0.0) or 0.0)
+        cur_tp = float(getattr(pos, "tp", 0.0) or 0.0)
+        if stop_loss and float(stop_loss) != cur_sl and (not cur_tp or take_profit == cur_tp):
+            action = "MODIFY_SL"
+        elif take_profit and float(take_profit) != cur_tp and (not cur_sl or stop_loss == cur_sl):
+            action = "MODIFY_TP"
+        else:
+            action = "MODIFY_SL_TP"
+        self._om._ownership_gate.authorize_or_raise(
+            ticket=ticket, action=action, actor="legacy"
+        )
+        return bool(self._inner.modify_position(ticket=ticket, stop_loss=stop_loss, take_profit=take_profit))
+
+    # ---- everything else: transparent delegation ------------------------
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
+def _ownership_gated_adapter(adapter: Any, om: Any) -> Any:
+    """Return the adapter wrapped with the ownership gate (idempotent)."""
+    if isinstance(adapter, _OwnershipGatedAdapter):
+        return adapter
+    return _OwnershipGatedAdapter(adapter, om)
+
+
 class OrderLifecycleManager:
     """
     Master Institutional Order Lifecycle Manager orchestrating real-time position management,
@@ -520,8 +581,15 @@ class OrderLifecycleManager:
         # because the RiskEngine flag + evaluate_proposal + loop-stop remain
         # — see the regression test for the full chain contract.
         self._safety_state_provider = safety_state_provider
-        self.adapter = adapter
-        self.mt5_adapter = adapter
+        # TASK-ML-CTRL §2: central position-ownership gate. Every broker
+        # mutation passes through the _OwnershipGatedAdapter below, which
+        # consults this gate. Legacy code is READ-ONLY for ML-owned positions.
+        from nexus_scalp.position_adviser.ownership import PositionOwnershipGate
+
+        self._ownership_gate = PositionOwnershipGate()
+        self._raw_adapter = adapter  # ML controller's direct path (it IS the owner)
+        self.adapter = _ownership_gated_adapter(adapter, self)
+        self.mt5_adapter = self.adapter
         self.audit = audit_repo or AuditRepository()
         # BUG-226: provenance of the account feeding this audit stream. The
         # engine sets this from the effective boot mode; ledger writes read it
