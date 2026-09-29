@@ -37,7 +37,7 @@ from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from statistics import median
-from typing import Any, Iterable
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODEL_ARTIFACT = (
@@ -781,6 +781,19 @@ def run_full(provider: str, duration: int, port: int, evidence_dir: Path) -> dic
 
     report["process_exit_code"] = process.returncode
     report["elapsed_sec"] = round(time.time() - started_at, 3)
+
+    # Redact only ephemeral CI credentials from the persisted process log.
+    # The raw runtime still receives them when necessary; evidence must never
+    # become a credential transport.
+    raw_log = log_capture.path.read_text(encoding="utf-8", errors="replace")
+    for secret_value in (
+        token,
+        os.environ.get("NSE_PG_TEST_PASSWORD", ""),
+    ):
+        if secret_value:
+            raw_log = raw_log.replace(secret_value, "***REDACTED***")
+    log_capture.path.write_text(raw_log, encoding="utf-8")
+
     diagnostics = _trace_logs(log_capture.path)
     report["diagnostics"] = diagnostics
 
