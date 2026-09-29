@@ -269,7 +269,12 @@ tests/unit/news/ingest/test_bug282_rfc822_and_identity.py
 tests/unit/news/ingest/test_payload_value_gate.py
 tests/unit/news/ingest/test_payload_value_gate_benchmark.py
 tests/unit/news/test_payload_archival_lifecycle.py
+<<<<<<< HEAD
 tests/unit/news/test_news_summary_echo.py
+||||||| parent of 320cc4f6 (perf(news): reclaim the legacy body duplicate (DEEP-OPT L3))
+=======
+tests/unit/news/test_news_body_duplicate_reclaim.py
+>>>>>>> 320cc4f6 (perf(news): reclaim the legacy body duplicate (DEEP-OPT L3))
 tests/unit/test_retention_payload_archival.py
 tests/unit/test_50d_normalization_parity.py
 tests/unit/test_70d_bug106_incremental_phase19.py
