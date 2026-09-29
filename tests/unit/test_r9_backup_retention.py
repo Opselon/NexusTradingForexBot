@@ -45,13 +45,6 @@ def _make_backup(backup_dir: str, name: str, size: int = 1024, age_days: float =
     return path
 
 
-@pytest.fixture
-def backup_dir(tmp_path: Any) -> str:
-    d = str(tmp_path / "backups")
-    os.makedirs(d, exist_ok=True)
-    return d
-
-
 def test_an_empty_directory_prunes_to_nothing(backup_dir: str) -> None:
     result = prune_backups(backup_dir)
     assert result.removed == 0
