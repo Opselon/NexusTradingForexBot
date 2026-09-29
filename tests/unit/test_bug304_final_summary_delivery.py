@@ -96,6 +96,7 @@ def test_notify_triage_marks_delivery_true_only_after_success(tmp_path, monkeypa
     assert out["telegram"]["ok"] is True
     assert out["result"]["delivered"] is True
 
+
 def test_telegram_send_and_wait_accepts_delayed_success(monkeypatch):
     from nexus_scalp.observability.telegram_notifier import TelegramNotifier
 
@@ -105,7 +106,6 @@ def test_telegram_send_and_wait_accepts_delayed_success(monkeypatch):
         callback = kwargs["callback"]
         timer = threading.Timer(0.08, callback, args=(123,))
         timer.start()
-        return None
 
     monkeypatch.setattr(notifier, "send", fake_send)
     result = notifier.send_and_wait("payload", wait_timeout_seconds=1.0)
@@ -130,7 +130,6 @@ def test_telegram_send_and_wait_reports_terminal_failure():
             callback(callback_result["message_id"])
 
         threading.Timer(0.01, fail_later).start()
-        return None
 
     notifier.send = fake_send  # type: ignore[method-assign]
     notifier.health_state = lambda: {"failure_category": "TELEGRAM_AUTH_ERROR"}  # type: ignore[method-assign]
