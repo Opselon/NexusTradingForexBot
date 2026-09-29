@@ -43,42 +43,43 @@ def main() -> int:
     ]
 
     print(
-        "provider={} status={} soak={}s api_queries={} db_queries={} errors={} warnings={} tracebacks={}".format(
-            data.get("provider", "?"),
-            data.get("status", "?"),
-            data.get("actual_soak_sec", 0),
-            data.get("api", {}).get("query_count_total", 0),
-            data.get("database", {}).get("query_count_total", 0),
-            max(len(errors), len(finding_errors)),
-            len(warnings) + len(finding_warnings),
-            len(tracebacks),
-        )
+        f"provider={data.get('provider', '?')} "
+        f"status={data.get('status', '?')} "
+        f"soak={data.get('actual_soak_sec', 0)}s "
+        f"api_queries={data.get('api', {}).get('query_count_total', 0)} "
+        f"db_queries={data.get('database', {}).get('query_count_total', 0)} "
+        f"errors={max(len(errors), len(finding_errors))} "
+        f"warnings={len(warnings) + len(finding_warnings)} "
+        f"tracebacks={len(tracebacks)}"
     )
 
     for event in errors[:30]:
         source = event.get("source") or {}
-        suffix = " [{}:{}]".format(source.get("file"), source.get("line")) if source else ""
+        suffix = f" [{source.get('file')}:{source.get('line')}]" if source else ""
         message = str(event.get("message") or event.get("error") or event)
-        print("::error title=Provider runtime error::{}{}".format(message[:3000], suffix))
+        print(f"::error title=Provider runtime error::{message[:3000]}{suffix}")
 
     for event in warnings[:30]:
         source = event.get("source") or {}
         suffix = " [{}:{}]".format(source.get("file"), source.get("line")) if source else ""
         message = str(event.get("message") or event.get("error") or event)
-        print("::warning title=Provider runtime warning::{}{}".format(message[:3000], suffix))
+        print(f"::warning title=Provider runtime warning::{message[:3000]}{suffix}")
 
     for item in finding_errors[:30]:
         message = str(item.get("message") or item.get("error") or item)
-        print("::error title=Runtime certification finding::{}".format(message[:3000]))
+        print(f"::error title=Runtime certification finding::{message[:3000]}")
     for item in finding_warnings[:30]:
         message = str(item.get("message") or item.get("error") or item)
-        print("::warning title=Runtime certification warning::{}".format(message[:3000]))
+        print(f"::warning title=Runtime certification warning::{message[:3000]}")
 
     for tb in tracebacks[:10]:
         source = tb.get("source") or {}
         suffix = " [{}:{}]".format(source.get("file"), source.get("line")) if source else ""
         trace = "\n".join(str(x) for x in tb.get("lines", [])[-12:])
-        print("::error title=Runtime traceback {}::{}{}".format(tb.get("traceback_id", "?"), trace[:4000], suffix))
+        print(
+            f"::error title=Runtime traceback {tb.get('traceback_id', '?')}::"
+            f"{trace[:4000]}{suffix}"
+        )
 
     return 0
 
