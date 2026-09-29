@@ -429,6 +429,16 @@ def run_query_round(
         quoted = _safe_identifier(table)
         query(f"{table}.count", f"SELECT COUNT(*) FROM {quoted}")
         query(f"{table}.sample", f"SELECT * FROM {quoted} LIMIT 1")
+        if provider == "postgres":
+            query(
+                f"{table}.explain_sample",
+                f"EXPLAIN (FORMAT JSON) SELECT * FROM {quoted} LIMIT 1",
+            )
+        else:
+            query(
+                f"{table}.explain_sample",
+                f"EXPLAIN QUERY PLAN SELECT * FROM {quoted} LIMIT 1",
+            )
 
         if provider == "postgres":
             cols = query(
