@@ -849,9 +849,6 @@ class RetentionEngine:
         if target is None or archive_op is None:
             return result
         table, op_name = target
-        if target is None or archive_op is None:
-            return result
-        table, op_name = target
         result["table"] = table
         # The age gate is evaluated at the SCHEDULER level (never per row):
         # the archival operation is bounded and idempotent, so eligibility
