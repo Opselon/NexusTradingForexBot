@@ -29,6 +29,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -304,7 +305,7 @@ async def run_soak(provider: str, duration_sec: int, host: str, port: int) -> di
                 TradeProposal(
                     request_id=f"ci-runtime-soak-{provider}",
                     symbol="XAUUSD",
-                    generated_at=__import__("datetime").datetime.now(__import__("datetime").UTC),
+                    generated_at=datetime.now(UTC),
                     action=ActionType.NO_TRADE,
                     confidence=0.0,
                     proposed_entry=2000.0,
