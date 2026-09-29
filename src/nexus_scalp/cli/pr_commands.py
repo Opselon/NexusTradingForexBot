@@ -142,7 +142,7 @@ def report(
             fetch_codeql=True,
             local_tests=local,
             reviews=True,
-            fetch_logs=False,
+            fetch_logs=True,
         ),
     )
 

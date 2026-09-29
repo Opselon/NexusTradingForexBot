@@ -22,6 +22,7 @@ from nexus_scalp.pr_evidence.artifact_collector import (
     ArtifactDiagnostics,
 )
 from nexus_scalp.pr_evidence.github_client import GitHubClient
+from nexus_scalp.pr_evidence.job_logs import is_agent_check, parse_job_log
 from nexus_scalp.pr_evidence.locations import (
     extract_error_type,
     extract_locations,
@@ -112,6 +113,7 @@ def _replace_check_sha(check: CheckResult, sha: str) -> CheckResult:
         annotations_url=check.annotations_url,
         annotations=check.annotations,
         head_sha=sha,
+        check_run_id=check.check_run_id,
     )
 
 
@@ -261,6 +263,7 @@ class CheckRunCollector:
             annotations_count=int(output.get("annotations_count") or 0),
             annotations_url=_text(output.get("annotations_url")) or UNKNOWN,
             head_sha=_text(raw.get("head_sha")) or UNKNOWN,
+            check_run_id=raw.get("id") if isinstance(raw.get("id"), int) else None,
         )
 
     def _to_annotation(self, raw: dict[str, Any]) -> CheckAnnotation:
@@ -713,7 +716,7 @@ class EvidenceOptions:
     fetch_codeql: bool = True
     local_tests: bool = False
     reviews: bool = True
-    fetch_logs: bool = False
+    fetch_logs: bool = True
     log_max_bytes: int = 6000
     #: Read base-branch protection → the merge verdict's required gates.
     fetch_merge_preconditions: bool = True
@@ -877,6 +880,12 @@ def collect_evidence(
             repo_root=repo_root,
             errors=errors,
         ),
+        log_failures=_collect_log_failures(
+            client=client,
+            checks=checks,
+            options=options,
+            errors=errors,
+        ),
     )
 
 
@@ -915,6 +924,85 @@ def _collect_artifact_failures(
         for diag in diags:
             out.extend(diag.failures)
     return out
+
+
+def _collect_log_failures(
+    *,
+    client: GitHubClient,
+    checks: list[CheckResult],
+    options: EvidenceOptions,
+    errors: list[str],
+) -> list[Failure]:
+    """Deep diagnostics from the JOB LOG of failed checks with no other surface.
+
+    A failed check sometimes publishes neither annotations nor an artifact —
+    the canonical case is GitHub's Copilot code-scanning agent
+    (``github-advanced-security``), whose only annotation is a synthetic
+    ``.github:218 → Process completed with exit code 1.`` The real cause
+    (``CAPIError: 400 The requested model is not supported``) lives solely in
+    the Actions job log. This stage fetches that log and extracts the
+    exception, marking it ``infrastructure`` so the reader does not chase a
+    code bug that does not exist.
+    """
+    if not options.fetch_logs or not checks:
+        return []
+    out: list[Failure] = []
+    for check in checks:
+        if not check.is_failure:
+            continue
+        # Only fetch logs where they can add information: agent-style checks
+        # whose annotations are synthetic, or any check with no deep rows.
+        if not is_agent_check(check.name):
+            continue
+        try:
+            cr_id = check.check_run_id
+            job_id = client.get_job_id_for_check(cr_id) if cr_id else None
+            if job_id is None:
+                continue
+            # Resolve the FAILED STEP from the job's step list: the streamed
+            # log has no per-step prefix in this shape, and the step name
+            # ("Processing Request") is the only honest "where".
+            failed_step = check.job or check.name
+            for step in client.get_job_steps(job_id):
+                if step.get("conclusion") == "failure":
+                    name = step.get("name") or ""
+                    if name:
+                        failed_step = name
+                    break
+            raw = client.get_job_log(job_id)
+            if not raw:
+                continue
+            text = raw.decode("utf-8", errors="replace")
+            diag = parse_job_log(text, job_name=failed_step)
+            if not diag.is_empty:
+                out.extend(
+                    diag.to_failures(
+                        workflow=check.workflow,
+                        job=check.job,
+                        check=check.name,
+                        url=check.url,
+                    )
+                )
+        except Exception as exc:
+            errors.append(f"Job log diagnostics failed for {check.name}: {exc}")
+            continue
+    return out
+
+
+def _check_run_id(url: str) -> int | None:
+    """Extract the numeric check-run id from a check-run API URL."""
+    if not url or url == UNKNOWN:
+        return None
+    match = _CHECK_RUN_ID_RE.search(url)
+    if match is None:
+        return None
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+_CHECK_RUN_ID_RE = re.compile(r"/check-runs/(\d{1,20})(?:/|$)")
 
 
 def _collect_artifact_run_id(url: str) -> int | None:

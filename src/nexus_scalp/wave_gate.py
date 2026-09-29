@@ -238,7 +238,7 @@ def _options() -> EvidenceOptions:
         fetch_codeql=False,
         local_tests=False,
         reviews=False,
-        fetch_logs=False,
+        fetch_logs=True,
         fetch_artifacts=False,
     )
 

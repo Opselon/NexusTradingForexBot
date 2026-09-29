@@ -168,6 +168,11 @@ class Failure:
     step: str = UNKNOWN
     #: The workflow FILE that defined the job (e.g. ``.github/workflows/x.yml``).
     workflow_file: str = UNKNOWN
+    #: True when the failure is CI/infra, not the PR diff — e.g. GitHub's
+    #: Copilot code-scanning agent failing with ``The requested model is not
+    #: supported``. Surfaced as ``infrastructure`` so the reader does not
+    #: chase a code bug that does not exist.
+    infrastructure: bool = False
 
     def affected_paths(self) -> list[str]:
         """Files this failure implicates: detected location + production location."""
@@ -235,6 +240,10 @@ class CheckResult:
     workflow_file: str = UNKNOWN
     #: The CI step that failed, when the job payload named one.
     step: str = UNKNOWN
+    #: The numeric check-run id (``None`` when the payload omitted it).
+    #: Needed to fetch the job log for agent checks whose only diagnostic
+    #: surface is the Actions job log.
+    check_run_id: int | None = None
 
     @property
     def is_failure(self) -> bool:
@@ -381,9 +390,15 @@ class EvidenceCollection:
     #: SUPERSEDE the synthetic ``.github`` workflow-file failures a red job
     #: otherwise reduces to.
     artifact_failures: list[Failure] = field(default_factory=list)
+    #: Deep diagnostics extracted from the JOB LOG of failed checks that
+    #: publish no usable annotation and upload no artifact — the canonical
+    #: case is GitHub's Copilot code-scanning agent (``github-advanced-security``),
+    #: whose real cause (``The requested model is not supported``) lives only
+    #: in the Actions job log.
+    log_failures: list[Failure] = field(default_factory=list)
 
     def all_failures(self) -> list[Failure]:
-        """CI-collected + artifact-collected + locally-collected failures.
+        """CI-collected + artifact-collected + log-collected + local failures.
 
         Artifact failures supersede synthetic workflow-file rows: when deep
         diagnostics exist for a check, the uninformative
@@ -391,7 +406,12 @@ class EvidenceCollection:
         rows that same check produced are noise that hides them.
         """
         merged = _supersede_artifact_failures(self.failures, self.artifact_failures)
-        return [*merged, *self.artifact_failures, *self.local_failures]
+        return [
+            *merged,
+            *self.artifact_failures,
+            *self.log_failures,
+            *self.local_failures,
+        ]
 
     @property
     def settled(self) -> bool:
