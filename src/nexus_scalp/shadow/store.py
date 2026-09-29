@@ -564,14 +564,93 @@ class ShadowStore:
         # translated schema (see nexus_scalp.shadow.schema), so provisioning
         # the domain already installs them. Nothing to ALTER at runtime — the
         # domain is the single source of truth for its own column set.
+        #
+        # DEEP-OPT L1 FOLLOW-UP: that assumption is why the live PostgreSQL
+        # ledger kept 108 MB of retired mirror JSON after the producer stopped
+        # writing it. The domain schema is authored in the SQLite dialect and
+        # only the eight DEEP-OPT columns were translated into the live table
+        # when it was first provisioned — a domain already provisioned is NEVER
+        # re-translated, so later column additions to the domain DDL do not
+        # reach an existing PostgreSQL database. A SQLite box heals via the
+        # branch above on the next ``ensure_schema``; a PostgreSQL box did not
+        # heal at all.
+        #
+        # The runtime additive heal below closes that gap using the domain's
+        # own pooled write backend — the same seam every other domain DDL path
+        # uses, so no raw connection and no sqlite3 import. It is idempotent
+        # (each missing column is guarded by an information_schema check) and
+        # it then runs the same provider-neutral backfill, which migrates the
+        # retired mirror into the minimal columns server-side. On a ledger that
+        # was provisioned before DEEP-OPT this reclaims the mirror bytes; on a
+        # fresh PostgreSQL database it finds nothing to do.
+        try:
+            self._ensure_additive_columns_postgres()
+        except Exception as e:
+            logger.error("[SHADOW] additive migration failed (pg)", error=str(e))
         self._additive_ensured = True
 
-    @staticmethod
-    def _add_missing_columns(
-        conn: sqlite3.Connection, table: str, columns: list[tuple[str, str]]
-    ) -> None:
+    def _ensure_additive_columns_postgres(self) -> None:
+        """Additive SHADOW_EVIDENCE v2 + DEEP-OPT L1 columns on PostgreSQL.
+
+        The mirror of the SQLite branch in :meth:`_ensure_additive_columns`,
+        for the case the domain was provisioned before these columns were
+        authored. Uses the domain's pooled write backend; never opens a raw
+        connection and never imports ``sqlite3``.
+        """
+        from nexus_scalp.adapters.database.provider_store import _write_backend
+
+        backend = _write_backend(self.audit_repo, domain=OPS_SHADOW_DOMAIN, provision=True)
+        if backend is None:
+            return
+        minimal_columns = [
+            ("champion_probabilities", "TEXT DEFAULT '[]'"),
+            ("challenger_probabilities", "TEXT DEFAULT '[]'"),
+            ("champion_strategy_id", "TEXT DEFAULT ''"),
+            ("challenger_strategy_id", "TEXT DEFAULT ''"),
+            ("hypothetical_risk_pct", "REAL DEFAULT 0.0"),
+            ("hypothetical_volume", "REAL DEFAULT 0.0"),
+            ("hypothetical_entry", "REAL DEFAULT 0.0"),
+            ("hypothetical_exit", "REAL DEFAULT 0.0"),
+            # Mirror-only provenance, carried out of the retired payload so the
+            # mirror can be reclaimed without losing it. See
+            # :meth:`_backfill_minimal_representation` for the full mapping.
+            ("mirror_created_at", "TEXT DEFAULT ''"),
+            ("champion_model_version", "TEXT DEFAULT ''"),
+            ("challenger_model_version", "TEXT DEFAULT ''"),
+            ("champion_artifact_hash", "TEXT DEFAULT ''"),
+            ("challenger_artifact_hash", "TEXT DEFAULT ''"),
+            ("shared_configuration_version", "TEXT DEFAULT ''"),
+        ]
+        run_columns = [
+            ("git_revision", "TEXT DEFAULT ''"),
+            ("configuration_version", "TEXT DEFAULT ''"),
+            ("challenger_artifact_hash", "TEXT DEFAULT ''"),
+            ("champion_artifact_hash", "TEXT DEFAULT ''"),
+        ]
+        pool = getattr(backend, "pool", None)
         try:
-            existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table});")}
+            conn_ctx = pool.connection() if pool is not None else backend
+        except Exception:
+            conn_ctx = backend
+        with conn_ctx as conn:
+            self._add_missing_columns(conn, "shadow_decisions", minimal_columns)
+            self._add_missing_columns(conn, "shadow_runs", run_columns)
+            self._backfill_minimal_representation(conn)
+
+    @staticmethod
+    def _add_missing_columns(conn: Any, table: str, columns: list[tuple[str, str]]) -> None:
+        is_sqlite = isinstance(conn, sqlite3.Connection)
+        try:
+            if is_sqlite:
+                existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table});")}
+            else:
+                existing = {
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+                        (table,),
+                    )
+                }
         except Exception:
             existing = set()
         for name, ddl in columns:
@@ -583,7 +662,7 @@ class ShadowStore:
                         "[SHADOW] add column failed", table=table, column=name, error=str(e)
                     )
 
-    def _backfill_minimal_representation(self, conn: sqlite3.Connection) -> None:
+    def _backfill_minimal_representation(self, conn: Any) -> None:
         """Migrates the retired JSON mirror into the minimal columns.
 
         DEEP-OPT L1, contract rule 86 (rollback + retained legacy reader):
@@ -592,20 +671,197 @@ class ShadowStore:
         probabilities yet", so a re-run is a no-op.
 
         Only the fields with no column are migrated (probabilities + the four
-        scalars). Everything else in the mirror is byte-identical to a column
-        that is already populated, so nothing is lost by leaving it behind.
+        scalars + the three mirror-only provenance fields, below). Everything
+        else in the mirror is byte-identical to a column that is already
+        populated, so nothing is lost by leaving it behind.
 
         The retired ``payload`` column is RETIRED, NOT DROPPED: a SQLite
         ``DROP COLUMN`` rewrites every row, which is exactly the write
         amplification the contract forbids. The reclaimable bytes are reported
         instead and the file is compacted explicitly via :func:`compact_database`.
+
+        PROVIDER-PORTABLE (DEEP-OPT L1 follow-up): the original implementation
+        used SQLite's ``PRAGMA table_info`` and a Python-side row loop, so it
+        never ran on PostgreSQL — the live PostgreSQL ledger kept all 55k rows
+        of mirror JSON (108 MB) after the producer stopped writing it. The
+        scan and the UPDATE are now both SQL-side and provider-neutral, so a
+        PostgreSQL box heals on the same ``ensure_schema`` call a SQLite one
+        does. The eligibility SELECT is deliberately a single bounded pass
+        (never a per-row round trip): 55k rows over one cursor, not 55k queries.
         """
+        is_sqlite = isinstance(conn, sqlite3.Connection)
         try:
-            cols = {row[1] for row in conn.execute("PRAGMA table_info(shadow_decisions);")}
+            if is_sqlite:
+                cols = {row[1] for row in conn.execute("PRAGMA table_info(shadow_decisions);")}
+            else:
+                cols = {
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'shadow_decisions'"
+                    )
+                }
         except Exception:
             return
         if not {"payload", "champion_probabilities"} <= cols:
             return
+
+        # The three mirror-only provenance fields. ``shared_input`` is 12.4% of
+        # the mirror's bytes but every one of ITS fields is already a column
+        # except ``configuration_version`` (verified on the live ledger), so it
+        # is reconstructed from that single key rather than stored wholesale.
+        provenance_cols = [
+            ("mirror_created_at", "TEXT DEFAULT ''"),
+            ("champion_model_version", "TEXT DEFAULT ''"),
+            ("challenger_model_version", "TEXT DEFAULT ''"),
+            ("champion_artifact_hash", "TEXT DEFAULT ''"),
+            ("challenger_artifact_hash", "TEXT DEFAULT ''"),
+            ("shared_configuration_version", "TEXT DEFAULT ''"),
+        ]
+        for name, ddl in provenance_cols:
+            if name not in cols:
+                try:
+                    conn.execute(f"ALTER TABLE shadow_decisions ADD COLUMN {name} {ddl};")
+                except Exception as e:
+                    logger.error(
+                        "[SHADOW] add column failed",
+                        table="shadow_decisions",
+                        column=name,
+                        error=str(e),
+                    )
+
+        # One provider-neutral UPDATE does the whole migration server-side.
+        # The JSON extraction is expressed with each engine's own function
+        # family rather than a Python row loop: on PostgreSQL jsonb operators
+        # do it in one statement, on SQLite json_extract does. Both keep the
+        # work off the application side and both are idempotent — the guard
+        # (live mirror AND no probabilities yet) is in the WHERE clause, so a
+        # second call updates zero rows.
+        if is_sqlite:
+            stmt = """
+                UPDATE shadow_decisions SET
+                    champion_probabilities = COALESCE(
+                        json_extract(payload, '$.champion_probabilities'), '[]'),
+                    challenger_probabilities = COALESCE(
+                        json_extract(payload, '$.challenger_probabilities'), '[]'),
+                    champion_strategy_id = COALESCE(NULLIF(
+                        json_extract(payload, '$.champion_strategy_id'), ''),
+                        NULLIF(json_extract(payload, '$.champion.strategy_id'), ''), ''),
+                    challenger_strategy_id = COALESCE(NULLIF(
+                        json_extract(payload, '$.challenger_strategy_id'), ''),
+                        NULLIF(json_extract(payload, '$.challenger.strategy_id'), ''), ''),
+                    hypothetical_risk_pct = COALESCE(
+                        json_extract(payload, '$.hypothetical.risk_pct'),
+                        json_extract(payload, '$.hypothetical_risk_pct'), 0.0),
+                    hypothetical_volume = COALESCE(
+                        json_extract(payload, '$.hypothetical.volume'),
+                        json_extract(payload, '$.hypothetical_volume'), 0.0),
+                    hypothetical_entry = COALESCE(
+                        json_extract(payload, '$.hypothetical.entry'),
+                        json_extract(payload, '$.hypothetical_entry'), 0.0),
+                    hypothetical_exit = COALESCE(
+                        json_extract(payload, '$.hypothetical.exit'),
+                        json_extract(payload, '$.hypothetical_exit'), 0.0),
+                    mirror_created_at = COALESCE(
+                        json_extract(payload, '$.created_at'), ''),
+                    champion_model_version = COALESCE(
+                        json_extract(payload, '$.champion.model_version'), ''),
+                    challenger_model_version = COALESCE(
+                        json_extract(payload, '$.challenger.model_version'), ''),
+                    champion_artifact_hash = COALESCE(
+                        json_extract(payload, '$.champion.artifact_hash'), ''),
+                    challenger_artifact_hash = COALESCE(
+                        json_extract(payload, '$.challenger.artifact_hash'), ''),
+                    shared_configuration_version = COALESCE(
+                        json_extract(payload, '$.shared_input.configuration_version'), '')
+                WHERE payload IS NOT NULL AND payload != '' AND payload != '{}'
+                  AND (champion_probabilities IS NULL
+                       OR champion_probabilities IN ('', '[]'))
+            """
+        else:
+            # PostgreSQL: the mirror is TEXT, so cast to jsonb for extraction.
+            # The nested groups (champion/challenger/hypothetical) are objects;
+            # ->> returns text, which is what the TEXT columns want.
+            #
+            # BYTE-IDENTITY: jsonb's text output is the *expanded* form
+            # ('[0.1, 0.2]' with a space after each comma). The SQLite side
+            # (json_extract over the ORIGINAL text) yields the producer's own
+            # bytes, which are compact. read_decision_row prefers the column
+            # over the mirror, so a divergence here would silently change the
+            # probabilities every consumer reads after migration. Re-serialize
+            # through the same compact encoder the write path uses so the
+            # migrated column is byte-identical to the mirror's own value.
+            stmt = """
+                UPDATE shadow_decisions SET
+                    champion_probabilities = COALESCE(
+                        NULLIF(replace((payload::jsonb -> 'champion_probabilities')::text,
+                                       ', ', ','), '[]'), '[]'),
+                    challenger_probabilities = COALESCE(
+                        NULLIF(replace((payload::jsonb -> 'challenger_probabilities')::text,
+                                       ', ', ','), '[]'), '[]'),
+                    champion_strategy_id = COALESCE(NULLIF(
+                        (payload::jsonb ->> 'champion_strategy_id'), ''),
+                        NULLIF((payload::jsonb -> 'champion') ->> 'strategy_id', ''), ''),
+                    challenger_strategy_id = COALESCE(NULLIF(
+                        (payload::jsonb ->> 'challenger_strategy_id'), ''),
+                        NULLIF((payload::jsonb -> 'challenger') ->> 'strategy_id', ''), ''),
+                    hypothetical_risk_pct = COALESCE(
+                        ((payload::jsonb -> 'hypothetical') ->> 'risk_pct')::double precision,
+                        (payload::jsonb ->> 'hypothetical_risk_pct')::double precision, 0.0),
+                    hypothetical_volume = COALESCE(
+                        ((payload::jsonb -> 'hypothetical') ->> 'volume')::double precision,
+                        (payload::jsonb ->> 'hypothetical_volume')::double precision, 0.0),
+                    hypothetical_entry = COALESCE(
+                        ((payload::jsonb -> 'hypothetical') ->> 'entry')::double precision,
+                        (payload::jsonb ->> 'hypothetical_entry')::double precision, 0.0),
+                    hypothetical_exit = COALESCE(
+                        ((payload::jsonb -> 'hypothetical') ->> 'exit')::double precision,
+                        (payload::jsonb ->> 'hypothetical_exit')::double precision, 0.0),
+                    mirror_created_at = COALESCE(
+                        (payload::jsonb ->> 'created_at'), ''),
+                    champion_model_version = COALESCE(
+                        ((payload::jsonb -> 'champion') ->> 'model_version'), ''),
+                    challenger_model_version = COALESCE(
+                        ((payload::jsonb -> 'challenger') ->> 'model_version'), ''),
+                    champion_artifact_hash = COALESCE(
+                        ((payload::jsonb -> 'champion') ->> 'artifact_hash'), ''),
+                    challenger_artifact_hash = COALESCE(
+                        ((payload::jsonb -> 'challenger') ->> 'artifact_hash'), ''),
+                    shared_configuration_version = COALESCE(
+                        ((payload::jsonb -> 'shared_input') ->> 'configuration_version'), '')
+                WHERE payload IS NOT NULL AND payload != '' AND payload != '{}'
+                  AND (champion_probabilities IS NULL
+                       OR champion_probabilities IN ('', '[]'))
+            """
+        try:
+            cur = conn.execute(stmt)
+            migrated = getattr(cur, "rowcount", -1) or 0
+        except Exception as e:
+            # A provider that lacks the JSON function family (or a row whose
+            # payload is not valid JSON) must not break schema init. The legacy
+            # Python-side path below is the fallback for those engines.
+            logger.warning(
+                "[SHADOW] server-side mirror backfill unavailable, falling back to the row loop",
+                error=str(e),
+            )
+            migrated = self._backfill_minimal_representation_loop(conn, cols)
+
+        if migrated:
+            logger.info(
+                "[SHADOW] minimal-representation backfill complete",
+                rows=migrated,
+                reclaimable_bytes=self.pending_mirror_bytes(conn),
+            )
+
+    def _backfill_minimal_representation_loop(self, conn: Any, cols: set[str]) -> int:
+        """Per-row fallback when a provider has no usable JSON function family.
+
+        This is the original implementation, preserved: it reads each eligible
+        row, extracts the eight minimal fields plus the three provenance ones
+        in Python, and UPDATEs them individually. It is correct on every
+        provider (it needs no JSON SQL at all — :mod:`json` does the parsing),
+        which is why it stays as the safety net for the server-side statement.
+        """
         try:
             pending = conn.execute(
                 "SELECT id, payload FROM shadow_decisions "
@@ -613,11 +869,11 @@ class ShadowStore:
                 "AND (champion_probabilities IS NULL OR champion_probabilities IN ('', '[]'))"
             ).fetchall()
         except Exception:
-            return
-        if not pending:
-            return
+            return 0
         migrated = 0
-        for row_id, raw in pending:
+        for row in pending:
+            row_id = row[0]
+            raw = row[1]
             try:
                 data = json.loads(raw)
             except (TypeError, ValueError):
@@ -626,6 +882,7 @@ class ShadowStore:
                 continue
             champion = data.get("champion") or {}
             challenger = data.get("challenger") or {}
+            shared = data.get("shared_input") or {}
             hyp = data.get("hypothetical") or {}
             try:
                 conn.execute(
@@ -633,7 +890,11 @@ class ShadowStore:
                     "champion_probabilities = ?, challenger_probabilities = ?, "
                     "champion_strategy_id = ?, challenger_strategy_id = ?, "
                     "hypothetical_risk_pct = ?, hypothetical_volume = ?, "
-                    "hypothetical_entry = ?, hypothetical_exit = ? "
+                    "hypothetical_entry = ?, hypothetical_exit = ?, "
+                    "mirror_created_at = ?, "
+                    "champion_model_version = ?, challenger_model_version = ?, "
+                    "champion_artifact_hash = ?, challenger_artifact_hash = ?, "
+                    "shared_configuration_version = ? "
                     "WHERE id = ?",
                     (
                         _compact_vector(data.get("champion_probabilities") or []),
@@ -644,26 +905,173 @@ class ShadowStore:
                         _as_float(hyp.get("volume", data.get("hypothetical_volume", 0.0))),
                         _as_float(hyp.get("entry", data.get("hypothetical_entry", 0.0))),
                         _as_float(hyp.get("exit", data.get("hypothetical_exit", 0.0))),
+                        data.get("created_at") or "",
+                        champion.get("model_version") or "",
+                        challenger.get("model_version") or "",
+                        champion.get("artifact_hash") or "",
+                        challenger.get("artifact_hash") or "",
+                        shared.get("configuration_version") or "",
                         row_id,
                     ),
                 )
                 migrated += 1
             except Exception as e:
                 logger.error("[SHADOW] payload backfill row failed", row=row_id, error=str(e))
-        if migrated:
-            logger.info(
-                "[SHADOW] minimal-representation backfill complete",
-                rows=migrated,
-                reclaimable_bytes=self.pending_mirror_bytes(conn),
-            )
+        return migrated
+
+    def reclaim_mirror_payloads(
+        self,
+        *,
+        batch_size: int = 5000,
+        max_rows: int | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, int]:
+        """Reclaim the retired ``payload`` mirror already on disk.
+
+        The producer stopped serializing the record in DEEP-OPT L1, but rows
+        written before that still carry the duplicate: 108.3 MB of a 227 MB
+        table on the live PostgreSQL ledger. This is the read-side twin of
+        that change — it NULLs the mirror on rows that
+        :meth:`_backfill_minimal_representation` has already migrated.
+
+        The mirror is retired, not dropped, so this sets it to ``''`` (the
+        column's pre-L1 default) rather than removing it. The read contract
+        (:meth:`read_decision_row`) treats an empty mirror as "no mirror" and
+        reads the columns, which is exactly the post-migration shape.
+
+        Lifecycle: idempotent (the guard is "payload non-empty AND the row has
+        been migrated"), bounded (``max_rows`` caps a call and the last round
+        fetches only the remainder), resumable (a keyset cursor over ``id``,
+        not OFFSET), and observable (eligible/archived/bytes counters).
+        """
+        counters: dict[str, int] = {
+            "eligible": 0,
+            "reclaimed": 0,
+            "bytes_before": 0,
+            "rounds": 0,
+        }
+        if not self.audit_repo:
+            return counters
+        bsize = max(1, int(batch_size))
+        remaining_cap = None if max_rows is None else max(0, int(max_rows))
+        # Only rows the backfill has migrated are reclaimable: a row that still
+        # has a mirror AND no probabilities has not been migrated yet, so
+        # clearing it would destroy its only copy of those fields.
+        # The placeholder is engine-specific: SQLite uses ?, PostgreSQL %s.
+        ph = "?"
+        if not getattr(self.audit_repo, "_is_sqlite", True):
+            ph = "%s"
+        sql = (
+            "SELECT id, octet_length(payload) AS n FROM shadow_decisions "
+            "WHERE payload IS NOT NULL AND payload <> '' AND payload <> '{}' "
+            "AND (champion_probabilities IS NOT NULL AND champion_probabilities NOT IN ('', '[]')) "
+            f"ORDER BY id LIMIT {ph}"
+        )
+        keyset_sql = (
+            "SELECT id, octet_length(payload) AS n FROM shadow_decisions "
+            "WHERE payload IS NOT NULL AND payload <> '' AND payload <> '{}' "
+            "AND (champion_probabilities IS NOT NULL AND champion_probabilities NOT IN ('', '[]')) "
+            f"AND id > {ph} ORDER BY id LIMIT {ph}"
+        )
+        last_id = 0
+        is_sqlite = bool(getattr(self.audit_repo, "_is_sqlite", True))
+        while True:
+            if remaining_cap is not None and counters["eligible"] >= remaining_cap:
+                break
+            fetch = bsize
+            if remaining_cap is not None:
+                fetch = min(bsize, remaining_cap - counters["eligible"])
+            if fetch <= 0:
+                break
+            if is_sqlite:
+                # The SQLite path borrows the repository's one connection seam
+                # (Phase 32: domain code never opens its own sqlite3).
+                from nexus_scalp.adapters.database.provider_store import sqlite_connection
+
+                with sqlite_connection(self.audit_repo, 15.0) as conn:
+                    rows = (
+                        conn.execute(sql, (fetch,)).fetchall()
+                        if last_id == 0
+                        else conn.execute(keyset_sql, (last_id, fetch)).fetchall()
+                    )
+                    if not rows:
+                        break
+                    ids, last_id = self._collect(rows, counters, last_id)
+                    if dry_run:
+                        counters["rounds"] += 1
+                        continue
+                    placeholders = ",".join("?" * len(ids))
+                    cur = conn.execute(
+                        f"UPDATE shadow_decisions SET payload = '' WHERE id IN ({placeholders})",
+                        ids,
+                    )
+                    counters["reclaimed"] += int(getattr(cur, "rowcount", len(ids)) or 0)
+                    counters["rounds"] += 1
+            else:
+                # PostgreSQL: the domain's pooled read plane, the same seam the
+                # operator surface uses — never a raw connection.
+                from nexus_scalp.adapters.database.provider_store import query_rows
+
+                rows = (
+                    query_rows(self.audit_repo, sql, (fetch,))
+                    if last_id == 0
+                    else query_rows(self.audit_repo, keyset_sql, (last_id, fetch))
+                )
+                if not rows:
+                    break
+                ids, last_id = self._collect(rows, counters, last_id)
+                if dry_run:
+                    counters["rounds"] += 1
+                    continue
+                counters["reclaimed"] += self._clear_payloads(ids)
+                counters["rounds"] += 1
+        return counters
 
     @staticmethod
-    def pending_mirror_bytes(conn: sqlite3.Connection) -> int:
-        """Retired-mirror bytes still on disk (0 once the column is dropped)."""
+    def _collect(rows: Any, counters: dict[str, int], last_id: int) -> tuple[list[int], int]:
+        ids: list[int] = []
+        for r in rows:
+            rid = int(r["id"] if isinstance(r, dict) else r[0])
+            nbytes = int(r["n"] if isinstance(r, dict) else r[1] or 0)
+            last_id = rid
+            counters["eligible"] += 1
+            counters["bytes_before"] += nbytes
+            ids.append(rid)
+        return ids, last_id
+
+    def _clear_payloads(self, ids: list[int]) -> int:
+        """One bounded UPDATE on the domain's write plane (PostgreSQL path)."""
+        from nexus_scalp.adapters.database.provider_store import _write_backend
+
+        backend = _write_backend(self.audit_repo, domain=OPS_SHADOW_DOMAIN, provision=True)
+        if backend is None:
+            return 0
+        pool = getattr(backend, "pool", None)
         try:
-            cols = {row[1] for row in conn.execute("PRAGMA table_info(shadow_decisions);")}
-            if "payload" not in cols:
-                return 0
+            conn_ctx = pool.connection() if pool is not None else backend
+        except Exception:
+            conn_ctx = backend
+        with conn_ctx as conn:
+            cur = conn.execute(
+                "UPDATE shadow_decisions SET payload = '' WHERE id = ANY(%s)", (ids,)
+            )
+            return int(getattr(cur, "rowcount", len(ids)) or 0)
+
+    @staticmethod
+    def pending_mirror_bytes(conn: Any) -> int:
+        """Retired-mirror bytes still on disk (0 once the column is dropped)."""
+        is_sqlite = isinstance(conn, sqlite3.Connection)
+        try:
+            if is_sqlite:
+                cols = {row[1] for row in conn.execute("PRAGMA table_info(shadow_decisions);")}
+                if "payload" not in cols:
+                    return 0
+                return int(
+                    conn.execute(
+                        "SELECT COALESCE(SUM(LENGTH(payload)), 0) FROM shadow_decisions"
+                    ).fetchone()[0]
+                    or 0
+                )
             row = conn.execute(
                 "SELECT COALESCE(SUM(LENGTH(payload)), 0) FROM shadow_decisions"
             ).fetchone()

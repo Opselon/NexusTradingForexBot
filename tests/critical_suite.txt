@@ -538,3 +538,4 @@ tests/unit/test_health_db_reason.py
 tests/unit/test_health_news_cycle.py
 tests/unit/test_bug544_audit_pg_bootstrap.py
 tests/unit/test_sec_codeql_secret_remediation.py
+tests/unit/shadow/test_payload_mirror_reclaim.py
