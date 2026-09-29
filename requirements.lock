@@ -364,9 +364,9 @@ execnet==2.1.2 \
     --hash=sha256:63d83bfdd9a23e35b9c6a3261412324f964c2ec8dcd8d3c6916ee9373e0befcd \
     --hash=sha256:67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec
     # via pytest-xdist
-fastapi==0.142.0 \
-    --hash=sha256:0b2d2ad7f915f29f79f190e30b40bd2b2e1bdec5617faeda10c37f7c36416305 \
-    --hash=sha256:a42da52ec744e7b0e8a0ea6e0cbc7292c6df3cbbda8606a91aecf5c166b156da
+fastapi==0.142.1 \
+    --hash=sha256:761663e3e6939da45f997a6f68362abc0fa9d8606e76d504f15f806d2281581d \
+    --hash=sha256:7eea2b5b1632ed43de2c090b3a43b7d92267189dfbbd55a967307ed763b6c57a
     # via nexus-scalp-engine (pyproject.toml)
 feedparser==6.0.14 \
     --hash=sha256:088679b0c4b543ee211a820dd544698c76a402122eae7473c04a43425f283d06 \
