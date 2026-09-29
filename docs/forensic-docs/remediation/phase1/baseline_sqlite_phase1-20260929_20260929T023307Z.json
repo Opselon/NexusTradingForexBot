@@ -1,0 +1,447 @@
+{
+  "collected_at_utc": "20260929T023307Z",
+  "label": "phase1-20260929",
+  "databases": [
+    {
+      "path": "C:\\Users\\Capsizer\\AppData\\Local\\NexusScalpEngine\\databases\\ai_provider_decisions.db",
+      "size_bytes": 24576,
+      "mtime": "2026-09-28T01:23:52.622904+00:00",
+      "wal_present": true,
+      "shm_present": true,
+      "wal_size_bytes": 0,
+      "pragmas": {
+        "journal_mode": "wal",
+        "synchronous": 2,
+        "foreign_keys": 0,
+        "auto_vacuum": 0,
+        "page_size": 4096,
+        "page_count": 6,
+        "freelist_count": 0,
+        "max_page_count": 4294967294,
+        "encoding": "UTF-8",
+        "user_version": 0,
+        "schema_version": 4,
+        "cache_size": -2000,
+        "mmap_size": 0,
+        "busy_timeout": 5000,
+        "journal_size_limit": -1,
+        "wal_autocheckpoint": 1000,
+        "wal_checkpoint_passive": [
+          0,
+          0,
+          0
+        ]
+      },
+      "integrity_check": "ok",
+      "sqlite_master": [
+        {
+          "type": "index",
+          "name": "idx_apd_created_at",
+          "tbl_name": "ai_provider_decisions",
+          "rootpage": 5,
+          "sql_len": 68
+        },
+        {
+          "type": "index",
+          "name": "idx_apd_decision_id",
+          "tbl_name": "ai_provider_decisions",
+          "rootpage": 4,
+          "sql_len": 70
+        },
+        {
+          "type": "index",
+          "name": "idx_apd_provider",
+          "tbl_name": "ai_provider_decisions",
+          "rootpage": 6,
+          "sql_len": 71
+        },
+        {
+          "type": "table",
+          "name": "ai_provider_decisions",
+          "tbl_name": "ai_provider_decisions",
+          "rootpage": 2,
+          "sql_len": 734
+        },
+        {
+          "type": "table",
+          "name": "sqlite_sequence",
+          "tbl_name": "sqlite_sequence",
+          "rootpage": 3,
+          "sql_len": 38
+        }
+      ],
+      "table_row_counts": {
+        "ai_provider_decisions": 0
+      },
+      "query_plans": {
+        "ai_provider_decisions::newest_rows_by_rowid": [
+          "SCAN ai_provider_decisions"
+        ],
+        "ai_provider_decisions::count": [
+          "SCAN ai_provider_decisions USING COVERING INDEX idx_apd_provider"
+        ]
+      },
+      "dbstat": [
+        {
+          "name": "sqlite_sequence",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_schema",
+          "bytes": 4096
+        },
+        {
+          "name": "idx_apd_provider",
+          "bytes": 4096
+        },
+        {
+          "name": "idx_apd_decision_id",
+          "bytes": 4096
+        },
+        {
+          "name": "idx_apd_created_at",
+          "bytes": 4096
+        },
+        {
+          "name": "ai_provider_decisions",
+          "bytes": 4096
+        }
+      ]
+    },
+    {
+      "path": "C:\\Users\\Capsizer\\AppData\\Local\\NexusScalpEngine\\databases\\app_settings.db",
+      "size_bytes": 155648,
+      "mtime": "2026-09-28T21:56:50.589210+00:00",
+      "wal_present": false,
+      "shm_present": false,
+      "wal_size_bytes": 0,
+      "pragmas": {
+        "journal_mode": "wal",
+        "synchronous": 2,
+        "foreign_keys": 0,
+        "auto_vacuum": 0,
+        "page_size": 4096,
+        "page_count": 38,
+        "freelist_count": 0,
+        "max_page_count": 4294967294,
+        "encoding": "UTF-8",
+        "user_version": 0,
+        "schema_version": 6,
+        "cache_size": -2000,
+        "mmap_size": 0,
+        "busy_timeout": 5000,
+        "journal_size_limit": -1,
+        "wal_autocheckpoint": 1000,
+        "wal_checkpoint_passive": [
+          0,
+          0,
+          0
+        ]
+      },
+      "integrity_check": "ok",
+      "sqlite_master": [
+        {
+          "type": "index",
+          "name": "idx_settings_audit_ts",
+          "tbl_name": "settings_audit",
+          "rootpage": 8,
+          "sql_len": 63
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_ai_provider_config_1",
+          "tbl_name": "ai_provider_config",
+          "rootpage": 12,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_application_settings_1",
+          "tbl_name": "application_settings",
+          "rootpage": 3,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_configuration_metadata_1",
+          "tbl_name": "configuration_metadata",
+          "rootpage": 5,
+          "sql_len": null
+        },
+        {
+          "type": "table",
+          "name": "ai_provider_activation",
+          "tbl_name": "ai_provider_activation",
+          "rootpage": 13,
+          "sql_len": 448
+        },
+        {
+          "type": "table",
+          "name": "ai_provider_config",
+          "tbl_name": "ai_provider_config",
+          "rootpage": 11,
+          "sql_len": 243
+        },
+        {
+          "type": "table",
+          "name": "application_settings",
+          "tbl_name": "application_settings",
+          "rootpage": 2,
+          "sql_len": 489
+        },
+        {
+          "type": "table",
+          "name": "configuration_metadata",
+          "tbl_name": "configuration_metadata",
+          "rootpage": 4,
+          "sql_len": 105
+        },
+        {
+          "type": "table",
+          "name": "settings_audit",
+          "tbl_name": "settings_audit",
+          "rootpage": 6,
+          "sql_len": 384
+        },
+        {
+          "type": "table",
+          "name": "sqlite_sequence",
+          "tbl_name": "sqlite_sequence",
+          "rootpage": 7,
+          "sql_len": 38
+        }
+      ],
+      "table_row_counts": {
+        "ai_provider_activation": 0,
+        "ai_provider_config": 0,
+        "application_settings": 51,
+        "configuration_metadata": 6,
+        "settings_audit": 935
+      },
+      "query_plans": {
+        "ai_provider_activation::newest_rows_by_rowid": [
+          "SCAN ai_provider_activation"
+        ],
+        "ai_provider_activation::count": [
+          "SCAN ai_provider_activation"
+        ],
+        "ai_provider_config::newest_rows_by_rowid": [
+          "SCAN ai_provider_config"
+        ],
+        "ai_provider_config::count": [
+          "SCAN ai_provider_config USING COVERING INDEX sqlite_autoindex_ai_provider_config_1"
+        ],
+        "application_settings::newest_rows_by_rowid": [
+          "SCAN application_settings"
+        ],
+        "application_settings::count": [
+          "SCAN application_settings USING COVERING INDEX sqlite_autoindex_application_settings_1"
+        ],
+        "configuration_metadata::newest_rows_by_rowid": [
+          "SCAN configuration_metadata"
+        ],
+        "configuration_metadata::count": [
+          "SCAN configuration_metadata USING COVERING INDEX sqlite_autoindex_configuration_metadata_1"
+        ],
+        "settings_audit::newest_rows_by_rowid": [
+          "SCAN settings_audit"
+        ],
+        "settings_audit::count": [
+          "SCAN settings_audit USING COVERING INDEX idx_settings_audit_ts"
+        ]
+      },
+      "dbstat": [
+        {
+          "name": "settings_audit",
+          "bytes": 90112
+        },
+        {
+          "name": "idx_settings_audit_ts",
+          "bytes": 20480
+        },
+        {
+          "name": "application_settings",
+          "bytes": 12288
+        },
+        {
+          "name": "sqlite_sequence",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_schema",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_autoindex_configuration_metadata_1",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_autoindex_application_settings_1",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_autoindex_ai_provider_config_1",
+          "bytes": 4096
+        },
+        {
+          "name": "configuration_metadata",
+          "bytes": 4096
+        },
+        {
+          "name": "ai_provider_config",
+          "bytes": 4096
+        },
+        {
+          "name": "ai_provider_activation",
+          "bytes": 4096
+        }
+      ]
+    },
+    {
+      "path": "C:\\Users\\Capsizer\\AppData\\Local\\nse_settings_final.db",
+      "size_bytes": 32768,
+      "mtime": "2026-08-20T04:07:03.868160+00:00",
+      "wal_present": false,
+      "shm_present": false,
+      "wal_size_bytes": 0,
+      "pragmas": {
+        "journal_mode": "delete",
+        "synchronous": 2,
+        "foreign_keys": 0,
+        "auto_vacuum": 0,
+        "page_size": 4096,
+        "page_count": 8,
+        "freelist_count": 0,
+        "max_page_count": 4294967294,
+        "encoding": "UTF-8",
+        "user_version": 0,
+        "schema_version": 4,
+        "cache_size": -2000,
+        "mmap_size": 0,
+        "busy_timeout": 5000,
+        "journal_size_limit": -1,
+        "wal_autocheckpoint": 1000,
+        "wal_checkpoint_passive": [
+          0,
+          -1,
+          -1
+        ]
+      },
+      "integrity_check": "ok",
+      "sqlite_master": [
+        {
+          "type": "index",
+          "name": "idx_settings_audit_ts",
+          "tbl_name": "settings_audit",
+          "rootpage": 8,
+          "sql_len": 63
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_application_settings_1",
+          "tbl_name": "application_settings",
+          "rootpage": 3,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_configuration_metadata_1",
+          "tbl_name": "configuration_metadata",
+          "rootpage": 5,
+          "sql_len": null
+        },
+        {
+          "type": "table",
+          "name": "application_settings",
+          "tbl_name": "application_settings",
+          "rootpage": 2,
+          "sql_len": 489
+        },
+        {
+          "type": "table",
+          "name": "configuration_metadata",
+          "tbl_name": "configuration_metadata",
+          "rootpage": 4,
+          "sql_len": 105
+        },
+        {
+          "type": "table",
+          "name": "settings_audit",
+          "tbl_name": "settings_audit",
+          "rootpage": 6,
+          "sql_len": 384
+        },
+        {
+          "type": "table",
+          "name": "sqlite_sequence",
+          "tbl_name": "sqlite_sequence",
+          "rootpage": 7,
+          "sql_len": 38
+        }
+      ],
+      "table_row_counts": {
+        "application_settings": 1,
+        "configuration_metadata": 0,
+        "settings_audit": 4
+      },
+      "query_plans": {
+        "application_settings::newest_rows_by_rowid": [
+          "SCAN application_settings"
+        ],
+        "application_settings::count": [
+          "SCAN application_settings USING COVERING INDEX sqlite_autoindex_application_settings_1"
+        ],
+        "configuration_metadata::newest_rows_by_rowid": [
+          "SCAN configuration_metadata"
+        ],
+        "configuration_metadata::count": [
+          "SCAN configuration_metadata USING COVERING INDEX sqlite_autoindex_configuration_metadata_1"
+        ],
+        "settings_audit::newest_rows_by_rowid": [
+          "SCAN settings_audit"
+        ],
+        "settings_audit::count": [
+          "SCAN settings_audit USING COVERING INDEX idx_settings_audit_ts"
+        ]
+      },
+      "dbstat": [
+        {
+          "name": "sqlite_sequence",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_schema",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_autoindex_configuration_metadata_1",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_autoindex_application_settings_1",
+          "bytes": 4096
+        },
+        {
+          "name": "settings_audit",
+          "bytes": 4096
+        },
+        {
+          "name": "idx_settings_audit_ts",
+          "bytes": 4096
+        },
+        {
+          "name": "configuration_metadata",
+          "bytes": 4096
+        },
+        {
+          "name": "application_settings",
+          "bytes": 4096
+        }
+      ]
+    },
+    {
+      "path": "\\c\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\databases\\app_settings.db",
+      "error": "FILE NOT FOUND"
+    }
+  ]
+}
