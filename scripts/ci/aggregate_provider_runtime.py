@@ -37,6 +37,24 @@ def main() -> int:
 
     for report in reports:
         obs = report.get("observability", {})
+        findings = list(report.get("findings", []))
+        error_types = {
+            "process-log",
+            "traceback",
+            "api",
+            "database-query",
+            "process-exit",
+            "harness",
+            "coverage-floor",
+            "soak-duration",
+        }
+        error_findings = [item for item in findings if item.get("type") in error_types]
+        warning_findings = [
+            item
+            for item in findings
+            if item.get("type") not in error_types
+            and item.get("type") not in {"process-log", "traceback"}
+        ]
         lines.append(
             "| {provider} | {status} | {soak:.1f}s | {api} | {db} | {errors} | {warnings} | {tracebacks} |".format(
                 provider=report.get("provider", "?"),
@@ -44,8 +62,8 @@ def main() -> int:
                 soak=float(report.get("actual_soak_sec", 0)),
                 api=int(report.get("api", {}).get("query_count_total", 0)),
                 db=int(report.get("database", {}).get("query_count_total", 0)),
-                errors=len(obs.get("errors", [])),
-                warnings=len(obs.get("warnings", [])),
+                errors=max(len(obs.get("errors", [])), len(error_findings)),
+                warnings=len(obs.get("warnings", [])) + len(warning_findings),
                 tracebacks=len(obs.get("tracebacks", [])),
             )
         )
