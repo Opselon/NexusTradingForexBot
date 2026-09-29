@@ -419,6 +419,7 @@ def table_columns(connection: Any, provider: str, table: str) -> list[str]:
 def open_provider_connection(provider: str) -> Any:
     if provider == "postgres":
         import psycopg
+
         from nexus_scalp.database.config import build_postgres_url, load_database_config
 
         cfg = load_database_config("audit")
