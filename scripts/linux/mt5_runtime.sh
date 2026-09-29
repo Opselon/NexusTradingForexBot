@@ -37,6 +37,7 @@ WINE_BIN="${NEXUS_MT5_WINE:-/opt/wine-staging/bin/wine}"
 WINE_SERVER="${NEXUS_MT5_WINESERVER:-/opt/wine-staging/bin/wineserver}"
 MT5DIR="$PREFIX/drive_c/Program Files/MetaTrader 5"
 TERMINAL="$MT5DIR/terminal64.exe"
+TERMINAL_EXE="terminal64.exe"
 DISPLAY_NUM="${NEXUS_MT5_DISPLAY:-99}"
 
 export WINEPREFIX="$PREFIX"
@@ -49,7 +50,8 @@ log() { printf '[nexus-mt5] %s\n' "$*"; }
 ensure_dirs() { mkdir -p "$PREFIX" "$CACHE" "$LOGDIR"; }
 
 terminal_running() {
-    pgrep -f "terminal64.exe" >/dev/null 2>&1
+    pgrep -f "terminal64.exe" >/dev/null 2>&1 ||
+        pgrep -f "terminal.exe" >/dev/null 2>&1
 }
 
 xvfb_up() {
@@ -80,24 +82,63 @@ ensure_xvfb() {
 
 cmd_install() {
     ensure_dirs
+    ensure_xvfb || { log "ERROR: Xvfb unavailable"; return 1; }
+    export DISPLAY=":$DISPLAY_NUM"
+
     if [ -x "$TERMINAL" ] || [ -f "$TERMINAL" ]; then
-        log "terminal64.exe already present: $TERMINAL"
+        log "$TERMINAL_EXE already present: $TERMINAL"
         return 0
     fi
+
     if [ ! -f "$CACHE/mt5setup.exe" ]; then
         log "downloading official installer (MetaQuotes CDN)"
         curl -sSL --max-time 300 -o "$CACHE/mt5setup.exe" \
             "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" \
             || { log "ERROR: download failed"; return 1; }
     fi
+
     sha256sum "$CACHE/mt5setup.exe" | tee "$CACHE/mt5setup.exe.sha256"
-    log "running silent install (/auto) — no sudo, user prefix only"
-    wine "$CACHE/mt5setup.exe" /auto > "$LOGDIR/install_$(date +%Y%m%d_%H%M%S).log" 2>&1
-    if [ ! -f "$TERMINAL" ]; then
-        log "ERROR: install finished but terminal64.exe missing — inspect $LOGDIR"
+
+    # The current MetaQuotes installer can return from /auto before its
+    # terminal payload is materialized. Initialize the isolated prefix, run
+    # the installer, then wait for the actual executable instead of using
+    # installer process exit as the completion signal.
+    log "initializing isolated Wine prefix ($WINEARCH)"
+    "$WINE_BIN" wineboot --init > "$LOGDIR/wineboot.log" 2>&1 || true
+    "$WINE_BIN" winecfg /v win10 > "$LOGDIR/winecfg.log" 2>&1 || true
+
+    local install_log="$LOGDIR/install_$(date +%Y%m%d_%H%M%S).log"
+    log "running official MT5 installer (/auto) — no sudo, user prefix only"
+    set +e
+    timeout 300 "$WINE_BIN" "$CACHE/mt5setup.exe" /auto > "$install_log" 2>&1
+    local installer_rc=$?
+    set -e
+    log "installer process rc=$installer_rc; waiting for terminal payload"
+
+    local found=""
+    for _ in $(seq 1 180); do
+        found="$(find "$PREFIX/drive_c" -type f \(
+            -iname "terminal64.exe" -o -iname "terminal.exe"
+        \) -print -quit 2>/dev/null)"
+        if [ -n "$found" ]; then
+            break
+        fi
+        sleep 1
+    done
+
+    if [ -z "$found" ]; then
+        log "ERROR: MT5 terminal executable was not materialized after 180s"
+        log "install log: $install_log"
+        find "$PREFIX/drive_c" -maxdepth 6 -type f \(
+            -iname "*terminal*.exe" -o -iname "*mt5*.exe"
+        \) -print 2>/dev/null | head -50 || true
         return 1
     fi
-    log "installed OK"
+
+    TERMINAL="$found"
+    MT5DIR="$(dirname "$TERMINAL")"
+    TERMINAL_EXE="$(basename "$TERMINAL")"
+    log "installed OK: $TERMINAL"
 }
 
 cmd_start() {
@@ -108,8 +149,8 @@ cmd_start() {
     fi
     ensure_xvfb || { log "ERROR: Xvfb unavailable"; return 1; }
     export DISPLAY=":$DISPLAY_NUM"
-    log "launching terminal64.exe /portable"
-    (cd "$MT5DIR" && nohup "$WINE_BIN" terminal64.exe /portable \
+    log "launching $TERMINAL_EXE /portable"
+    (cd "$MT5DIR" && nohup "$WINE_BIN" "$TERMINAL_EXE" /portable \
         > "$LOGDIR/terminal_launch.log" 2>&1 &)
     sleep 8
     if terminal_running; then
