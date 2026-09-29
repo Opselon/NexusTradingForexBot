@@ -3529,6 +3529,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
 
     register_position_adviser_routes(app)
 
+    # ML POSITION CONTROL PLANE ROUTES (TASK-ML-CTRL): /api/position-ml/*.
+    # Lifecycle state, ownership gate, versioned feature schema — the UI's
+    # backend-truth source for the ML controller (spec §13/§26).
+    from nexus_scalp.web.position_ml_routes import register_position_ml_routes
+
+    register_position_ml_routes(app)
+
     # AI PROVIDER ECOSYSTEM ROUTES (ECOSYSTEM-001): /api/ai-providers/*.
     # Provider registry, health, switching, decision evaluate/compare and the
     # decision trace. Additive new router; the orchestrator singleton it installs
