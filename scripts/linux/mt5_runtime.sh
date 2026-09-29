@@ -117,8 +117,10 @@ cmd_install() {
 
     local found=""
     for _ in $(seq 1 180); do
-        found="$(find "$PREFIX/drive_c" -type f \(
-            -iname "terminal64.exe" -o -iname "terminal.exe" \) -print -quit 2>/dev/null)"
+        found="$(find "$PREFIX/drive_c" -type f -iname "terminal64.exe" -print -quit 2>/dev/null)"
+        if [ -z "$found" ]; then
+            found="$(find "$PREFIX/drive_c" -type f -iname "terminal.exe" -print -quit 2>/dev/null)"
+        fi
         if [ -n "$found" ]; then
             break
         fi
@@ -127,10 +129,8 @@ cmd_install() {
 
     if [ -z "$found" ]; then
         log "ERROR: MT5 terminal executable was not materialized after 180s"
-        log "install log: $install_log"
-        find "$PREFIX/drive_c" -maxdepth 6 -type f \(
-            -iname "*terminal*.exe" -o -iname "*mt5*.exe"
-        \) -print 2>/dev/null | head -50 || true
+        log "installer rc=$installer_rc; install log: $install_log"
+        find "$PREFIX/drive_c" -maxdepth 6 -type f -iname "*terminal*.exe" -print 2>/dev/null | head -50 || true
         return 1
     fi
 
@@ -153,7 +153,9 @@ cmd_start() {
         > "$LOGDIR/terminal_launch.log" 2>&1 &)
     sleep 8
     if terminal_running; then
-        log "started (pid $(pgrep -f terminal64.exe | head -1))"
+        pid="$(pgrep -f "$TERMINAL_EXE" | head -1 || true)"
+        [ -n "$pid" ] || pid="$(pgrep -f "terminal64.exe|terminal.exe" | head -1 || true)"
+        log "started (pid ${pid:-unknown})"
         return 0
     fi
     log "ERROR: terminal did not start — see $LOGDIR/terminal_launch.log"
@@ -177,7 +179,9 @@ cmd_stop() {
 
 cmd_status() {
     if terminal_running; then
-        log "RUNNING (pid $(pgrep -f terminal64.exe | head -1))"
+        pid="$(pgrep -f "$TERMINAL_EXE" | head -1 || true)"
+        [ -n "$pid" ] || pid="$(pgrep -f "terminal64.exe|terminal.exe" | head -1 || true)"
+        log "RUNNING (pid ${pid:-unknown})"
         return 0
     fi
     log "STOPPED"
