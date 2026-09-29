@@ -325,6 +325,35 @@ def get_engine_adapter(request: Request) -> Any:
 # ---------------------------------------------------------------------------
 
 
+def _inject_limit(sql: str, limit: int) -> str:
+    """Append ``LIMIT n`` to ``sql`` unless it already carries one.
+
+    The pooled read plane receives a plain statement; PostgreSQL honors LIMIT
+    in the planner so the engine stops after ``limit`` rows instead of
+    materializing the whole result for a Python slice. Guards against a
+    double LIMIT (a caller that already wrote one, or a CTE/FETCH shape) by
+    looking for the keyword outside of string literals; on any doubt the
+    statement is returned UNCHANGED rather than risk a syntax error, and the
+    caller still gets the bound via the hard ceiling above.
+    """
+    # Strip quoted literals so a LIMIT inside a string constant is not mistaken
+    # for a clause. Only single-quoted SQL literals are handled — callers here
+    # pass static SELECT shapes, not arbitrary DDL.
+    stripped: list[str] = []
+    in_lit = False
+    for ch in sql:
+        if ch == "'":
+            in_lit = not in_lit
+            stripped.append(" ")
+            continue
+        stripped.append("" if in_lit else ch)
+    probe = "".join(stripped).upper()
+    for kw in ("LIMIT", "FETCH FIRST"):
+        if re.search(rf"\b{kw}\b", probe):
+            return sql
+    return f"{sql.rstrip().rstrip(';')} LIMIT {limit}"
+
+
 def fetch_rows_bounded(
     repo: Any,
     sql: str,
@@ -369,7 +398,14 @@ def fetch_rows_bounded(
     plane = _repo_read_plane(repo)
     if plane is None:
         raise ProviderReadUnavailableError("audit read plane unavailable for a pooled provider")
-    return list(plane.query(sql, tuple(args)))[:bounded]
+    # LIMIT is part of the SQL, not a Python slice. The SQLite branch above
+    # injects "LIMIT ?" so the engine only materializes what it returns; the
+    # pooled branch used to run the bare statement and slice in Python, so a
+    # route asking for ONE row (signals.py:38, "ORDER BY id DESC", limit 1)
+    # still fetched every row of audit_signals and the slice discarded all
+    # but one. Phase-2 measured the cost: 3.22M seq scans / 30.5B seq tuples
+    # on an 8,791-row table — 9,483 tuples per scan.
+    return list(plane.query(_inject_limit(sql, bounded), tuple(args)))
 
 
 def iso_or_none(value: Any) -> str | None:
