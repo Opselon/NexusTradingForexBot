@@ -202,9 +202,7 @@ def test_new_rows_write_no_mirror_bytes(store, repo):
     for _ in range(3):
         assert store.save_decision(_decision())
     _drain(repo)
-    mirror_bytes = ShadowStore.pending_mirror_bytes(
-        sqlite3.connect(_db_path(repo))
-    )
+    mirror_bytes = ShadowStore.pending_mirror_bytes(sqlite3.connect(_db_path(repo)))
     assert mirror_bytes <= len("{}") * 3  # default marker only, never a record
 
 
@@ -338,9 +336,7 @@ def test_compact_database_reclaims_and_is_idempotent(tmp_path):
     conn = sqlite3.connect(db)
     conn.execute("CREATE TABLE shadow_decisions (id INTEGER PRIMARY KEY, payload TEXT)")
     big = json.dumps({"blob": "x" * 4000})
-    conn.executemany(
-        "INSERT INTO shadow_decisions (payload) VALUES (?)", [(big,)] * 400
-    )
+    conn.executemany("INSERT INTO shadow_decisions (payload) VALUES (?)", [(big,)] * 400)
     conn.commit()
     conn.close()
     before = os.path.getsize(db)
