@@ -211,6 +211,28 @@ def decisions_no_trade_reasons(request: Request) -> Any:
 def decisions_no_trade(request: Request) -> Any:
     # P1: ``COUNT(*) WHERE action='NO_TRADE'`` was an unbounded full scan
     # (majority predicate). Bounded to a latest-N slice via the repository.
+    #
+    # R-3 (matrix, peer Phase-2): the repository's bound put the majority
+    # predicate INSIDE the slice (``WHERE UPPER(action)=? ORDER BY id DESC
+    # LIMIT n``), so the LIMIT never bound — a predicate selecting ~92% of
+    # rows has no index path and the planner must consider every row first.
+    # MEASURED on a scratch PostgreSQL 17.10 cluster, production-shaped
+    # corpus, EXPLAIN (ANALYZE, BUFFERS): 20K rows -> Seq Scan of 18,400 rows
+    # in 13.8 ms; 200K rows -> Seq Scan of 184,000 rows in 158.2 ms (11.5x
+    # the previous point, i.e. O(ledger), even with a RECENT cutoff because
+    # the filter sits inside the slice); the sibling ``get_decision_stats``,
+    # whose window filter sits OUTSIDE the slice, held a constant 2,000-row
+    # Index Scan Backward at 1.12-1.79 ms (141x faster at 200K).
+    #
+    # ``count_decisions`` still exists for its own callers; this route now
+    # computes both its numbers from the SAME bounded slice the sibling
+    # endpoints read, so every decision-analytics surface shares one window
+    # and one disclosed bound. ``group_by_reason=True`` groups the slice by
+    # ``reason_code`` - which for a NO_TRADE row IS the rejection reason - so
+    # one call answers the count and the distribution this row of
+    # ``docs/api/API_PLATFORM_V1.md`` §7 documents.
+    repo = get_audit_repo(request)
+    stats = repo.get_decision_stats(group_by_reason=True)
     page = _query_signals(
         request,
         where=" WHERE action = 'NO_TRADE'",
@@ -218,12 +240,18 @@ def decisions_no_trade(request: Request) -> Any:
         page=1,
         page_size=1,
     )
-    total = get_audit_repo(request).count_decisions(action="NO_TRADE")
     return ok(
         request,
         {
-            "total": total,
+            "total": stats["by_action"].get("NO_TRADE", 0),
             "latest": page["items"][0] if page["items"] else None,
+            # Additive: the rejection-reason distribution the API doc names.
+            "rejection_reasons": stats["by_group"],
+            "group_key": stats["group_key"],
+            # Disclosed bound: the numbers cover this latest-N slice, not the
+            # whole ledger (exhaustive when the slice covers the window).
+            "sampled_rows": stats["sampled_rows"],
+            "exhaustive": stats["exhaustive"],
         },
     )
 

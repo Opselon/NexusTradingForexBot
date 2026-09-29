@@ -92,7 +92,14 @@ CREATE TABLE IF NOT EXISTS shadow_decisions (
     shadow_exit_reason TEXT DEFAULT '',
     delta_r REAL,
     outcome_status TEXT DEFAULT 'NOT_RECORDED',
-    payload TEXT DEFAULT '{}'
+    champion_probabilities TEXT DEFAULT '[]',
+    challenger_probabilities TEXT DEFAULT '[]',
+    champion_strategy_id TEXT DEFAULT '',
+    challenger_strategy_id TEXT DEFAULT '',
+    hypothetical_risk_pct REAL DEFAULT 0.0,
+    hypothetical_volume REAL DEFAULT 0.0,
+    hypothetical_entry REAL DEFAULT 0.0,
+    hypothetical_exit REAL DEFAULT 0.0
 );
 """
 
@@ -355,7 +362,9 @@ _STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_shadow70_obs_model ON shadow70_observations(model_id, timestamp);",
     "CREATE INDEX IF NOT EXISTS idx_shadow70_events_ts ON shadow70_events(timestamp);",
     "CREATE INDEX IF NOT EXISTS idx_gov_events_ts ON model_governance_events(timestamp);",
-    "CREATE INDEX IF NOT EXISTS idx_gov_events_model ON model_governance_events(model_id, timestamp);",
+    # idx_gov_events_model (model_id, timestamp) REMOVED — 0 scans on the live
+    # ledger (see governance/store.py for the full rationale). Re-add here AND
+    # in governance/store.py if a caller ever filters by model_id.
     "CREATE INDEX IF NOT EXISTS idx_gov_state_model ON model_governance_state(model_id);",
     "CREATE INDEX IF NOT EXISTS idx_gov_comp_ts ON model_shadow_comparisons(timestamp);",
     # Lane B (PG upsert parity): INSERT OR REPLACE keyed on the natural key

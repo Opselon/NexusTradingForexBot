@@ -381,7 +381,16 @@ def make_portability_app() -> typer.Typer:
                 dst.close()
         finally:
             src.close()
-        payload = {"success": True, "backup_path": backup_path}
+        # R-9: the backup directory has no pruner of its own, so the producer
+        # applies retention immediately after writing (bounded + best-effort).
+        from nexus_scalp.hygiene.backup_retention import prune_backups
+
+        retention = prune_backups()
+        payload = {
+            "success": True,
+            "backup_path": backup_path,
+            "retention": retention.as_payload(),
+        }
         _emit(payload, json_mode, plain_title="SQLITE BACKUP CREATED")
 
     return app
@@ -584,6 +593,185 @@ def make_db_app(
         _emit(payload, json_mode, plain_title="DATABASE REPAIR")
         if failed:
             raise typer.Exit(1)
+
+    @app.command("compact-summary-echo")
+    def db_compact_summary_echo(
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+        dry_run: bool = typer.Option(
+            False, "--dry-run", help="Report the reclaimable bytes WITHOUT changing anything."
+        ),
+    ) -> None:
+        """DEEP-OPT L2: clear the AI-analysis summary echo (operator action).
+
+        The AI analysis row re-persisted the source article's summary verbatim
+        (~45.0 MB of a 45.0 MB column on production data). This clears only
+        rows whose summary is the source text or starts with it; a summary the
+        model actually authored is untouched. Read-only check first, then a
+        bounded UPDATE in one transaction. Never automatic: purge is an explicit
+        operator action (Part 5 rules 43/93).
+        """
+        from nexus_scalp.release.paths import get_runtime_workspace
+
+        ws = workspace or get_runtime_workspace()
+        news_db = ws / "artifacts" / "news.db"
+        if not news_db.exists():
+            _print_error(f"news database not found: {news_db}")
+            raise typer.Exit(1)
+
+        import sqlite3
+
+        con = sqlite3.connect(f"file:{news_db}?mode=ro", uri=True)
+        try:
+            total = con.execute(
+                "SELECT COUNT(*) FROM news_ai_analysis a "
+                "JOIN news_articles n ON n.article_id = a.article_id "
+                "WHERE a.summary IS NOT NULL AND a.summary <> '' "
+                "AND (a.summary = n.summary OR a.summary LIKE n.summary || '%')"
+            ).fetchone()[0]
+            rows = con.execute(
+                "SELECT a.ai_analysis_id, a.summary FROM news_ai_analysis a "
+                "JOIN news_articles n ON n.article_id = a.article_id "
+                "WHERE a.summary IS NOT NULL AND a.summary <> '' "
+                "AND (a.summary = n.summary OR a.summary LIKE n.summary || '%')"
+            ).fetchall()
+        finally:
+            con.close()
+
+        payload = {
+            "database": "news",
+            "echo_rows": total,
+            "echo_bytes": sum(len(s.encode("utf-8")) for _, s in rows),
+            "dry_run": dry_run,
+        }
+        if dry_run or not rows:
+            _emit(payload, json_mode, plain_title="SUMMARY ECHO (dry-run — no changes made)")
+            return
+
+        rw = sqlite3.connect(news_db)
+        try:
+            rw.execute("BEGIN")
+            cur = rw.executemany(
+                "UPDATE news_ai_analysis SET summary = '' WHERE ai_analysis_id = ?",
+                [(aid,) for aid, _ in rows],
+            )
+            rw.commit()
+            payload["cleared_rows"] = cur.rowcount or len(rows)
+        except sqlite3.Error as e:
+            rw.rollback()
+            _print_error(f"failed: {e}")
+            raise typer.Exit(1) from e
+        finally:
+            rw.close()
+        _emit(payload, json_mode, plain_title="SUMMARY ECHO CLEARED")
+
+    @app.command("compact-body-duplicate")
+    def db_compact_body_duplicate(
+        json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+        dry_run: bool = typer.Option(
+            False, "--dry-run", help="Report the reclaimable bytes WITHOUT changing anything."
+        ),
+        batch_size: int = typer.Option(
+            5000, "--batch-size", help="Rows cleared per bounded UPDATE batch."
+        ),
+    ) -> None:
+        """DEEP-OPT L3: clear the legacy body duplicate (operator action).
+
+        ``news_articles.body`` and ``news_articles.summary`` were both written
+        verbatim from the RSS feed before the pre-insert payload value gate
+        shipped. Measured on production data: 24,891 of 24,906 rows store
+        ``body`` byte-identical to ``summary`` — ~48.5 MB of pure duplicate.
+
+        This is a RECLAIM of legacy bytes, not a producer fix: the gate itself
+        is working (it shipped after the newest row in this ledger). Every body
+        reader routes through ``resolve_article_body``, which re-materializes
+        the text from ``summary`` when ``body`` is empty, so clearing the
+        duplicate is LOSSLESS for every downstream consumer.
+
+        Bounded key-range batches, one transaction each (Part 5 rule 45);
+        read-only scan first; never automatic (rules 43/93).
+        """
+        import sqlite3
+
+        from nexus_scalp.news.body_resolution import resolve_article_body
+        from nexus_scalp.release.paths import get_runtime_workspace
+
+        ws = workspace or get_runtime_workspace()
+        news_db = ws / "artifacts" / "news.db"
+        if not news_db.exists():
+            _print_error(f"news database not found: {news_db}")
+            raise typer.Exit(1)
+
+        con = sqlite3.connect(f"file:{news_db}?mode=ro", uri=True)
+        try:
+            total = con.execute(
+                "SELECT COUNT(*) FROM news_articles "
+                "WHERE body IS NOT NULL AND body <> '' AND body = summary"
+            ).fetchone()[0]
+            dup_bytes = con.execute(
+                "SELECT SUM(LENGTH(body)) FROM news_articles "
+                "WHERE body IS NOT NULL AND body <> '' AND body = summary"
+            ).fetchone()[0]
+        finally:
+            con.close()
+
+        payload = {
+            "database": "news",
+            "duplicate_rows": total,
+            "duplicate_bytes": int(dup_bytes or 0),
+            "dry_run": dry_run,
+        }
+        if dry_run or not total:
+            _emit(payload, json_mode, plain_title="BODY DUPLICATE (dry-run — no changes made)")
+            return
+
+        # Safety check: resolve_article_body must reproduce the summary exactly
+        # for the rows we are about to clear, or the reclaim would lose text.
+        con = sqlite3.connect(f"file:{news_db}?mode=ro", uri=True)
+        try:
+            mismatch = 0
+            for (summary,) in con.execute(
+                "SELECT summary FROM news_articles "
+                "WHERE body IS NOT NULL AND body <> '' AND body = summary "
+                "ORDER BY id DESC LIMIT 500"
+            ):
+                if resolve_article_body("", summary or "") != (summary or ""):
+                    mismatch += 1
+        finally:
+            con.close()
+        if mismatch:
+            _print_error(
+                f"aborted: {mismatch} sampled rows would NOT reconstruct from summary "
+                "(resolve_article_body contract broken) — refusing to clear"
+            )
+            raise typer.Exit(1)
+
+        rw = sqlite3.connect(news_db)
+        cleared = 0
+        try:
+            cursor = rw.execute(
+                "SELECT MIN(id), MAX(id) FROM news_articles "
+                "WHERE body IS NOT NULL AND body <> '' AND body = summary"
+            ).fetchone()
+            lo, hi = cursor[0], cursor[1]
+            while lo is not None and lo <= hi:
+                end = min(lo + batch_size - 1, hi)
+                cur = rw.execute(
+                    "UPDATE news_articles SET body = '' "
+                    "WHERE id >= ? AND id <= ? AND body <> '' AND body = summary",
+                    (lo, end),
+                )
+                rw.commit()
+                cleared += cur.rowcount or 0
+                lo = end + 1
+        except sqlite3.Error as e:
+            rw.rollback()
+            _print_error(f"failed: {e}")
+            raise typer.Exit(1) from e
+        finally:
+            rw.close()
+
+        payload["cleared_rows"] = cleared
+        _emit(payload, json_mode, plain_title="BODY DUPLICATE CLEARED")
 
     @app.command("doctor")
     def db_doctor(

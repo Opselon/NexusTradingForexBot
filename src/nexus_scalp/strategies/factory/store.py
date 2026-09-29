@@ -146,7 +146,9 @@ CREATE TABLE IF NOT EXISTS factory_loop_state (
     cycle_count INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_factory_cand_gen ON factory_candidates(generation_id, population_index);
-CREATE INDEX IF NOT EXISTS idx_factory_cand_hash ON factory_candidates(definition_hash);
+-- idx_factory_cand_hash (definition_hash) REMOVED — 0 scans on the live ledger
+-- and definition_hash is never a lookup key anywhere in the tree. See
+-- audit_repository._create_research_tables for the full rationale.
 CREATE INDEX IF NOT EXISTS idx_factory_fail_gen ON factory_failures(generation_id);
 CREATE INDEX IF NOT EXISTS idx_factory_events_gen ON factory_events(generation_id, created_at);
 """

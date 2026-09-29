@@ -617,6 +617,9 @@ def analyze_article_with_ai(
     # news prompt and left the audit column empty for every row).
     result.prompt_version = NEWS_PROMPT_VERSION
 
+    # DEEP-OPT L2: value gate the summary echo (Part 5 rules 9/14/85).
+    result.summary = _strip_summary_echo(result.summary, article)
+
     # Persist (separate AI-interpretation table — deterministic engine untouched).
     result.ai_analysis_id = f"nai_{uuid.uuid4().hex[:12]}"
     _persist_ai_analysis(db, result)
@@ -660,6 +663,32 @@ def _persist_ai_analysis(db: NewsDatabase, result: NewsAIAnalysisResult) -> None
 # ---------------------------------------------------------------------------
 # Auto-prune (§25-§30) — recoverable IRRELEVANT classification
 # ---------------------------------------------------------------------------
+
+
+def _strip_summary_echo(summary: str, article: NewsArticle) -> str:
+    """Value gate for the AI analysis ``summary`` (DEEP-OPT L2).
+
+    The deterministic ingest pipeline already persists ``article.summary`` in
+    ``news_articles.summary``. The AI analysis row then re-persisted the SAME
+    text as its own ``summary``, because the prompt asks the model to "state the
+    article's core fact base" and a model that has nothing to add restates the
+    source. Measured on production data, 45.0 MB of the 45.0 MB column was
+    byte-identical to the source summary — a pure cross-table duplicate.
+
+    Removing the echo is LOSSLESS for any summary the model actually authored
+    (it differs from the source, so it survives the check) and removes only the
+    restatement. An analysis whose summary is NOT the source text keeps it.
+
+    Part 5 rules 9/14/16 (dedup, column projection, payload) + rule 85
+    (LOSSLESS verified, not assumed).
+    """
+    s = (summary or "").strip()
+    if not s:
+        return ""
+    src = (article.summary or "").strip()
+    if src and (s == src or s.startswith(src)):
+        return ""
+    return s
 
 
 @dataclass

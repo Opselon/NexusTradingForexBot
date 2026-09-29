@@ -1,255 +1,3 @@
-#     11 heavy/duplicate-family files demoted to tests/extended_suite.txt (they run
-#     Forensic provenance: docs/testing/TEST_ARCHITECTURE.md + scripts/testing/verdicts.
-#     breaker, financial batch salvage + dead-letter were heavy-only until now;
-#     new behavioral batteries written by this mission (see the test files).
-#     on every main push + release SHA — never dropped, only moved off the PR lane).
-#     purge/embargo semantics) exercised on every push, not only heavy runs;
-#   "RANGING") while every producer emits RegimeType values or nothing at all
-#   'min_samples_to_reject' via 94ecf2c7->#199; 'forwarded', 'non-finite' at
-#   (26,161 byte-identical rows, ~80 MB news.db, lane-04 RC2 + lane-06 §3).
-#   (experience-paralysis, lane-08 §4). REJECT demotes to WARN below the shared
-#   (live p50=$0.23, guardian kills median $0.30; 24% of decisions, RC-2).
-#   -> ALL 14 setup families permanently NO_GO(REGIME_NOT_OK(UNKNOWN)) on
-#   ACCEPT infinity, so TickData(bid=1,ask=inf) -> spread inf and (inf,inf) ->
-#   BUG-223 NEXUS_AUDIT_DB seam -> tmp-path rows stamped CHAMPION). Pins:
-#   BUG-278 (2026-09-14 wave): repo-root pytest clobbered the PRODUCTION
-#   BUG-279 (2026-09-14 wave): feed-stall FAIL-LOUD — the 09-11 20:00Z freeze
-#   BUG-280 (2026-09-14 wave): the early-return order-frequency throttle was a
-#   BUG-281 (2026-09-14 wave): HIGH_SPREAD_CHOP chop band ($0.25/$0.18,
-#   BUG-282 (2026-09-14 wave): RSS pubDate is RFC-822 but the parser accepted
-#   BUG-283 (2026-09-14 wave): the hunter regime gate spoke ("TRENDING",
-#   BUG-284 (2026-09-14 wave): Phase-09 suitability REJECT fired on 1-4 sample
-#   BUG-285 (2026-09-14 wave, input-validation lane L11-1/2): pydantic gt/ge
-#   BUG-286 FINDING-2 class guard (structural, role-11): no zero-byte
-#   BUG-287 (role-11, 2026-09-15): PERF-WAVE R1 — the financial audit enqueue
-#   DEGRADED via runtime_risk_state), weekend suppression, recovery reset,
-#   EVALUATING floor (5, = StrategyEvaluator.min_samples_evaluating); at/above
-#   FREEZE_ALL (fail-closed direction kept).
-#   HARDCODED 60s floor pre-empting the configured cooldown_seconds=4.0 that
-#   NaN passed the MUST-FAIL-CLOSED price boundary; the broker-history reader
-#   Pins: RFC-822 parses to true event time, honest None + published_at_source
-#   RED-BEFORE 3/3 at 65d3cb50. test_obs_trace_chain (the OBS-TRACE decision
-#   Recalibrated to $0.45/$0.30 from the live broker window with machine
-#   The 60-s publish bucket inside the article-hash identity therefore
-#   UNREGISTERED at main — gate gap closed with the same wave it now tests.
-#   adapter + regime stamped into retrain records; UNKNOWN/CHOP/FREEZE stay
-#   agent17 OOS hard gate -> model-promotion OOS gate (empty-population refusal,
-#   cache -> EXEC_TRACE rate limit; plus fail-closed / LIVE-PAPER guard pins.
-#   calibrated on the 2026-05..08 p50=$0.04 era) froze NORMAL live spreads
-#   champion bundle (force_fresh mint + load_database_config ignoring the
-#   contract battery incl. the re-pinned unknown-regime diagnostic) was found
-#   cooldown policy; pins strict-config still blocks, no magic literal.
-#   duplicate-tick early-return skipped the whole pipeline. Pins: engine-owned
-#   env-seam precedence, governed-tree force_fresh refusal, quarantine
-#   evidence JSON pinned against the code defaults; extreme spreads still
-#   families - the evidence contract was inverted (zero evidence passes, ONE
-#   forwarded NaN/inf/inverted-OHLC bars into the canonical series (validation
-#   gate-first skeleton heal -> dead-letter bounded retention -> /health TTL
-#   identifier-shaped file may ever be TRACKED at repo root — three incidents
-#   ineligible (fail-closed); adapter domain pinned against the enum.
-#   live_freshness gate -> freshness characterization battery
-#   loss blocks): 473/1373 decisions (34.5%) died at SUITABILITY_BELOW_THRESHOLD
-#   memory; RED-BEFORE proven at 701bc50c.
-#   migration row-scoping + idempotency, src call-site ban.
-#   must never block the tick path longer than 100ms (old 2s floor), and R9 —
-#   no raw stdout print on the decision path. Behavior pins + source pins;
-#   non-finite BarData refused, get_historical_bars drops malformed rows loudly.
-#   of cmd-hook '<'-sweep sentinels reaching commits ('the',
-#   only ISO-8601 and silently fabricated now() on failure (88.1% of rows).
-#   position_state_machine + recovery_budget -> qa_deep state battery
-#   provenance, poll-stable timeless identity, legacy-DB column heal.
-#   provider_gate -> qa_deep provider-gate chaos battery
-#   ran 2.5 days: watchdog warned 1828x + re-emitted a HIGH incident every 15s
-#   re-minted per poll -> dedup/tombstone guards structurally unable to fire
-#   real data (lane-03 §3, verified 500 elite rows -> 0 GO). Pure vocabulary
-#   runtime_safety battery -> P0 halt/kill-switch persistence, hot-path circuit
-#   sizing fail-closed + protection ledger invariants + audit flush contract ->
-#   stall episode (one START, one CRITICAL escalation past 900s grace ->
-#   swallowed evaluations vs 1,469 decisions (96:1, RC-4). One authoritative
-#   the #204 head). Predicate unit pins + live-tree gate + .gitignore guard
-#   the floor the full NO_TRADE rejection semantics are pinned UNCHANGED.
-#   the post-policy COOLDOWN gate reads (same _last_signal_time field): 78,798
-#   update_engine (orchestrator/discovery/rollback) -> phase17 + BUG-237
-#   was report-only). Pins: allow_inf_nan=False on all tick price/volume fields,
-#   watchdog wiring reads (last-fresh stamp only on NEW ticks).
-#   while runtime_risk_state() kept claiming RUNNING and the BUG-169
-#  CR-007 registry entry records its protection. The comment above stays as the
-#  historical provenance the role-7 wave wrote into this file.)
-#  — measured 1252s aggregate; it now runs on main push + release SHA, and the
-# (BarHandler/RuntimeLoop/TickPipeline/ProtectionEngine) targeting
-# (monotonic stamps vs the caller's wall now_t) -> deep index scans every light
-# (native MT5 history/tick windows + the live maintenance-window entry guard),
-# (perf-wave R2) — stranded rows never returned to the ledger, dir grew unbounded.
-# (reconstruction 2026-09-14: the battery itself moved to tests/extended_suite.txt
-# (risk-engine ctor vs RiskConfig.max_allowed_lots).
-# --- wave-2 (2026-09-15): CR-named owners + mutation-proven P0 contracts promoted;
-# --- wave-2: CI-integrity meta-gates (fast, they police the tier system itself) ---
-# ---------------------------------------------------------------------------
-# 2026-09-16): a clean GitHub-release install died on launch with
-# A2 dataset/feature/label lineage bounded probe (Agent-2 dataset forensics, 2026-09-05):
-# AGENT-15 (2026-09-09): capital-protection boundary battery — exposure/spread
-# AGENT-2 OBSERVABILITY GUARDRAILS (2026-09-01): executable enforcement of the frozen log contract — storm bounds, redaction, dormant-worker, recovery, evidence preservation (docs/architecture/observability-log-contract.md). Full list + rationale: tests/critical_suite_observability.txt
-# AGENT4-SPRINT (2026-09-01): winner-protection geometry repair - BE trigger R-floor, lock offset 0.6p, tier floors 0.60/0.70/0.80 (regression suite)
-# ArtifactIntegrityError LOAD_REJECTED (model.pt missing) -> PYI abort, because
-# BREAKING/STALE encodings (4.0/5.0) exceeded the [-3,+3] family bound; producer-side
-# BUG-165: BUG-140 terminal-outcome P0 regression net (Hermes-DevOps, 2026-08-31)
-# BUG-166 (learning-loop battery): core experience/dataset/contract suites ran in NO pipeline
-# BUG-183: purge/embargo leakage-guard defaults wired into the production research path (Hermes-DevOps, 2026-09-01)
-# BUG-217 (Nexus-Main, 2026-09-02): 70D news state-encoding latent bound overflow -
-# BUG-256 (Agent-15 capital protection, 2026-09-11): persisted-safety-state
-# BUG-257 remainder (NSE-Swarm role 5, 2026-09-13): the P0-2 trust anchor
-# BUG-258 (Hermes-Swarm, 2026-09-11): news DB list caps silently truncated
-# BUG-264 (NSE-Swarm CI/GitOps, 2026-09-12): maintenance-window test-pin
-# BUG-266 (NSE-Swarm role 1 Architect, 2026-09-13): the shipped paper REPLAY
-# BUG-268 (NSE-Swarm role 2 Backend/Domain, 2026-09-13): minimum-loss grace
-# BUG-269 (NSE-Swarm role 3, 2026-09-13): docker starter provisioner mints
-# BUG-271 (NSE-Swarm role 4, 2026-09-13): governed in-place serving-artifact
-# BUG-274 (NSE-Swarm role 6, 2026-09-14): bound-seam wrapper-state leak class.
-# BUG-275 (NSE-Swarm role 6, 2026-09-14): hygiene cadence mixed clock domains
-# BUG-276 (NSE-Swarm role 7, 2026-09-14): baseline-skeleton CONSTRAINT shadow -
-# BUG-277 (NSE-Swarm role 9, 2026-09-14): doctor WARNING-actions filter matched
-# BUG-285 (NSE-Swarm role 10, 2026-09-15) — ID renumbered: swarm reserved BUG-278 mid-PR, Hermes wave took it: durable financial-overflow was write-only
-# BUG-288/289 (NSE-Swarm role 12, 2026-09-15) — audit-worker queue-adoption race (windows CI red
-# BUG-290/291 (NSE-Swarm role 1, 2026-09-15): perf-wave R7+R8 unbounded in-process guard
-# BUG-292 (NSE-Swarm role 2, 2026-09-15): perf-wave R6 — the C3 session spread-percentile
-# BUG-293 (NSE-Swarm input-validation lane, 2026-09-15): lane-11 L11-4 + L11-6
-# BUG-294 (NSE perf-bounds lane, 2026-09-15): behavioral regression net for the
-# BUG-296 (NSE-Swarm zero-state lane, 2026-09-15): nexus repair --model is the
-# BUG-297 (NSE-Swarm hot-path-sqlite lane, 2026-09-16): perf-wave R5 — the evaluator's
-# BUG-298 (packaged fresh-install START crash + first-run model acquisition,
-# BUG-299 (NSE-Swarm role4, 2026-09-16): the canonical-costs research bridge left
-# BUG-303 (NSE-Swarm role 9 Observability, 2026-09-17): CI env probe, pip repair,
-# BUG-305 (NSE-Swarm role 10 Accounting/Forensics, 2026-09-18): audit G1
-# BUG-306 (NSE-Swarm role 11 CI/GitOps, 2026-09-18): Windows CI critical suite
-# CHG-0048 (Nexus-Main UX, 2026-09-02): client UX safety contracts - mode-switch
-# COVERAGE FORENSIC MISSION (2026-09-09): gate-closure, not bloat.
-# Every push now gates the fetch->clean->train + dataset hardening contracts
-# Every push proves the system still wires together (user brief: one file, full chain).
-# First Setup & Local Training Environment Provisioning
-# G3/BUG-259/BUG-260) - conservative zero + rate-limited HOLD_AGE_FALLBACK.
-# I/O). Now an off-loop-refreshed in-process sketch with SQL-parity guarantees.
-# ML-ARCH-001 (ScalpNet 3-Class Head Sunset — legacy-4 surface audit evidence)
-# ML-CI-002 (ML Contract & Canonical Documentation Drift Prevention CI Gate)
-# ML-DATA-001 (Historical M1 Market Data Ingest & Parquet Storage Harness)
-# ML-EXP-001 (Immutable Experiment Registry & Artifact Manifest Schema)
-# ML-EXP-003 (Bounded Hyperparameter Grid Search Runner)
-# ML-FEAT-001 (50D Normalization End-to-End Parity Verification)
-# ML-FEAT-002 (Feature Importance, Collinearity Clustering & Redundancy Pruning)
-# ML-GOV-001 (Model Promotion Pipeline Pre-Flight & OOS Economic Gate Verification)
-# ML-LABEL-002 (Sample Uniqueness Weighting & Label Overlap Anti-Leakage)
-# ML-OBS-001 (Live Shadow Outcome Real-Time Resolution and Holding Metrics Wiring)
-# ML-PHASE1-DATA-CONTRACT (2026-09-21): the 70D canonical data contract,
-# ML-PLAT-001 (MT5 Runtime Boundaries & Remote Gateway Linux Parity Verification)
-# ML-PLAT-002 (Signed Official Model Bundle Verification & Staging Slot Isolation)
-# ML-RISK-001 (Position Replay & Economic Dataset Generation Engine)
-# ML-TRAIN-001 (Deterministic Training Engine, Seed Harness & AMP Precision)
-# ML-TRAIN-002 (Loss Function Exploration: Focal / Label Smoothing / Class-Balanced / Dice)
-# ML-TRAIN-003 (Optimizer & LR-Schedule factory)
-# ML-UI-001 (Deep Learning & Neural Model Studio Verification — 50D/70D)
-# ML-UI-002 (Model Studio E2E Dataset Ingestion, 50D/70D Normalization & Position-Dataset Pipeline)
-# ML-UI-003 (AI Hub: Model Registry, SQLite Catalog & Live Runtime Hot-Loader)
-# ML-VAL-001 (Purged Walk-Forward Fold Monotonicity & Embargo Boundary Audit)
-# ML-VAL-002 (Probability Calibration & Expected Calibration Error Evaluation)
-# MT5-inspired Truthful Backtest Report Engine & UI contract
-# MaintenanceCycle.run_cycle (2-sighting confirm, throttled, never blocks).
-# Membership is evidence-driven: every file answers "what real defect does it
-# Now one reused handle per (thread, timeout tier) through _connect_sqlite.
-# OBS-002 (2026-09-09): correlation ids (EXEC-/INC-/upd-/fh-/req_) are the
-# OBS-006 (2026-09-10): update lifecycle leaves log evidence — every stage
-# ONLY supported zero-state model bootstrap (E1/E4/E8) — sidecar-stamped mint,
-# P1/L5-L8/S10 extraction left 13 getattr(self, ...) reads in BOUND wrappers
-# PAPER/LIVE isolation, duplicate execution, DB economic integrity, model
-# PERF-DEADLETTER / PERF-HEALTH / PERF-EXEC-TRACE wave (2026-09-10):
-# PERF-WAVE R4 (NSE-Swarm role 6, 2026-09-16): remote gateway recurring tick
-# QA HARDENING MISSION (2026-09-07): critical-source floor mapping.
-# RAW->CLEAN->FEATURES->LABELS->DATASET->MODEL INPUT chain on a 5k-bar M1 tail via the canonical builder (BUG-246 gap-constant SSoT pin).
-# Registry of protected regressions: docs/testing/critical_regressions.md
-# SELF-UPDATE CLI AUDIT (2026-09-10): real-CLI operator matrix found verify exit-code
-# SMOKE-E2E (NexusMain, 2026-09-05): whole-application chain in ONE hermetic file
-# TASK-STORAGE-HYGIENE (2026-09-09): 10GB client-disk mission — storage policy
-# TIER 1 — PR/PUSH CRITICAL GATE (NSE radical test reconstruction 2026-09-14)
-# These suites existed but ran in NO CI gate, so the contract they pin was
-# Tick->50D->70D->ScalpNet->Policy->Risk->Paper dispatch->Audit DB->API v1
-# USER ACTION / NEXT guidance surface was permanently dead. Filter fix +
-# WAVE-2 ECOSYSTEM GATING (2026-09-05 forensic GAP-closure, QA verdict P0)
-# Worker idle-pass drain + file cap + poison dead-letter + recovery observability.
-# artifact contract) are mutation-validated: scripts/testing/mutation_check.py
-# b1fe0137; pins live in the already-gated test_outcome_flush_race_bug140.py) + telegram_notify CLI
-# behavior, not just its structure).
-# blocking fresh-install START smoke in release.yml.
-# boot-#2 load, CHAMPION/verified-bundle clobber refusals (E9), db-migrate lock
-# bounded-runtime class — eviction driven through the REAL dispatch seam, broken-
-# call-shape break (OS-leg + JS-lane finish notifications never delivered).
-# candle-intel/MSIE bar feeds + live chart overlays + breakeven-breach check
-# catch?" and runs deterministic + fast. Measured cost outliers moved to
-# collision — pins a provably-outside-window timestamp so the dispatch
-# composition-root attributes -> permanent defaults: PERF-02 5s throttles never
-# confirmation gate (BUG-194), connectivity truth, palette safety, i18n/RTL,
-# contract breaks (VERIFIED -> 5, tamper -> 5) + transient-cache FAIL + --json stdout
-# correlation id (incl. the -<hex8> uuid suffix the redactor previously ate).
-# cycle (12x intended IO). Wall-domain contract + RED-before pins.
-# decision humanization. 28 tests over real assets + create_app serve surface.
-# derived-registry reads (pre-trade tier-3 fallback twin of BUG-292) paid a raw
-# dies permanently after a legitimate retrain. Champion supersession seam.
-# engage (per-tick gateway RPC), hourly online-train gates fire per bar,
-# engine (allowlist cleanup), runtime retention re-prune, MT5 failure-storm
-# engine runs (the 09-11 bb1f0afe shape) serves poisoned weights silently
-# every default-costs backtest paid 25% of real cost and the robustness GATE8 stress
-# evidence; a cap-pinned gate fails closed ROBUSTNESS_NOT_SIMULABLE.
-# explicit caller limits (newest-500) -> dataset news-frame export lost the
-# fail-open boundaries — paper_state.json partial-apply on corrupt reload and
-# fingerprint -> P0-2 boot trust anchor refuses the NEXT cold boot; trading
-# fires at BOOT only; a foreign process re-landing drifted bytes while the
-# gate ever launched the built EXE in a start shape. Adds the model_provisioning
-# gate must never fall back to the host wall clock (clock-domain parity with
-# gate ran a per-call SQLite connect + same-day SELECT INSIDE policy evaluation (loop-thread
-# gate-first fresh DBs dead-letter every ON CONFLICT producer forever (15 of 17
-# gateway order payloads silently defaulting volume/price before broker dispatch.
-# heartbeat, lane report, and telegram notify entry point robustness.
-# idempotency / safe-mode batteries can never re-flake at a wall-clock minute.
-# labeling identity, fail-closed serving validator, provenance census, and
-# log<->DB join key and must survive the high-entropy redactor; secrets stay
-# maps (_processed_orders, _ai_flip_warn_times, AccountingCore._report_cache) -> BoundedLRUMap.
-# max_slippage_ticks at the 5.0 model default while calibrated friction is ~20 ticks —
-# mkdir (E6) and the cp1252 pre-bind panel safety (W12).
-# mode had zero production wiring (audit K2) - pins the paper-data factory as
-# module to have at least one critical-suite guardian. These entries map
-# not just the epoch-conversion helper. Class-wide AST guard included.
-# nothing provisioned a serving bundle for an INSTALLED release and no release
-# oldest analyzed history; windowed exports dropped rows INSIDE the window.
-# on cancel, paper/direct inline, execution untouched).
-# on the real OrderLifecycleManager composition root.
-# package (PATH A signed official download / PATH B local training), packaged
-# parity — official_install._sync_file os.fsync on "rb" fails with EBADF (CRT _commit
-# persist (async retrain / collapse recovery / hot-swap) orphans the CHAMPION
-# pollution; pinned by the contract battery below.
-# probe -> fresh-volume container restart loop. Servability-gated re-mint.
-# read offloaded from the event loop in RuntimeLoop._poll_tick (shielded, drained
-# redacted on the same path (artifacts/forensics/observability-audit.json).
-# remainder — the runtime broker-offset override must reach EVERY consumer
-# repair mirrors the dataset clamp semantics. Companion to BUG-190/BUG-197.
-# requires write access); test_model_studio.py charmap UnicodeDecodeError on UTF-8 Web/index.html.
-# scenarios were exact no-ops (PASS with max_degradation=0.0). Cap now derived from
-# scripts/ci/critical_manifest.py REQUIRES every execution-critical
-# shadow70/news-coverage gates landed by agent/feature/ML-PHASE1-DATA-CONTRACT.
-# sqlite3.connect per call on the loop thread and bypassed the repository's URI contract.
-# squeeze limits, dispatch idempotency, clamp insanity guards, config-contract pin
-# stdout log_signal pin, report-cache LRU under real browsing (pins the BUG-287/290/291
-# targets). Unique-index heal at baseline + boot + class-wide ON-CONFLICT guard.
-# tests/extended_suite.txt (Tier 2, main-push). P0 safety domains (risk math,
-# that were landed but not executed in any CI gate until this wave.
-# the previously-unguarded floor modules (drift closure, not bloat):
-# the rendered label "WARN" against the producer vocabulary "WARNING" -> the
-# the single PAPER construction path + fail-closed / loud-degrade semantics.
-# throttle, protected-data + concurrency + growth-clamp regression nets.
-# transition + blocked/failed/rollback verdict logs [UPDATE] with the upd-
-# unreachable. RED-BEFORE 10/10 proven at fd95a7b0.
-# until the next refusal. Alert-only champion-drift sentinel wired into
-# untrained weights that pass the digest gate then die on the P0 serving
-# unverified on every push.
-# vocabulary contract + class-wide verdict=="WARN" comparison guard.
-# wiring on the dispatch layer — the HALTED/KILL_SWITCH gate must stay live
-# workspace+configs anchoring, the labeled DEV STARTER fallback, and the
 tests/ci/test_beforepush_wrapper.py
 tests/ci/test_check_workflows.py
 tests/ci/test_classify_changes.py
@@ -269,6 +17,8 @@ tests/unit/news/ingest/test_bug282_rfc822_and_identity.py
 tests/unit/news/ingest/test_payload_value_gate.py
 tests/unit/news/ingest/test_payload_value_gate_benchmark.py
 tests/unit/news/test_payload_archival_lifecycle.py
+tests/unit/news/test_news_summary_echo.py
+tests/unit/news/test_news_body_duplicate_reclaim.py
 tests/unit/test_retention_payload_archival.py
 tests/unit/test_50d_normalization_parity.py
 tests/unit/test_70d_bug106_incremental_phase19.py
@@ -381,17 +131,9 @@ tests/unit/test_liquidity_engine_causality.py
 tests/unit/test_liquidity_engine_contract.py
 tests/unit/test_live_freshness_characterization.py
 tests/unit/test_live_shadow_outcome_resolution.py
+tests/unit/shadow/test_shadow_minimal_representation.py
 tests/unit/test_logging_correlation_ids.py
 tests/unit/test_logging_redaction.py
-# OBSERVABILITY GUARDRAILS (2026-09-01, Agent 2): the frozen log contract's
-# executable net — storm bounds, redaction, dormant-worker, recovery,
-# evidence preservation (docs/architecture/observability-log-contract.md;
-# full rationale: tests/critical_suite_observability.txt). Their own manifest
-# names these three as "removal/omission from the manifest must be treated as
-# a contract violation, not cleanup", and test_logging_redaction.py was the
-# only one of the three present here. The other two executed NOWHERE in CI
-# (not in this gate, not in extended, not in any heavy arm) while the comment
-# above advertised them as enforced. (CI-MANIFEST-OBS-001)
 tests/unit/test_observability_contract_freeze.py
 tests/unit/test_observability_guardrails.py
 tests/unit/test_loss_functions.py
@@ -460,9 +202,6 @@ tests/unit/test_regime_calibration_bug132.py
 tests/unit/test_runtime_dependency_closure.py
 tests/unit/test_release_system.py
 tests/unit/test_release_update_phase17.py
-# UPD-RETRY-001 (2026-09-29): connection-level failures must not be retried.
-# Pins the discovery/downloader retry contract the release suite depends on
-# (test_up46/test_up47 cover the TRANSIENT HTTP CODE half that must survive).
 tests/unit/test_update_retry_discipline.py
 tests/unit/test_replay_toggle_guard.py
 tests/unit/test_research_archive_round3.py
@@ -538,3 +277,16 @@ tests/unit/test_health_db_reason.py
 tests/unit/test_health_news_cycle.py
 tests/unit/test_bug544_audit_pg_bootstrap.py
 tests/unit/test_sec_codeql_secret_remediation.py
+tests/unit/shadow/test_payload_mirror_reclaim.py
+tests/unit/governance/test_gov_dead_index.py
+tests/unit/test_r1_health_domain_hot_path_memo.py
+tests/unit/test_r9_backup_retention.py
+tests/contracts/phase2/test_deep_opt_l4_evidence_body.py
+tests/unit/factory/test_factory_dead_index.py
+tests/unit/shadow/test_sqlite_mirror_reclaim.py
+tests/contracts/phase2/test_deep_opt_l4_evidence_body_pg.py
+tests/unit/test_r3_no_trade_bounded_tail.py
+tests/unit/test_r3_v1_decision_count_bounded.py
+tests/unit/test_l7_archive_restore_roundtrip.py
+tests/unit/test_l7_news_archive_retirement.py
+tests/unit/test_l7_managed_db_retirement.py
