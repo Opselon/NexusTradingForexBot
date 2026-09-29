@@ -1018,7 +1018,7 @@ jobs:
         continue-on-error: true
         run: |
           python scripts/ci/aggregate_provider_runtime.py \
-            --root full-runtime-results
+            --root full-runtime-results \
             --output runtime-provider-overall.json
 
       - name: Upload provider overall runtime evidence
