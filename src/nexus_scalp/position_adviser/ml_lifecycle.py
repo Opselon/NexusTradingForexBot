@@ -110,6 +110,26 @@ class MLPositionControllerLifecycle:
     # -------------------------------------------------------- persistence
 
     def _persist(self, rec: MLLifecycleRecord) -> None:
+        """Persist through the injected store (AdviserSettingsStore-compatible).
+
+        The store's own keys (position_adviser.*) remain the single
+        authoritative record — no parallel key family (§25).
+        """
+        store = self._settings
+        # AdviserSettingsStore-shaped API (load/save_selection/save_activation)
+        if hasattr(store, "save_selection") and hasattr(store, "save_activation"):
+            store.save_selection(
+                model_id=rec.model_id,
+                weights_path=rec.model_path,
+                scaler_path=rec.scaler_path,
+            )
+            store.save_activation(
+                MLLifecycleState.ACTIVE.value
+                if rec.enabled
+                else MLLifecycleState.DISABLED.value
+            )
+            return
+        # test/fake settings service: generic get/set
         p = _SETTINGS_PREFIX
         s = self._settings
         s.set(f"{p}.enabled", rec.enabled, value_type="bool", actor="ml_lifecycle")
@@ -134,6 +154,20 @@ class MLPositionControllerLifecycle:
         )
 
     def read_persisted(self) -> MLLifecycleRecord:
+        store = self._settings
+        rec = MLLifecycleRecord()
+        if hasattr(store, "save_selection") and hasattr(store, "load"):
+            s = store.load()
+            rec.enabled = str(s.activation).upper() in ("PAPER", "LIVE")
+            rec.model_id = s.model_id
+            rec.model_path = s.weights_path
+            rec.scaler_path = s.scaler_path
+            rec.schema_version = self._schema_version
+            rec.controller_mode = (
+                Controller.ML.value if rec.enabled else Controller.LEGACY.value
+            )
+            return rec
+        # generic get/set fallback (tests)
         p = _SETTINGS_PREFIX
         s = self._settings
         import json
@@ -143,7 +177,6 @@ class MLPositionControllerLifecycle:
             prev = json.loads(raw_prev.value) if raw_prev and raw_prev.value else {}
         except Exception:
             prev = {}
-        rec = MLLifecycleRecord()
         if (v := s.get(f"{p}.enabled")) is not None:
             rec.enabled = bool(v.value)
         if (v := s.get(f"{p}.model_id")) is not None:

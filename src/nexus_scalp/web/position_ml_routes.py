@@ -18,22 +18,52 @@ router = APIRouter(prefix="/api/position-ml", tags=["position-ml"])
 _LIFECYCLE: Any = None  # wired by register_position_ml_routes
 
 
-def get_ml_lifecycle() -> Any:
+def _ml_lifecycle() -> Any:
+    """The ML lifecycle bound to the REAL adviser service + settings store.
+
+    Reuses AdviserSettingsStore (position_adviser.* keys) as the single
+    authoritative persistence (§25 — no parallel state store) and the
+    process-wide adviser service singleton. Built lazily on first use; the
+    OrderManager's ownership gate is wired when the engine composes it.
+    """
+    global _LIFECYCLE
     if _LIFECYCLE is None:
-        raise RuntimeError("ML lifecycle not wired (register_position_ml_routes not called)")
+        from nexus_scalp.position_adviser.feature_schema import POSITION_FEATURE_SCHEMA_VERSION
+        from nexus_scalp.position_adviser.ml_lifecycle import MLPositionControllerLifecycle
+        from nexus_scalp.position_adviser.ownership import PositionOwnershipGate
+        from nexus_scalp.web.position_adviser_routes import (
+            _settings_database,
+            get_position_adviser_service,
+        )
+        from nexus_scalp.position_adviser.settings_store import AdviserSettingsStore
+
+        svc = get_position_adviser_service()
+        lc = MLPositionControllerLifecycle(
+            settings_service=AdviserSettingsStore(_settings_database()),
+            gate=PositionOwnershipGate(),
+            schema_version=POSITION_FEATURE_SCHEMA_VERSION,
+        )
+        # the adviser service's own state machine remains the model holder;
+        # the lifecycle delegates load/unload to it so there is ONE runtime.
+        lc.wire_model_runtime(
+            loader=lambda w, s: svc.load(w, s),
+            unloader=svc.unload,
+        )
+        _LIFECYCLE = lc
     return _LIFECYCLE
 
 
-def register_position_ml_routes(app: Any, lifecycle: Any) -> None:
+def register_position_ml_routes(app: Any, lifecycle: Any | None = None) -> None:
     global _LIFECYCLE
-    _LIFECYCLE = lifecycle
+    if lifecycle is not None:
+        _LIFECYCLE = lifecycle
     app.include_router(router)
 
 
 @router.get("/status")
 def route_ml_status() -> dict[str, Any]:
     """Full lifecycle + ownership + tensor-contract state (§26 contract)."""
-    lc = get_ml_lifecycle()
+    lc = _ml_lifecycle()
     gate = lc._gate
     contract = schema_contract()
     st = lc.status()
@@ -71,7 +101,7 @@ def route_ml_schema() -> dict[str, Any]:
 
 @router.get("/ownership/audit")
 def route_ml_ownership_audit(limit: int = 50) -> dict[str, Any]:
-    lc = get_ml_lifecycle()
+    lc = _ml_lifecycle()
     return {"status": "OK", "audit": lc._gate.audit_tail(limit)}
 
 
@@ -79,7 +109,7 @@ def route_ml_ownership_audit(limit: int = 50) -> dict[str, Any]:
 def route_ml_activate(req: dict[str, Any]) -> dict[str, Any]:
     """Persist + load + activate (§14). Returns restart_required when the
     runtime cannot hot-load (e.g. torch lazy-init mid-loop)."""
-    lc = get_ml_lifecycle()
+    lc = _ml_lifecycle()
     out = lc.activate(
         model_id=str(req.get("model_id", "")),
         model_path=str(req.get("model_path", "")),
@@ -92,7 +122,7 @@ def route_ml_activate(req: dict[str, Any]) -> dict[str, Any]:
 
 @router.post("/disable")
 def route_ml_disable() -> dict[str, Any]:
-    lc = get_ml_lifecycle()
+    lc = _ml_lifecycle()
     return lc.disable()
 
 
@@ -112,7 +142,7 @@ def _param_count() -> int | None:
     try:
         import torch  # noqa: F401
 
-        lc = get_ml_lifecycle()
+        lc = _ml_lifecycle()
         model = getattr(lc, "_loaded_model", None)
         if model is None:
             return None
