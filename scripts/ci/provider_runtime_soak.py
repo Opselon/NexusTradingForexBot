@@ -797,8 +797,6 @@ def main() -> int:
                     db_runs.append(run_db_battery(args.provider, "late-boot", max_tables=40))
                 except Exception as exc:
                     failure = f"late-boot database battery crashed: {type(exc).__name__}: {exc}"
-                        type(exc).__name__, exc
-                    )
                     break
                 next_db_pass += 60
 
