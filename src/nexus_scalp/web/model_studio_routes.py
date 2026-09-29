@@ -3281,7 +3281,12 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
                 fn()
                 checks.append({"name": name, "passed": True, "detail": "ok"})
             except Exception as exc:
-                checks.append({"name": name, "passed": False, "detail": str(exc)})
+                # The check battery is returned verbatim in an HTTP response, so
+                # the per-check detail must never carry exception text (it can
+                # contain tensor shapes, artifact paths, SQL or credentials).
+                # The real failure is logged with its traceback.
+                logger.warning("switch_preview check %s failed: %s", name, exc, exc_info=True)
+                checks.append({"name": name, "passed": False, "detail": "CHECK_FAILED"})
 
         weights_path = REPO_ROOT / rec.weights_path
         _check(

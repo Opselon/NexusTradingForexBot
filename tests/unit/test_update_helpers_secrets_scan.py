@@ -90,11 +90,17 @@ def test_scanner_ignores_base_gateway_server_literal(tmp_path: Path, helpers_mod
 
 
 def test_scanner_still_catches_a_real_bot_token(tmp_path: Path, helpers_module: Any) -> None:
-    """The bot-token pattern is untouched and must still fire."""
+    """The bot-token pattern is untouched and must still fire.
+
+    The fixture uses a synthetic value with the exact Telegram token SHAPE
+    (``<bot_id>:<secret_part>``) so the pattern is genuinely exercised, but it
+    is not a credential: a deterministic fixture marker that no bot was ever
+    issued. It cannot authenticate anywhere.
+    """
     root = tmp_path / "portable"
     root.mkdir(parents=True, exist_ok=True)
     (root / "live.yaml").write_text(
-        'bot_token: "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"\n',
+        'bot_token: "000000000:SYNTHETIC_TEST_FIXTURE_NOT_A_CREDENTIAL_xxxxxxxxxx"\n',
         encoding="utf-8",
     )
     rc = helpers_module.action_scan_tree([str(root)])

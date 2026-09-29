@@ -148,13 +148,21 @@ def _definitions(driver: Any) -> dict[str, str]:
 
 
 def ensure_analytics_views(driver: Any) -> dict[str, dict[str, str]]:
-    """Create analytics views and return ``created``, ``exists`` or ``FAILED`` per view."""
+    """Create analytics views and return ``created``, ``exists`` or ``FAILED`` per view.
+
+    The ``error`` value on a FAILED view is a fixed public-safe string: never the
+    exception text, class name or traceback (those can carry SQL fragments,
+    schema names and filesystem paths to an HTTP client). The real failure is
+    logged with the traceback instead.
+    """
     results: dict[str, dict[str, str]] = {}
     try:
         definitions = _definitions(driver)
     except Exception as exc:
-        reason = f"{type(exc).__name__}: {exc}"
-        return {name: {"status": "FAILED", "error": reason} for name in _VIEW_TABLES}
+        logger.error("Analytics view definitions failed: %s", exc, exc_info=True)
+        return {
+            name: {"status": "FAILED", "error": "VIEW_DEFINITION_FAILED"} for name in _VIEW_TABLES
+        }
     for name, ddl in definitions.items():
         try:
             # SQLite accepts CREATE VIEW IF NOT EXISTS; PostgreSQL does not, so
@@ -165,9 +173,8 @@ def ensure_analytics_views(driver: Any) -> dict[str, dict[str, str]]:
                 driver.execute(ddl)
                 results[name] = {"status": "created"}
         except Exception as exc:
-            reason = f"{type(exc).__name__}: {exc}"
-            logger.warning("Analytics view %s failed: %s", name, reason)
-            results[name] = {"status": "FAILED", "error": reason}
+            logger.warning("Analytics view %s failed: %s", name, exc, exc_info=True)
+            results[name] = {"status": "FAILED", "error": "VIEW_CREATE_FAILED"}
     return results
 
 
