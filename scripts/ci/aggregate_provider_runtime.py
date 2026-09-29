@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +30,7 @@ def main() -> int:
     lines = [
         "## Provider Runtime Certification",
         "",
-        "Overall: **{}**".format(overall),
+        f"Overall: **{overall}**",
         "",
         "| Provider | Status | Soak | API queries | DB queries | Log errors | Warnings | Tracebacks |",
         "|---|---|---:|---:|---:|---:|---:|---:|",
@@ -56,16 +57,13 @@ def main() -> int:
             and item.get("type") not in {"process-log", "traceback"}
         ]
         lines.append(
-            "| {provider} | {status} | {soak:.1f}s | {api} | {db} | {errors} | {warnings} | {tracebacks} |".format(
-                provider=report.get("provider", "?"),
-                status=report.get("status", "?"),
-                soak=float(report.get("actual_soak_sec", 0)),
-                api=int(report.get("api", {}).get("query_count_total", 0)),
-                db=int(report.get("database", {}).get("query_count_total", 0)),
-                errors=max(len(obs.get("errors", [])), len(error_findings)),
-                warnings=len(obs.get("warnings", [])) + len(warning_findings),
-                tracebacks=len(obs.get("tracebacks", [])),
-            )
+            f"| {report.get('provider', '?')} | {report.get('status', '?')} | "
+            f"{float(report.get('actual_soak_sec', 0)):.1f}s | "
+            f"{int(report.get('api', {}).get('query_count_total', 0))} | "
+            f"{int(report.get('database', {}).get('query_count_total', 0))} | "
+            f"{max(len(obs.get('errors', [])), len(error_findings))} | "
+            f"{len(obs.get('warnings', [])) + len(warning_findings)} | "
+            f"{len(obs.get('tracebacks', []))} |"
         )
 
     payload = {
@@ -83,21 +81,19 @@ def main() -> int:
 
     summary = "\n".join(lines) + "\n"
     print(summary)
-    summary_path = Path(__import__("os").environ["GITHUB_STEP_SUMMARY"])
+    summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
     with summary_path.open("a", encoding="utf-8") as handle:
         handle.write(summary)
 
     for report in failed:
         print(
-            "::error title=Provider runtime certification failed::{}: status={}".format(
-                report.get("provider", "?"), report.get("status")
-            )
+            f"::error title=Provider runtime certification failed::"
+            f"{report.get('provider', '?')}: status={report.get('status')}"
         )
     for report in warned:
         print(
-            "::warning title=Provider runtime certification has warnings::{} has warnings; inspect provider_runtime_soak.json".format(
-                report.get("provider", "?")
-            )
+            f"::warning title=Provider runtime certification has warnings::"
+            f"{report.get('provider', '?')} has warnings; inspect provider_runtime_soak.json"
         )
 
     return 0 if overall != "FAIL" else 1
