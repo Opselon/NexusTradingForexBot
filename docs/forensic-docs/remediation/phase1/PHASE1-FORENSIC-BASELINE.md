@@ -1,7 +1,7 @@
 # Phase 1 — Zero-Write Forensic Baseline (Database Remediation Program)
 
-Generated (UTC): 2026-09-29T02:35:54Z
-Baseline commit (this branch): `8c80747a99c0aa006d76cee51184984edad5f216`
+Generated (UTC): 2026-09-29T02:40:50Z
+Baseline commit (this branch): `6c8de59b8f513e2c65d2d61f299a824f0b9f5e89`
 
 Part 4 of the execution protocol, Phase 1. **Zero-write.** The PostgreSQL
 session is opened with `default_transaction_read_only = on` and every probe
@@ -365,32 +365,32 @@ Each finding carries a stable ID. Severity is *measured*, not assigned by feel.
 
 **LIMITATION.** A disabled flag is not proof the data is unread — batch research jobs may still query it. Consumer proof is required first.
 
-### F-011 — PostgreSQL is the sole runtime provider; SQLite is confined to settings storage
+### F-011 — PostgreSQL is the sole runtime provider, but SQLite is NOT merely settings storage
 
-**FACT.** The provider was chosen deliberately by the operator, so there is no silent provider fallback in play — but there is also no SQLite runtime workload left to remediate.
+**FACT.** The provider was chosen deliberately by the operator, so there is no silent provider fallback in play. **However, an earlier revision of this finding wrongly claimed SQLite was confined to settings storage - see C-1, which measures a multi-GB SQLite footprint.**
 
 **MEASUREMENT.**
 - `database.provider` = `postgresql` (source **USER_SETTINGS**, not a wave)
 - `database.provider_transition_state` = active `postgresql`, target `postgresql`
-- largest SQLite database found: `app_settings.db` 155,648 bytes, 5 tables
-- `ai_provider_decisions.db` 24,576 bytes with **0 rows**
-- repo `data/*.db` and root `app_settings.db` are **0-byte placeholders**
+- `ai_provider_decisions.db` 24,576 bytes with **0 rows** (orphan candidate)
+- the settings store `app_settings.db` is 155,648 bytes / 5 tables, `quick_check = ok`
+- **correction (C-1):** `artifacts/audit.db` 416.4 MB is the engine's audit write target, `artifacts/news.db` 230.3 MB, plus a 1.25 GB `audit_backup_*.db` set
 
-**REPRODUCTION.** `baseline_collect_sqlite.py` over the discovered SQLite files, plus the `application_settings` table read.
+**REPRODUCTION.** `baseline_collect_sqlite.py` over the actual runtime store paths, plus the `application_settings` table read.
 
-**ROOT CAUSE.** N/A — this is a routing fact, not a defect.
+**ROOT CAUSE.** N/A for the provider choice. The SQLite volume is a separate lifecycle question: no owner, no retention, and three near-identical backups on a live path.
 
 **CHANGE.** None.
 
-**BEFORE.** SQLite total: ~213 KB across 3 real files, all `quick_check = ok`.
+**BEFORE.** SQLite footprint: **~2.6 GB** across the repo's `artifacts/` stores and backups (see C-1), not the ~213 KB an earlier revision reported from a too-shallow sweep.
 
-**AFTER.** N/A.
+**AFTER.** PENDING.
 
 **TRADEOFF.** None.
 
-**TEST.** Sec.44 SQLite WAL/restart tests remain cheap to run but currently have almost no runtime surface.
+**TEST.** Sec.44 SQLite WAL/restart tests and sec.72 SQLite acceptance now apply in full, and the 1.25 GB backup set needs an owner under sec.49/§90.
 
-**LIMITATION.** The 0-byte `data/*.db` files are placeholders whose real runtime homes were not definitively identified in this pass; the settings store is definitive, the domain stores are not.
+**LIMITATION.** The settings store is definitively located; the domain stores' runtime homes are established for `artifacts/` but the split between the two checkouts' copies is not yet disambiguated.
 
 ---
 
@@ -464,4 +464,137 @@ Stated plainly so Phase 2 does not inherit a false sense of coverage:
 - silent provider fallback — none found; provider is an explicit USER_SETTINGS
   choice (F-011)
 - benchmark disconnected from production path — n/a; no benchmark attempted
+
+## 9. Corrections, supersession, and cross-reference to prior audits
+
+This section is appended, not back-edited: the errors it records were in an
+earlier revision of this document and are corrected here with their evidence, so
+the audit trail shows what changed and why.
+
+### C-1 — CORRECTION: the SQLite footprint was understated by ~12,000x
+
+The first SQLite sweep used `-maxdepth 4` from `$HOME`. That matched the repo's
+`data/*.db` **0-byte placeholders** and missed the real stores under
+`artifacts/`, which sit deeper. The initial claim of ~213 KB total was wrong.
+
+Measured footprint of the SQLite stores that matter:
+
+Path                                                           | Size
+---------------------------------------------------------------|--------
+`NexusTradingForexBot/artifacts/audit.db`                      | 416.4 MB (live write target)
+`NexusTradingForexBot/artifacts/backups/audit_backup_*.db` (x3)| 1.25 GB (three near-identical backups)
+`NexusTradingForexBot/artifacts/news.db`                       | 230.3 MB
+`NexusTradingForexBot/artifacts/strategies.db`                 | 29.1 MB
+`NexusTradingForexBot/artifacts/candle_intel.db`               | 10.5 MB
+`nse-review-main/artifacts/audit.db`                           | 415.4 MB (second checkout)
+`nse-review-main/artifacts/news.db`                            | 230.3 MB
+
+**Consequence for F-011.** The earlier statement that SQLite is confined to
+settings storage with almost no runtime surface left is **withdrawn**. SQLite
+carries the engine's audit write target plus a 1.25 GB backup set. Sec.72 SQLite
+acceptance and the sec.44/§49 lifecycle questions apply in full, and the backup set
+is an unowned growth source in its own right.
+
+### C-2 — SUPERSESSION: the prior audit's P0 provider split is STALE at main
+
+The 2026-09-28 forensic audit's headline P0 ('R2') states that
+`AuditRepository.log_signal()` begins with `if not self._is_sqlite: return`, so the
+engine writes audit data to SQLite while the UI polls PostgreSQL. **At the current
+`origin/main` that is no longer true.**
+
+Verified at `adbf05af` (`src/nexus_scalp/adapters/database/audit_repository.py`):
+
+- `log_signal` (line 3922) has **no** component/config early return; it proceeds
+  straight to building the record and writing it.
+- `self._write_plane = self._build_write_plane()` (line 442), started at line 537
+  and flushed at lines 3263-3267 -> an `AuditWritePlane`
+  (`adapters/database/audit_write_plane.py`) is the non-SQLite write path.
+- CHG-0067 converted the non-SQLite **read** gates from fail-silent defaults to
+  fabric read-plane routing, with `provider_read_degraded_total` plus a
+  rate-limited structured warning when no plane is registered.
+- `_is_sqlite` still appears 54 times, but the remaining guards are routed or
+  explicitly observable rather than silent.
+
+**Consequence.** R2 must not be re-opened as an open P0, and the earlier F-011
+phrasing implying a live write/read split is withdrawn. What *remains* true and
+measurable is narrower: PG `audit_signals` holds 7,453 live rows against an id
+sequence at 1.95M, while SQLite `audit.db` holds 11,266 rows whose newest entry was
+89.3 h old at the prior audit - two stores with different freshness, which is a
+reconciliation question, not a provider-split blocker.
+
+### C-3 — REFINEMENT of F-003: audit_orders is the churn + index-scan hotspot
+
+`audit_orders` is not merely index-scan-heavy; it is the **most rewritten table in
+the database**:
+
+- `n_tup_ins` = 8,799 but `n_tup_del` = 44,394 against only
+  2,457 live rows -> the table is being rewritten wholesale
+- `idx_scan` = 3,229,612 and `idx_tup_fetch` = 61,661,025
+  (25,096 fetches per live row)
+- every other table's insert:delete ratio is under 3x; this one is ~5x with a
+  live set smaller than either counter
+
+This makes F-003 the strongest sec.24/§28 lifecycle candidate in the baseline and
+raises its priority well above what its row count suggests.
+
+### C-4 — REFINEMENT of F-005: the duplicate index pairs ARE present
+
+The first F-005 revision reported '0 duplicate groups' because it compared full
+index **definitions**, which differ by the `UNIQUE`/`PRIMARY` keyword. Comparing
+**key columns** per table finds 4 pairs, matching the prior audits:
+
+table                      | key columns       | reclaimable plain copy          | bytes
+---------------------------|-------------------|---------------------------------|--------
+`news_analyzed_hashes`     | (article_hash)    | `idx_news_analyzed_hashes_hash` | 2,940,928
+`news_junk_hashes`         | (article_hash)    | `idx_news_junk_hashes_hash`     | 1,187,840
+`audit_experience_outcomes`| (idempotency_key) | `idx_exp_outcome_key`           | 303,104
+`release_metadata`         | (key)             | `idx_release_metadata_key`      | 8,192
+**total reclaimable**      |                   |                                 | **4,440,064 (4.23 MB)**
+
+Each plain copy is key-identical to a UNIQUE/constraint index on the same table, so
+dropping it is lossless for uniqueness enforcement. Sec.49 still requires the DDL /
+constraint / migration-reference / foreign-tooling gate before any drop.
+
+Note the scan asymmetry that also argues for these: on
+`audit_experience_outcomes` the *plain* copy carries 2,801,729 scans while the
+unique constraint index carries 3,791 - i.e. the redundant index is absorbing
+work the constraint index could serve.
+
+### C-5 — REFINEMENT of F-008: deletion is rare, and concentrated in the small tables
+
+Only **11 of 126 tables** record any deletion at all, and the tables with
+zero deletions include the largest ones:
+
+| table | inserts | live | total |
+|---|---|---|---|
+| `research_events` | 87,951 | 87,951 | 25 MB |
+| `model_governance_events` | 59,180 | 59,180 | 40 MB |
+| `shadow_decisions` | 55,342 | 55,342 | 94 MB |
+| `research_gates` | 27,984 | 27,984 | 51 MB |
+| `news_articles` | 25,144 | 25,144 | 80 MB |
+| `research_evidence` | 19,228 | 19,228 | 44 MB |
+| `candle_patterns` | 10,758 | 10,758 | 3120 kB |
+| `audit_broker_orders` | 10,743 | 10,743 | 2552 kB |
+
+This strengthens F-008: the storage that dominates the database sits on a pure
+append path with no observed reclamation, while every one of the 11 tables that
+*does* delete is under 15 MB. Lifecycle work should target the append tables, not
+the churning ones.
+
+### C-6 — CORROBORATION: three independent audits agree on the instrumentation gap
+
+`postgresql-deep-performance-storage-audit-2026-09-27.md`,
+`postgresql-master-performance-audit-2026-09-27.md` and
+`postgresql-forensic-audit-2026-09-28.md` all independently report
+`pg_stat_statements` absent with an empty `shared_preload_libraries`, and all three
+mark their top-query table `N/A` rather than fabricating one. Section 2's
+NOT MEASURABLE finding is therefore corroborated by three prior passes, not inferred
+from a single probe.
+
+Known drift between those three documents (unreconciled, and NOT inherited here):
+database size 501 MB (both 09-27) vs 588 MB (09-28); buffer-hit ratio 98.7% /
+98.21% / 99.9% across three different windows; index count 445 (user indexes) vs
+281 (public-schema indexes) - a definitional difference, not a contradiction.
+
+---
 

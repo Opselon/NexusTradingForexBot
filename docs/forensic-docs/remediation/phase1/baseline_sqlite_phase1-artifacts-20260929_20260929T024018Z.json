@@ -1,0 +1,5214 @@
+{
+  "collected_at_utc": "20260929T024018Z",
+  "label": "phase1-artifacts-20260929",
+  "databases": [
+    {
+      "path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\audit.db",
+      "size_bytes": 436670464,
+      "mtime": "2026-09-28T01:30:02.100303+00:00",
+      "wal_present": true,
+      "shm_present": true,
+      "wal_size_bytes": 0,
+      "pragmas": {
+        "journal_mode": "wal",
+        "synchronous": 2,
+        "foreign_keys": 0,
+        "auto_vacuum": 0,
+        "page_size": 4096,
+        "page_count": 106609,
+        "freelist_count": 734,
+        "max_page_count": 4294967294,
+        "encoding": "UTF-8",
+        "user_version": 0,
+        "schema_version": 200,
+        "cache_size": -2000,
+        "mmap_size": 0,
+        "busy_timeout": 5000,
+        "journal_size_limit": -1,
+        "wal_autocheckpoint": 1000,
+        "wal_checkpoint_passive": [
+          0,
+          0,
+          0
+        ]
+      },
+      "integrity_check": "ok",
+      "sqlite_master": [
+        {
+          "type": "index",
+          "name": "idx_anomaly_events_ticket",
+          "tbl_name": "anomaly_events",
+          "rootpage": 12327,
+          "sql_len": 64
+        },
+        {
+          "type": "index",
+          "name": "idx_anomaly_events_type",
+          "tbl_name": "anomaly_events",
+          "rootpage": 12328,
+          "sql_len": 68
+        },
+        {
+          "type": "index",
+          "name": "idx_audit_ledger_close_time",
+          "tbl_name": "audit_ledger",
+          "rootpage": 12425,
+          "sql_len": 69
+        },
+        {
+          "type": "index",
+          "name": "idx_audit_signals_dedup",
+          "tbl_name": "audit_signals",
+          "rootpage": 75,
+          "sql_len": 78
+        },
+        {
+          "type": "index",
+          "name": "idx_autopsy_strategy",
+          "tbl_name": "trade_autopsies",
+          "rootpage": 62,
+          "sql_len": 65
+        },
+        {
+          "type": "index",
+          "name": "idx_behavior_analysis_ticket",
+          "tbl_name": "behavior_analysis",
+          "rootpage": 12325,
+          "sql_len": 70
+        },
+        {
+          "type": "index",
+          "name": "idx_behavior_analysis_version",
+          "tbl_name": "behavior_analysis",
+          "rootpage": 12326,
+          "sql_len": 98
+        },
+        {
+          "type": "index",
+          "name": "idx_behavior_pattern",
+          "tbl_name": "behavior_detections",
+          "rootpage": 64,
+          "sql_len": 65
+        },
+        {
+          "type": "index",
+          "name": "idx_behavior_ticket",
+          "tbl_name": "behavior_detections",
+          "rootpage": 63,
+          "sql_len": 63
+        },
+        {
+          "type": "index",
+          "name": "idx_broker_deals_position",
+          "tbl_name": "audit_broker_deals",
+          "rootpage": 72,
+          "sql_len": 73
+        },
+        {
+          "type": "index",
+          "name": "idx_broker_trades_exit",
+          "tbl_name": "audit_broker_trades",
+          "rootpage": 74,
+          "sql_len": 69
+        },
+        {
+          "type": "index",
+          "name": "idx_events_archive_occurred",
+          "tbl_name": "research_events_archive",
+          "rootpage": 106604,
+          "sql_len": 81
+        },
+        {
+          "type": "index",
+          "name": "idx_events_strategy",
+          "tbl_name": "research_events",
+          "rootpage": 12733,
+          "sql_len": 77
+        },
+        {
+          "type": "index",
+          "name": "idx_evidence_archive_created",
+          "tbl_name": "research_evidence_archive",
+          "rootpage": 106605,
+          "sql_len": 83
+        },
+        {
+          "type": "index",
+          "name": "idx_evidence_strategy",
+          "tbl_name": "research_evidence",
+          "rootpage": 12734,
+          "sql_len": 80
+        },
+        {
+          "type": "index",
+          "name": "idx_evidence_strategy_created_id",
+          "tbl_name": "research_evidence",
+          "rootpage": 106280,
+          "sql_len": 105
+        },
+        {
+          "type": "index",
+          "name": "idx_evolution_status",
+          "tbl_name": "strategy_evolution_candidates",
+          "rootpage": 65,
+          "sql_len": 74
+        },
+        {
+          "type": "index",
+          "name": "idx_executions_order_status",
+          "tbl_name": "audit_executions",
+          "rootpage": 403,
+          "sql_len": 86
+        },
+        {
+          "type": "index",
+          "name": "idx_exp_corrections_key",
+          "tbl_name": "audit_experience_corrections",
+          "rootpage": 59,
+          "sql_len": 85
+        },
+        {
+          "type": "index",
+          "name": "idx_exp_outcome_key",
+          "tbl_name": "audit_experience_outcomes",
+          "rootpage": 58,
+          "sql_len": 78
+        },
+        {
+          "type": "index",
+          "name": "idx_exp_request",
+          "tbl_name": "audit_experiences",
+          "rootpage": 56,
+          "sql_len": 61
+        },
+        {
+          "type": "index",
+          "name": "idx_exp_schema",
+          "tbl_name": "audit_experiences",
+          "rootpage": 57,
+          "sql_len": 86
+        },
+        {
+          "type": "index",
+          "name": "idx_exp_strategy_time",
+          "tbl_name": "audit_experiences",
+          "rootpage": 54,
+          "sql_len": 93
+        },
+        {
+          "type": "index",
+          "name": "idx_exp_symbol_time",
+          "tbl_name": "audit_experiences",
+          "rootpage": 55,
+          "sql_len": 86
+        },
+        {
+          "type": "index",
+          "name": "idx_factory_cand_gen",
+          "tbl_name": "factory_candidates",
+          "rootpage": 12716,
+          "sql_len": 88
+        },
+        {
+          "type": "index",
+          "name": "idx_factory_cand_hash",
+          "tbl_name": "factory_candidates",
+          "rootpage": 12717,
+          "sql_len": 73
+        },
+        {
+          "type": "index",
+          "name": "idx_factory_events_gen",
+          "tbl_name": "factory_events",
+          "rootpage": 12719,
+          "sql_len": 80
+        },
+        {
+          "type": "index",
+          "name": "idx_factory_fail_gen",
+          "tbl_name": "factory_failures",
+          "rootpage": 12718,
+          "sql_len": 68
+        },
+        {
+          "type": "index",
+          "name": "idx_gates_run",
+          "tbl_name": "research_gates",
+          "rootpage": 12732,
+          "sql_len": 61
+        },
+        {
+          "type": "index",
+          "name": "idx_gates_strategy",
+          "tbl_name": "research_gates",
+          "rootpage": 12731,
+          "sql_len": 75
+        },
+        {
+          "type": "index",
+          "name": "idx_gates_strategy_run",
+          "tbl_name": "research_gates",
+          "rootpage": 106003,
+          "sql_len": 97
+        },
+        {
+          "type": "index",
+          "name": "idx_gov_comp_ts",
+          "tbl_name": "model_shadow_comparisons",
+          "rootpage": 12420,
+          "sql_len": 67
+        },
+        {
+          "type": "index",
+          "name": "idx_gov_events_model",
+          "tbl_name": "model_governance_events",
+          "rootpage": 12418,
+          "sql_len": 77
+        },
+        {
+          "type": "index",
+          "name": "idx_gov_events_ts",
+          "tbl_name": "model_governance_events",
+          "rootpage": 12417,
+          "sql_len": 68
+        },
+        {
+          "type": "index",
+          "name": "idx_gov_state_model",
+          "tbl_name": "model_governance_state",
+          "rootpage": 12419,
+          "sql_len": 83
+        },
+        {
+          "type": "index",
+          "name": "idx_incident_events_incident",
+          "tbl_name": "incident_events",
+          "rootpage": 12450,
+          "sql_len": 73
+        },
+        {
+          "type": "index",
+          "name": "idx_incident_quarantine_incident",
+          "tbl_name": "incident_quarantine",
+          "rootpage": 12451,
+          "sql_len": 81
+        },
+        {
+          "type": "index",
+          "name": "idx_incidents_category",
+          "tbl_name": "incidents",
+          "rootpage": 12447,
+          "sql_len": 58
+        },
+        {
+          "type": "index",
+          "name": "idx_incidents_detected",
+          "tbl_name": "incidents",
+          "rootpage": 12449,
+          "sql_len": 61
+        },
+        {
+          "type": "index",
+          "name": "idx_incidents_fingerprint",
+          "tbl_name": "incidents",
+          "rootpage": 12448,
+          "sql_len": 64
+        },
+        {
+          "type": "index",
+          "name": "idx_incidents_severity",
+          "tbl_name": "incidents",
+          "rootpage": 12446,
+          "sql_len": 58
+        },
+        {
+          "type": "index",
+          "name": "idx_incidents_status",
+          "tbl_name": "incidents",
+          "rootpage": 12445,
+          "sql_len": 54
+        },
+        {
+          "type": "index",
+          "name": "idx_learning_cycle_events_cycle",
+          "tbl_name": "learning_cycle_events",
+          "rootpage": 3654,
+          "sql_len": 79
+        },
+        {
+          "type": "index",
+          "name": "idx_learning_cycles_status",
+          "tbl_name": "learning_cycles",
+          "rootpage": 3568,
+          "sql_len": 66
+        },
+        {
+          "type": "index",
+          "name": "idx_learning_cycles_trigger",
+          "tbl_name": "learning_cycles",
+          "rootpage": 3647,
+          "sql_len": 77
+        },
+        {
+          "type": "index",
+          "name": "idx_lifecycle_ticket",
+          "tbl_name": "position_lifecycle_events",
+          "rootpage": 60,
+          "sql_len": 80
+        },
+        {
+          "type": "index",
+          "name": "idx_lifecycle_type",
+          "tbl_name": "position_lifecycle_events",
+          "rootpage": 61,
+          "sql_len": 72
+        },
+        {
+          "type": "index",
+          "name": "idx_model_comp_candidate",
+          "tbl_name": "model_comparisons",
+          "rootpage": 71,
+          "sql_len": 78
+        },
+        {
+          "type": "index",
+          "name": "idx_orders_execution_idempotency",
+          "tbl_name": "audit_orders",
+          "rootpage": 975,
+          "sql_len": 174
+        },
+        {
+          "type": "index",
+          "name": "idx_orders_ticket",
+          "tbl_name": "audit_orders",
+          "rootpage": 11730,
+          "sql_len": 90
+        },
+        {
+          "type": "index",
+          "name": "idx_paper_exec_identity",
+          "tbl_name": "audit_paper_executions",
+          "rootpage": 3626,
+          "sql_len": 114
+        },
+        {
+          "type": "index",
+          "name": "idx_paper_exec_ts",
+          "tbl_name": "audit_paper_executions",
+          "rootpage": 3639,
+          "sql_len": 60
+        },
+        {
+          "type": "index",
+          "name": "idx_registry_id",
+          "tbl_name": "strategy_registry",
+          "rootpage": 66,
+          "sql_len": 74
+        },
+        {
+          "type": "index",
+          "name": "idx_registry_lifecycle",
+          "tbl_name": "strategy_registry",
+          "rootpage": 67,
+          "sql_len": 67
+        },
+        {
+          "type": "index",
+          "name": "idx_release_metadata_key",
+          "tbl_name": "release_metadata",
+          "rootpage": 12472,
+          "sql_len": 79
+        },
+        {
+          "type": "index",
+          "name": "idx_research_runs_strategy",
+          "tbl_name": "research_runs",
+          "rootpage": 68,
+          "sql_len": 69
+        },
+        {
+          "type": "index",
+          "name": "idx_research_runs_strategy_executed",
+          "tbl_name": "research_runs",
+          "rootpage": 106221,
+          "sql_len": 92
+        },
+        {
+          "type": "index",
+          "name": "idx_settings_audit_ts",
+          "tbl_name": "settings_audit",
+          "rootpage": 12785,
+          "sql_len": 63
+        },
+        {
+          "type": "index",
+          "name": "idx_shadow70_events_ts",
+          "tbl_name": "shadow70_events",
+          "rootpage": 12463,
+          "sql_len": 65
+        },
+        {
+          "type": "index",
+          "name": "idx_shadow70_obs_model",
+          "tbl_name": "shadow70_observations",
+          "rootpage": 12462,
+          "sql_len": 81
+        },
+        {
+          "type": "index",
+          "name": "idx_shadow70_obs_ts",
+          "tbl_name": "shadow70_observations",
+          "rootpage": 12461,
+          "sql_len": 68
+        },
+        {
+          "type": "index",
+          "name": "idx_shadow_decisions_run",
+          "tbl_name": "shadow_decisions",
+          "rootpage": 30361,
+          "sql_len": 76
+        },
+        {
+          "type": "index",
+          "name": "idx_shadow_decisions_symbol",
+          "tbl_name": "shadow_decisions",
+          "rootpage": 30362,
+          "sql_len": 79
+        },
+        {
+          "type": "index",
+          "name": "idx_shadow_runs_status",
+          "tbl_name": "shadow_runs",
+          "rootpage": 30363,
+          "sql_len": 58
+        },
+        {
+          "type": "index",
+          "name": "idx_train_runs_dataset",
+          "tbl_name": "training_runs",
+          "rootpage": 69,
+          "sql_len": 64
+        },
+        {
+          "type": "index",
+          "name": "idx_train_runs_status",
+          "tbl_name": "training_runs",
+          "rootpage": 70,
+          "sql_len": 59
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_anomaly_events_1",
+          "tbl_name": "anomaly_events",
+          "rootpage": 12324,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_application_settings_1",
+          "tbl_name": "application_settings",
+          "rootpage": 12780,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_audit_broker_trades_1",
+          "tbl_name": "audit_broker_trades",
+          "rootpage": 49,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_audit_experience_corrections_1",
+          "tbl_name": "audit_experience_corrections",
+          "rootpage": 10,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_audit_experience_outcomes_1",
+          "tbl_name": "audit_experience_outcomes",
+          "rootpage": 8,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_audit_experiences_1",
+          "tbl_name": "audit_experiences",
+          "rootpage": 5,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_audit_guard_telemetry_1",
+          "tbl_name": "audit_guard_telemetry",
+          "rootpage": 53,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_behavior_analysis_1",
+          "tbl_name": "behavior_analysis",
+          "rootpage": 12322,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_behavior_detections_1",
+          "tbl_name": "behavior_detections",
+          "rootpage": 23,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_configuration_metadata_1",
+          "tbl_name": "configuration_metadata",
+          "rootpage": 12783,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_experience_model_registry_1",
+          "tbl_name": "experience_model_registry",
+          "rootpage": 16,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_candidates_1",
+          "tbl_name": "factory_candidates",
+          "rootpage": 12704,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_events_1",
+          "tbl_name": "factory_events",
+          "rootpage": 12708,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_failures_1",
+          "tbl_name": "factory_failures",
+          "rootpage": 12706,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_generations_1",
+          "tbl_name": "factory_generations",
+          "rootpage": 12702,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_loop_state_1",
+          "tbl_name": "factory_loop_state",
+          "rootpage": 12715,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_provider_usage_1",
+          "tbl_name": "factory_provider_usage",
+          "rootpage": 12713,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_runs_1",
+          "tbl_name": "factory_runs",
+          "rootpage": 12711,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_incident_quarantine_1",
+          "tbl_name": "incident_quarantine",
+          "rootpage": 12444,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_incidents_1",
+          "tbl_name": "incidents",
+          "rootpage": 12439,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_intelligence_worker_state_1",
+          "tbl_name": "intelligence_worker_state",
+          "rootpage": 27,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_learning_cycles_1",
+          "tbl_name": "learning_cycles",
+          "rootpage": 3401,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_model_comparisons_1",
+          "tbl_name": "model_comparisons",
+          "rootpage": 45,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_model_governance_events_1",
+          "tbl_name": "model_governance_events",
+          "rootpage": 12411,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_model_promotion_audit_1",
+          "tbl_name": "model_promotion_audit",
+          "rootpage": 12434,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_model_rollback_audit_1",
+          "tbl_name": "model_rollback_audit",
+          "rootpage": 12437,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_model_shadow_comparisons_1",
+          "tbl_name": "model_shadow_comparisons",
+          "rootpage": 12414,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_position_lifecycle_events_1",
+          "tbl_name": "position_lifecycle_events",
+          "rootpage": 18,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_release_metadata_1",
+          "tbl_name": "release_metadata",
+          "rootpage": 12471,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_research_events_1",
+          "tbl_name": "research_events",
+          "rootpage": 12723,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_research_evidence_1",
+          "tbl_name": "research_evidence",
+          "rootpage": 12726,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_research_gates_1",
+          "tbl_name": "research_gates",
+          "rootpage": 12721,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_research_run_snapshots_1",
+          "tbl_name": "research_run_snapshots",
+          "rootpage": 12728,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_research_runs_1",
+          "tbl_name": "research_runs",
+          "rootpage": 32,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_research_worker_heartbeat_1",
+          "tbl_name": "research_worker_heartbeat",
+          "rootpage": 12730,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_research_worker_state_1",
+          "tbl_name": "research_worker_state",
+          "rootpage": 34,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_schema_meta_1",
+          "tbl_name": "schema_meta",
+          "rootpage": 12422,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_schema_migrations_1",
+          "tbl_name": "schema_migrations",
+          "rootpage": 12424,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_shadow70_drift_alerts_1",
+          "tbl_name": "shadow70_drift_alerts",
+          "rootpage": 12459,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_shadow70_events_1",
+          "tbl_name": "shadow70_events",
+          "rootpage": 12456,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_shadow70_observations_1",
+          "tbl_name": "shadow70_observations",
+          "rootpage": 12453,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_shadow_comparisons_1",
+          "tbl_name": "shadow_comparisons",
+          "rootpage": 30357,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_shadow_decisions_1",
+          "tbl_name": "shadow_decisions",
+          "rootpage": 30354,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_shadow_promotions_1",
+          "tbl_name": "shadow_promotions",
+          "rootpage": 30359,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_shadow_runs_1",
+          "tbl_name": "shadow_runs",
+          "rootpage": 30352,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_strategy_evolution_candidates_1",
+          "tbl_name": "strategy_evolution_candidates",
+          "rootpage": 25,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_strategy_intelligence_registry_1",
+          "tbl_name": "strategy_intelligence_registry",
+          "rootpage": 13,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_strategy_registry_1",
+          "tbl_name": "strategy_registry",
+          "rootpage": 29,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_trade_autopsies_1",
+          "tbl_name": "trade_autopsies",
+          "rootpage": 20,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_trading_rules_config_1",
+          "tbl_name": "trading_rules_config",
+          "rootpage": 3,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_training_runs_1",
+          "tbl_name": "training_runs",
+          "rootpage": 42,
+          "sql_len": null
+        },
+        {
+          "type": "table",
+          "name": "anomaly_events",
+          "tbl_name": "anomaly_events",
+          "rootpage": 12323,
+          "sql_len": 501
+        },
+        {
+          "type": "table",
+          "name": "application_settings",
+          "tbl_name": "application_settings",
+          "rootpage": 12779,
+          "sql_len": 489
+        },
+        {
+          "type": "table",
+          "name": "audit_account_snapshots",
+          "tbl_name": "audit_account_snapshots",
+          "rootpage": 40,
+          "sql_len": 341
+        },
+        {
+          "type": "table",
+          "name": "audit_broker_deals",
+          "tbl_name": "audit_broker_deals",
+          "rootpage": 47,
+          "sql_len": 602
+        },
+        {
+          "type": "table",
+          "name": "audit_broker_history_meta",
+          "tbl_name": "audit_broker_history_meta",
+          "rootpage": 51,
+          "sql_len": 287
+        },
+        {
+          "type": "table",
+          "name": "audit_broker_orders",
+          "tbl_name": "audit_broker_orders",
+          "rootpage": 46,
+          "sql_len": 677
+        },
+        {
+          "type": "table",
+          "name": "audit_broker_trades",
+          "tbl_name": "audit_broker_trades",
+          "rootpage": 48,
+          "sql_len": 757
+        },
+        {
+          "type": "table",
+          "name": "audit_dead_letter",
+          "tbl_name": "audit_dead_letter",
+          "rootpage": 3667,
+          "sql_len": 569
+        },
+        {
+          "type": "table",
+          "name": "audit_executions",
+          "tbl_name": "audit_executions",
+          "rootpage": 39,
+          "sql_len": 413
+        },
+        {
+          "type": "table",
+          "name": "audit_executions_reconciled",
+          "tbl_name": "audit_executions_reconciled",
+          "rootpage": 1732,
+          "sql_len": 343
+        },
+        {
+          "type": "table",
+          "name": "audit_experience_corrections",
+          "tbl_name": "audit_experience_corrections",
+          "rootpage": 9,
+          "sql_len": 419
+        },
+        {
+          "type": "table",
+          "name": "audit_experience_outcomes",
+          "tbl_name": "audit_experience_outcomes",
+          "rootpage": 7,
+          "sql_len": 1306
+        },
+        {
+          "type": "table",
+          "name": "audit_experiences",
+          "tbl_name": "audit_experiences",
+          "rootpage": 4,
+          "sql_len": 1406
+        },
+        {
+          "type": "table",
+          "name": "audit_guard_telemetry",
+          "tbl_name": "audit_guard_telemetry",
+          "rootpage": 52,
+          "sql_len": 289
+        },
+        {
+          "type": "table",
+          "name": "audit_ledger",
+          "tbl_name": "audit_ledger",
+          "rootpage": 37,
+          "sql_len": 2099
+        },
+        {
+          "type": "table",
+          "name": "audit_orders",
+          "tbl_name": "audit_orders",
+          "rootpage": 36,
+          "sql_len": 539
+        },
+        {
+          "type": "table",
+          "name": "audit_paper_executions",
+          "tbl_name": "audit_paper_executions",
+          "rootpage": 3616,
+          "sql_len": 542
+        },
+        {
+          "type": "table",
+          "name": "audit_signals",
+          "tbl_name": "audit_signals",
+          "rootpage": 35,
+          "sql_len": 1011
+        },
+        {
+          "type": "table",
+          "name": "behavior_analysis",
+          "tbl_name": "behavior_analysis",
+          "rootpage": 12321,
+          "sql_len": 652
+        },
+        {
+          "type": "table",
+          "name": "behavior_detections",
+          "tbl_name": "behavior_detections",
+          "rootpage": 22,
+          "sql_len": 584
+        },
+        {
+          "type": "table",
+          "name": "configuration_metadata",
+          "tbl_name": "configuration_metadata",
+          "rootpage": 12782,
+          "sql_len": 105
+        },
+        {
+          "type": "table",
+          "name": "experience_model_registry",
+          "tbl_name": "experience_model_registry",
+          "rootpage": 15,
+          "sql_len": 1009
+        },
+        {
+          "type": "table",
+          "name": "factory_candidates",
+          "tbl_name": "factory_candidates",
+          "rootpage": 12703,
+          "sql_len": 738
+        },
+        {
+          "type": "table",
+          "name": "factory_events",
+          "tbl_name": "factory_events",
+          "rootpage": 12707,
+          "sql_len": 346
+        },
+        {
+          "type": "table",
+          "name": "factory_failures",
+          "tbl_name": "factory_failures",
+          "rootpage": 12705,
+          "sql_len": 402
+        },
+        {
+          "type": "table",
+          "name": "factory_generations",
+          "tbl_name": "factory_generations",
+          "rootpage": 12701,
+          "sql_len": 463
+        },
+        {
+          "type": "table",
+          "name": "factory_loop_state",
+          "tbl_name": "factory_loop_state",
+          "rootpage": 12714,
+          "sql_len": 313
+        },
+        {
+          "type": "table",
+          "name": "factory_provider_usage",
+          "tbl_name": "factory_provider_usage",
+          "rootpage": 12712,
+          "sql_len": 567
+        },
+        {
+          "type": "table",
+          "name": "factory_runs",
+          "tbl_name": "factory_runs",
+          "rootpage": 12710,
+          "sql_len": 365
+        },
+        {
+          "type": "table",
+          "name": "incident_events",
+          "tbl_name": "incident_events",
+          "rootpage": 12441,
+          "sql_len": 331
+        },
+        {
+          "type": "table",
+          "name": "incident_quarantine",
+          "tbl_name": "incident_quarantine",
+          "rootpage": 12443,
+          "sql_len": 420
+        },
+        {
+          "type": "table",
+          "name": "incident_value_traces",
+          "tbl_name": "incident_value_traces",
+          "rootpage": 12442,
+          "sql_len": 277
+        },
+        {
+          "type": "table",
+          "name": "incidents",
+          "tbl_name": "incidents",
+          "rootpage": 12438,
+          "sql_len": 1425
+        },
+        {
+          "type": "table",
+          "name": "intelligence_worker_state",
+          "tbl_name": "intelligence_worker_state",
+          "rootpage": 26,
+          "sql_len": 280
+        },
+        {
+          "type": "table",
+          "name": "learning_cycle_events",
+          "tbl_name": "learning_cycle_events",
+          "rootpage": 3477,
+          "sql_len": 411
+        },
+        {
+          "type": "table",
+          "name": "learning_cycles",
+          "tbl_name": "learning_cycles",
+          "rootpage": 2048,
+          "sql_len": 1179
+        },
+        {
+          "type": "table",
+          "name": "model_comparisons",
+          "tbl_name": "model_comparisons",
+          "rootpage": 44,
+          "sql_len": 617
+        },
+        {
+          "type": "table",
+          "name": "model_governance_events",
+          "tbl_name": "model_governance_events",
+          "rootpage": 12410,
+          "sql_len": 944
+        },
+        {
+          "type": "table",
+          "name": "model_governance_state",
+          "tbl_name": "model_governance_state",
+          "rootpage": 12412,
+          "sql_len": 380
+        },
+        {
+          "type": "table",
+          "name": "model_promotion_audit",
+          "tbl_name": "model_promotion_audit",
+          "rootpage": 12433,
+          "sql_len": 971
+        },
+        {
+          "type": "table",
+          "name": "model_rollback_audit",
+          "tbl_name": "model_rollback_audit",
+          "rootpage": 12436,
+          "sql_len": 731
+        },
+        {
+          "type": "table",
+          "name": "model_runtime_health",
+          "tbl_name": "model_runtime_health",
+          "rootpage": 12416,
+          "sql_len": 908
+        },
+        {
+          "type": "table",
+          "name": "model_shadow_comparisons",
+          "tbl_name": "model_shadow_comparisons",
+          "rootpage": 12413,
+          "sql_len": 1620
+        },
+        {
+          "type": "table",
+          "name": "position_lifecycle_events",
+          "tbl_name": "position_lifecycle_events",
+          "rootpage": 17,
+          "sql_len": 642
+        },
+        {
+          "type": "table",
+          "name": "release_metadata",
+          "tbl_name": "release_metadata",
+          "rootpage": 12470,
+          "sql_len": 182
+        },
+        {
+          "type": "table",
+          "name": "research_events",
+          "tbl_name": "research_events",
+          "rootpage": 12722,
+          "sql_len": 472
+        },
+        {
+          "type": "table",
+          "name": "research_events_archive",
+          "tbl_name": "research_events_archive",
+          "rootpage": 106601,
+          "sql_len": 376
+        },
+        {
+          "type": "table",
+          "name": "research_evidence",
+          "tbl_name": "research_evidence",
+          "rootpage": 12725,
+          "sql_len": 584
+        },
+        {
+          "type": "table",
+          "name": "research_evidence_archive",
+          "tbl_name": "research_evidence_archive",
+          "rootpage": 106602,
+          "sql_len": 446
+        },
+        {
+          "type": "table",
+          "name": "research_gates",
+          "tbl_name": "research_gates",
+          "rootpage": 12720,
+          "sql_len": 925
+        },
+        {
+          "type": "table",
+          "name": "research_run_snapshots",
+          "tbl_name": "research_run_snapshots",
+          "rootpage": 12727,
+          "sql_len": 1249
+        },
+        {
+          "type": "table",
+          "name": "research_runs",
+          "tbl_name": "research_runs",
+          "rootpage": 31,
+          "sql_len": 562
+        },
+        {
+          "type": "table",
+          "name": "research_worker_heartbeat",
+          "tbl_name": "research_worker_heartbeat",
+          "rootpage": 12729,
+          "sql_len": 719
+        },
+        {
+          "type": "table",
+          "name": "research_worker_state",
+          "tbl_name": "research_worker_state",
+          "rootpage": 33,
+          "sql_len": 276
+        },
+        {
+          "type": "table",
+          "name": "runtime_risk_state",
+          "tbl_name": "runtime_risk_state",
+          "rootpage": 3657,
+          "sql_len": 789
+        },
+        {
+          "type": "table",
+          "name": "schema_meta",
+          "tbl_name": "schema_meta",
+          "rootpage": 12421,
+          "sql_len": 59
+        },
+        {
+          "type": "table",
+          "name": "schema_migrations",
+          "tbl_name": "schema_migrations",
+          "rootpage": 12423,
+          "sql_len": 359
+        },
+        {
+          "type": "table",
+          "name": "settings_audit",
+          "tbl_name": "settings_audit",
+          "rootpage": 12784,
+          "sql_len": 384
+        },
+        {
+          "type": "table",
+          "name": "shadow70_drift_alerts",
+          "tbl_name": "shadow70_drift_alerts",
+          "rootpage": 12458,
+          "sql_len": 790
+        },
+        {
+          "type": "table",
+          "name": "shadow70_events",
+          "tbl_name": "shadow70_events",
+          "rootpage": 12455,
+          "sql_len": 688
+        },
+        {
+          "type": "table",
+          "name": "shadow70_feature_health",
+          "tbl_name": "shadow70_feature_health",
+          "rootpage": 12457,
+          "sql_len": 822
+        },
+        {
+          "type": "table",
+          "name": "shadow70_observations",
+          "tbl_name": "shadow70_observations",
+          "rootpage": 12452,
+          "sql_len": 2185
+        },
+        {
+          "type": "table",
+          "name": "shadow_comparisons",
+          "tbl_name": "shadow_comparisons",
+          "rootpage": 30355,
+          "sql_len": 1545
+        },
+        {
+          "type": "table",
+          "name": "shadow_decisions",
+          "tbl_name": "shadow_decisions",
+          "rootpage": 30353,
+          "sql_len": 2190
+        },
+        {
+          "type": "table",
+          "name": "shadow_promotions",
+          "tbl_name": "shadow_promotions",
+          "rootpage": 30358,
+          "sql_len": 706
+        },
+        {
+          "type": "table",
+          "name": "shadow_runs",
+          "tbl_name": "shadow_runs",
+          "rootpage": 30351,
+          "sql_len": 797
+        },
+        {
+          "type": "table",
+          "name": "sqlite_sequence",
+          "tbl_name": "sqlite_sequence",
+          "rootpage": 6,
+          "sql_len": 38
+        },
+        {
+          "type": "table",
+          "name": "sqlite_stat1",
+          "tbl_name": "sqlite_stat1",
+          "rootpage": 106598,
+          "sql_len": 39
+        },
+        {
+          "type": "table",
+          "name": "strategy_evolution_candidates",
+          "tbl_name": "strategy_evolution_candidates",
+          "rootpage": 24,
+          "sql_len": 661
+        },
+        {
+          "type": "table",
+          "name": "strategy_intelligence_registry",
+          "tbl_name": "strategy_intelligence_registry",
+          "rootpage": 12,
+          "sql_len": 741
+        },
+        {
+          "type": "table",
+          "name": "strategy_registry",
+          "tbl_name": "strategy_registry",
+          "rootpage": 28,
+          "sql_len": 1144
+        },
+        {
+          "type": "table",
+          "name": "trade_autopsies",
+          "tbl_name": "trade_autopsies",
+          "rootpage": 19,
+          "sql_len": 1372
+        },
+        {
+          "type": "table",
+          "name": "trading_rules_config",
+          "tbl_name": "trading_rules_config",
+          "rootpage": 2,
+          "sql_len": 211
+        },
+        {
+          "type": "table",
+          "name": "training_runs",
+          "tbl_name": "training_runs",
+          "rootpage": 41,
+          "sql_len": 1445
+        }
+      ],
+      "table_row_counts": {
+        "anomaly_events": 22,
+        "application_settings": 0,
+        "audit_account_snapshots": 8015,
+        "audit_broker_deals": 8482,
+        "audit_broker_history_meta": 1,
+        "audit_broker_orders": 10647,
+        "audit_broker_trades": 4115,
+        "audit_dead_letter": 45,
+        "audit_executions": 3,
+        "audit_executions_reconciled": 954,
+        "audit_experience_corrections": 0,
+        "audit_experience_outcomes": 1715,
+        "audit_experiences": 5239,
+        "audit_guard_telemetry": 506,
+        "audit_ledger": 435,
+        "audit_orders": 2379,
+        "audit_paper_executions": 0,
+        "audit_signals": 11266,
+        "behavior_analysis": 432,
+        "behavior_detections": 333,
+        "configuration_metadata": 0,
+        "experience_model_registry": 26,
+        "factory_candidates": 295,
+        "factory_events": 4,
+        "factory_failures": 0,
+        "factory_generations": 3,
+        "factory_loop_state": 1,
+        "factory_provider_usage": 0,
+        "factory_runs": 0,
+        "incident_events": 13,
+        "incident_quarantine": 0,
+        "incident_value_traces": 0,
+        "incidents": 8,
+        "intelligence_worker_state": 1,
+        "learning_cycle_events": 0,
+        "learning_cycles": 0,
+        "model_comparisons": 4,
+        "model_governance_events": 59164,
+        "model_governance_state": 0,
+        "model_promotion_audit": 0,
+        "model_rollback_audit": 0,
+        "model_runtime_health": 1935,
+        "model_shadow_comparisons": 63,
+        "position_lifecycle_events": 3817,
+        "release_metadata": 0,
+        "research_events": 82726,
+        "research_events_archive": 0,
+        "research_evidence": 18316,
+        "research_evidence_archive": 0,
+        "research_gates": 26140,
+        "research_run_snapshots": 4357,
+        "research_runs": 4357,
+        "research_worker_heartbeat": 1,
+        "research_worker_state": 1,
+        "runtime_risk_state": 1,
+        "schema_meta": 1,
+        "schema_migrations": 8,
+        "settings_audit": 0,
+        "shadow70_drift_alerts": 0,
+        "shadow70_events": 0,
+        "shadow70_feature_health": 0,
+        "shadow70_observations": 2,
+        "shadow_comparisons": 61,
+        "shadow_decisions": 55342,
+        "shadow_promotions": 0,
+        "shadow_runs": 63,
+        "strategy_evolution_candidates": 1,
+        "strategy_intelligence_registry": 373,
+        "strategy_registry": 4109,
+        "trade_autopsies": 395,
+        "trading_rules_config": 30,
+        "training_runs": 6
+      },
+      "query_plans": {
+        "anomaly_events::newest_rows_by_rowid": [
+          "SCAN anomaly_events"
+        ],
+        "anomaly_events::count": [
+          "SCAN anomaly_events USING COVERING INDEX idx_anomaly_events_type"
+        ],
+        "application_settings::newest_rows_by_rowid": [
+          "SCAN application_settings"
+        ],
+        "application_settings::count": [
+          "SCAN application_settings USING COVERING INDEX sqlite_autoindex_application_settings_1"
+        ],
+        "audit_account_snapshots::newest_rows_by_rowid": [
+          "SCAN audit_account_snapshots"
+        ],
+        "audit_account_snapshots::count": [
+          "SCAN audit_account_snapshots"
+        ],
+        "audit_broker_deals::newest_rows_by_rowid": [
+          "SCAN audit_broker_deals"
+        ],
+        "audit_broker_deals::count": [
+          "SCAN audit_broker_deals USING COVERING INDEX idx_broker_deals_position"
+        ],
+        "audit_broker_history_meta::newest_rows_by_rowid": [
+          "SCAN audit_broker_history_meta"
+        ],
+        "audit_broker_history_meta::count": [
+          "SCAN audit_broker_history_meta"
+        ],
+        "audit_broker_orders::newest_rows_by_rowid": [
+          "SCAN audit_broker_orders"
+        ],
+        "audit_broker_orders::count": [
+          "SCAN audit_broker_orders"
+        ],
+        "audit_broker_trades::newest_rows_by_rowid": [
+          "SCAN audit_broker_trades"
+        ],
+        "audit_broker_trades::count": [
+          "SCAN audit_broker_trades USING COVERING INDEX idx_broker_trades_exit"
+        ],
+        "audit_dead_letter::newest_rows_by_rowid": [
+          "SCAN audit_dead_letter"
+        ],
+        "audit_dead_letter::count": [
+          "SCAN audit_dead_letter"
+        ],
+        "audit_executions::newest_rows_by_rowid": [
+          "SCAN audit_executions"
+        ],
+        "audit_executions::count": [
+          "SCAN audit_executions USING COVERING INDEX idx_executions_order_status"
+        ],
+        "audit_executions_reconciled::newest_rows_by_rowid": [
+          "SCAN audit_executions_reconciled"
+        ],
+        "audit_executions_reconciled::count": [
+          "SCAN audit_executions_reconciled"
+        ],
+        "audit_experience_corrections::newest_rows_by_rowid": [
+          "SCAN audit_experience_corrections"
+        ],
+        "audit_experience_corrections::count": [
+          "SCAN audit_experience_corrections USING COVERING INDEX idx_exp_corrections_key"
+        ],
+        "audit_experience_outcomes::newest_rows_by_rowid": [
+          "SCAN audit_experience_outcomes"
+        ],
+        "audit_experience_outcomes::count": [
+          "SCAN audit_experience_outcomes USING COVERING INDEX idx_exp_outcome_key"
+        ],
+        "audit_experiences::newest_rows_by_rowid": [
+          "SCAN audit_experiences"
+        ],
+        "audit_experiences::count": [
+          "SCAN audit_experiences USING COVERING INDEX idx_exp_request"
+        ],
+        "audit_guard_telemetry::newest_rows_by_rowid": [
+          "SCAN audit_guard_telemetry"
+        ],
+        "audit_guard_telemetry::count": [
+          "SCAN audit_guard_telemetry"
+        ],
+        "audit_ledger::newest_rows_by_rowid": [
+          "SCAN audit_ledger"
+        ],
+        "audit_ledger::count": [
+          "SCAN audit_ledger USING COVERING INDEX idx_audit_ledger_close_time"
+        ],
+        "audit_orders::newest_rows_by_rowid": [
+          "SCAN audit_orders"
+        ],
+        "audit_orders::count": [
+          "SCAN audit_orders USING COVERING INDEX idx_orders_ticket"
+        ],
+        "audit_paper_executions::newest_rows_by_rowid": [
+          "SCAN audit_paper_executions"
+        ],
+        "audit_paper_executions::count": [
+          "SCAN audit_paper_executions USING COVERING INDEX idx_paper_exec_ts"
+        ],
+        "audit_signals::newest_rows_by_rowid": [
+          "SCAN audit_signals"
+        ],
+        "audit_signals::count": [
+          "SCAN audit_signals USING COVERING INDEX idx_audit_signals_dedup"
+        ],
+        "behavior_analysis::newest_rows_by_rowid": [
+          "SCAN behavior_analysis"
+        ],
+        "behavior_analysis::count": [
+          "SCAN behavior_analysis USING COVERING INDEX idx_behavior_analysis_ticket"
+        ],
+        "behavior_detections::newest_rows_by_rowid": [
+          "SCAN behavior_detections"
+        ],
+        "behavior_detections::count": [
+          "SCAN behavior_detections USING COVERING INDEX idx_behavior_pattern"
+        ],
+        "configuration_metadata::newest_rows_by_rowid": [
+          "SCAN configuration_metadata"
+        ],
+        "configuration_metadata::count": [
+          "SCAN configuration_metadata USING COVERING INDEX sqlite_autoindex_configuration_metadata_1"
+        ],
+        "experience_model_registry::newest_rows_by_rowid": [
+          "SCAN experience_model_registry"
+        ],
+        "experience_model_registry::count": [
+          "SCAN experience_model_registry USING COVERING INDEX sqlite_autoindex_experience_model_registry_1"
+        ],
+        "factory_candidates::newest_rows_by_rowid": [
+          "SCAN factory_candidates"
+        ],
+        "factory_candidates::count": [
+          "SCAN factory_candidates USING COVERING INDEX idx_factory_cand_hash"
+        ],
+        "factory_events::newest_rows_by_rowid": [
+          "SCAN factory_events"
+        ],
+        "factory_events::count": [
+          "SCAN factory_events USING COVERING INDEX sqlite_autoindex_factory_events_1"
+        ],
+        "factory_failures::newest_rows_by_rowid": [
+          "SCAN factory_failures"
+        ],
+        "factory_failures::count": [
+          "SCAN factory_failures USING COVERING INDEX idx_factory_fail_gen"
+        ],
+        "factory_generations::newest_rows_by_rowid": [
+          "SCAN factory_generations"
+        ],
+        "factory_generations::count": [
+          "SCAN factory_generations USING COVERING INDEX sqlite_autoindex_factory_generations_1"
+        ],
+        "factory_loop_state::newest_rows_by_rowid": [
+          "SCAN factory_loop_state"
+        ],
+        "factory_loop_state::count": [
+          "SCAN factory_loop_state USING COVERING INDEX sqlite_autoindex_factory_loop_state_1"
+        ],
+        "factory_provider_usage::newest_rows_by_rowid": [
+          "SCAN factory_provider_usage"
+        ],
+        "factory_provider_usage::count": [
+          "SCAN factory_provider_usage USING COVERING INDEX sqlite_autoindex_factory_provider_usage_1"
+        ],
+        "factory_runs::newest_rows_by_rowid": [
+          "SCAN factory_runs"
+        ],
+        "factory_runs::count": [
+          "SCAN factory_runs USING COVERING INDEX sqlite_autoindex_factory_runs_1"
+        ],
+        "incident_events::newest_rows_by_rowid": [
+          "SCAN incident_events"
+        ],
+        "incident_events::count": [
+          "SCAN incident_events USING COVERING INDEX idx_incident_events_incident"
+        ],
+        "incident_quarantine::newest_rows_by_rowid": [
+          "SCAN incident_quarantine"
+        ],
+        "incident_quarantine::count": [
+          "SCAN incident_quarantine USING COVERING INDEX idx_incident_quarantine_incident"
+        ],
+        "incident_value_traces::newest_rows_by_rowid": [
+          "SCAN incident_value_traces"
+        ],
+        "incident_value_traces::count": [
+          "SCAN incident_value_traces"
+        ],
+        "incidents::newest_rows_by_rowid": [
+          "SCAN incidents"
+        ],
+        "incidents::count": [
+          "SCAN incidents USING COVERING INDEX idx_incidents_detected"
+        ],
+        "intelligence_worker_state::newest_rows_by_rowid": [
+          "SCAN intelligence_worker_state"
+        ],
+        "intelligence_worker_state::count": [
+          "SCAN intelligence_worker_state USING COVERING INDEX sqlite_autoindex_intelligence_worker_state_1"
+        ],
+        "learning_cycle_events::newest_rows_by_rowid": [
+          "SCAN learning_cycle_events"
+        ],
+        "learning_cycle_events::count": [
+          "SCAN learning_cycle_events USING COVERING INDEX idx_learning_cycle_events_cycle"
+        ],
+        "learning_cycles::newest_rows_by_rowid": [
+          "SCAN learning_cycles"
+        ],
+        "learning_cycles::count": [
+          "SCAN learning_cycles USING COVERING INDEX idx_learning_cycles_trigger"
+        ],
+        "model_comparisons::newest_rows_by_rowid": [
+          "SCAN model_comparisons"
+        ],
+        "model_comparisons::count": [
+          "SCAN model_comparisons USING COVERING INDEX idx_model_comp_candidate"
+        ],
+        "model_governance_events::newest_rows_by_rowid": [
+          "SCAN model_governance_events"
+        ],
+        "model_governance_events::count": [
+          "SCAN model_governance_events USING COVERING INDEX idx_gov_events_ts"
+        ],
+        "model_governance_state::newest_rows_by_rowid": [
+          "SCAN model_governance_state"
+        ],
+        "model_governance_state::count": [
+          "SCAN model_governance_state USING COVERING INDEX idx_gov_state_model"
+        ],
+        "model_promotion_audit::newest_rows_by_rowid": [
+          "SCAN model_promotion_audit"
+        ],
+        "model_promotion_audit::count": [
+          "SCAN model_promotion_audit USING COVERING INDEX sqlite_autoindex_model_promotion_audit_1"
+        ],
+        "model_rollback_audit::newest_rows_by_rowid": [
+          "SCAN model_rollback_audit"
+        ],
+        "model_rollback_audit::count": [
+          "SCAN model_rollback_audit USING COVERING INDEX sqlite_autoindex_model_rollback_audit_1"
+        ],
+        "model_runtime_health::newest_rows_by_rowid": [
+          "SCAN model_runtime_health"
+        ],
+        "model_runtime_health::count": [
+          "SCAN model_runtime_health"
+        ],
+        "model_shadow_comparisons::newest_rows_by_rowid": [
+          "SCAN model_shadow_comparisons"
+        ],
+        "model_shadow_comparisons::count": [
+          "SCAN model_shadow_comparisons USING COVERING INDEX idx_gov_comp_ts"
+        ],
+        "position_lifecycle_events::newest_rows_by_rowid": [
+          "SCAN position_lifecycle_events"
+        ],
+        "position_lifecycle_events::count": [
+          "SCAN position_lifecycle_events USING COVERING INDEX idx_lifecycle_type"
+        ],
+        "release_metadata::newest_rows_by_rowid": [
+          "SCAN release_metadata"
+        ],
+        "release_metadata::count": [
+          "SCAN release_metadata USING COVERING INDEX idx_release_metadata_key"
+        ],
+        "research_events::newest_rows_by_rowid": [
+          "SCAN research_events"
+        ],
+        "research_events::count": [
+          "SCAN research_events USING COVERING INDEX sqlite_autoindex_research_events_1"
+        ],
+        "research_events_archive::newest_rows_by_rowid": [
+          "SCAN research_events_archive"
+        ],
+        "research_events_archive::count": [
+          "SCAN research_events_archive USING COVERING INDEX idx_events_archive_occurred"
+        ],
+        "research_evidence::newest_rows_by_rowid": [
+          "SCAN research_evidence"
+        ],
+        "research_evidence::count": [
+          "SCAN research_evidence USING COVERING INDEX sqlite_autoindex_research_evidence_1"
+        ],
+        "research_evidence_archive::newest_rows_by_rowid": [
+          "SCAN research_evidence_archive"
+        ],
+        "research_evidence_archive::count": [
+          "SCAN research_evidence_archive USING COVERING INDEX idx_evidence_archive_created"
+        ],
+        "research_gates::newest_rows_by_rowid": [
+          "SCAN research_gates"
+        ],
+        "research_gates::count": [
+          "SCAN research_gates USING COVERING INDEX idx_gates_run"
+        ],
+        "research_run_snapshots::newest_rows_by_rowid": [
+          "SCAN research_run_snapshots"
+        ],
+        "research_run_snapshots::count": [
+          "SCAN research_run_snapshots USING COVERING INDEX sqlite_autoindex_research_run_snapshots_1"
+        ],
+        "research_runs::newest_rows_by_rowid": [
+          "SCAN research_runs"
+        ],
+        "research_runs::count": [
+          "SCAN research_runs USING COVERING INDEX idx_research_runs_strategy"
+        ],
+        "research_worker_heartbeat::newest_rows_by_rowid": [
+          "SCAN research_worker_heartbeat"
+        ],
+        "research_worker_heartbeat::count": [
+          "SCAN research_worker_heartbeat USING COVERING INDEX sqlite_autoindex_research_worker_heartbeat_1"
+        ],
+        "research_worker_state::newest_rows_by_rowid": [
+          "SCAN research_worker_state"
+        ],
+        "research_worker_state::count": [
+          "SCAN research_worker_state USING COVERING INDEX sqlite_autoindex_research_worker_state_1"
+        ],
+        "runtime_risk_state::newest_rows_by_rowid": [
+          "SCAN runtime_risk_state"
+        ],
+        "runtime_risk_state::count": [
+          "SCAN runtime_risk_state"
+        ],
+        "schema_meta::newest_rows_by_rowid": [
+          "SCAN schema_meta"
+        ],
+        "schema_meta::count": [
+          "SCAN schema_meta USING COVERING INDEX sqlite_autoindex_schema_meta_1"
+        ],
+        "schema_migrations::newest_rows_by_rowid": [
+          "SCAN schema_migrations"
+        ],
+        "schema_migrations::count": [
+          "SCAN schema_migrations USING COVERING INDEX sqlite_autoindex_schema_migrations_1"
+        ],
+        "settings_audit::newest_rows_by_rowid": [
+          "SCAN settings_audit"
+        ],
+        "settings_audit::count": [
+          "SCAN settings_audit USING COVERING INDEX idx_settings_audit_ts"
+        ],
+        "shadow70_drift_alerts::newest_rows_by_rowid": [
+          "SCAN shadow70_drift_alerts"
+        ],
+        "shadow70_drift_alerts::count": [
+          "SCAN shadow70_drift_alerts USING COVERING INDEX sqlite_autoindex_shadow70_drift_alerts_1"
+        ],
+        "shadow70_events::newest_rows_by_rowid": [
+          "SCAN shadow70_events"
+        ],
+        "shadow70_events::count": [
+          "SCAN shadow70_events USING COVERING INDEX idx_shadow70_events_ts"
+        ],
+        "shadow70_feature_health::newest_rows_by_rowid": [
+          "SCAN shadow70_feature_health"
+        ],
+        "shadow70_feature_health::count": [
+          "SCAN shadow70_feature_health"
+        ],
+        "shadow70_observations::newest_rows_by_rowid": [
+          "SCAN shadow70_observations"
+        ],
+        "shadow70_observations::count": [
+          "SCAN shadow70_observations USING COVERING INDEX idx_shadow70_obs_ts"
+        ],
+        "shadow_comparisons::newest_rows_by_rowid": [
+          "SCAN shadow_comparisons"
+        ],
+        "shadow_comparisons::count": [
+          "SCAN shadow_comparisons USING COVERING INDEX sqlite_autoindex_shadow_comparisons_1"
+        ],
+        "shadow_decisions::newest_rows_by_rowid": [
+          "SCAN shadow_decisions"
+        ],
+        "shadow_decisions::count": [
+          "SCAN shadow_decisions USING COVERING INDEX sqlite_autoindex_shadow_decisions_1"
+        ],
+        "shadow_promotions::newest_rows_by_rowid": [
+          "SCAN shadow_promotions"
+        ],
+        "shadow_promotions::count": [
+          "SCAN shadow_promotions USING COVERING INDEX sqlite_autoindex_shadow_promotions_1"
+        ],
+        "shadow_runs::newest_rows_by_rowid": [
+          "SCAN shadow_runs"
+        ],
+        "shadow_runs::count": [
+          "SCAN shadow_runs USING COVERING INDEX idx_shadow_runs_status"
+        ],
+        "strategy_evolution_candidates::newest_rows_by_rowid": [
+          "SCAN strategy_evolution_candidates"
+        ],
+        "strategy_evolution_candidates::count": [
+          "SCAN strategy_evolution_candidates USING COVERING INDEX idx_evolution_status"
+        ],
+        "strategy_intelligence_registry::newest_rows_by_rowid": [
+          "SCAN strategy_intelligence_registry"
+        ],
+        "strategy_intelligence_registry::count": [
+          "SCAN strategy_intelligence_registry USING COVERING INDEX sqlite_autoindex_strategy_intelligence_registry_1"
+        ],
+        "strategy_registry::newest_rows_by_rowid": [
+          "SCAN strategy_registry"
+        ],
+        "strategy_registry::count": [
+          "SCAN strategy_registry USING COVERING INDEX idx_registry_lifecycle"
+        ],
+        "trade_autopsies::newest_rows_by_rowid": [
+          "SCAN trade_autopsies"
+        ],
+        "trade_autopsies::count": [
+          "SCAN trade_autopsies USING COVERING INDEX idx_autopsy_strategy"
+        ],
+        "trading_rules_config::newest_rows_by_rowid": [
+          "SCAN trading_rules_config"
+        ],
+        "trading_rules_config::count": [
+          "SCAN trading_rules_config USING COVERING INDEX sqlite_autoindex_trading_rules_config_1"
+        ],
+        "training_runs::newest_rows_by_rowid": [
+          "SCAN training_runs"
+        ],
+        "training_runs::count": [
+          "SCAN training_runs USING COVERING INDEX idx_train_runs_status"
+        ]
+      },
+      "dbstat": [
+        {
+          "name": "shadow_decisions",
+          "bytes": 227233792
+        },
+        {
+          "name": "research_gates",
+          "bytes": 27537408
+        },
+        {
+          "name": "model_governance_events",
+          "bytes": 26816512
+        },
+        {
+          "name": "strategy_registry",
+          "bytes": 25477120
+        },
+        {
+          "name": "research_evidence",
+          "bytes": 24416256
+        },
+        {
+          "name": "audit_experiences",
+          "bytes": 21512192
+        },
+        {
+          "name": "research_events",
+          "bytes": 12779520
+        },
+        {
+          "name": "audit_signals",
+          "bytes": 10420224
+        },
+        {
+          "name": "position_lifecycle_events",
+          "bytes": 5812224
+        },
+        {
+          "name": "idx_events_strategy",
+          "bytes": 5394432
+        },
+        {
+          "name": "idx_gov_events_model",
+          "bytes": 3973120
+        },
+        {
+          "name": "audit_experience_outcomes",
+          "bytes": 3862528
+        },
+        {
+          "name": "idx_shadow_decisions_run",
+          "bytes": 3407872
+        },
+        {
+          "name": "research_runs",
+          "bytes": 2940928
+        },
+        {
+          "name": "idx_gov_events_ts",
+          "bytes": 2740224
+        },
+        {
+          "name": "idx_shadow_decisions_symbol",
+          "bytes": 2564096
+        },
+        {
+          "name": "research_run_snapshots",
+          "bytes": 2248704
+        },
+        {
+          "name": "sqlite_autoindex_research_events_1",
+          "bytes": 2088960
+        },
+        {
+          "name": "sqlite_autoindex_model_governance_events_1",
+          "bytes": 1785856
+        },
+        {
+          "name": "sqlite_autoindex_shadow_decisions_1",
+          "bytes": 1687552
+        },
+        {
+          "name": "idx_evidence_strategy_created_id",
+          "bytes": 1302528
+        },
+        {
+          "name": "audit_broker_orders",
+          "bytes": 1236992
+        },
+        {
+          "name": "idx_evidence_strategy",
+          "bytes": 1142784
+        },
+        {
+          "name": "model_runtime_health",
+          "bytes": 1134592
+        },
+        {
+          "name": "audit_broker_trades",
+          "bytes": 1085440
+        },
+        {
+          "name": "audit_broker_deals",
+          "bytes": 1011712
+        },
+        {
+          "name": "idx_gates_strategy_run",
+          "bytes": 892928
+        },
+        {
+          "name": "idx_gates_strategy",
+          "bytes": 688128
+        },
+        {
+          "name": "sqlite_autoindex_research_gates_1",
+          "bytes": 675840
+        },
+        {
+          "name": "trade_autopsies",
+          "bytes": 655360
+        },
+        {
+          "name": "audit_account_snapshots",
+          "bytes": 606208
+        },
+        {
+          "name": "idx_gates_run",
+          "bytes": 536576
+        },
+        {
+          "name": "sqlite_autoindex_research_evidence_1",
+          "bytes": 475136
+        },
+        {
+          "name": "idx_audit_signals_dedup",
+          "bytes": 475136
+        },
+        {
+          "name": "idx_exp_symbol_time",
+          "bytes": 425984
+        },
+        {
+          "name": "factory_candidates",
+          "bytes": 425984
+        },
+        {
+          "name": "audit_orders",
+          "bytes": 425984
+        },
+        {
+          "name": "strategy_intelligence_registry",
+          "bytes": 389120
+        },
+        {
+          "name": "audit_executions_reconciled",
+          "bytes": 368640
+        },
+        {
+          "name": "idx_exp_strategy_time",
+          "bytes": 344064
+        }
+      ]
+    },
+    {
+      "path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\news.db",
+      "size_bytes": 241434624,
+      "mtime": "2026-09-28T01:45:32.553047+00:00",
+      "wal_present": true,
+      "shm_present": true,
+      "wal_size_bytes": 0,
+      "pragmas": {
+        "journal_mode": "wal",
+        "synchronous": 2,
+        "foreign_keys": 0,
+        "auto_vacuum": 0,
+        "page_size": 4096,
+        "page_count": 58944,
+        "freelist_count": 1973,
+        "max_page_count": 4294967294,
+        "encoding": "UTF-8",
+        "user_version": 0,
+        "schema_version": 41,
+        "cache_size": -2000,
+        "mmap_size": 0,
+        "busy_timeout": 5000,
+        "journal_size_limit": -1,
+        "wal_autocheckpoint": 1000,
+        "wal_checkpoint_passive": [
+          0,
+          0,
+          0
+        ]
+      },
+      "integrity_check": "ok",
+      "sqlite_master": [
+        {
+          "type": "index",
+          "name": "idx_calendar_events_sched",
+          "tbl_name": "calendar_events",
+          "rootpage": 46168,
+          "sql_len": 71
+        },
+        {
+          "type": "index",
+          "name": "idx_news_ai_analysis_article",
+          "tbl_name": "news_ai_analysis",
+          "rootpage": 1070,
+          "sql_len": 91
+        },
+        {
+          "type": "index",
+          "name": "idx_news_analysis_article",
+          "tbl_name": "news_analysis",
+          "rootpage": 37,
+          "sql_len": 85
+        },
+        {
+          "type": "index",
+          "name": "idx_news_analyzed_hashes_hash",
+          "tbl_name": "news_analyzed_hashes",
+          "rootpage": 3213,
+          "sql_len": 80
+        },
+        {
+          "type": "index",
+          "name": "idx_news_articles_dup",
+          "tbl_name": "news_articles",
+          "rootpage": 35,
+          "sql_len": 79
+        },
+        {
+          "type": "index",
+          "name": "idx_news_articles_published",
+          "tbl_name": "news_articles",
+          "rootpage": 33,
+          "sql_len": 76
+        },
+        {
+          "type": "index",
+          "name": "idx_news_articles_source",
+          "tbl_name": "news_articles",
+          "rootpage": 34,
+          "sql_len": 84
+        },
+        {
+          "type": "index",
+          "name": "idx_news_articles_source_url",
+          "tbl_name": "news_articles",
+          "rootpage": 26156,
+          "sql_len": 84
+        },
+        {
+          "type": "index",
+          "name": "idx_news_articles_status",
+          "tbl_name": "news_articles",
+          "rootpage": 1065,
+          "sql_len": 70
+        },
+        {
+          "type": "index",
+          "name": "idx_news_health_source",
+          "tbl_name": "news_health",
+          "rootpage": 3606,
+          "sql_len": 84
+        },
+        {
+          "type": "index",
+          "name": "idx_news_impacts_asset",
+          "tbl_name": "news_impacts",
+          "rootpage": 38,
+          "sql_len": 77
+        },
+        {
+          "type": "index",
+          "name": "idx_news_junk_hashes_hash",
+          "tbl_name": "news_junk_hashes",
+          "rootpage": 3303,
+          "sql_len": 72
+        },
+        {
+          "type": "index",
+          "name": "idx_news_prune_audit_article",
+          "tbl_name": "news_prune_audit",
+          "rootpage": 1071,
+          "sql_len": 90
+        },
+        {
+          "type": "index",
+          "name": "idx_news_trade_links_article",
+          "tbl_name": "news_trade_links",
+          "rootpage": 40,
+          "sql_len": 73
+        },
+        {
+          "type": "index",
+          "name": "idx_news_trade_links_trade",
+          "tbl_name": "news_trade_links",
+          "rootpage": 39,
+          "sql_len": 69
+        },
+        {
+          "type": "index",
+          "name": "idx_news_versions_article",
+          "tbl_name": "news_article_versions",
+          "rootpage": 36,
+          "sql_len": 85
+        },
+        {
+          "type": "index",
+          "name": "idx_post_event_article",
+          "tbl_name": "news_post_event",
+          "rootpage": 43,
+          "sql_len": 66
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_calendar_events_1",
+          "tbl_name": "calendar_events",
+          "rootpage": 46166,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_news_ai_analysis_1",
+          "tbl_name": "news_ai_analysis",
+          "rootpage": 1061,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_news_analysis_1",
+          "tbl_name": "news_analysis",
+          "rootpage": 16,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_news_analysis_runs_1",
+          "tbl_name": "news_analysis_runs",
+          "rootpage": 23,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_news_analyzed_hashes_1",
+          "tbl_name": "news_analyzed_hashes",
+          "rootpage": 3168,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_news_articles_1",
+          "tbl_name": "news_articles",
+          "rootpage": 9,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_news_articles_2",
+          "tbl_name": "news_articles",
+          "rootpage": 10,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_news_consensus_1",
+          "tbl_name": "news_consensus",
+          "rootpage": 21,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_news_event_links_1",
+          "tbl_name": "news_event_links",
+          "rootpage": 27,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_news_health_1",
+          "tbl_name": "news_health",
+          "rootpage": 31,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_news_junk_hashes_1",
+          "tbl_name": "news_junk_hashes",
+          "rootpage": 3302,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_news_post_event_1",
+          "tbl_name": "news_post_event",
+          "rootpage": 42,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_news_prune_audit_1",
+          "tbl_name": "news_prune_audit",
+          "rootpage": 1063,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_news_sources_1",
+          "tbl_name": "news_sources",
+          "rootpage": 7,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_news_trade_links_1",
+          "tbl_name": "news_trade_links",
+          "rootpage": 29,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_news_worker_state_1",
+          "tbl_name": "news_worker_state",
+          "rootpage": 25,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_schema_meta_1",
+          "tbl_name": "schema_meta",
+          "rootpage": 3,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_schema_migrations_1",
+          "tbl_name": "schema_migrations",
+          "rootpage": 5,
+          "sql_len": null
+        },
+        {
+          "type": "table",
+          "name": "calendar_events",
+          "tbl_name": "calendar_events",
+          "rootpage": 46165,
+          "sql_len": 557
+        },
+        {
+          "type": "table",
+          "name": "calendar_worker_state",
+          "tbl_name": "calendar_worker_state",
+          "rootpage": 46167,
+          "sql_len": 470
+        },
+        {
+          "type": "table",
+          "name": "news_ai_analysis",
+          "tbl_name": "news_ai_analysis",
+          "rootpage": 1060,
+          "sql_len": 848
+        },
+        {
+          "type": "table",
+          "name": "news_analysis",
+          "tbl_name": "news_analysis",
+          "rootpage": 15,
+          "sql_len": 1064
+        },
+        {
+          "type": "table",
+          "name": "news_analysis_runs",
+          "tbl_name": "news_analysis_runs",
+          "rootpage": 22,
+          "sql_len": 293
+        },
+        {
+          "type": "table",
+          "name": "news_analyzed_hashes",
+          "tbl_name": "news_analyzed_hashes",
+          "rootpage": 3082,
+          "sql_len": 200
+        },
+        {
+          "type": "table",
+          "name": "news_article_versions",
+          "tbl_name": "news_article_versions",
+          "rootpage": 11,
+          "sql_len": 406
+        },
+        {
+          "type": "table",
+          "name": "news_articles",
+          "tbl_name": "news_articles",
+          "rootpage": 8,
+          "sql_len": 930
+        },
+        {
+          "type": "table",
+          "name": "news_consensus",
+          "tbl_name": "news_consensus",
+          "rootpage": 20,
+          "sql_len": 434
+        },
+        {
+          "type": "table",
+          "name": "news_entities",
+          "tbl_name": "news_entities",
+          "rootpage": 13,
+          "sql_len": 331
+        },
+        {
+          "type": "table",
+          "name": "news_event_links",
+          "tbl_name": "news_event_links",
+          "rootpage": 26,
+          "sql_len": 170
+        },
+        {
+          "type": "table",
+          "name": "news_health",
+          "tbl_name": "news_health",
+          "rootpage": 30,
+          "sql_len": 418
+        },
+        {
+          "type": "table",
+          "name": "news_impacts",
+          "tbl_name": "news_impacts",
+          "rootpage": 19,
+          "sql_len": 489
+        },
+        {
+          "type": "table",
+          "name": "news_junk_hashes",
+          "tbl_name": "news_junk_hashes",
+          "rootpage": 3301,
+          "sql_len": 230
+        },
+        {
+          "type": "table",
+          "name": "news_post_event",
+          "tbl_name": "news_post_event",
+          "rootpage": 41,
+          "sql_len": 863
+        },
+        {
+          "type": "table",
+          "name": "news_prune_audit",
+          "tbl_name": "news_prune_audit",
+          "rootpage": 1062,
+          "sql_len": 350
+        },
+        {
+          "type": "table",
+          "name": "news_sources",
+          "tbl_name": "news_sources",
+          "rootpage": 6,
+          "sql_len": 498
+        },
+        {
+          "type": "table",
+          "name": "news_topics",
+          "tbl_name": "news_topics",
+          "rootpage": 14,
+          "sql_len": 140
+        },
+        {
+          "type": "table",
+          "name": "news_trade_links",
+          "tbl_name": "news_trade_links",
+          "rootpage": 28,
+          "sql_len": 295
+        },
+        {
+          "type": "table",
+          "name": "news_worker_state",
+          "tbl_name": "news_worker_state",
+          "rootpage": 24,
+          "sql_len": 233
+        },
+        {
+          "type": "table",
+          "name": "schema_meta",
+          "tbl_name": "schema_meta",
+          "rootpage": 2,
+          "sql_len": 59
+        },
+        {
+          "type": "table",
+          "name": "schema_migrations",
+          "tbl_name": "schema_migrations",
+          "rootpage": 4,
+          "sql_len": 359
+        },
+        {
+          "type": "table",
+          "name": "sqlite_sequence",
+          "tbl_name": "sqlite_sequence",
+          "rootpage": 12,
+          "sql_len": 38
+        }
+      ],
+      "table_row_counts": {
+        "calendar_events": 293,
+        "calendar_worker_state": 1,
+        "news_ai_analysis": 2705,
+        "news_analysis": 20388,
+        "news_analysis_runs": 25587,
+        "news_analyzed_hashes": 15020,
+        "news_article_versions": 0,
+        "news_articles": 24919,
+        "news_consensus": 0,
+        "news_entities": 61265,
+        "news_event_links": 0,
+        "news_health": 12,
+        "news_impacts": 23381,
+        "news_junk_hashes": 9249,
+        "news_post_event": 0,
+        "news_prune_audit": 9269,
+        "news_sources": 13,
+        "news_topics": 42288,
+        "news_trade_links": 0,
+        "news_worker_state": 1,
+        "schema_meta": 1,
+        "schema_migrations": 1
+      },
+      "query_plans": {
+        "calendar_events::newest_rows_by_rowid": [
+          "SCAN calendar_events"
+        ],
+        "calendar_events::count": [
+          "SCAN calendar_events USING COVERING INDEX idx_calendar_events_sched"
+        ],
+        "calendar_worker_state::newest_rows_by_rowid": [
+          "SCAN calendar_worker_state"
+        ],
+        "calendar_worker_state::count": [
+          "SCAN calendar_worker_state"
+        ],
+        "news_ai_analysis::newest_rows_by_rowid": [
+          "SCAN news_ai_analysis"
+        ],
+        "news_ai_analysis::count": [
+          "SCAN news_ai_analysis USING COVERING INDEX sqlite_autoindex_news_ai_analysis_1"
+        ],
+        "news_analysis::newest_rows_by_rowid": [
+          "SCAN news_analysis"
+        ],
+        "news_analysis::count": [
+          "SCAN news_analysis USING COVERING INDEX sqlite_autoindex_news_analysis_1"
+        ],
+        "news_analysis_runs::newest_rows_by_rowid": [
+          "SCAN news_analysis_runs"
+        ],
+        "news_analysis_runs::count": [
+          "SCAN news_analysis_runs USING COVERING INDEX sqlite_autoindex_news_analysis_runs_1"
+        ],
+        "news_analyzed_hashes::newest_rows_by_rowid": [
+          "SCAN news_analyzed_hashes"
+        ],
+        "news_analyzed_hashes::count": [
+          "SCAN news_analyzed_hashes USING COVERING INDEX idx_news_analyzed_hashes_hash"
+        ],
+        "news_article_versions::newest_rows_by_rowid": [
+          "SCAN news_article_versions"
+        ],
+        "news_article_versions::count": [
+          "SCAN news_article_versions USING COVERING INDEX idx_news_versions_article"
+        ],
+        "news_articles::newest_rows_by_rowid": [
+          "SCAN news_articles"
+        ],
+        "news_articles::count": [
+          "SCAN news_articles USING COVERING INDEX idx_news_articles_status"
+        ],
+        "news_consensus::newest_rows_by_rowid": [
+          "SCAN news_consensus"
+        ],
+        "news_consensus::count": [
+          "SCAN news_consensus USING COVERING INDEX sqlite_autoindex_news_consensus_1"
+        ],
+        "news_entities::newest_rows_by_rowid": [
+          "SCAN news_entities"
+        ],
+        "news_entities::count": [
+          "SCAN news_entities"
+        ],
+        "news_event_links::newest_rows_by_rowid": [
+          "SCAN news_event_links"
+        ],
+        "news_event_links::count": [
+          "SCAN news_event_links USING COVERING INDEX sqlite_autoindex_news_event_links_1"
+        ],
+        "news_health::newest_rows_by_rowid": [
+          "SCAN news_health"
+        ],
+        "news_health::count": [
+          "SCAN news_health USING COVERING INDEX sqlite_autoindex_news_health_1"
+        ],
+        "news_impacts::newest_rows_by_rowid": [
+          "SCAN news_impacts"
+        ],
+        "news_impacts::count": [
+          "SCAN news_impacts USING COVERING INDEX idx_news_impacts_asset"
+        ],
+        "news_junk_hashes::newest_rows_by_rowid": [
+          "SCAN news_junk_hashes"
+        ],
+        "news_junk_hashes::count": [
+          "SCAN news_junk_hashes USING COVERING INDEX idx_news_junk_hashes_hash"
+        ],
+        "news_post_event::newest_rows_by_rowid": [
+          "SCAN news_post_event"
+        ],
+        "news_post_event::count": [
+          "SCAN news_post_event USING COVERING INDEX idx_post_event_article"
+        ],
+        "news_prune_audit::newest_rows_by_rowid": [
+          "SCAN news_prune_audit"
+        ],
+        "news_prune_audit::count": [
+          "SCAN news_prune_audit USING COVERING INDEX sqlite_autoindex_news_prune_audit_1"
+        ],
+        "news_sources::newest_rows_by_rowid": [
+          "SCAN news_sources"
+        ],
+        "news_sources::count": [
+          "SCAN news_sources USING COVERING INDEX sqlite_autoindex_news_sources_1"
+        ],
+        "news_topics::newest_rows_by_rowid": [
+          "SCAN news_topics"
+        ],
+        "news_topics::count": [
+          "SCAN news_topics"
+        ],
+        "news_trade_links::newest_rows_by_rowid": [
+          "SCAN news_trade_links"
+        ],
+        "news_trade_links::count": [
+          "SCAN news_trade_links USING COVERING INDEX idx_news_trade_links_article"
+        ],
+        "news_worker_state::newest_rows_by_rowid": [
+          "SCAN news_worker_state"
+        ],
+        "news_worker_state::count": [
+          "SCAN news_worker_state USING COVERING INDEX sqlite_autoindex_news_worker_state_1"
+        ],
+        "schema_meta::newest_rows_by_rowid": [
+          "SCAN schema_meta"
+        ],
+        "schema_meta::count": [
+          "SCAN schema_meta USING COVERING INDEX sqlite_autoindex_schema_meta_1"
+        ],
+        "schema_migrations::newest_rows_by_rowid": [
+          "SCAN schema_migrations"
+        ],
+        "schema_migrations::count": [
+          "SCAN schema_migrations USING COVERING INDEX sqlite_autoindex_schema_migrations_1"
+        ]
+      },
+      "dbstat": [
+        {
+          "name": "news_articles",
+          "bytes": 117288960
+        },
+        {
+          "name": "news_analysis",
+          "bytes": 66285568
+        },
+        {
+          "name": "news_ai_analysis",
+          "bytes": 6901760
+        },
+        {
+          "name": "news_analyzed_hashes",
+          "bytes": 4206592
+        },
+        {
+          "name": "news_impacts",
+          "bytes": 3493888
+        },
+        {
+          "name": "news_analysis_runs",
+          "bytes": 3424256
+        },
+        {
+          "name": "news_entities",
+          "bytes": 3235840
+        },
+        {
+          "name": "idx_news_articles_source_url",
+          "bytes": 3080192
+        },
+        {
+          "name": "sqlite_autoindex_news_articles_2",
+          "bytes": 2363392
+        },
+        {
+          "name": "idx_news_articles_source",
+          "bytes": 2248704
+        },
+        {
+          "name": "news_junk_hashes",
+          "bytes": 2134016
+        },
+        {
+          "name": "idx_news_impacts_asset",
+          "bytes": 1978368
+        },
+        {
+          "name": "idx_news_articles_published",
+          "bytes": 1916928
+        },
+        {
+          "name": "sqlite_autoindex_news_analyzed_hashes_1",
+          "bytes": 1892352
+        },
+        {
+          "name": "idx_news_analyzed_hashes_hash",
+          "bytes": 1892352
+        },
+        {
+          "name": "news_topics",
+          "bytes": 1802240
+        },
+        {
+          "name": "idx_news_analysis_article",
+          "bytes": 1679360
+        },
+        {
+          "name": "news_prune_audit",
+          "bytes": 1585152
+        },
+        {
+          "name": "sqlite_autoindex_news_articles_1",
+          "bytes": 827392
+        },
+        {
+          "name": "sqlite_autoindex_news_junk_hashes_1",
+          "bytes": 753664
+        },
+        {
+          "name": "idx_news_junk_hashes_hash",
+          "bytes": 753664
+        },
+        {
+          "name": "sqlite_autoindex_news_analysis_runs_1",
+          "bytes": 745472
+        },
+        {
+          "name": "sqlite_autoindex_news_analysis_1",
+          "bytes": 716800
+        },
+        {
+          "name": "idx_news_prune_audit_article",
+          "bytes": 606208
+        },
+        {
+          "name": "idx_news_articles_status",
+          "bytes": 397312
+        },
+        {
+          "name": "idx_news_articles_dup",
+          "bytes": 311296
+        },
+        {
+          "name": "sqlite_autoindex_news_prune_audit_1",
+          "bytes": 249856
+        },
+        {
+          "name": "idx_news_ai_analysis_article",
+          "bytes": 241664
+        },
+        {
+          "name": "sqlite_autoindex_news_ai_analysis_1",
+          "bytes": 98304
+        },
+        {
+          "name": "calendar_events",
+          "bytes": 86016
+        },
+        {
+          "name": "sqlite_schema",
+          "bytes": 20480
+        },
+        {
+          "name": "idx_calendar_events_sched",
+          "bytes": 16384
+        },
+        {
+          "name": "sqlite_autoindex_calendar_events_1",
+          "bytes": 12288
+        },
+        {
+          "name": "sqlite_sequence",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_autoindex_schema_migrations_1",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_autoindex_schema_meta_1",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_autoindex_news_worker_state_1",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_autoindex_news_trade_links_1",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_autoindex_news_sources_1",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_autoindex_news_post_event_1",
+          "bytes": 4096
+        }
+      ]
+    },
+    {
+      "path": "C:\\Users\\Capsizer\\source\\repos\\NexusTradingForexBot\\artifacts\\strategies.db",
+      "size_bytes": 30511104,
+      "mtime": "2026-09-27T09:44:50.613566+00:00",
+      "wal_present": false,
+      "shm_present": false,
+      "wal_size_bytes": 0,
+      "pragmas": {
+        "journal_mode": "delete",
+        "synchronous": 2,
+        "foreign_keys": 0,
+        "auto_vacuum": 0,
+        "page_size": 4096,
+        "page_count": 7449,
+        "freelist_count": 0,
+        "max_page_count": 4294967294,
+        "encoding": "UTF-8",
+        "user_version": 0,
+        "schema_version": 15,
+        "cache_size": -2000,
+        "mmap_size": 0,
+        "busy_timeout": 5000,
+        "journal_size_limit": -1,
+        "wal_autocheckpoint": 1000,
+        "wal_checkpoint_passive": [
+          0,
+          -1,
+          -1
+        ]
+      },
+      "integrity_check": "ok",
+      "sqlite_master": [
+        {
+          "type": "index",
+          "name": "idx_factory_candidates_gen",
+          "tbl_name": "factory_candidates",
+          "rootpage": 18,
+          "sql_len": 79
+        },
+        {
+          "type": "index",
+          "name": "idx_factory_candidates_lifecycle",
+          "tbl_name": "factory_candidates",
+          "rootpage": 19,
+          "sql_len": 81
+        },
+        {
+          "type": "index",
+          "name": "idx_factory_events_generation",
+          "tbl_name": "factory_events",
+          "rootpage": 21,
+          "sql_len": 78
+        },
+        {
+          "type": "index",
+          "name": "idx_factory_failures_candidate",
+          "tbl_name": "factory_failures",
+          "rootpage": 20,
+          "sql_len": 80
+        },
+        {
+          "type": "index",
+          "name": "idx_factory_runs_strategy",
+          "tbl_name": "factory_runs",
+          "rootpage": 23,
+          "sql_len": 70
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_candidates_1",
+          "tbl_name": "factory_candidates",
+          "rootpage": 5,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_events_1",
+          "tbl_name": "factory_events",
+          "rootpage": 9,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_failures_1",
+          "tbl_name": "factory_failures",
+          "rootpage": 7,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_generations_1",
+          "tbl_name": "factory_generations",
+          "rootpage": 3,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_loop_state_1",
+          "tbl_name": "factory_loop_state",
+          "rootpage": 15,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_provider_usage_1",
+          "tbl_name": "factory_provider_usage",
+          "rootpage": 13,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_runs_1",
+          "tbl_name": "factory_runs",
+          "rootpage": 11,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_strategy_research_meta_1",
+          "tbl_name": "strategy_research_meta",
+          "rootpage": 17,
+          "sql_len": null
+        },
+        {
+          "type": "table",
+          "name": "factory_candidates",
+          "tbl_name": "factory_candidates",
+          "rootpage": 4,
+          "sql_len": 522
+        },
+        {
+          "type": "table",
+          "name": "factory_events",
+          "tbl_name": "factory_events",
+          "rootpage": 8,
+          "sql_len": 250
+        },
+        {
+          "type": "table",
+          "name": "factory_failures",
+          "tbl_name": "factory_failures",
+          "rootpage": 6,
+          "sql_len": 294
+        },
+        {
+          "type": "table",
+          "name": "factory_generations",
+          "tbl_name": "factory_generations",
+          "rootpage": 2,
+          "sql_len": 343
+        },
+        {
+          "type": "table",
+          "name": "factory_loop_state",
+          "tbl_name": "factory_loop_state",
+          "rootpage": 14,
+          "sql_len": 319
+        },
+        {
+          "type": "table",
+          "name": "factory_provider_usage",
+          "tbl_name": "factory_provider_usage",
+          "rootpage": 12,
+          "sql_len": 423
+        },
+        {
+          "type": "table",
+          "name": "factory_runs",
+          "tbl_name": "factory_runs",
+          "rootpage": 10,
+          "sql_len": 269
+        },
+        {
+          "type": "table",
+          "name": "strategy_research_meta",
+          "tbl_name": "strategy_research_meta",
+          "rootpage": 16,
+          "sql_len": 119
+        }
+      ],
+      "table_row_counts": {
+        "factory_candidates": 4108,
+        "factory_events": 4445,
+        "factory_failures": 8932,
+        "factory_generations": 29,
+        "factory_loop_state": 2,
+        "factory_provider_usage": 27,
+        "factory_runs": 3926,
+        "strategy_research_meta": 2
+      },
+      "query_plans": {
+        "factory_candidates::newest_rows_by_rowid": [
+          "SCAN factory_candidates"
+        ],
+        "factory_candidates::count": [
+          "SCAN factory_candidates USING COVERING INDEX idx_factory_candidates_lifecycle"
+        ],
+        "factory_events::newest_rows_by_rowid": [
+          "SCAN factory_events"
+        ],
+        "factory_events::count": [
+          "SCAN factory_events USING COVERING INDEX idx_factory_events_generation"
+        ],
+        "factory_failures::newest_rows_by_rowid": [
+          "SCAN factory_failures"
+        ],
+        "factory_failures::count": [
+          "SCAN factory_failures USING COVERING INDEX idx_factory_failures_candidate"
+        ],
+        "factory_generations::newest_rows_by_rowid": [
+          "SCAN factory_generations"
+        ],
+        "factory_generations::count": [
+          "SCAN factory_generations USING COVERING INDEX sqlite_autoindex_factory_generations_1"
+        ],
+        "factory_loop_state::newest_rows_by_rowid": [
+          "SCAN factory_loop_state"
+        ],
+        "factory_loop_state::count": [
+          "SCAN factory_loop_state USING COVERING INDEX sqlite_autoindex_factory_loop_state_1"
+        ],
+        "factory_provider_usage::newest_rows_by_rowid": [
+          "SCAN factory_provider_usage"
+        ],
+        "factory_provider_usage::count": [
+          "SCAN factory_provider_usage USING COVERING INDEX sqlite_autoindex_factory_provider_usage_1"
+        ],
+        "factory_runs::newest_rows_by_rowid": [
+          "SCAN factory_runs"
+        ],
+        "factory_runs::count": [
+          "SCAN factory_runs USING COVERING INDEX idx_factory_runs_strategy"
+        ],
+        "strategy_research_meta::newest_rows_by_rowid": [
+          "SCAN strategy_research_meta"
+        ],
+        "strategy_research_meta::count": [
+          "SCAN strategy_research_meta USING COVERING INDEX sqlite_autoindex_strategy_research_meta_1"
+        ]
+      },
+      "dbstat": [
+        {
+          "name": "factory_events",
+          "bytes": 18690048
+        },
+        {
+          "name": "factory_candidates",
+          "bytes": 8118272
+        },
+        {
+          "name": "factory_failures",
+          "bytes": 2068480
+        },
+        {
+          "name": "factory_runs",
+          "bytes": 360448
+        },
+        {
+          "name": "sqlite_autoindex_factory_failures_1",
+          "bytes": 303104
+        },
+        {
+          "name": "idx_factory_failures_candidate",
+          "bytes": 217088
+        },
+        {
+          "name": "sqlite_autoindex_factory_events_1",
+          "bytes": 139264
+        },
+        {
+          "name": "sqlite_autoindex_factory_runs_1",
+          "bytes": 110592
+        },
+        {
+          "name": "sqlite_autoindex_factory_candidates_1",
+          "bytes": 98304
+        },
+        {
+          "name": "idx_factory_runs_strategy",
+          "bytes": 94208
+        },
+        {
+          "name": "idx_factory_candidates_lifecycle",
+          "bytes": 81920
+        },
+        {
+          "name": "idx_factory_events_generation",
+          "bytes": 73728
+        },
+        {
+          "name": "idx_factory_candidates_gen",
+          "bytes": 57344
+        },
+        {
+          "name": "factory_loop_state",
+          "bytes": 36864
+        },
+        {
+          "name": "factory_generations",
+          "bytes": 24576
+        },
+        {
+          "name": "sqlite_schema",
+          "bytes": 12288
+        },
+        {
+          "name": "strategy_research_meta",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_autoindex_strategy_research_meta_1",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_autoindex_factory_provider_usage_1",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_autoindex_factory_loop_state_1",
+          "bytes": 4096
+        },
+        {
+          "name": "sqlite_autoindex_factory_generations_1",
+          "bytes": 4096
+        },
+        {
+          "name": "factory_provider_usage",
+          "bytes": 4096
+        }
+      ]
+    },
+    {
+      "path": "C:\\Users\\Capsizer\\source\\repos\\nse-review-main\\artifacts\\audit.db",
+      "size_bytes": 435593216,
+      "mtime": "2026-09-27T00:15:00.883627+00:00",
+      "wal_present": false,
+      "shm_present": false,
+      "wal_size_bytes": 0,
+      "pragmas": {
+        "journal_mode": "wal",
+        "synchronous": 2,
+        "foreign_keys": 0,
+        "auto_vacuum": 0,
+        "page_size": 4096,
+        "page_count": 106346,
+        "freelist_count": 0,
+        "max_page_count": 4294967294,
+        "encoding": "UTF-8",
+        "user_version": 0,
+        "schema_version": 202,
+        "cache_size": -2000,
+        "mmap_size": 0,
+        "busy_timeout": 5000,
+        "journal_size_limit": -1,
+        "wal_autocheckpoint": 1000,
+        "wal_checkpoint_passive": [
+          0,
+          0,
+          0
+        ]
+      },
+      "integrity_check": "ok",
+      "sqlite_master": [
+        {
+          "type": "index",
+          "name": "idx_anomaly_events_ticket",
+          "tbl_name": "anomaly_events",
+          "rootpage": 12327,
+          "sql_len": 64
+        },
+        {
+          "type": "index",
+          "name": "idx_anomaly_events_type",
+          "tbl_name": "anomaly_events",
+          "rootpage": 12328,
+          "sql_len": 68
+        },
+        {
+          "type": "index",
+          "name": "idx_audit_ledger_close_time",
+          "tbl_name": "audit_ledger",
+          "rootpage": 12425,
+          "sql_len": 69
+        },
+        {
+          "type": "index",
+          "name": "idx_audit_signals_dedup",
+          "tbl_name": "audit_signals",
+          "rootpage": 75,
+          "sql_len": 78
+        },
+        {
+          "type": "index",
+          "name": "idx_autopsy_strategy",
+          "tbl_name": "trade_autopsies",
+          "rootpage": 62,
+          "sql_len": 65
+        },
+        {
+          "type": "index",
+          "name": "idx_behavior_analysis_ticket",
+          "tbl_name": "behavior_analysis",
+          "rootpage": 12325,
+          "sql_len": 70
+        },
+        {
+          "type": "index",
+          "name": "idx_behavior_analysis_version",
+          "tbl_name": "behavior_analysis",
+          "rootpage": 12326,
+          "sql_len": 98
+        },
+        {
+          "type": "index",
+          "name": "idx_behavior_pattern",
+          "tbl_name": "behavior_detections",
+          "rootpage": 64,
+          "sql_len": 65
+        },
+        {
+          "type": "index",
+          "name": "idx_behavior_ticket",
+          "tbl_name": "behavior_detections",
+          "rootpage": 63,
+          "sql_len": 63
+        },
+        {
+          "type": "index",
+          "name": "idx_broker_deals_position",
+          "tbl_name": "audit_broker_deals",
+          "rootpage": 72,
+          "sql_len": 73
+        },
+        {
+          "type": "index",
+          "name": "idx_broker_trades_exit",
+          "tbl_name": "audit_broker_trades",
+          "rootpage": 74,
+          "sql_len": 69
+        },
+        {
+          "type": "index",
+          "name": "idx_events_archive_occurred",
+          "tbl_name": "research_events_archive",
+          "rootpage": 106342,
+          "sql_len": 81
+        },
+        {
+          "type": "index",
+          "name": "idx_events_strategy",
+          "tbl_name": "research_events",
+          "rootpage": 12733,
+          "sql_len": 77
+        },
+        {
+          "type": "index",
+          "name": "idx_evidence_archive_created",
+          "tbl_name": "research_evidence_archive",
+          "rootpage": 106343,
+          "sql_len": 83
+        },
+        {
+          "type": "index",
+          "name": "idx_evidence_strategy",
+          "tbl_name": "research_evidence",
+          "rootpage": 12734,
+          "sql_len": 80
+        },
+        {
+          "type": "index",
+          "name": "idx_evidence_strategy_created_id",
+          "tbl_name": "research_evidence",
+          "rootpage": 106018,
+          "sql_len": 105
+        },
+        {
+          "type": "index",
+          "name": "idx_evolution_status",
+          "tbl_name": "strategy_evolution_candidates",
+          "rootpage": 65,
+          "sql_len": 74
+        },
+        {
+          "type": "index",
+          "name": "idx_executions_order_status",
+          "tbl_name": "audit_executions",
+          "rootpage": 403,
+          "sql_len": 86
+        },
+        {
+          "type": "index",
+          "name": "idx_exp_corrections_key",
+          "tbl_name": "audit_experience_corrections",
+          "rootpage": 59,
+          "sql_len": 85
+        },
+        {
+          "type": "index",
+          "name": "idx_exp_outcome_key",
+          "tbl_name": "audit_experience_outcomes",
+          "rootpage": 58,
+          "sql_len": 78
+        },
+        {
+          "type": "index",
+          "name": "idx_exp_request",
+          "tbl_name": "audit_experiences",
+          "rootpage": 56,
+          "sql_len": 61
+        },
+        {
+          "type": "index",
+          "name": "idx_exp_schema",
+          "tbl_name": "audit_experiences",
+          "rootpage": 57,
+          "sql_len": 86
+        },
+        {
+          "type": "index",
+          "name": "idx_exp_strategy_time",
+          "tbl_name": "audit_experiences",
+          "rootpage": 54,
+          "sql_len": 93
+        },
+        {
+          "type": "index",
+          "name": "idx_exp_symbol_time",
+          "tbl_name": "audit_experiences",
+          "rootpage": 55,
+          "sql_len": 86
+        },
+        {
+          "type": "index",
+          "name": "idx_factory_cand_gen",
+          "tbl_name": "factory_candidates",
+          "rootpage": 12716,
+          "sql_len": 88
+        },
+        {
+          "type": "index",
+          "name": "idx_factory_cand_hash",
+          "tbl_name": "factory_candidates",
+          "rootpage": 12717,
+          "sql_len": 73
+        },
+        {
+          "type": "index",
+          "name": "idx_factory_events_gen",
+          "tbl_name": "factory_events",
+          "rootpage": 12719,
+          "sql_len": 80
+        },
+        {
+          "type": "index",
+          "name": "idx_factory_fail_gen",
+          "tbl_name": "factory_failures",
+          "rootpage": 12718,
+          "sql_len": 68
+        },
+        {
+          "type": "index",
+          "name": "idx_gates_run",
+          "tbl_name": "research_gates",
+          "rootpage": 12732,
+          "sql_len": 61
+        },
+        {
+          "type": "index",
+          "name": "idx_gates_strategy",
+          "tbl_name": "research_gates",
+          "rootpage": 12731,
+          "sql_len": 75
+        },
+        {
+          "type": "index",
+          "name": "idx_gates_strategy_run",
+          "tbl_name": "research_gates",
+          "rootpage": 3750,
+          "sql_len": 97
+        },
+        {
+          "type": "index",
+          "name": "idx_gov_comp_ts",
+          "tbl_name": "model_shadow_comparisons",
+          "rootpage": 12420,
+          "sql_len": 67
+        },
+        {
+          "type": "index",
+          "name": "idx_gov_events_model",
+          "tbl_name": "model_governance_events",
+          "rootpage": 12418,
+          "sql_len": 77
+        },
+        {
+          "type": "index",
+          "name": "idx_gov_events_ts",
+          "tbl_name": "model_governance_events",
+          "rootpage": 12417,
+          "sql_len": 68
+        },
+        {
+          "type": "index",
+          "name": "idx_gov_state_model",
+          "tbl_name": "model_governance_state",
+          "rootpage": 12419,
+          "sql_len": 83
+        },
+        {
+          "type": "index",
+          "name": "idx_incident_events_incident",
+          "tbl_name": "incident_events",
+          "rootpage": 12450,
+          "sql_len": 73
+        },
+        {
+          "type": "index",
+          "name": "idx_incident_quarantine_incident",
+          "tbl_name": "incident_quarantine",
+          "rootpage": 12451,
+          "sql_len": 81
+        },
+        {
+          "type": "index",
+          "name": "idx_incidents_category",
+          "tbl_name": "incidents",
+          "rootpage": 12447,
+          "sql_len": 58
+        },
+        {
+          "type": "index",
+          "name": "idx_incidents_detected",
+          "tbl_name": "incidents",
+          "rootpage": 12449,
+          "sql_len": 61
+        },
+        {
+          "type": "index",
+          "name": "idx_incidents_fingerprint",
+          "tbl_name": "incidents",
+          "rootpage": 12448,
+          "sql_len": 64
+        },
+        {
+          "type": "index",
+          "name": "idx_incidents_severity",
+          "tbl_name": "incidents",
+          "rootpage": 12446,
+          "sql_len": 58
+        },
+        {
+          "type": "index",
+          "name": "idx_incidents_status",
+          "tbl_name": "incidents",
+          "rootpage": 12445,
+          "sql_len": 54
+        },
+        {
+          "type": "index",
+          "name": "idx_learning_cycle_events_cycle",
+          "tbl_name": "learning_cycle_events",
+          "rootpage": 3654,
+          "sql_len": 79
+        },
+        {
+          "type": "index",
+          "name": "idx_learning_cycles_status",
+          "tbl_name": "learning_cycles",
+          "rootpage": 3568,
+          "sql_len": 66
+        },
+        {
+          "type": "index",
+          "name": "idx_learning_cycles_trigger",
+          "tbl_name": "learning_cycles",
+          "rootpage": 3647,
+          "sql_len": 77
+        },
+        {
+          "type": "index",
+          "name": "idx_lifecycle_ticket",
+          "tbl_name": "position_lifecycle_events",
+          "rootpage": 60,
+          "sql_len": 80
+        },
+        {
+          "type": "index",
+          "name": "idx_lifecycle_type",
+          "tbl_name": "position_lifecycle_events",
+          "rootpage": 61,
+          "sql_len": 72
+        },
+        {
+          "type": "index",
+          "name": "idx_model_comp_candidate",
+          "tbl_name": "model_comparisons",
+          "rootpage": 71,
+          "sql_len": 78
+        },
+        {
+          "type": "index",
+          "name": "idx_orders_execution_idempotency",
+          "tbl_name": "audit_orders",
+          "rootpage": 975,
+          "sql_len": 174
+        },
+        {
+          "type": "index",
+          "name": "idx_orders_ticket",
+          "tbl_name": "audit_orders",
+          "rootpage": 11730,
+          "sql_len": 90
+        },
+        {
+          "type": "index",
+          "name": "idx_paper_exec_identity",
+          "tbl_name": "audit_paper_executions",
+          "rootpage": 3626,
+          "sql_len": 114
+        },
+        {
+          "type": "index",
+          "name": "idx_paper_exec_ts",
+          "tbl_name": "audit_paper_executions",
+          "rootpage": 3639,
+          "sql_len": 60
+        },
+        {
+          "type": "index",
+          "name": "idx_registry_id",
+          "tbl_name": "strategy_registry",
+          "rootpage": 66,
+          "sql_len": 74
+        },
+        {
+          "type": "index",
+          "name": "idx_registry_lifecycle",
+          "tbl_name": "strategy_registry",
+          "rootpage": 67,
+          "sql_len": 67
+        },
+        {
+          "type": "index",
+          "name": "idx_release_metadata_key",
+          "tbl_name": "release_metadata",
+          "rootpage": 12472,
+          "sql_len": 79
+        },
+        {
+          "type": "index",
+          "name": "idx_research_runs_strategy",
+          "tbl_name": "research_runs",
+          "rootpage": 68,
+          "sql_len": 69
+        },
+        {
+          "type": "index",
+          "name": "idx_research_runs_strategy_executed",
+          "tbl_name": "research_runs",
+          "rootpage": 32378,
+          "sql_len": 92
+        },
+        {
+          "type": "index",
+          "name": "idx_settings_audit_ts",
+          "tbl_name": "settings_audit",
+          "rootpage": 12785,
+          "sql_len": 63
+        },
+        {
+          "type": "index",
+          "name": "idx_shadow70_events_ts",
+          "tbl_name": "shadow70_events",
+          "rootpage": 12463,
+          "sql_len": 65
+        },
+        {
+          "type": "index",
+          "name": "idx_shadow70_obs_model",
+          "tbl_name": "shadow70_observations",
+          "rootpage": 12462,
+          "sql_len": 81
+        },
+        {
+          "type": "index",
+          "name": "idx_shadow70_obs_ts",
+          "tbl_name": "shadow70_observations",
+          "rootpage": 12461,
+          "sql_len": 68
+        },
+        {
+          "type": "index",
+          "name": "idx_shadow_decisions_run",
+          "tbl_name": "shadow_decisions",
+          "rootpage": 30361,
+          "sql_len": 76
+        },
+        {
+          "type": "index",
+          "name": "idx_shadow_decisions_symbol",
+          "tbl_name": "shadow_decisions",
+          "rootpage": 30362,
+          "sql_len": 79
+        },
+        {
+          "type": "index",
+          "name": "idx_shadow_runs_status",
+          "tbl_name": "shadow_runs",
+          "rootpage": 30363,
+          "sql_len": 58
+        },
+        {
+          "type": "index",
+          "name": "idx_train_runs_dataset",
+          "tbl_name": "training_runs",
+          "rootpage": 69,
+          "sql_len": 64
+        },
+        {
+          "type": "index",
+          "name": "idx_train_runs_status",
+          "tbl_name": "training_runs",
+          "rootpage": 70,
+          "sql_len": 59
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_ai_provider_config_1",
+          "tbl_name": "ai_provider_config",
+          "rootpage": 106345,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_anomaly_events_1",
+          "tbl_name": "anomaly_events",
+          "rootpage": 12324,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_application_settings_1",
+          "tbl_name": "application_settings",
+          "rootpage": 12780,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_audit_broker_trades_1",
+          "tbl_name": "audit_broker_trades",
+          "rootpage": 49,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_audit_experience_corrections_1",
+          "tbl_name": "audit_experience_corrections",
+          "rootpage": 10,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_audit_experience_outcomes_1",
+          "tbl_name": "audit_experience_outcomes",
+          "rootpage": 8,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_audit_experiences_1",
+          "tbl_name": "audit_experiences",
+          "rootpage": 5,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_audit_guard_telemetry_1",
+          "tbl_name": "audit_guard_telemetry",
+          "rootpage": 53,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_behavior_analysis_1",
+          "tbl_name": "behavior_analysis",
+          "rootpage": 12322,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_behavior_detections_1",
+          "tbl_name": "behavior_detections",
+          "rootpage": 23,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_configuration_metadata_1",
+          "tbl_name": "configuration_metadata",
+          "rootpage": 12783,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_experience_model_registry_1",
+          "tbl_name": "experience_model_registry",
+          "rootpage": 16,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_candidates_1",
+          "tbl_name": "factory_candidates",
+          "rootpage": 12704,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_events_1",
+          "tbl_name": "factory_events",
+          "rootpage": 12708,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_failures_1",
+          "tbl_name": "factory_failures",
+          "rootpage": 12706,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_generations_1",
+          "tbl_name": "factory_generations",
+          "rootpage": 12702,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_loop_state_1",
+          "tbl_name": "factory_loop_state",
+          "rootpage": 12715,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_provider_usage_1",
+          "tbl_name": "factory_provider_usage",
+          "rootpage": 12713,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_factory_runs_1",
+          "tbl_name": "factory_runs",
+          "rootpage": 12711,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_incident_quarantine_1",
+          "tbl_name": "incident_quarantine",
+          "rootpage": 12444,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_incidents_1",
+          "tbl_name": "incidents",
+          "rootpage": 12439,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_intelligence_worker_state_1",
+          "tbl_name": "intelligence_worker_state",
+          "rootpage": 27,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_learning_cycles_1",
+          "tbl_name": "learning_cycles",
+          "rootpage": 3401,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_model_comparisons_1",
+          "tbl_name": "model_comparisons",
+          "rootpage": 45,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_model_governance_events_1",
+          "tbl_name": "model_governance_events",
+          "rootpage": 12411,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_model_promotion_audit_1",
+          "tbl_name": "model_promotion_audit",
+          "rootpage": 12434,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_model_rollback_audit_1",
+          "tbl_name": "model_rollback_audit",
+          "rootpage": 12437,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_model_shadow_comparisons_1",
+          "tbl_name": "model_shadow_comparisons",
+          "rootpage": 12414,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_position_lifecycle_events_1",
+          "tbl_name": "position_lifecycle_events",
+          "rootpage": 18,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_release_metadata_1",
+          "tbl_name": "release_metadata",
+          "rootpage": 12471,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_research_events_1",
+          "tbl_name": "research_events",
+          "rootpage": 12723,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_research_evidence_1",
+          "tbl_name": "research_evidence",
+          "rootpage": 12726,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_research_gates_1",
+          "tbl_name": "research_gates",
+          "rootpage": 12721,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_research_run_snapshots_1",
+          "tbl_name": "research_run_snapshots",
+          "rootpage": 12728,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_research_runs_1",
+          "tbl_name": "research_runs",
+          "rootpage": 32,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_research_worker_heartbeat_1",
+          "tbl_name": "research_worker_heartbeat",
+          "rootpage": 12730,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_research_worker_state_1",
+          "tbl_name": "research_worker_state",
+          "rootpage": 34,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_schema_meta_1",
+          "tbl_name": "schema_meta",
+          "rootpage": 12422,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_schema_migrations_1",
+          "tbl_name": "schema_migrations",
+          "rootpage": 12424,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_shadow70_drift_alerts_1",
+          "tbl_name": "shadow70_drift_alerts",
+          "rootpage": 12459,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_shadow70_events_1",
+          "tbl_name": "shadow70_events",
+          "rootpage": 12456,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_shadow70_observations_1",
+          "tbl_name": "shadow70_observations",
+          "rootpage": 12453,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_shadow_comparisons_1",
+          "tbl_name": "shadow_comparisons",
+          "rootpage": 30357,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_shadow_decisions_1",
+          "tbl_name": "shadow_decisions",
+          "rootpage": 30354,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_shadow_promotions_1",
+          "tbl_name": "shadow_promotions",
+          "rootpage": 30359,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_shadow_runs_1",
+          "tbl_name": "shadow_runs",
+          "rootpage": 30352,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_strategy_evolution_candidates_1",
+          "tbl_name": "strategy_evolution_candidates",
+          "rootpage": 25,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_strategy_intelligence_registry_1",
+          "tbl_name": "strategy_intelligence_registry",
+          "rootpage": 13,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_strategy_registry_1",
+          "tbl_name": "strategy_registry",
+          "rootpage": 29,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_trade_autopsies_1",
+          "tbl_name": "trade_autopsies",
+          "rootpage": 20,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_trading_rules_config_1",
+          "tbl_name": "trading_rules_config",
+          "rootpage": 3,
+          "sql_len": null
+        },
+        {
+          "type": "index",
+          "name": "sqlite_autoindex_training_runs_1",
+          "tbl_name": "training_runs",
+          "rootpage": 42,
+          "sql_len": null
+        },
+        {
+          "type": "table",
+          "name": "ai_provider_activation",
+          "tbl_name": "ai_provider_activation",
+          "rootpage": 106346,
+          "sql_len": 448
+        },
+        {
+          "type": "table",
+          "name": "ai_provider_config",
+          "tbl_name": "ai_provider_config",
+          "rootpage": 106344,
+          "sql_len": 243
+        },
+        {
+          "type": "table",
+          "name": "anomaly_events",
+          "tbl_name": "anomaly_events",
+          "rootpage": 12323,
+          "sql_len": 501
+        },
+        {
+          "type": "table",
+          "name": "application_settings",
+          "tbl_name": "application_settings",
+          "rootpage": 12779,
+          "sql_len": 489
+        },
+        {
+          "type": "table",
+          "name": "audit_account_snapshots",
+          "tbl_name": "audit_account_snapshots",
+          "rootpage": 40,
+          "sql_len": 341
+        },
+        {
+          "type": "table",
+          "name": "audit_broker_deals",
+          "tbl_name": "audit_broker_deals",
+          "rootpage": 47,
+          "sql_len": 602
+        },
+        {
+          "type": "table",
+          "name": "audit_broker_history_meta",
+          "tbl_name": "audit_broker_history_meta",
+          "rootpage": 51,
+          "sql_len": 287
+        },
+        {
+          "type": "table",
+          "name": "audit_broker_orders",
+          "tbl_name": "audit_broker_orders",
+          "rootpage": 46,
+          "sql_len": 677
+        },
+        {
+          "type": "table",
+          "name": "audit_broker_trades",
+          "tbl_name": "audit_broker_trades",
+          "rootpage": 48,
+          "sql_len": 757
+        },
+        {
+          "type": "table",
+          "name": "audit_dead_letter",
+          "tbl_name": "audit_dead_letter",
+          "rootpage": 3667,
+          "sql_len": 569
+        },
+        {
+          "type": "table",
+          "name": "audit_executions",
+          "tbl_name": "audit_executions",
+          "rootpage": 39,
+          "sql_len": 413
+        },
+        {
+          "type": "table",
+          "name": "audit_executions_reconciled",
+          "tbl_name": "audit_executions_reconciled",
+          "rootpage": 1732,
+          "sql_len": 343
+        },
+        {
+          "type": "table",
+          "name": "audit_experience_corrections",
+          "tbl_name": "audit_experience_corrections",
+          "rootpage": 9,
+          "sql_len": 419
+        },
+        {
+          "type": "table",
+          "name": "audit_experience_outcomes",
+          "tbl_name": "audit_experience_outcomes",
+          "rootpage": 7,
+          "sql_len": 1306
+        },
+        {
+          "type": "table",
+          "name": "audit_experiences",
+          "tbl_name": "audit_experiences",
+          "rootpage": 4,
+          "sql_len": 1406
+        },
+        {
+          "type": "table",
+          "name": "audit_guard_telemetry",
+          "tbl_name": "audit_guard_telemetry",
+          "rootpage": 52,
+          "sql_len": 289
+        },
+        {
+          "type": "table",
+          "name": "audit_ledger",
+          "tbl_name": "audit_ledger",
+          "rootpage": 37,
+          "sql_len": 2099
+        },
+        {
+          "type": "table",
+          "name": "audit_orders",
+          "tbl_name": "audit_orders",
+          "rootpage": 36,
+          "sql_len": 539
+        },
+        {
+          "type": "table",
+          "name": "audit_paper_executions",
+          "tbl_name": "audit_paper_executions",
+          "rootpage": 3616,
+          "sql_len": 542
+        },
+        {
+          "type": "table",
+          "name": "audit_signals",
+          "tbl_name": "audit_signals",
+          "rootpage": 35,
+          "sql_len": 1011
+        },
+        {
+          "type": "table",
+          "name": "behavior_analysis",
+          "tbl_name": "behavior_analysis",
+          "rootpage": 12321,
+          "sql_len": 652
+        },
+        {
+          "type": "table",
+          "name": "behavior_detections",
+          "tbl_name": "behavior_detections",
+          "rootpage": 22,
+          "sql_len": 584
+        },
+        {
+          "type": "table",
+          "name": "configuration_metadata",
+          "tbl_name": "configuration_metadata",
+          "rootpage": 12782,
+          "sql_len": 105
+        },
+        {
+          "type": "table",
+          "name": "experience_model_registry",
+          "tbl_name": "experience_model_registry",
+          "rootpage": 15,
+          "sql_len": 1009
+        },
+        {
+          "type": "table",
+          "name": "factory_candidates",
+          "tbl_name": "factory_candidates",
+          "rootpage": 12703,
+          "sql_len": 738
+        },
+        {
+          "type": "table",
+          "name": "factory_events",
+          "tbl_name": "factory_events",
+          "rootpage": 12707,
+          "sql_len": 346
+        },
+        {
+          "type": "table",
+          "name": "factory_failures",
+          "tbl_name": "factory_failures",
+          "rootpage": 12705,
+          "sql_len": 402
+        },
+        {
+          "type": "table",
+          "name": "factory_generations",
+          "tbl_name": "factory_generations",
+          "rootpage": 12701,
+          "sql_len": 463
+        },
+        {
+          "type": "table",
+          "name": "factory_loop_state",
+          "tbl_name": "factory_loop_state",
+          "rootpage": 12714,
+          "sql_len": 313
+        },
+        {
+          "type": "table",
+          "name": "factory_provider_usage",
+          "tbl_name": "factory_provider_usage",
+          "rootpage": 12712,
+          "sql_len": 567
+        },
+        {
+          "type": "table",
+          "name": "factory_runs",
+          "tbl_name": "factory_runs",
+          "rootpage": 12710,
+          "sql_len": 365
+        },
+        {
+          "type": "table",
+          "name": "incident_events",
+          "tbl_name": "incident_events",
+          "rootpage": 12441,
+          "sql_len": 331
+        },
+        {
+          "type": "table",
+          "name": "incident_quarantine",
+          "tbl_name": "incident_quarantine",
+          "rootpage": 12443,
+          "sql_len": 420
+        },
+        {
+          "type": "table",
+          "name": "incident_value_traces",
+          "tbl_name": "incident_value_traces",
+          "rootpage": 12442,
+          "sql_len": 277
+        },
+        {
+          "type": "table",
+          "name": "incidents",
+          "tbl_name": "incidents",
+          "rootpage": 12438,
+          "sql_len": 1425
+        },
+        {
+          "type": "table",
+          "name": "intelligence_worker_state",
+          "tbl_name": "intelligence_worker_state",
+          "rootpage": 26,
+          "sql_len": 280
+        },
+        {
+          "type": "table",
+          "name": "learning_cycle_events",
+          "tbl_name": "learning_cycle_events",
+          "rootpage": 3477,
+          "sql_len": 411
+        },
+        {
+          "type": "table",
+          "name": "learning_cycles",
+          "tbl_name": "learning_cycles",
+          "rootpage": 2048,
+          "sql_len": 1179
+        },
+        {
+          "type": "table",
+          "name": "model_comparisons",
+          "tbl_name": "model_comparisons",
+          "rootpage": 44,
+          "sql_len": 617
+        },
+        {
+          "type": "table",
+          "name": "model_governance_events",
+          "tbl_name": "model_governance_events",
+          "rootpage": 12410,
+          "sql_len": 944
+        },
+        {
+          "type": "table",
+          "name": "model_governance_state",
+          "tbl_name": "model_governance_state",
+          "rootpage": 12412,
+          "sql_len": 380
+        },
+        {
+          "type": "table",
+          "name": "model_promotion_audit",
+          "tbl_name": "model_promotion_audit",
+          "rootpage": 12433,
+          "sql_len": 971
+        },
+        {
+          "type": "table",
+          "name": "model_rollback_audit",
+          "tbl_name": "model_rollback_audit",
+          "rootpage": 12436,
+          "sql_len": 731
+        },
+        {
+          "type": "table",
+          "name": "model_runtime_health",
+          "tbl_name": "model_runtime_health",
+          "rootpage": 12416,
+          "sql_len": 908
+        },
+        {
+          "type": "table",
+          "name": "model_shadow_comparisons",
+          "tbl_name": "model_shadow_comparisons",
+          "rootpage": 12413,
+          "sql_len": 1620
+        },
+        {
+          "type": "table",
+          "name": "position_lifecycle_events",
+          "tbl_name": "position_lifecycle_events",
+          "rootpage": 17,
+          "sql_len": 642
+        },
+        {
+          "type": "table",
+          "name": "release_metadata",
+          "tbl_name": "release_metadata",
+          "rootpage": 12470,
+          "sql_len": 182
+        },
+        {
+          "type": "table",
+          "name": "research_events",
+          "tbl_name": "research_events",
+          "rootpage": 12722,
+          "sql_len": 472
+        },
+        {
+          "type": "table",
+          "name": "research_events_archive",
+          "tbl_name": "research_events_archive",
+          "rootpage": 106339,
+          "sql_len": 376
+        },
+        {
+          "type": "table",
+          "name": "research_evidence",
+          "tbl_name": "research_evidence",
+          "rootpage": 12725,
+          "sql_len": 584
+        },
+        {
+          "type": "table",
+          "name": "research_evidence_archive",
+          "tbl_name": "research_evidence_archive",
+          "rootpage": 106340,
+          "sql_len": 446
+        },
+        {
+          "type": "table",
+          "name": "research_gates",
+          "tbl_name": "research_gates",
+          "rootpage": 12720,
+          "sql_len": 925
+        },
+        {
+          "type": "table",
+          "name": "research_run_snapshots",
+          "tbl_name": "research_run_snapshots",
+          "rootpage": 12727,
+          "sql_len": 1249
+        },
+        {
+          "type": "table",
+          "name": "research_runs",
+          "tbl_name": "research_runs",
+          "rootpage": 31,
+          "sql_len": 562
+        },
+        {
+          "type": "table",
+          "name": "research_worker_heartbeat",
+          "tbl_name": "research_worker_heartbeat",
+          "rootpage": 12729,
+          "sql_len": 719
+        },
+        {
+          "type": "table",
+          "name": "research_worker_state",
+          "tbl_name": "research_worker_state",
+          "rootpage": 33,
+          "sql_len": 276
+        },
+        {
+          "type": "table",
+          "name": "runtime_risk_state",
+          "tbl_name": "runtime_risk_state",
+          "rootpage": 3657,
+          "sql_len": 789
+        },
+        {
+          "type": "table",
+          "name": "schema_meta",
+          "tbl_name": "schema_meta",
+          "rootpage": 12421,
+          "sql_len": 59
+        },
+        {
+          "type": "table",
+          "name": "schema_migrations",
+          "tbl_name": "schema_migrations",
+          "rootpage": 12423,
+          "sql_len": 359
+        },
+        {
+          "type": "table",
+          "name": "settings_audit",
+          "tbl_name": "settings_audit",
+          "rootpage": 12784,
+          "sql_len": 384
+        },
+        {
+          "type": "table",
+          "name": "shadow70_drift_alerts",
+          "tbl_name": "shadow70_drift_alerts",
+          "rootpage": 12458,
+          "sql_len": 790
+        },
+        {
+          "type": "table",
+          "name": "shadow70_events",
+          "tbl_name": "shadow70_events",
+          "rootpage": 12455,
+          "sql_len": 688
+        },
+        {
+          "type": "table",
+          "name": "shadow70_feature_health",
+          "tbl_name": "shadow70_feature_health",
+          "rootpage": 12457,
+          "sql_len": 822
+        },
+        {
+          "type": "table",
+          "name": "shadow70_observations",
+          "tbl_name": "shadow70_observations",
+          "rootpage": 12452,
+          "sql_len": 2185
+        },
+        {
+          "type": "table",
+          "name": "shadow_comparisons",
+          "tbl_name": "shadow_comparisons",
+          "rootpage": 30355,
+          "sql_len": 1545
+        },
+        {
+          "type": "table",
+          "name": "shadow_decisions",
+          "tbl_name": "shadow_decisions",
+          "rootpage": 30353,
+          "sql_len": 2190
+        },
+        {
+          "type": "table",
+          "name": "shadow_promotions",
+          "tbl_name": "shadow_promotions",
+          "rootpage": 30358,
+          "sql_len": 706
+        },
+        {
+          "type": "table",
+          "name": "shadow_runs",
+          "tbl_name": "shadow_runs",
+          "rootpage": 30351,
+          "sql_len": 797
+        },
+        {
+          "type": "table",
+          "name": "sqlite_sequence",
+          "tbl_name": "sqlite_sequence",
+          "rootpage": 6,
+          "sql_len": 38
+        },
+        {
+          "type": "table",
+          "name": "sqlite_stat1",
+          "tbl_name": "sqlite_stat1",
+          "rootpage": 106336,
+          "sql_len": 39
+        },
+        {
+          "type": "table",
+          "name": "strategy_evolution_candidates",
+          "tbl_name": "strategy_evolution_candidates",
+          "rootpage": 24,
+          "sql_len": 661
+        },
+        {
+          "type": "table",
+          "name": "strategy_intelligence_registry",
+          "tbl_name": "strategy_intelligence_registry",
+          "rootpage": 12,
+          "sql_len": 741
+        },
+        {
+          "type": "table",
+          "name": "strategy_registry",
+          "tbl_name": "strategy_registry",
+          "rootpage": 28,
+          "sql_len": 1144
+        },
+        {
+          "type": "table",
+          "name": "trade_autopsies",
+          "tbl_name": "trade_autopsies",
+          "rootpage": 19,
+          "sql_len": 1372
+        },
+        {
+          "type": "table",
+          "name": "trading_rules_config",
+          "tbl_name": "trading_rules_config",
+          "rootpage": 2,
+          "sql_len": 211
+        },
+        {
+          "type": "table",
+          "name": "training_runs",
+          "tbl_name": "training_runs",
+          "rootpage": 41,
+          "sql_len": 1445
+        }
+      ],
+      "table_row_counts": {
+        "ai_provider_activation": 0,
+        "ai_provider_config": 0,
+        "anomaly_events": 22,
+        "application_settings": 0,
+        "audit_account_snapshots": 8038,
+        "audit_broker_deals": 8482,
+        "audit_broker_history_meta": 1,
+        "audit_broker_orders": 10647,
+        "audit_broker_trades": 4115,
+        "audit_dead_letter": 45,
+        "audit_executions": 3,
+        "audit_executions_reconciled": 954,
+        "audit_experience_corrections": 0,
+        "audit_experience_outcomes": 1715,
+        "audit_experiences": 5239,
+        "audit_guard_telemetry": 509,
+        "audit_ledger": 435,
+        "audit_orders": 8721,
+        "audit_paper_executions": 0,
+        "audit_signals": 11300,
+        "behavior_analysis": 432,
+        "behavior_detections": 333,
+        "configuration_metadata": 0,
+        "experience_model_registry": 26,
+        "factory_candidates": 295,
+        "factory_events": 4,
+        "factory_failures": 0,
+        "factory_generations": 3,
+        "factory_loop_state": 1,
+        "factory_provider_usage": 0,
+        "factory_runs": 0,
+        "incident_events": 13,
+        "incident_quarantine": 0,
+        "incident_value_traces": 0,
+        "incidents": 8,
+        "intelligence_worker_state": 1,
+        "learning_cycle_events": 0,
+        "learning_cycles": 0,
+        "model_comparisons": 4,
+        "model_governance_events": 59161,
+        "model_governance_state": 0,
+        "model_promotion_audit": 0,
+        "model_rollback_audit": 0,
+        "model_runtime_health": 1940,
+        "model_shadow_comparisons": 63,
+        "position_lifecycle_events": 3888,
+        "release_metadata": 0,
+        "research_events": 82726,
+        "research_events_archive": 0,
+        "research_evidence": 18316,
+        "research_evidence_archive": 0,
+        "research_gates": 26140,
+        "research_run_snapshots": 4357,
+        "research_runs": 4357,
+        "research_worker_heartbeat": 1,
+        "research_worker_state": 1,
+        "runtime_risk_state": 1,
+        "schema_meta": 1,
+        "schema_migrations": 8,
+        "settings_audit": 0,
+        "shadow70_drift_alerts": 0,
+        "shadow70_events": 0,
+        "shadow70_feature_health": 0,
+        "shadow70_observations": 2,
+        "shadow_comparisons": 61,
+        "shadow_decisions": 55342,
+        "shadow_promotions": 0,
+        "shadow_runs": 63,
+        "strategy_evolution_candidates": 1,
+        "strategy_intelligence_registry": 373,
+        "strategy_registry": 4109,
+        "trade_autopsies": 395,
+        "trading_rules_config": 30,
+        "training_runs": 6
+      },
+      "query_plans": {
+        "ai_provider_activation::newest_rows_by_rowid": [
+          "SCAN ai_provider_activation"
+        ],
+        "ai_provider_activation::count": [
+          "SCAN ai_provider_activation"
+        ],
+        "ai_provider_config::newest_rows_by_rowid": [
+          "SCAN ai_provider_config"
+        ],
+        "ai_provider_config::count": [
+          "SCAN ai_provider_config USING COVERING INDEX sqlite_autoindex_ai_provider_config_1"
+        ],
+        "anomaly_events::newest_rows_by_rowid": [
+          "SCAN anomaly_events"
+        ],
+        "anomaly_events::count": [
+          "SCAN anomaly_events USING COVERING INDEX idx_anomaly_events_type"
+        ],
+        "application_settings::newest_rows_by_rowid": [
+          "SCAN application_settings"
+        ],
+        "application_settings::count": [
+          "SCAN application_settings USING COVERING INDEX sqlite_autoindex_application_settings_1"
+        ],
+        "audit_account_snapshots::newest_rows_by_rowid": [
+          "SCAN audit_account_snapshots"
+        ],
+        "audit_account_snapshots::count": [
+          "SCAN audit_account_snapshots"
+        ],
+        "audit_broker_deals::newest_rows_by_rowid": [
+          "SCAN audit_broker_deals"
+        ],
+        "audit_broker_deals::count": [
+          "SCAN audit_broker_deals USING COVERING INDEX idx_broker_deals_position"
+        ],
+        "audit_broker_history_meta::newest_rows_by_rowid": [
+          "SCAN audit_broker_history_meta"
+        ],
+        "audit_broker_history_meta::count": [
+          "SCAN audit_broker_history_meta"
+        ],
+        "audit_broker_orders::newest_rows_by_rowid": [
+          "SCAN audit_broker_orders"
+        ],
+        "audit_broker_orders::count": [
+          "SCAN audit_broker_orders"
+        ],
+        "audit_broker_trades::newest_rows_by_rowid": [
+          "SCAN audit_broker_trades"
+        ],
+        "audit_broker_trades::count": [
+          "SCAN audit_broker_trades USING COVERING INDEX idx_broker_trades_exit"
+        ],
+        "audit_dead_letter::newest_rows_by_rowid": [
+          "SCAN audit_dead_letter"
+        ],
+        "audit_dead_letter::count": [
+          "SCAN audit_dead_letter"
+        ],
+        "audit_executions::newest_rows_by_rowid": [
+          "SCAN audit_executions"
+        ],
+        "audit_executions::count": [
+          "SCAN audit_executions USING COVERING INDEX idx_executions_order_status"
+        ],
+        "audit_executions_reconciled::newest_rows_by_rowid": [
+          "SCAN audit_executions_reconciled"
+        ],
+        "audit_executions_reconciled::count": [
+          "SCAN audit_executions_reconciled"
+        ],
+        "audit_experience_corrections::newest_rows_by_rowid": [
+          "SCAN audit_experience_corrections"
+        ],
+        "audit_experience_corrections::count": [
+          "SCAN audit_experience_corrections USING COVERING INDEX idx_exp_corrections_key"
+        ],
+        "audit_experience_outcomes::newest_rows_by_rowid": [
+          "SCAN audit_experience_outcomes"
+        ],
+        "audit_experience_outcomes::count": [
+          "SCAN audit_experience_outcomes USING COVERING INDEX idx_exp_outcome_key"
+        ],
+        "audit_experiences::newest_rows_by_rowid": [
+          "SCAN audit_experiences"
+        ],
+        "audit_experiences::count": [
+          "SCAN audit_experiences USING COVERING INDEX idx_exp_request"
+        ],
+        "audit_guard_telemetry::newest_rows_by_rowid": [
+          "SCAN audit_guard_telemetry"
+        ],
+        "audit_guard_telemetry::count": [
+          "SCAN audit_guard_telemetry"
+        ],
+        "audit_ledger::newest_rows_by_rowid": [
+          "SCAN audit_ledger"
+        ],
+        "audit_ledger::count": [
+          "SCAN audit_ledger USING COVERING INDEX idx_audit_ledger_close_time"
+        ],
+        "audit_orders::newest_rows_by_rowid": [
+          "SCAN audit_orders"
+        ],
+        "audit_orders::count": [
+          "SCAN audit_orders USING COVERING INDEX idx_orders_ticket"
+        ],
+        "audit_paper_executions::newest_rows_by_rowid": [
+          "SCAN audit_paper_executions"
+        ],
+        "audit_paper_executions::count": [
+          "SCAN audit_paper_executions USING COVERING INDEX idx_paper_exec_ts"
+        ],
+        "audit_signals::newest_rows_by_rowid": [
+          "SCAN audit_signals"
+        ],
+        "audit_signals::count": [
+          "SCAN audit_signals USING COVERING INDEX idx_audit_signals_dedup"
+        ],
+        "behavior_analysis::newest_rows_by_rowid": [
+          "SCAN behavior_analysis"
+        ],
+        "behavior_analysis::count": [
+          "SCAN behavior_analysis USING COVERING INDEX idx_behavior_analysis_ticket"
+        ],
+        "behavior_detections::newest_rows_by_rowid": [
+          "SCAN behavior_detections"
+        ],
+        "behavior_detections::count": [
+          "SCAN behavior_detections USING COVERING INDEX idx_behavior_pattern"
+        ],
+        "configuration_metadata::newest_rows_by_rowid": [
+          "SCAN configuration_metadata"
+        ],
+        "configuration_metadata::count": [
+          "SCAN configuration_metadata USING COVERING INDEX sqlite_autoindex_configuration_metadata_1"
+        ],
+        "experience_model_registry::newest_rows_by_rowid": [
+          "SCAN experience_model_registry"
+        ],
+        "experience_model_registry::count": [
+          "SCAN experience_model_registry USING COVERING INDEX sqlite_autoindex_experience_model_registry_1"
+        ],
+        "factory_candidates::newest_rows_by_rowid": [
+          "SCAN factory_candidates"
+        ],
+        "factory_candidates::count": [
+          "SCAN factory_candidates USING COVERING INDEX idx_factory_cand_hash"
+        ],
+        "factory_events::newest_rows_by_rowid": [
+          "SCAN factory_events"
+        ],
+        "factory_events::count": [
+          "SCAN factory_events USING COVERING INDEX sqlite_autoindex_factory_events_1"
+        ],
+        "factory_failures::newest_rows_by_rowid": [
+          "SCAN factory_failures"
+        ],
+        "factory_failures::count": [
+          "SCAN factory_failures USING COVERING INDEX idx_factory_fail_gen"
+        ],
+        "factory_generations::newest_rows_by_rowid": [
+          "SCAN factory_generations"
+        ],
+        "factory_generations::count": [
+          "SCAN factory_generations USING COVERING INDEX sqlite_autoindex_factory_generations_1"
+        ],
+        "factory_loop_state::newest_rows_by_rowid": [
+          "SCAN factory_loop_state"
+        ],
+        "factory_loop_state::count": [
+          "SCAN factory_loop_state USING COVERING INDEX sqlite_autoindex_factory_loop_state_1"
+        ],
+        "factory_provider_usage::newest_rows_by_rowid": [
+          "SCAN factory_provider_usage"
+        ],
+        "factory_provider_usage::count": [
+          "SCAN factory_provider_usage USING COVERING INDEX sqlite_autoindex_factory_provider_usage_1"
+        ],
+        "factory_runs::newest_rows_by_rowid": [
+          "SCAN factory_runs"
+        ],
+        "factory_runs::count": [
+          "SCAN factory_runs USING COVERING INDEX sqlite_autoindex_factory_runs_1"
+        ],
+        "incident_events::newest_rows_by_rowid": [
+          "SCAN incident_events"
+        ],
+        "incident_events::count": [
+          "SCAN incident_events USING COVERING INDEX idx_incident_events_incident"
+        ],
+        "incident_quarantine::newest_rows_by_rowid": [
+          "SCAN incident_quarantine"
+        ],
+        "incident_quarantine::count": [
+          "SCAN incident_quarantine USING COVERING INDEX idx_incident_quarantine_incident"
+        ],
+        "incident_value_traces::newest_rows_by_rowid": [
+          "SCAN incident_value_traces"
+        ],
+        "incident_value_traces::count": [
+          "SCAN incident_value_traces"
+        ],
+        "incidents::newest_rows_by_rowid": [
+          "SCAN incidents"
+        ],
+        "incidents::count": [
+          "SCAN incidents USING COVERING INDEX idx_incidents_detected"
+        ],
+        "intelligence_worker_state::newest_rows_by_rowid": [
+          "SCAN intelligence_worker_state"
+        ],
+        "intelligence_worker_state::count": [
+          "SCAN intelligence_worker_state USING COVERING INDEX sqlite_autoindex_intelligence_worker_state_1"
+        ],
+        "learning_cycle_events::newest_rows_by_rowid": [
+          "SCAN learning_cycle_events"
+        ],
+        "learning_cycle_events::count": [
+          "SCAN learning_cycle_events USING COVERING INDEX idx_learning_cycle_events_cycle"
+        ],
+        "learning_cycles::newest_rows_by_rowid": [
+          "SCAN learning_cycles"
+        ],
+        "learning_cycles::count": [
+          "SCAN learning_cycles USING COVERING INDEX idx_learning_cycles_trigger"
+        ],
+        "model_comparisons::newest_rows_by_rowid": [
+          "SCAN model_comparisons"
+        ],
+        "model_comparisons::count": [
+          "SCAN model_comparisons USING COVERING INDEX idx_model_comp_candidate"
+        ],
+        "model_governance_events::newest_rows_by_rowid": [
+          "SCAN model_governance_events"
+        ],
+        "model_governance_events::count": [
+          "SCAN model_governance_events USING COVERING INDEX idx_gov_events_ts"
+        ],
+        "model_governance_state::newest_rows_by_rowid": [
+          "SCAN model_governance_state"
+        ],
+        "model_governance_state::count": [
+          "SCAN model_governance_state USING COVERING INDEX idx_gov_state_model"
+        ],
+        "model_promotion_audit::newest_rows_by_rowid": [
+          "SCAN model_promotion_audit"
+        ],
+        "model_promotion_audit::count": [
+          "SCAN model_promotion_audit USING COVERING INDEX sqlite_autoindex_model_promotion_audit_1"
+        ],
+        "model_rollback_audit::newest_rows_by_rowid": [
+          "SCAN model_rollback_audit"
+        ],
+        "model_rollback_audit::count": [
+          "SCAN model_rollback_audit USING COVERING INDEX sqlite_autoindex_model_rollback_audit_1"
+        ],
+        "model_runtime_health::newest_rows_by_rowid": [
+          "SCAN model_runtime_health"
+        ],
+        "model_runtime_health::count": [
+          "SCAN model_runtime_health"
+        ],
+        "model_shadow_comparisons::newest_rows_by_rowid": [
+          "SCAN model_shadow_comparisons"
+        ],
+        "model_shadow_comparisons::count": [
+          "SCAN model_shadow_comparisons USING COVERING INDEX idx_gov_comp_ts"
+        ],
+        "position_lifecycle_events::newest_rows_by_rowid": [
+          "SCAN position_lifecycle_events"
+        ],
+        "position_lifecycle_events::count": [
+          "SCAN position_lifecycle_events USING COVERING INDEX idx_lifecycle_type"
+        ],
+        "release_metadata::newest_rows_by_rowid": [
+          "SCAN release_metadata"
+        ],
+        "release_metadata::count": [
+          "SCAN release_metadata USING COVERING INDEX idx_release_metadata_key"
+        ],
+        "research_events::newest_rows_by_rowid": [
+          "SCAN research_events"
+        ],
+        "research_events::count": [
+          "SCAN research_events USING COVERING INDEX sqlite_autoindex_research_events_1"
+        ],
+        "research_events_archive::newest_rows_by_rowid": [
+          "SCAN research_events_archive"
+        ],
+        "research_events_archive::count": [
+          "SCAN research_events_archive USING COVERING INDEX idx_events_archive_occurred"
+        ],
+        "research_evidence::newest_rows_by_rowid": [
+          "SCAN research_evidence"
+        ],
+        "research_evidence::count": [
+          "SCAN research_evidence USING COVERING INDEX sqlite_autoindex_research_evidence_1"
+        ],
+        "research_evidence_archive::newest_rows_by_rowid": [
+          "SCAN research_evidence_archive"
+        ],
+        "research_evidence_archive::count": [
+          "SCAN research_evidence_archive USING COVERING INDEX idx_evidence_archive_created"
+        ],
+        "research_gates::newest_rows_by_rowid": [
+          "SCAN research_gates"
+        ],
+        "research_gates::count": [
+          "SCAN research_gates USING COVERING INDEX idx_gates_run"
+        ],
+        "research_run_snapshots::newest_rows_by_rowid": [
+          "SCAN research_run_snapshots"
+        ],
+        "research_run_snapshots::count": [
+          "SCAN research_run_snapshots USING COVERING INDEX sqlite_autoindex_research_run_snapshots_1"
+        ],
+        "research_runs::newest_rows_by_rowid": [
+          "SCAN research_runs"
+        ],
+        "research_runs::count": [
+          "SCAN research_runs USING COVERING INDEX idx_research_runs_strategy"
+        ],
+        "research_worker_heartbeat::newest_rows_by_rowid": [
+          "SCAN research_worker_heartbeat"
+        ],
+        "research_worker_heartbeat::count": [
+          "SCAN research_worker_heartbeat USING COVERING INDEX sqlite_autoindex_research_worker_heartbeat_1"
+        ],
+        "research_worker_state::newest_rows_by_rowid": [
+          "SCAN research_worker_state"
+        ],
+        "research_worker_state::count": [
+          "SCAN research_worker_state USING COVERING INDEX sqlite_autoindex_research_worker_state_1"
+        ],
+        "runtime_risk_state::newest_rows_by_rowid": [
+          "SCAN runtime_risk_state"
+        ],
+        "runtime_risk_state::count": [
+          "SCAN runtime_risk_state"
+        ],
+        "schema_meta::newest_rows_by_rowid": [
+          "SCAN schema_meta"
+        ],
+        "schema_meta::count": [
+          "SCAN schema_meta USING COVERING INDEX sqlite_autoindex_schema_meta_1"
+        ],
+        "schema_migrations::newest_rows_by_rowid": [
+          "SCAN schema_migrations"
+        ],
+        "schema_migrations::count": [
+          "SCAN schema_migrations USING COVERING INDEX sqlite_autoindex_schema_migrations_1"
+        ],
+        "settings_audit::newest_rows_by_rowid": [
+          "SCAN settings_audit"
+        ],
+        "settings_audit::count": [
+          "SCAN settings_audit USING COVERING INDEX idx_settings_audit_ts"
+        ],
+        "shadow70_drift_alerts::newest_rows_by_rowid": [
+          "SCAN shadow70_drift_alerts"
+        ],
+        "shadow70_drift_alerts::count": [
+          "SCAN shadow70_drift_alerts USING COVERING INDEX sqlite_autoindex_shadow70_drift_alerts_1"
+        ],
+        "shadow70_events::newest_rows_by_rowid": [
+          "SCAN shadow70_events"
+        ],
+        "shadow70_events::count": [
+          "SCAN shadow70_events USING COVERING INDEX idx_shadow70_events_ts"
+        ],
+        "shadow70_feature_health::newest_rows_by_rowid": [
+          "SCAN shadow70_feature_health"
+        ],
+        "shadow70_feature_health::count": [
+          "SCAN shadow70_feature_health"
+        ],
+        "shadow70_observations::newest_rows_by_rowid": [
+          "SCAN shadow70_observations"
+        ],
+        "shadow70_observations::count": [
+          "SCAN shadow70_observations USING COVERING INDEX idx_shadow70_obs_ts"
+        ],
+        "shadow_comparisons::newest_rows_by_rowid": [
+          "SCAN shadow_comparisons"
+        ],
+        "shadow_comparisons::count": [
+          "SCAN shadow_comparisons USING COVERING INDEX sqlite_autoindex_shadow_comparisons_1"
+        ],
+        "shadow_decisions::newest_rows_by_rowid": [
+          "SCAN shadow_decisions"
+        ],
+        "shadow_decisions::count": [
+          "SCAN shadow_decisions USING COVERING INDEX sqlite_autoindex_shadow_decisions_1"
+        ],
+        "shadow_promotions::newest_rows_by_rowid": [
+          "SCAN shadow_promotions"
+        ],
+        "shadow_promotions::count": [
+          "SCAN shadow_promotions USING COVERING INDEX sqlite_autoindex_shadow_promotions_1"
+        ],
+        "shadow_runs::newest_rows_by_rowid": [
+          "SCAN shadow_runs"
+        ],
+        "shadow_runs::count": [
+          "SCAN shadow_runs USING COVERING INDEX idx_shadow_runs_status"
+        ],
+        "strategy_evolution_candidates::newest_rows_by_rowid": [
+          "SCAN strategy_evolution_candidates"
+        ],
+        "strategy_evolution_candidates::count": [
+          "SCAN strategy_evolution_candidates USING COVERING INDEX idx_evolution_status"
+        ],
+        "strategy_intelligence_registry::newest_rows_by_rowid": [
+          "SCAN strategy_intelligence_registry"
+        ],
+        "strategy_intelligence_registry::count": [
+          "SCAN strategy_intelligence_registry USING COVERING INDEX sqlite_autoindex_strategy_intelligence_registry_1"
+        ],
+        "strategy_registry::newest_rows_by_rowid": [
+          "SCAN strategy_registry"
+        ],
+        "strategy_registry::count": [
+          "SCAN strategy_registry USING COVERING INDEX idx_registry_lifecycle"
+        ],
+        "trade_autopsies::newest_rows_by_rowid": [
+          "SCAN trade_autopsies"
+        ],
+        "trade_autopsies::count": [
+          "SCAN trade_autopsies USING COVERING INDEX idx_autopsy_strategy"
+        ],
+        "trading_rules_config::newest_rows_by_rowid": [
+          "SCAN trading_rules_config"
+        ],
+        "trading_rules_config::count": [
+          "SCAN trading_rules_config USING COVERING INDEX sqlite_autoindex_trading_rules_config_1"
+        ],
+        "training_runs::newest_rows_by_rowid": [
+          "SCAN training_runs"
+        ],
+        "training_runs::count": [
+          "SCAN training_runs USING COVERING INDEX idx_train_runs_status"
+        ]
+      },
+      "dbstat": [
+        {
+          "name": "shadow_decisions",
+          "bytes": 227233792
+        },
+        {
+          "name": "research_gates",
+          "bytes": 27537408
+        },
+        {
+          "name": "model_governance_events",
+          "bytes": 26816512
+        },
+        {
+          "name": "strategy_registry",
+          "bytes": 25477120
+        },
+        {
+          "name": "research_evidence",
+          "bytes": 24416256
+        },
+        {
+          "name": "audit_experiences",
+          "bytes": 21512192
+        },
+        {
+          "name": "research_events",
+          "bytes": 12779520
+        },
+        {
+          "name": "audit_signals",
+          "bytes": 10448896
+        },
+        {
+          "name": "position_lifecycle_events",
+          "bytes": 5906432
+        },
+        {
+          "name": "idx_events_strategy",
+          "bytes": 5394432
+        },
+        {
+          "name": "idx_gov_events_model",
+          "bytes": 3973120
+        },
+        {
+          "name": "audit_experience_outcomes",
+          "bytes": 3862528
+        },
+        {
+          "name": "idx_shadow_decisions_run",
+          "bytes": 3407872
+        },
+        {
+          "name": "research_runs",
+          "bytes": 2940928
+        },
+        {
+          "name": "idx_gov_events_ts",
+          "bytes": 2740224
+        },
+        {
+          "name": "idx_shadow_decisions_symbol",
+          "bytes": 2564096
+        },
+        {
+          "name": "research_run_snapshots",
+          "bytes": 2248704
+        },
+        {
+          "name": "sqlite_autoindex_research_events_1",
+          "bytes": 2088960
+        },
+        {
+          "name": "audit_orders",
+          "bytes": 1900544
+        },
+        {
+          "name": "sqlite_autoindex_model_governance_events_1",
+          "bytes": 1785856
+        },
+        {
+          "name": "sqlite_autoindex_shadow_decisions_1",
+          "bytes": 1687552
+        },
+        {
+          "name": "idx_evidence_strategy_created_id",
+          "bytes": 1302528
+        },
+        {
+          "name": "audit_broker_orders",
+          "bytes": 1236992
+        },
+        {
+          "name": "idx_evidence_strategy",
+          "bytes": 1142784
+        },
+        {
+          "name": "model_runtime_health",
+          "bytes": 1138688
+        },
+        {
+          "name": "audit_broker_trades",
+          "bytes": 1085440
+        },
+        {
+          "name": "audit_broker_deals",
+          "bytes": 1011712
+        },
+        {
+          "name": "idx_gates_strategy_run",
+          "bytes": 892928
+        },
+        {
+          "name": "idx_gates_strategy",
+          "bytes": 688128
+        },
+        {
+          "name": "sqlite_autoindex_research_gates_1",
+          "bytes": 675840
+        },
+        {
+          "name": "trade_autopsies",
+          "bytes": 655360
+        },
+        {
+          "name": "audit_account_snapshots",
+          "bytes": 610304
+        },
+        {
+          "name": "idx_gates_run",
+          "bytes": 536576
+        },
+        {
+          "name": "sqlite_autoindex_research_evidence_1",
+          "bytes": 475136
+        },
+        {
+          "name": "idx_audit_signals_dedup",
+          "bytes": 475136
+        },
+        {
+          "name": "idx_exp_symbol_time",
+          "bytes": 425984
+        },
+        {
+          "name": "factory_candidates",
+          "bytes": 425984
+        },
+        {
+          "name": "idx_orders_ticket",
+          "bytes": 421888
+        },
+        {
+          "name": "strategy_intelligence_registry",
+          "bytes": 389120
+        },
+        {
+          "name": "audit_executions_reconciled",
+          "bytes": 368640
+        }
+      ]
+    }
+  ]
+}

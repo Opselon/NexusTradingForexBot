@@ -74,6 +74,20 @@ def main() -> int:
     zero_idx_bytes = sum(r["index_bytes"] for r in zero_idx)
     inval = [r for r in idx if not r["indisvalid"] or not r["indisready"]]
 
+    # sec.24/§28 lifecycle evidence: which tables delete at all, and which append only.
+    dels = sorted(
+        [r for r in d["table_stats"]["rows"] if (r["n_tup_del"] or 0) > 0],
+        key=lambda r: -(r["n_tup_del"] or 0),
+    )
+    nolife = sorted(
+        [
+            r
+            for r in d["table_stats"]["rows"]
+            if (r["n_tup_del"] or 0) == 0 and (r["n_tup_ins"] or 0) > 2000
+        ],
+        key=lambda r: -(r["n_tup_ins"] or 0),
+    )
+
     asig = tables["audit_signals"]
     aord = tables["audit_orders"]
     aeoc = tables["audit_experience_outcomes"]
@@ -565,29 +579,33 @@ def main() -> int:
 
     finding(
         "F-011",
-        "PostgreSQL is the sole runtime provider; SQLite is confined to settings storage",
+        "PostgreSQL is the sole runtime provider, but SQLite is NOT merely settings storage",
         "The provider was chosen deliberately by the operator, so there is no silent "
-        "provider fallback in play — but there is also no SQLite runtime workload left "
-        "to remediate.",
+        "provider fallback in play. **However, an earlier revision of this finding wrongly "
+        "claimed SQLite was confined to settings storage - see C-1, which measures a "
+        "multi-GB SQLite footprint.**",
         [
             "`database.provider` = `postgresql` (source **USER_SETTINGS**, not a wave)",
             "`database.provider_transition_state` = active `postgresql`, target `postgresql`",
-            "largest SQLite database found: `app_settings.db` 155,648 bytes, 5 tables",
-            "`ai_provider_decisions.db` 24,576 bytes with **0 rows**",
-            "repo `data/*.db` and root `app_settings.db` are **0-byte placeholders**",
+            "`ai_provider_decisions.db` 24,576 bytes with **0 rows** (orphan candidate)",
+            "the settings store `app_settings.db` is 155,648 bytes / 5 tables, `quick_check = ok`",
+            "**correction (C-1):** `artifacts/audit.db` 416.4 MB is the engine's audit write "
+            "target, `artifacts/news.db` 230.3 MB, plus a 1.25 GB `audit_backup_*.db` set",
         ],
-        "`baseline_collect_sqlite.py` over the discovered SQLite files, plus the "
+        "`baseline_collect_sqlite.py` over the actual runtime store paths, plus the "
         "`application_settings` table read.",
-        "N/A — this is a routing fact, not a defect.",
+        "N/A for the provider choice. The SQLite volume is a separate lifecycle question: "
+        "no owner, no retention, and three near-identical backups on a live path.",
         "None.",
-        "SQLite total: ~213 KB across 3 real files, all `quick_check = ok`.",
-        "N/A.",
+        "SQLite footprint: **~2.6 GB** across the repo's `artifacts/` stores and backups "
+        "(see C-1), not the ~213 KB an earlier revision reported from a too-shallow sweep.",
+        "PENDING.",
         "None.",
-        "Sec.44 SQLite WAL/restart tests remain cheap to run but currently have almost "
-        "no runtime surface.",
-        "The 0-byte `data/*.db` files are placeholders whose real runtime homes were not "
-        "definitively identified in this pass; the settings store is definitive, the "
-        "domain stores are not.",
+        "Sec.44 SQLite WAL/restart tests and sec.72 SQLite acceptance now apply in full, "
+        "and the 1.25 GB backup set needs an owner under sec.49/§90.",
+        "The settings store is definitively located; the domain stores' runtime homes are "
+        "established for `artifacts/` but the split between the two checkouts' copies is "
+        "not yet disambiguated.",
     )
 
     aj("---")
@@ -678,6 +696,141 @@ def main() -> int:
     aj("- silent provider fallback — none found; provider is an explicit USER_SETTINGS")
     aj("  choice (F-011)")
     aj("- benchmark disconnected from production path — n/a; no benchmark attempted")
+    aj("")
+
+    aj("## 9. Corrections, supersession, and cross-reference to prior audits")
+    aj("")
+    aj("This section is appended, not back-edited: the errors it records were in an")
+    aj("earlier revision of this document and are corrected here with their evidence, so")
+    aj("the audit trail shows what changed and why.")
+    aj("")
+
+    aj("### C-1 — CORRECTION: the SQLite footprint was understated by ~12,000x")
+    aj("")
+    aj("The first SQLite sweep used `-maxdepth 4` from `$HOME`. That matched the repo's")
+    aj("`data/*.db` **0-byte placeholders** and missed the real stores under")
+    aj("`artifacts/`, which sit deeper. The initial claim of ~213 KB total was wrong.")
+    aj("")
+    aj("Measured footprint of the SQLite stores that matter:")
+    aj("")
+    aj("Path                                                           | Size")
+    aj("---------------------------------------------------------------|--------")
+    aj("`NexusTradingForexBot/artifacts/audit.db`                      | 416.4 MB (live write target)")
+    aj("`NexusTradingForexBot/artifacts/backups/audit_backup_*.db` (x3)| 1.25 GB (three near-identical backups)")
+    aj("`NexusTradingForexBot/artifacts/news.db`                       | 230.3 MB")
+    aj("`NexusTradingForexBot/artifacts/strategies.db`                 | 29.1 MB")
+    aj("`NexusTradingForexBot/artifacts/candle_intel.db`               | 10.5 MB")
+    aj("`nse-review-main/artifacts/audit.db`                           | 415.4 MB (second checkout)")
+    aj("`nse-review-main/artifacts/news.db`                            | 230.3 MB")
+    aj("")
+    aj("**Consequence for F-011.** The earlier statement that SQLite is confined to")
+    aj("settings storage with almost no runtime surface left is **withdrawn**. SQLite")
+    aj("carries the engine's audit write target plus a 1.25 GB backup set. Sec.72 SQLite")
+    aj("acceptance and the sec.44/§49 lifecycle questions apply in full, and the backup set")
+    aj("is an unowned growth source in its own right.")
+    aj("")
+
+    aj("### C-2 — SUPERSESSION: the prior audit's P0 provider split is STALE at main")
+    aj("")
+    aj("The 2026-09-28 forensic audit's headline P0 ('R2') states that")
+    aj("`AuditRepository.log_signal()` begins with `if not self._is_sqlite: return`, so the")
+    aj("engine writes audit data to SQLite while the UI polls PostgreSQL. **At the current")
+    aj("`origin/main` that is no longer true.**")
+    aj("")
+    aj("Verified at `adbf05af` (`src/nexus_scalp/adapters/database/audit_repository.py`):")
+    aj("")
+    aj("- `log_signal` (line 3922) has **no** component/config early return; it proceeds")
+    aj("  straight to building the record and writing it.")
+    aj("- `self._write_plane = self._build_write_plane()` (line 442), started at line 537")
+    aj("  and flushed at lines 3263-3267 -> an `AuditWritePlane`")
+    aj("  (`adapters/database/audit_write_plane.py`) is the non-SQLite write path.")
+    aj("- CHG-0067 converted the non-SQLite **read** gates from fail-silent defaults to")
+    aj("  fabric read-plane routing, with `provider_read_degraded_total` plus a")
+    aj("  rate-limited structured warning when no plane is registered.")
+    aj("- `_is_sqlite` still appears 54 times, but the remaining guards are routed or")
+    aj("  explicitly observable rather than silent.")
+    aj("")
+    aj("**Consequence.** R2 must not be re-opened as an open P0, and the earlier F-011")
+    aj("phrasing implying a live write/read split is withdrawn. What *remains* true and")
+    aj("measurable is narrower: PG `audit_signals` holds 7,453 live rows against an id")
+    aj("sequence at 1.95M, while SQLite `audit.db` holds 11,266 rows whose newest entry was")
+    aj("89.3 h old at the prior audit - two stores with different freshness, which is a")
+    aj("reconciliation question, not a provider-split blocker.")
+    aj("")
+
+    aj("### C-3 — REFINEMENT of F-003: audit_orders is the churn + index-scan hotspot")
+    aj("")
+    aj("`audit_orders` is not merely index-scan-heavy; it is the **most rewritten table in")
+    aj("the database**:")
+    aj("")
+    aj(f"- `n_tup_ins` = {aord['n_tup_ins']:,} but `n_tup_del` = {aord['n_tup_del']:,} against only")
+    aj(f"  {aord['n_live_tup']:,} live rows -> the table is being rewritten wholesale")
+    aj(f"- `idx_scan` = {aord['idx_scan']:,} and `idx_tup_fetch` = {aord['idx_tup_fetch']:,}")
+    aj(f"  ({aord['idx_tup_fetch'] / aord['n_live_tup']:,.0f} fetches per live row)")
+    aj("- every other table's insert:delete ratio is under 3x; this one is ~5x with a")
+    aj("  live set smaller than either counter")
+    aj("")
+    aj("This makes F-003 the strongest sec.24/§28 lifecycle candidate in the baseline and")
+    aj("raises its priority well above what its row count suggests.")
+    aj("")
+
+    aj("### C-4 — REFINEMENT of F-005: the duplicate index pairs ARE present")
+    aj("")
+    aj("The first F-005 revision reported '0 duplicate groups' because it compared full")
+    aj("index **definitions**, which differ by the `UNIQUE`/`PRIMARY` keyword. Comparing")
+    aj("**key columns** per table finds 4 pairs, matching the prior audits:")
+    aj("")
+    aj("table                      | key columns       | reclaimable plain copy          | bytes")
+    aj("---------------------------|-------------------|---------------------------------|--------")
+    aj("`news_analyzed_hashes`     | (article_hash)    | `idx_news_analyzed_hashes_hash` | 2,940,928")
+    aj("`news_junk_hashes`         | (article_hash)    | `idx_news_junk_hashes_hash`     | 1,187,840")
+    aj("`audit_experience_outcomes`| (idempotency_key) | `idx_exp_outcome_key`           | 303,104")
+    aj("`release_metadata`         | (key)             | `idx_release_metadata_key`      | 8,192")
+    aj("**total reclaimable**      |                   |                                 | **4,440,064 (4.23 MB)**")
+    aj("")
+    aj("Each plain copy is key-identical to a UNIQUE/constraint index on the same table, so")
+    aj("dropping it is lossless for uniqueness enforcement. Sec.49 still requires the DDL /")
+    aj("constraint / migration-reference / foreign-tooling gate before any drop.")
+    aj("")
+    aj("Note the scan asymmetry that also argues for these: on")
+    aj("`audit_experience_outcomes` the *plain* copy carries 2,801,729 scans while the")
+    aj("unique constraint index carries 3,791 - i.e. the redundant index is absorbing")
+    aj("work the constraint index could serve.")
+    aj("")
+
+    aj("### C-5 — REFINEMENT of F-008: deletion is rare, and concentrated in the small tables")
+    aj("")
+    aj(f"Only **{len(dels)} of 126 tables** record any deletion at all, and the tables with")
+    aj("zero deletions include the largest ones:")
+    aj("")
+    aj("| table | inserts | live | total |")
+    aj("|---|---|---|---|")
+    for r in nolife[:8]:
+        aj(f"| `{r['relname']}` | {r['n_tup_ins']:,} | {r['n_live_tup']:,} | {r['total_pretty']} |")
+    aj("")
+    aj("This strengthens F-008: the storage that dominates the database sits on a pure")
+    aj("append path with no observed reclamation, while every one of the 11 tables that")
+    aj("*does* delete is under 15 MB. Lifecycle work should target the append tables, not")
+    aj("the churning ones.")
+    aj("")
+
+    aj("### C-6 — CORROBORATION: three independent audits agree on the instrumentation gap")
+    aj("")
+    aj("`postgresql-deep-performance-storage-audit-2026-09-27.md`,")
+    aj("`postgresql-master-performance-audit-2026-09-27.md` and")
+    aj("`postgresql-forensic-audit-2026-09-28.md` all independently report")
+    aj("`pg_stat_statements` absent with an empty `shared_preload_libraries`, and all three")
+    aj("mark their top-query table `N/A` rather than fabricating one. Section 2's")
+    aj("NOT MEASURABLE finding is therefore corroborated by three prior passes, not inferred")
+    aj("from a single probe.")
+    aj("")
+    aj("Known drift between those three documents (unreconciled, and NOT inherited here):")
+    aj("database size 501 MB (both 09-27) vs 588 MB (09-28); buffer-hit ratio 98.7% /")
+    aj("98.21% / 99.9% across three different windows; index count 445 (user indexes) vs")
+    aj("281 (public-schema indexes) - a definitional difference, not a contradiction.")
+    aj("")
+
+    aj("---")
     aj("")
 
     outdir = Path(args.dir)
