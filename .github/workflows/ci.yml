@@ -859,7 +859,7 @@ jobs:
           set -euo pipefail
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends wine winbind xvfb x11-utils
+          sudo apt-get install -y --no-install-recommends wine wine32:i386 winbind xvfb x11-utils
 
       - name: Prepare isolated MT5 runtime root
         run: |
@@ -870,10 +870,21 @@ jobs:
           Xvfb ":$NEXUS_MT5_DISPLAY" -screen 0 1280x1024x24 > "$RUNNER_TEMP/nexus-mt5-xvfb.log" 2>&1 &
           echo "DISPLAY=:$NEXUS_MT5_DISPLAY" >> "$GITHUB_ENV"
 
+      - name: Set up Python 3.11 for repository diagnostics
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install repository runtime dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web,postgres]"
+
       - name: Verify Wine
         run: |
           wine --version
-          wineserver --version || true
+          wineserver --version
 
       - name: Install official MetaTrader 5
         run: |
@@ -881,23 +892,25 @@ jobs:
           export NEXUS_MT5_WINESERVER="$(command -v wineserver)"
           bash scripts/linux/mt5_runtime.sh install
 
-      - name: Start MT5 and health-soak for 120s
+      - name: Start MT5 and health-soak for 120s with complete trace log
         run: |
           set -euo pipefail
           export NEXUS_MT5_WINE="$(command -v wine)"
           export NEXUS_MT5_WINESERVER="$(command -v wineserver)"
           trap 'bash scripts/linux/mt5_runtime.sh stop || true' EXIT
-          bash scripts/linux/mt5_runtime.sh start
-          python scripts/linux/mt5_doctor.py
-          bash scripts/linux/mt5_runtime.sh health
-          for i in $(seq 1 24); do
-            sleep 5
+          {
+            bash scripts/linux/mt5_runtime.sh start
+            python scripts/linux/mt5_doctor.py
             bash scripts/linux/mt5_runtime.sh health
-          done
-          python scripts/linux/mt5_doctor.py
-          bash scripts/linux/mt5_runtime.sh logs > "$RUNNER_TEMP/nexus-mt5-runtime.log" 2>&1 || true
-          bash scripts/linux/mt5_runtime.sh stop
-          trap - EXIT
+            for i in $(seq 1 24); do
+              sleep 5
+              bash scripts/linux/mt5_runtime.sh health
+            done
+            python scripts/linux/mt5_doctor.py
+            bash scripts/linux/mt5_runtime.sh logs || true
+            bash scripts/linux/mt5_runtime.sh stop
+            trap - EXIT
+          } 2>&1 | tee "$RUNNER_TEMP/nexus-mt5-runtime.log"
 
       - name: Trace MT5 warnings and errors
         if: always()
@@ -917,10 +930,9 @@ jobs:
         with:
           name: ci-mt5-wine-runtime-${{ github.run_id }}
           path: |
-            ${{ runner.temp }}/nexus-mt5/
-            ${{ runner.temp }}/nexus-mt5-xvfb.log
             ${{ runner.temp }}/nexus-mt5-runtime.log
-          if-no-files-found: warn
+            ${{ runner.temp }}/nexus-mt5-xvfb.log
+          if-no-files-found: error
           retention-days: 14
 
   full-runtime-verdict:
