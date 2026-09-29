@@ -37,7 +37,6 @@ on:
       - "QA Deep Assurance"
       - "Nightly ML Benchmark"
       - "PR Evidence Report"
-      - "Full Runtime Certification"
     types: [completed]
 
 permissions:
