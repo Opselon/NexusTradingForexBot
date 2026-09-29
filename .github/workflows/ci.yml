@@ -925,6 +925,11 @@ jobs:
           "$NEXUS_MT5_WINE" --version
           "$NEXUS_MT5_WINESERVER" --version || true
 
+      - name: Start headless Xvfb for installer/runtime
+        run: |
+          Xvfb ":${NEXUS_MT5_DISPLAY}" -screen 0 1280x1024x24 > "$RUNNER_TEMP/nexus-mt5-xvfb.log" 2>&1 &
+          echo "DISPLAY=:${NEXUS_MT5_DISPLAY}" >> "$GITHUB_ENV"
+
       - name: Install official MetaTrader 5 terminal under Wine
         run: |
           export NEXUS_MT5_WINE="$(command -v wine)"
