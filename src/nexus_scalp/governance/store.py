@@ -404,7 +404,16 @@ class GovernanceStore:
                 )
                 for idx in (
                     "CREATE INDEX IF NOT EXISTS idx_gov_events_ts ON model_governance_events(timestamp);",
-                    "CREATE INDEX IF NOT EXISTS idx_gov_events_model ON model_governance_events(model_id, event);",
+                    # idx_gov_events_model (model_id, event) REMOVED: 0 scans on
+                    # the live ledger against 59k+ rows and growing, because no
+                    # caller of list_events() ever passes model_id (the only
+                    # production read is operational_digest's LIMIT 50 with no
+                    # filter, served by idx_gov_events_ts). Keeping a 5.5 MB
+                    # index on the highest-write-frequency table in the DB is
+                    # pure write amplification — every record_event() from the
+                    # 11 hot-path call sites pays for an index nothing reads.
+                    # A future caller that genuinely filters by model_id should
+                    # re-add it (the plan then uses it, verified).
                     "CREATE INDEX IF NOT EXISTS idx_gov_state_model ON model_governance_state(model_id, model_version);",
                     "CREATE INDEX IF NOT EXISTS idx_gov_comp_ts ON model_shadow_comparisons(timestamp);",
                     # Lane B (PG upsert parity): the ON CONFLICT target the
