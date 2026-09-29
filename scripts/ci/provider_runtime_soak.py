@@ -154,7 +154,7 @@ class LogCollector:
                         {"file": source.group(1), "line": int(source.group(2)), "column": int(source.group(3))}
                         if source
                         else None
-                    ),
+    
                 }
                 with self.lock:
                     self.events.append(event)
@@ -555,10 +555,10 @@ def run_db_battery(provider: str, phase: str, max_tables: int = 40) -> dict[str,
                 table = selected[(query_id - 1) % len(selected)]
                 execute(
                     "SELECT COUNT(*) AS row_count FROM " + ident(table),
-                    label="stress-count:{}:{}".format(stress_round, table),
+                    label=f"stress-count:{stress_round}:{table}",
                 )
             else:
-                execute("SELECT 1", label="stress-select1:{}".format(stress_round))
+                execute("SELECT 1", label=f"stress-select1:{stress_round}")
 
         failed = [q for q in queries if q["status"] == "FAIL"]
         durations = sorted(float(q["duration_ms"]) for q in queries)
@@ -600,7 +600,7 @@ def wait_http(base_url: str, timeout: int) -> dict[str, Any]:
             if status.get("status") == 200:
                 return {"health": last, "status": status}
         time.sleep(1)
-    raise RuntimeError("application did not become healthy within {}s; last={}".format(timeout, last))
+    raise RuntimeError(f"application did not become healthy within {timeout}s; last={last}")
 
 
 def request_graceful_shutdown(proc: subprocess.Popen[str], collector: LogCollector) -> dict[str, Any]:
@@ -701,7 +701,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.duration < SOAK_SEC:
-        parser.error("--duration must be at least {}".format(SOAK_SEC))
+        parser.error(f"--duration must be at least {SOAK_SEC}")
 
     if str(REPO_ROOT / "src") not in sys.path:
         sys.path.insert(0, str(REPO_ROOT / "src"))
@@ -717,7 +717,7 @@ def main() -> int:
     evidence_dir.mkdir(parents=True, exist_ok=True)
     log_path = evidence_dir / "launcher.log"
     config_path = REPO_ROOT / "configs" / "base.yaml"
-    base_url = "http://{}:{}".format(args.host, args.port)
+    base_url = f"http://{args.host}:{args.port}"
 
     env = dict(os.environ)
     env["PYTHONUNBUFFERED"] = "1"
@@ -769,34 +769,34 @@ def main() -> int:
         try:
             db_runs.append(run_db_battery(args.provider, "mid-boot", max_tables=40))
         except Exception as exc:
-            failure = "mid-boot database battery crashed: {}: {}".format(type(exc).__name__, exc)
+            failure = f"mid-boot database battery crashed: {type(exc).__name__}: {exc}"
 
         soak_started = time.monotonic()
         next_db_pass = soak_started + 60
         next_api_sweep = soak_started + 30
         while time.monotonic() - soak_started < args.duration:
             if proc.poll() is not None:
-                failure = "launcher exited during soak with rc={}".format(proc.returncode)
+                failure = f"launcher exited during soak with rc={proc.returncode}"
                 break
             now = time.monotonic()
             for path in HOT_ENDPOINTS:
                 probe = http_request(base_url, path)
                 probe["sweep"] = "hot"
                 if probe.get("status", 0) >= 500 or probe.get("status") == 0:
-                    failure = "hot endpoint failure: {}".format(probe)
+                    failure = f"hot endpoint failure: {probe}"
                     break
             if failure:
                 break
 
             if now >= next_api_sweep:
-                api_sweeps.append(api_battery(base_url, routes, "repeat-{}".format(len(api_sweeps))))
+                api_sweeps.append(api_battery(base_url, routes, f"repeat-{len(api_sweeps)}"))
                 next_api_sweep += 30
 
             if now >= next_db_pass:
                 try:
                     db_runs.append(run_db_battery(args.provider, "late-boot", max_tables=40))
                 except Exception as exc:
-                    failure = "late-boot database battery crashed: {}: {}".format(
+                    failure = f"late-boot database battery crashed: {type(exc).__name__}: {exc}"
                         type(exc).__name__, exc
                     )
                     break
@@ -807,7 +807,7 @@ def main() -> int:
 
         actual_soak = time.monotonic() - soak_started
     except Exception as exc:
-        failure = "{}: {}".format(type(exc).__name__, exc)
+        failure = f"{type(exc).__name__}: {exc}"
         actual_soak = 0.0
     finally:
         shutdown = request_graceful_shutdown(proc, collector)
@@ -838,8 +838,8 @@ def main() -> int:
             0,
             {
                 "type": "coverage-floor",
-                "message": "runtime query battery executed fewer than {} total read-only queries".format(
-                    MIN_TOTAL_QUERIES
+                "message": (
+                    f"runtime query battery executed fewer than {MIN_TOTAL_QUERIES} total read-only queries"
                 ),
                 "count": total_queries,
                 "minimum": MIN_TOTAL_QUERIES,
