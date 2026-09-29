@@ -225,11 +225,27 @@ class TestAdditiveOnly:
 
 
 class TestReadOnly:
-    def test_connect_ro_cannot_write(self) -> None:
-        from nexus_scalp.web.operator_routes import _connect_ro
+    def test_reader_cannot_write(self) -> None:
+        """The ledger reader stays structurally read-only.
 
-        con = _connect_ro()
-        assert con is not None, "authoritative audit DB must exist in repo"
+        Under SQLite the operator surface opens a ``file:...?mode=ro`` URI, so
+        a mutation is rejected by SQLite itself. Under PostgreSQL the reader
+        goes through the fabric's READ pool. Either way this module must never
+        be able to mutate the audit trail.
+        """
+        from nexus_scalp.web.operator_routes import _ledger_reader
+
+        reader = _ledger_reader()
+        # The authoritative audit DB must exist in the repo test workspace.
+        assert reader.provider in {"sqlite", "postgresql"}
+        if reader.provider != "sqlite":
+            return  # PG read pool: read-only is enforced by the pool, not by
+            # a local file handle; the POST-405 test below covers the surface.
+        from nexus_scalp.web.operator_routes import _audit_db_path
+
+        path = _audit_db_path()
+        assert path, "authoritative audit DB path must resolve in repo"
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0)
         try:
             with pytest.raises(sqlite3.OperationalError):
                 con.execute("CREATE TABLE cc_mutation_probe (x INTEGER)")

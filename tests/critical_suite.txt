@@ -266,6 +266,10 @@ tests/integration/test_official_model_tamper_proofing.py
 tests/integration/test_signal_pipeline_health.py
 tests/release/test_release_hardening.py
 tests/unit/news/ingest/test_bug282_rfc822_and_identity.py
+tests/unit/news/ingest/test_payload_value_gate.py
+tests/unit/news/ingest/test_payload_value_gate_benchmark.py
+tests/unit/news/test_payload_archival_lifecycle.py
+tests/unit/test_retention_payload_archival.py
 tests/unit/test_50d_normalization_parity.py
 tests/unit/test_70d_bug106_incremental_phase19.py
 tests/unit/test_70d_contract_parity_task3.py

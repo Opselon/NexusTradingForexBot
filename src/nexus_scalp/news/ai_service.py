@@ -44,6 +44,7 @@ from enum import StrEnum
 from typing import Any
 
 from nexus_scalp.news.analysis.local import LocalNewsAnalyzer
+from nexus_scalp.news.body_resolution import resolve_article_body
 from nexus_scalp.news.database import NewsDatabase
 from nexus_scalp.news.models import NewsArticle, NewsNovelty, normalize_datetime
 from nexus_scalp.observability.logging import get_logger
@@ -369,13 +370,18 @@ def _build_user_prompt(article: NewsArticle, local: dict[str, Any]) -> str:
     deterministic fields are passed as CONTEXT (clearly separate from the
     untrusted article body).
     """
-    body = (article.body or "")[:NEWS_AI_MAX_BODY_CHARS]
-    # RSS feeds currently store body="" (only title+summary populated); use
-    # summary as fallback so the model gets real content instead of an empty
-    # BODY, which otherwise causes long reasoning traces and max_tokens
-    # truncation (finish_reason=length → empty fallback storm).
-    if not body.strip() and (article.summary or "").strip():
-        body = (article.summary or "").strip()[:NEWS_AI_MAX_BODY_CHARS]
+    body = resolve_article_body(
+        (article.body or "")[:NEWS_AI_MAX_BODY_CHARS], article.summary or ""
+    )
+    # DB-LIFECYCLE: the pre-insert payload value gate persists body="" when
+    # the body is a verbatim restatement of the summary (~28.5 MB of text
+    # stored twice in production for zero capability gain). resolve_article_body
+    # re-materializes that text from the summary, so the model still sees the
+    # full article content and the prompt is byte-identical to the pre-gate
+    # behavior. This ALSO covers the original RSS case (body="" because the
+    # feed had no <content:encoded>) that the inline fallback below existed
+    # for — one shared read-side contract instead of two.
+    body = body[:NEWS_AI_MAX_BODY_CHARS]
     ctx_lines = [
         f"ARTICLE ID: {article.article_id}",
         f"SOURCE: {article.source_name or article.source_id or 'unknown'}",

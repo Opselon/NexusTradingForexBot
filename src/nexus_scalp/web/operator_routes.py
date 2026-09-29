@@ -55,7 +55,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -138,28 +138,161 @@ def _audit_db_path() -> str | None:
         return None
 
 
-def _connect_ro() -> sqlite3.Connection | None:
-    """Read-only SQLite connection to the authoritative audit DB.
+#: Ledger reader abstraction.
+#:
+#: DB-LIFECYCLE (R2 / provider split): the operator surface used to open a raw
+#: ``sqlite3.connect(f"file:{path}?mode=ro")`` handle to the audit DB. That
+#: bypass is *structurally* provider-blind: on a box whose settings DB carries
+#: ``database.provider=postgresql`` the engine writes audit rows to PostgreSQL
+#: while this route kept reading the SQLite file, so every summary/funnel/
+#: NO_TRADE statistic rendered from a stale snapshot and the two surfaces of
+#: one fact disagreed forever (measured: PG newest row 68.9 min old, SQLite
+#: 89.3 h old at probe time).
+#:
+#: The fix routes the read through the fabric's provider-aware read plane
+#: (``provider_store.query_rows`` — same path the audit repository's own read
+#: surface uses) instead of a private connection. Read-only is preserved by
+#: construction: ``query_rows`` issues the caller's SELECT through the READ
+#: pool, and this module still issues no statement that can mutate.
+class LedgerReader:
+    """Provider-aware, read-only window onto the decision ledger.
 
-    ``mode=ro`` is deliberate: the operator surface must be structurally
-    unable to mutate the audit trail. Returns None when the DB is absent
-    (fresh install) - callers report ``LEDGER_UNAVAILABLE``, never fake
-    empty statistics.
+    Two access shapes, both bounded:
+
+    * ``columns(table)`` — the projection adaptation the pre-fix code did via
+      ``PRAGMA table_info`` on a raw SQLite handle. Translated to the
+      portable catalog probe so it works on PostgreSQL too.
+    * ``select(proj, table, order_by, limit)`` — the bounded tail fetch
+      (``ORDER BY id DESC LIMIT n``) every P1 census uses.
     """
-    path = _audit_db_path()
-    if not path:
-        return None
-    try:
-        return sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0)
-    except Exception:
-        return None
+
+    def __init__(self, repo: Any | None = None) -> None:
+        self._repo = repo
+        self._sqlite_fallback_path: str | None = None
+        self._provider = self._resolve_provider()
+
+    def _resolve_provider(self) -> str:
+        """'sqlite' | 'postgresql', from the ACTIVE config (never a guess)."""
+        try:
+            from nexus_scalp.database.config import load_database_config
+
+            cfg = load_database_config("audit")
+            return "postgresql" if cfg.is_postgresql else "sqlite"
+        except Exception:
+            return "sqlite"
+
+    # -- connection handling -------------------------------------------------
+    def _sqlite_con(self) -> sqlite3.Connection | None:
+        """Read-only SQLite handle — ONLY used when the provider is SQLite."""
+        path = self._sqlite_fallback_path
+        if path is None:
+            path = _audit_db_path()
+        if not path:
+            return None
+        try:
+            return sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0)
+        except Exception:
+            return None
+
+    def _rows(self, sql: str, args: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+        """One bounded read on the ACTIVE provider; [] on unavailable.
+
+        SQLite keeps the zero-dependency read-only handle (no repository
+        construction, no pool — the audit DB is a local file); PostgreSQL
+        goes through the fabric's read pool via the repository.
+        """
+        if self._provider != "postgresql":
+            con = self._sqlite_con()
+            if con is None:
+                return []
+            try:
+                con.row_factory = sqlite3.Row
+                with con:
+                    return [dict(r) for r in con.execute(sql, tuple(args)).fetchall()]
+            except Exception:
+                return []
+            finally:
+                with _Suppress():
+                    con.close()
+        from nexus_scalp.adapters.database.provider_store import query_rows
+
+        return query_rows(self._repo, sql, args, operation="operator_routes")
+
+    # -- public API ----------------------------------------------------------
+    def columns(self, table: str) -> set[str]:
+        """Columns the table actually has (empty set when unavailable).
+
+        Replaces the raw ``PRAGMA table_info`` probe with a portable catalog
+        read so the projection adaptation survives the provider switch.
+        """
+        if self._provider != "postgresql":
+            con = self._sqlite_con()
+            if con is None:
+                return set()
+            try:
+                return {str(r[1]) for r in con.execute(f"PRAGMA table_info({table})")}
+            except Exception:
+                return set()
+            finally:
+                with _Suppress():
+                    con.close()
+        rows = self._rows(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE LOWER(table_name) = LOWER(%s)",
+            (table,),
+        )
+        return {str(r["column_name"]) for r in rows}
+
+    def select(
+        self,
+        proj: str,
+        table: str,
+        limit: int,
+        *,
+        where: str = "",
+        args: tuple[Any, ...] = (),
+        order_by: str = "id DESC",
+    ) -> list[dict[str, Any]]:
+        """Bounded read: ``SELECT proj FROM table [where] ORDER BY order_by LIMIT n``."""
+        clause = f" WHERE {where}" if where else ""
+        sql = f"SELECT {proj} FROM {table}{clause} ORDER BY {order_by} LIMIT ?"
+        return self._rows(sql, (*args, limit))
+
+    @property
+    def provider(self) -> str:
+        return self._provider
+
+    @property
+    def available(self) -> bool:
+        """True when the ledger is reachable at all (for honest warnings)."""
+        return bool(self._rows("SELECT 1 AS v", ()))
 
 
-def _has_column(con: sqlite3.Connection, table: str, column: str) -> bool:
+def _ledger_reader() -> LedgerReader:
+    """A provider-aware ledger reader for one request.
+
+    Constructed per call (never a module-level singleton): under PostgreSQL
+    the reader borrows the fabric's read pool through a lazily-built audit
+    repository, and a shared instance would outlive re-provisioning.
+    """
+    repo: Any | None = None
     try:
-        return any(row[1] == column for row in con.execute(f"PRAGMA table_info({table})"))
+        from nexus_scalp.web.diagnostics_state_routes import _audit_repository
+
+        repo = _audit_repository()
     except Exception:
-        return False
+        repo = None
+    return LedgerReader(repo=repo)
+
+
+class _Suppress:
+    """Suppress-and-forget context manager (close paths never raise out)."""
+
+    def __enter__(self) -> _Suppress:
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+        return True
 
 
 def _safe_json(text: Any) -> tuple[dict[str, Any], bool]:
@@ -204,7 +337,7 @@ def _probability_block(parsed: dict[str, Any], optional_cols: dict[str, Any]) ->
 
 
 def _signal_row(
-    row: sqlite3.Row,
+    row: Mapping[str, Any],
     optional_cols: list[str],
     include_payload: bool = False,
 ) -> dict[str, Any]:
@@ -280,8 +413,8 @@ def register_operator_routes(
             summary["identity"] = None
 
         # Decision stats over a bounded recent window.
-        con = _connect_ro()
-        if con is None:
+        ledger = _ledger_reader()
+        if not ledger.available:
             summary["warnings"].append(
                 {
                     "code": "LEDGER_UNAVAILABLE",
@@ -295,7 +428,6 @@ def register_operator_routes(
             )
             return serialize_enums(summary)
         try:
-            con.row_factory = sqlite3.Row
             # P1 (scan-amplification fix): this used to be a two-step
             # ``SELECT id ... LIMIT 20000`` followed by ``WHERE id IN (...)``,
             # a semi-join whose window (20000) is LARGER than the table
@@ -307,13 +439,11 @@ def register_operator_routes(
             # The projection adapts to the columns the ledger actually has
             # (an older audit DB may predate decision_stage/blocked_by) so
             # the bounded read stays valid across schema generations.
-            avail = [c for c in _SUMMARY_COLUMNS if _has_column(con, "audit_signals", c)]
+            cols = ledger.columns("audit_signals")
+            avail = [c for c in _SUMMARY_COLUMNS if c in cols]
             proj = ", ".join(avail)
             window = _SUMMARY_WINDOW
-            rows = con.execute(
-                f"SELECT {proj} FROM audit_signals ORDER BY id DESC LIMIT ?",
-                (window,),
-            ).fetchall()
+            rows = ledger.select(proj, "audit_signals", window)
             scanned = len(rows)
             stats: dict[str, Any] = {"scanned_rows": scanned, "window": window}
             if scanned:
@@ -356,8 +486,6 @@ def register_operator_routes(
         except Exception as exc:
             _log_err(exc, "operator summary ledger stats failed", endpoint="/api/operator/summary")
             summary["ledger"] = {"available": False, "reason": "LEDGER_READ_ERROR"}
-        finally:
-            con.close()
         return serialize_enums(summary)
 
     # ------------------------------------------------------------------
@@ -372,21 +500,24 @@ def register_operator_routes(
         limit: int = 100,
     ) -> dict[str, Any]:
         limit = max(1, min(int(limit), _MAX_LIMIT))
-        con = _connect_ro()
-        if con is None:
+        ledger = _ledger_reader()
+        if not ledger.available:
             return _err("RESOURCE_UNAVAILABLE", extra={"reason": "LEDGER_UNAVAILABLE"})
         try:
-            con.row_factory = sqlite3.Row
-            optional_cols = [
-                c for c in _OPTIONAL_SIGNAL_COLUMNS if _has_column(con, "audit_signals", c)
-            ]
+            cols = ledger.columns("audit_signals")
+            optional_cols = [c for c in _OPTIONAL_SIGNAL_COLUMNS if c in cols]
             where: list[str] = []
             params: list[Any] = []
             if hours is not None and hours > 0:
-                # Filter on the ledger's own timestamp (ISO-8601 with offset,
-                # comparable to SQLite's datetime('now') which is UTC).
-                where.append("generated_at >= datetime('now', ?)")
-                params.append(f"-{float(hours)} hours")
+                # Filter on the ledger's own ISO-8601 timestamp. The old form
+                # used SQLite's ``datetime('now', ?)`` — a provider-only
+                # function that PostgreSQL does not have; the cutoff is now
+                # computed once in the application and compared as a string,
+                # which is portable across both providers (generated_at is a
+                # TEXT/ISO column on both).
+                cutoff = (datetime.now(UTC) - timedelta(hours=float(hours))).isoformat()
+                where.append("generated_at >= ?")
+                params.append(cutoff)
             if action:
                 where.append("UPPER(action) = ?")
                 params.append(action.upper())
@@ -399,15 +530,13 @@ def register_operator_routes(
                 where.append("(request_id LIKE ? OR reason_code LIKE ? OR regime LIKE ?)")
                 like = f"%{search}%"
                 params.extend([like, like, like])
-            clause = ("WHERE " + " AND ".join(where)) if where else ""
-            sql = (
-                "SELECT id, request_id, symbol, action, confidence, regime, generated_at, "
+            clause = " AND ".join(where)
+            proj = (
+                "id, request_id, symbol, action, confidence, regime, generated_at, "
                 "execution_mode, reason_code, decision_stage, blocked_by, payload"
                 + (", " + ", ".join(optional_cols) if optional_cols else "")
-                + f" FROM audit_signals {clause} ORDER BY id DESC LIMIT ?"
             )
-            params.append(limit)
-            rows = con.execute(sql, params).fetchall()
+            rows = ledger.select(proj, "audit_signals", limit, where=clause, args=tuple(params))
             out = [_signal_row(r, optional_cols) for r in rows]
             return serialize_enums(
                 {
@@ -425,20 +554,17 @@ def register_operator_routes(
         except Exception as exc:
             _log_err(exc, "operator decisions query failed", endpoint="/api/operator/decisions")
             return _err("INTERNAL_ERROR")
-        finally:
-            con.close()
 
     # ------------------------------------------------------------------
     # GET /api/operator/decisions/{id} - full evidence for one decision
     # ------------------------------------------------------------------
     @app.get("/api/operator/decisions/{decision_id}", dependencies=[Depends(require_web_auth)])
     def operator_decision_detail(decision_id: int) -> dict[str, Any]:
-        con = _connect_ro()
-        if con is None:
+        ledger = _ledger_reader()
+        if not ledger.available:
             return _err("RESOURCE_UNAVAILABLE", extra={"reason": "LEDGER_UNAVAILABLE"})
         try:
-            con.row_factory = sqlite3.Row
-            cols = [r[1] for r in con.execute("PRAGMA table_info(audit_signals)")]
+            cols = ledger.columns("audit_signals")
             if not cols:
                 return _err("RESOURCE_UNAVAILABLE", extra={"reason": "LEDGER_SCHEMA_UNAVAILABLE"})
             wanted = list(
@@ -447,10 +573,11 @@ def register_operator_routes(
                 )
             )
             select_cols = [c for c in wanted if c in cols]
-            row = con.execute(
+            found = ledger._rows(
                 f"SELECT {', '.join(select_cols)} FROM audit_signals WHERE id = ?",
                 (decision_id,),
-            ).fetchone()
+            )
+            row = found[0] if found else None
             if row is None:
                 return _err("NOT_FOUND", extra={"reason": f"DECISION_NOT_FOUND: {decision_id}"})
             detail = _signal_row(
@@ -465,34 +592,23 @@ def register_operator_routes(
             # so the operator knows how the orders were matched.
             orders: list[dict[str, Any]] = []
             correlation = "REQUEST_ID_VIA_ORDER_ID"
+            order_proj = (
+                "id, ticket, order_id, symbol, action, price, stop_loss, "
+                "take_profit, volume, reason, latency, execution_mode, timestamp, execution_id"
+            )
             if detail.get("request_id"):
-                try:
-                    orders = [
-                        dict(r)
-                        for r in con.execute(
-                            "SELECT id, ticket, order_id, symbol, action, price, stop_loss, "
-                            "take_profit, volume, reason, latency, execution_mode, timestamp, execution_id "
-                            "FROM audit_orders WHERE order_id = ? "
-                            "ORDER BY id DESC LIMIT 20",
-                            (detail["request_id"],),
-                        )
-                    ]
-                except Exception:
-                    orders = []
-            if not orders and _has_column(con, "audit_orders", "execution_id"):
+                orders = ledger._rows(
+                    f"SELECT {order_proj} FROM audit_orders WHERE order_id = ? "
+                    "ORDER BY id DESC LIMIT 20",
+                    (detail["request_id"],),
+                )
+            if not orders and "execution_id" in ledger.columns("audit_orders"):
                 correlation = "EXECUTION_ID"
-                try:
-                    orders = [
-                        dict(r)
-                        for r in con.execute(
-                            "SELECT id, ticket, order_id, symbol, action, price, stop_loss, "
-                            "take_profit, volume, reason, latency, execution_mode, timestamp, execution_id "
-                            "FROM audit_orders WHERE execution_id = ? ORDER BY id DESC LIMIT 20",
-                            (decision_id,),
-                        )
-                    ]
-                except Exception:
-                    orders = []
+                orders = ledger._rows(
+                    f"SELECT {order_proj} FROM audit_orders WHERE execution_id = ? "
+                    "ORDER BY id DESC LIMIT 20",
+                    (decision_id,),
+                )
             detail["orders"] = orders
             detail["order_correlation"] = correlation
             return serialize_enums({"available": True, "decision": detail})
@@ -501,30 +617,24 @@ def register_operator_routes(
                 exc, "operator decision detail failed", endpoint="/api/operator/decisions/{id}"
             )
             return _err("INTERNAL_ERROR")
-        finally:
-            con.close()
 
     # ------------------------------------------------------------------
     # GET /api/operator/funnel - terminal-stage + gate distributions
     # ------------------------------------------------------------------
     @app.get("/api/operator/funnel", dependencies=[Depends(require_web_auth)])
     def operator_funnel(hours: float | None = None) -> dict[str, Any]:
-        con = _connect_ro()
-        if con is None:
+        ledger = _ledger_reader()
+        if not ledger.available:
             return _err("RESOURCE_UNAVAILABLE", extra={"reason": "LEDGER_UNAVAILABLE"})
         try:
-            con.row_factory = sqlite3.Row
             # P1: same vacuous-window defect as the summary — the pre-fix code
             # fetched ``LIMIT 50000`` ids then ``WHERE id IN (...)``: a window
             # 5x larger than the whole table, so it semi-joined the entire
             # ledger on every call. One bounded query reads the same tail.
-            avail = [c for c in _FUNNEL_COLUMNS if _has_column(con, "audit_signals", c)]
+            avail = [c for c in _FUNNEL_COLUMNS if c in ledger.columns("audit_signals")]
             proj = ", ".join(avail)
             window = _FUNNEL_WINDOW
-            rows = con.execute(
-                f"SELECT {proj} FROM audit_signals ORDER BY id DESC LIMIT ?",
-                (window,),
-            ).fetchall()
+            rows = ledger.select(proj, "audit_signals", window)
             if not rows:
                 return serialize_enums(
                     {
@@ -562,8 +672,6 @@ def register_operator_routes(
         except Exception as exc:
             _log_err(exc, "operator funnel failed", endpoint="/api/operator/funnel")
             return _err("INTERNAL_ERROR")
-        finally:
-            con.close()
 
     # ------------------------------------------------------------------
     # GET /api/operator/no-trade - NO_TRADE forensics
@@ -571,13 +679,12 @@ def register_operator_routes(
     @app.get("/api/operator/no-trade", dependencies=[Depends(require_web_auth)])
     def operator_no_trade(hours: float | None = None, limit: int = 25) -> dict[str, Any]:
         limit = max(1, min(int(limit), 100))
-        con = _connect_ro()
-        if con is None:
+        ledger = _ledger_reader()
+        if not ledger.available:
             return _err("RESOURCE_UNAVAILABLE", extra={"reason": "LEDGER_UNAVAILABLE"})
         try:
-            con.row_factory = sqlite3.Row
             optional_cols = [
-                c for c in _OPTIONAL_SIGNAL_COLUMNS if _has_column(con, "audit_signals", c)
+                c for c in _OPTIONAL_SIGNAL_COLUMNS if c in ledger.columns("audit_signals")
             ]
             # P1: the pre-fix code ran FIVE separate full-table queries here
             # (COUNT + blocked_by + regime + reason_code + hourly GROUP BY),
@@ -588,14 +695,17 @@ def register_operator_routes(
             # of the NO_TRADE tail supplies every distribution, and the hourly
             # trend is derived from the rows already in memory.
             window = _NO_TRADE_WINDOW
-            fetched = con.execute(
-                "SELECT id, request_id, symbol, action, confidence, regime, generated_at, "
+            proj = (
+                "id, request_id, symbol, action, confidence, regime, generated_at, "
                 "execution_mode, reason_code, decision_stage, blocked_by, payload"
                 + (", " + ", ".join(optional_cols) if optional_cols else "")
-                + " FROM audit_signals WHERE UPPER(action) = 'NO_TRADE'"
-                " ORDER BY id DESC LIMIT ?",
-                (window,),
-            ).fetchall()
+            )
+            fetched = ledger.select(
+                proj,
+                "audit_signals",
+                window,
+                where="UPPER(action) = 'NO_TRADE'",
+            )
             if hours is not None and hours > 0:
                 cutoff = (datetime.now(UTC) - timedelta(hours=float(hours))).isoformat()
                 rows = [r for r in fetched if (r["generated_at"] or "") >= cutoff]
@@ -644,8 +754,6 @@ def register_operator_routes(
         except Exception as exc:
             _log_err(exc, "operator no-trade failed", endpoint="/api/operator/no-trade")
             return _err("INTERNAL_ERROR")
-        finally:
-            con.close()
 
     # ------------------------------------------------------------------
     # GET /api/operator/orders - recent dispatch evidence + latency stats
@@ -653,17 +761,16 @@ def register_operator_routes(
     @app.get("/api/operator/orders", dependencies=[Depends(require_web_auth)])
     def operator_orders(limit: int = 50) -> dict[str, Any]:
         limit = max(1, min(int(limit), 200))
-        con = _connect_ro()
-        if con is None:
+        ledger = _ledger_reader()
+        if not ledger.available:
             return _err("RESOURCE_UNAVAILABLE", extra={"reason": "LEDGER_UNAVAILABLE"})
         try:
-            con.row_factory = sqlite3.Row
-            rows = con.execute(
-                "SELECT id, ticket, order_id, symbol, action, price, stop_loss, take_profit, "
-                "volume, reason, latency, execution_mode, timestamp, execution_id "
-                "FROM audit_orders ORDER BY id DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            rows = ledger.select(
+                "id, ticket, order_id, symbol, action, price, stop_loss, take_profit, "
+                "volume, reason, latency, execution_mode, timestamp, execution_id",
+                "audit_orders",
+                limit,
+            )
             latencies = [r["latency"] for r in rows if isinstance(r["latency"], (int, float))]
             stats: dict[str, Any] | None = None
             if latencies:
@@ -690,5 +797,3 @@ def register_operator_routes(
         except Exception as exc:
             _log_err(exc, "operator orders failed", endpoint="/api/operator/orders")
             return _err("INTERNAL_ERROR")
-        finally:
-            con.close()

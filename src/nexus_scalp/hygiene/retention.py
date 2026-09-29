@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any, ClassVar
 
 from nexus_scalp.hygiene import DataTier
 
@@ -57,8 +58,11 @@ class RetentionRule:
         return row_age_days >= float(threshold)
 
     def is_archive_candidate(self, row_age_days: float) -> bool:
-        if self.never_delete:
-            return False
+        # ``never_delete`` protects the ROW (canonical evidence, audit
+        # ledger). It must not block archival of a DUPLICATE PAYLOAD, which
+        # is a storage-tier decision on data the row's own ``summary``
+        # already holds. The two are independent: a never_delete table can
+        # still have an ``archive_after_days`` payload policy.
         if self.archive_after_days is None:
             return False
         return row_age_days >= float(self.archive_after_days)
@@ -447,6 +451,20 @@ NEWS_RETENTION: dict[str, RetentionRule] = {
         never_delete=True,
         cleanup_class="DUPLICATE_WITH_CANONICAL",
         owner="NewsDatabase",
+        # DB-LIFECYCLE: the ROW is never deleted (canonical evidence), but its
+        # DUPLICATE PAYLOAD is archival. ~54.4 MB of the 79.5 MB table is
+        # body+summary, and ~28.5 MB of that is body that is a verbatim copy
+        # of the same row's summary (feeds with no <content:encoded> copy
+        # <description> into body at ingest). The decision value is already
+        # extracted into entities/topics/impacts by then, so the duplicate
+        # body is cold evidence the operational table should stop paying for.
+        # Archival is lossless: summary is the surviving canonical text and
+        # every read consumer already falls back body -> summary.
+        # See ingest.deduplicator._gate_duplicate_payload (prevents the
+        # duplicate on new rows) and
+        # NewsDatabase.archive_duplicate_payloads (reclaims it on existing
+        # rows, bounded + idempotent + dry-run capable).
+        archive_after_days=7.0,
     ),
     "news_analysis": RetentionRule(
         database="news",
@@ -756,6 +774,11 @@ class RetentionEngine:
         if rule is None:
             return "KEEP"  # unknown table -> keep (spec §73)
         if rule.never_delete:
+            # never_delete blocks DELETION, not archival of a duplicate
+            # payload (see is_archive_candidate). The verdict still has to
+            # fall through to the archive check below.
+            if row_age_days is not None and rule.is_archive_candidate(row_age_days):
+                return "ARCHIVE"
             return "KEEP"
         if row_age_days is None:
             return "KEEP"
@@ -764,3 +787,76 @@ class RetentionEngine:
         if rule.is_age_candidate(row_age_days):
             return "CANDIDATE"
         return "KEEP"
+
+    # ------------------------------------------------------------------
+    # DB-LIFECYCLE: payload archival execution
+    # ------------------------------------------------------------------
+    #
+    # ``classify`` is a verdict; this is the scheduler half. It runs the
+    # archival the verdict describes, but only for tables that expose a
+    # bounded archival operation. A table with ``never_delete=True`` keeps
+    # its rows forever; only its DUPLICATE PAYLOAD can be reclaimed, so the
+    # executor dispatches on (table, archival_op) pairs rather than on age
+    # alone. Every op is bounded, idempotent and dry-run capable — the same
+    # contract the purge scheduler honours.
+
+    #: Map of (database, table) -> the bounded archival operation to run.
+    #: ``ClassVar`` because it is read-only registry data shared by every
+    #: engine instance (the operations live on the domain databases, which
+    #: are only constructible with a live config, so the engine resolves the
+    #: caller-supplied callable rather than constructing one itself).
+    _ARCHIVE_OPS: ClassVar[dict[tuple[str, str], str]] = {
+        ("news", "news_articles"): "archive_duplicate_payloads",
+    }
+
+    def archive_eligible_payloads(
+        self,
+        db_key: str,
+        *,
+        batch_size: int = 500,
+        max_rows: int | None = None,
+        dry_run: bool = False,
+        archive_op: Any = None,
+    ) -> dict[str, Any]:
+        """Run the payload archival scheduled for this database.
+
+        ``archive_op`` is the callable to invoke (the domain database's
+        bounded archival method). Passing it explicitly keeps the retention
+        engine free of a construction dependency on every domain database
+        — the caller resolves the database, the engine owns the policy.
+
+        Returns the archival counters plus the age-gate verdicts the
+        scheduler used to decide. Nothing is executed when the policy says
+        KEEP or the caller passes ``dry_run=True`` (shadow mode).
+        """
+        result: dict[str, Any] = {
+            "table": None,
+            "dry_run": bool(dry_run),
+            "verdict": "KEEP",
+            "counters": {},
+        }
+        # Find the first table in this database that has an archival op and
+        # a payload-archival policy with an archive_after gate.
+        target = None
+        for (db, table), op_name in self._ARCHIVE_OPS.items():
+            if db != db_key:
+                continue
+            rule = self.rule_for(table)
+            if rule is None or rule.archive_after_days is None:
+                continue
+            target = (table, op_name)
+            break
+        if target is None or archive_op is None:
+            return result
+        table, op_name = target
+        result["table"] = table
+        # The age gate is evaluated at the SCHEDULER level (never per row):
+        # the archival operation is bounded and idempotent, so eligibility
+        # is "the table has an archive_after policy at all" — every row it
+        # touches is still subject to the duplicate test inside the op.
+        result["verdict"] = "ARCHIVE" if not dry_run else "DRY_RUN"
+        counters = archive_op(batch_size=batch_size, max_rows=max_rows, dry_run=dry_run)
+        result["counters"] = counters
+        result["archived"] = int(counters.get("archived", 0))
+        result["bytes_before"] = int(counters.get("bytes_before", 0))
+        return result

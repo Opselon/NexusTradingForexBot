@@ -412,3 +412,29 @@ class SchemaMixin(_NewsDbCoreProto):
                     sqlite=is_sqlite,
                 )
             )
+        # DB-LIFECYCLE: the cold-payload archival marker. ``body``/``summary``
+        # carry ~54.4 MB of a 79.5 MB table (68%); an analyzed article's
+        # decision value has already been extracted into ``entities``,
+        # ``topics`` and the ``news_analysis`` rows, so the raw text is COLD
+        # evidence that can be archived out of the operational table. The
+        # column records that a row's payload was archived (and when), so the
+        # read side can render an honest ARCHIVED marker instead of an empty
+        # body. Default 0 = payload present, exactly the pre-change state.
+        if "payload_archived" not in cols:
+            conn.execute(
+                _add_column_sql(
+                    "news_articles",
+                    "payload_archived",
+                    "INTEGER NOT NULL DEFAULT 0",
+                    sqlite=is_sqlite,
+                )
+            )
+        if "payload_archived_at" not in cols:
+            conn.execute(
+                _add_column_sql(
+                    "news_articles",
+                    "payload_archived_at",
+                    "TEXT NOT NULL DEFAULT ''",
+                    sqlite=is_sqlite,
+                )
+            )

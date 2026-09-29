@@ -111,8 +111,90 @@ def normalize_title(title: str) -> str:
     return " ".join(tokens)
 
 
+def _payload_eq(a: str, b: str) -> bool:
+    """Byte-identical-after-normalization payload comparison.
+
+    Whitespace/case-insensitive so trailing whitespace, case folds, and
+    paragraph re-wraps (common between ``<description>`` and
+    ``<content:encoded>``) still count as the same content. This is the
+    cheapest deterministic test that answers "does the body carry ANY
+    information the summary does not?" — it costs two string passes, never
+    a database query.
+    """
+    na = _WS_RE.sub(" ", (a or "").strip()).casefold()
+    nb = _WS_RE.sub(" ", (b or "").strip()).casefold()
+    return na == nb
+
+
+#: The pre-insert payload value gate (V-class: DERIVED vs DECISION-CRITICAL).
+#:
+#: ``news_articles.body`` and ``news_articles.summary`` are written verbatim
+#: from the RSS ``<content:encoded>`` and ``<description>`` fields. For feeds
+#: with no full-text element the ingest layer *copies summary into body*
+#: (``sources/base.py::_normalize_feedparser_entry`` and
+#: ``_parse_xml_minimal``), so the same ~28.5 MB of text is stored twice per
+#: article — measured on the production ledger: ``body`` 28,521,694 logical
+#: bytes vs ``summary`` 28,517,874, ~54.4 MB of a 79.5 MB table, ~9% of the
+#: whole 588 MB database. ``body`` is genuinely consumed (the analysis
+#: pipeline's keyword/local/LLM paths read it), so the column cannot be
+#: dropped — but a body that is a verbatim copy of the summary carries ZERO
+#: additional information, and storing it doubles TOAST, WAL, index-free
+#: heap width and backup size for no capability gain.
+#:
+#: The gate therefore answers one deterministic question BEFORE persistence:
+#:
+#:     "does this body carry information the summary does not?"
+#:
+#: If not, the canonical row records ``body = ""`` — the analysis consumers
+#: already fall back ``body -> summary`` (``ai_service._build_user_prompt``,
+#: ``analysis/keywords.py``, ``analysis/local.py`` join title+summary+body),
+#: so no capability is lost and every existing consumer still sees the full
+#: text via ``summary``. The dedup is lossless by construction: an empty body
+#: is exactly "summary already holds this text".
+_BODY_DUPLICATE_OF_SUMMARY = ""
+
+
+def _gate_duplicate_payload(summary: str, body: str) -> str:
+    """Pre-insert payload value gate: drop a body that duplicates summary.
+
+    Returns the body value that should be PERSISTED. One of:
+
+    * the original ``body`` — it carries real extra content (or the summary
+      is empty, in which case the body is the only text and must survive);
+    * ``""`` — the body is a verbatim duplicate of the summary and carries no
+      information the summary does not. Downstream readers fall back to the
+      summary, so no decision/risk/audit/model/replay capability is lost.
+
+    Cost: two string normalizations — never a database query, never a remote
+    call. The gate must stay cheaper than the persistence it prevents.
+    """
+    b = (body or "").strip()
+    s = (summary or "").strip()
+    if not b:
+        # No body at all: nothing to gate, and the summary-only feeds keep
+        # working exactly as before.
+        return ""
+    if not s:
+        # A body with no summary: the body IS the text. Keep it (the
+        # summary-first consumers would otherwise see nothing).
+        return b
+    if _payload_eq(b, s):
+        # The duplicate case: body is the summary re-stored. Drop the copy.
+        return _BODY_DUPLICATE_OF_SUMMARY
+    return b
+
+
 def _content_fingerprint(summary: str, body: str, title: str) -> str:
-    """Fingerprint of the textual payload (normalized, first 2000 chars)."""
+    """Fingerprint of the textual payload (normalized, first 2000 chars).
+
+    DB-LIFECYCLE: fingerprints the RAW summary+body BEFORE the payload gate
+    applies. The article identity must be stable across the gate's
+    introduction: an article whose body duplicates its summary would
+    otherwise mint a NEW article_hash after this change and re-enter the
+    ledger as a "new" story on the next poll, defeating the very dedup this
+    module exists to provide. The fingerprint is computed from the source
+    text, the gate only decides what is persisted.
+    """
     text = " ".join([normalize_title(title), summary or "", body or ""])
     return hashlib.sha256(text[:2000].encode("utf-8")).hexdigest()
 
@@ -180,11 +262,17 @@ def canonicalize_item(item: dict[str, Any], source_id: str, source_name: str) ->
         summary=summary,
         body=body,
     )
+    # PRE-INSERT VALUE GATE (database-lifecycle remediation): the body is
+    # only worth its TOAST/heap bytes when it is NOT a restatement of the
+    # summary. The fingerprint above still sees the RAW body so article
+    # identity is unaffected by the gate. See _gate_duplicate_payload.
+    persisted_body = _gate_duplicate_payload(summary, body)
     return {
         "title": title,
         "url": url,
         "summary": summary,
-        "body": body,
+        "body": persisted_body,
+        "body_deduped": persisted_body != body,
         "published_at": published_dt,
         "published_at_source": PUBLISHED_AT_SOURCE_FEED
         if published_dt
