@@ -70,6 +70,52 @@ def _err(code: str, message: str, request_id: str | None = None) -> dict[str, An
     }
 
 
+def _redacted(report: Any, request_id: str | None = None) -> dict[str, Any]:
+    """Build a public-safe migration-report payload for an HTTP response.
+
+    ``MigrationReport.to_dict()`` carries caller-supplied error strings that may
+    contain exception text (SQL fragments, schema names, paths, credentials).
+    The safe fields are copied by name so no tainted value is ever propagated,
+    and the error/warning lists are replaced by the fixed public sentence the
+    client already expects; the untouched originals stay in server logs.
+    """
+    source = report.to_dict() if hasattr(report, "to_dict") else dict(report)
+    payload: dict[str, Any] = {}
+    for key in _REPORT_SAFE_KEYS:
+        if key in source:
+            payload[key] = source[key]
+    errors = source.get("errors")
+    warnings = source.get("warnings")
+    payload["errors"] = (
+        ["One or more error occurred. Check server logs for details."]
+        if isinstance(errors, list) and errors
+        else []
+    )
+    payload["warnings"] = (
+        ["One or more warning occurred. Check server logs for details."]
+        if isinstance(warnings, list) and warnings
+        else []
+    )
+    return payload
+
+
+#: Fields copied verbatim into the public payload. ``errors``/``warnings`` are
+#: deliberately excluded — they are rebuilt as fixed sentences above.
+_REPORT_SAFE_KEYS = (
+    "status",
+    "source",
+    "destination",
+    "tables_migrated",
+    "rows_migrated",
+    "rows_failed",
+    "duration_ms",
+    "validation",
+    "provider_switch_ready",
+    "per_table",
+    "preview",
+)
+
+
 def _route_secret(password: str) -> None:
     """Route a URL-carried password into the OS SecretStore (never echoed)."""
     if not password:
@@ -291,7 +337,7 @@ def transition_migrate(payload: dict[str, Any], request: Request) -> dict[str, A
         ).run()
         passed = report.status == "SUCCESS"
         mgr.mark_migration(passed, "Migration failed" if not passed else "")
-        report_payload = report.to_dict()
+        report_payload = _redacted(report, request_id)
         if report_payload.get("errors"):
             report_payload["errors"] = [
                 "One or more migration errors occurred. Check server logs for details."
@@ -374,7 +420,7 @@ def reverse_migrate(payload: dict[str, Any], request: Request) -> dict[str, Any]
         )
         mig = PostgresToSqliteMigrator(src, dst, opts)
         report = mig.run()
-        return {"success": report.status == "SUCCESS", "report": report.to_dict()}
+        return {"success": report.status == "SUCCESS", "report": _redacted(report, request_id)}
     except Exception as exc:
         log_web_error(logger, "/api/db/manage/reverse-migrate", request_id, exc)
         return _err(

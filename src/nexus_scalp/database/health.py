@@ -17,6 +17,9 @@ from nexus_scalp.database.drivers import get_driver
 from nexus_scalp.database.provider import DatabaseProvider
 from nexus_scalp.database.query_logging import query_observability_snapshot
 from nexus_scalp.database.views import ensure_analytics_views
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.database.health")
 
 #: Tables whose availability matters for trading safety.
 CRITICAL_TABLES: dict[str, tuple[str, ...]] = {
@@ -241,7 +244,10 @@ class DatabaseHealthService:
                     }
                 )
             except Exception as exc:
-                pool_stats.update({"error": f"{type(exc).__name__}: {exc}"})
+                # Public-safe: ``pool_stats`` is embedded verbatim in the HTTP
+                # dashboard body, so no exception text reaches the client.
+                logger.error("Dashboard pool stats failed: %s", exc, exc_info=True)
+                pool_stats.update({"error": "POOL_STATS_UNAVAILABLE"})
         else:
             pool_stats = {"applicable": False, "reason": "SQLite has no connection pool"}
 
@@ -277,7 +283,11 @@ class DatabaseHealthService:
             finally:
                 driver.close()
         except Exception as exc:
-            views = {"_ensure": {"status": "FAILED", "error": f"{type(exc).__name__}: {exc}"}}
+            # Public-safe: the HTTP dashboard surfaces this verbatim, so the fixed
+            # token carries no exception text, driver class or path; the real
+            # failure (with traceback) goes to the log only.
+            logger.error("Dashboard analytics views failed: %s", exc, exc_info=True)
+            views = {"_ensure": {"status": "FAILED", "error": "VIEW_ENSURE_FAILED"}}
 
         unavailable = {
             "value": None,
