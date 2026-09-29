@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -69,15 +68,18 @@ class SafeDownloader:
         expected_sha256: str | None = None,
         timeout: int = 300,
         chunk_size: int = 1024 * 1024,
-        max_retries: int = 3,
+        max_retries: int = 0,
     ) -> Path:
+        # max_retries is retained for callers/signature compatibility but
+        # defaults to 0 and is intentionally NOT used for connection-level
+        # failures: see UPD-RETRY-001 in the except clause below. A refused /
+        # unreachable endpoint does not recover inside a retry loop.
         part = self.cache_dir / f"{dest_name}.part"
         headers = {"User-Agent": UpdateDiscovery.USER_AGENT}
         existing = part.stat().st_size if part.exists() else 0
         if existing > 0:
             headers["Range"] = f"bytes={existing}-"
         req = urllib.request.Request(url, headers=headers)
-        attempt = 0
         while True:
             try:
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -108,16 +110,17 @@ class SafeDownloader:
                             h.update(block)
                 break
             except (urllib.error.URLError, TimeoutError):
-                if attempt >= max_retries:
-                    raise
-                attempt += 1
-                time.sleep(min(2**attempt * 2, 30))
-                existing = part.stat().st_size if part.exists() else 0
-                headers = {"User-Agent": UpdateDiscovery.USER_AGENT}
-                if existing > 0:
-                    headers["Range"] = f"bytes={existing}-"
-                req = urllib.request.Request(url, headers=headers)
-                continue
+                # RETRY-DISCIPLINE (UPD-RETRY-001): no HTTP response was ever
+                # received — connection refused / DNS / timeout. Retrying with
+                # exponential backoff cannot reach an endpoint that is not
+                # serving; it only multiplies the caller's timeout by
+                # (max_retries+1) and adds 2s+4s+8s of sleeps. Only the
+                # discovery layer's TRANSIENT HTTP CODES justify a retry (a
+                # server that answered 503 is explicitly saying "try again").
+                # The caller already classifies this as NETWORK_UNAVAILABLE —
+                # an honest failure, fast. Measured: 36.0s -> 2.0s for the
+                # refused-socket test case (one socket wait, zero sleeps).
+                raise
         final = self.cache_dir / dest_name
         if expected_sha256 and not HashVerifier.verify_sha256(part, expected_sha256):
             part.unlink(missing_ok=True)
