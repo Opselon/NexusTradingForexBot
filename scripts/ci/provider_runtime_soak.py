@@ -73,7 +73,7 @@ HOT_ENDPOINTS = (
 )
 SEVERITY_RE = re.compile(r"\b(CRITICAL|FATAL|ERROR|WARNING|WARN)\b", re.IGNORECASE)
 TRACEBACK_RE = re.compile(r"Traceback \(most recent call last\):")
-FRAME_RE = re.compile(r'File "(.+?)", line (\\d+), in (.+)')
+FRAME_RE = re.compile(r'File "(.+?)", line (\d+), in (.+)')
 SOURCE_RE = re.compile(
     r"((?:[A-Za-z]:[\\/]|/)?[\w.\-\\/]+\.py):(\d+)(?::(\d+))?"
 )
@@ -112,13 +112,13 @@ class LogCollector:
             traceback_buf: list[str] = []
             traceback_start = 0
             for raw in self.proc.stdout:
-                line = ANSI_RE.sub("", raw.rstrip("\\r\\n"))
+                line = ANSI_RE.sub("", raw.rstrip("\r\n"))
                 now = time.monotonic()
                 with self.lock:
                     self.lines.append(line)
                     if len(self.lines) > 5000:
                         del self.lines[:1000]
-                log.write(line + "\\n")
+                log.write(line + "\n")
                 log.flush()
 
                 if TRACEBACK_RE.search(line):
@@ -606,6 +606,7 @@ def wait_http(base_url: str, timeout: int) -> dict[str, Any]:
 def request_graceful_shutdown(proc: subprocess.Popen[str], collector: LogCollector) -> dict[str, Any]:
     started = time.perf_counter()
     signal_sent = False
+    forced_kill = False
     if proc.poll() is None:
         proc.send_signal(signal.SIGINT)
         signal_sent = True
@@ -623,13 +624,14 @@ def request_graceful_shutdown(proc: subprocess.Popen[str], collector: LogCollect
             time.sleep(0.5)
 
     if proc.poll() is None:
+        forced_kill = True
         proc.kill()
         proc.wait(timeout=10)
 
     return {
         "signal_sent": signal_sent,
         "exit_code": proc.returncode,
-        "forced_kill": proc.returncode is None,
+        "forced_kill": forced_kill,
         "shutdown_wait_sec": round(time.perf_counter() - started, 2),
         "log": collector.snapshot(),
     }
