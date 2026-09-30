@@ -22,7 +22,11 @@ import re
 
 #: Statement verbs a driver may execute on behalf of callers: the read paths
 #: plus the DML/DDL the internal store layer legitimately issues (built from
-#: allow-listed identifiers, never raw user text).
+#: allow-listed identifiers, never raw user text). Leading ``-- ...`` line
+#: comments are skipped: schema DDL documents itself inline (e.g.
+#: ``strategies.factory.store._SCHEMA`` prefixes a retained index with the
+#: rationale for the one it replaced), and a line comment cannot hide a second
+#: statement once the interior-``;`` check below has already rejected it.
 _ALLOWED_VERBS = re.compile(
     r"^(?:\s*--[^\r\n]*[\r\n]+)*\s*"
     r"(SELECT|EXPLAIN|WITH|PRAGMA|VALUES|INSERT|UPDATE|DELETE|REPLACE"

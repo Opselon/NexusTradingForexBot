@@ -831,6 +831,29 @@ class TestDbConsoleQueryGuard:
         assert body["success"] is True
         assert len(body.get("rows", [])) <= 100
 
+    def test_verb_guard_accepts_ddl_with_leading_line_comments(self):
+        """Schema DDL may document itself before the verb.
+
+        ``strategies.factory.store._SCHEMA`` keeps a rationale block above a
+        retained index, and ``schema_snapshot.strategy_factory_schema_statements``
+        splits on ``;`` so that whole comment header lands at the front of one
+        statement. The guard documented line comments as permitted, so the verb
+        allow-list must look past them (DB-FABRIC: "SQL verb not allowed at
+        driver boundary" during reverse-migration schema replay).
+        """
+        from nexus_scalp.database.drivers._sql_guard import assert_safe_sql
+
+        sql = (
+            "-- idx_factory_cand_hash (definition_hash) REMOVED — 0 scans on the live ledger\n"
+            "-- and definition_hash is never a lookup key anywhere in the tree.\n"
+            "CREATE INDEX IF NOT EXISTS idx_factory_fail_gen ON factory_failures(generation_id)"
+        )
+        assert assert_safe_sql(sql) == sql
+
+        # a hostile verb hidden behind the same header is still rejected
+        with pytest.raises(ValueError):
+            assert_safe_sql("-- benign\nATTACH DATABASE ':memory:' AS aux")
+
     def test_placeholder_translation_used_for_pg(self):
         from nexus_scalp.web.db_console import _query_console_sql
 
