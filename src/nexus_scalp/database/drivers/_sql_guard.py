@@ -63,6 +63,7 @@ def _verb_allowed(sql: str) -> bool:
         return stripped.upper().startswith(_VERBS)
     return False
 
+
 #: Stacked statements are never legitimate in driver input; a caller needing
 #: multiple statements issues them one by one. Block comments are banned;
 #: line comments (--) are permitted (schema DDL documents itself) because a
