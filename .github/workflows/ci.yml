@@ -976,12 +976,15 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
-          log="$RUNNER_TEMP/nexus-mt5-runtime.log"
-          if [ -f "$log" ]; then
-            echo "=== MT5/WINE WARNINGS + ERRORS ==="
-            grep -Ein 'warn|error|critical|exception|fatal' "$log" | head -100 || true
-          else
-            echo "MT5 runtime log not present"
+          echo "=== MT5/WINE INSTALL + RUNTIME DIAGNOSTICS ==="
+          find "$NEXUS_MT5_ROOT/logs" -maxdepth 1 -type f -print -exec sh -c 'echo "--- $1 ---"; tail -200 "$1"' _ {} \; 2>/dev/null || true
+          for log in "$NEXUS_MT5_ROOT"/logs/*.log; do
+            [ -f "$log" ] || continue
+            echo "=== WARN/ERROR: $log ==="
+            grep -Ein 'warn|error|critical|exception|fatal|failed|cannot|err:' "$log" | head -200 || true
+          done
+          if [ -f "$RUNNER_TEMP/nexus-mt5-runtime.log" ]; then
+            cat "$RUNNER_TEMP/nexus-mt5-runtime.log"
           fi
 
       - name: Upload MT5/Wine evidence
@@ -990,6 +993,7 @@ jobs:
         with:
           name: ci-mt5-wine-runtime-${{ github.run_id }}
           path: |
+            ${{ runner.temp }}/nexus-mt5/
             ${{ runner.temp }}/nexus-mt5-runtime.log
             ${{ runner.temp }}/nexus-mt5-xvfb.log
           if-no-files-found: error
