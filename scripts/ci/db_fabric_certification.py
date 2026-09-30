@@ -477,10 +477,9 @@ def main() -> int:
     try:
         import yaml
 
-        config_data = (
-            yaml.safe_load((REPO_ROOT / "configs" / "base.yaml").read_text(encoding="utf-8"))
-            or {}
-        )
+        config_data = yaml.safe_load(
+            (REPO_ROOT / "configs" / "base.yaml").read_text(encoding="utf-8")
+        ) or {}
         if isinstance(config_data, dict):
             news_cfg = config_data.setdefault("news", {})
             if isinstance(news_cfg, dict):
