@@ -351,6 +351,8 @@ def source_sql_inventory() -> dict[str, Any]:
 
 
 _READ_VERBS = {"SELECT", "WITH", "EXPLAIN", "VALUES", "PRAGMA"}
+
+
 def _first_sql_keyword(sql: str) -> str:
     """Return the first SQL keyword after blank/line-comment prefixes."""
     for line in sql.splitlines():
