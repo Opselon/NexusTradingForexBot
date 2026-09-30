@@ -61,7 +61,9 @@ class PostgresToSqliteMigrator:
         self.dst_cfg = dst_config
         self.opts = options or MigrationOptions()
 
-    def _ensure_destination_schema(self, dst_driver: Any) -> None:
+    def _ensure_destination_schema(
+        self, dst_driver: Any, source_tables: set[str] | None = None
+    ) -> None:
         """Replay the canonical schema idempotently onto the existing SQLite DB.
 
         ``replay_schema()`` is built by executing the migration chain against an
@@ -74,24 +76,64 @@ class PostgresToSqliteMigrator:
         from nexus_scalp.database.migration.schema_snapshot import replay_schema
         from nexus_scalp.database.registry import DatabaseDomain
 
-        for statement in replay_schema(domain=DatabaseDomain.AUDIT):
-            match = _ADD_COLUMN_RE.match(statement)
-            if match and dst_driver.table_exists(match.group(1)):
-                table = match.group(1)
-                column = match.group(2)
-                existing = {
-                    str(item["name"]).casefold()
-                    for item in dst_driver.table_columns(table)
-                    if isinstance(item, dict) and "name" in item
-                }
-                if column.casefold() in existing:
-                    logger.info(
-                        "[DB-MIGRATE] reverse schema column already present: %s.%s",
-                        table,
-                        column,
-                    )
-                    continue
-            dst_driver.execute(statement)
+        from nexus_scalp.database.migration import schema_snapshot
+
+        def apply_statements(statements: tuple[str, ...]) -> None:
+            for statement in statements:
+                match = _ADD_COLUMN_RE.match(statement)
+                if match and dst_driver.table_exists(match.group(1)):
+                    table = match.group(1)
+                    column = match.group(2)
+                    existing = {
+                        str(item["name"]).casefold()
+                        for item in dst_driver.table_columns(table)
+                        if isinstance(item, dict) and "name" in item
+                    }
+                    if column.casefold() in existing:
+                        logger.info(
+                            "[DB-MIGRATE] reverse schema column already present: %s.%s",
+                            table,
+                            column,
+                        )
+                        continue
+                dst_driver.execute(statement)
+
+        apply_statements(replay_schema(domain=DatabaseDomain.AUDIT))
+
+        # The PostgreSQL audit database can also contain lazy-owned operational
+        # tables that are not part of AUDIT replay (for example shadow70_*).
+        # Only replay an auxiliary owner when at least one of its tables is
+        # actually present in the source, so an unrelated fresh destination is
+        # not polluted with every optional schema.
+        source_keys = {table.casefold() for table in (source_tables or set())}
+        auxiliary = (
+            ("model_lifecycle", schema_snapshot.model_lifecycle_schema_statements),
+            ("strategy_factory", schema_snapshot.strategy_factory_schema_statements),
+            ("ops_shadow", schema_snapshot.ops_shadow_schema_statements),
+            ("ops_hygiene", schema_snapshot.ops_hygiene_schema_statements),
+        )
+        for owner, extractor in auxiliary:
+            statements = tuple(extractor())
+            expected = {
+                match.group(1).casefold()
+                for statement in statements
+                for match in (
+                    re.search(
+                        r"CREATE\\s+TABLE(?:\\s+IF\\s+NOT\\s+EXISTS)?\\s+\"?([A-Za-z_][\\w$]*)",
+                        statement,
+                        re.IGNORECASE,
+                    ),
+                )
+                if match
+            }
+            if not expected.intersection(source_keys):
+                continue
+            logger.info(
+                "[DB-MIGRATE] reverse schema owner=%s source_tables=%d",
+                owner,
+                len(expected.intersection(source_keys)),
+            )
+            apply_statements(statements)
 
     def _ensure_checkpoint_table(self, dst_driver: Any) -> None:
         ddl = (
@@ -188,10 +230,13 @@ class PostgresToSqliteMigrator:
         dst_driver = get_driver(self.dst_cfg)
 
         try:
-            self._ensure_destination_schema(dst_driver)
+            tables = [t for t in src_driver.list_tables() if t not in SKIP_TABLES]
+            self._ensure_destination_schema(
+                dst_driver,
+                source_tables={table for table in tables},
+            )
             self._ensure_checkpoint_table(dst_driver)
             checkpoints = self._load_checkpoints(dst_driver)
-            tables = [t for t in src_driver.list_tables() if t not in SKIP_TABLES]
             if self.opts.tables:
                 tables = [t for t in tables if t in self.opts.tables]
 
