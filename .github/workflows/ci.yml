@@ -1085,8 +1085,13 @@ jobs:
               "postgres_query_floor_350": int(postgres_report.get("workload", {}).get("query_count", 0)) >= 350,
               "sqlite_query_failures_zero": int(sqlite_report.get("workload", {}).get("failed", 1)) == 0,
               "postgres_query_failures_zero": int(postgres_report.get("workload", {}).get("failed", 1)) == 0,
-              "schema_table_set_equal": bool(parity.get("checks", {}).get("same_table_set")),
-              "schema_columns_equal": bool(parity.get("checks", {}).get("same_column_contract")),
+              "every_sqlite_table_exists_in_postgres": bool(
+                  parity.get("checks", {}).get("sqlite_has_no_missing_postgres_tables")
+              ),
+              "shared_columns_equal": bool(parity.get("checks", {}).get("same_column_contract")),
+              "postgres_only_data_free": bool(
+                  parity.get("checks", {}).get("postgres_only_tables_are_empty")
+              ),
               "migration_cert_pass": migration.get("status") == "PASS",
               "migration_roundtrip_digest": bool(migration.get("digest_match")),
               "migration_idempotent": bool(migration.get("idempotent_forward_pass")),
