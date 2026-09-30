@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 ROOT = Path(__file__).resolve().parents[2]
-MIN_QUERIES = 350
+MIN_QUERIES = 500
 MAX_TABLES = 500
 MAX_STATIC_SQL = 2000
 SQL_RE = re.compile(
@@ -127,6 +127,17 @@ def schema_inventory(conn: Any, provider: str) -> dict[str, Any]:
             "indexes": indexes(conn, provider, table),
         }
     return result
+
+
+def live_row_counts(conn: Any, inventory: dict[str, Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for table in inventory:
+        try:
+            row = conn.execute("SELECT COUNT(*) FROM " + ident(table)).fetchone()
+            counts[table] = int(row[0] or 0)
+        except Exception:
+            counts[table] = -1
+    return counts
 
 
 def execute_query(conn: Any, sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any]:
@@ -361,6 +372,7 @@ def main() -> int:
     conn = connect(args.provider)
     try:
         inventory = schema_inventory(conn, args.provider)
+        row_counts = live_row_counts(conn, inventory)
         workload = live_query_battery(conn, args.provider, inventory)
     finally:
         conn.close()
@@ -374,6 +386,7 @@ def main() -> int:
         "table_count": len(inventory),
         "schema": inventory,
         "canonical_schema": canonical_schema(inventory),
+        "row_counts": row_counts,
         "workload": workload,
         "source_sql": source,
         "contracts": {
