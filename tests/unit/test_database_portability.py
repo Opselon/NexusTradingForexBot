@@ -28,12 +28,12 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from nexus_scalp.database.ddl_port import port_create_table  # noqa: E402
 from nexus_scalp.database.config import (  # noqa: E402
     DatabaseConfig,
     load_database_config,
     mask_url_password,
 )
+from nexus_scalp.database.ddl_port import port_create_table  # noqa: E402
 from nexus_scalp.database.drivers import get_driver  # noqa: E402
 from nexus_scalp.database.drivers.postgres_driver import _translate_placeholders  # noqa: E402
 from nexus_scalp.database.migrate_engine import (  # noqa: E402
