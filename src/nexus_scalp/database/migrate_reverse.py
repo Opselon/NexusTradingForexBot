@@ -73,10 +73,9 @@ class PostgresToSqliteMigrator:
         inspect the live destination first and skip only that exact already-
         present column. All other DDL errors remain fatal.
         """
+        from nexus_scalp.database import migration
         from nexus_scalp.database.migration.schema_snapshot import replay_schema
         from nexus_scalp.database.registry import DatabaseDomain
-
-        from nexus_scalp.database.migration import schema_snapshot
 
         def apply_statements(statements: tuple[str, ...]) -> None:
             for statement in statements:
@@ -107,10 +106,10 @@ class PostgresToSqliteMigrator:
         # not polluted with every optional schema.
         source_keys = {table.casefold() for table in (source_tables or set())}
         auxiliary = (
-            ("model_lifecycle", schema_snapshot.model_lifecycle_schema_statements),
-            ("strategy_factory", schema_snapshot.strategy_factory_schema_statements),
-            ("ops_shadow", schema_snapshot.ops_shadow_schema_statements),
-            ("ops_hygiene", schema_snapshot.ops_hygiene_schema_statements),
+            ("model_lifecycle", migration.schema_snapshot.model_lifecycle_schema_statements),
+            ("strategy_factory", migration.schema_snapshot.strategy_factory_schema_statements),
+            ("ops_shadow", migration.schema_snapshot.ops_shadow_schema_statements),
+            ("ops_hygiene", migration.schema_snapshot.ops_hygiene_schema_statements),
         )
         for owner, extractor in auxiliary:
             statements = tuple(extractor())
