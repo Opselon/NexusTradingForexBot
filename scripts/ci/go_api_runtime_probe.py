@@ -21,12 +21,8 @@ TOKEN = "ci-go-api-token"
 REQUEST_TIMEOUT = 5.0
 STARTUP_TIMEOUT = 30.0
 
-ROUTE_RE = re.compile(
-    r'\{Method:\s*"(?P<method>[A-Z]+)"\s*,\s*Path:\s*"(?P<path>[^"]+)"'
-)
-HANDLE_RE = re.compile(
-    r'Handle(?:Func)?\(\s*"(?P<method>[A-Z]+)"\s*,\s*"(?P<path>[^"]+)"'
-)
+ROUTE_RE = re.compile(r'\{Method:\s*"(?P<method>[A-Z]+)"\s*,\s*Path:\s*"(?P<path>[^"]+)"')
+HANDLE_RE = re.compile(r'Handle(?:Func)?\(\s*"(?P<method>[A-Z]+)"\s*,\s*"(?P<path>[^"]+)"')
 
 
 def collect_routes() -> list[tuple[str, str]]:
