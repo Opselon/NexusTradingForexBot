@@ -412,7 +412,8 @@ def reverse_migrate(payload: dict[str, Any], request: Request) -> dict[str, Any]
                 "Reverse migration requires PostgreSQL to be the configured active provider.",
                 request_id,
             )
-        dst = DatabaseConfig.for_sqlite("audit")
+        sqlite_path = str((payload or {}).get("sqlite_path") or "").strip()
+        dst = DatabaseConfig.for_sqlite("audit", path=sqlite_path)
 
         opts = MigrationOptions(
             batch_size=int((payload or {}).get("batch_size") or 2000),
