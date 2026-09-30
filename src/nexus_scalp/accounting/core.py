@@ -114,13 +114,83 @@ class AccountingCore:
 
     @property
     def _enabled(self) -> bool:
-        """False for non-SQLite backends, where these queries do not apply."""
-        return bool(getattr(self.audit_repo, "_is_sqlite", False))
+        """True when the authoritative audit store is actually readable.
+
+        The store is readable when either
+
+        * the repository is SQLite and carries a real on-disk path (the legacy
+          local file), or
+        * a provider read plane is reachable for the domain (the PostgreSQL
+          production path — the engine migrated to a server, so
+          ``_is_sqlite`` is False and the raw ``sqlite3.connect`` below must
+          never be attempted).
+
+        Before CHG-0068 this returned ``not _is_sqlite``-inverted, i.e. False
+        under PostgreSQL, so every read below silently degraded to ``[]`` /
+        ``has_data=False`` while the same tables held thousands of rows the
+        sibling routes served fine. The frontend then rendered a truthful-looking
+        empty Accounting tab — no exception, no failed request, no log line.
+        """
+        if bool(getattr(self.audit_repo, "_is_sqlite", False)):
+            return bool(getattr(self.audit_repo, "_db_path", ""))
+        return self._read_plane is not None
 
     def _connect(self, timeout: float = 5.0) -> sqlite3.Connection:
         conn = sqlite3.connect(self.audit_repo._db_path, timeout=timeout)
         conn.row_factory = sqlite3.Row
         return conn
+
+    @property
+    def _read_plane(self) -> Any:
+        """The fabric's read plane for the audit domain, or None.
+
+        Reuses the repository's own resolver so the accounting core and the
+        audit routes can never resolve two different planes for one domain. A
+        write-shaped backend is refused: reads must never share the write path.
+        """
+        if bool(getattr(self.audit_repo, "_is_sqlite", False)):
+            return None
+        resolver = getattr(self.audit_repo, "_registered_audit_read_plane", None)
+        if callable(resolver):
+            try:
+                return resolver()
+            except Exception as err:
+                logger.debug("[ACCOUNTING] read plane resolve failed", error=str(err))
+                return None
+        return None
+
+    def _query(self, sql: str, args: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+        """Runs one parameterized SELECT against the readable audit store.
+
+        SQLite keeps its short-lived local connection; any other provider is
+        served through the registered read plane, which translates the
+        SQLite-style ``?`` placeholders itself. One code path, one row shape
+        (``dict``) for both providers, so the callers above never branch on the
+        backend.
+        """
+        if bool(getattr(self.audit_repo, "_is_sqlite", False)):
+            with self._connect() as conn:
+                return [dict(r) for r in conn.execute(sql, tuple(args)).fetchall()]
+        plane = self._read_plane
+        if plane is None:
+            return []
+        return [dict(r) for r in plane.query(sql, tuple(args))]
+
+    def _query_one(self, sql: str, args: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+        """Runs one parameterized SELECT expecting at most a single row."""
+        if bool(getattr(self.audit_repo, "_is_sqlite", False)):
+            with self._connect() as conn:
+                row = conn.execute(sql, tuple(args)).fetchone()
+                return dict(row) if row is not None else None
+        plane = self._read_plane
+        if plane is None:
+            return None
+        query_one = getattr(plane, "query_one", None)
+        if callable(query_one):
+            row = query_one(sql, tuple(args))
+            return dict(row) if row is not None else None
+        rows = plane.query(sql, tuple(args))
+        return dict(rows[0]) if rows else None
 
     # ------------------------------------------------------------------
     # Live account state
@@ -213,11 +283,20 @@ class AccountingCore:
             "AND ABS(margin_free - 10000.0) < 1e-9)"
         )
         clauses.append("(COALESCE(account_source,'') != 'PAPER')")
+        # Snapshot timestamps are written by ``datetime.now(UTC).isoformat()``
+        # — always ISO ('2026-09-30T10:56:56+00:00'). A cutoff built with
+        # strftime('%Y-%m-%d %H:%M:%S') keeps the space separator, and the
+        # lexicographic order then breaks on every sub-day bound because
+        # 'T' > ' ': '2026-09-30T08:00:00' >= '2026-09-30 09:00:00' is TRUE and
+        # '2026-09-30T11:00:00' < '2026-09-30 10:00:00' is TRUE — the window
+        # excludes nothing. Same normalization load_trades applies to the
+        # ledger's mixed legacy/live close-time formats, one bound for both.
+        ts_expr = "REPLACE(REPLACE(timestamp, 'T', ' '), '+00:00', '')"
         if since is not None:
-            clauses.append("timestamp >= ?")
+            clauses.append(f"{ts_expr} >= ?")
             args.append(ensure_utc(since).strftime("%Y-%m-%d %H:%M:%S"))
         if until is not None:
-            clauses.append("timestamp < ?")
+            clauses.append(f"{ts_expr} < ?")
             args.append(ensure_utc(until).strftime("%Y-%m-%d %H:%M:%S"))
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
@@ -229,24 +308,23 @@ class AccountingCore:
 
         out: list[AccountSnapshot] = []
         try:
-            with self._connect() as conn:
-                for row in conn.execute(sql, tuple(args)).fetchall():
-                    stamp = parse_sql_timestamp(row["timestamp"])
-                    if stamp is None:
-                        continue
-                    balance = float(row["balance"])
-                    equity = float(row["equity"])
-                    out.append(
-                        AccountSnapshot(
-                            timestamp=stamp,
-                            balance=balance,
-                            equity=equity,
-                            margin_free=float(row["margin_free"]),
-                            peak_equity=float(row["peak_equity"]),
-                            # Derived, not invented: MT5 defines equity = balance + floating.
-                            floating_pnl=equity - balance,
-                        )
+            for row in self._query(sql, tuple(args)):
+                stamp = parse_sql_timestamp(row["timestamp"])
+                if stamp is None:
+                    continue
+                balance = float(row["balance"])
+                equity = float(row["equity"])
+                out.append(
+                    AccountSnapshot(
+                        timestamp=stamp,
+                        balance=balance,
+                        equity=equity,
+                        margin_free=float(row["margin_free"]),
+                        peak_equity=float(row["peak_equity"]),
+                        # Derived, not invented: MT5 defines equity = balance + floating.
+                        floating_pnl=equity - balance,
                     )
+                )
         except Exception as err:
             logger.error("[ACCOUNTING] snapshot load failed", error=str(err))
             return []
@@ -287,8 +365,8 @@ class AccountingCore:
         # broker history); they are only excluded from derived metrics.
         clauses.append("(COALESCE(account_source,'') != 'PAPER')")
         clauses.append(
-            "NOT (COALESCE(CAST(ticket AS INTEGER), 0) < 100000000000 "
-            "AND CAST(ticket AS INTEGER) >= 100000)"
+            "NOT (COALESCE(CAST(ticket AS BIGINT), 0) < 100000000000 "
+            "AND CAST(ticket AS BIGINT) >= 100000)"
         )
         clauses.append(
             "NOT (COALESCE(entry_price,0) BETWEEN 1999.0 AND 2001.0 "
@@ -319,8 +397,7 @@ class AccountingCore:
         args.append(int(limit))
 
         try:
-            with self._connect() as conn:
-                rows = [dict(r) for r in conn.execute(sql, tuple(args)).fetchall()]
+            rows = self._query(sql, tuple(args))
         except Exception as err:
             logger.error("[ACCOUNTING] trade load failed", error=str(err))
             return []
@@ -354,8 +431,7 @@ class AccountingCore:
             "ORDER BY COALESCE(NULLIF(exit_time,''), '') DESC LIMIT ?"
         )
         try:
-            with self._connect() as conn:
-                rows = [dict(r) for r in conn.execute(sql, (int(limit),)).fetchall()]
+            rows = self._query(sql, (int(limit),))
         except Exception as err:
             logger.error("[ACCOUNTING] broker trade load failed", error=str(err))
             return []
@@ -436,21 +512,20 @@ class AccountingCore:
 
         mapping: dict[str, dict[str, Any]] = {}
         try:
-            with self._connect() as conn:
-                # Chunked IN() to stay under SQLite's variable limit.
-                for start in range(0, len(tickets), 400):
-                    chunk = tickets[start : start + 400]
-                    placeholders = ",".join("?" * len(chunk))
-                    sql = (
-                        "SELECT o.execution_id, e.experience_id, e.strategy_id, "
-                        "e.strategy_version, e.model_id, e.model_version, "
-                        "e.feature_schema_id, e.feature_dimension "
-                        "FROM audit_experience_outcomes o "
-                        "JOIN audit_experiences e ON e.idempotency_key = o.idempotency_key "
-                        f"WHERE o.execution_id IN ({placeholders})"
-                    )
-                    for row in conn.execute(sql, tuple(chunk)).fetchall():
-                        mapping[str(row["execution_id"])] = dict(row)
+            # Chunked IN() to stay under SQLite's variable limit.
+            for start in range(0, len(tickets), 400):
+                chunk = tickets[start : start + 400]
+                placeholders = ",".join("?" * len(chunk))
+                sql = (
+                    "SELECT o.execution_id, e.experience_id, e.strategy_id, "
+                    "e.strategy_version, e.model_id, e.model_version, "
+                    "e.feature_schema_id, e.feature_dimension "
+                    "FROM audit_experience_outcomes o "
+                    "JOIN audit_experiences e ON e.idempotency_key = o.idempotency_key "
+                    f"WHERE o.execution_id IN ({placeholders})"
+                )
+                for row in self._query(sql, tuple(chunk)):
+                    mapping[str(row["execution_id"])] = row
         except Exception as err:
             logger.debug("[ACCOUNTING] identity join skipped", error=str(err))
             return records
@@ -784,10 +859,7 @@ class AccountingCore:
             return trace
 
         try:
-            with self._connect() as conn:
-                row = conn.execute(
-                    "SELECT * FROM audit_ledger WHERE ticket = ?", (int(ticket),)
-                ).fetchone()
+            row = self._query_one("SELECT * FROM audit_ledger WHERE ticket = ?", (int(ticket),))
         except Exception as err:
             logger.error("[ACCOUNTING] trade trace load failed", ticket=ticket, error=str(err))
             trace.notes.append(f"LEDGER_READ_FAILED: {err}")
@@ -894,20 +966,19 @@ class AccountingCore:
             return
 
         try:
-            with self._connect() as conn:
-                out_row = conn.execute(
-                    """
-                    SELECT o.strategy_quality, o.entry_quality, o.execution_quality,
-                           o.management_quality, o.exit_quality, o.behavioral_flags,
-                           o.slippage_points, o.execution_latency_ms, o.exit_reason,
-                           o.realized_r_multiple
-                    FROM audit_experience_outcomes o
-                    JOIN audit_experiences e ON e.idempotency_key = o.idempotency_key
-                    WHERE o.execution_id = ?
-                    LIMIT 1
-                    """,
-                    (str(record.ticket),),
-                ).fetchone()
+            out_row = self._query_one(
+                """
+                SELECT o.strategy_quality, o.entry_quality, o.execution_quality,
+                       o.management_quality, o.exit_quality, o.behavioral_flags,
+                       o.slippage_points, o.execution_latency_ms, o.exit_reason,
+                       o.realized_r_multiple
+                FROM audit_experience_outcomes o
+                JOIN audit_experiences e ON e.idempotency_key = o.idempotency_key
+                WHERE o.execution_id = ?
+                LIMIT 1
+                """,
+                (str(record.ticket),),
+            )
         except Exception as err:
             logger.debug("[ACCOUNTING] experience detail read failed", error=str(err))
             out_row = None
@@ -956,19 +1027,18 @@ class AccountingCore:
     def _attach_order_events(self, trace: TradeForensicTrace, record: TradeRecord) -> None:
         """Attaches the raw order lifecycle events for this ticket."""
         try:
-            with self._connect() as conn:
-                rows = conn.execute(
-                    """
-                    SELECT id, ticket, order_id, action, price, stop_loss, take_profit,
-                           volume, reason, latency, execution_mode, timestamp
-                    FROM audit_orders
-                    WHERE ticket = ? OR (order_id != '' AND order_id = ?)
-                    ORDER BY id ASC
-                    LIMIT 200
-                    """,
-                    (record.ticket, record.order_id),
-                ).fetchall()
-            trace.order_events = [dict(r) for r in rows]
+            rows = self._query(
+                """
+                SELECT id, ticket, order_id, action, price, stop_loss, take_profit,
+                       volume, reason, latency, execution_mode, timestamp
+                FROM audit_orders
+                WHERE ticket = ? OR (order_id != '' AND order_id = ?)
+                ORDER BY id ASC
+                LIMIT 200
+                """,
+                (record.ticket, record.order_id),
+            )
+            trace.order_events = rows
         except Exception as err:
             logger.debug("[ACCOUNTING] order events read failed", error=str(err))
             trace.notes.append("ORDER_EVENTS_UNAVAILABLE")
