@@ -105,6 +105,77 @@ class TestProviderLifecycleStateMachine:
 class TestPostgresToSqliteMigrator:
     """Verifies streaming batch migration from PostgreSQL to SQLite."""
 
+
+    def test_reverse_schema_replay_skips_existing_add_column(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Existing additive columns must not break reverse migration bootstrap."""
+        src_db = tmp_path / "source.db"
+        dst_db = tmp_path / "destination.db"
+        src_cfg = DatabaseConfig.for_sqlite("audit", path=str(src_db))
+        dst_cfg = DatabaseConfig.for_sqlite("audit", path=str(dst_db))
+
+        source = SQLiteDriver(src_cfg)
+        source.execute(
+            """
+            CREATE TABLE factory_candidates (
+                candidate_id TEXT PRIMARY KEY,
+                context_matrices TEXT DEFAULT '{}'
+            )
+            """
+        )
+        source.execute(
+            "INSERT INTO factory_candidates (candidate_id, context_matrices) VALUES (?, ?)",
+            ("candidate-1", '{"session_matrix":{}}'),
+        )
+        source.close()
+
+        destination = SQLiteDriver(dst_cfg)
+        destination.execute(
+            """
+            CREATE TABLE factory_candidates (
+                candidate_id TEXT PRIMARY KEY,
+                context_matrices TEXT DEFAULT '{}'
+            )
+            """
+        )
+        destination.close()
+
+        from nexus_scalp.database.migration import schema_snapshot
+
+        monkeypatch.setattr(
+            schema_snapshot,
+            "replay_schema",
+            lambda *, domain: (
+                "CREATE TABLE IF NOT EXISTS factory_candidates ("
+                "candidate_id TEXT PRIMARY KEY, context_matrices TEXT DEFAULT '{}'"
+                ")",
+                "ALTER TABLE factory_candidates ADD COLUMN context_matrices TEXT DEFAULT '{}';",
+            ),
+        )
+
+        report = PostgresToSqliteMigrator(
+            src_cfg,
+            dst_cfg,
+            MigrationOptions(batch_size=10, validate_checksums=True),
+        ).run()
+
+        assert report.status == "SUCCESS"
+        assert report.provider_switch_ready is True
+        assert report.rows_migrated == 1
+        verify = SQLiteDriver(dst_cfg)
+        try:
+            assert verify.scalar("SELECT COUNT(*) FROM factory_candidates") == 1
+            assert (
+                verify.scalar(
+                    "SELECT context_matrices FROM factory_candidates WHERE candidate_id = ?",
+                    ("candidate-1",),
+                )
+                == '{"session_matrix":{}}'
+            )
+        finally:
+            verify.close()
+
     def test_reverse_migration_table_copy_and_verification(self) -> None:
         """Migrator must copy tables, rows, and verify financial totals."""
         with tempfile.TemporaryDirectory() as tmpdir:
