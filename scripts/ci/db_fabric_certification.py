@@ -59,17 +59,24 @@ def http_json(
         return json.loads(response.read().decode("utf-8", "replace") or "{}")
 
 
-def wait_ready(base: str) -> None:
+def wait_ready(base: str) -> dict[str, Any]:
+    """Wait for both health surfaces and retain the exact failure evidence."""
     deadline = time.monotonic() + STARTUP_TIMEOUT
-    last: Any = None
+    last_health: Any = None
+    last_status: Any = None
+    last_error: str | None = None
     while time.monotonic() < deadline:
         try:
-            last = http_json(base, "GET", "/health")
-            http_json(base, "GET", "/api/status")
-            return
-        except Exception:
+            last_health = http_json(base, "GET", "/health")
+            last_status = http_json(base, "GET", "/api/status")
+            return {"health": last_health, "status": last_status}
+        except Exception as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
             time.sleep(1)
-    raise RuntimeError(f"application did not become ready: {last!r}")
+    raise RuntimeError(
+        "application did not become ready: "
+        f"health={last_health!r} status={last_status!r} error={last_error!r}"
+    )
 
 
 def start_app(port: int, settings_db: Path, audit_db: Path, provider: str) -> subprocess.Popen[str]:
@@ -118,27 +125,65 @@ def start_app(port: int, settings_db: Path, audit_db: Path, provider: str) -> su
         stdout=handle,
         stderr=subprocess.STDOUT,
         text=True,
+        start_new_session=True,
     )
     proc._nse_log_handle = handle  # type: ignore[attr-defined]
     return proc
 
 
 def stop_app(proc: subprocess.Popen[str]) -> dict[str, Any]:
+    """Gracefully stop the launcher and all child processes in its session."""
+    forced = False
     if proc.poll() is None:
         proc.send_signal(signal.SIGINT)
         try:
             proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
+            forced = True
             proc.terminate()
             try:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=10)
+                forced = True
+    
+    # NSE starts the Go/API sidecar as a child process. The old harness only
+    # waited for the Python parent, so the sidecar could survive a restart and
+    # steal the Go port from the next provider lifecycle phase. Each launcher
+    # gets its own session; drain that session after the parent exits.
+    try:
+        pgid = os.getpgid(proc.pid)
+    except ProcessLookupError:
+        pgid = None
+    if pgid is not None:
+        try:
+            os.killpg(pgid, signal.SIGTERM if forced else signal.SIGINT)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            forced = True
+    
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            try:
+                os.killpg(pgid, 0)
+            except ProcessLookupError:
+                break
+            except PermissionError:
+                break
+            time.sleep(0.2)
+        else:
+            forced = True
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    
+    if proc.poll() is None:
+        proc.wait(timeout=10)
     handle = getattr(proc, "_nse_log_handle", None)
     if handle:
         handle.close()
-    return {"exit_code": proc.returncode, "forced": proc.returncode not in (0, None)}
+    return {"exit_code": proc.returncode, "forced": forced or proc.returncode not in (0, None)}
 
 
 def open_db(provider: str, sqlite_path: Path):
@@ -349,7 +394,7 @@ def main() -> int:
     proc: subprocess.Popen[str] | None = None
     try:
         proc = start_app(args.port, args.settings_db, sqlite_work, "sqlite")
-        wait_ready(base)
+        evidence["startup_sqlite"] = wait_ready(base)
         evidence["phases"].append({"phase": "sqlite_boot", "status": "PASS"})
 
         sqlite_conn = open_db("sqlite", sqlite_work)
@@ -483,7 +528,7 @@ def main() -> int:
         # PostgreSQL restart. Starting a second process on the same port would
         # otherwise create a false readiness failure.
         proc = start_app(args.port, args.settings_db, sqlite_work, "postgresql")
-        wait_ready(base)
+        evidence["startup_postgres_restart"] = wait_ready(base)
         post_restart = http_json(base, "GET", "/api/status")
         if not post_restart.get("success", True) and post_restart.get("status") not in (
             200,
@@ -504,7 +549,7 @@ def main() -> int:
             raise RuntimeError(f"provider switch back to SQLite failed: {switched_back}")
         stop_app(proc)
         proc = start_app(args.port, args.settings_db, sqlite_work, "sqlite")
-        wait_ready(base)
+        evidence["startup_sqlite_final"] = wait_ready(base)
 
         final_conn = open_db("sqlite", sqlite_work)
         final_schema = tables_and_columns("sqlite", final_conn)
