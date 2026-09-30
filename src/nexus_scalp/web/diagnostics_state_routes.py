@@ -1448,9 +1448,38 @@ def register_diagnostics_state_routes(
                 task.add_done_callback(app.state.background_tasks.discard)
         else:
             logger.info("Web Dashboard triggered system stop command.")
-            engine._running = False
+            await engine.stop()
 
-        return {"success": True, "engine_running": engine._running}
+            # A stop request is not a closed engine. RuntimeLoop performs the
+            # worker/adapter/audit drain after observing _running=False. This
+            # endpoint is also the maintenance quiesce barrier used before
+            # database migration, so it must not claim STOPPED while draining.
+            deadline = asyncio.get_running_loop().time() + 30.0
+            while getattr(engine, "_run_loop_alive", False):
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Engine stop requested but run loop did not exit within 30s.",
+                    )
+                await asyncio.sleep(0.05)
+
+            # Startup-blocked / already-idle paths may not execute RuntimeLoop's
+            # normal shutdown tail. The engine teardown is idempotent, so make
+            # the maintenance barrier explicit here.
+            if not getattr(engine, "shutdown_completed", False):
+                await engine._shutdown_async()
+
+            if not getattr(engine, "shutdown_completed", False):
+                raise HTTPException(
+                    status_code=503,
+                    detail="Engine stop requested but graceful teardown did not complete.",
+                )
+
+        return {
+            "success": True,
+            "engine_running": bool(getattr(engine, "_running", False)),
+            "shutdown": engine.shutdown_status(),
+        }
 
     # POST /api/engine/mode
     # UI source-of-control: the dashboard's execution-mode selector.
