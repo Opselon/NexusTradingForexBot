@@ -383,7 +383,9 @@ class SqliteToPostgresMigrator:
                 try:
                     src_columns = self._src_driver.table_columns(t)
                     pg_columns = self._pg_driver.table_columns(t)
-                    src_names = {str(col["name"]).casefold(): str(col["name"]) for col in src_columns}
+                    src_names = {
+                        str(col["name"]).casefold(): str(col["name"]) for col in src_columns
+                    }
                     pg_names = {str(col["name"]).casefold(): str(col["name"]) for col in pg_columns}
                     pg_table_name = next(
                         (
@@ -405,11 +407,7 @@ class SqliteToPostgresMigrator:
                 # identity max (sequence carry-over proof)
                 id_col = src_names.get("id")
                 if id_col is None:
-                    pk_names = [
-                        str(col["name"])
-                        for col in src_columns
-                        if col.get("pk")
-                    ]
+                    pk_names = [str(col["name"]) for col in src_columns if col.get("pk")]
                     id_col = pk_names[0] if pk_names else None
                 if id_col is not None:
                     pg_id_col = pg_names.get(id_col.casefold())
