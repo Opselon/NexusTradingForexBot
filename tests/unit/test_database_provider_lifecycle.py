@@ -116,16 +116,45 @@ class TestPostgresToSqliteMigrator:
         from nexus_scalp.database.migrate_reverse import _CREATE_TABLE_RE
 
         for ddl, expected in (
-            (
-                "CREATE TABLE IF NOT EXISTS shadow70_drift_alerts (id INTEGER)",
-                "shadow70_drift_alerts",
-            ),
-            ("CREATE TABLE model_governance_state (model_id TEXT)", "model_governance_state"),
-            ('CREATE TABLE IF NOT EXISTS "learning_cycles" (id INTEGER)', "learning_cycles"),
+            ("CREATE TABLE IF NOT EXISTS shadow70_drift_alerts (id INTEGER)",
+             "shadow70_drift_alerts"),
+            ("CREATE TABLE model_governance_state (model_id TEXT)",
+             "model_governance_state"),
+            ('CREATE TABLE IF NOT EXISTS "learning_cycles" (id INTEGER)',
+             "learning_cycles"),
         ):
             match = _CREATE_TABLE_RE.search(ddl)
             assert match is not None, f"pattern failed to match: {ddl}"
             assert match.group(1) == expected
+
+    def test_strategy_factory_schema_statements_cover_research_meta(self) -> None:
+        """The factory owner must provision its whole declared table set.
+
+        The statements are the reverse-migration source of truth for the
+        strategy_factory owner, so a table the store declares must appear in
+        them: ``strategy_research_meta`` is declared by
+        ``research_store.ALL_DDL`` but was missing from the older
+        ``factory.store._SCHEMA`` transcription, so a PostgreSQL audit database
+        that had it could not be reverse-migrated ("Table
+        strategy_research_meta does not exist in SQLite destination").
+        """
+        from nexus_scalp.database.migrate_reverse import _CREATE_TABLE_RE
+        from nexus_scalp.database.migration.schema_snapshot import (
+            strategy_factory_schema_statements,
+        )
+        from nexus_scalp.strategies.research_store import ALL_DDL, TABLES
+
+        statements = strategy_factory_schema_statements()
+        created = {
+            _CREATE_TABLE_RE.search(stmt).group(1).casefold()
+            for stmt in statements
+            if _CREATE_TABLE_RE.search(stmt)
+        }
+        # every table the owning store declares must be provisioned
+        assert {table.casefold() for table in TABLES} <= created
+        assert "strategy_research_meta" in created
+        # the extractor must not double-emit a statement per table
+        assert len(created) == len({table.casefold() for table in TABLES})
 
     def test_reverse_schema_replay_provisional_owner_when_source_has_table(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
