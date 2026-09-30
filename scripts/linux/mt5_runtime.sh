@@ -135,8 +135,9 @@ cmd_install() {
     log "installer process rc=$installer_rc; waiting for terminal payload"
 
     local found=""
+    local search_root="$PREFIX/drive_c"
     for _ in $(seq 1 60); do
-        found="$(find "$PREFIX/drive_c" -type f -iname "terminal64.exe" -print -quit 2>/dev/null)"
+        found="$(find "$search_root" -xdev -type f -iname "terminal64.exe" -print -quit 2>/dev/null)"
         [ -n "$found" ] && break
         sleep 1
     done
@@ -154,10 +155,12 @@ cmd_install() {
         log "GUI installer rc=$fallback_rc; waiting for terminal payload"
     fi
 
+    local found=""
+    local search_root="$PREFIX/drive_c"
     for _ in $(seq 1 120); do
-        found="$(find "$PREFIX/drive_c" -type f -iname "terminal64.exe" -print -quit 2>/dev/null)"
+        found="$(find "$search_root" -xdev -type f -iname "terminal64.exe" -print -quit 2>/dev/null)"
         if [ -z "$found" ]; then
-            found="$(find "$PREFIX/drive_c" -type f -iname "terminal.exe" -print -quit 2>/dev/null)"
+            found="$(find "$search_root" -xdev -type f -iname "terminal.exe" -print -quit 2>/dev/null)"
         fi
         if [ -n "$found" ]; then
             break
