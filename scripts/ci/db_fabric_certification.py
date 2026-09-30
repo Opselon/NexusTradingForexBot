@@ -83,6 +83,8 @@ def start_app(port: int, settings_db: Path, audit_db: Path, provider: str) -> su
             "NEXUS_AUDIT_DB": str(audit_db),
             "NSE_WEB_HOST": "127.0.0.1",
             "NSE_WEB_PORT": str(port),
+            "NSE_WEB_ACTUAL_PORT": str(port),
+            "NSE_GO_ADDR": f"127.0.0.1:{port + 1}",
             "NSE_WEB_AUTH_TOKEN": "ci-runtime-token",
             "NSE_EXECUTION__MODE": "PAPER",
             "NSE_EXECUTION__SYMBOL": "XAUUSD",
