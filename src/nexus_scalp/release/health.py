@@ -238,6 +238,65 @@ def _alternative_bars_source(rel_path: Path) -> Path | None:
     return None
 
 
+def _pg_conflict_hint(cfg: Any, env: dict[str, str] | None = None) -> str:
+    """Env-vs-persisted conflict hint for a PostgreSQL DATABASE failure.
+
+    BUG-PGENV (the pasted doctor incident): the resolved role came from an
+    ``NSE_DATABASE__PG_USER`` export while the password in the OS secret
+    store belongs to a different role, so the server (which was up) refused
+    authentication and the operator was told to "start the service". The
+    connection settings DB row is the machine's persisted truth; when the
+    resolver applied an env override that DIFFERS from it, say so and name
+    the exact variable to clear. Pure diagnostics — never mutates state.
+    ``env`` defaults to os.environ; tests inject an explicit dict so the
+    hint does not depend on the ambient shell.
+    """
+    if not getattr(cfg, "env_overrode_persisted", False):
+        return ""
+    envd = env if env is not None else os.environ
+    parts: list[str] = []
+    env_user = envd.get("NSE_DATABASE__PG_USER")
+    if env_user:
+        parts.append(f"NSE_DATABASE__PG_USER={env_user} is overriding the persisted role")
+    env_db = envd.get("NSE_DATABASE__PG_DATABASE")
+    if env_db:
+        parts.append(f"NSE_DATABASE__PG_DATABASE={env_db} is overriding the persisted database")
+    if not parts:
+        return ""
+    return (
+        "Environment override conflicts with the persisted connection settings ("
+        + "; ".join(parts)
+        + "). Clear it (env -u NSE_DATABASE__PG_USER ...) or run "
+        "`nexus db-portability switch postgresql` to persist the new value."
+    )
+
+
+def _postgres_failure_suggestion(err: str, cfg: Any, env: dict[str, str] | None = None) -> str:
+    """Remediation that follows the failure cause, not a fixed string.
+
+    HEALTH-DBREASON made the REASON truthful; this makes the SUGGESTION
+    truthful too. An auth refusal on a live server is a credential problem
+    (rotate the secret or fix the role), not a dead service; ``Connection
+    refused`` is the only case where "start the service" is right.
+    """
+    low = (err or "").lower()
+    if "password authentication failed" in low or "fe_sendauth" in low or "no password supplied" in low:
+        base = (
+            "Credential refused by the server (it is UP): the stored "
+            "db.postgresql.password does not match role "
+            f"'{getattr(cfg, 'username', '') or '?'}'. Re-set it with "
+            "`nexus db test-connection --username <role> --password <pw>` "
+            "or `nexus db-portability`."
+        )
+        hint = _pg_conflict_hint(cfg, env=env)
+        return f"{base} {hint}" if hint else base
+    if "connection refused" in low or "could not connect" in low or "server closed" in low:
+        return "Start the PostgreSQL service / verify it is listening (nexus db status)."
+    if "does not exist" in low:
+        return f"Database does not exist on the server — create it or run `nexus db migrate`."
+    return "Start the PostgreSQL service / verify credentials (nexus db status)."
+
+
 def _db_health(db_path: Path) -> tuple[str, str]:
     """SQLite integrity probe (verdict, reason).
 
@@ -627,11 +686,21 @@ class HealthEngine:
             # server: FAIL with the real reason (never WARNING-then-healthy).
             verdict = "FAIL"
             state = MISSING if status == "DRIVER_UNAVAILABLE" else ERROR
+            # HEALTH-DBREASON / BUG-PGENV: the suggestion must follow the
+            # FAILURE, not be a fixed string. The pasted incident reported
+            # "Start the PostgreSQL service" while the server was up and the
+            # real defect was an NSE_DATABASE__* env override pairing role
+            # ``postgres`` with a secret belonging to another role — a
+            # credential mismatch an operator could fix in one line, buried
+            # under a remediation that did not apply. Classify the cause and
+            # point at the exact knob. The env-vs-persisted hint is only
+            # offered when the resolver actually applied an override.
+            suggestion = _postgres_failure_suggestion(err, cfg, env=dict(os.environ))
             return HealthEntry(
                 "DATABASE",
                 verdict,
                 f"{label}: {status} ({err})",
-                "Start the PostgreSQL service / verify credentials (nexus db status).",
+                suggestion,
                 state=state,
             )
         missing = [t for t, s in (snap.get("critical_tables") or {}).items() if s != "OK"]

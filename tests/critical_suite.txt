@@ -293,3 +293,4 @@ tests/unit/test_l7_news_archive_retirement.py
 tests/unit/test_l7_managed_db_retirement.py
 tests/unit/test_research_archive_pg_write_plane.py
 tests/unit/test_l4_schema_lifecycle_indexes.py
+tests/unit/test_db_pg_env_overlay_doctor.py
