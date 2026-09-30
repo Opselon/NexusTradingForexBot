@@ -19,6 +19,7 @@ No LIVE trading, MT5 orders, external news, or network market data are used.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import signal
@@ -35,6 +36,33 @@ MIN_QUERY_FLOOR = 200
 MAX_TABLES = 50
 QUERY_TIMEOUT = 8
 STARTUP_TIMEOUT = 60
+
+def find_free_port(start_port: int) -> int:
+    """Find a loopback port that is immediately free for this certification."""
+    import socket
+
+    for port in range(start_port, start_port + 50):
+        with contextlib.suppress(OSError):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.bind(("127.0.0.1", port))
+                return port
+    raise RuntimeError(f"no free loopback port in {start_port}-{start_port + 49}")
+
+
+def wait_port_free(port: int, timeout: float = 20.0) -> None:
+    """Require the previous runtime instance to release its Python web port."""
+    import socket
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                pass
+        except OSError:
+            return
+        time.sleep(0.25)
+    raise RuntimeError(f"port {port} was not released within {timeout:.1f}s")
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -59,13 +87,27 @@ def http_json(
         return json.loads(response.read().decode("utf-8", "replace") or "{}")
 
 
-def wait_ready(base: str) -> dict[str, Any]:
-    """Wait for both health surfaces and retain the exact failure evidence."""
+def wait_ready(
+    base: str,
+    proc: subprocess.Popen[str] | None = None,
+    log_path: Path | None = None,
+) -> dict[str, Any]:
+    """Wait for both health surfaces and fail with the real startup evidence."""
     deadline = time.monotonic() + STARTUP_TIMEOUT
     last_health: Any = None
     last_status: Any = None
     last_error: str | None = None
     while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            tail = ""
+            if log_path and log_path.exists():
+                tail = log_path.read_text(
+                    encoding="utf-8", errors="replace"
+                )[-12000:]
+            raise RuntimeError(
+                f"application exited before readiness rc={proc.returncode}; "
+                f"log_tail={tail}"
+            )
         try:
             last_health = http_json(base, "GET", "/health")
             last_status = http_json(base, "GET", "/api/status")
@@ -73,13 +115,25 @@ def wait_ready(base: str) -> dict[str, Any]:
         except Exception as exc:
             last_error = f"{type(exc).__name__}: {exc}"
             time.sleep(1)
+    tail = ""
+    if log_path and log_path.exists():
+        tail = log_path.read_text(
+            encoding="utf-8", errors="replace"
+        )[-12000:]
     raise RuntimeError(
-        "application did not become ready: "
-        f"health={last_health!r} status={last_status!r} error={last_error!r}"
+        f"application did not become ready at {base}: "
+        f"health={last_health!r} status={last_status!r} "
+        f"error={last_error!r} log_tail={tail}"
     )
 
 
-def start_app(port: int, settings_db: Path, audit_db: Path, provider: str) -> subprocess.Popen[str]:
+def start_app(
+    port: int,
+    settings_db: Path,
+    audit_db: Path,
+    provider: str,
+    config_path: Path,
+) -> subprocess.Popen[str]:
     env = dict(os.environ)
     env.update(
         {
@@ -91,6 +145,7 @@ def start_app(port: int, settings_db: Path, audit_db: Path, provider: str) -> su
             "NSE_WEB_HOST": "127.0.0.1",
             "NSE_WEB_PORT": str(port),
             "NSE_WEB_ACTUAL_PORT": str(port),
+            "NSE_WEB_AUTH_DOTENV_DISABLE": "1",
             "NSE_GO_ADDR": f"127.0.0.1:{port + 1}",
             "NSE_WEB_AUTH_TOKEN": "ci-runtime-token",
             "NSE_EXECUTION__MODE": "PAPER",
@@ -109,7 +164,7 @@ def start_app(port: int, settings_db: Path, audit_db: Path, provider: str) -> su
         sys.executable,
         str(REPO_ROOT / "NexusTradingForexBot.py"),
         "--config",
-        str(REPO_ROOT / "configs" / "base.yaml"),
+        str(config_path),
         "--mode",
         "paper",
         "--symbol",
@@ -384,8 +439,37 @@ def main() -> int:
     }
 
     evidence: dict[str, Any] = {"status": "FAIL", "phases": [], "errors": [], "warnings": []}
-    base = f"http://127.0.0.1:{args.port}"
     sqlite_work = args.evidence_dir / "certification.sqlite"
+
+    # The real application is launched with an isolated config copy. This
+    # preserves the production configuration graph while disabling network-only
+    # background sources that should not make DB certification depend on feeds.
+    config_path = args.evidence_dir / "runtime.yaml"
+    try:
+        import yaml
+
+        config_data = yaml.safe_load(
+            (REPO_ROOT / "configs" / "base.yaml").read_text(encoding="utf-8")
+        ) or {}
+        if isinstance(config_data, dict):
+            news_cfg = config_data.setdefault("news", {})
+            if isinstance(news_cfg, dict):
+                news_cfg["enabled"] = False
+                analysis_cfg = news_cfg.setdefault("analysis", {})
+                if isinstance(analysis_cfg, dict):
+                    analysis_cfg["enabled"] = False
+            hygiene_cfg = config_data.setdefault("database_hygiene", {})
+            if isinstance(hygiene_cfg, dict):
+                hygiene_cfg["enabled"] = False
+        config_path.write_text(
+            yaml.safe_dump(config_data, sort_keys=False),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        raise RuntimeError(f"failed to prepare isolated runtime config: {exc}") from exc
+
+    port = find_free_port(args.port)
+    base = f"http://127.0.0.1:{port}"
     sqlite_work.write_bytes(args.sqlite_db.read_bytes())
     os.environ["NEXUS_AUDIT_DB"] = str(sqlite_work)
     os.environ["NEXUS_SETTINGS_DB"] = str(args.settings_db)
@@ -393,8 +477,10 @@ def main() -> int:
 
     proc: subprocess.Popen[str] | None = None
     try:
-        proc = start_app(args.port, args.settings_db, sqlite_work, "sqlite")
-        evidence["startup_sqlite"] = wait_ready(base)
+        proc = start_app(port, args.settings_db, sqlite_work, "sqlite", config_path)
+        evidence["startup_sqlite"] = wait_ready(
+            base, proc, args.settings_db.parent / "db-fabric-sqlite.log"
+        )
         evidence["phases"].append({"phase": "sqlite_boot", "status": "PASS"})
 
         sqlite_conn = open_db("sqlite", sqlite_work)
@@ -527,8 +613,18 @@ def main() -> int:
         # Stop the pre-migration SQLite process before validating the real
         # PostgreSQL restart. Starting a second process on the same port would
         # otherwise create a false readiness failure.
-        proc = start_app(args.port, args.settings_db, sqlite_work, "postgresql")
-        evidence["startup_postgres_restart"] = wait_ready(base)
+        stop_result = stop_app(proc)
+        wait_port_free(port)
+        evidence["shutdown_sqlite"] = stop_result
+        proc = None
+        port = find_free_port(port + 1)
+        base = f"http://127.0.0.1:{port}"
+        proc = start_app(
+            port, args.settings_db, sqlite_work, "postgresql", config_path
+        )
+        evidence["startup_postgres_restart"] = wait_ready(
+            base, proc, args.settings_db.parent / "db-fabric-postgresql.log"
+        )
         post_restart = http_json(base, "GET", "/api/status")
         if not post_restart.get("success", True) and post_restart.get("status") not in (
             200,
@@ -547,9 +643,18 @@ def main() -> int:
         switched_back = http_json(base, "POST", "/api/db/manage/provider", {"provider": "sqlite"})
         if switched_back.get("success") is not True:
             raise RuntimeError(f"provider switch back to SQLite failed: {switched_back}")
-        stop_app(proc)
-        proc = start_app(args.port, args.settings_db, sqlite_work, "sqlite")
-        evidence["startup_sqlite_final"] = wait_ready(base)
+        stop_result = stop_app(proc)
+        wait_port_free(port)
+        evidence["shutdown_postgres"] = stop_result
+        proc = None
+        port = find_free_port(port + 1)
+        base = f"http://127.0.0.1:{port}"
+        proc = start_app(
+            port, args.settings_db, sqlite_work, "sqlite", config_path
+        )
+        evidence["startup_sqlite_final"] = wait_ready(
+            base, proc, args.settings_db.parent / "db-fabric-sqlite.log"
+        )
 
         final_conn = open_db("sqlite", sqlite_work)
         final_schema = tables_and_columns("sqlite", final_conn)
