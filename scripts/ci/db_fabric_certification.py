@@ -477,9 +477,9 @@ def main() -> int:
     try:
         import yaml
 
-        config_data = yaml.safe_load(
-            (REPO_ROOT / "configs" / "base.yaml").read_text(encoding="utf-8")
-        ) or {}
+        config_data = (
+            yaml.safe_load((REPO_ROOT / "configs" / "base.yaml").read_text(encoding="utf-8")) or {}
+        )
         if isinstance(config_data, dict):
             news_cfg = config_data.setdefault("news", {})
             if isinstance(news_cfg, dict):
@@ -702,9 +702,7 @@ def main() -> int:
             for table in final_schema_compare["extra_right"]
             if table not in allowed_preexisting
         ]
-        final_schema_compare["allowed_preexisting_extras"] = sorted(
-            allowed_preexisting
-        )
+        final_schema_compare["allowed_preexisting_extras"] = sorted(allowed_preexisting)
         final_schema_compare["unexpected_extra_right"] = unexpected_extra
         final_schema_compare["match"] = (
             not final_schema_compare["missing_right"]
@@ -715,8 +713,7 @@ def main() -> int:
         final_count_diffs = {
             table: {"postgres": pg_counts[table], "sqlite_final": final_counts.get(table)}
             for table in pg_counts
-            if table not in EPHEMERAL_RUNTIME_TABLES
-            and pg_counts[table] != final_counts.get(table)
+            if table not in EPHEMERAL_RUNTIME_TABLES and pg_counts[table] != final_counts.get(table)
         }
         # Also guarantee that tables which existed only in the original
         # SQLite skeleton were not lost during the PG -> SQLite round trip.

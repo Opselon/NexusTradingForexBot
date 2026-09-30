@@ -105,7 +105,6 @@ class TestProviderLifecycleStateMachine:
 class TestPostgresToSqliteMigrator:
     """Verifies streaming batch migration from PostgreSQL to SQLite."""
 
-
     def test_reverse_schema_replay_skips_existing_add_column(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:

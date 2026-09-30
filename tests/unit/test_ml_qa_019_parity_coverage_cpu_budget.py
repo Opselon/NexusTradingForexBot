@@ -586,8 +586,7 @@ def test_current_module_has_no_skips() -> None:
     )
     verdict = proc.stdout + proc.stderr
     assert proc.returncode == 0, (
-        f"the remediated module must execute cleanly; rc={proc.returncode} "
-        f"output={verdict[-1200:]}"
+        f"the remediated module must execute cleanly; rc={proc.returncode} output={verdict[-1200:]}"
     )
     # Scope skip detection to the target module's three durable nodes. The
     # subprocess inherits the repository's pytest configuration, so unrelated
@@ -595,9 +594,7 @@ def test_current_module_has_no_skips() -> None:
     # are not evidence that this ML-QA module was silently uncollected.
     target_markers = tuple(f"::{name}" for name in _DURABLE_TESTS)
     target_lines = [
-        line
-        for line in verdict.splitlines()
-        if any(marker in line for marker in target_markers)
+        line for line in verdict.splitlines() if any(marker in line for marker in target_markers)
     ]
     assert len(target_lines) == len(_DURABLE_TESTS), (
         f"expected all durable ML-QA nodes to execute, got target lines={target_lines}"
