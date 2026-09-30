@@ -716,6 +716,36 @@ def main() -> int:
             raise RuntimeError(f"PostgreSQL restart status failed: {post_restart}")
         evidence["phases"].append({"phase": "postgres_restart", "status": "PASS"})
 
+        # Reverse migration is a destructive-risk maintenance operation for the
+        # destination copy if application writers remain active. Quiesce the
+        # actual engine through the same operator API the UI uses, then wait for
+        # the run loop to report STOPPED before taking the reverse-migration
+        # source snapshot. This tests the real operational precondition instead
+        # of racing a live writer and then weakening the integrity assertion.
+        stop_engine = http_json(
+            base,
+            "POST",
+            "/api/engine/toggle",
+            {"active": False},
+        )
+        if stop_engine.get("success") is not True:
+            raise RuntimeError(f"engine quiesce request failed: {stop_engine}")
+
+        quiesce_deadline = time.monotonic() + 30
+        quiesced_status: dict[str, Any] | None = None
+        while time.monotonic() < quiesce_deadline:
+            status = http_json(base, "GET", "/api/status")
+            quiesced_status = status
+            if status.get("engine_running") is False:
+                break
+            time.sleep(0.5)
+        if not quiesced_status or quiesced_status.get("engine_running") is not False:
+            raise RuntimeError(
+                f"engine did not quiesce before reverse migration: {quiesced_status}"
+            )
+        evidence["engine_quiesce"] = quiesced_status
+        evidence["phases"].append({"phase": "engine_quiesced_before_reverse", "status": "PASS"})
+
         reverse = http_json(
             base,
             "POST",
@@ -726,6 +756,34 @@ def main() -> int:
         if reverse.get("success") is not True:
             raise RuntimeError(f"reverse migration failed: {reverse}")
         evidence["reverse_report"] = reverse.get("report")
+
+        # The engine is quiesced, so the reverse migrator's per-table source
+        # counts are now a stable integrity baseline rather than a moving target.
+        reverse_report = evidence["reverse_report"] or {}
+        reverse_per_table = (
+            reverse_report.get("per_table")
+            if isinstance(reverse_report, dict)
+            else None
+        )
+        if not isinstance(reverse_per_table, dict):
+            raise RuntimeError(f"reverse migration returned no per-table integrity report: {reverse_report}")
+        mismatched_tables = {
+            table: detail
+            for table, detail in reverse_per_table.items()
+            if isinstance(detail, dict)
+            and detail.get("source_rows") is not None
+            and detail.get("migrated_rows") is not None
+            and int(detail["source_rows"]) != int(detail["migrated_rows"])
+        }
+        if mismatched_tables:
+            raise RuntimeError(
+                f"reverse migration copied a different row count than its frozen source: {mismatched_tables}"
+            )
+        evidence["reverse_source_row_baseline"] = {
+            table: detail.get("source_rows")
+            for table, detail in reverse_per_table.items()
+            if isinstance(detail, dict) and detail.get("source_rows") is not None
+        }
         evidence["phases"].append({"phase": "postgres_to_sqlite_reverse", "status": "PASS"})
 
         switched_back = http_json(base, "POST", "/api/db/manage/provider", {"provider": "sqlite"})
