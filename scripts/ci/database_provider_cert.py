@@ -10,6 +10,8 @@ The workload is designed to stay short: bounded queries, short statement timeout
 no concurrent flood, and no writes against the application database.
 """
 
+# fmt: off
+
 from __future__ import annotations
 
 import argparse
