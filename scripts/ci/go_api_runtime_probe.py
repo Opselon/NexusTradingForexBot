@@ -108,8 +108,16 @@ def wait_ready(base: str) -> None:
                 urllib.request.Request(base.rstrip("/") + "/health"),
                 timeout=2,
             ) as response:
-                if 200 <= int(response.status) < 500:
+                # Any HTTP response proves the listener/runtime is alive.
+                # The no-Python CI mode intentionally returns 503 for health.
+                if 100 <= int(response.status) < 600:
                     return
+        except urllib.error.HTTPError as exc:
+            # A valid HTTP 4xx/5xx response still proves the Go server is
+            # listening; 503 is the expected no-Python dependency state.
+            if 100 <= int(exc.code) < 600:
+                return
+            last_error = f"{type(exc).__name__}: {exc}"
         except Exception as exc:
             last_error = f"{type(exc).__name__}: {exc}"
         time.sleep(0.5)
