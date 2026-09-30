@@ -75,6 +75,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git diff -- requirements.lock requirements.txt
           git add requirements.lock requirements.txt
           if git diff --cached --quiet; then
             echo 'Dependency artifacts already current'
