@@ -75,8 +75,6 @@ def connect(provider: str) -> Any:
 
 
 def tables(conn: Any, provider: str) -> list[str]:
-    if keyword == "WITH" and re.search(r"\b(?:INSERT|UPDATE|DELETE)\b", sql, re.I):
-        return False
     if provider == "postgres":
         rows = conn.execute(
             "SELECT tablename FROM pg_catalog.pg_tables "
@@ -132,13 +130,16 @@ def schema_inventory(conn: Any, provider: str) -> dict[str, Any]:
 
 
 def live_row_counts(conn: Any, inventory: dict[str, Any]) -> dict[str, int]:
+    """Count every live table and reject any statement that cannot execute."""
     counts: dict[str, int] = {}
     for table in inventory:
         try:
             row = conn.execute("SELECT COUNT(*) FROM " + ident(table)).fetchone()
-            counts[table] = int(row[0] or 0)
-        except Exception:
-            counts[table] = -1
+        except Exception as exc:
+            raise RuntimeError(
+                f"live row-count query failed for {table}: {type(exc).__name__}: {exc}"
+            ) from exc
+        counts[table] = int(row[0] or 0)
     return counts
 
 
