@@ -14,6 +14,16 @@ Contract (each function returns FetchResult):
 This module centralizes what previously reached into ``AccountingCore``
 internals from four separate stage methods; the reporting engine remains a
 read-only consumer and never writes financial truth.
+
+Provider neutrality (PG-ACCT-READ-001 follow-up): all reads go through
+``AccountingCore._query`` (SQLite connection OR the registered audit read
+plane), never through a raw ``sqlite3.connect``. Timestamp literals are
+space-separated (``%Y-%m-%d %H:%M:%S``); the column side is normalized with
+``REPLACE`` so ISO ``T``-separated ``isoformat()`` values compare correctly on
+both providers (see ``AccountingCore.load_snapshots`` for the same pattern).
+Ticket joins use chunked ``IN (...)`` instead of SQLite temp tables — the
+read plane is readonly and cannot create temp tables on PostgreSQL, and
+SQLite accepts ``IN`` lists just the same.
 """
 
 from __future__ import annotations
@@ -22,6 +32,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from nexus_scalp.accounting.core import AccountingCore
+
+#: Chunk size for IN (...) ticket joins (stays under SQLite's variable limit).
+_TICKET_CHUNK = 400
 
 
 @dataclass
@@ -39,22 +52,30 @@ def _core_disabled(core: AccountingCore) -> bool:
     return not core._enabled
 
 
-def _core_connect(core: AccountingCore):
-    """Single documented access point to the core's connection."""
-    return core._connect()
+def _normalized_ts_expr(column: str) -> str:
+    """SQL expression normalizing an ISO timestamp column for text comparison.
+
+    Mirrors the expression used by ``AccountingCore.load_snapshots``: strip the
+    ``+00:00`` tz suffix, then turn the ISO ``T`` separator into a space so the
+    value is directly comparable with ``%Y-%m-%d %H:%M:%S`` bound arguments on
+    both SQLite and PostgreSQL.
+    """
+    return f"REPLACE(REPLACE({column}, 'T', ' '), '+00:00', '')"
+
+
+def _chunked_in(chunk: list[Any]) -> str:
+    """Comma-separated ``?`` placeholders for one chunk (caller binds values)."""
+    return ",".join("?" for _ in chunk)
 
 
 def fetch_model_rows(core: AccountingCore, start_sql: str, end_sql: str) -> FetchResult:
     """audit_signals rows in period (model/decision-funnel stage)."""
     if _core_disabled(core):
         return FetchResult(enabled=False)
-    sql = (
-        "SELECT action, blocked_by, payload FROM audit_signals "
-        "WHERE generated_at >= ? AND generated_at < ?"
-    )
+    ts = _normalized_ts_expr("generated_at")
+    sql = f"SELECT action, blocked_by, payload FROM audit_signals WHERE {ts} >= ? AND {ts} < ?"
     try:
-        with _core_connect(core) as conn:
-            rows = [dict(r) for r in conn.execute(sql, (start_sql, end_sql))]
+        rows = core._query(sql, (start_sql, end_sql))
     except Exception as err:
         return FetchResult(enabled=True, error=str(err))
     return FetchResult(enabled=True, rows=rows)
@@ -64,81 +85,73 @@ def fetch_execution_rows(core: AccountingCore, start_sql: str, end_sql: str) -> 
     """audit_orders latency rows in period (execution-quality stage)."""
     if _core_disabled(core):
         return FetchResult(enabled=False)
+    ts = _normalized_ts_expr("timestamp")
     sql = (
         "SELECT latency, reason, execution_mode, action FROM audit_orders "
-        "WHERE timestamp >= ? AND timestamp < ?"
+        f"WHERE {ts} >= ? AND {ts} < ?"
     )
     try:
-        with _core_connect(core) as conn:
-            rows = [dict(r) for r in conn.execute(sql, (start_sql, end_sql))]
+        rows = core._query(sql, (start_sql, end_sql))
     except Exception as err:
         return FetchResult(enabled=True, error=str(err))
     return FetchResult(enabled=True, rows=rows)
 
 
 def fetch_behavioral_rows(core: AccountingCore, tickets: list[str]) -> FetchResult:
-    """behavior_detections + behavior_analysis rows for tickets (temp-table join)."""
+    """behavior_detections + behavior_analysis rows for tickets (IN-chunk join)."""
     if _core_disabled(core):
         return FetchResult(enabled=False)
     if not tickets:
         return FetchResult(enabled=True)
     try:
-        with _core_connect(core) as conn:
-            conn.execute(
-                "CREATE TEMP TABLE IF NOT EXISTS _tmp_rpt_tickets (ticket TEXT PRIMARY KEY)"
-            )
-            conn.execute("DELETE FROM _tmp_rpt_tickets")
-            conn.executemany(
-                "INSERT INTO _tmp_rpt_tickets (ticket) VALUES (?)", ((t,) for t in tickets)
-            )
-
-            rows = [
-                dict(r)
-                for r in conn.execute(
-                    "SELECT behavior_key, pattern, severity, confidence, evidence "
-                    "FROM behavior_detections d JOIN _tmp_rpt_tickets t ON d.ticket = t.ticket"
+        rows: list[dict[str, Any]] = []
+        rows2: list[dict[str, Any]] = []
+        for start in range(0, len(tickets), _TICKET_CHUNK):
+            chunk = tickets[start : start + _TICKET_CHUNK]
+            placeholders = _chunked_in(chunk)
+            rows.extend(
+                core._query(
+                    "SELECT d.behavior_key, d.pattern, d.severity, d.confidence, d.evidence "
+                    f"FROM behavior_detections d WHERE d.ticket IN ({placeholders})",
+                    chunk,
                 )
-            ]
-            rows2 = [
-                dict(r)
-                for r in conn.execute(
-                    "SELECT * FROM behavior_analysis a JOIN _tmp_rpt_tickets t ON a.ticket = t.ticket"
+            )
+            rows2.extend(
+                core._query(
+                    f"SELECT a.* FROM behavior_analysis a WHERE a.ticket IN ({placeholders})",
+                    chunk,
                 )
-            ]
+            )
     except Exception as err:
         return FetchResult(enabled=True, error=str(err))
     return FetchResult(enabled=True, rows=rows, rows2=rows2)
 
 
 def fetch_anomaly_rows(core: AccountingCore, tickets: list[str]) -> FetchResult:
-    """anomaly_events + behavior_analysis rows for tickets (temp-table join)."""
+    """anomaly_events + behavior_analysis rows for tickets (IN-chunk join)."""
     if _core_disabled(core):
         return FetchResult(enabled=False)
     if not tickets:
         return FetchResult(enabled=True)
     try:
-        with _core_connect(core) as conn:
-            conn.execute(
-                "CREATE TEMP TABLE IF NOT EXISTS _tmp_rpt_tickets (ticket TEXT PRIMARY KEY)"
-            )
-            conn.execute("DELETE FROM _tmp_rpt_tickets")
-            conn.executemany(
-                "INSERT INTO _tmp_rpt_tickets (ticket) VALUES (?)", ((t,) for t in tickets)
-            )
-
-            rows = [
-                dict(r)
-                for r in conn.execute(
-                    "SELECT anomaly_type, severity, algorithm_version "
-                    "FROM anomaly_events e JOIN _tmp_rpt_tickets t ON e.ticket = t.ticket"
+        rows: list[dict[str, Any]] = []
+        rows2: list[dict[str, Any]] = []
+        for start in range(0, len(tickets), _TICKET_CHUNK):
+            chunk = tickets[start : start + _TICKET_CHUNK]
+            placeholders = _chunked_in(chunk)
+            rows.extend(
+                core._query(
+                    "SELECT e.anomaly_type, e.severity, e.algorithm_version "
+                    f"FROM anomaly_events e WHERE e.ticket IN ({placeholders})",
+                    chunk,
                 )
-            ]
-            rows2 = [
-                dict(r)
-                for r in conn.execute(
-                    "SELECT * FROM behavior_analysis a JOIN _tmp_rpt_tickets t ON a.ticket = t.ticket"
+            )
+            rows2.extend(
+                core._query(
+                    f"SELECT a.* FROM behavior_analysis a WHERE a.ticket IN ({placeholders})",
+                    chunk,
                 )
-            ]
+            )
     except Exception as err:
         return FetchResult(enabled=True, error=str(err))
     return FetchResult(enabled=True, rows=rows, rows2=rows2)
