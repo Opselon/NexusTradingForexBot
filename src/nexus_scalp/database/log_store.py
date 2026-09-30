@@ -138,6 +138,13 @@ class DatabaseLogEntry:
         return asdict(self)
 
 
+def _first(row: Any, key: str = "column_name") -> Any:
+    """Read the first column of a result row, tuple- or dict-shaped."""
+    if isinstance(row, dict):
+        return row.get(key, row.get(0))
+    return row[0]
+
+
 class DatabaseLogStore:
     """Manages persistent logging of database warnings and errors."""
 
@@ -149,8 +156,69 @@ class DatabaseLogStore:
         self.cfg = config or load_database_config("audit")
         self.retention_days = retention_days
 
+    #: Additive columns introduced after the table first shipped. Each is
+    #: applied with ADD COLUMN IF NOT EXISTS so an existing (pre-1-column-set)
+    #: table is brought up to the contract WITHOUT recreating it: the live
+    #: production table was created by the earlier 14-column DDL and a bare
+    #: ``CREATE TABLE IF NOT EXISTS`` silently no-ops on it, leaving every
+    #: INSERT against the new columns to fail (BUG-LOGSCHEMA).
+    _ADDITIVE_PG = (
+        ("event_name", "VARCHAR(255) NOT NULL DEFAULT ''"),
+        ("logger_name", "VARCHAR(255) NOT NULL DEFAULT ''"),
+        ("full_trace", "TEXT NOT NULL DEFAULT ''"),
+        ("context_json", "JSONB NOT NULL DEFAULT '{}'::jsonb"),
+        ("fingerprint", "VARCHAR(64) NOT NULL DEFAULT ''"),
+        ("first_seen_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"),
+        ("last_seen_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()"),
+        ("repeat_count", "BIGINT NOT NULL DEFAULT 1"),
+    )
+    _ADDITIVE_SQLITE = (
+        ("event_name", "TEXT NOT NULL DEFAULT ''"),
+        ("logger_name", "TEXT NOT NULL DEFAULT ''"),
+        ("full_trace", "TEXT NOT NULL DEFAULT ''"),
+        ("context_json", "TEXT NOT NULL DEFAULT '{}'"),
+        ("fingerprint", "TEXT NOT NULL DEFAULT ''"),
+        ("first_seen_at", "TEXT NOT NULL DEFAULT ''"),
+        ("last_seen_at", "TEXT NOT NULL DEFAULT ''"),
+        ("repeat_count", "INTEGER NOT NULL DEFAULT 1"),
+    )
+
+    @classmethod
+    def _existing_columns(cls, driver: Any, *, is_postgresql: bool = True) -> set[str]:
+        """Column names present on the live table (empty set if unreadable).
+        SQLite asks ``pragma_table_info``. Placeholders are provider-native
+        too (``%s`` vs ``?``) and the driver does NOT translate them, so the
+        branch must be explicit — a ``%s`` query sent to SQLite is a syntax
+        error that silently disables the whole additive migration.
+        """
+        try:
+            if is_postgresql:
+                rows = driver.query(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = current_schema() AND table_name = %s",
+                    (LOG_TABLE,),
+                )
+                return {str(_first(r, "column_name")) for r in rows}
+            # SQLite: no information_schema, and ? placeholders (not %s).
+            # NOTE: the SQLite driver's query() yields dicts, not tuples —
+            # read the value by key or the index access KeyErrors out and
+            # silently disables the additive migration.
+            rows = driver.query(f"SELECT name FROM pragma_table_info('{LOG_TABLE}')")
+            return {str(_first(r, "name")) for r in rows}
+        except Exception:
+            # Best-effort introspection: a failure here only means the
+            # additive step is skipped, and the CREATE still guarantees the
+            # full contract on a fresh database.
+            return set()
+
     def ensure_table(self, driver: Any | None = None) -> None:
-        """Create the db_operation_logs table if not present."""
+        """Create the db_operation_logs table if not present.
+
+        Also brings an EXISTING table up to the current column contract via
+        additive ``ADD COLUMN IF NOT EXISTS``: the sink writes to columns the
+        original 14-column DDL did not have, so a table created by an earlier
+        release must be migrated in place or every persist fails.
+        """
         close_needed = False
         if driver is None:
             driver = get_driver(self.cfg)
@@ -187,7 +255,6 @@ class DatabaseLogStore:
                     ),
                     f"CREATE INDEX IF NOT EXISTS idx_{LOG_TABLE}_ts ON {LOG_TABLE} (timestamp)",
                     f"CREATE INDEX IF NOT EXISTS idx_{LOG_TABLE}_level ON {LOG_TABLE} (level)",
-                    f"CREATE INDEX IF NOT EXISTS idx_{LOG_TABLE}_fp ON {LOG_TABLE} (fingerprint, last_seen_at)",
                 ]
             else:
                 stmts = [
@@ -219,10 +286,39 @@ class DatabaseLogStore:
                     ),
                     f"CREATE INDEX IF NOT EXISTS idx_{LOG_TABLE}_ts ON {LOG_TABLE} (timestamp)",
                     f"CREATE INDEX IF NOT EXISTS idx_{LOG_TABLE}_level ON {LOG_TABLE} (level)",
-                    f"CREATE INDEX IF NOT EXISTS idx_{LOG_TABLE}_fp ON {LOG_TABLE} (fingerprint, last_seen_at)",
+                    # NOTE: the (fingerprint, last_seen_at) index is NOT here.
+                    # On a table created by an earlier release those columns
+                    # do not exist yet, so this DDL would fail; the additive
+                    # migration below creates it once they are present.
                 ]
             for stmt in stmts:
                 driver.execute(stmt)
+            # In-place additive migration for tables created by an earlier
+            # release (see the docstring on _ADDITIVE_* above).
+            additive = self._ADDITIVE_PG if self.cfg.is_postgresql else self._ADDITIVE_SQLITE
+            existing = self._existing_columns(driver, is_postgresql=self.cfg.is_postgresql)
+            if existing:
+                for col, decl in additive:
+                    if col not in existing:
+                        if self.cfg.is_postgresql:
+                            driver.execute(
+                                f"ALTER TABLE {LOG_TABLE} ADD COLUMN IF NOT EXISTS {col} {decl}"
+                            )
+                        else:
+                            # SQLite has no IF NOT EXISTS on ADD COLUMN; the
+                            # `col not in existing` guard is the dedup.
+                            driver.execute(f"ALTER TABLE {LOG_TABLE} ADD COLUMN {col} {decl}")
+            # The (fingerprint, last_seen_at) index is deliberately not in the
+            # CREATE block: on a table created by an earlier release those
+            # columns did not exist at CREATE time. Run it here, after any
+            # additive ALTER, so both fresh and legacy tables get it.
+            try:
+                driver.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{LOG_TABLE}_fp "
+                    f"ON {LOG_TABLE} (fingerprint, last_seen_at)"
+                )
+            except Exception:
+                pass
         finally:
             if close_needed:
                 driver.close()
