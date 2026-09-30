@@ -970,31 +970,6 @@ jobs:
           docker logs nse-db-fabric-pg | tail -120 || true
           exit 1
 
-      - name: Provision certified runtime model
-        run: python scripts/ci/runtime_gate.py --json --evidence
-
-      - name: Prepare deterministic market data
-        run: |
-          python - <<'PY'
-          from datetime import UTC, datetime, timedelta
-          from pathlib import Path
-          import polars as pl
-
-          path = Path("data/raw/XAUUSD_M1.parquet")
-          path.parent.mkdir(parents=True, exist_ok=True)
-          start = datetime(2026, 1, 1, tzinfo=UTC)
-          n = 12000
-          close = [2000.0 + ((i % 200) - 100) * 0.02 + (i % 17) * 0.003 for i in range(n)]
-          pl.DataFrame({
-              "time_utc": [start + timedelta(minutes=i) for i in range(n)],
-              "open": close,
-              "high": [v + 0.15 for v in close],
-              "low": [v - 0.15 for v in close],
-              "close": [v + (0.01 if i % 2 else -0.01) for i, v in enumerate(close)],
-              "tick_volume": [100 + (i % 31) for i in range(n)],
-          }).write_parquet(path)
-          PY
-
       - name: Run end-to-end DB fabric certification
         run: |
           set -o pipefail

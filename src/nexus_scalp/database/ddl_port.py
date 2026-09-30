@@ -160,11 +160,20 @@ def port_create_table(ddl: str) -> str | None:
         out_lines.append(f"{colname} {ported}" + (f" {constraints}" if constraints else ""))
     if not out_lines:
         return ddl
+    # SQLite date/time helper defaults are not PostgreSQL functions.
+    # Keep the stored representation as UTC text to preserve the audit
+    # schema's historical contract while making the DDL executable on PG.
+    out_sql = f"{head}({', '.join(out_lines)}){tail}"
+    out_sql = re.sub(
+        r"(?i)\\bdatetime\\s*\\(\\s*(['"])now\\1\\s*\\)",
+        "to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')",
+        out_sql,
+    )
     # strip any trailing 'WITHOUT ROWID' / 'STRICT' in tail
     tail = re.sub(r"WITHOUT\s+ROWID", "", tail, flags=re.I)
     tail = re.sub(r"STRICT", "", tail, flags=re.I)
     tail = tail.rstrip().rstrip(",") if tail.strip() else tail
-    return f"{head}({', '.join(out_lines)}){tail}"
+    return out_sql
 
 
 def _drop_autoincrement(constraints: str) -> str:

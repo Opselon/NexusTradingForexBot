@@ -28,6 +28,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from nexus_scalp.database.ddl_port import port_create_table  # noqa: E402
 from nexus_scalp.database.config import (  # noqa: E402
     DatabaseConfig,
     load_database_config,
@@ -841,6 +842,19 @@ class TestDbConsoleQueryGuard:
             _query_console_sql("SELECT * FROM t WHERE x = ?", "sqlite")
             == "SELECT * FROM t WHERE x = ?"
         )
+
+
+    def test_ddl_port_translates_sqlite_datetime_default(self):
+        sqlite_ddl = (
+            'CREATE TABLE IF NOT EXISTS archive_events ('
+            'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+            "occurred_at TEXT, archived_at TEXT NOT NULL DEFAULT (datetime('now')))"
+        )
+        pg_ddl = port_create_table(sqlite_ddl)
+        assert pg_ddl is not None
+        assert "datetime('now')" not in pg_ddl.lower()
+        assert "to_char(now() AT TIME ZONE 'utc'" in pg_ddl
+        assert "BIGSERIAL PRIMARY KEY" in pg_ddl
 
 
 class TestDbConsoleApiKeys:
