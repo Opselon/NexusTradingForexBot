@@ -70,9 +70,7 @@ def persisted_pg_settings(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
-def default_path_pg_settings(
-    persisted_pg_settings: Path, monkeypatch: pytest.MonkeyPatch
-) -> Path:
+def default_path_pg_settings(persisted_pg_settings: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """The DEFAULT-path caller (``load_database_config("audit")`` with no
     explicit settings_db_path — what HealthEngine and the doctor actually do).
 

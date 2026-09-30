@@ -280,7 +280,11 @@ def _postgres_failure_suggestion(err: str, cfg: Any, env: dict[str, str] | None 
     refused`` is the only case where "start the service" is right.
     """
     low = (err or "").lower()
-    if "password authentication failed" in low or "fe_sendauth" in low or "no password supplied" in low:
+    if (
+        "password authentication failed" in low
+        or "fe_sendauth" in low
+        or "no password supplied" in low
+    ):
         base = (
             "Credential refused by the server (it is UP): the stored "
             "db.postgresql.password does not match role "
@@ -293,7 +297,7 @@ def _postgres_failure_suggestion(err: str, cfg: Any, env: dict[str, str] | None 
     if "connection refused" in low or "could not connect" in low or "server closed" in low:
         return "Start the PostgreSQL service / verify it is listening (nexus db status)."
     if "does not exist" in low:
-        return f"Database does not exist on the server — create it or run `nexus db migrate`."
+        return "Database does not exist on the server — create it or run `nexus db migrate`."
     return "Start the PostgreSQL service / verify credentials (nexus db status)."
 
 
