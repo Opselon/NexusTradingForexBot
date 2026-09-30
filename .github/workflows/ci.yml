@@ -820,6 +820,46 @@ jobs:
             --port "$NSE_RUNTIME_SOAK_PORT" \
             --evidence-dir "$RUNNER_TEMP/nse-full-runtime-${{ matrix.provider }}"
 
+      - name: Deep database provider certification
+        run: |
+          python scripts/ci/database_provider_cert.py \
+            --provider "${{ matrix.provider }}" \
+            --evidence-dir "$RUNNER_TEMP/nse-full-runtime-${{ matrix.provider }}"
+
+      - name: Print database certification summary
+        if: always()
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = Path(os.environ["RUNNER_TEMP"]) / "nse-full-runtime-${{ matrix.provider }}" / "database_provider_cert.json"
+          try:
+              d = json.loads(p.read_text(encoding="utf-8"))
+          except Exception as exc:
+              print("DB_CERT_REPORT_ERROR:", type(exc).__name__, exc)
+          else:
+              w = d.get("workload", {})
+              s = d.get("source_sql", {})
+              print("=== DATABASE CERTIFICATION ===")
+              print("STATUS:", d.get("status"))
+              print("TABLES:", d.get("table_count"))
+              print("LIVE QUERIES:", w.get("passed", 0), "/", w.get("query_count", 0))
+              print("QUERY FAILURES:", w.get("failed", 0))
+              print("P95 MS:", w.get("p95_ms"))
+              print("STATIC SQL SITES:", s.get("literal_statement_count"))
+              print("DYNAMIC SQL SITES:", s.get("dynamic_sql_sites"))
+              print("DIALECT HITS:", s.get("dialect_hits"))
+          PY
+
+      - name: Upload database certification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-db-cert-${{ matrix.provider }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/database_provider_cert.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Print full runtime warnings, errors, tracebacks and query verdict
         if: always()
         continue-on-error: true
@@ -895,6 +935,107 @@ jobs:
       - name: Cleanup PostgreSQL
         if: always() && matrix.provider == 'postgres'
         run: docker rm -f nse-ci-pg >/dev/null 2>&1 || true
+
+  # ---------------------------------------------------------------------------
+  # DB MIGRATION CERTIFICATION — production migrators, not a fake copy test.
+  # ---------------------------------------------------------------------------
+  database-migration-certification:
+    name: SQLite ↔ PostgreSQL Migration Certification
+    needs: full-runtime-provider
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+
+    env:
+      NSE_PG_TEST_PASSWORD: nse_password_dev
+      NSE_DATABASE__PG_HOST: 127.0.0.1
+      NSE_DATABASE__PG_PORT: "5432"
+      NSE_DATABASE__PG_DATABASE: nse_audit
+      NSE_DATABASE__PG_USER: nse_user
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install database runtime dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,postgres]"
+
+      - name: Start disposable PostgreSQL
+        run: |
+          set -euo pipefail
+          docker rm -f nse-db-cert-pg >/dev/null 2>&1 || true
+          docker run -d --name nse-db-cert-pg \
+            -e POSTGRES_DB=nse_audit \
+            -e POSTGRES_USER=nse_user \
+            -e POSTGRES_PASSWORD="$NSE_PG_TEST_PASSWORD" \
+            -p 5432:5432 postgres:16-alpine
+          for i in $(seq 1 40); do
+            docker exec nse-db-cert-pg pg_isready -U nse_user -d nse_audit >/dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          docker logs nse-db-cert-pg | tail -100 || true
+          exit 1
+
+      - name: Run real bidirectional migration certification
+        run: |
+          python scripts/ci/database_migration_cert.py \
+            --evidence-dir "$RUNNER_TEMP/nse-db-migration-cert"
+
+      - name: Upload migration certification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-db-migration-cert-${{ github.run_id }}
+          path: ${{ runner.temp }}/nse-db-migration-cert/database_migration_cert.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup PostgreSQL
+        if: always()
+        run: docker rm -f nse-db-cert-pg >/dev/null 2>&1 || true
+
+  # ---------------------------------------------------------------------------
+  # DB PARITY AGGREGATOR — compare the two real provider certification lanes.
+  # ---------------------------------------------------------------------------
+  database-provider-parity:
+    name: SQLite ↔ PostgreSQL Query/Schema Parity
+    needs: full-runtime-provider
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download provider certification evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v7.0.0
+        with:
+          pattern: ci-db-cert-*-${{ github.run_id }}
+          path: ${{ runner.temp }}/db-cert
+          merge-multiple: false
+
+      - name: Compare SQLite and PostgreSQL contracts
+        run: |
+          python scripts/ci/database_provider_parity.py \
+            --evidence-dir "$RUNNER_TEMP/db-cert"
+
+      - name: Upload parity report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-db-parity-${{ github.run_id }}
+          path: ${{ runner.temp }}/db-cert/provider_parity.json
+          if-no-files-found: error
+          retention-days: 14
 
   # ---------------------------------------------------------------------------
   # MT5/WINE — independent terminal runtime line.
