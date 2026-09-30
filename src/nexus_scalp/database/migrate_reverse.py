@@ -291,7 +291,6 @@ class PostgresToSqliteMigrator:
                 f'SELECT {source_col_str} FROM "{table}" {where} '
                 f'ORDER BY "{source_order_col}" ASC LIMIT {batch_size}'
             )
-            )
             rows = src.query(fetch_sql, tuple(args))
             if not rows:
                 break
