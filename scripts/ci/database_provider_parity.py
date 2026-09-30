@@ -87,7 +87,8 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
         "static_sql_counts": source_sql_counts,
         "dialect_hits": dialect,
         "notes": [
-            "SQLite is the compatibility baseline; SQLite-only tables are hard failures.",\n            "PostgreSQL-only tables are explicit evidence and do not mask SQLite-to-PostgreSQL loss.",
+            "SQLite is the compatibility baseline; SQLite-only tables are hard failures.",
+            "PostgreSQL-only tables are explicit evidence and do not mask SQLite-to-PostgreSQL loss.",
             "PostgreSQL type spelling is not required to equal SQLite because the production DDL translator intentionally maps types.",
             "Index names are evidence only; migration may legitimately rename indexes.",
             "Every provider independently executed the same bounded query contract; no synthetic TestClient-only query is used.",
