@@ -26,7 +26,10 @@ from nexus_scalp.strategies.factory.models import (
 
 def _score_of(entry: dict[str, Any]) -> float:
     try:
-        return float((entry.get("score") or {}).get("final_score", 0.0) or 0.0)
+        score = entry.get("score")
+        if not isinstance(score, dict):
+            return 0.0
+        return float(score.get("final_score", 0.0) or 0.0)
     except (TypeError, ValueError):
         return 0.0
 
@@ -105,8 +108,7 @@ def build_summary(
             [
                 e
                 for e in registry_entries
-                if (e.get("score") or {}).get("verdict") == "VALIDATED"
-                and float((e.get("score") or {}).get("final_score", 0.0) or 0.0) >= 0.6
+                if score_verdict(e) == "VALIDATED" and _score_of(e) >= 0.6
             ]
         ),
         avg_score=avg,
@@ -123,7 +125,10 @@ def build_summary(
 
 
 def score_verdict(entry: dict[str, Any]) -> str:
-    return str((entry.get("score") or {}).get("verdict", "UNKNOWN"))
+    score = entry.get("score")
+    if not isinstance(score, dict):
+        return "UNKNOWN"
+    return str(score.get("verdict", "UNKNOWN"))
 
 
 def _structural_passed(candidate: dict[str, Any]) -> bool:
