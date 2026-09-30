@@ -353,14 +353,16 @@ def tables_and_columns(provider: str, conn: Any) -> dict[str, list[str]]:
 
 
 def row_counts(conn: Any, schema: dict[str, list[str]]) -> dict[str, int]:
-    """Count every table; only the query corpus remains bounded by MAX_TABLES."""
+    """Count every table and reject any count query that cannot execute."""
     counts: dict[str, int] = {}
     for table in schema:
         try:
             row = conn.execute('SELECT COUNT(*) FROM "' + table.replace('"', '""') + '"').fetchone()
-            counts[table] = int(row[0] or 0)
-        except Exception:
-            counts[table] = -1
+        except Exception as exc:
+            raise RuntimeError(
+                f"row-count query failed for {table}: {type(exc).__name__}: {exc}"
+            ) from exc
+        counts[table] = int(row[0] or 0)
     return counts
 
 
