@@ -658,6 +658,7 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
             "message_id": None,
             "safe_message": "Telegram worker completed without delivery",
         }
+
     # =====================================================================
     # Worker dispatch (HTTP + verification + bounded retry)
     # =====================================================================
