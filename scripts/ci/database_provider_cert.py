@@ -416,11 +416,11 @@ def _probe_parameters(sql: str, provider: str) -> tuple[str, tuple[Any, ...]]:
         from nexus_scalp.database.drivers.postgres_driver import _translate_placeholders
 
         rendered = _translate_placeholders(sql)
-        rendered = re.sub(r"\\b(LIMIT|OFFSET)\\s+%s\\b", r"\\1 1", rendered, flags=re.I)
+        rendered = re.sub(r"\b(LIMIT|OFFSET)\s+%s", r"\1 1", rendered, flags=re.I)
         count = len(re.findall(r"(?<!%)%s", rendered))
         return rendered, tuple(None for _ in range(count))
 
-    rendered = re.sub(r"\\b(LIMIT|OFFSET)\\s+\\?\\b", r"\\1 1", sql, flags=re.I)
+    rendered = re.sub(r"\b(LIMIT|OFFSET)\s+\?", r"\1 1", sql, flags=re.I)
     count = rendered.count("?")
     return rendered, tuple(None for _ in range(count))
 
