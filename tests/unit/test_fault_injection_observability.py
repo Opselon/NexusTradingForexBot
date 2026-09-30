@@ -134,6 +134,8 @@ def test_f1_regime_state_freshness_alarm_exists(tmp_path) -> None:
 # ---------------------------------------------------------------------------
 # F2: missing HTF history
 # ---------------------------------------------------------------------------
+
+
 def test_f2_zero_h1_momentum_is_not_treated_as_history_fallback(tmp_path, monkeypatch) -> None:
     """A real zero H1 momentum must not block warmup.
 
