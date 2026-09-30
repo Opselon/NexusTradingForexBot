@@ -27,8 +27,8 @@ type DepEntry struct {
 // DepsTable maps "METHOD /path" to its dependency classification. Routes
 // absent from this table are unclassified and must forward to Python.
 var DepsTable = map[string]DepEntry{
-	"DELETE /api/db/console/apikey/{name}":                     {Method: "DELETE", Path: "/api/db/console/apikey/{name}", NeedsPython: true, Why: "write:assumed"},
-	"DELETE /api/model-studio/models/{model_id}":               {Method: "DELETE", Path: "/api/model-studio/models/{model_id}", NeedsPython: true, Why: "observed:db"},
+	"DELETE /api/db/console/apikey/{name}":       {Method: "DELETE", Path: "/api/db/console/apikey/{name}", NeedsPython: true, Why: "write:assumed"},
+	"DELETE /api/model-studio/models/{model_id}": {Method: "DELETE", Path: "/api/model-studio/models/{model_id}", NeedsPython: true, Why: "observed:db"},
 	"GET /":                                                    {Method: "GET", Path: "/", NeedsPython: false, Why: "stateless-2xx"},
 	"GET /api_client.js":                                       {Method: "GET", Path: "/api_client.js", NeedsPython: false, Why: "stateless-2xx"},
 	"GET /api/account/drawdown":                                {Method: "GET", Path: "/api/account/drawdown", NeedsPython: true, Why: "stub-in-2xx"},
