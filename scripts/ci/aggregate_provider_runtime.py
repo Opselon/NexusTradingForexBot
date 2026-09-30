@@ -16,7 +16,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
-    files = sorted(args.root.glob("*/provider_runtime_soak.json"))
+    files = sorted(args.root.glob("**/provider_runtime_soak.json"))
     if not files:
         print("::error title=Runtime provider evidence missing::No provider report files found")
         return 1
