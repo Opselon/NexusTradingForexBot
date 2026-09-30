@@ -118,8 +118,7 @@ def wait_ready(
             if log_path and log_path.exists():
                 tail = log_path.read_text(encoding="utf-8", errors="replace")[-12000:]
             raise RuntimeError(
-                f"application exited before readiness rc={proc.returncode}; "
-                f"log_tail={tail}"
+                f"application exited before readiness rc={proc.returncode}; log_tail={tail}"
             )
         try:
             last_health = http_json(base, "GET", "/health")
@@ -158,7 +157,10 @@ def start_app(
             "NSE_WEB_PORT": str(port),
             "NSE_WEB_ACTUAL_PORT": str(port),
             "NSE_WEB_AUTH_DOTENV_DISABLE": "1",
-            "NSE_GO_ADDR": f"127.0.0.1:{go_port}",
+            # The Go plane has its own dedicated runtime soak. Keep this
+            # certification focused on the Python DB fabric so a stale Go
+            # child from an earlier phase cannot invalidate migration tests.
+            "NSE_GO_API_DISABLE": "1",
             "NSE_WEB_AUTH_TOKEN": "ci-runtime-token",
             "NSE_EXECUTION__MODE": "PAPER",
             "NSE_EXECUTION__SYMBOL": "XAUUSD",
@@ -244,7 +246,7 @@ def stop_app(proc: subprocess.Popen[str]) -> dict[str, Any]:
                 os.killpg(pgid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-    
+
     if proc.poll() is None:
         proc.wait(timeout=10)
     handle = getattr(proc, "_nse_log_handle", None)
