@@ -874,6 +874,21 @@ class TestDbConsoleQueryGuard:
         elapsed = time.perf_counter() - start
         assert elapsed < 1.0, f"verb check took {elapsed:.3f}s on a comment-only statement"
 
+    def test_verb_guard_requires_exact_first_sql_token(self):
+        """Allow-listing must reject identifiers that only prefix an allowed verb."""
+        from nexus_scalp.database.drivers._sql_guard import assert_safe_sql
+
+        for sql in (
+            "SELECTED * FROM application_settings",
+            "DROPPED TABLE application_settings",
+            "CREATED TABLE application_settings",
+            "INSERTED INTO application_settings VALUES (1)",
+        ):
+            with pytest.raises(ValueError, match="SQL verb not allowed"):
+                assert_safe_sql(sql)
+
+        assert assert_safe_sql("  SELECT 1") == "  SELECT 1"
+
     def test_placeholder_translation_used_for_pg(self):
         from nexus_scalp.web.db_console import _query_console_sql
 
