@@ -288,13 +288,13 @@ def prepare_runtime_environment(provider: str, evidence_dir: Path) -> Path:
         raise ValueError(provider)
 
     # HealthEngine has a hard canonical DATA check. Give the real launcher a
-    # deterministic 12k-row parquet set without committing or downloading data.
+    # deterministic 20k-row parquet set without committing or downloading data.
     data_path = REPO_ROOT / "data" / "raw" / "XAUUSD_M1.parquet"
     data_path.parent.mkdir(parents=True, exist_ok=True)
     import polars as pl
 
     start = datetime(2026, 1, 1, tzinfo=UTC)
-    n = 12_000
+    n = 20_000
     timestamps = [start + timedelta(minutes=i) for i in range(n)]
     closes = [2000.0 + ((i % 200) - 100) * 0.02 + (i % 17) * 0.003 for i in range(n)]
     frame = pl.DataFrame(
