@@ -157,6 +157,7 @@ def normalize_template_path(path: str) -> str:
     normalized = "".join(out).rstrip("?") or "/"
     return re.sub(r"\{[^}]+\}", "{param}", normalized)
 
+
 def react_calls() -> list[dict[str, Any]]:
     root = ROOT / "frontend" / "src"
     calls: list[dict[str, Any]] = []
