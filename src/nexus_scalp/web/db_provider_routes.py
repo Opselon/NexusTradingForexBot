@@ -392,6 +392,9 @@ def transition_verify(payload: dict[str, Any], request: Request) -> dict[str, An
 def transition_activate(request: Request) -> dict[str, Any]:
     request_id = request_id_from_request(request)
     try:
+        blocked = _reject_if_engine_running(request, request_id)
+        if blocked is not None:
+            return blocked
         mgr = _lifecycle_manager()
         activated = mgr.confirm_activation()
         return {"success": activated, "activated": activated, "state": mgr.get_state().to_dict()}
@@ -442,13 +445,14 @@ def reverse_migrate(payload: dict[str, Any], request: Request) -> dict[str, Any]
         sqlite_path = str((payload or {}).get("sqlite_path") or "").strip()
         dst = DatabaseConfig.for_sqlite("audit", path=sqlite_path)
 
-        opts = MigrationOptions(
-            batch_size=int((payload or {}).get("batch_size") or 2000),
-            validate_checksums=True,
-        )
-        mig = PostgresToSqliteMigrator(src, dst, opts)
-        report = mig.run()
-        return {"success": report.status == "SUCCESS", "report": _redacted(report, request_id)}
+        with migration_guard(request.app):
+            opts = MigrationOptions(
+                batch_size=int((payload or {}).get("batch_size") or 2000),
+                validate_checksums=True,
+            )
+            mig = PostgresToSqliteMigrator(src, dst, opts)
+            report = mig.run()
+            return {"success": report.status == "SUCCESS", "report": _redacted(report, request_id)}
     except Exception as exc:
         log_web_error(logger, "/api/db/manage/reverse-migrate", request_id, exc)
         return _err(
