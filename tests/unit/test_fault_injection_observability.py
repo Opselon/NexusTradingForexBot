@@ -134,6 +134,57 @@ def test_f1_regime_state_freshness_alarm_exists(tmp_path) -> None:
 # ---------------------------------------------------------------------------
 # F2: missing HTF history
 # ---------------------------------------------------------------------------
+def test_f2_zero_h1_momentum_is_not_treated_as_history_fallback(tmp_path, monkeypatch) -> None:
+    """A real zero H1 momentum must not block warmup.
+
+    ``htf_h1_momentum`` legitimately equals 0 when the last two H1 closes are
+    equal. Warmup readiness must use the bar-count contract, not the numeric
+    feature value, otherwise a flat-but-valid H1 window permanently blocks
+    inference.
+    """
+    from nexus_scalp.application.live_engine import LiveEngine
+    from nexus_scalp.market_data.bar_aggregator import BarData
+
+    engine, _ = _make_engine(tmp_path)
+    engine.H1_REQUIRED_BARS = 2
+    engine.H4_REQUIRED_BARS = 3
+
+    bar = BarData(
+        symbol="XAUUSD",
+        timeframe="M1",
+        timestamp=datetime(2026, 9, 1, 10, 0, tzinfo=UTC),
+        open=4400.0,
+        high=4400.2,
+        low=4399.8,
+        close=4400.0,
+        tick_volume=100,
+        is_complete=True,
+    )
+    monkeypatch.setattr(engine.aggregator, "get_completed_bars", lambda: [bar])
+
+    feature = type(
+        "FeatureStub",
+        (),
+        {
+            "htf_h4_trend": 1.0,
+            "htf_h1_momentum": 0.0,
+            "to_tensor_input": lambda self: [0.25] * 50,
+        },
+    )()
+    monkeypatch.setattr(
+        engine.feature_engine,
+        "compute_from_bars",
+        lambda completed_bars, current_tick: feature,
+    )
+
+    h1 = [object(), object()]
+    h4 = [object(), object(), object()]
+    ready = LiveEngine.evaluate_warmup_readiness(engine, "XAUUSD", h1, h4)
+
+    assert ready is True
+    assert engine.warmup_state == "READY"
+    assert engine._inference_enabled is True
+
 def test_f2_missing_htf_blocks_inference_visibly(tmp_path) -> None:
     engine, _ = _make_engine(tmp_path)
     # Inject the fault: H1/H4 history unavailable.
