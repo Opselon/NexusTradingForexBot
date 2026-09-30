@@ -59,45 +59,66 @@ def concrete_path(path: str) -> str:
 
 def http_probe(base: str, method: str, path: str) -> dict[str, Any]:
     probe = concrete_path(path)
-    headers = {
-        "Authorization": f"Bearer {TOKEN}",
-        "Accept": "application/json, text/plain, */*",
-    }
-    if method in {"POST", "PUT", "PATCH"}:
-        headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(
-        base.rstrip("/") + probe,
-        data=b"{}" if method in {"POST", "PUT", "PATCH"} else None,
-        headers=headers,
-        method=method,
-    )
-    started = time.perf_counter()
-    try:
-        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as response:
-            status = int(response.status)
-            body = response.read(4096).decode("utf-8", "replace")
-    except urllib.error.HTTPError as exc:
-        status = int(exc.code)
-        body = exc.read(4096).decode("utf-8", "replace")
-    except Exception as exc:
-        return {
-            "method": method,
-            "path": path,
-            "probe_path": probe,
-            "status": None,
-            "duration_ms": round((time.perf_counter() - started) * 1000.0, 3),
-            "transport_error": f"{type(exc).__name__}: {exc}",
+    last_error: Exception | None = None
+
+    # Windows hosted runners can report an intermittent localhost
+    # WSAECONNRESET/WSAECONNABORTED while rapidly opening short-lived sockets.
+    # Retry only transport failures; an HTTP response is authoritative and is
+    # never retried.
+    for attempt in range(1, 3):
+        headers = {
+            "Authorization": f"Bearer {TOKEN}",
+            "Accept": "application/json, text/plain, */*",
+            "Connection": "close",
         }
+        if method in {"POST", "PUT", "PATCH"}:
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(
+            base.rstrip("/") + probe,
+            data=b"{}" if method in {"POST", "PUT", "PATCH"} else None,
+            headers=headers,
+            method=method,
+        )
+        started = time.perf_counter()
+        try:
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as response:
+                status = int(response.status)
+                body = response.read(4096).decode("utf-8", "replace")
+            return {
+                "method": method,
+                "path": path,
+                "probe_path": probe,
+                "status": status,
+                "duration_ms": round((time.perf_counter() - started) * 1000.0, 3),
+                "body_prefix": body[:1000],
+                "attempts": attempt,
+            }
+        except urllib.error.HTTPError as exc:
+            return {
+                "method": method,
+                "path": path,
+                "probe_path": probe,
+                "status": int(exc.code),
+                "duration_ms": round((time.perf_counter() - started) * 1000.0, 3),
+                "body_prefix": exc.read(4096).decode("utf-8", "replace")[:1000],
+                "attempts": attempt,
+            }
+        except Exception as exc:
+            last_error = exc
+            if attempt < 2:
+                time.sleep(0.05)
+                continue
+            return {
+                "method": method,
+                "path": path,
+                "probe_path": probe,
+                "status": None,
+                "duration_ms": round((time.perf_counter() - started) * 1000.0, 3),
+                "transport_error": f"{type(last_error).__name__}: {last_error}",
+                "attempts": attempt,
+            }
 
-    return {
-        "method": method,
-        "path": path,
-        "probe_path": probe,
-        "status": status,
-        "duration_ms": round((time.perf_counter() - started) * 1000.0, 3),
-        "body_prefix": body[:1000],
-    }
-
+    raise AssertionError("unreachable")
 
 def wait_ready(base: str) -> None:
     deadline = time.monotonic() + STARTUP_TIMEOUT
