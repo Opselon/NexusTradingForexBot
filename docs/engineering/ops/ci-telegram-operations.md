@@ -40,12 +40,12 @@ Separation of concerns (spec §20):
 
 ## 1a. FINAL AI summary lane (BUG-300) — the very end of every pipeline
 
-`.github/workflows/ci-summary.yml` (workflow_run @ completed) fires AFTER
-each watched pipeline (CI, Release, Security, OS matrix, JS, Docs,
-dependency lanes, OSV, nightlies) — the absolute last job of the run.
-It is the ONLY consumer of `AI_HOST`/`AI_KEY`.
+The dedicated AI final-summary workflow has been removed. `PR Evidence Report`
+remains the canonical post-run evidence surface. AI triage remains available to
+explicitly invoked CI tooling, but it is no longer an automatic workflow fan-out
+or a required final-summary stage.
 
-Per run it: (1) `scripts/ci/ci_summary.py` collects WHOLE-run evidence —
+The canonical evidence flow is: (1) the reporting lane collects WHOLE-run evidence —
 run conclusion, job/step verdicts, junit + coverage from the ci-results
 artifact, PR diff stats + mergeable + review decision + recent comments,
 touched lanes via classify_changes; (2) `telegram_notify.py ai-triage`
