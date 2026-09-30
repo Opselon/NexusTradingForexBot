@@ -348,6 +348,123 @@ def source_sql_inventory() -> dict[str, Any]:
     }
 
 
+_READ_VERBS = {"SELECT", "WITH", "EXPLAIN", "VALUES", "PRAGMA"}
+_PROVIDER_SQL_ONLY = {
+    "sqlite_pragma",
+    "sqlite_datetime_now",
+}
+
+
+def _first_sql_keyword(sql: str) -> str:
+    """Return the first SQL keyword after blank/line-comment prefixes."""
+    for line in sql.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("--"):
+            continue
+        return stripped.split(None, 1)[0].upper()
+    return ""
+
+
+def _provider_sql_supported(sql: str, provider: str) -> bool:
+    keyword = _first_sql_keyword(sql)
+    if keyword not in _READ_VERBS:
+        return False
+    if provider == "postgres":
+        # PRAGMA and SQLite's datetime('now') are intentionally SQLite-only.
+        if re.search(r"\\bPRAGMA\\b", sql, re.I):
+            return False
+        if re.search(r"datetime\\s*\\(\\s*['\"]now['\"]", sql, re.I):
+            return False
+        return True
+    # PostgreSQL casts are not valid SQLite syntax; the source inventory marks
+    # those statements so the SQLite lane does not confuse a PG-only path with
+    # a portability failure.
+    return not re.search(r"::[A-Za-z_][A-Za-z0-9_]*", sql)
+
+
+def _probe_parameters(sql: str, provider: str) -> tuple[str, tuple[Any, ...]]:
+    """Create deterministic, type-neutral params for a read-only source query.
+
+    NULL binds let PostgreSQL infer the parameter type from the surrounding
+    column expression. LIMIT/OFFSET placeholders require an integer literal,
+    so those slots are replaced with 1 rather than binding NULL.
+    """
+    if provider == "postgres":
+        # Reuse the production PostgreSQL placeholder translator so the CI probe
+        # exercises the same qmark/named-placeholder compatibility contract.
+        from nexus_scalp.database.drivers.postgres_driver import _translate_placeholders
+
+        rendered = _translate_placeholders(sql)
+        rendered = re.sub(r"\\b(LIMIT|OFFSET)\\s+%s\\b", r"\\1 1", rendered, flags=re.I)
+        count = len(re.findall(r"(?<!%)%s", rendered))
+        return rendered, tuple(None for _ in range(count))
+
+    rendered = re.sub(r"\\b(LIMIT|OFFSET)\\s+\\?\\b", r"\\1 1", sql, flags=re.I)
+    count = rendered.count("?")
+    return rendered, tuple(None for _ in range(count))
+
+
+def source_read_query_probe(
+    conn: Any,
+    provider: str,
+    source: dict[str, Any],
+) -> dict[str, Any]:
+    """Execute every unique provider-compatible literal read query from src.
+
+    This is deliberately a minimized corpus: exact normalized duplicate SQL is
+    collapsed, mutations are excluded (the certification database is real app
+    state), and provider-native statements only run in their owning lane. Every
+    query admitted to this corpus executes for real; a single execution failure
+    is a certification failure rather than an informational warning.
+    """
+    unique: dict[str, dict[str, Any]] = {}
+    for item in source.get("statements", []):
+        sql = " ".join(str(item.get("sql", "")).split())
+        if not sql or not _provider_sql_supported(sql, provider):
+            continue
+        unique.setdefault(sql, item)
+
+    results: list[dict[str, Any]] = []
+    for sql, source_item in sorted(unique.items()):
+        rendered, params = _probe_parameters(sql, provider)
+        started = time.perf_counter()
+        try:
+            cur = conn.execute(rendered, params)
+            cur.fetchmany(10)
+            results.append(
+                {
+                    "status": "PASS",
+                    "source": source_item,
+                    "sql": sql,
+                    "executed_sql": rendered,
+                    "duration_ms": round((time.perf_counter() - started) * 1000, 3),
+                    "param_count": len(params),
+                }
+            )
+        except Exception as exc:
+            results.append(
+                {
+                    "status": "FAIL",
+                    "source": source_item,
+                    "sql": sql,
+                    "executed_sql": rendered,
+                    "duration_ms": round((time.perf_counter() - started) * 1000, 3),
+                    "param_count": len(params),
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+
+    failures = [item for item in results if item["status"] != "PASS"]
+    return {
+        "query_count": len(results),
+        "unique_query_count": len(unique),
+        "passed": len(results) - len(failures),
+        "failed": len(failures),
+        "failures": failures[:100],
+        "queries": results,
+    }
+
+
 def canonical_schema(inv: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for table, meta in inv.items():
@@ -374,14 +491,15 @@ def main() -> int:
         inventory = schema_inventory(conn, args.provider)
         row_counts = live_row_counts(conn, inventory)
         workload = live_query_battery(conn, args.provider, inventory)
+        source = source_sql_inventory()
+        source_query_probe = source_read_query_probe(conn, args.provider, source)
     finally:
         conn.close()
 
-    source = source_sql_inventory()
     report = {
         "schema_version": 2,
         "provider": args.provider,
-        "status": "PASS" if workload["failed"] == 0 else "FAIL",
+        "status": "PASS" if workload["failed"] == 0 and source_query_probe["failed"] == 0 else "FAIL",
         "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
         "table_count": len(inventory),
         "schema": inventory,
@@ -389,10 +507,12 @@ def main() -> int:
         "row_counts": row_counts,
         "workload": workload,
         "source_sql": source,
+        "source_query_probe": source_query_probe,
         "contracts": {
             "minimum_live_queries": MIN_QUERIES,
             "query_floor_met": workload["query_count"] >= MIN_QUERIES,
             "all_live_queries_passed": workload["failed"] == 0,
+            "source_literal_read_queries_all_passed": source_query_probe["failed"] == 0,
             "static_sql_inventory_complete": not source["inventory_truncated"],
         },
     }
@@ -403,6 +523,8 @@ def main() -> int:
         "tables": len(inventory),
         "queries": workload["query_count"],
         "query_failures": workload["failed"],
+        "source_query_failures": source_query_probe["failed"],
+        "source_read_queries": source_query_probe["query_count"],
         "p95_ms": workload["p95_ms"],
         "literal_sql_sites": source["literal_statement_count"],
         "dynamic_sql_sites": source["dynamic_sql_sites"],
