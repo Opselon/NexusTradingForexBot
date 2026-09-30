@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: deplock-${{ github.workflow }}-${{ github.ref }}
@@ -64,54 +64,9 @@ jobs:
           # since 059cb23a. v10's valid input is `version` again.
           version: "0.12.10"
 
-      - name: Regenerate dependency artifacts for certification
+      - name: Drift check (regenerates nothing; fails on stale artifacts)
         run: |
-          python scripts/ci/check_dependency_drift.py --regen
-          mkdir -p dependency-regenerated
-          cp requirements.lock requirements.txt dependency-regenerated/
-
-      - name: Commit regenerated dependency artifacts for certification branch
-        if: github.event_name == 'pull_request' && github.head_ref == 'feature/db-fabric-full-certification'
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git diff -- requirements.lock requirements.txt
-          git add requirements.lock requirements.txt
-          if git diff --cached --quiet; then
-            echo 'Dependency artifacts already current'
-            exit 0
-          fi
-          git commit -m 'chore(deps): refresh generated dependency lock artifacts'
-          git fetch origin "${GITHUB_HEAD_REF}"
-          git rebase "origin/${GITHUB_HEAD_REF}"
-          git push origin "HEAD:${GITHUB_HEAD_REF}"
-
-      - name: Verify regenerated dependency artifacts
-        run: python scripts/ci/check_dependency_drift.py
-
-      - name: Upload regenerated dependency artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: dependency-regenerated-${{ github.run_number }}-${{ github.sha }}
-          path: dependency-regenerated/
-          if-no-files-found: error
-          retention-days: 2
-
-  migration-safety:
-    name: Migration safety (fail-loud + version postconditions)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-
-      - name: Install minimal check deps
-        run: python -m pip install --upgrade pip structlog
+          python scripts/ci/check_dependency_drift.py
 
       - name: Migration safety check (disposable DBs only)
         run: |
