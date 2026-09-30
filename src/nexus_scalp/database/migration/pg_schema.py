@@ -244,6 +244,25 @@ def _recorded_domain_migrations(domain: str):
         return None
 
 
+def _is_idempotent_index_race(exc: BaseException, sql: str) -> bool:
+    """Recognize PostgreSQL's concurrent CREATE INDEX IF NOT EXISTS race.
+
+    Two independent bootstrap paths can both observe a missing index and
+    race to create the same relation. PostgreSQL can surface that race as
+    duplicate-key-on-pg_class even though the DDL is explicitly idempotent.
+    The schema is correct after either creator wins, so this is a benign
+    provisioning race, not schema drift.
+    """
+    message = str(exc).lower()
+    statement = sql.lower()
+    return (
+        "create index if not exists" in statement
+        and "duplicate key value violates unique constraint" in message
+        and "relname" in message
+        and "relnamespace" in message
+    )
+
+
 def apply_schema(
     statements: list[str], execute, *, stop_on_error: bool = False, domain: str = ""
 ) -> dict[str, object]:
@@ -276,6 +295,13 @@ def apply_schema(
             applied.append(translated.strip().splitlines()[0][:80])
         except Exception as exc:
             head = translated.strip().splitlines()[0][:80]
+            if _is_idempotent_index_race(exc, translated):
+                skipped.append(head)
+                logger.warning(
+                    "[DB-MIGRATE] concurrent idempotent index creation already won: %s",
+                    head,
+                )
+                continue
             # IF NOT EXISTS already covers the normal re-run; a residual error
             # is a genuine schema drift the operator must see.
             errors.append({"statement": head, "error": f"{type(exc).__name__}: {exc}"})

@@ -33,11 +33,14 @@ ROOT="${NEXUS_MT5_ROOT:-/home/ubuntu/nexus-mt5}"
 PREFIX="$ROOT/test/prefix"
 CACHE="$ROOT/cache"
 LOGDIR="$ROOT/logs"
+WEBVIEW_CACHE="$CACHE/webview2setup.exe"
 WINE_BIN="${NEXUS_MT5_WINE:-/opt/wine-staging/bin/wine}"
 WINE_SERVER="${NEXUS_MT5_WINESERVER:-/opt/wine-staging/bin/wineserver}"
 MT5DIR="$PREFIX/drive_c/Program Files/MetaTrader 5"
 TERMINAL="$MT5DIR/terminal64.exe"
+TERMINAL_EXE="terminal64.exe"
 DISPLAY_NUM="${NEXUS_MT5_DISPLAY:-99}"
+MT5_WEBVIEW2_URL="${NEXUS_MT5_WEBVIEW2_URL:-https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/f2910a1e-e5a6-4f17-b52d-7faf525d17f8/MicrosoftEdgeWebview2Setup.exe}"
 
 export WINEPREFIX="$PREFIX"
 export WINEARCH="${NEXUS_MT5_WINEARCH:-win64}"
@@ -49,7 +52,8 @@ log() { printf '[nexus-mt5] %s\n' "$*"; }
 ensure_dirs() { mkdir -p "$PREFIX" "$CACHE" "$LOGDIR"; }
 
 terminal_running() {
-    pgrep -f "terminal64.exe" >/dev/null 2>&1
+    pgrep -f "terminal64.exe" >/dev/null 2>&1 ||
+        pgrep -f "terminal.exe" >/dev/null 2>&1
 }
 
 xvfb_up() {
@@ -80,24 +84,101 @@ ensure_xvfb() {
 
 cmd_install() {
     ensure_dirs
+    ensure_xvfb || { log "ERROR: Xvfb unavailable"; return 1; }
+    export DISPLAY=":$DISPLAY_NUM"
+
     if [ -x "$TERMINAL" ] || [ -f "$TERMINAL" ]; then
-        log "terminal64.exe already present: $TERMINAL"
+        log "$TERMINAL_EXE already present: $TERMINAL"
         return 0
     fi
+
     if [ ! -f "$CACHE/mt5setup.exe" ]; then
         log "downloading official installer (MetaQuotes CDN)"
         curl -sSL --max-time 300 -o "$CACHE/mt5setup.exe" \
             "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" \
             || { log "ERROR: download failed"; return 1; }
     fi
+
     sha256sum "$CACHE/mt5setup.exe" | tee "$CACHE/mt5setup.exe.sha256"
-    log "running silent install (/auto) — no sudo, user prefix only"
-    wine "$CACHE/mt5setup.exe" /auto > "$LOGDIR/install_$(date +%Y%m%d_%H%M%S).log" 2>&1
-    if [ ! -f "$TERMINAL" ]; then
-        log "ERROR: install finished but terminal64.exe missing — inspect $LOGDIR"
+
+    # MetaQuotes' current Linux installation flow provisions WebView2 before
+    # starting the terminal installer. Without it, the bootstrapper can exit
+    # without materializing terminal64.exe under Wine.
+    if [ ! -f "$WEBVIEW_CACHE" ]; then
+        log "downloading Microsoft WebView2 runtime"
+        curl -fL --retry 3 --max-time 300 -o "$WEBVIEW_CACHE" "$MT5_WEBVIEW2_URL" \
+            || { log "ERROR: WebView2 download failed"; return 1; }
+    fi
+    sha256sum "$WEBVIEW_CACHE" | tee "$WEBVIEW_CACHE.sha256"
+
+    log "initializing isolated Wine prefix ($WINEARCH)"
+    "$WINE_BIN" wineboot --init > "$LOGDIR/wineboot.log" 2>&1 || true
+    "$WINE_BIN" winecfg /v win11 > "$LOGDIR/winecfg.log" 2>&1 || true
+
+    log "installing Microsoft WebView2 runtime"
+    set +e
+    timeout 300 "$WINE_BIN" "$WEBVIEW_CACHE" /silent /install > "$LOGDIR/webview2_install.log" 2>&1
+    local webview_rc=$?
+    set -e
+    if [ "$webview_rc" -ne 0 ]; then
+        log "ERROR: WebView2 installer failed rc=$webview_rc"
+        tail -100 "$LOGDIR/webview2_install.log" || true
         return 1
     fi
-    log "installed OK"
+
+    local install_log="$LOGDIR/install_$(date +%Y%m%d_%H%M%S).log"
+    log "running official MT5 installer (/auto) — no sudo, user prefix only"
+    set +e
+    timeout 300 "$WINE_BIN" "$CACHE/mt5setup.exe" /auto > "$install_log" 2>&1
+    local installer_rc=$?
+    set -e
+    log "installer process rc=$installer_rc; waiting for terminal payload"
+
+    local found=""
+    local search_root="$PREFIX/drive_c"
+    for _ in $(seq 1 60); do
+        found="$(find "$search_root" -xdev -type f -iname "terminal64.exe" -print -quit 2>/dev/null)"
+        [ -n "$found" ] && break
+        sleep 1
+    done
+
+    # Some Wine/MetaQuotes builds return from /auto without completing the
+    # GUI bootstrap. Under Xvfb the normal installer is safe to run headless
+    # and is the official fallback used by MetaQuotes' Linux flow.
+    if [ -z "$found" ]; then
+        local fallback_log="$LOGDIR/install_fallback_$(date +%Y%m%d_%H%M%S).log"
+        log "terminal not materialized after /auto; retrying official installer in GUI mode"
+        set +e
+        timeout 300 "$WINE_BIN" "$CACHE/mt5setup.exe" > "$fallback_log" 2>&1
+        local fallback_rc=$?
+        set -e
+        log "GUI installer rc=$fallback_rc; waiting for terminal payload"
+    fi
+
+    local found=""
+    local search_root="$PREFIX/drive_c"
+    for _ in $(seq 1 120); do
+        found="$(find "$search_root" -xdev -type f -iname "terminal64.exe" -print -quit 2>/dev/null)"
+        if [ -z "$found" ]; then
+            found="$(find "$search_root" -xdev -type f -iname "terminal.exe" -print -quit 2>/dev/null)"
+        fi
+        if [ -n "$found" ]; then
+            break
+        fi
+        sleep 1
+    done
+
+    if [ -z "$found" ]; then
+        log "ERROR: MT5 terminal executable was not materialized after 180s"
+        log "installer rc=$installer_rc; install log: $install_log"
+        find "$PREFIX/drive_c" -maxdepth 6 -type f -iname "*terminal*.exe" -print 2>/dev/null | head -50 || true
+        return 1
+    fi
+
+    TERMINAL="$found"
+    MT5DIR="$(dirname "$TERMINAL")"
+    TERMINAL_EXE="$(basename "$TERMINAL")"
+    log "installed OK: $TERMINAL"
 }
 
 cmd_start() {
@@ -108,12 +189,14 @@ cmd_start() {
     fi
     ensure_xvfb || { log "ERROR: Xvfb unavailable"; return 1; }
     export DISPLAY=":$DISPLAY_NUM"
-    log "launching terminal64.exe /portable"
-    (cd "$MT5DIR" && nohup "$WINE_BIN" terminal64.exe /portable \
+    log "launching $TERMINAL_EXE /portable"
+    (cd "$MT5DIR" && nohup "$WINE_BIN" "$TERMINAL_EXE" /portable \
         > "$LOGDIR/terminal_launch.log" 2>&1 &)
     sleep 8
     if terminal_running; then
-        log "started (pid $(pgrep -f terminal64.exe | head -1))"
+        pid="$(pgrep -f "$TERMINAL_EXE" | head -1 || true)"
+        [ -n "$pid" ] || pid="$(pgrep -f "terminal64.exe|terminal.exe" | head -1 || true)"
+        log "started (pid ${pid:-unknown})"
         return 0
     fi
     log "ERROR: terminal did not start — see $LOGDIR/terminal_launch.log"
@@ -137,7 +220,9 @@ cmd_stop() {
 
 cmd_status() {
     if terminal_running; then
-        log "RUNNING (pid $(pgrep -f terminal64.exe | head -1))"
+        pid="$(pgrep -f "$TERMINAL_EXE" | head -1 || true)"
+        [ -n "$pid" ] || pid="$(pgrep -f "terminal64.exe|terminal.exe" | head -1 || true)"
+        log "RUNNING (pid ${pid:-unknown})"
         return 0
     fi
     log "STOPPED"

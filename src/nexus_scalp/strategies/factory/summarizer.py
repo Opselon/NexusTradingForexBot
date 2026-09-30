@@ -26,7 +26,10 @@ from nexus_scalp.strategies.factory.models import (
 
 def _score_of(entry: dict[str, Any]) -> float:
     try:
-        return float((entry.get("score") or {}).get("final_score", 0.0) or 0.0)
+        score = entry.get("score")
+        if not isinstance(score, dict):
+            return 0.0
+        return float(score.get("final_score", 0.0) or 0.0)
     except (TypeError, ValueError):
         return 0.0
 
@@ -102,12 +105,7 @@ def build_summary(
         validated=len(validated),
         rejected=len(rejected),
         elite=len(
-            [
-                e
-                for e in registry_entries
-                if (e.get("score") or {}).get("verdict") == "VALIDATED"
-                and float((e.get("score") or {}).get("final_score", 0.0) or 0.0) >= 0.6
-            ]
+            [e for e in registry_entries if score_verdict(e) == "VALIDATED" and _score_of(e) >= 0.6]
         ),
         avg_score=avg,
         best_score=best,
@@ -123,7 +121,10 @@ def build_summary(
 
 
 def score_verdict(entry: dict[str, Any]) -> str:
-    return str((entry.get("score") or {}).get("verdict", "UNKNOWN"))
+    score = entry.get("score")
+    if not isinstance(score, dict):
+        return "UNKNOWN"
+    return str(score.get("verdict", "UNKNOWN"))
 
 
 def _structural_passed(candidate: dict[str, Any]) -> bool:
@@ -157,15 +158,24 @@ def memory_summary(
 ) -> dict[str, Any]:
     """Builds the structured learning context (spec 24 / 81) — this is what
     the next generation's planner / LLM prompt consumes."""
-    top = sorted(
-        all_entries,
-        key=lambda e: float((e.get("score") or {}).get("final_score", 0.0) or 0.0),
-        reverse=True,
-    )[:5]
-    worst = sorted(
-        all_entries,
-        key=lambda e: float((e.get("score") or {}).get("final_score", 0.0) or 0.0),
-    )[:5]
+    normalized_summaries: list[GenerationSummary] = []
+    for raw in summaries:
+        if isinstance(raw, GenerationSummary):
+            normalized_summaries.append(raw)
+            continue
+        if isinstance(raw, dict):
+            try:
+                normalized_summaries.append(GenerationSummary.model_validate(raw))
+            except Exception:
+                continue
+    summaries = normalized_summaries
+
+    # Registry reads are provider-shaped rows, but legacy/corrupt rows can
+    # still round-trip as scalar JSON values. Ignore those rows rather than
+    # turning a diagnostic memory endpoint into a 500.
+    entries = [e for e in all_entries if isinstance(e, dict)]
+    top = sorted(entries, key=_score_of, reverse=True)[:5]
+    worst = sorted(entries, key=_score_of)[:5]
 
     common_failures: list[dict[str, Any]] = []
     failure_tally: dict[str, int] = {}

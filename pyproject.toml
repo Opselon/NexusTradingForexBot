@@ -24,7 +24,7 @@ dependencies = [
     "pyarrow>=15.0.0,<26.0.0",
     "numpy>=1.26.0,<3.0.0",
     "torch>=2.2.0,<3.0.0",
-    "fastapi>=0.110.0,<1.0.0",
+    "fastapi==0.142.0",
     "uvicorn>=0.27.0,<1.0.0",
     "httpx>=0.26.0,<1.0.0",
     "MetaTrader5>=5.0.45; platform_system == 'Windows'",

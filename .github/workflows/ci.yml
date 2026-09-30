@@ -725,6 +725,344 @@ jobs:
         run: python scripts/ci/ci_final_gate.py
 
   # ---------------------------------------------------------------------------
+  # FULL REAL-PROCESS RUNTIME — SQLite + PostgreSQL matrix.
+  # Each matrix leg launches NexusTradingForexBot.py itself in PAPER mode,
+  # keeps the real engine + FastAPI process alive for >=120 seconds, performs
+  # a large bounded read-only query workload (>=500 queries), checks live API
+  # endpoints, captures and traces warnings/errors/tracebacks, then requires
+  # graceful process shutdown. This is deliberately not TestClient smoke.
+  # ---------------------------------------------------------------------------
+  full-runtime-provider:
+    name: Full NSE Runtime (${{ matrix.provider }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [sqlite, postgres]
+
+    env:
+      NSE_PG_TEST_PASSWORD: nse_password_dev
+      NSE_DATABASE__PG_HOST: 127.0.0.1
+      NSE_DATABASE__PG_PORT: "5432"
+      NSE_DATABASE__PG_DATABASE: nse_audit
+      NSE_DATABASE__PG_USER: nse_user
+      NSE_RUNTIME_SOAK_PORT: "18080"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install full runtime dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web,postgres]"
+
+      - name: Prepare isolated provider environment
+        run: |
+          root="$RUNNER_TEMP/nse-full-runtime-${{ matrix.provider }}"
+          mkdir -p "$root"
+          echo "NEXUS_SETTINGS_DB=$root/app_settings.db" >> "$GITHUB_ENV"
+          echo "NEXUS_AUDIT_DB=$root/audit.db" >> "$GITHUB_ENV"
+          echo "NEXUS_DATA_ROOT=$root/data" >> "$GITHUB_ENV"
+          echo "NSE_EXECUTION__MODE=PAPER" >> "$GITHUB_ENV"
+          echo "NSE_EXECUTION__SYMBOL=XAUUSD" >> "$GITHUB_ENV"
+          echo "NSE_NO_BROWSER=1" >> "$GITHUB_ENV"
+          echo "NSE_NO_TELEGRAM=1" >> "$GITHUB_ENV"
+          echo "NSE_NEWS__ENABLED=false" >> "$GITHUB_ENV"
+          echo "NSE_TELEGRAM__ENABLED=false" >> "$GITHUB_ENV"
+          echo "NSE_NO_AUTO_INSTALL=1" >> "$GITHUB_ENV"
+          echo "NSE_WEB_ACTUAL_PORT=$NSE_RUNTIME_SOAK_PORT" >> "$GITHUB_ENV"
+          if [ "${{ matrix.provider }}" = "postgres" ]; then
+            echo "NSE_DATABASE__PROVIDER=postgresql" >> "$GITHUB_ENV"
+          else
+            echo "NSE_DATABASE__PROVIDER=sqlite" >> "$GITHUB_ENV"
+            echo "NSE_DATABASE__SQLITE_PATH=$root/audit.sqlite" >> "$GITHUB_ENV"
+          fi
+
+      - name: Start disposable PostgreSQL
+        if: matrix.provider == 'postgres'
+        run: |
+          set -euo pipefail
+          docker rm -f nse-ci-pg >/dev/null 2>&1 || true
+          docker run -d --name nse-ci-pg \
+            -e POSTGRES_DB=nse_audit \
+            -e POSTGRES_USER=nse_user \
+            -e POSTGRES_PASSWORD="$NSE_PG_TEST_PASSWORD" \
+            -p 5432:5432 \
+            postgres:16-alpine
+          for i in $(seq 1 40); do
+            if docker exec nse-ci-pg pg_isready -U nse_user -d nse_audit >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs nse-ci-pg | tail -100 || true
+          echo "::error::PostgreSQL service did not become ready"
+          exit 1
+
+      - name: Provision and certify runtime model
+        run: |
+          python scripts/ci/runtime_gate.py --json --evidence
+
+      - name: Boot full NSE process + 120s soak + query workload
+        run: |
+          python scripts/ci/provider_runtime_soak.py \
+            --provider "${{ matrix.provider }}" \
+            --duration 120 \
+            --port "$NSE_RUNTIME_SOAK_PORT" \
+            --evidence-dir "$RUNNER_TEMP/nse-full-runtime-${{ matrix.provider }}"
+
+      - name: Print full runtime warnings, errors, tracebacks and query verdict
+        if: always()
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "nse-full-runtime-${{ matrix.provider }}"
+          report = {}
+          query = {}
+          for name, target in (("report", root / "full_runtime_report.json"), ("query", root / "query_matrix.json")):
+              try:
+                  payload = json.loads(target.read_text(encoding="utf-8"))
+              except Exception as exc:
+                  print(f"{name.upper()}_REPORT_ERROR: {type(exc).__name__}: {exc}")
+                  continue
+              if name == "report":
+                  report = payload
+              else:
+                  query = payload
+          diag = report.get("diagnostics", {})
+          print("=== FULL RUNTIME RESULT ===")
+          print("STATUS:", report.get("status", "FAIL"))
+          print("CONFIG:", report.get("config_path", "unknown"))
+          print("SOAK_SECONDS:", report.get("elapsed_sec", "n/a"))
+          print("PROCESS_RC:", report.get("process_exit_code", "n/a"))
+          print("QUERIES:", f"{query.get('queries_ok', 0)}/{query.get('queries_total', 0)}")
+          print("QUERY_FAILURES:", query.get("queries_failed", 0))
+          print("QUERY_FLOOR:", query.get("minimum_query_floor", "n/a"))
+          print("QUERY_FLOOR_MET:", query.get("query_floor_met", False))
+          print("WARNINGS:", diag.get("warning_count", 0))
+          print("ERRORS:", diag.get("error_count", 0))
+          print("TRACEBACKS:", diag.get("traceback_count", 0))
+          if report.get("runtime_error"):
+              print("RUNTIME_ERROR:", report["runtime_error"])
+          for item in diag.get("warnings", [])[:50]:
+              print(f"[WARN] line={item.get('line_no', '?')} {item.get('message', item.get('error', ''))}")
+          for item in diag.get("errors", [])[:50]:
+              print(f"[ERROR] line={item.get('line_no', '?')} {item.get('message', item.get('error', ''))}")
+          for trace in diag.get("tracebacks", [])[:25]:
+              frames = " -> ".join(
+                  f"{frame['file']}:{frame['line']}" +
+                  (f"::{frame['function']}" if frame.get("function") else "")
+                  for frame in trace.get("frames", [])
+              )
+              print(f"[TRACE] lines={trace.get('start_line_no')}-{trace.get('end_line_no')} {frames or 'no parsed frames'}")
+          for item in query.get("failure_samples", [])[:50]:
+              print(f"[QUERY-FAIL] {item.get('label', 'unknown')}: {item.get('error', '')}")
+          PY
+
+      - name: Emit GitHub runtime annotations
+        if: always()
+        continue-on-error: true
+        run: |
+          python scripts/ci/render_provider_runtime.py \
+            --evidence "$RUNNER_TEMP/nse-full-runtime-${{ matrix.provider }}/provider_runtime_soak.json"
+
+      - name: Upload full runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-full-runtime-${{ matrix.provider }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/full_runtime_report.json
+            ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/query_matrix.json
+            ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/provider_runtime_soak.json
+            ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/runtime.log
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup PostgreSQL
+        if: always() && matrix.provider == 'postgres'
+        run: docker rm -f nse-ci-pg >/dev/null 2>&1 || true
+
+  # ---------------------------------------------------------------------------
+  # MT5/WINE — independent terminal runtime line.
+  # Validates install/start/health/stop for the official terminal under
+  # Wine/Xvfb. It never places an order and does not fabricate demo creds.
+  # ---------------------------------------------------------------------------
+  mt5-wine-runtime:
+    name: MetaTrader 5 Wine Runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    env:
+      NEXUS_MT5_DISPLAY: "99"
+      NEXUS_MT5_WINEDEBUG: "-all"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Wine staging + Xvfb
+        run: |
+          set -euo pipefail
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates curl wget gnupg xvfb x11-utils winbind
+          sudo mkdir -pm755 /etc/apt/keyrings
+          wget -qO- https://dl.winehq.org/wine-builds/winehq.key | sudo gpg --dearmor -o /etc/apt/keyrings/winehq-archive.key
+          sudo wget -qNP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/noble/winehq-noble.sources
+          sudo apt-get update
+          sudo apt-get install -y --install-recommends winehq-staging
+          wine --version
+
+      - name: Prepare isolated MT5 runtime root
+        run: |
+          echo "NEXUS_MT5_ROOT=$RUNNER_TEMP/nexus-mt5" >> "$GITHUB_ENV"
+
+      - name: Start Xvfb
+        run: |
+          Xvfb ":$NEXUS_MT5_DISPLAY" -screen 0 1280x1024x24 > "$RUNNER_TEMP/nexus-mt5-xvfb.log" 2>&1 &
+          echo "DISPLAY=:$NEXUS_MT5_DISPLAY" >> "$GITHUB_ENV"
+
+      - name: Set up Python 3.11 for repository diagnostics
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install repository runtime dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web,postgres]"
+
+      - name: Verify Wine
+        run: |
+          wine --version
+          wineserver --version
+
+      - name: Install official MetaTrader 5
+        run: |
+          export NEXUS_MT5_WINE="$(command -v wine)"
+          export NEXUS_MT5_WINESERVER="$(command -v wineserver)"
+          bash scripts/linux/mt5_runtime.sh install
+
+      - name: Start MT5 and health-soak for 120s with complete trace log
+        run: |
+          set -euo pipefail
+          export NEXUS_MT5_WINE="$(command -v wine)"
+          export NEXUS_MT5_WINESERVER="$(command -v wineserver)"
+          trap 'bash scripts/linux/mt5_runtime.sh stop || true' EXIT
+          {
+            bash scripts/linux/mt5_runtime.sh start
+            python scripts/linux/mt5_doctor.py
+            bash scripts/linux/mt5_runtime.sh health
+            for i in $(seq 1 24); do
+              sleep 5
+              bash scripts/linux/mt5_runtime.sh health
+            done
+            python scripts/linux/mt5_doctor.py
+            bash scripts/linux/mt5_runtime.sh logs || true
+            bash scripts/linux/mt5_runtime.sh stop
+            trap - EXIT
+          } 2>&1 | tee "$RUNNER_TEMP/nexus-mt5-runtime.log"
+
+      - name: Trace MT5 warnings and errors
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "=== MT5/WINE INSTALL + RUNTIME DIAGNOSTICS ==="
+          find "$NEXUS_MT5_ROOT/logs" -maxdepth 1 -type f -print -exec sh -c 'echo "--- $1 ---"; tail -200 "$1"' _ {} \; 2>/dev/null || true
+          for log in "$NEXUS_MT5_ROOT"/logs/*.log; do
+            [ -f "$log" ] || continue
+            echo "=== WARN/ERROR: $log ==="
+            grep -Ein 'warn|error|critical|exception|fatal|failed|cannot|err:' "$log" | head -200 || true
+          done
+          if [ -f "$RUNNER_TEMP/nexus-mt5-runtime.log" ]; then
+            cat "$RUNNER_TEMP/nexus-mt5-runtime.log"
+          fi
+
+      - name: Upload MT5/Wine evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-mt5-wine-runtime-${{ github.run_id }}
+          # $NEXUS_MT5_ROOT wholesale is NOT uploadable: the Wine prefix's
+          # dosdevices/ holds per-drive symlinks back to the host filesystem
+          # (z: -> /), so the artifact walk descends into / and dies with
+          # EACCES on paths like dosdevices/z:/boot/efi. Upload the
+          # diagnostics that actually matter instead of the whole prefix.
+          path: |
+            ${{ runner.temp }}/nexus-mt5/logs/
+            ${{ runner.temp }}/nexus-mt5/cache/*.sha256
+            ${{ runner.temp }}/nexus-mt5-runtime.log
+            ${{ runner.temp }}/nexus-mt5-xvfb.log
+          if-no-files-found: error
+          retention-days: 14
+
+  full-runtime-verdict:
+    name: Full Runtime Overall Verdict
+    if: always()
+    needs:
+      - full-runtime-provider
+      - mt5-wine-runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download provider runtime evidence
+        if: always()
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ci-full-runtime-*
+          path: full-runtime-results
+          merge-multiple: false
+
+      - name: Aggregate provider warnings, errors, traces and query counts
+        if: always()
+        continue-on-error: true
+        run: |
+          python scripts/ci/aggregate_provider_runtime.py \
+            --root full-runtime-results \
+            --output runtime-provider-overall.json
+
+      - name: Upload provider overall runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-provider-runtime-overall-${{ github.run_id }}
+          path: runtime-provider-overall.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Require every runtime line to pass
+        run: |
+          echo "SQLite/PostgreSQL matrix: ${{ needs.full-runtime-provider.result }}"
+          echo "MT5/Wine line:             ${{ needs.mt5-wine-runtime.result }}"
+          if [ "${{ needs.full-runtime-provider.result }}" != "success" ]; then
+            echo "::error::Full SQLite/PostgreSQL runtime matrix failed"
+            exit 1
+          fi
+          if [ "${{ needs.mt5-wine-runtime.result }}" != "success" ]; then
+            echo "::error::MetaTrader 5 Wine runtime failed"
+            exit 1
+          fi
+          echo "FULL RUNTIME CERTIFICATION: PASS"
+  # ---------------------------------------------------------------------------
   # TIER 2 — EXTENDED validation (brief section 19). Runs on MAIN PUSH
   # (post-merge evidence) and explicit dispatch, never on the PR lane. Holds
   # the production-truth tests whose MEASURED wall cost (bug276 1252s,

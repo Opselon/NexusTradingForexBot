@@ -2795,6 +2795,15 @@ class AuditRepository:
         # sequence, raising "dictionary update sequence element #0 has length
         # N; 2 is required" and silently returning [] from every read.
         conn.row_factory = sqlite3.Row
+        # The audit domain has several independent writers (the write plane's
+        # dedicated writer, per-request repository reads that promote to a
+        # short write, and the CI/probe readers). WAL keeps a writer from
+        # blocking readers, but two writers still contend on the write lock.
+        # The connect `timeout` already makes sqlite3 wait, but only after
+        # acquiring does a statement honor busy_timeout, and several callers
+        # hold a read transaction while a writer commits. Wait in both places
+        # instead of surfacing SQLITE_BUSY as an application error.
+        conn.execute("PRAGMA busy_timeout = " + str(int(timeout * 1000)))
         return conn
 
     def provision_sqlite_schema(self, statements: list[str]) -> bool:
