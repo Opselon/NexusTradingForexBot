@@ -298,9 +298,7 @@ def compare_states(left: dict[str, list[str]], right: dict[str, list[str]]) -> d
 
     # PostgreSQL owns a private migration checkpoint table created by the
     # production migrator. It is evidence, not an application-domain table.
-    extra_right = sorted(
-        (right_tables - left_tables) - INTERNAL_MIGRATION_TABLES
-    )
+    extra_right = sorted((right_tables - left_tables) - INTERNAL_MIGRATION_TABLES)
 
     column_diffs = {
         table: {
@@ -456,8 +454,7 @@ def main() -> int:
         ephemeral_count_diffs = {
             table: {"sqlite": sqlite_counts[table], "postgres": pg_counts.get(table)}
             for table in sqlite_counts
-            if table in EPHEMERAL_RUNTIME_TABLES
-            and sqlite_counts[table] != pg_counts.get(table)
+            if table in EPHEMERAL_RUNTIME_TABLES and sqlite_counts[table] != pg_counts.get(table)
         }
         pg_queries = query_corpus("postgres", pg_conn, pg_schema)
         pg_conn.close()
@@ -482,12 +479,18 @@ def main() -> int:
             raise RuntimeError(f"PostgreSQL query corpus failed: {pg_queries['failed']}")
         evidence["phases"].append({"phase": "postgres_frozen_query_parity", "status": "PASS"})
 
-        # Restart only after the frozen migration snapshot has passed. This
-        # validates the actual post-cutover application boot independently.
+        # Stop the pre-migration SQLite process before validating the real
+        # PostgreSQL restart. Starting a second process on the same port would
+        # otherwise create a false readiness failure.
+        stop_app(proc)
         proc = start_app(args.port, args.settings_db, sqlite_work, "postgresql")
         wait_ready(base)
         post_restart = http_json(base, "GET", "/api/status")
-        if not post_restart.get("success", True) and post_restart.get("status") not in (200, "ok", "OK"):
+        if not post_restart.get("success", True) and post_restart.get("status") not in (
+            200,
+            "ok",
+            "OK",
+        ):
             raise RuntimeError(f"PostgreSQL restart status failed: {post_restart}")
         evidence["phases"].append({"phase": "postgres_restart", "status": "PASS"})
 
