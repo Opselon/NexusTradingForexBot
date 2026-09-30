@@ -45,9 +45,7 @@ class _FailedLifecycle:
     def __init__(self) -> None:
         self._gate = _FakeGate()
         self.state = MLLifecycleState.FAILED
-        self.last_error = (
-            "MODEL_LOAD_FAILED: FileNotFoundError [Errno 2] C:/secrets/model.pt"
-        )
+        self.last_error = "MODEL_LOAD_FAILED: FileNotFoundError [Errno 2] C:/secrets/model.pt"
         self._loaded_model = None
 
     def status(self) -> dict[str, Any]:
@@ -62,9 +60,7 @@ class _FailedLifecycle:
             "controller_mode": "legacy",
         }
 
-    def activate(
-        self, model_id: str, model_path: str, scaler_path: str
-    ) -> dict[str, Any]:
+    def activate(self, model_id: str, model_path: str, scaler_path: str) -> dict[str, Any]:
         return {
             "status": "FAILED",
             "reason": "MODEL_LOAD_FAILED: OSError [Errno 2] C:/secrets/model.pt",
@@ -84,9 +80,7 @@ def client() -> TestClient:
 def test_public_error_code_maps_known_failures() -> None:
     assert _public_error_code("MODEL_LOAD_FAILED: boom") == "MODEL_LOAD_FAILED"
     assert _public_error_code("MODEL_LOAD_REJECTED: mismatch") == "MODEL_LOAD_REJECTED"
-    assert (
-        _public_error_code("MODEL_LOAD_FAILED on restart: x") == "MODEL_LOAD_FAILED"
-    )
+    assert _public_error_code("MODEL_LOAD_FAILED on restart: x") == "MODEL_LOAD_FAILED"
     assert _public_error_code("") == ""
     assert _public_error_code(None) == ""
     assert _public_error_code("anything else") == "FAILED"
@@ -118,9 +112,7 @@ def test_activate_ok_branch_carries_no_reason() -> None:
             super().__init__()
             self.state = MLLifecycleState.ACTIVE
 
-        def activate(
-            self, model_id: str, model_path: str, scaler_path: str
-        ) -> dict[str, Any]:
+        def activate(self, model_id: str, model_path: str, scaler_path: str) -> dict[str, Any]:
             # Real OK payload includes no "reason", but the route must not
             # echo the lifecycle dict even if one sneaks in.
             return {
