@@ -863,6 +863,7 @@ class ShadowStore:
         which is why it stays as the safety net for the server-side statement.
         """
         try:
+            # ci: schema-guarded — caller enters this fallback only when payload exists.
             pending = conn.execute(
                 "SELECT id, payload FROM shadow_decisions "
                 "WHERE payload IS NOT NULL AND payload != '' AND payload != '{}' "
