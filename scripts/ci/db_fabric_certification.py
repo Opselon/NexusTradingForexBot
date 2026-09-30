@@ -691,11 +691,43 @@ def main() -> int:
         final_counts = row_counts(final_conn, final_schema)
         final_queries = query_corpus("sqlite", final_conn, final_schema)
         final_conn.close()
-        final_schema_compare = compare_states(sqlite_schema, final_schema)
+
+        # Reverse migration must reproduce the PostgreSQL source state, not the
+        # pre-migration SQLite skeleton: PostgreSQL can legitimately contain
+        # lazy/optional tables that were created while the app was running.
+        final_schema_compare = compare_states(pg_schema, final_schema)
+        allowed_preexisting = set(sqlite_schema) - set(pg_schema)
+        unexpected_extra = [
+            table
+            for table in final_schema_compare["extra_right"]
+            if table not in allowed_preexisting
+        ]
+        final_schema_compare["allowed_preexisting_extras"] = sorted(
+            allowed_preexisting
+        )
+        final_schema_compare["unexpected_extra_right"] = unexpected_extra
+        final_schema_compare["match"] = (
+            not final_schema_compare["missing_right"]
+            and not final_schema_compare["unexpected_extra_right"]
+            and not final_schema_compare["column_diffs"]
+        )
+
         final_count_diffs = {
-            table: {"before": sqlite_counts[table], "after": final_counts.get(table)}
+            table: {"postgres": pg_counts[table], "sqlite_final": final_counts.get(table)}
+            for table in pg_counts
+            if table not in EPHEMERAL_RUNTIME_TABLES
+            and pg_counts[table] != final_counts.get(table)
+        }
+        # Also guarantee that tables which existed only in the original
+        # SQLite skeleton were not lost during the PG -> SQLite round trip.
+        preserved_sqlite_diffs = {
+            table: {
+                "sqlite_before": sqlite_counts[table],
+                "sqlite_final": final_counts.get(table),
+            }
             for table in sqlite_counts
-            if sqlite_counts[table] != final_counts.get(table)
+            if table not in EPHEMERAL_RUNTIME_TABLES
+            and sqlite_counts[table] != final_counts.get(table)
         }
         evidence["sqlite_final"] = {
             "schema": final_schema,
@@ -704,7 +736,13 @@ def main() -> int:
         }
         evidence["final_schema_compare"] = final_schema_compare
         evidence["final_count_diffs"] = final_count_diffs
-        if not final_schema_compare["match"] or final_count_diffs or final_queries["failed"]:
+        evidence["preserved_sqlite_diffs"] = preserved_sqlite_diffs
+        if (
+            not final_schema_compare["match"]
+            or final_count_diffs
+            or preserved_sqlite_diffs
+            or final_queries["failed"]
+        ):
             raise RuntimeError("reverse-migration SQLite verification failed")
 
         evidence["benchmark"] = {
