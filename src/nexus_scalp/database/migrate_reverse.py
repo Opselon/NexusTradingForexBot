@@ -55,6 +55,14 @@ class PostgresToSqliteMigrator:
         self.dst_cfg = dst_config
         self.opts = options or MigrationOptions()
 
+    def _ensure_destination_schema(self, dst_driver: Any) -> None:
+        """Replay the canonical SQLite audit schema before copying PostgreSQL rows."""
+        from nexus_scalp.database.migration.schema_snapshot import replay_schema
+        from nexus_scalp.database.registry import DatabaseDomain
+
+        for statement in replay_schema(domain=DatabaseDomain.AUDIT):
+            dst_driver.execute(statement)
+
     def _ensure_checkpoint_table(self, dst_driver: Any) -> None:
         ddl = (
             f"CREATE TABLE IF NOT EXISTS {CHECKPOINT_TABLE} ("
@@ -150,6 +158,7 @@ class PostgresToSqliteMigrator:
         dst_driver = get_driver(self.dst_cfg)
 
         try:
+            self._ensure_destination_schema(dst_driver)
             self._ensure_checkpoint_table(dst_driver)
             checkpoints = self._load_checkpoints(dst_driver)
             tables = [t for t in src_driver.list_tables() if t not in SKIP_TABLES]
