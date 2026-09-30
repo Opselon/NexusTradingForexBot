@@ -33,12 +33,14 @@ ROOT="${NEXUS_MT5_ROOT:-/home/ubuntu/nexus-mt5}"
 PREFIX="$ROOT/test/prefix"
 CACHE="$ROOT/cache"
 LOGDIR="$ROOT/logs"
+WEBVIEW_CACHE="$CACHE/webview2setup.exe"
 WINE_BIN="${NEXUS_MT5_WINE:-/opt/wine-staging/bin/wine}"
 WINE_SERVER="${NEXUS_MT5_WINESERVER:-/opt/wine-staging/bin/wineserver}"
 MT5DIR="$PREFIX/drive_c/Program Files/MetaTrader 5"
 TERMINAL="$MT5DIR/terminal64.exe"
 TERMINAL_EXE="terminal64.exe"
 DISPLAY_NUM="${NEXUS_MT5_DISPLAY:-99}"
+MT5_WEBVIEW2_URL="${NEXUS_MT5_WEBVIEW2_URL:-https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/f2910a1e-e5a6-4f17-b52d-7faf525d17f8/MicrosoftEdgeWebview2Setup.exe}"
 
 export WINEPREFIX="$PREFIX"
 export WINEARCH="${NEXUS_MT5_WINEARCH:-win64}"
@@ -99,13 +101,30 @@ cmd_install() {
 
     sha256sum "$CACHE/mt5setup.exe" | tee "$CACHE/mt5setup.exe.sha256"
 
-    # The current MetaQuotes installer can return from /auto before its
-    # terminal payload is materialized. Initialize the isolated prefix, run
-    # the installer, then wait for the actual executable instead of using
-    # installer process exit as the completion signal.
+    # MetaQuotes' current Linux installation flow provisions WebView2 before
+    # starting the terminal installer. Without it, the bootstrapper can exit
+    # without materializing terminal64.exe under Wine.
+    if [ ! -f "$WEBVIEW_CACHE" ]; then
+        log "downloading Microsoft WebView2 runtime"
+        curl -fL --retry 3 --max-time 300 -o "$WEBVIEW_CACHE" "$MT5_WEBVIEW2_URL" \
+            || { log "ERROR: WebView2 download failed"; return 1; }
+    fi
+    sha256sum "$WEBVIEW_CACHE" | tee "$WEBVIEW_CACHE.sha256"
+
     log "initializing isolated Wine prefix ($WINEARCH)"
     "$WINE_BIN" wineboot --init > "$LOGDIR/wineboot.log" 2>&1 || true
-    "$WINE_BIN" winecfg /v win10 > "$LOGDIR/winecfg.log" 2>&1 || true
+    "$WINE_BIN" winecfg /v win11 > "$LOGDIR/winecfg.log" 2>&1 || true
+
+    log "installing Microsoft WebView2 runtime"
+    set +e
+    timeout 300 "$WINE_BIN" "$WEBVIEW_CACHE" /silent /install > "$LOGDIR/webview2_install.log" 2>&1
+    local webview_rc=$?
+    set -e
+    if [ "$webview_rc" -ne 0 ]; then
+        log "ERROR: WebView2 installer failed rc=$webview_rc"
+        tail -100 "$LOGDIR/webview2_install.log" || true
+        return 1
+    fi
 
     local install_log="$LOGDIR/install_$(date +%Y%m%d_%H%M%S).log"
     log "running official MT5 installer (/auto) — no sudo, user prefix only"
