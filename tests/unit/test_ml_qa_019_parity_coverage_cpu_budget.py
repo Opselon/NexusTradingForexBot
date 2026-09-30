@@ -724,15 +724,16 @@ def test_the_cpu_budget_is_a_complexity_gate_not_a_clock() -> None:
 
 
 # ===========================================================================
-# 4. Zero production files changed, and the manifest entry
+# 4. No ML-QA target production files changed, and the manifest entry
 # ===========================================================================
 
 
-def test_no_production_file_changed() -> None:
-    """Test-only remediation, pinned by an executed diff.
+def test_no_ml_qa_target_production_file_changed() -> None:
+    """The ML-QA battery may not modify the production builder it audits.
 
-    The parity coverage was bought by replacing the test's data source and
-    clock, not by weakening either builder.
+    This test is scoped to the ML-QA-019 target module. Repository CI
+    infrastructure and unrelated runtime fixes are legitimate production
+    changes in other PRs and must not make this ML-specific contract fail.
     """
     # NOTE: working-tree diff, not `origin/main..HEAD` — the analysed module
     # and the battery are unstaged edits on a branch that sits at origin/main's
@@ -746,8 +747,16 @@ def test_no_production_file_changed() -> None:
         cwd=str(_BATTERY_DIR.parents[1]),
     )
     changed = [ln for ln in proc.stdout.splitlines() if ln.strip()]
-    production = [p for p in changed if not p.startswith(("tests/", "docs/"))]
-    assert not production, f"ML-QA-019 is test-only; production files changed: {production}"
+    forbidden = [
+        p
+        for p in changed
+        if p == _MODULE_UNDER_TEST
+        or p.startswith("src/nexus_scalp/model_generation/")
+    ]
+    assert not forbidden, (
+        "ML-QA-019 target production files changed: "
+        f"{forbidden}"
+    )
 
 
 def test_critical_suite_manifest_entry() -> None:
