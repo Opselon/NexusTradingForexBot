@@ -569,7 +569,9 @@ def main() -> int:
         # a live PAPER engine can legitimately add a signal/account snapshot
         # between the end of the copy and the parity read. Comparing an active
         # writer against a moving source would manufacture false corruption.
-        stop_app(proc)
+        stop_result = stop_app(proc)
+        wait_port_free(port)
+        evidence["shutdown_sqlite"] = stop_result
         proc = None
 
         pg_conn = open_db("postgres", sqlite_work)
@@ -610,13 +612,6 @@ def main() -> int:
             raise RuntimeError(f"PostgreSQL query corpus failed: {pg_queries['failed']}")
         evidence["phases"].append({"phase": "postgres_frozen_query_parity", "status": "PASS"})
 
-        # Stop the pre-migration SQLite process before validating the real
-        # PostgreSQL restart. Starting a second process on the same port would
-        # otherwise create a false readiness failure.
-        stop_result = stop_app(proc)
-        wait_port_free(port)
-        evidence["shutdown_sqlite"] = stop_result
-        proc = None
         port = find_free_port(port + 1)
         base = f"http://127.0.0.1:{port}"
         proc = start_app(
