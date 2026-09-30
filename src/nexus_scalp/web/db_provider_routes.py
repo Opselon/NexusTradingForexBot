@@ -35,6 +35,7 @@ from nexus_scalp.database.connection_url import (
     is_parse_failure,
     parse_pg_url,
 )
+from nexus_scalp.database.maintenance_gate import engine_is_running, maintenance_active, migration_guard
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.settings.provider_options import (
     OPTION_KEYS,
@@ -57,21 +58,21 @@ def _lifecycle_manager() -> Any:
     return ProviderLifecycleManager()
 
 
-def _engine_is_running(request: Request) -> bool:
-    """Return the authoritative runtime writer state for DB maintenance gates."""
-    engine = getattr(request.app.state, "engine", None)
-    return bool(engine is not None and getattr(engine, "_running", False))
-
-
 def _reject_if_engine_running(request: Request, request_id: str) -> dict[str, Any] | None:
-    """DB migration must never race an active application writer."""
-    if not _engine_is_running(request):
-        return None
-    return _err(
-        "DB_ENGINE_MUST_BE_STOPPED",
-        "Database migration requires the trading engine to be stopped.",
-        request_id,
-    )
+    """Reject maintenance when the engine or another maintenance operation is active."""
+    if engine_is_running(request.app):
+        return _err(
+            "DB_ENGINE_MUST_BE_STOPPED",
+            "Database migration requires the trading engine to be stopped.",
+            request_id,
+        )
+    if maintenance_active(request.app):
+        return _err(
+            "DB_MAINTENANCE_IN_PROGRESS",
+            "Another database maintenance operation is already running.",
+            request_id,
+        )
+    return None
 
 
 router = APIRouter(prefix="/api/db/manage")
@@ -337,29 +338,34 @@ def transition_migrate(payload: dict[str, Any], request: Request) -> dict[str, A
         from nexus_scalp.database.config import DatabaseConfig, load_database_config
         from nexus_scalp.database.migrate_engine import MigrationOptions, SqliteToPostgresMigrator
 
+        blocked = _reject_if_engine_running(request, request_id)
+        if blocked is not None:
+            return blocked
+
         mgr = _lifecycle_manager()
-        mgr.mark_migrating()
-        source = load_database_config("audit")
-        target = DatabaseConfig.for_postgres("audit")
-        if not source.is_sqlite:
-            return _err(
-                "DB_TRANSITION_MIGRATE_INVALID",
-                "Migration requires SQLite as the source.",
-                request_id,
-            )
-        report = SqliteToPostgresMigrator(
-            source,
-            target,
-            MigrationOptions(batch_size=int((payload or {}).get("batch_size") or 2000)),
-        ).run()
-        passed = report.status == "SUCCESS"
-        mgr.mark_migration(passed, "Migration failed" if not passed else "")
-        report_payload = _redacted(report, request_id)
-        if report_payload.get("errors"):
-            report_payload["errors"] = [
-                "One or more migration errors occurred. Check server logs for details."
-            ]
-        return {"success": passed, "report": report_payload, "state": mgr.get_state().to_dict()}
+        with migration_guard(request.app):
+            mgr.mark_migrating()
+            source = load_database_config("audit")
+            target = DatabaseConfig.for_postgres("audit")
+            if not source.is_sqlite:
+                return _err(
+                    "DB_TRANSITION_MIGRATE_INVALID",
+                    "Migration requires SQLite as the source.",
+                    request_id,
+                )
+            report = SqliteToPostgresMigrator(
+                source,
+                target,
+                MigrationOptions(batch_size=int((payload or {}).get("batch_size") or 2000)),
+            ).run()
+            passed = report.status == "SUCCESS"
+            mgr.mark_migration(passed, "Migration failed" if not passed else "")
+            report_payload = _redacted(report, request_id)
+            if report_payload.get("errors"):
+                report_payload["errors"] = [
+                    "One or more migration errors occurred. Check server logs for details."
+                ]
+            return {"success": passed, "report": report_payload, "state": mgr.get_state().to_dict()}
     except Exception as exc:
         log_web_error(logger, "/api/db/manage/transition/migrate", request_id, exc)
         return _err(
