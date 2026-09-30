@@ -178,6 +178,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=18787)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--frontend-dist", type=Path)
+    parser.add_argument("--workers", type=int, default=8)
     args = parser.parse_args()
 
     binary = Path(args.binary).resolve()
@@ -230,7 +231,8 @@ def main() -> int:
         except urllib.error.HTTPError as exc:
             unauth_status = int(exc.code)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+        workers = max(1, min(args.workers, 32))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
             results = list(
                 pool.map(
                     lambda item: http_probe(base, item[0], item[1]),
@@ -261,6 +263,7 @@ def main() -> int:
             "binary": str(binary),
             "port": args.port,
             "python_origin": "",
+            "workers": workers,
         }
 
         if args.frontend_dist:
