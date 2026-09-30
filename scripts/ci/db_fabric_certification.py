@@ -762,9 +762,7 @@ def main() -> int:
         try:
             reverse_pg_schema = tables_and_columns("postgres", pg_conn_reverse)
             reverse_pg_counts = row_counts(pg_conn_reverse, reverse_pg_schema)
-            reverse_pg_queries = query_corpus(
-                "postgres", pg_conn_reverse, reverse_pg_schema
-            )
+            reverse_pg_queries = query_corpus("postgres", pg_conn_reverse, reverse_pg_schema)
         finally:
             pg_conn_reverse.close()
 

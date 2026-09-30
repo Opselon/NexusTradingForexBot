@@ -11,9 +11,7 @@ from nexus_scalp.database.maintenance_gate import (
 
 
 def _app(running: bool = False) -> SimpleNamespace:
-    return SimpleNamespace(
-        state=SimpleNamespace(engine=SimpleNamespace(_running=running))
-    )
+    return SimpleNamespace(state=SimpleNamespace(engine=SimpleNamespace(_running=running)))
 
 
 def test_migration_guard_rejects_active_engine() -> None:
