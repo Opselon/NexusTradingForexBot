@@ -998,8 +998,14 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-mt5-wine-runtime-${{ github.run_id }}
+          # $NEXUS_MT5_ROOT wholesale is NOT uploadable: the Wine prefix's
+          # dosdevices/ holds per-drive symlinks back to the host filesystem
+          # (z: -> /), so the artifact walk descends into / and dies with
+          # EACCES on paths like dosdevices/z:/boot/efi. Upload the
+          # diagnostics that actually matter instead of the whole prefix.
           path: |
-            ${{ runner.temp }}/nexus-mt5/
+            ${{ runner.temp }}/nexus-mt5/logs/
+            ${{ runner.temp }}/nexus-mt5/cache/*.sha256
             ${{ runner.temp }}/nexus-mt5-runtime.log
             ${{ runner.temp }}/nexus-mt5-xvfb.log
           if-no-files-found: error
