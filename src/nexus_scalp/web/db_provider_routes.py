@@ -57,6 +57,23 @@ def _lifecycle_manager() -> Any:
     return ProviderLifecycleManager()
 
 
+def _engine_is_running(request: Request) -> bool:
+    """Return the authoritative runtime writer state for DB maintenance gates."""
+    engine = getattr(request.app.state, "engine", None)
+    return bool(engine is not None and getattr(engine, "_running", False))
+
+
+def _reject_if_engine_running(request: Request, request_id: str) -> dict[str, Any] | None:
+    """DB migration must never race an active application writer."""
+    if not _engine_is_running(request):
+        return None
+    return _err(
+        "DB_ENGINE_MUST_BE_STOPPED",
+        "Database migration requires the trading engine to be stopped.",
+        request_id,
+    )
+
+
 router = APIRouter(prefix="/api/db/manage")
 
 
@@ -401,6 +418,10 @@ def reverse_migrate(payload: dict[str, Any], request: Request) -> dict[str, Any]
     """Stream operational data from PostgreSQL back to SQLite."""
     request_id = request_id_from_request(request)
     try:
+        blocked = _reject_if_engine_running(request, request_id)
+        if blocked is not None:
+            return blocked
+
         from nexus_scalp.database.config import DatabaseConfig, load_database_config
         from nexus_scalp.database.migrate_engine import MigrationOptions
         from nexus_scalp.database.migrate_reverse import PostgresToSqliteMigrator

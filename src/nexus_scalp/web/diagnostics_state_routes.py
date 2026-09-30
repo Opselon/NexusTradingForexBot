@@ -1958,6 +1958,10 @@ def register_diagnostics_state_routes(
         `/api/db/manage/progress`.
         """
         try:
+            engine = getattr(app.state, "engine", None)
+            if engine is not None and bool(getattr(engine, "_running", False)):
+                return _err("DB_ENGINE_MUST_BE_STOPPED")
+
             import threading
 
             from nexus_scalp.database.config import DatabaseConfig
