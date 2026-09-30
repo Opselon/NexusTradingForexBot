@@ -716,6 +716,25 @@ def main() -> int:
             raise RuntimeError(f"PostgreSQL restart status failed: {post_restart}")
         evidence["phases"].append({"phase": "postgres_restart", "status": "PASS"})
 
+        # Establish the reverse-migration source baseline AFTER the actual
+        # PostgreSQL restart. Startup legitimately materializes schema_migrations
+        # and runtime state, so a pre-restart snapshot is not the state being
+        # reversed and must not be used as the reverse integrity baseline.
+        reverse_source_conn = open_db("postgres", sqlite_work)
+        reverse_pg_schema = tables_and_columns("postgres", reverse_source_conn)
+        reverse_pg_counts = row_counts(reverse_source_conn, reverse_pg_schema)
+        reverse_pg_queries = query_corpus("postgres", reverse_source_conn, reverse_pg_schema)
+        reverse_source_conn.close()
+        evidence["postgres_reverse_source_before_quiesce"] = {
+            "schema": reverse_pg_schema,
+            "counts": reverse_pg_counts,
+            "queries": reverse_pg_queries,
+        }
+        if reverse_pg_queries["failed"]:
+            raise RuntimeError(
+                f"PostgreSQL reverse-source query corpus failed: {reverse_pg_queries['failed']}"
+            )
+
         # Reverse migration is a destructive-risk maintenance operation for the
         # destination copy if application writers remain active. Quiesce the
         # actual engine through the same operator API the UI uses, then wait for
@@ -848,12 +867,16 @@ def main() -> int:
         # The app is stopped, so exact counts are meaningful. Migration checkpoint
         # tables are metadata and are intentionally excluded from domain equality.
         final_count_diffs = {
-            table: {"postgres": pg_counts[table], "sqlite_final": final_counts.get(table)}
-            for table in pg_counts
+            table: {"postgres": reverse_pg_counts[table], "sqlite_final": final_counts.get(table)}
+            for table in reverse_pg_counts
             if table not in INTERNAL_MIGRATION_TABLES
             and table not in EPHEMERAL_RUNTIME_TABLES
-            and pg_counts[table] != final_counts.get(table)
+            and reverse_pg_counts[table] != final_counts.get(table)
         }
+        # Initial SQLite is a preservation floor: a live migration may add rows,
+        # but it must never lose rows that existed before migration. Exact
+        # source->destination equality for the reverse operation is enforced by
+        # reverse_report above while the engine is quiesced.
         preserved_sqlite_diffs = {
             table: {
                 "sqlite_before": sqlite_counts[table],
@@ -862,7 +885,10 @@ def main() -> int:
             for table in sqlite_counts
             if table not in INTERNAL_MIGRATION_TABLES
             and table not in EPHEMERAL_RUNTIME_TABLES
-            and sqlite_counts[table] != final_counts.get(table)
+            and (
+                final_counts.get(table) is None
+                or final_counts.get(table, -1) < sqlite_counts[table]
+            )
         }
         evidence["sqlite_final"] = {
             "schema": final_schema,
@@ -878,7 +904,12 @@ def main() -> int:
             or preserved_sqlite_diffs
             or final_queries["failed"]
         ):
-            raise RuntimeError("reverse-migration SQLite verification failed")
+            raise RuntimeError(
+                "reverse-migration SQLite verification failed: "
+                f"schema={final_schema_compare} "
+                f"reverse_count_diffs={final_count_diffs} "
+                f"preservation_diffs={preserved_sqlite_diffs}"
+            )
 
         evidence["phases"].append({"phase": "sqlite_reverse_frozen_verification", "status": "PASS"})
 
@@ -900,6 +931,7 @@ def main() -> int:
         evidence["sqlite_restart_status"] = sqlite_restart_status
         evidence["phases"].append({"phase": "sqlite_restart", "status": "PASS"})
 
+        evidence["reverse_source_counts"] = reverse_pg_counts
         evidence["benchmark"] = {
             "sqlite_before_p95_ms": sqlite_queries["p95_ms"],
             "postgres_p95_ms": pg_queries["p95_ms"],
