@@ -135,7 +135,33 @@ cmd_install() {
     log "installer process rc=$installer_rc; waiting for terminal payload"
 
     local found=""
-    for _ in $(seq 1 180); do
+    for _ in $(seq 1 60); do
+        found="$(find "$PREFIX/drive_c" -type f -iname "terminal64.exe" -print -quit 2>/dev/null)"
+        [ -n "$found" ] && break
+        sleep 1
+    done
+
+    # Some Wine/MetaQuotes builds return from /auto without completing the
+    # GUI bootstrap. Under Xvfb the normal installer is safe to run headless
+    # and is the official fallback used by MetaQuotes' Linux flow.
+    if [ -z "$found" ]; then
+        local fallback_log="$LOGDIR/install_fallback_$(date +%Y%m%d_%H%M%S).log"
+        log "terminal not materialized after /auto; retrying official installer in GUI mode"
+        set +e
+        timeout 300 "$WINE_BIN" "$CACHE/mt5setup.exe" > "$fallback_log" 2>&1
+        local fallback_rc=$?
+        set -e
+        log "GUI installer rc=$fallback_rc; waiting for terminal payload"
+    fi
+
+    for _ in $(seq 1 120); do
+        found="$(find "$PREFIX/drive_c" -type f -iname "terminal64.exe" -print -quit 2>/dev/null)"
+        if [ -z "$found" ]; then
+            found="$(find "$PREFIX/drive_c" -type f -iname "terminal.exe" -print -quit 2>/dev/null)"
+        fi
+        [ -n "$found" ] && break
+        sleep 1
+    done
         found="$(find "$PREFIX/drive_c" -type f -iname "terminal64.exe" -print -quit 2>/dev/null)"
         if [ -z "$found" ]; then
             found="$(find "$PREFIX/drive_c" -type f -iname "terminal.exe" -print -quit 2>/dev/null)"
