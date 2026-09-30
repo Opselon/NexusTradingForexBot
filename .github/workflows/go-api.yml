@@ -90,6 +90,10 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: React JavaScript tests
+        working-directory: frontend
+        run: npm test
+
       - name: Build Go API for React runtime integration
         working-directory: go-api
         shell: bash
