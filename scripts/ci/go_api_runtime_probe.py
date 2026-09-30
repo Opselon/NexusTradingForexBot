@@ -116,6 +116,7 @@ def http_probe(base: str, method: str, path: str) -> dict[str, Any]:
 
     raise AssertionError("unreachable")
 
+
 def wait_ready(base: str) -> None:
     deadline = time.monotonic() + STARTUP_TIMEOUT
     last_error = ""
