@@ -482,7 +482,6 @@ def main() -> int:
         # Stop the pre-migration SQLite process before validating the real
         # PostgreSQL restart. Starting a second process on the same port would
         # otherwise create a false readiness failure.
-        stop_app(proc)
         proc = start_app(args.port, args.settings_db, sqlite_work, "postgresql")
         wait_ready(base)
         post_restart = http_json(base, "GET", "/api/status")
