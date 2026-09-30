@@ -2071,7 +2071,7 @@ def register_debug_research_routes(
             # degraded/unknown review conditions also surface as reasons
             if payload["decision"] == "REVIEW_REQUIRED":
                 payload["blocking_reasons"] = [
-                    f"{check_id} [{check.get('status')}"
+                    f"{check_id} [{check.get('status')}]"
                     for check_id, check in engine.dashboard().get("rows", {}).items()
                     if isinstance(check, dict)
                     and check.get("status") in ("DEGRADED", "UNKNOWN")
