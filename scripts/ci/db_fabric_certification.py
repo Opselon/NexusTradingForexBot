@@ -90,8 +90,14 @@ def write_json(path: Path, value: Any) -> None:
 
 
 def http_json(
-    base: str, method: str, path: str, payload: dict[str, Any] | None = None
+    base: str,
+    method: str,
+    path: str,
+    payload: dict[str, Any] | None = None,
+    *,
+    timeout: float = QUERY_TIMEOUT,
 ) -> dict[str, Any]:
+    """Call the UI API with an explicit timeout and actionable timing context."""
     data = None
     headers = {
         "Authorization": "Bearer " + os.environ.get("NSE_WEB_AUTH_TOKEN", "ci-runtime-token")
@@ -99,9 +105,26 @@ def http_json(
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
+
     req = urllib.request.Request(base.rstrip("/") + path, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=QUERY_TIMEOUT) as response:
-        return json.loads(response.read().decode("utf-8", "replace") or "{}")
+    started = time.perf_counter()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            body = response.read().decode("utf-8", "replace") or "{}"
+    except Exception as exc:
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        raise RuntimeError(
+            f"HTTP {method} {path} failed after {elapsed_ms:.1f}ms "
+            f"(timeout={timeout:.1f}s): {type(exc).__name__}: {exc}"
+        ) from exc
+
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+    print(
+        f"[DB-FABRIC][HTTP] {method} {path} completed in {elapsed_ms:.1f}ms "
+        f"(timeout={timeout:.1f}s)",
+        flush=True,
+    )
+    return json.loads(body)
 
 
 def wait_ready(
@@ -698,6 +721,7 @@ def main() -> int:
             "POST",
             "/api/db/manage/reverse-migrate",
             {"batch_size": 1000, "sqlite_path": str(sqlite_work)},
+            timeout=120.0,
         )
         if reverse.get("success") is not True:
             raise RuntimeError(f"reverse migration failed: {reverse}")
