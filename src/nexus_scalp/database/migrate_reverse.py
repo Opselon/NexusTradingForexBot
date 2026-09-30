@@ -110,7 +110,10 @@ class PostgresToSqliteMigrator:
                 try:
                     dst_driver.execute(statement)
                 except Exception as exc:
-                    if _INDEX_RE.match(statement) and "no such column" in str(exc).lower():
+                    if _INDEX_RE.match(statement) and (
+                        "no such column" in str(exc).lower()
+                        or "has no column named" in str(exc).lower()
+                    ):
                         logger.warning(
                             "[DB-MIGRATE] skipping index creation for missing column: %s (%s)",
                             statement.strip(),
