@@ -458,6 +458,7 @@ def source_read_query_probe(
     conn: Any,
     provider: str,
     source: dict[str, Any],
+    inventory: dict[str, Any],
 ) -> dict[str, Any]:
     """Execute every unique provider-compatible literal read query from src.
 
@@ -468,9 +469,27 @@ def source_read_query_probe(
     is a certification failure rather than an informational warning.
     """
     unique: dict[str, dict[str, Any]] = {}
+    out_of_scope: list[dict[str, Any]] = []
+    live_tables = {str(name).casefold() for name in inventory}
+
     for item in source.get("statements", []):
         sql = " ".join(str(item.get("sql", "")).split())
         if not sql or not _provider_sql_supported(sql, provider):
+            continue
+        referenced = _referenced_tables(sql)
+        unknown = sorted(
+            table for table in referenced if "." not in table and table not in live_tables
+        )
+        if unknown:
+            out_of_scope.append(
+                {
+                    "status": "REJECTED_OUT_OF_SCOPE",
+                    "source": item,
+                    "sql": sql,
+                    "reason": "references table(s) outside active provider database",
+                    "tables": unknown,
+                }
+            )
             continue
         unique.setdefault(sql, item)
 
@@ -508,9 +527,11 @@ def source_read_query_probe(
     return {
         "query_count": len(results),
         "unique_query_count": len(unique),
+        "out_of_scope_count": len(out_of_scope),
         "passed": len(results) - len(failures),
         "failed": len(failures),
         "failures": failures[:100],
+        "out_of_scope": out_of_scope[:200],
         "queries": results,
     }
 
@@ -542,7 +563,7 @@ def main() -> int:
         row_counts = live_row_counts(conn, inventory)
         workload = live_query_battery(conn, args.provider, inventory)
         source = source_sql_inventory()
-        source_query_probe = source_read_query_probe(conn, args.provider, source)
+        source_query_probe = source_read_query_probe(conn, args.provider, source, inventory)
     finally:
         conn.close()
 
@@ -575,6 +596,7 @@ def main() -> int:
         "query_failures": workload["failed"],
         "source_query_failures": source_query_probe["failed"],
         "source_read_queries": source_query_probe["query_count"],
+        "source_out_of_scope_queries": source_query_probe["out_of_scope_count"],
         "p95_ms": workload["p95_ms"],
         "literal_sql_sites": source["literal_statement_count"],
         "dynamic_sql_sites": source["dynamic_sql_sites"],
