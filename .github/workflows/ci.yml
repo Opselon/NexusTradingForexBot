@@ -890,6 +890,7 @@ jobs:
             ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/provider_runtime_soak.json
             ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/runtime.log
             ${{ runner.temp }}/nse-runtime-${{ matrix.provider }}/audit.db
+            artifacts/models/scalp/XAUUSD/70d_liquidity/
           if-no-files-found: error
           retention-days: 14
 
@@ -944,6 +945,16 @@ jobs:
           path: ${{ runner.temp }}/db-fabric/input
           merge-multiple: true
 
+      - name: Restore certified model bundle from SQLite runtime lane
+        run: |
+          set -euo pipefail
+          model_pt="$(find "$RUNNER_TEMP/db-fabric/input" -type f -name model.pt -print -quit)"
+          test -n "$model_pt"
+          model_dir="$(dirname "$model_pt")"
+          target="artifacts/models/scalp/XAUUSD/70d_liquidity"
+          mkdir -p "$target"
+          cp "$model_dir"/* "$target"/
+
       - name: Locate SQLite audit database
         run: |
           set -euo pipefail
@@ -970,8 +981,6 @@ jobs:
           docker logs nse-db-fabric-pg | tail -120 || true
           exit 1
 
-      - name: Provision certified runtime model
-        run: python scripts/ci/runtime_gate.py --json --evidence
 
       - name: Prepare deterministic market data
         run: |
