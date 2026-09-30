@@ -157,6 +157,18 @@ def memory_summary(
 ) -> dict[str, Any]:
     """Builds the structured learning context (spec 24 / 81) — this is what
     the next generation's planner / LLM prompt consumes."""
+    normalized_summaries: list[GenerationSummary] = []
+    for raw in summaries:
+        if isinstance(raw, GenerationSummary):
+            normalized_summaries.append(raw)
+            continue
+        if isinstance(raw, dict):
+            try:
+                normalized_summaries.append(GenerationSummary.model_validate(raw))
+            except Exception:
+                continue
+    summaries = normalized_summaries
+
     # Registry reads are provider-shaped rows, but legacy/corrupt rows can
     # still round-trip as scalar JSON values. Ignore those rows rather than
     # turning a diagnostic memory endpoint into a 500.
