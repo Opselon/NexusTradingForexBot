@@ -207,11 +207,7 @@ class PostgresToSqliteMigrator:
                 )
             destination_by_key[key] = name
 
-        missing = [
-            source_by_key[key]
-            for key in source_by_key
-            if key not in destination_by_key
-        ]
+        missing = [source_by_key[key] for key in source_by_key if key not in destination_by_key]
         if missing:
             raise RuntimeError(
                 f"Destination SQLite table {table} is missing source columns: {missing}"
@@ -221,7 +217,6 @@ class PostgresToSqliteMigrator:
             [source_by_key[name.casefold()] for name in destination_columns],
             destination_columns,
         )
-
 
     def _migrate_table(
         self,
@@ -252,10 +247,7 @@ class PostgresToSqliteMigrator:
         source_col_str = ", ".join(f'"{name}"' for name in source_cols)
         destination_col_str = ", ".join(f'"{name}"' for name in destination_cols)
         qmarks = ", ".join("?" for _ in destination_cols)
-        insert_sql = (
-            f'INSERT OR REPLACE INTO "{table}" '
-            f'({destination_col_str}) VALUES ({qmarks})'
-        )
+        insert_sql = f'INSERT OR REPLACE INTO "{table}" ({destination_col_str}) VALUES ({qmarks})'
 
         batch_size = self.opts.batch_size or DEFAULT_BATCH_SIZE
         copied = int((checkpoint or {}).get("rows_copied") or 0)
@@ -297,10 +289,7 @@ class PostgresToSqliteMigrator:
 
             # Source rows use the PostgreSQL spelling; destination INSERTs use
             # the SQLite spelling. The mapping above makes this case-safe.
-            tuples = [
-                tuple(row.get(column) for column in source_cols)
-                for row in rows
-            ]
+            tuples = [tuple(row.get(column) for column in source_cols) for row in rows]
             dst.executemany(insert_sql, tuples)
 
             copied += len(rows)
@@ -385,9 +374,7 @@ class PostgresToSqliteMigrator:
                     "match": match,
                 }
                 try:
-                    source_columns, destination_columns = self._column_mapping(
-                        src, dst, t
-                    )
+                    source_columns, destination_columns = self._column_mapping(src, dst, t)
                 except RuntimeError as exc:
                     row_ok = False
                     errors.append(str(exc))
@@ -409,12 +396,8 @@ class PostgresToSqliteMigrator:
                     destination_order = next(
                         name for name in destination_columns if name.casefold() == order_key
                     )
-                    source_digest = self._table_digest(
-                        src, t, source_columns, source_order
-                    )
-                    dest_digest = self._table_digest(
-                        dst, t, destination_columns, destination_order
-                    )
+                    source_digest = self._table_digest(src, t, source_columns, source_order)
+                    dest_digest = self._table_digest(dst, t, destination_columns, destination_order)
                     detail.update(
                         {
                             "source_digest": source_digest,
