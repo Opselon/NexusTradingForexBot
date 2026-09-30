@@ -597,6 +597,68 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
             time.sleep(0.002)
         return record.message_id if record.status == "DELIVERED" else None
 
+    def send_and_wait(
+        self,
+        html_text: str,
+        reply_to_message_id: int | None = None,
+        *,
+        severity: str = "INFO",
+        event_type: str = "GENERIC",
+        correlation_id: str | None = None,
+        wait_timeout_seconds: float = 35.0,
+    ) -> dict[str, Any]:
+        """Queue a notification and wait for its terminal worker result.
+
+        Separate from ``send()`` so hot callers retain the 50ms acknowledgement
+        contract while CI/reporting can wait for a real terminal delivery state.
+        """
+        done = threading.Event()
+        callback_result: dict[str, Any] = {"message_id": None}
+
+        def _callback(message_id: int | None) -> None:
+            callback_result["message_id"] = message_id
+            done.set()
+
+        self.send(
+            html_text,
+            reply_to_message_id=reply_to_message_id,
+            callback=_callback,
+            severity=severity,
+            event_type=event_type,
+            correlation_id=correlation_id,
+        )
+
+        timeout = max(0.1, float(wait_timeout_seconds))
+        if not done.wait(timeout):
+            return {
+                "ok": False,
+                "category": TELEGRAM_TIMEOUT,
+                "retryable": True,
+                "status": "TIMEOUT",
+                "message_id": None,
+                "safe_message": f"delivery did not reach a terminal state within {timeout:.1f}s",
+            }
+
+        message_id = callback_result.get("message_id")
+        if message_id is not None:
+            return {
+                "ok": True,
+                "category": "DELIVERED",
+                "retryable": False,
+                "status": "DELIVERED",
+                "message_id": message_id,
+            }
+
+        health = self.health_state()
+        return {
+            "ok": False,
+            "category": health.get("failure_category") or TELEGRAM_UNKNOWN_ERROR,
+            "retryable": False,
+            "status": "FAILED_FINAL",
+            "message_id": None,
+            "safe_message": "Telegram worker completed without delivery",
+        }
+
     # =====================================================================
     # Worker dispatch (HTTP + verification + bounded retry)
     # =====================================================================

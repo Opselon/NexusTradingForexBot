@@ -381,11 +381,18 @@ class CITelegramReporter:
         ok = True
         for chunk in chunks:
             try:
-                mid = self.notifier.send(chunk, event_type=event_type, severity="INFO")
-                if mid is None:
+                delivery = self.notifier.send_and_wait(
+                    chunk,
+                    event_type=event_type,
+                    severity="INFO",
+                    wait_timeout_seconds=35.0,
+                )
+                if not delivery.get("ok"):
                     ok = False
                 else:
-                    sent_ids.append(mid)
+                    mid = delivery.get("message_id")
+                    if isinstance(mid, int):
+                        sent_ids.append(mid)
             except Exception as err:
                 logger.error("[CI_TELEGRAM] event=SEND_FAILED error=%s", err)
                 ok = False
