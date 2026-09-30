@@ -36,6 +36,11 @@ on:
     branches: [main, develop]
     paths:
       - "go-api/**"
+      - "frontend/**"
+      - "src/nexus_scalp/web/**"
+      - "api/migration/**"
+      - "scripts/ci/go_api_runtime_probe.py"
+      - "scripts/ci/check_go_react_api_contract.py"
       - ".github/workflows/go-api.yml"
   workflow_dispatch:
 
