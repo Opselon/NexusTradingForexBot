@@ -181,6 +181,48 @@ class PostgresToSqliteMigrator:
 
         return report
 
+    @staticmethod
+    def _column_mapping(src: Any, dst: Any, table: str) -> tuple[list[str], list[str]]:
+        """Map source columns to destination columns case-insensitively."""
+        source_columns = [str(c["name"]) for c in src.table_columns(table)]
+        destination_columns = [str(c["name"]) for c in dst.table_columns(table)]
+        source_by_key: dict[str, str] = {}
+        destination_by_key: dict[str, str] = {}
+
+        for name in source_columns:
+            key = name.casefold()
+            previous = source_by_key.get(key)
+            if previous is not None and previous != name:
+                raise RuntimeError(
+                    f"Ambiguous source columns on {table}: {previous!r} and {name!r}"
+                )
+            source_by_key[key] = name
+
+        for name in destination_columns:
+            key = name.casefold()
+            previous = destination_by_key.get(key)
+            if previous is not None and previous != name:
+                raise RuntimeError(
+                    f"Ambiguous destination columns on {table}: {previous!r} and {name!r}"
+                )
+            destination_by_key[key] = name
+
+        missing = [
+            source_by_key[key]
+            for key in source_by_key
+            if key not in destination_by_key
+        ]
+        if missing:
+            raise RuntimeError(
+                f"Destination SQLite table {table} is missing source columns: {missing}"
+            )
+
+        return (
+            [source_by_key[name.casefold()] for name in destination_columns],
+            destination_columns,
+        )
+
+
     def _migrate_table(
         self,
         src: Any,
@@ -197,17 +239,23 @@ class PostgresToSqliteMigrator:
             report.errors.append(message)
             raise RuntimeError(message)
 
-        cols = [c["name"] for c in dst.table_columns(table)]
-        if not cols:
+        source_cols, destination_cols = self._column_mapping(src, dst, table)
+        if not destination_cols:
             return
 
-        has_id = "id" in cols
-        order_col = "id" if has_id else cols[0]
+        source_by_key = {name.casefold(): name for name in source_cols}
+        destination_by_key = {name.casefold(): name for name in destination_cols}
+        order_key = "id" if "id" in destination_by_key else destination_cols[0].casefold()
+        source_order_col = source_by_key[order_key]
         total_rows = src.scalar(f"SELECT COUNT(*) FROM {table}") or 0
 
-        col_str = ", ".join(f'"{c}"' for c in cols)
-        qmarks = ", ".join("?" for _ in cols)
-        insert_sql = f'INSERT OR REPLACE INTO "{table}" ({col_str}) VALUES ({qmarks})'
+        source_col_str = ", ".join(f'"{name}"' for name in source_cols)
+        destination_col_str = ", ".join(f'"{name}"' for name in destination_cols)
+        qmarks = ", ".join("?" for _ in destination_cols)
+        insert_sql = (
+            f'INSERT OR REPLACE INTO "{table}" '
+            f'({destination_col_str}) VALUES ({qmarks})'
+        )
 
         batch_size = self.opts.batch_size or DEFAULT_BATCH_SIZE
         copied = int((checkpoint or {}).get("rows_copied") or 0)
@@ -236,23 +284,28 @@ class PostgresToSqliteMigrator:
             if last_val is not None:
                 is_pg = getattr(src, "config", None) and src.config.is_postgresql
                 ph = "%s" if is_pg else "?"
-                where = f'WHERE "{order_col}" > {ph}'
+                where = f'WHERE "{source_order_col}" > {ph}'
                 args.append(last_val)
 
             fetch_sql = (
-                f'SELECT {col_str} FROM "{table}" {where} '
-                f'ORDER BY "{order_col}" ASC LIMIT {batch_size}'
+                f'SELECT {source_col_str} FROM "{table}" {where} '
+                f'ORDER BY "{source_order_col}" ASC LIMIT {batch_size}'
+            )
             )
             rows = src.query(fetch_sql, tuple(args))
             if not rows:
                 break
 
-            # Convert row dicts to tuples in column order
-            tuples = [tuple(r.get(c) for c in cols) for r in rows]
+            # Source rows use the PostgreSQL spelling; destination INSERTs use
+            # the SQLite spelling. The mapping above makes this case-safe.
+            tuples = [
+                tuple(row.get(column) for column in source_cols)
+                for row in rows
+            ]
             dst.executemany(insert_sql, tuples)
 
             copied += len(rows)
-            last_val = rows[-1].get(order_col)
+            last_val = rows[-1].get(source_order_col)
             self._save_checkpoint(
                 dst,
                 table,
@@ -332,17 +385,50 @@ class PostgresToSqliteMigrator:
                     "dest_rows": d_cnt,
                     "match": match,
                 }
-                columns = [c["name"] for c in src.table_columns(t)]
-                dst_columns = {c["name"] for c in dst.table_columns(t)}
-                if columns and set(columns) <= dst_columns:
-                    order = next((c for c in columns if c == "id"), columns[0])
-                    source_digest = self._table_digest(src, t, columns, order)
-                    dest_digest = self._table_digest(dst, t, columns, order)
-                    detail.update({"source_digest": source_digest, "dest_digest": dest_digest})
+                try:
+                    source_columns, destination_columns = self._column_mapping(
+                        src, dst, t
+                    )
+                except RuntimeError as exc:
+                    row_ok = False
+                    errors.append(str(exc))
+                    details[t] = {
+                        **detail,
+                        "match": False,
+                        "column_mapping_error": str(exc),
+                    }
+                    continue
+
+                if source_columns and destination_columns:
+                    destination_keys = {name.casefold() for name in destination_columns}
+                    order_key = (
+                        "id" if "id" in destination_keys else destination_columns[0].casefold()
+                    )
+                    source_order = next(
+                        name for name in source_columns if name.casefold() == order_key
+                    )
+                    destination_order = next(
+                        name for name in destination_columns if name.casefold() == order_key
+                    )
+                    source_digest = self._table_digest(
+                        src, t, source_columns, source_order
+                    )
+                    dest_digest = self._table_digest(
+                        dst, t, destination_columns, destination_order
+                    )
+                    detail.update(
+                        {
+                            "source_digest": source_digest,
+                            "dest_digest": dest_digest,
+                            "source_columns": source_columns,
+                            "destination_columns": destination_columns,
+                        }
+                    )
                     detail["match"] = detail["match"] and source_digest == dest_digest
                     if source_digest != dest_digest:
                         row_ok = False
                         errors.append(f"Value digest mismatch on {t}")
+
                 details[t] = detail
 
             # Financial comparison on audit_ledger
