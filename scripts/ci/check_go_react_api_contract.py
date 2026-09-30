@@ -40,26 +40,53 @@ def go_routes() -> set[tuple[str, str]]:
     return routes
 
 
-def find_matching_paren(source: str, open_pos: int) -> int:
-    """Find a call's closing parenthesis while respecting quoted arguments."""
+def consume_js_string(source: str, start: int) -> int:
+    """Return the index immediately after a JS string/template literal."""
+    quote = source[start]
+    i = start + 1
+    while i < len(source):
+        ch = source[i]
+        if ch == "\\":
+            i += 2
+            continue
+        if quote == chr(96) and source.startswith("$" + "{", i):
+            i = consume_template_expression(source, i + 2)
+            continue
+        if ch == quote:
+            return i + 1
+        i += 1
+    raise ValueError("unterminated JavaScript string/template literal")
+
+
+def consume_template_expression(source: str, start: int) -> int:
+    """Return the index immediately after a balanced template expression."""
     depth = 1
-    quote: str | None = None
-    escaped = False
+    i = start
+    while i < len(source):
+        ch = source[i]
+        if ch in "'\"" or ch == chr(96):
+            i = consume_js_string(source, i)
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    raise ValueError("unterminated JavaScript template expression")
+
+
+def find_matching_paren(source: str, open_pos: int) -> int:
+    """Find a call's closing parenthesis, including nested JS templates."""
+    depth = 1
     i = open_pos + 1
     while i < len(source):
         ch = source[i]
-        if quote is not None:
-            if escaped:
-                escaped = False
-            elif ch == "\\":
-                escaped = True
-            elif ch == quote:
-                quote = None
-            i += 1
-            continue
         if ch in "'\"" or ch == chr(96):
-            quote = ch
-        elif ch == "(":
+            i = consume_js_string(source, i)
+            continue
+        if ch == "(":
             depth += 1
         elif ch == ")":
             depth -= 1
@@ -73,21 +100,14 @@ def split_top_level_args(args: str) -> list[str]:
     parts: list[str] = []
     start = 0
     paren = bracket = brace = 0
-    quote: str | None = None
-    escaped = False
+    i = 0
 
-    for i, ch in enumerate(args):
-        if quote is not None:
-            if escaped:
-                escaped = False
-            elif ch == "\\":
-                escaped = True
-            elif ch == quote:
-                quote = None
-            continue
+    while i < len(args):
+        ch = args[i]
         if ch in "'\"" or ch == chr(96):
-            quote = ch
-        elif ch == "(":
+            i = consume_js_string(args, i)
+            continue
+        if ch == "(":
             paren += 1
         elif ch == ")":
             paren -= 1
@@ -102,25 +122,18 @@ def split_top_level_args(args: str) -> list[str]:
         elif ch == "," and paren == bracket == brace == 0:
             parts.append(args[start:i].strip())
             start = i + 1
+        i += 1
+
     parts.append(args[start:].strip())
     return parts
 
 
 def first_literal_arg(args: str) -> str | None:
     args = args.lstrip()
-    if not args or args[0] not in "'\"" and args[0] != chr(96):
+    if not args or (args[0] not in "'\"" and args[0] != chr(96)):
         return None
-    quote = args[0]
-    escaped = False
-    for i in range(1, len(args)):
-        ch = args[i]
-        if escaped:
-            escaped = False
-        elif ch == "\\":
-            escaped = True
-        elif ch == quote:
-            return args[1:i]
-    return None
+    end = consume_js_string(args, 0)
+    return args[1:end - 1]
 
 
 def normalize_template_path(path: str) -> str:
@@ -129,52 +142,20 @@ def normalize_template_path(path: str) -> str:
     i = 0
     while i < len(path):
         if path.startswith("$" + "{", i):
-            depth = 1
-            j = i + 2
-            quote: str | None = None
-            escaped = False
-            while j < len(path):
-                ch = path[j]
-                if quote is not None:
-                    if escaped:
-                        escaped = False
-                    elif ch == "\\":
-                        escaped = True
-                    elif ch == quote:
-                        quote = None
-                else:
-                    if ch in "'\"" or ch == chr(96):
-                        quote = ch
-                    elif ch == "{":
-                        depth += 1
-                    elif ch == "}":
-                        depth -= 1
-                        if depth == 0:
-                            break
-                j += 1
-            if depth != 0:
-                return path
-
-            # A template expression after a slash is a path parameter.
-            # Other expressions are normally query builders/optional query
-            # strings and are not part of the backend route shape.
+            end = consume_template_expression(path, i + 2)
             if out and out[-1] == "/":
                 out.append("{param}")
             elif out and out[-1] == "?":
                 out.pop()
-            i = j + 1
+            i = end
             continue
-
-        if path[i] == "?" and "$" + "{" in path[i:]:
+        if path[i] == "?":
             break
         out.append(path[i])
         i += 1
 
     normalized = "".join(out).rstrip("?") or "/"
-    # Go route templates use {param_name}; React template literals use
-    # ${expression}. Compare both as the same structural path parameter.
     return re.sub(r"\{[^}]+\}", "{param}", normalized)
-
 
 def react_calls() -> list[dict[str, Any]]:
     root = ROOT / "frontend" / "src"
