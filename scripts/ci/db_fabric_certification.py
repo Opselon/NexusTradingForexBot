@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """End-to-end DB fabric certification for the real NSE application.
 
+# This lane certifies the complete SQLite ↔ PostgreSQL provider lifecycle.
+
 This is deliberately stronger than a provider smoke test:
   * starts the real launcher on SQLite using a disposable persisted DB;
   * runs a bounded provider-neutral query corpus and records every statement;
