@@ -330,8 +330,9 @@ def tables_and_columns(provider: str, conn: Any) -> dict[str, list[str]]:
 
 
 def row_counts(conn: Any, schema: dict[str, list[str]]) -> dict[str, int]:
+    """Count every table; only the query corpus remains bounded by MAX_TABLES."""
     counts: dict[str, int] = {}
-    for table in list(schema)[:MAX_TABLES]:
+    for table in schema:
         try:
             row = conn.execute('SELECT COUNT(*) FROM "' + table.replace('"', '""') + '"').fetchone()
             counts[table] = int(row[0] or 0)
@@ -410,7 +411,9 @@ EPHEMERAL_RUNTIME_TABLES = {
     "research_worker_heartbeat",
 }
 INTERNAL_MIGRATION_TABLES = {
+    # Forward/reverse checkpoint ledgers are migration metadata, not domain data.
     "_nse_migration_checkpoints",
+    "_nse_reverse_migration_checkpoints",
 }
 
 
@@ -448,6 +451,35 @@ def compare_states(left: dict[str, list[str]], right: dict[str, list[str]]) -> d
         "ephemeral_runtime_tables": sorted(EPHEMERAL_RUNTIME_TABLES & left_tables),
         "match": not missing_right and not extra_right and not column_diffs,
     }
+
+
+def reverse_schema_replay_tables(source_schema: dict[str, list[str]]) -> set[str]:
+    """Return tables production reverse migration may create from canonical schema replay."""
+    from nexus_scalp.database.migrate_reverse import _CREATE_TABLE_RE
+    from nexus_scalp.database.migration import schema_snapshot
+    from nexus_scalp.database.models import DatabaseDomain
+
+    def created_tables(statements: tuple[str, ...]) -> set[str]:
+        out: set[str] = set()
+        for statement in statements:
+            match = _CREATE_TABLE_RE.search(statement)
+            if match:
+                out.add(match.group(1))
+        return out
+
+    source_keys = {table.casefold() for table in source_schema}
+    expected = created_tables(schema_snapshot.replay_schema(domain=DatabaseDomain.AUDIT))
+    auxiliary = (
+        schema_snapshot.model_lifecycle_schema_statements,
+        schema_snapshot.strategy_factory_schema_statements,
+        schema_snapshot.ops_shadow_schema_statements,
+        schema_snapshot.ops_hygiene_schema_statements,
+    )
+    for extractor in auxiliary:
+        owner_tables = created_tables(tuple(extractor()))
+        if {table.casefold() for table in owner_tables} & source_keys:
+            expected.update(owner_tables)
+    return expected
 
 
 def main() -> int:
@@ -675,36 +707,41 @@ def main() -> int:
         switched_back = http_json(base, "POST", "/api/db/manage/provider", {"provider": "sqlite"})
         if switched_back.get("success") is not True:
             raise RuntimeError(f"provider switch back to SQLite failed: {switched_back}")
+
         stop_result = stop_app(proc)
         wait_port_free(port)
         wait_port_free(go_port)
         evidence["shutdown_postgres"] = stop_result
         proc = None
-        port, go_port = find_free_port_pair(port + 1)
-        base = f"http://127.0.0.1:{port}"
-        proc = start_app(port, args.settings_db, sqlite_work, "sqlite", config_path, go_port)
-        evidence["startup_sqlite_final"] = wait_ready(
-            base, proc, args.settings_db.parent / "db-fabric-sqlite.log"
-        )
-        base = evidence["startup_sqlite_final"]["base_url"]
 
+        # Freeze the reverse-migrated SQLite database BEFORE restarting NSE.
+        # Startup legitimately writes runtime-state rows; comparing after startup
+        # would manufacture false migration mismatches.
         final_conn = open_db("sqlite", sqlite_work)
         final_schema = tables_and_columns("sqlite", final_conn)
         final_counts = row_counts(final_conn, final_schema)
         final_queries = query_corpus("sqlite", final_conn, final_schema)
         final_conn.close()
 
-        # Reverse migration must reproduce the PostgreSQL source state, not the
-        # pre-migration SQLite skeleton: PostgreSQL can legitimately contain
-        # lazy/optional tables that were created while the app was running.
+        # The production reverse migrator replays the canonical AUDIT schema and
+        # conditionally replays auxiliary owners. Known schema-completion tables
+        # are valid; arbitrary extras remain a hard failure.
         final_schema_compare = compare_states(pg_schema, final_schema)
         allowed_preexisting = set(sqlite_schema) - set(pg_schema)
+        allowed_schema_replay = reverse_schema_replay_tables(pg_schema)
+        allowed_preexisting_keys = {table.casefold() for table in allowed_preexisting}
+        allowed_schema_replay_keys = {table.casefold() for table in allowed_schema_replay}
         unexpected_extra = [
             table
             for table in final_schema_compare["extra_right"]
-            if table not in allowed_preexisting
+            if table.casefold() not in allowed_preexisting_keys
+            and table.casefold() not in allowed_schema_replay_keys
         ]
         final_schema_compare["allowed_preexisting_extras"] = sorted(allowed_preexisting)
+        final_schema_compare["allowed_schema_replay_extras"] = sorted(
+            table for table in final_schema_compare["extra_right"]
+            if table.casefold() in allowed_schema_replay_keys
+        )
         final_schema_compare["unexpected_extra_right"] = unexpected_extra
         final_schema_compare["match"] = (
             not final_schema_compare["missing_right"]
@@ -712,20 +749,23 @@ def main() -> int:
             and not final_schema_compare["column_diffs"]
         )
 
+        # The app is stopped, so exact counts are meaningful. Migration checkpoint
+        # tables are metadata and are intentionally excluded from domain equality.
         final_count_diffs = {
             table: {"postgres": pg_counts[table], "sqlite_final": final_counts.get(table)}
             for table in pg_counts
-            if table not in EPHEMERAL_RUNTIME_TABLES and pg_counts[table] != final_counts.get(table)
+            if table not in INTERNAL_MIGRATION_TABLES
+            and table not in EPHEMERAL_RUNTIME_TABLES
+            and pg_counts[table] != final_counts.get(table)
         }
-        # Also guarantee that tables which existed only in the original
-        # SQLite skeleton were not lost during the PG -> SQLite round trip.
         preserved_sqlite_diffs = {
             table: {
                 "sqlite_before": sqlite_counts[table],
                 "sqlite_final": final_counts.get(table),
             }
             for table in sqlite_counts
-            if table not in EPHEMERAL_RUNTIME_TABLES
+            if table not in INTERNAL_MIGRATION_TABLES
+            and table not in EPHEMERAL_RUNTIME_TABLES
             and sqlite_counts[table] != final_counts.get(table)
         }
         evidence["sqlite_final"] = {
@@ -743,6 +783,26 @@ def main() -> int:
             or final_queries["failed"]
         ):
             raise RuntimeError("reverse-migration SQLite verification failed")
+
+        evidence["phases"].append({"phase": "sqlite_reverse_frozen_verification", "status": "PASS"})
+
+        # Exercise the requested final SQLite restart as a separate lifecycle gate.
+        # Do not compare persistent counts after this point because live runtime
+        # writers are allowed to create new operational state rows.
+        port, go_port = find_free_port_pair(port + 1)
+        base = f"http://127.0.0.1:{port}"
+        proc = start_app(port, args.settings_db, sqlite_work, "sqlite", config_path, go_port)
+        evidence["startup_sqlite_final"] = wait_ready(
+            base, proc, args.settings_db.parent / "db-fabric-sqlite.log"
+        )
+        base = evidence["startup_sqlite_final"]["base_url"]
+        sqlite_restart_status = http_json(base, "GET", "/api/status")
+        if not sqlite_restart_status.get("success", True) and sqlite_restart_status.get(
+            "status"
+        ) not in (200, "ok", "OK"):
+            raise RuntimeError(f"SQLite final restart status failed: {sqlite_restart_status}")
+        evidence["sqlite_restart_status"] = sqlite_restart_status
+        evidence["phases"].append({"phase": "sqlite_restart", "status": "PASS"})
 
         evidence["benchmark"] = {
             "sqlite_before_p95_ms": sqlite_queries["p95_ms"],

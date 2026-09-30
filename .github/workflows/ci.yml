@@ -1004,15 +1004,59 @@ jobs:
           }).write_parquet(path)
           PY
 
-      - name: Run end-to-end DB fabric certification
+      - name: Run end-to-end DB fabric certification with full trace
         run: |
-          set -o pipefail
+          set -uo pipefail
           mkdir -p "$RUNNER_TEMP/db-fabric/evidence"
+          log="$RUNNER_TEMP/db-fabric/certification.log"
+
+          # Stream complete Python stdout/stderr to Actions and persist the exact
+          # same stream. Capture the Python exit code explicitly.
+          set +e
+          set -x
           python -u scripts/ci/db_fabric_certification.py \
             --sqlite-db "$SQLITE_RUNTIME_DB" \
             --settings-db "$RUNNER_TEMP/db-fabric/settings.db" \
             --evidence-dir "$RUNNER_TEMP/db-fabric/evidence" \
-            --port 18090 2>&1 | tee "$RUNNER_TEMP/db-fabric/certification.log"
+            --port 18090 2>&1 | tee "$log"
+          rc=${PIPESTATUS[0]}
+          set +x
+
+          echo "DB_FABRIC_CERTIFICATION_RC=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo "=== DB FABRIC STRUCTURED FAILURE ==="
+            python - <<'PY' || true
+          import json
+          import os
+          from pathlib import Path
+
+          p = Path(os.environ["RUNNER_TEMP"]) / "db-fabric" / "evidence" / "db_fabric_certification.json"
+          if p.exists():
+              data = json.loads(p.read_text(encoding="utf-8"))
+              print(json.dumps({
+                  "status": data.get("status"),
+                  "errors": data.get("errors"),
+                  "phases": data.get("phases"),
+                  "final_count_diffs": data.get("final_count_diffs"),
+                  "preserved_sqlite_diffs": data.get("preserved_sqlite_diffs"),
+                  "final_schema_compare": data.get("final_schema_compare"),
+                  "traceback": data.get("traceback"),
+              }, indent=2, sort_keys=True, default=str))
+          else:
+              print("certification evidence file was not produced")
+          PY
+            echo "=== CERTIFICATION LOG: LAST 500 LINES ==="
+            tail -n 500 "$log" || true
+            echo "=== CERTIFICATION LOG: ERROR/FAIL FILTER ==="
+            grep -Ein 'error|fail|exception|traceback|mismatch|does not exist|cannot' "$log" | tail -n 250 || true
+            echo "=== APPLICATION LOG TAILS ==="
+            for f in "$RUNNER_TEMP"/db-fabric/db-fabric-*.log "$RUNNER_TEMP"/db-fabric/evidence/db-fabric-*.log; do
+              [ -f "$f" ] || continue
+              echo "===== $f ====="
+              tail -n 500 "$f" || true
+            done
+            exit "$rc"
+          fi
 
       - name: Run deep SQLite provider query certification
         run: |
@@ -1132,23 +1176,40 @@ jobs:
               raise SystemExit(1)
           PY
 
-      - name: Print DB fabric full diagnostics
+      - name: Print DB fabric diagnostics
         if: always()
         continue-on-error: true
         run: |
-          echo "=== DB FABRIC CERTIFICATION LOG ==="
-          cat "$RUNNER_TEMP/db-fabric/certification.log" 2>/dev/null || true
-          echo "=== DB FABRIC EVIDENCE ==="
-          cat "$RUNNER_TEMP/db-fabric/evidence/db_fabric_certification.json" 2>/dev/null || true
-          echo "=== ALL DB FABRIC FILES ==="
-          find "$RUNNER_TEMP/db-fabric" -type f -print | sort
-          echo "=== ALL DB FABRIC LOGS ==="
-          find "$RUNNER_TEMP/db-fabric" -type f -name '*.log' -print0 | while IFS= read -r -d '' f; do
+          echo "=== DB FABRIC DIAGNOSTIC SUMMARY ==="
+          if [ -f "$RUNNER_TEMP/db-fabric/evidence/db_fabric_certification.json" ]; then
+            python - <<'PY' || true
+          import json
+          import os
+          from pathlib import Path
+
+          p = Path(os.environ["RUNNER_TEMP"]) / "db-fabric" / "evidence" / "db_fabric_certification.json"
+          data = json.loads(p.read_text(encoding="utf-8"))
+          print(json.dumps({
+              "status": data.get("status"),
+              "errors": data.get("errors"),
+              "phases": data.get("phases"),
+              "final_count_diffs": data.get("final_count_diffs"),
+              "preserved_sqlite_diffs": data.get("preserved_sqlite_diffs"),
+              "final_schema_compare": data.get("final_schema_compare"),
+              "shutdown": data.get("shutdown"),
+          }, indent=2, sort_keys=True, default=str))
+          PY
+          fi
+          echo "=== CERTIFICATION LOG TAIL ==="
+          tail -n 500 "$RUNNER_TEMP/db-fabric/certification.log" 2>/dev/null || true
+          echo "=== APPLICATION WARN/ERROR TAILS ==="
+          for f in "$RUNNER_TEMP"/db-fabric/db-fabric-*.log; do
+            [ -f "$f" ] || continue
             echo "===== $f ====="
-            cat "$f" || true
+            grep -Ein 'warn|error|critical|exception|fatal|failed|cannot|mismatch' "$f" | tail -n 250 || true
           done
-          echo "=== POSTGRES CONTAINER LOG ==="
-          docker logs nse-db-fabric-pg 2>&1 || true
+          echo "=== POSTGRES CONTAINER LOG (TAIL) ==="
+          docker logs --tail 250 nse-db-fabric-pg 2>&1 || true
           echo "=== PROCESS SNAPSHOT ==="
           ps -ef | grep -E 'nexus|uvicorn|python|postgres' | grep -v grep || true
 
