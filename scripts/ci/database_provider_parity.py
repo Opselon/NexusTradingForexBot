@@ -29,13 +29,15 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
         s_cols = sq[table].get("columns", [])
         p_cols = pg[table].get("columns", [])
         if s_cols != p_cols:
-            column_mismatches.append({
-                "table": table,
-                "sqlite_columns": s_cols,
-                "postgres_columns": p_cols,
-                "missing_in_postgres": sorted(set(s_cols) - set(p_cols)),
-                "missing_in_sqlite": sorted(set(p_cols) - set(s_cols)),
-            })
+            column_mismatches.append(
+                {
+                    "table": table,
+                    "sqlite_columns": s_cols,
+                    "postgres_columns": p_cols,
+                    "missing_in_postgres": sorted(set(s_cols) - set(p_cols)),
+                    "missing_in_sqlite": sorted(set(p_cols) - set(s_cols)),
+                }
+            )
 
     sq_work = sqlite.get("workload", {})
     pg_work = postgres.get("workload", {})
@@ -78,9 +80,12 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
         "postgres_only_tables_are_empty": not pg_only_nonempty,
         "sqlite_queries_all_passed": sq_work.get("failed", 1) == 0,
         "postgres_queries_all_passed": pg_work.get("failed", 1) == 0,
-        "sqlite_query_floor_met": sq_work.get("query_count", 0) >= sqlite.get("contracts", {}).get("minimum_live_queries", 350),
-        "postgres_query_floor_met": pg_work.get("query_count", 0) >= postgres.get("contracts", {}).get("minimum_live_queries", 350),
-        "static_sql_inventory_matches": source_sql_counts["sqlite"] == source_sql_counts["postgres"],
+        "sqlite_query_floor_met": sq_work.get("query_count", 0)
+        >= sqlite.get("contracts", {}).get("minimum_live_queries", 350),
+        "postgres_query_floor_met": pg_work.get("query_count", 0)
+        >= postgres.get("contracts", {}).get("minimum_live_queries", 350),
+        "static_sql_inventory_matches": source_sql_counts["sqlite"]
+        == source_sql_counts["postgres"],
     }
     # PostgreSQL may legitimately materialize optional/derived tables on
     # provider bootstrap that have no SQLite counterpart. Those are retained as
