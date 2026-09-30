@@ -403,9 +403,14 @@ def main() -> int:
             raise RuntimeError(
                 f"provider was not cut over after validated migration: {status_after_migration}"
             )
+
+        # Freeze all application writers before the direct parity snapshot.
+        # The UI migration is intentionally performed while NSE is running, but
+        # a live PAPER engine can legitimately add a signal/account snapshot
+        # between the end of the copy and the parity read. Comparing an active
+        # writer against a moving source would manufacture false corruption.
         stop_app(proc)
-        proc = start_app(args.port, args.settings_db, sqlite_work, "postgresql")
-        wait_ready(base)
+        proc = None
 
         pg_conn = open_db("postgres", sqlite_work)
         pg_schema = tables_and_columns("postgres", pg_conn)
@@ -431,7 +436,16 @@ def main() -> int:
             )
         if pg_queries["failed"]:
             raise RuntimeError(f"PostgreSQL query corpus failed: {pg_queries['failed']}")
-        evidence["phases"].append({"phase": "postgres_restart_query_parity", "status": "PASS"})
+        evidence["phases"].append({"phase": "postgres_frozen_query_parity", "status": "PASS"})
+
+        # Restart only after the frozen migration snapshot has passed. This
+        # validates the actual post-cutover application boot independently.
+        proc = start_app(args.port, args.settings_db, sqlite_work, "postgresql")
+        wait_ready(base)
+        post_restart = http_json(base, "GET", "/api/status")
+        if not post_restart.get("success", True) and post_restart.get("status") not in (200, "ok", "OK"):
+            raise RuntimeError(f"PostgreSQL restart status failed: {post_restart}")
+        evidence["phases"].append({"phase": "postgres_restart", "status": "PASS"})
 
         reverse = http_json(base, "POST", "/api/db/manage/reverse-migrate", {"batch_size": 1000})
         if reverse.get("success") is not True:
