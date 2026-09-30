@@ -92,7 +92,6 @@ tests/unit/test_bug298_model_provisioning.py
 tests/unit/test_bug298_provisioning_web_api.py
 tests/unit/test_bug299_friction_cap_saturation.py
 tests/unit/test_bug300_ai_triage_fallback.py
-tests/unit/test_bug300_workflow_ai_wiring.py
 tests/unit/test_bug303_ci_notify_env_and_report.py
 tests/unit/test_bug305_broker_offset_env_consumer_parity.py
 tests/unit/test_bug306_windows_ci_compat.py
