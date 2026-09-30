@@ -64,8 +64,17 @@ def connect(provider: str) -> Any:
         return conn
 
     import psycopg
-    from nexus_scalp.database.config import build_postgres_url, load_database_config
+    from nexus_scalp.database.config import (
+        PG_PASSWORD_SECRET_KEY,
+        build_postgres_url,
+        load_database_config,
+    )
+    from nexus_scalp.settings.secret_store import SecureSecretStore
 
+    SecureSecretStore().set_secret(
+        PG_PASSWORD_SECRET_KEY,
+        os.environ.get("NSE_PG_TEST_PASSWORD", "nse_password_dev"),
+    )
     cfg = load_database_config("audit")
     conn = psycopg.connect(build_postgres_url(cfg), connect_timeout=5)
     conn.autocommit = True
