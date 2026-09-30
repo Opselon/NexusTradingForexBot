@@ -1014,6 +1014,119 @@ jobs:
             --evidence-dir "$RUNNER_TEMP/db-fabric/evidence" \
             --port 18090 | tee "$RUNNER_TEMP/db-fabric/certification.log"
 
+      - name: Run deep SQLite provider query certification
+        run: |
+          set -euo pipefail
+          export NEXUS_AUDIT_DB="$RUNNER_TEMP/db-fabric/evidence/certification.sqlite"
+          export NSE_DATABASE__PROVIDER=sqlite
+          mkdir -p "$RUNNER_TEMP/db-fabric/evidence/ci-db-cert-sqlite"
+          python scripts/ci/database_provider_cert.py \
+            --provider sqlite \
+            --evidence-dir "$RUNNER_TEMP/db-fabric/evidence/ci-db-cert-sqlite"
+
+      - name: Run deep PostgreSQL provider query certification
+        run: |
+          set -euo pipefail
+          unset NEXUS_AUDIT_DB || true
+          export NSE_DATABASE__PROVIDER=postgresql
+          export NSE_DATABASE__PG_HOST=127.0.0.1
+          export NSE_DATABASE__PG_PORT=5432
+          export NSE_DATABASE__PG_DATABASE=nse_audit
+          export NSE_DATABASE__PG_USER=nse_user
+          export HOME="$RUNNER_TEMP/db-fabric/home"
+          mkdir -p "$HOME"
+          python - <<'PY'
+          import os
+          import sys
+          sys.path.insert(0, "src")
+          from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
+          from nexus_scalp.settings.secret_store import SecureSecretStore
+          SecureSecretStore().set_secret(PG_PASSWORD_SECRET_KEY, os.environ["NSE_PG_TEST_PASSWORD"])
+          PY
+          mkdir -p "$RUNNER_TEMP/db-fabric/evidence/ci-db-cert-postgres"
+          python scripts/ci/database_provider_cert.py \
+            --provider postgres \
+            --evidence-dir "$RUNNER_TEMP/db-fabric/evidence/ci-db-cert-postgres"
+
+      - name: Compare SQLite/PostgreSQL live schema and query contract
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/db-fabric/evidence/ci-db-cert-root"
+          export DB_CERT_ROOT="$RUNNER_TEMP/db-fabric/evidence"
+          python scripts/ci/database_provider_parity.py \
+            --evidence-dir "$DB_CERT_ROOT"
+
+      - name: Run production migrator deep round-trip certification
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/db-fabric/evidence/ci-migration-cert"
+          python scripts/ci/database_migration_cert.py \
+            --evidence-dir "$RUNNER_TEMP/db-fabric/evidence/ci-migration-cert"
+
+      - name: Enforce deep DB certification contract and emit benchmark
+        run: |
+          set -euo pipefail
+          export DB_CERT_ROOT="$RUNNER_TEMP/db-fabric/evidence"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["DB_CERT_ROOT"])
+          sqlite_report = json.loads((root / "ci-db-cert-sqlite" / "database_provider_cert.json").read_text())
+          postgres_report = json.loads((root / "ci-db-cert-postgres" / "database_provider_cert.json").read_text())
+          parity = json.loads((root / "provider_parity.json").read_text())
+          migration = json.loads((root / "ci-migration-cert" / "database_migration_cert.json").read_text())
+
+          checks = {
+              "sqlite_provider_cert_pass": sqlite_report.get("status") == "PASS",
+              "postgres_provider_cert_pass": postgres_report.get("status") == "PASS",
+              "sqlite_query_floor_350": int(sqlite_report.get("workload", {}).get("query_count", 0)) >= 350,
+              "postgres_query_floor_350": int(postgres_report.get("workload", {}).get("query_count", 0)) >= 350,
+              "sqlite_query_failures_zero": int(sqlite_report.get("workload", {}).get("failed", 1)) == 0,
+              "postgres_query_failures_zero": int(postgres_report.get("workload", {}).get("failed", 1)) == 0,
+              "schema_table_set_equal": bool(parity.get("checks", {}).get("same_table_set")),
+              "schema_columns_equal": bool(parity.get("checks", {}).get("same_column_contract")),
+              "migration_cert_pass": migration.get("status") == "PASS",
+              "migration_roundtrip_digest": bool(migration.get("digest_match")),
+              "migration_idempotent": bool(migration.get("idempotent_forward_pass")),
+          }
+
+          benchmark = {
+              "sqlite_mean_ms": sqlite_report.get("workload", {}).get("mean_ms"),
+              "sqlite_p95_ms": sqlite_report.get("workload", {}).get("p95_ms"),
+              "postgres_p95_ms": postgres_report.get("workload", {}).get("p95_ms"),
+              "postgres_max_ms": postgres_report.get("workload", {}).get("max_ms"),
+              "sqlite_query_count": sqlite_report.get("workload", {}).get("query_count"),
+              "postgres_query_count": postgres_report.get("workload", {}).get("query_count"),
+              "migration_elapsed_ms": migration.get("elapsed_ms"),
+          }
+
+          result = {
+              "status": "PASS" if all(checks.values()) else "FAIL",
+              "checks": checks,
+              "benchmark": benchmark,
+          }
+          (root / "deep_db_certification_overall.json").write_text(
+              json.dumps(result, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+
+          summary = "## Deep DB Fabric Certification\n\n"
+          summary += "| Check | Result |\n|---|---|\n"
+          for name, ok in checks.items():
+              summary += f"| {name} | {'PASS' if ok else 'FAIL'} |\n"
+          summary += "\n### Approximate benchmark\n"
+          for name, value in benchmark.items():
+              summary += f"- {name}: {value}\n"
+          print(summary)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write(summary)
+
+          if result["status"] != "PASS":
+              raise SystemExit(1)
+          PY
+
       - name: Print DB fabric diagnostics
         if: always()
         continue-on-error: true
