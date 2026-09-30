@@ -34,6 +34,7 @@ tests/unit/test_accounting_pnl_regression.py
 tests/unit/test_accounting_timezone.py
 tests/unit/test_agent11_execution_risk_forensic.py
 tests/unit/test_agent12_execution_forensic.py
+tests/unit/test_agent13_methodology_integrity.py
 tests/unit/test_agent14_dataset_integrity.py
 tests/unit/test_agent16_walkforward_purge_embargo_leakage.py
 tests/unit/test_agent17_oos_hard_gate.py
