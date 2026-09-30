@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Cross-provider comparison for the two real database certification lanes."""
 
+# fmt: off
+
 from __future__ import annotations
 
 import argparse
