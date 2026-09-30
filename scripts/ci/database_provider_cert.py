@@ -293,8 +293,16 @@ class SQLCollector(ast.NodeVisitor):
 
     def __init__(self, path: Path) -> None:
         self.path = path
+        self.source_lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
         self.statements: list[dict[str, Any]] = []
         self.dynamic = 0
+
+    def _schema_guarded(self, lineno: int) -> bool:
+        start = max(0, lineno - 7)
+        return any(
+            "ci: schema-guarded" in line.lower()
+            for line in self.source_lines[start:lineno]
+        )
 
     def visit_Call(self, node: ast.Call) -> None:
         fn = node.func
@@ -303,12 +311,15 @@ class SQLCollector(ast.NodeVisitor):
             arg = node.args[0]
             sql = ast.literal_eval(arg) if isinstance(arg, ast.Constant) and isinstance(arg.value, str) else None
             if isinstance(sql, str) and SQL_RE.search(sql):
-                self.statements.append({
+                item = {
                     "file": str(self.path.relative_to(ROOT)),
                     "line": int(node.lineno),
                     "method": name,
                     "sql": " ".join(sql.split()),
-                })
+                }
+                if self._schema_guarded(int(node.lineno)):
+                    item["schema_guarded"] = True
+                self.statements.append(item)
             elif isinstance(arg, (ast.JoinedStr, ast.BinOp, ast.Call, ast.Name, ast.Attribute)):
                 self.dynamic += 1
         self.generic_visit(node)
@@ -425,7 +436,7 @@ def _provider_sql_supported(sql: str, provider: str) -> bool:
             return False
         if re.search(r"datetime\s*\(\s*['\"]now['\"]", sql, re.I):
             return False
-        return True
+        return not re.search(r"\b(?:lastval|current_database|version)\s*\(", sql, re.I)
     # PostgreSQL casts, placeholders, and system catalogs are not SQLite syntax.
     if re.search(r"::[A-Za-z_][A-Za-z0-9_]*|%s", sql):
         return False
@@ -475,6 +486,16 @@ def source_read_query_probe(
     for item in source.get("statements", []):
         sql = " ".join(str(item.get("sql", "")).split())
         if not sql or not _provider_sql_supported(sql, provider):
+            continue
+        if item.get("schema_guarded"):
+            out_of_scope.append(
+                {
+                    "status": "REJECTED_RUNTIME_GUARDED",
+                    "source": item,
+                    "sql": sql,
+                    "reason": "runtime schema guard controls whether this query executes",
+                }
+            )
             continue
         referenced = _referenced_tables(sql)
         unknown = sorted(
