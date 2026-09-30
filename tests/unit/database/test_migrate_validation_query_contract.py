@@ -17,10 +17,7 @@ class _FakeDriver:
         return 1
 
     def table_columns(self, table: str) -> list[dict[str, Any]]:
-        return [
-            {"name": name, "pk": False}
-            for name in self.columns
-        ]
+        return [{"name": name, "pk": False} for name in self.columns]
 
     def list_tables(self) -> list[str]:
         return ["audit_ledger"]
