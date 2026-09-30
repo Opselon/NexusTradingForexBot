@@ -116,12 +116,12 @@ class TestPostgresToSqliteMigrator:
         from nexus_scalp.database.migrate_reverse import _CREATE_TABLE_RE
 
         for ddl, expected in (
-            ("CREATE TABLE IF NOT EXISTS shadow70_drift_alerts (id INTEGER)",
-             "shadow70_drift_alerts"),
-            ("CREATE TABLE model_governance_state (model_id TEXT)",
-             "model_governance_state"),
-            ('CREATE TABLE IF NOT EXISTS "learning_cycles" (id INTEGER)',
-             "learning_cycles"),
+            (
+                "CREATE TABLE IF NOT EXISTS shadow70_drift_alerts (id INTEGER)",
+                "shadow70_drift_alerts",
+            ),
+            ("CREATE TABLE model_governance_state (model_id TEXT)", "model_governance_state"),
+            ('CREATE TABLE IF NOT EXISTS "learning_cycles" (id INTEGER)', "learning_cycles"),
         ):
             match = _CREATE_TABLE_RE.search(ddl)
             assert match is not None, f"pattern failed to match: {ddl}"
