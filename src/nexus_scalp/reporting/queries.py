@@ -113,13 +113,13 @@ def fetch_behavioral_rows(core: AccountingCore, tickets: list[str]) -> FetchResu
                 core._query(
                     "SELECT d.behavior_key, d.pattern, d.severity, d.confidence, d.evidence "
                     f"FROM behavior_detections d WHERE d.ticket IN ({placeholders})",
-                    chunk,
+                    tuple(chunk),
                 )
             )
             rows2.extend(
                 core._query(
                     f"SELECT a.* FROM behavior_analysis a WHERE a.ticket IN ({placeholders})",
-                    chunk,
+                    tuple(chunk),
                 )
             )
     except Exception as err:
@@ -143,13 +143,13 @@ def fetch_anomaly_rows(core: AccountingCore, tickets: list[str]) -> FetchResult:
                 core._query(
                     "SELECT e.anomaly_type, e.severity, e.algorithm_version "
                     f"FROM anomaly_events e WHERE e.ticket IN ({placeholders})",
-                    chunk,
+                    tuple(chunk),
                 )
             )
             rows2.extend(
                 core._query(
                     f"SELECT a.* FROM behavior_analysis a WHERE a.ticket IN ({placeholders})",
-                    chunk,
+                    tuple(chunk),
                 )
             )
     except Exception as err:
