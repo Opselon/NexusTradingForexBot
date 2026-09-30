@@ -110,7 +110,119 @@ func TestProxyAttachesRoutingDecision(t *testing.T) {
 	}
 }
 
-// TestProxyDirectServing exercises Wave 4 direct serving on the proxy handler:
+// TestProxySSEStreamForwardedUnbuffered is the regression test for the live
+// tick stream failing through the Go origin. Chrome's EventSource aborted with
+// "response has a MIME type (application/json) that is not text/event-stream"
+// because the buffered proxy read the whole SSE body with io.ReadAll (blocking
+// forever on an intentionally open stream) and then served it with a hardcoded
+// Content-Type: application/json. The stream path must instead pipe upstream
+// bytes straight through with Python's own text/event-stream content type.
+func TestProxySSEStreamForwardedUnbuffered(t *testing.T) {
+	streamHits := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		streamHits++
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(http.StatusOK)
+		fl := w.(http.Flusher)
+		for i := 0; i < 3; i++ {
+			_, _ = w.Write([]byte("data: tick\n\n"))
+			fl.Flush()
+		}
+	}))
+	defer upstream.Close()
+
+	py := python.New(python.Options{Origin: upstream.URL})
+	p := NewProxy(py)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/ticks/stream", nil)
+	req.Header.Set("Accept", "text/event-stream")
+	p.Handler("GET", "/api/ticks/stream").ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Errorf("Content-Type = %q, want text/event-stream (Python's own SSE type must reach the client)", got)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Errorf("Cache-Control = %q, want no-cache", got)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	want := "data: tick\n\ndata: tick\n\ndata: tick\n\n"
+	if body != want {
+		t.Errorf("stream body = %q, want the upstream SSE bytes verbatim (%q)", body, want)
+	}
+	if streamHits != 1 {
+		t.Errorf("upstream was hit %d times, want exactly 1 (one forwarded stream)", streamHits)
+	}
+}
+
+// TestProxyLargePayloadNotTruncated is the regression test for the highest-
+// impact bug found in the Wave 7 browser deep check: the research strategies
+// endpoint emits ~15 MiB, the buffered proxy capped the upstream read at 8 MiB,
+// the truncated body failed json.Unmarshal, and the client received a fabricated
+// 503 DEPENDENCY_UNAVAILABLE — breaking the whole Research page through the Go
+// origin. The cap is now sized far above any legitimate payload.
+func TestProxyLargePayloadNotTruncated(t *testing.T) {
+	// A valid v1 envelope whose data payload is 12 MiB — past the old 8 MiB
+	// cap, well under the new 64 MiB guard.
+	const n = 12 << 20
+	big := strings.Repeat("a", n)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"blob":"` + big + `"},"meta":{"request_id":"req_x","generated_at":"2026-09-30T00:00:00+00:00"}}`))
+	}))
+	defer upstream.Close()
+
+	py := python.New(python.Options{Origin: upstream.URL})
+	p := NewProxy(py)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/v1/research/strategies", nil)
+	p.Handler("GET", "/api/v1/research/strategies").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d on a 12 MiB payload, want 200 (a legitimate upstream answer must not be classified as unavailable)", rec.Code)
+	}
+	if got := rec.Body.Len(); got < n {
+		t.Errorf("forwarded body = %d bytes, want >= %d (the payload must arrive complete, not truncated)", got, n)
+	}
+	if !strings.Contains(rec.Body.String(), big) {
+		t.Error("forwarded body lost the upstream payload")
+	}
+}
+
+// TestProxyV1EnvelopeForwardedVerbatim pins the byte-level parity contract on
+// the v1 surface: when Python already answered with {"data":...,"meta":...},
+// Go must emit Python's exact bytes. Rewriting meta (request_id/generation
+// time) or re-marshaling the body changes float formatting, key order, and
+// correlation ids — the proxy re-marshal this replaces did all three.
+func TestProxyV1EnvelopeForwardedVerbatim(t *testing.T) {
+	// Deliberately non-alphabetical keys and a float formatting Go's encoder
+	// would not reproduce identically.
+	body := `{"data":{"zeta":1,"alpha":2.718281828459045,"nested":{"keep":"order"}},"meta":{"request_id":"req_py_origin","generated_at":"2026-09-30T01:02:03.456789+00:00","custom":"kept"}}`
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer upstream.Close()
+
+	py := python.New(python.Options{Origin: upstream.URL})
+	p := NewProxy(py)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/v1/risk/summary", nil)
+	p.Handler("GET", "/api/v1/risk/summary").ServeHTTP(rec, req)
+
+	if rec.Body.String() != body {
+		t.Errorf("v1 body was rewritten\n got: %s\nwant: %s", rec.Body.String(), body)
+	}
+}
+
 // registered candidates are served directly with target "go-direct",
 // and when disabled or unhandled, route to Python.
 func TestProxyDirectServing(t *testing.T) {
