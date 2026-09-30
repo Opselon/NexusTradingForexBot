@@ -75,6 +75,8 @@ def connect(provider: str) -> Any:
 
 
 def tables(conn: Any, provider: str) -> list[str]:
+    if keyword == "WITH" and re.search(r"\b(?:INSERT|UPDATE|DELETE)\b", sql, re.I):
+        return False
     if provider == "postgres":
         rows = conn.execute(
             "SELECT tablename FROM pg_catalog.pg_tables "
