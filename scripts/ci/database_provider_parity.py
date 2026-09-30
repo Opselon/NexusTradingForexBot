@@ -67,9 +67,13 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
 
     sq_work = sqlite.get("workload", {})
     pg_work = postgres.get("workload", {})
+    sq_source = sqlite.get("source_query_probe", {})
+    pg_source = postgres.get("source_query_probe", {})
     query_failures = {
         "sqlite": sq_work.get("failed", 0),
         "postgres": pg_work.get("failed", 0),
+        "sqlite_source": sq_source.get("failed", 0),
+        "postgres_source": pg_source.get("failed", 0),
     }
 
     sqlite_counts = sqlite.get("row_counts", {})
@@ -106,6 +110,8 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
         "postgres_only_tables_are_empty": not pg_only_nonempty,
         "sqlite_queries_all_passed": sq_work.get("failed", 1) == 0,
         "postgres_queries_all_passed": pg_work.get("failed", 1) == 0,
+        "sqlite_source_queries_all_passed": sq_source.get("failed", 1) == 0,
+        "postgres_source_queries_all_passed": pg_source.get("failed", 1) == 0,
         "sqlite_query_floor_met": sq_work.get("query_count", 0)
         >= sqlite.get("contracts", {}).get("minimum_live_queries", 350),
         "postgres_query_floor_met": pg_work.get("query_count", 0)
@@ -142,12 +148,21 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
             "postgres": pg_work.get("p95_ms"),
         },
         "static_sql_counts": source_sql_counts,
+        "source_query_counts": {
+            "sqlite": sq_source.get("query_count", 0),
+            "postgres": pg_source.get("query_count", 0),
+        },
+        "source_query_unique_counts": {
+            "sqlite": sq_source.get("unique_query_count", 0),
+            "postgres": pg_source.get("unique_query_count", 0),
+        },
         "dialect_hits": dialect,
         "notes": [
             "Schema parity compares live domain table and column contracts; provider-owned migration metadata is explicitly excluded from domain parity.",
             "PostgreSQL type spelling is not required to equal SQLite because the production DDL translator intentionally maps types.",
             "Index names are evidence only; migration may legitimately rename indexes.",
-            "Every provider independently executed the same bounded query contract; no synthetic TestClient-only query is used.",
+            "Every provider independently executed the same bounded live-table query contract; no synthetic TestClient-only query is used.",
+            "Every provider also executed every deduplicated provider-compatible literal read query discovered from the source tree; write statements are never executed against certification data.",
         ],
     }
 
