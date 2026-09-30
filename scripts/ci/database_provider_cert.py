@@ -21,7 +21,7 @@ import re
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 ROOT = Path(__file__).resolve().parents[2]
 MIN_QUERIES = 350
@@ -272,7 +272,7 @@ class SQLCollector(ast.NodeVisitor):
     that a static parser can safely manufacture runtime parameters.
     """
 
-    METHODS = {"execute", "executemany", "executescript", "query", "scalar", "execute_many"}
+    METHODS: ClassVar[set[str]] = {"execute", "executemany", "executescript", "query", "scalar", "execute_many"}
 
     def __init__(self, path: Path) -> None:
         self.path = path
