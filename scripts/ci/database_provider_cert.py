@@ -364,6 +364,27 @@ def _first_sql_keyword(sql: str) -> str:
     return ""
 
 
+def _referenced_tables(sql: str) -> set[str]:
+    """Return obvious base-table references from a read-only SQL statement."""
+    normalized = re.sub(r"\s+", " ", sql).strip().rstrip(";")
+    found: set[str] = set()
+    pattern = (
+        r'\b(?:FROM|JOIN)\s+'
+        r'((?:[A-Za-z_][A-Za-z0-9_$]*\.)?[A-Za-z_][A-Za-z0-9_$]*|'
+        r'"[^"]+"(?:\."[^"]+")?)'
+    )
+    for match in re.finditer(pattern, normalized, re.I):
+        token = match.group(1)
+        if "." in token:
+            schema, token = token.rsplit(".", 1)
+            schema = schema.strip('"').casefold()
+            if schema not in {"public", "main"}:
+                found.add(f"{schema}.{token.strip(chr(34)).casefold()}")
+                continue
+        found.add(token.strip('"').casefold())
+    return found
+
+
 def _provider_sql_supported(sql: str, provider: str) -> bool:
     keyword = _first_sql_keyword(sql)
     if keyword not in _READ_VERBS:
@@ -399,11 +420,16 @@ def _provider_sql_supported(sql: str, provider: str) -> bool:
         )
         return bool(match and match.group(1).lower() in safe)
     if provider == "postgres":
-        # SQLite's datetime('now') is intentionally SQLite-only.
-        return not re.search(r"datetime\s*\(\s*['\"]now['\"]", sql, re.I)
-    # PostgreSQL casts are not valid SQLite syntax; provider-native statements
-    # are skipped in the SQLite lane rather than misclassified as drift.
-    return not re.search(r"::[A-Za-z_][A-Za-z0-9_]*", sql)
+        # SQLite catalog/functions are intentionally SQLite-only.
+        if re.search(r"\bsqlite_master\b|\bsqlite_temp_master\b", sql, re.I):
+            return False
+        if re.search(r"datetime\s*\(\s*['\"]now['\"]", sql, re.I):
+            return False
+        return True
+    # PostgreSQL casts, placeholders, and system catalogs are not SQLite syntax.
+    if re.search(r"::[A-Za-z_][A-Za-z0-9_]*|%s", sql):
+        return False
+    return not re.search(r"\b(?:information_schema|pg_catalog)\.", sql, re.I)
 
 
 def _probe_parameters(sql: str, provider: str) -> tuple[str, tuple[Any, ...]]:
