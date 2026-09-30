@@ -843,7 +843,6 @@ class TestDbConsoleQueryGuard:
             == "SELECT * FROM t WHERE x = ?"
         )
 
-
     def test_ddl_port_translates_sqlite_datetime_default(self):
         sqlite_ddl = (
             "CREATE TABLE IF NOT EXISTS archive_events ("
