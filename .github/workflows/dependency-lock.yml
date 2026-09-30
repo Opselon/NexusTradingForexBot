@@ -64,23 +64,9 @@ jobs:
           # since 059cb23a. v10's valid input is `version` again.
           version: "0.12.10"
 
-      - name: Generate resolver artifacts for CI evidence
-        run: |
-          python scripts/ci/check_dependency_drift.py --regen
-          mkdir -p dependency-regenerated
-          cp requirements.lock requirements.txt dependency-regenerated/
-
-      - name: Verify regenerated artifacts are deterministic
+      - name: Drift check (regenerates nothing; fails on stale artifacts)
         run: |
           python scripts/ci/check_dependency_drift.py
-
-      - name: Upload regenerated dependency artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: dependency-regenerated-${{ github.run_number }}-${{ github.sha }}
-          path: dependency-regenerated/
-          if-no-files-found: error
-          retention-days: 2
 
   migration-safety:
     name: Migration safety (fail-loud + version postconditions)
