@@ -107,7 +107,15 @@ def wait_ready(
     proc: subprocess.Popen[str] | None = None,
     log_path: Path | None = None,
 ) -> dict[str, Any]:
-    """Wait for both health surfaces and fail with the real startup evidence."""
+    """Wait for the real web surface, tolerating launcher port auto-increment."""
+    from urllib.parse import urlsplit
+
+    requested = urlsplit(base)
+    requested_port = requested.port or 80
+    candidates = [
+        f"{requested.scheme}://{requested.hostname}:{port}"
+        for port in range(requested_port, requested_port + 21)
+    ]
     deadline = time.monotonic() + STARTUP_TIMEOUT
     last_health: Any = None
     last_status: Any = None
@@ -120,18 +128,23 @@ def wait_ready(
             raise RuntimeError(
                 f"application exited before readiness rc={proc.returncode}; log_tail={tail}"
             )
-        try:
-            last_health = http_json(base, "GET", "/health")
-            last_status = http_json(base, "GET", "/api/status")
-            return {"health": last_health, "status": last_status}
-        except Exception as exc:
-            last_error = f"{type(exc).__name__}: {exc}"
-            time.sleep(1)
+        for candidate in candidates:
+            try:
+                last_health = http_json(candidate, "GET", "/health")
+                last_status = http_json(candidate, "GET", "/api/status")
+                return {
+                    "health": last_health,
+                    "status": last_status,
+                    "base_url": candidate,
+                }
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+        time.sleep(1)
     tail = ""
     if log_path and log_path.exists():
         tail = log_path.read_text(encoding="utf-8", errors="replace")[-12000:]
     raise RuntimeError(
-        f"application did not become ready at {base}: "
+        f"application did not become ready near {base}: "
         f"health={last_health!r} status={last_status!r} "
         f"error={last_error!r} log_tail={tail}"
     )
@@ -161,6 +174,8 @@ def start_app(
             # certification focused on the Python DB fabric so a stale Go
             # child from an earlier phase cannot invalidate migration tests.
             "NSE_GO_API_DISABLE": "1",
+            "NEXUS_PAPER_STRESS_SEED": "42",
+            "NSE_RUNTIME_MODE": "paper",
             "NSE_WEB_AUTH_TOKEN": "ci-runtime-token",
             "NSE_EXECUTION__MODE": "PAPER",
             "NSE_EXECUTION__SYMBOL": "XAUUSD",
@@ -496,6 +511,7 @@ def main() -> int:
         evidence["startup_sqlite"] = wait_ready(
             base, proc, args.settings_db.parent / "db-fabric-sqlite.log"
         )
+        base = evidence["startup_sqlite"]["base_url"]
         evidence["phases"].append({"phase": "sqlite_boot", "status": "PASS"})
 
         sqlite_conn = open_db("sqlite", sqlite_work)
@@ -634,6 +650,7 @@ def main() -> int:
         evidence["startup_postgres_restart"] = wait_ready(
             base, proc, args.settings_db.parent / "db-fabric-postgresql.log"
         )
+        base = evidence["startup_postgres_restart"]["base_url"]
         post_restart = http_json(base, "GET", "/api/status")
         if not post_restart.get("success", True) and post_restart.get("status") not in (
             200,
@@ -663,6 +680,7 @@ def main() -> int:
         evidence["startup_sqlite_final"] = wait_ready(
             base, proc, args.settings_db.parent / "db-fabric-sqlite.log"
         )
+        base = evidence["startup_sqlite_final"]["base_url"]
 
         final_conn = open_db("sqlite", sqlite_work)
         final_schema = tables_and_columns("sqlite", final_conn)
