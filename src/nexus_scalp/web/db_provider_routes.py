@@ -35,7 +35,12 @@ from nexus_scalp.database.connection_url import (
     is_parse_failure,
     parse_pg_url,
 )
-from nexus_scalp.database.maintenance_gate import (\n    engine_is_running,\n    maintenance_active,\n    migration_guard,\n)
+
+from nexus_scalp.database.maintenance_gate import (
+    engine_is_running,
+    maintenance_active,
+    migration_guard,
+)
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.settings.provider_options import (
     OPTION_KEYS,
