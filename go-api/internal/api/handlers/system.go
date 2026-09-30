@@ -20,13 +20,24 @@ import (
 // SystemHandlers serves the /api/v1/system/* domain (10 operations).
 type SystemHandlers struct {
 	py *python.Client
+
+	// direct serves the Wave-4 direct routes (version, capabilities). It is
+	// built ONCE in NewSystem and reused by every request: rebuilding it per
+	// call (the previous VersionDirect/CapabilitiesDirect pattern) reset its
+	// cachedVersion to nil each time, so every request re-ran
+	// `git rev-parse HEAD` (~43ms on Windows) and the "direct" route was
+	// slower than the Python proxy it replaced.
+	direct *SystemDirectHandler
 }
 
 // NewSystem builds the handlers with a Python boundary client.
 // py may be unconfigured (no engine attached): handlers then report
 // DEPENDENCY_UNAVAILABLE instead of inventing state.
 func NewSystem(py *python.Client) *SystemHandlers {
-	return &SystemHandlers{py: py}
+	return &SystemHandlers{
+		py:     py,
+		direct: NewSystemDirect(py),
+	}
 }
 
 // The Python contract types we proxy. Field names are the EXECUTABLE ones.

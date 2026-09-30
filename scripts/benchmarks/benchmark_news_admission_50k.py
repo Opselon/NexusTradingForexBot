@@ -210,6 +210,30 @@ def generate_workload(n: int = 50_000) -> list[dict[str, Any]]:
     return workload
 
 
+class _BenchArgs:
+    """Parsed CLI args, readable before ``main()`` parses them."""
+
+    sqlite: bool = False
+
+
+BENCH_ARGS = _BenchArgs()
+
+
+def _apply_bench_env() -> None:
+    """Pin the benchmark env BEFORE the first NewsDatabase is constructed.
+
+    The provider is resolved lazily inside ``NewsDatabase.__init__`` (never at
+    import time), so setting ``NSE_DATABASE__PROVIDER`` at the top of
+    ``main()`` — before workload generation and before the first measurement
+    — is enough for the store in every run to open SQLite. ``--sqlite`` never
+    silently ignores the box config otherwise: without it the harness follows
+    the ACTIVE provider exactly as before.
+    """
+    os.environ.pop("NEXUS_SETTINGS_DB", None)
+    if BENCH_ARGS.sqlite:
+        os.environ["NSE_DATABASE__PROVIDER"] = "sqlite"
+
+
 def _measure_run(
     name: str,
     workload: list[dict[str, Any]],
@@ -309,7 +333,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="News Admission Gateway 50k benchmark")
     parser.add_argument("--count", type=int, default=50_000, help="Workload item count")
     parser.add_argument("--output", type=str, default="", help="Path to write JSON results")
+    parser.add_argument(
+        "--sqlite",
+        action="store_true",
+        help=(
+            "Pin the provider to SQLite for this run. The store otherwise follows "
+            "the ACTIVE provider; on a box whose persisted settings point at a "
+            "PostgreSQL cluster that is not running, this is the difference "
+            "between a measurement and a pool-timeout."
+        ),
+    )
     args = parser.parse_args()
+    BENCH_ARGS.sqlite = args.sqlite
+    _apply_bench_env()
 
     workload = generate_workload(args.count)
 
@@ -322,6 +358,7 @@ def main() -> None:
         "benchmark": "news_admission_gateway_50k",
         "timestamp": datetime.now(UTC).isoformat(),
         "workload_size": args.count,
+        "provider_pinned_to_sqlite": bool(args.sqlite),
         "runs": {},
     }
 

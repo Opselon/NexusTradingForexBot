@@ -18,6 +18,13 @@ import (
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/routing"
 )
 
+// maxProxiedBody bounds the bytes a proxied response may buffer. The v1
+// envelope shape check needs the body in memory (it decodes only the envelope
+// skeleton and re-emits Python's bytes for data), so the upstream payload is
+// read once and copied out rather than re-marshalled. 8 MiB matches the
+// boundary client's own limit.
+const maxProxiedBody = 8 << 20
+
 // Proxy forwards requests to the Python runtime unchanged, or executes
 // registered direct handlers for Candidate routes with automatic fallback.
 type Proxy struct {
@@ -61,6 +68,11 @@ func (p *Proxy) Handler(method, path string) http.Handler {
 		}
 
 		// Fallback/direct forwarder to Python.
+		//
+		// The upstream body is streamed straight through to the client with
+		// io.Copy once the envelope shape is known: no full re-decode, no
+		// re-marshal. Python's own byte output (key order, float formatting) is
+		// preserved exactly, which is the byte-level parity contract.
 		forwardToPython := func(rw http.ResponseWriter, req *http.Request) {
 			raw, err := p.py.DoRaw(req.Context(), method, full, req.Body)
 			if err != nil {
@@ -87,6 +99,9 @@ func (p *Proxy) Handler(method, path string) http.Handler {
 			}
 
 			if respond.IsV1Path(req.URL.Path) {
+				// Decode ONLY the envelope skeleton: the data field is kept as
+				// raw bytes so it can be streamed back byte-for-byte instead of
+				// being re-parsed and re-marshalled.
 				var env pyEnvelope[json.RawMessage]
 				if err := json.Unmarshal(raw, &env); err != nil {
 					// Python did not return the v1 envelope. Serve the bytes
