@@ -133,7 +133,7 @@ def first_literal_arg(args: str) -> str | None:
     if not args or (args[0] not in "'\"" and args[0] != chr(96)):
         return None
     end = consume_js_string(args, 0)
-    return args[1:end - 1]
+    return args[1 : end - 1]
 
 
 def normalize_template_path(path: str) -> str:
@@ -222,9 +222,7 @@ def main() -> int:
     calls = react_calls()
 
     if len(routes) < 400:
-        raise SystemExit(
-            f"Go route inventory unexpectedly small: {len(routes)}"
-        )
+        raise SystemExit(f"Go route inventory unexpectedly small: {len(routes)}")
     if not calls:
         raise SystemExit("No React API calls were discovered under frontend/src")
 
