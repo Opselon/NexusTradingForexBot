@@ -130,7 +130,8 @@ class TestPostgresToSqliteMigrator:
                     id INTEGER PRIMARY KEY,
                     symbol TEXT NOT NULL,
                     pnl REAL NOT NULL,
-                    closed_at TEXT NOT NULL
+                    closed_at TEXT NOT NULL,
+                    mae_usd REAL NOT NULL
                 )
                 """
             )
@@ -141,12 +142,12 @@ class TestPostgresToSqliteMigrator:
                     (i + 1, "EURUSD", "BUY", 0.85),
                 )
             src_drv.execute(
-                "INSERT INTO audit_ledger (id, symbol, pnl, closed_at) VALUES (?, ?, ?, ?)",
-                (1, "EURUSD", 125.50, "2026-09-27T10:00:00Z"),
+                "INSERT INTO audit_ledger (id, symbol, pnl, closed_at, mae_usd) VALUES (?, ?, ?, ?, ?)",
+                (1, "EURUSD", 125.50, "2026-09-27T10:00:00Z", -4.25),
             )
             src_drv.execute(
-                "INSERT INTO audit_ledger (id, symbol, pnl, closed_at) VALUES (?, ?, ?, ?)",
-                (2, "GBPUSD", -25.50, "2026-09-27T10:05:00Z"),
+                "INSERT INTO audit_ledger (id, symbol, pnl, closed_at, mae_usd) VALUES (?, ?, ?, ?, ?)",
+                (2, "GBPUSD", -25.50, "2026-09-27T10:05:00Z", -7.75),
             )
             src_drv.close()
 
@@ -170,7 +171,8 @@ class TestPostgresToSqliteMigrator:
                     id INTEGER PRIMARY KEY,
                     symbol TEXT NOT NULL,
                     pnl REAL NOT NULL,
-                    closed_at TEXT NOT NULL
+                    closed_at TEXT NOT NULL,
+                    MAE_usd REAL NOT NULL
                 )
                 """
             )
@@ -190,6 +192,8 @@ class TestPostgresToSqliteMigrator:
             assert sig_cnt == 15
             pnl_sum = verify_drv.scalar("SELECT SUM(pnl) FROM audit_ledger")
             assert abs(float(pnl_sum or 0.0) - 100.0) < 1e-4
+            mae_sum = verify_drv.scalar('SELECT SUM("MAE_usd") FROM audit_ledger')
+            assert abs(float(mae_sum or 0.0) - (-12.0)) < 1e-4
             verify_drv.close()
 
 
