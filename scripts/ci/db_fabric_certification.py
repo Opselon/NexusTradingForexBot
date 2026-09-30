@@ -37,17 +37,34 @@ MAX_TABLES = 50
 QUERY_TIMEOUT = 8
 STARTUP_TIMEOUT = 60
 
-def find_free_port(start_port: int) -> int:
-    """Find a loopback port that is immediately free for this certification."""
+def find_free_port_pair(start_port: int) -> tuple[int, int]:
+    """Find two simultaneously-free loopback ports for web + Go sidecar.
+
+    The application boots FastAPI and a Go/API sidecar. Checking only the
+    Python web port is insufficient: the derived ``port + 1`` can already be
+    occupied by a stale sidecar or another local service. Probe and reserve
+    both sockets together so a lifecycle phase never selects a partial pair.
+    """
     import socket
 
-    for port in range(start_port, start_port + 50):
-        with contextlib.suppress(OSError):
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                sock.bind(("127.0.0.1", port))
-                return port
-    raise RuntimeError(f"no free loopback port in {start_port}-{start_port + 49}")
+    for web_port in range(start_port, start_port + 50):
+        for go_port in (web_port + 1, web_port + 2, web_port + 3):
+            sockets: list[socket.socket] = []
+            try:
+                for candidate in (web_port, go_port):
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    sock.bind(("127.0.0.1", candidate))
+                    sockets.append(sock)
+                return web_port, go_port
+            except OSError:
+                pass
+            finally:
+                for sock in sockets:
+                    sock.close()
+    raise RuntimeError(
+        f"no free web/Go port pair in {start_port}-{start_port + 52}"
+    )
 
 
 def wait_port_free(port: int, timeout: float = 20.0) -> None:
@@ -133,6 +150,7 @@ def start_app(
     audit_db: Path,
     provider: str,
     config_path: Path,
+    go_port: int,
 ) -> subprocess.Popen[str]:
     env = dict(os.environ)
     env.update(
@@ -146,7 +164,7 @@ def start_app(
             "NSE_WEB_PORT": str(port),
             "NSE_WEB_ACTUAL_PORT": str(port),
             "NSE_WEB_AUTH_DOTENV_DISABLE": "1",
-            "NSE_GO_ADDR": f"127.0.0.1:{port + 1}",
+            "NSE_GO_ADDR": f"127.0.0.1:{go_port}",
             "NSE_WEB_AUTH_TOKEN": "ci-runtime-token",
             "NSE_EXECUTION__MODE": "PAPER",
             "NSE_EXECUTION__SYMBOL": "XAUUSD",
@@ -468,7 +486,7 @@ def main() -> int:
     except Exception as exc:
         raise RuntimeError(f"failed to prepare isolated runtime config: {exc}") from exc
 
-    port = find_free_port(args.port)
+    port, go_port = find_free_port_pair(args.port)
     base = f"http://127.0.0.1:{port}"
     sqlite_work.write_bytes(args.sqlite_db.read_bytes())
     os.environ["NEXUS_AUDIT_DB"] = str(sqlite_work)
@@ -477,7 +495,7 @@ def main() -> int:
 
     proc: subprocess.Popen[str] | None = None
     try:
-        proc = start_app(port, args.settings_db, sqlite_work, "sqlite", config_path)
+        proc = start_app(port, args.settings_db, sqlite_work, "sqlite", config_path, go_port)
         evidence["startup_sqlite"] = wait_ready(
             base, proc, args.settings_db.parent / "db-fabric-sqlite.log"
         )
@@ -571,6 +589,7 @@ def main() -> int:
         # writer against a moving source would manufacture false corruption.
         stop_result = stop_app(proc)
         wait_port_free(port)
+        wait_port_free(go_port)
         evidence["shutdown_sqlite"] = stop_result
         proc = None
 
@@ -612,10 +631,10 @@ def main() -> int:
             raise RuntimeError(f"PostgreSQL query corpus failed: {pg_queries['failed']}")
         evidence["phases"].append({"phase": "postgres_frozen_query_parity", "status": "PASS"})
 
-        port = find_free_port(port + 1)
+        port, go_port = find_free_port_pair(port + 1)
         base = f"http://127.0.0.1:{port}"
         proc = start_app(
-            port, args.settings_db, sqlite_work, "postgresql", config_path
+            port, args.settings_db, sqlite_work, "postgresql", config_path, go_port
         )
         evidence["startup_postgres_restart"] = wait_ready(
             base, proc, args.settings_db.parent / "db-fabric-postgresql.log"
@@ -640,12 +659,13 @@ def main() -> int:
             raise RuntimeError(f"provider switch back to SQLite failed: {switched_back}")
         stop_result = stop_app(proc)
         wait_port_free(port)
+        wait_port_free(go_port)
         evidence["shutdown_postgres"] = stop_result
         proc = None
-        port = find_free_port(port + 1)
+        port, go_port = find_free_port_pair(port + 1)
         base = f"http://127.0.0.1:{port}"
         proc = start_app(
-            port, args.settings_db, sqlite_work, "sqlite", config_path
+            port, args.settings_db, sqlite_work, "sqlite", config_path, go_port
         )
         evidence["startup_sqlite_final"] = wait_ready(
             base, proc, args.settings_db.parent / "db-fabric-sqlite.log"
