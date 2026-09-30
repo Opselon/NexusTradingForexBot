@@ -610,6 +610,26 @@ def main() -> int:
             raise RuntimeError(f"UI migration preview failed: {preview}")
         evidence["phases"].append({"phase": "ui_config_test_preview", "status": "PASS"})
 
+        # DB migration is a maintenance operation: the backend rejects it while
+        # runtime writers are active. Quiesce the real engine before migration
+        # so certification exercises the production safety contract.
+        stop_engine = http_json(base, "POST", "/api/engine/toggle", {"active": False})
+        if stop_engine.get("success") is not True:
+            raise RuntimeError(f"engine quiesce before migration failed: {stop_engine}")
+        quiesce_deadline = time.monotonic() + 30
+        runtime_status: dict[str, Any] = {}
+        while time.monotonic() < quiesce_deadline:
+            runtime_status = http_json(base, "GET", "/api/status")
+            if runtime_status.get("engine_running") is False:
+                break
+            time.sleep(0.5)
+        if runtime_status.get("engine_running") is not False:
+            raise RuntimeError(
+                f"engine did not quiesce before SQLite→PostgreSQL migration: {runtime_status}"
+            )
+        evidence["engine_quiesce_before_migration"] = runtime_status
+        evidence["phases"].append({"phase": "engine_quiesced_before_migration", "status": "PASS"})
+
         started = http_json(
             base,
             "POST",
