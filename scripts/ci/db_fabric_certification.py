@@ -19,7 +19,6 @@ No LIVE trading, MT5 orders, external news, or network market data are used.
 from __future__ import annotations
 
 import argparse
-import contextlib
 import json
 import os
 import signal
@@ -36,6 +35,7 @@ MIN_QUERY_FLOOR = 200
 MAX_TABLES = 50
 QUERY_TIMEOUT = 8
 STARTUP_TIMEOUT = 60
+
 
 def find_free_port_pair(start_port: int) -> tuple[int, int]:
     """Find two simultaneously-free loopback ports for web + Go sidecar.
@@ -62,9 +62,7 @@ def find_free_port_pair(start_port: int) -> tuple[int, int]:
             finally:
                 for sock in sockets:
                     sock.close()
-    raise RuntimeError(
-        f"no free web/Go port pair in {start_port}-{start_port + 52}"
-    )
+    raise RuntimeError(f"no free web/Go port pair in {start_port}-{start_port + 52}")
 
 
 def wait_port_free(port: int, timeout: float = 20.0) -> None:
@@ -118,9 +116,7 @@ def wait_ready(
         if proc is not None and proc.poll() is not None:
             tail = ""
             if log_path and log_path.exists():
-                tail = log_path.read_text(
-                    encoding="utf-8", errors="replace"
-                )[-12000:]
+                tail = log_path.read_text(encoding="utf-8", errors="replace")[-12000:]
             raise RuntimeError(
                 f"application exited before readiness rc={proc.returncode}; "
                 f"log_tail={tail}"
@@ -134,9 +130,7 @@ def wait_ready(
             time.sleep(1)
     tail = ""
     if log_path and log_path.exists():
-        tail = log_path.read_text(
-            encoding="utf-8", errors="replace"
-        )[-12000:]
+        tail = log_path.read_text(encoding="utf-8", errors="replace")[-12000:]
     raise RuntimeError(
         f"application did not become ready at {base}: "
         f"health={last_health!r} status={last_status!r} "
@@ -218,7 +212,7 @@ def stop_app(proc: subprocess.Popen[str]) -> dict[str, Any]:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 forced = True
-    
+
     # NSE starts the Go/API sidecar as a child process. The old harness only
     # waited for the Python parent, so the sidecar could survive a restart and
     # steal the Go port from the next provider lifecycle phase. Each launcher
@@ -234,7 +228,7 @@ def stop_app(proc: subprocess.Popen[str]) -> dict[str, Any]:
             pass
         except PermissionError:
             forced = True
-    
+
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             try:
@@ -466,9 +460,10 @@ def main() -> int:
     try:
         import yaml
 
-        config_data = yaml.safe_load(
-            (REPO_ROOT / "configs" / "base.yaml").read_text(encoding="utf-8")
-        ) or {}
+        config_data = (
+            yaml.safe_load((REPO_ROOT / "configs" / "base.yaml").read_text(encoding="utf-8"))
+            or {}
+        )
         if isinstance(config_data, dict):
             news_cfg = config_data.setdefault("news", {})
             if isinstance(news_cfg, dict):
@@ -633,9 +628,7 @@ def main() -> int:
 
         port, go_port = find_free_port_pair(port + 1)
         base = f"http://127.0.0.1:{port}"
-        proc = start_app(
-            port, args.settings_db, sqlite_work, "postgresql", config_path, go_port
-        )
+        proc = start_app(port, args.settings_db, sqlite_work, "postgresql", config_path, go_port)
         evidence["startup_postgres_restart"] = wait_ready(
             base, proc, args.settings_db.parent / "db-fabric-postgresql.log"
         )
@@ -664,9 +657,7 @@ def main() -> int:
         proc = None
         port, go_port = find_free_port_pair(port + 1)
         base = f"http://127.0.0.1:{port}"
-        proc = start_app(
-            port, args.settings_db, sqlite_work, "sqlite", config_path, go_port
-        )
+        proc = start_app(port, args.settings_db, sqlite_work, "sqlite", config_path, go_port)
         evidence["startup_sqlite_final"] = wait_ready(
             base, proc, args.settings_db.parent / "db-fabric-sqlite.log"
         )
