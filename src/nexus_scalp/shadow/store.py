@@ -1067,6 +1067,7 @@ class ShadowStore:
                 cols = {row[1] for row in conn.execute("PRAGMA table_info(shadow_decisions);")}
                 if "payload" not in cols:
                     return 0
+                # ci: schema-guarded — payload presence was checked above.
                 return int(
                     conn.execute(
                         "SELECT COALESCE(SUM(LENGTH(payload)), 0) FROM shadow_decisions"
