@@ -889,12 +889,127 @@ jobs:
             ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/query_matrix.json
             ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/provider_runtime_soak.json
             ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/runtime.log
+            ${{ runner.temp }}/nse-runtime-${{ matrix.provider }}/audit.db
           if-no-files-found: error
           retention-days: 14
 
       - name: Cleanup PostgreSQL
         if: always() && matrix.provider == 'postgres'
         run: docker rm -f nse-ci-pg >/dev/null 2>&1 || true
+
+  # ---------------------------------------------------------------------------
+  # DATABASE FABRIC CERTIFICATION — real UI-driven SQLite -> PostgreSQL -> SQLite.
+  # Uses the SQLite audit DB produced by the full real-process runtime lane,
+  # starts a disposable PostgreSQL, and exercises the same HTTP workflow the
+  # Database Management UI uses: config -> connection test -> preview ->
+  # migration -> validation -> automatic cutover -> restart -> reverse migration
+  # -> switch back -> restart. The same bounded query corpus runs statement by
+  # statement against both providers and a small p95 benchmark is recorded.
+  # This is a certification lane, not a load test.
+  # ---------------------------------------------------------------------------
+  db-fabric-certification:
+    name: DB Fabric Certification (SQLite ↔ PostgreSQL)
+    if: always() && needs.full-runtime-provider.result == 'success'
+    needs:
+      - full-runtime-provider
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+
+    env:
+      NSE_PG_TEST_PASSWORD: nse_password_dev
+      NSE_DATABASE__PG_HOST: 127.0.0.1
+      NSE_DATABASE__PG_PORT: "5432"
+      NSE_DATABASE__PG_DATABASE: nse_audit
+      NSE_DATABASE__PG_USER: nse_user
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web,postgres]"
+
+      - name: Download SQLite runtime evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ci-full-runtime-sqlite-*
+          path: ${{ runner.temp }}/db-fabric/input
+          merge-multiple: true
+
+      - name: Locate SQLite audit database
+        run: |
+          set -euo pipefail
+          sqlite_db="$(find "$RUNNER_TEMP/db-fabric/input" -type f -name audit.db -print -quit)"
+          test -n "$sqlite_db"
+          echo "SQLITE_RUNTIME_DB=$sqlite_db" >> "$GITHUB_ENV"
+
+      - name: Start disposable PostgreSQL 16
+        run: |
+          set -euo pipefail
+          docker rm -f nse-db-fabric-pg >/dev/null 2>&1 || true
+          docker run -d --name nse-db-fabric-pg \
+            -e POSTGRES_DB=nse_audit \
+            -e POSTGRES_USER=nse_user \
+            -e POSTGRES_PASSWORD="$NSE_PG_TEST_PASSWORD" \
+            -p 5432:5432 \
+            postgres:16-alpine
+          for i in $(seq 1 45); do
+            if docker exec nse-db-fabric-pg pg_isready -U nse_user -d nse_audit >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs nse-db-fabric-pg | tail -120 || true
+          exit 1
+
+      - name: Run end-to-end DB fabric certification
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/db-fabric/evidence"
+          python scripts/ci/db_fabric_certification.py \
+            --sqlite-db "$SQLITE_RUNTIME_DB" \
+            --settings-db "$RUNNER_TEMP/db-fabric/settings.db" \
+            --evidence-dir "$RUNNER_TEMP/db-fabric/evidence" \
+            --port 18090 | tee "$RUNNER_TEMP/db-fabric/certification.log"
+
+      - name: Print DB fabric diagnostics
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "=== DB FABRIC CERTIFICATION ==="
+          if [ -f "$RUNNER_TEMP/db-fabric/evidence/db_fabric_certification.json" ]; then
+            cat "$RUNNER_TEMP/db-fabric/evidence/db_fabric_certification.json"
+          fi
+          echo "=== APP LOGS ==="
+          for f in "$RUNNER_TEMP/db-fabric"/db-fabric-*.log; do
+            [ -f "$f" ] || continue
+            echo "--- $f ---"
+            grep -Ein 'warn|error|critical|exception|fatal|traceback|failed|locked' "$f" | tail -200 || true
+          done
+
+      - name: Upload DB fabric evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-db-fabric-certification-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/db-fabric/evidence/
+            ${{ runner.temp }}/db-fabric/certification.log
+            ${{ runner.temp }}/db-fabric/db-fabric-*.log
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup PostgreSQL
+        if: always()
+        run: docker rm -f nse-db-fabric-pg >/dev/null 2>&1 || true
 
   # ---------------------------------------------------------------------------
   # MT5/WINE — independent terminal runtime line.
