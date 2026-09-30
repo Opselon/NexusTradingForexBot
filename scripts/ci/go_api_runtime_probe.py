@@ -199,7 +199,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=18787)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--frontend-dist", type=Path)
-    parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--workers", type=int, default=1 if os.name == "nt" else 8)
     args = parser.parse_args()
 
     binary = Path(args.binary).resolve()
