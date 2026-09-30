@@ -660,7 +660,12 @@ def main() -> int:
             raise RuntimeError(f"PostgreSQL restart status failed: {post_restart}")
         evidence["phases"].append({"phase": "postgres_restart", "status": "PASS"})
 
-        reverse = http_json(base, "POST", "/api/db/manage/reverse-migrate", {"batch_size": 1000})
+        reverse = http_json(
+            base,
+            "POST",
+            "/api/db/manage/reverse-migrate",
+            {"batch_size": 1000, "sqlite_path": str(sqlite_work)},
+        )
         if reverse.get("success") is not True:
             raise RuntimeError(f"reverse migration failed: {reverse}")
         evidence["reverse_report"] = reverse.get("report")
