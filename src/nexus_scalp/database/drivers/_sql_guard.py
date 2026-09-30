@@ -60,7 +60,10 @@ def _verb_allowed(sql: str) -> bool:
         stripped = line.strip()
         if not stripped or stripped.startswith("--"):
             continue
-        return stripped.upper().startswith(_VERBS)
+        # Compare the first SQL token exactly; "startswith" would accept
+        # prefixes such as "SELECTED" or "DROPPED" as valid verbs.
+        first_token = stripped.split(None, 1)[0].upper()
+        return first_token in _VERBS
     return False
 
 
