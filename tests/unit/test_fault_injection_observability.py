@@ -185,6 +185,7 @@ def test_f2_zero_h1_momentum_is_not_treated_as_history_fallback(tmp_path, monkey
     assert engine.warmup_state == "READY"
     assert engine._inference_enabled is True
 
+
 def test_f2_missing_htf_blocks_inference_visibly(tmp_path) -> None:
     engine, _ = _make_engine(tmp_path)
     # Inject the fault: H1/H4 history unavailable.
