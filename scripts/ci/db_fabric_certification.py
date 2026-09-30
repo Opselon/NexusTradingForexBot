@@ -753,9 +753,7 @@ def main() -> int:
             stop_engine.get("engine_running") is not False
             or stop_engine.get("shutdown", {}).get("phase") != "CLOSED"
         ):
-            raise RuntimeError(
-                f"engine quiesce did not reach CLOSED: {stop_engine}"
-            )
+            raise RuntimeError(f"engine quiesce did not reach CLOSED: {stop_engine}")
 
         evidence["engine_quiesce"] = stop_engine
         evidence["phases"].append({"phase": "engine_quiesced_before_reverse", "status": "PASS"})

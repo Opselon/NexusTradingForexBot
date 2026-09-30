@@ -2396,7 +2396,6 @@ class LiveEngine:
             self._shutdown_in_progress = False
             self._shutdown_completed = True
 
-
     # -------------------------
     # Preflight
     # -------------------------

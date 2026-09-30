@@ -10,7 +10,16 @@ from typing import Any
 
 
 def load(root: Path, provider: str) -> dict[str, Any]:
+    """Load a provider certification artifact, accepting either directory shape.
+
+    The lanes historically wrote ``ci-db-cert-<provider>`` (no suffix); the glob
+    below only matched ``ci-db-cert-<provider>-*/``, so a lane that wrote the
+    plain name produced "missing <provider> certification artifact" even though
+    the artifact existed (DB-FABRIC parity step). Accept both spellings rather
+    than renaming a directory the evidence bundles already ship.
+    """
     matches = list(root.glob(f"ci-db-cert-{provider}-*/database_provider_cert.json"))
+    matches.extend(root.glob(f"ci-db-cert-{provider}/database_provider_cert.json"))
     if not matches:
         raise FileNotFoundError(f"missing {provider} certification artifact under {root}")
     return json.loads(matches[0].read_text(encoding="utf-8"))
