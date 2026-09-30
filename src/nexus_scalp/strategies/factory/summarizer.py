@@ -157,15 +157,12 @@ def memory_summary(
 ) -> dict[str, Any]:
     """Builds the structured learning context (spec 24 / 81) — this is what
     the next generation's planner / LLM prompt consumes."""
-    top = sorted(
-        all_entries,
-        key=lambda e: float((e.get("score") or {}).get("final_score", 0.0) or 0.0),
-        reverse=True,
-    )[:5]
-    worst = sorted(
-        all_entries,
-        key=lambda e: float((e.get("score") or {}).get("final_score", 0.0) or 0.0),
-    )[:5]
+    # Registry reads are provider-shaped rows, but legacy/corrupt rows can
+    # still round-trip as scalar JSON values. Ignore those rows rather than
+    # turning a diagnostic memory endpoint into a 500.
+    entries = [e for e in all_entries if isinstance(e, dict)]
+    top = sorted(entries, key=_score_of, reverse=True)[:5]
+    worst = sorted(entries, key=_score_of)[:5]
 
     common_failures: list[dict[str, Any]] = []
     failure_tally: dict[str, int] = {}
