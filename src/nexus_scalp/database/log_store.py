@@ -403,8 +403,12 @@ class DatabaseLogStore:
             cutoff = (datetime.now(UTC) - timedelta(days=self.retention_days)).isoformat()
             where = "timestamp < %s" if self.cfg.is_postgresql else "timestamp < ?"
             sql = f"DELETE FROM {LOG_TABLE} WHERE {where}"
-            cnt = driver.execute(sql, (cutoff,))
-            return int(cnt or 0)
+            result = driver.execute(sql, (cutoff,))
+            # PostgreSQL/SQLite drivers may return a cursor rather than the
+            # affected-row count. Use rowcount when available and preserve
+            # the integer contract of this method.
+            rowcount = getattr(result, "rowcount", result)
+            return int(rowcount or 0)
         except Exception as exc:
             logger.error("Failed to prune old database operation logs: %s", exc)
             return 0
