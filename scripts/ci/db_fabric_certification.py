@@ -746,6 +746,17 @@ def main() -> int:
         evidence["engine_quiesce"] = quiesced_status
         evidence["phases"].append({"phase": "engine_quiesced_before_reverse", "status": "PASS"})
 
+        # The PostgreSQL run can still lazily create tables AFTER the snapshot
+        # above (shadow/shadow70/governance stores, release_metadata, the
+        # strategy research store). The reverse migration copies whatever
+        # exists at this point, so the final comparison must use a schema
+        # captured at the same moment — not the pre-run snapshot.
+        pg_conn_reverse = open_db("postgres", sqlite_work)
+        try:
+            pg_schema_at_reverse = tables_and_columns("postgres", pg_conn_reverse)
+        finally:
+            pg_conn_reverse.close()
+
         reverse = http_json(
             base,
             "POST",
@@ -761,12 +772,12 @@ def main() -> int:
         # counts are now a stable integrity baseline rather than a moving target.
         reverse_report = evidence["reverse_report"] or {}
         reverse_per_table = (
-            reverse_report.get("per_table")
-            if isinstance(reverse_report, dict)
-            else None
+            reverse_report.get("per_table") if isinstance(reverse_report, dict) else None
         )
         if not isinstance(reverse_per_table, dict):
-            raise RuntimeError(f"reverse migration returned no per-table integrity report: {reverse_report}")
+            raise RuntimeError(
+                f"reverse migration returned no per-table integrity report: {reverse_report}"
+            )
         mismatched_tables = {
             table: detail
             for table, detail in reverse_per_table.items()
@@ -785,6 +796,8 @@ def main() -> int:
             if isinstance(detail, dict) and detail.get("source_rows") is not None
         }
         evidence["phases"].append({"phase": "postgres_to_sqlite_reverse", "status": "PASS"})
+        pg_schema = pg_schema_at_reverse
+        pg_counts = row_counts(open_db("postgres", sqlite_work), pg_schema)
 
         switched_back = http_json(base, "POST", "/api/db/manage/provider", {"provider": "sqlite"})
         if switched_back.get("success") is not True:
@@ -821,7 +834,8 @@ def main() -> int:
         ]
         final_schema_compare["allowed_preexisting_extras"] = sorted(allowed_preexisting)
         final_schema_compare["allowed_schema_replay_extras"] = sorted(
-            table for table in final_schema_compare["extra_right"]
+            table
+            for table in final_schema_compare["extra_right"]
             if table.casefold() in allowed_schema_replay_keys
         )
         final_schema_compare["unexpected_extra_right"] = unexpected_extra
@@ -944,7 +958,9 @@ def main() -> int:
         for log_path in log_candidates:
             if log_path.exists():
                 try:
-                    logs[str(log_path)] = log_path.read_text(encoding="utf-8", errors="replace")[-100000:]
+                    logs[str(log_path)] = log_path.read_text(encoding="utf-8", errors="replace")[
+                        -100000:
+                    ]
                 except OSError as log_exc:
                     logs[str(log_path)] = f"<log read failed: {log_exc}>"
         evidence["runtime_logs"] = logs
