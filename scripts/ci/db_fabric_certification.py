@@ -39,12 +39,18 @@ STARTUP_TIMEOUT = 60
 
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(value, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8"
+    )
 
 
-def http_json(base: str, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def http_json(
+    base: str, method: str, path: str, payload: dict[str, Any] | None = None
+) -> dict[str, Any]:
     data = None
-    headers = {"Authorization": "Bearer " + os.environ.get("NSE_WEB_AUTH_TOKEN", "ci-runtime-token")}
+    headers = {
+        "Authorization": "Bearer " + os.environ.get("NSE_WEB_AUTH_TOKEN", "ci-runtime-token")
+    }
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -140,7 +146,11 @@ def open_db(provider: str, sqlite_path: Path):
         return conn
     import psycopg
 
-    from nexus_scalp.database.config import DatabaseConfig, PG_PASSWORD_SECRET_KEY, build_postgres_url
+    from nexus_scalp.database.config import (
+        PG_PASSWORD_SECRET_KEY,
+        DatabaseConfig,
+        build_postgres_url,
+    )
     from nexus_scalp.settings.secret_store import SecureSecretStore
 
     password = os.environ.get("NSE_PG_TEST_PASSWORD", "nse_password_dev")
@@ -166,7 +176,9 @@ def tables_and_columns(provider: str, conn: Any) -> dict[str, list[str]]:
         ).fetchall()
         out: dict[str, list[str]] = {}
         for (name,) in rows:
-            cols = conn.execute('PRAGMA table_info("' + str(name).replace('"', '""') + '")').fetchall()
+            cols = conn.execute(
+                'PRAGMA table_info("' + str(name).replace('"', '""') + '")'
+            ).fetchall()
             out[str(name)] = [str(row[1]) for row in cols if len(row) > 1]
         return out
     rows = conn.execute(
@@ -195,7 +207,9 @@ def row_counts(conn: Any, schema: dict[str, list[str]]) -> dict[str, int]:
     return counts
 
 
-def query_corpus(provider: str, conn: Any, schema: dict[str, list[str]], rounds: int = 2) -> dict[str, Any]:
+def query_corpus(
+    provider: str, conn: Any, schema: dict[str, list[str]], rounds: int = 2
+) -> dict[str, Any]:
     """Run the same generated read-only corpus against either provider."""
     selected = list(schema)[:MAX_TABLES]
     cases: list[tuple[str, str]] = []
@@ -312,7 +326,11 @@ def main() -> int:
         sqlite_counts = row_counts(sqlite_conn, sqlite_schema)
         sqlite_queries = query_corpus("sqlite", sqlite_conn, sqlite_schema)
         sqlite_conn.close()
-        evidence["sqlite_before"] = {"schema": sqlite_schema, "counts": sqlite_counts, "queries": sqlite_queries}
+        evidence["sqlite_before"] = {
+            "schema": sqlite_schema,
+            "counts": sqlite_counts,
+            "queries": sqlite_queries,
+        }
         if sqlite_queries["failed"]:
             raise RuntimeError(f"SQLite query corpus failed: {sqlite_queries['failed']}")
 
@@ -370,14 +388,19 @@ def main() -> int:
             time.sleep(1)
         if not migration_report:
             raise RuntimeError("UI migration did not finish within 90s")
-        if migration_report.get("status") not in {"COMPLETE", "SUCCESS"} or migration_report.get("validation") != "PASSED":
+        if (
+            migration_report.get("status") not in {"COMPLETE", "SUCCESS"}
+            or migration_report.get("validation") != "PASSED"
+        ):
             raise RuntimeError(f"UI migration validation failed: {migration_report}")
         evidence["migration_report"] = migration_report
         evidence["phases"].append({"phase": "ui_sqlite_to_postgres", "status": "PASS"})
 
         status_after_migration = http_json(base, "GET", "/api/db/manage/status")
         if status_after_migration.get("provider") != "postgresql":
-            raise RuntimeError(f"provider was not cut over after validated migration: {status_after_migration}")
+            raise RuntimeError(
+                f"provider was not cut over after validated migration: {status_after_migration}"
+            )
         stop_app(proc)
         proc = start_app(args.port, args.settings_db, sqlite_work, "postgresql")
         wait_ready(base)
@@ -393,11 +416,17 @@ def main() -> int:
         }
         pg_queries = query_corpus("postgres", pg_conn, pg_schema)
         pg_conn.close()
-        evidence["postgres_after"] = {"schema": pg_schema, "counts": pg_counts, "queries": pg_queries}
+        evidence["postgres_after"] = {
+            "schema": pg_schema,
+            "counts": pg_counts,
+            "queries": pg_queries,
+        }
         evidence["schema_compare"] = schema_compare
         evidence["count_diffs"] = count_diffs
         if not schema_compare["match"] or count_diffs:
-            raise RuntimeError(f"SQLite/PostgreSQL schema or count mismatch: {schema_compare}; {count_diffs}")
+            raise RuntimeError(
+                f"SQLite/PostgreSQL schema or count mismatch: {schema_compare}; {count_diffs}"
+            )
         if pg_queries["failed"]:
             raise RuntimeError(f"PostgreSQL query corpus failed: {pg_queries['failed']}")
         evidence["phases"].append({"phase": "postgres_restart_query_parity", "status": "PASS"})
@@ -426,7 +455,11 @@ def main() -> int:
             for table in sqlite_counts
             if sqlite_counts[table] != final_counts.get(table)
         }
-        evidence["sqlite_final"] = {"schema": final_schema, "counts": final_counts, "queries": final_queries}
+        evidence["sqlite_final"] = {
+            "schema": final_schema,
+            "counts": final_counts,
+            "queries": final_queries,
+        }
         evidence["final_schema_compare"] = final_schema_compare
         evidence["final_count_diffs"] = final_count_diffs
         if not final_schema_compare["match"] or final_count_diffs or final_queries["failed"]:
