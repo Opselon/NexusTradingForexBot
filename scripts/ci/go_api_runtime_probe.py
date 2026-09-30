@@ -242,7 +242,7 @@ def main() -> int:
             item for item in results
             if item.get("transport_error")
             or item.get("status") is None
-            or item.get("status") in {404, 405}
+            or item.get("status") == 405
             or (item.get("status", 0) >= 500 and item.get("status") != 503)
         ]
 
