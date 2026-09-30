@@ -131,11 +131,38 @@ type SystemDirectHandler struct {
 type SystemDirect = SystemDirectHandler
 type SystemDirectHandlers = SystemDirectHandler
 
+// commitOnce + commitCache guarantee ONE git resolution per PROCESS. The
+// legacy VersionDirect path rebuilt the handler on every request, which reset
+// cachedVersion to nil each call — so every request re-ran `git rev-parse
+// HEAD` (~43ms on Windows) and the "direct" route ended up slower than the
+// Python proxy it replaced. Caching the resolved commit process-wide makes
+// any handler built later (including per-request rebuilds) reuse it.
+var (
+	commitOnce     sync.Once
+	commitCache    string
+	commitErr      error
+	commitResolved bool
+)
+
+// resolveCommitOnce runs the (expensive, exec-based) git resolution exactly
+// once per process, then returns the cached result.
+func resolveCommitOnce() (string, error) {
+	commitOnce.Do(func() {
+		commitCache, commitErr = resolveGitCommit()
+		commitResolved = true
+	})
+	return commitCache, commitErr
+}
+
 // NewSystemDirect constructs a direct handler with an optional Python client.
+//
+// The handler caches VersionData on first use, and the git commit it embeds
+// is cached process-wide (resolveCommitOnce), so the exec happens at most
+// once per process no matter how many handlers are constructed.
 func NewSystemDirect(py *python.Client) *SystemDirectHandler {
 	return &SystemDirectHandler{
 		py:          py,
-		gitResolver: resolveGitCommit,
+		gitResolver: resolveCommitOnce,
 	}
 }
 
@@ -155,10 +182,26 @@ func (h *SystemDirectHandler) SetForceFallback(force bool) {
 }
 
 // SetGitCommitResolver overrides the git commit resolution func (useful in tests).
+//
+// The override replaces the process-wide cached resolver for THIS handler:
+// resolution still runs at most ONCE (the default is once per process, an
+// override is once per handler), instead of on every request. Without that
+// guarantee a rebuilt or reset handler would re-run resolution per request —
+// exactly the Wave-6 regression this package guards against.
 func (h *SystemDirectHandler) SetGitCommitResolver(resolver func() (string, error)) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.gitResolver = resolver
+	if resolver == nil {
+		h.gitResolver = resolveCommitOnce
+		return
+	}
+	var sha string
+	var err error
+	var once sync.Once
+	h.gitResolver = func() (string, error) {
+		once.Do(func() { sha, err = resolver() })
+		return sha, err
+	}
 }
 
 // Capabilities serves GET /api/v1/system/capabilities directly from Go.
@@ -206,13 +249,17 @@ func (h *SystemDirectHandler) Version(w http.ResponseWriter, r *http.Request) {
 }
 
 // CapabilitiesDirect provides direct Go serving on the legacy SystemHandlers receiver.
+// It reuses the ONE long-lived SystemDirectHandler built in NewSystem so the
+// cached capabilities survive across requests.
 func (h *SystemHandlers) CapabilitiesDirect(w http.ResponseWriter, r *http.Request) {
-	NewSystemDirect(h.py).Capabilities(w, r)
+	h.direct.Capabilities(w, r)
 }
 
 // VersionDirect provides direct Go serving on the legacy SystemHandlers receiver.
+// It reuses the ONE long-lived SystemDirectHandler built in NewSystem so the
+// cached VersionData survives across requests (see SystemHandlers.direct).
 func (h *SystemHandlers) VersionDirect(w http.ResponseWriter, r *http.Request) {
-	NewSystemDirect(h.py).Version(w, r)
+	h.direct.Version(w, r)
 }
 
 // SystemCapabilitiesDirectHandler returns a standalone http.HandlerFunc.

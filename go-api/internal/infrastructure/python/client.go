@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -32,6 +33,90 @@ import (
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/security/auth"
 	"github.com/Opselon/NexusTradingForexBot/go-api/pkg/contracts"
 )
+
+// Boundary transport tuning (Wave 6).
+//
+// The default http.Transport has MaxIdleConnsPerHost=2, which caps the
+// reusable connection pool at two idle sockets per upstream. Under any real
+// concurrency the pool is exhausted and every overflow request pays a fresh
+// 127.0.0.1 TCP setup (~1-3ms) plus a uvicorn accept; under burst load the
+// backlog queues and shows up as a multi-hundred-ms p99. Raising the pool and
+// keeping idle sockets alive across the request gap removes that per-request
+// connection cost.
+const (
+	// maxIdleConnsPerHost is the reusable connection pool size for the single
+	// localhost upstream. 128 comfortably covers the control plane's real
+	// concurrency; beyond that the overflow cost is a new socket, not a stall.
+	maxIdleConnsPerHost = 128
+	// maxIdleConns bounds the whole pool (one host in practice).
+	maxIdleConns = 256
+	// idleConnTimeout is how long an unused socket stays in the pool. It must
+	// stay comfortably BELOW the upstream's own keep-alive timeout, otherwise
+	// Go reuses a socket the upstream has already half-closed and the request
+	// fails with a spurious EOF (retried once, costing latency). uvicorn's
+	// default timeout_keep_alive is 5s, so 70s is wrong; 4s is.
+	idleConnTimeout = 4 * time.Second
+	// dialTimeout bounds upstream connection setup so a hung Python runtime
+	// degrades this request, not the process.
+	dialTimeout = 5 * time.Second
+	// keepAliveInterval is the TCP keep-alive probe interval for pooled
+	// sockets. The default is 15s; on Windows a shorter interval surfaces a
+	// dead upstream peer faster than the dial timeout alone.
+	keepAliveInterval = 30 * time.Second
+	// responseHeaderTimeout bounds the time waiting for the upstream response
+	// headers once the request is written, so a slow upstream cannot hold a
+	// pooled connection (and a goroutine) forever. The Client.Timeout stays the
+	// outer bound for the whole call.
+	responseHeaderTimeout = 25 * time.Second
+)
+
+// newBoundaryTransport builds the shared, keep-alive-enabled http.Transport
+// used by every python.Client. One transport is shared across clients so the
+// connection pool is process-wide (all clients talk to the same localhost
+// upstream anyway); pooling is what makes the proxy not pay TCP setup per
+// request.
+//
+// HTTP/2 is NOT attempted: the Python upstream is uvicorn over cleartext HTTP
+// (no h2c negotiation), so ForceAttemptHTTP2 only adds an ALPN round-trip that
+// always falls back to HTTP/1.1 anyway.
+func newBoundaryTransport() *http.Transport {
+	return &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   dialTimeout,
+			KeepAlive: keepAliveInterval,
+		}).DialContext,
+		MaxIdleConns:          maxIdleConns,
+		MaxIdleConnsPerHost:   maxIdleConnsPerHost,
+		MaxConnsPerHost:       0,
+		IdleConnTimeout:       idleConnTimeout,
+		ResponseHeaderTimeout: responseHeaderTimeout,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+}
+
+// sharedTransport is the single process-wide upstream transport. It is created
+// once and never replaced: transports are safe for concurrent use and their
+// pools are what we want every request to reuse.
+var (
+	sharedTransportOnce sync.Once
+	sharedTransport     *http.Transport
+)
+
+// boundaryTransport returns the shared tuned transport, building it on first
+// use.
+func boundaryTransport() *http.Transport {
+	sharedTransportOnce.Do(func() {
+		sharedTransport = newBoundaryTransport()
+	})
+	return sharedTransport
+}
+
+// NewTransportForTest exposes the same transport construction used in
+// production so tests can assert on its keep-alive configuration.
+func NewTransportForTest() *http.Transport {
+	return newBoundaryTransport()
+}
 
 // ErrNotConfigured means no Python origin is configured (engine not
 // attached). Maps to the v1 DEPENDENCY_UNAVAILABLE / ENGINE_UNAVAILABLE codes.
@@ -150,10 +235,19 @@ func New(opts Options) *Client {
 	}
 	return &Client{
 		origin:      opts.Origin,
-		hc:          &http.Client{Timeout: opts.Timeout},
+		hc:          &http.Client{Timeout: opts.Timeout, Transport: boundaryTransport()},
 		maxFailures: opts.MaxFailures,
 		coolDown:    opts.CoolDown,
 	}
+}
+
+// Transport exposes the client's shared upstream transport so callers (and
+// tests) can inspect or reuse the tuned connection pool. Never nil.
+func (c *Client) Transport() http.RoundTripper {
+	if c == nil || c.hc == nil || c.hc.Transport == nil {
+		return boundaryTransport()
+	}
+	return c.hc.Transport
 }
 
 // Configured reports whether an origin is set (engine attached?).
@@ -218,6 +312,16 @@ func (c *Client) DoJSONRaw(ctx context.Context, method, path string, body io.Rea
 	return c.do(ctx, method, path, body, out)
 }
 
+// maxUpstreamBody bounds how many bytes of a Python response the buffered
+// paths (DoRaw/DoJSON) will read before giving up. It is a runaway guard
+// against a broken upstream emitting an endless stream, NOT a correctness
+// limit: Python legitimately emits multi-megabyte payloads
+// (/api/v1/research/strategies measures ~15 MiB with the full registry), and
+// an undersized cap silently truncates a valid body mid-string, the unmarshal
+// then fails, and the handler reports 503 DEPENDENCY_UNAVAILABLE — an outage
+// the upstream never had. 64 MiB keeps the guard far above any real payload.
+const maxUpstreamBody = 64 << 20
+
 // DoRaw forwards the request and returns the raw response body. Use this when
 // the caller must preserve Python's exact byte output (key order, float
 // formatting, an envelope it does not want re-derived).
@@ -250,7 +354,7 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body io.Reader)
 	}
 	defer resp.Body.Close()
 
-	payload, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	payload, err := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamBody))
 	if err != nil {
 		c.recordFailure()
 		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
@@ -278,9 +382,78 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body io.Reader)
 	if len(payload) == 0 {
 		return nil, nil
 	}
-
 	c.recordSuccess()
 	return payload, nil
+}
+
+// DoStream forwards the request and returns the live upstream response WITHOUT
+// buffering the body. This is the only correct way to proxy a Server-Sent
+// Events stream (text/event-stream): the buffered DoRaw path reads the whole
+// body with io.ReadAll, which blocks forever on a stream that is intentionally
+// open-ended, and even if it completed it would discard Python's
+// Content-Type/Cache-Control/Connection headers and re-emit the bytes as
+// application/json — Chrome's EventSource then aborts with
+// "response has a MIME type (application/json) that is not
+// text/event-stream", killing live tick/trace updates through the Go origin.
+//
+// The caller owns the returned response and MUST close resp.Body. Failure
+// semantics mirror DoRaw: ErrNotConfigured / ErrUnavailable / *BoundaryError /
+// *LegacyResponse are classified the same way so a stream's error answers
+// cannot diverge from a buffered route's. Because the caller streams outside
+// the circuit breaker's observation window, only the connection setup and
+// header read count toward failure accounting — a long-lived stream must never
+// be able to trip the breaker just by being long-lived.
+func (c *Client) DoStream(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
+	if !c.Configured() {
+		return nil, ErrNotConfigured
+	}
+	if c.tripped() {
+		return nil, ErrUnavailable
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.origin+path, body)
+	if err != nil {
+		return nil, err
+	}
+	if tok, ok := auth.CurrentToken(); ok && tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	if rid := observability.RequestIDFrom(ctx); rid != "" {
+		req.Header.Set("X-Request-ID", rid)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		c.recordFailure()
+		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+
+	// A >=400 answer is a finite, complete response, not a stream: classify it
+	// exactly as DoRaw does and hand the caller the boundary error so SSE
+	// endpoints report Python's own 401/403/422/503 instead of hanging or
+	// being masked. The body still has to be drained and closed here because
+	// the caller never sees the Response on this path.
+	if resp.StatusCode >= 400 {
+		payload, rerr := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamBody))
+		_ = resp.Body.Close()
+		if rerr != nil {
+			c.recordFailure()
+			return nil, fmt.Errorf("%w: %v", ErrUnavailable, rerr)
+		}
+		if strings.HasPrefix(path, "/api/v1/") {
+			var env contracts.ErrorEnvelope
+			if jerr := json.Unmarshal(payload, &env); jerr == nil && env.Error.Code != "" {
+				return nil, &BoundaryError{Status: resp.StatusCode, Envelope: env}
+			}
+		}
+		return nil, &LegacyResponse{Status: resp.StatusCode, Body: payload}
+	}
+
+	c.recordSuccess()
+	return resp, nil
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body io.Reader, out any) error {
@@ -314,7 +487,7 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader, ou
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamBody))
 	if err != nil {
 		c.recordFailure()
 		return fmt.Errorf("%w: %v", ErrUnavailable, err)
