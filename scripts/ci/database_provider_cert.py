@@ -11,6 +11,7 @@ no concurrent flood, and no writes against the application database.
 """
 
 # fmt: off
+# ruff: noqa: I001
 
 from __future__ import annotations
 
