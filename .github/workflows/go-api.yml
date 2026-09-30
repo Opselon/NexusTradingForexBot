@@ -140,9 +140,9 @@ jobs:
     timeout-minutes: 20
 
     strategy:
-      # Windows is a hard requirement, not a best-effort leg: a fail-fast
-      # false would let the shipped-OS failure hide behind a Linux pass.
-      fail-fast: true
+      # Keep Linux and Windows independent so every shipped OS reports its own
+      # Go build, unit-test, and full API-runtime result.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
 
