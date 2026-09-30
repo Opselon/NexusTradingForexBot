@@ -130,6 +130,7 @@ def canonical_feature_names() -> tuple[str, ...]:
     silently at inference.
     """
     base = tuple(BASE_50D_NAMES)
+    _run_import_guard()
     news_canonical = _news_schema_fields()
     liquidity_canonical = (
         "bsl_distance_atr",
@@ -328,6 +329,7 @@ def assert_canonical_registry() -> None:
     definition, one registry — any drift is an immediate error (INV-009).
     """
     registered = FEATURE_SCHEMAS.resolve(SCHEMA_ID)
+    _run_import_guard()
     if registered.dimension != DIMENSION:
         raise RuntimeError(
             f"70D contract: registry scalp_v3 dimension {registered.dimension} != {DIMENSION}. "
@@ -341,5 +343,20 @@ def assert_canonical_registry() -> None:
 
 
 # Import-time guard: the news/liquidity upstream orders are verified against
-# the canonical tuples (fail early in tests and in the live entry points).
-canonical_feature_names()
+# the canonical tuples. EU-03 (wave-6 perf): the guard used to run
+# ``canonical_feature_names()`` directly at module import, which pulls
+# ``model_generation.architectures`` -> ``torch`` (~1.8s) on EVERY CLI
+# invocation — even ``nexus --version``, which only needs SCHEMA_ID. The check
+# now runs lazily, on the first call of ``canonical_feature_names()``,
+# ``canonical_registry_json()`` or ``assert_canonical_registry()``: the same
+# fail-early guarantee still holds (the first real consumer raises before any
+# inference), while imports that only need the schema id pay nothing.
+_GUARD: dict[str, bool] = {"ran": False}
+
+
+def _run_import_guard() -> None:
+    """Verify the news/liquidity upstream orders once, on first real use."""
+    if _GUARD["ran"]:
+        return
+    _GUARD["ran"] = True
+    canonical_feature_names()

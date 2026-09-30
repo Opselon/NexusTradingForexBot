@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -32,6 +33,90 @@ import (
 	"github.com/Opselon/NexusTradingForexBot/go-api/internal/security/auth"
 	"github.com/Opselon/NexusTradingForexBot/go-api/pkg/contracts"
 )
+
+// Boundary transport tuning (Wave 6).
+//
+// The default http.Transport has MaxIdleConnsPerHost=2, which caps the
+// reusable connection pool at two idle sockets per upstream. Under any real
+// concurrency the pool is exhausted and every overflow request pays a fresh
+// 127.0.0.1 TCP setup (~1-3ms) plus a uvicorn accept; under burst load the
+// backlog queues and shows up as a multi-hundred-ms p99. Raising the pool and
+// keeping idle sockets alive across the request gap removes that per-request
+// connection cost.
+const (
+	// maxIdleConnsPerHost is the reusable connection pool size for the single
+	// localhost upstream. 128 comfortably covers the control plane's real
+	// concurrency; beyond that the overflow cost is a new socket, not a stall.
+	maxIdleConnsPerHost = 128
+	// maxIdleConns bounds the whole pool (one host in practice).
+	maxIdleConns = 256
+	// idleConnTimeout is how long an unused socket stays in the pool. It must
+	// stay comfortably BELOW the upstream's own keep-alive timeout, otherwise
+	// Go reuses a socket the upstream has already half-closed and the request
+	// fails with a spurious EOF (retried once, costing latency). uvicorn's
+	// default timeout_keep_alive is 5s, so 70s is wrong; 4s is.
+	idleConnTimeout = 4 * time.Second
+	// dialTimeout bounds upstream connection setup so a hung Python runtime
+	// degrades this request, not the process.
+	dialTimeout = 5 * time.Second
+	// keepAliveInterval is the TCP keep-alive probe interval for pooled
+	// sockets. The default is 15s; on Windows a shorter interval surfaces a
+	// dead upstream peer faster than the dial timeout alone.
+	keepAliveInterval = 30 * time.Second
+	// responseHeaderTimeout bounds the time waiting for the upstream response
+	// headers once the request is written, so a slow upstream cannot hold a
+	// pooled connection (and a goroutine) forever. The Client.Timeout stays the
+	// outer bound for the whole call.
+	responseHeaderTimeout = 25 * time.Second
+)
+
+// newBoundaryTransport builds the shared, keep-alive-enabled http.Transport
+// used by every python.Client. One transport is shared across clients so the
+// connection pool is process-wide (all clients talk to the same localhost
+// upstream anyway); pooling is what makes the proxy not pay TCP setup per
+// request.
+//
+// HTTP/2 is NOT attempted: the Python upstream is uvicorn over cleartext HTTP
+// (no h2c negotiation), so ForceAttemptHTTP2 only adds an ALPN round-trip that
+// always falls back to HTTP/1.1 anyway.
+func newBoundaryTransport() *http.Transport {
+	return &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   dialTimeout,
+			KeepAlive: keepAliveInterval,
+		}).DialContext,
+		MaxIdleConns:          maxIdleConns,
+		MaxIdleConnsPerHost:   maxIdleConnsPerHost,
+		MaxConnsPerHost:       0,
+		IdleConnTimeout:       idleConnTimeout,
+		ResponseHeaderTimeout: responseHeaderTimeout,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+}
+
+// sharedTransport is the single process-wide upstream transport. It is created
+// once and never replaced: transports are safe for concurrent use and their
+// pools are what we want every request to reuse.
+var (
+	sharedTransportOnce sync.Once
+	sharedTransport     *http.Transport
+)
+
+// boundaryTransport returns the shared tuned transport, building it on first
+// use.
+func boundaryTransport() *http.Transport {
+	sharedTransportOnce.Do(func() {
+		sharedTransport = newBoundaryTransport()
+	})
+	return sharedTransport
+}
+
+// NewTransportForTest exposes the same transport construction used in
+// production so tests can assert on its keep-alive configuration.
+func NewTransportForTest() *http.Transport {
+	return newBoundaryTransport()
+}
 
 // ErrNotConfigured means no Python origin is configured (engine not
 // attached). Maps to the v1 DEPENDENCY_UNAVAILABLE / ENGINE_UNAVAILABLE codes.
@@ -150,10 +235,19 @@ func New(opts Options) *Client {
 	}
 	return &Client{
 		origin:      opts.Origin,
-		hc:          &http.Client{Timeout: opts.Timeout},
+		hc:          &http.Client{Timeout: opts.Timeout, Transport: boundaryTransport()},
 		maxFailures: opts.MaxFailures,
 		coolDown:    opts.CoolDown,
 	}
+}
+
+// Transport exposes the client's shared upstream transport so callers (and
+// tests) can inspect or reuse the tuned connection pool. Never nil.
+func (c *Client) Transport() http.RoundTripper {
+	if c == nil || c.hc == nil || c.hc.Transport == nil {
+		return boundaryTransport()
+	}
+	return c.hc.Transport
 }
 
 // Configured reports whether an origin is set (engine attached?).
