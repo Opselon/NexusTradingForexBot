@@ -169,7 +169,7 @@ def port_create_table(ddl: str) -> str | None:
     tail = tail.rstrip().rstrip(",") if tail.strip() else tail
     out_sql = f"{head}({', '.join(out_lines)}){tail}"
     return re.sub(
-        r"(?i)\bdatetime\s*\(\s*(['"])now\1\s*\)",
+        r"(?i)\bdatetime\s*\(\s*(['\"])now\1\s*\)",
         "to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')",
         out_sql,
     )
