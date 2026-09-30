@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Aggregate the two provider runtime certification reports."""
+
 from __future__ import annotations
 
 import argparse
@@ -20,9 +21,7 @@ def main() -> int:
         print("::error title=Runtime provider evidence missing::No provider report files found")
         return 1
 
-    reports: list[dict[str, Any]] = [
-        json.loads(path.read_text(encoding="utf-8")) for path in files
-    ]
+    reports: list[dict[str, Any]] = [json.loads(path.read_text(encoding="utf-8")) for path in files]
     failed = [report for report in reports if report.get("status") == "FAIL"]
     warned = [report for report in reports if report.get("status") == "PASS_WITH_WARNINGS"]
     overall = "FAIL" if failed else ("PASS_WITH_WARNINGS" if warned else "PASS")

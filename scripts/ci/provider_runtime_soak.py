@@ -44,17 +44,19 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODEL_ARTIFACT = (
-    REPO_ROOT
-    / "artifacts"
-    / "models"
-    / "scalp"
-    / "XAUUSD"
-    / "70d_liquidity"
-    / "model.pt"
+    REPO_ROOT / "artifacts" / "models" / "scalp" / "XAUUSD" / "70d_liquidity" / "model.pt"
 )
 MAX_API_ROUTES = 100
 API_WORKERS = 6
 API_TIMEOUT_SEC = 4
+# The runtime soak shares one single-worker uvicorn process with the engine's
+# own background workers. A full-route battery fired while the hot-probe loop
+# is already running starves the single asyncio event loop and every request
+# hits the client timeout — the failure is manufactured by the harness, not the
+# application. Battery sweeps run with a small stagger so the control plane is
+# exercised without self-inflicted denial of service.
+API_SWEEP_WORKERS = 2
+API_SWEEP_STAGGER_MS = 35
 DB_QUERY_TIMEOUT_MS = 3000
 MIN_TOTAL_QUERIES = 500
 MIN_DB_QUERIES_PER_PASS = 250
@@ -78,9 +80,7 @@ SEVERITY_RE = re.compile(
 )
 TRACEBACK_RE = re.compile(r"Traceback \(most recent call last\):")
 FRAME_RE = re.compile(r'File "(.+?)", line (\d+), in (.+)')
-SOURCE_RE = re.compile(
-    r"((?:[A-Za-z]:[\\/]|/)?[\w.\-\\/]+\.py):(\d+)(?::(\d+))?"
-)
+SOURCE_RE = re.compile(r"((?:[A-Za-z]:[\\/]|/)?[\w.\-\\/]+\.py):(\d+)(?::(\d+))?")
 ANSI_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 
 
@@ -90,7 +90,9 @@ def set_env(name: str, value: str) -> None:
 
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8"
+    )
 
 
 class LogCollector:
@@ -133,7 +135,9 @@ class LogCollector:
                     traceback_buf.append(line)
                     if len(traceback_buf) >= 80 or (
                         line
-                        and not line.startswith((" ", "File ", "Traceback", "During handling", "The above"))
+                        and not line.startswith(
+                            (" ", "File ", "Traceback", "During handling", "The above")
+                        )
                         and SEVERITY_RE.search(line)
                     ):
                         self._record_traceback(traceback_buf, traceback_start, now)
@@ -156,7 +160,9 @@ class LogCollector:
                     "line_no": len(self.lines),
                     "elapsed_sec": round(now - self.started, 3),
                     "message": line,
-                    "fingerprint": hashlib.sha256(normalized.encode("utf-8", "replace")).hexdigest()[:16],
+                    "fingerprint": hashlib.sha256(
+                        normalized.encode("utf-8", "replace")
+                    ).hexdigest()[:16],
                     "source": (
                         {
                             "file": source.group(1),
@@ -190,7 +196,9 @@ class LogCollector:
             if m and source is None:
                 source = {"file": m.group(1), "line": int(m.group(2))}
         payload = {
-            "traceback_id": hashlib.sha256("\n".join(lines).encode("utf-8", "replace")).hexdigest()[:16],
+            "traceback_id": hashlib.sha256("\n".join(lines).encode("utf-8", "replace")).hexdigest()[
+                :16
+            ],
             "start_line_no": start_line,
             "end_line_no": start_line + len(lines) - 1,
             "elapsed_sec": round(now - self.started, 3),
@@ -248,12 +256,15 @@ def prepare_runtime_environment(provider: str, evidence_dir: Path) -> Path:
         set_env("NSE_DATABASE__PROVIDER", "postgresql")
         set_env("NSE_DATABASE__PG_HOST", os.environ.get("NSE_DATABASE__PG_HOST", "127.0.0.1"))
         set_env("NSE_DATABASE__PG_PORT", os.environ.get("NSE_DATABASE__PG_PORT", "5432"))
-        set_env("NSE_DATABASE__PG_DATABASE", os.environ.get("NSE_DATABASE__PG_DATABASE", "nse_audit"))
+        set_env(
+            "NSE_DATABASE__PG_DATABASE", os.environ.get("NSE_DATABASE__PG_DATABASE", "nse_audit")
+        )
         set_env("NSE_DATABASE__PG_USER", os.environ.get("NSE_DATABASE__PG_USER", "nse_user"))
         set_env("NSE_DATABASE__PG_SSLMODE", "disable")
         password = os.environ.get("NSE_PG_TEST_PASSWORD", "nse_password_dev")
         from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
         from nexus_scalp.settings.secret_store import SecureSecretStore
+
         SecureSecretStore().set_secret(PG_PASSWORD_SECRET_KEY, password)
     elif provider == "sqlite":
         set_env("NSE_DATABASE__PROVIDER", "sqlite")
@@ -376,11 +387,21 @@ def discover_get_routes(base_url: str) -> tuple[list[str], dict[str, Any]]:
 
 def api_battery(base_url: str, routes: list[str], sweep_id: str) -> dict[str, Any]:
     started = time.perf_counter()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=API_WORKERS) as pool:
-        results = list(pool.map(lambda path: http_request(base_url, path), routes))
+    workers = min(API_SWEEP_WORKERS, max(1, len(routes)))
+
+    def _probe(path: str) -> dict[str, Any]:
+        # Stagger starts within the battery so the single event loop is not hit
+        # by `workers` simultaneous fresh connections at each wave.
+        time.sleep(API_SWEEP_STAGGER_MS / 1000 * (len(path) % 3))
+        return http_request(base_url, path)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(_probe, routes))
     ok = [r for r in results if 200 <= int(r.get("status", 0)) < 400]
     client_errors = [r for r in results if 400 <= int(r.get("status", 0)) < 500]
-    server_errors = [r for r in results if int(r.get("status", 0)) >= 500 or int(r.get("status", 0)) == 0]
+    server_errors = [
+        r for r in results if int(r.get("status", 0)) >= 500 or int(r.get("status", 0)) == 0
+    ]
     durations = sorted(float(r.get("duration_ms", 0.0)) for r in results)
     p95 = durations[min(len(durations) - 1, int(len(durations) * 0.95))] if durations else 0.0
     return {
@@ -439,6 +460,11 @@ def open_provider_connection(provider: str) -> Any:
         os.environ["NEXUS_AUDIT_DB"],
         timeout=DB_QUERY_TIMEOUT_MS / 1000,
     )
+    # WAL readers never block a writer, but a reader holding a shared lock
+    # while a writer commits (or another reader mid-scan) can still surface
+    # SQLITE_BUSY. Match the application's own busy_timeout so the probe
+    # waits rather than turning an expected WAL tail into a "database is
+    # locked" error attributed to the application.
     connection.execute("PRAGMA busy_timeout = " + str(DB_QUERY_TIMEOUT_MS))
     return connection
 
@@ -494,7 +520,10 @@ def run_db_battery(provider: str, phase: str, max_tables: int = 40) -> dict[str,
             )
         else:
             execute("PRAGMA integrity_check", label="sqlite integrity")
-            execute("SELECT name, type FROM sqlite_master ORDER BY type, name LIMIT 100", label="sqlite catalog")
+            execute(
+                "SELECT name, type FROM sqlite_master ORDER BY type, name LIMIT 100",
+                label="sqlite catalog",
+            )
 
         for table in selected:
             qtable = ident(table)
@@ -512,16 +541,26 @@ def run_db_battery(provider: str, phase: str, max_tables: int = 40) -> dict[str,
             symbol = lower.get("symbol")
             if symbol:
                 execute(
-                    "SELECT " + ident(symbol) + ", COUNT(*) AS row_count FROM " + qtable
-                    + " GROUP BY " + ident(symbol) + " ORDER BY row_count DESC LIMIT 20",
+                    "SELECT "
+                    + ident(symbol)
+                    + ", COUNT(*) AS row_count FROM "
+                    + qtable
+                    + " GROUP BY "
+                    + ident(symbol)
+                    + " ORDER BY row_count DESC LIMIT 20",
                     label="group-by-symbol:" + table,
                 )
 
             status_col = lower.get("status") or lower.get("state") or lower.get("verdict")
             if status_col:
                 execute(
-                    "SELECT " + ident(status_col) + ", COUNT(*) AS row_count FROM " + qtable
-                    + " GROUP BY " + ident(status_col) + " ORDER BY row_count DESC LIMIT 20",
+                    "SELECT "
+                    + ident(status_col)
+                    + ", COUNT(*) AS row_count FROM "
+                    + qtable
+                    + " GROUP BY "
+                    + ident(status_col)
+                    + " ORDER BY row_count DESC LIMIT 20",
                     label="group-by-status:" + table,
                 )
 
@@ -543,18 +582,28 @@ def run_db_battery(provider: str, phase: str, max_tables: int = 40) -> dict[str,
             )
             if time_col:
                 execute(
-                    "SELECT MIN(" + ident(time_col) + "), MAX(" + ident(time_col) + "), COUNT("
-                    + ident(time_col) + ") FROM " + qtable,
+                    "SELECT MIN("
+                    + ident(time_col)
+                    + "), MAX("
+                    + ident(time_col)
+                    + "), COUNT("
+                    + ident(time_col)
+                    + ") FROM "
+                    + qtable,
                     label="time-range:" + table,
                 )
 
         # A second catalog pass means this is materially more than a smoke
         # check even when the application created only a handful of tables.
-        execute("SELECT COUNT(*) FROM " + (
-            "information_schema.tables WHERE table_schema='public'"
-            if provider == "postgres"
-            else "sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-        ), label="schema-table-count")
+        execute(
+            "SELECT COUNT(*) FROM "
+            + (
+                "information_schema.tables WHERE table_schema='public'"
+                if provider == "postgres"
+                else "sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ),
+            label="schema-table-count",
+        )
 
         # Hard query-volume contract: every DB pass executes at least 250
         # bounded read-only queries. This is intentionally a repeated workload
@@ -616,13 +665,31 @@ def wait_http(base_url: str, timeout: int) -> dict[str, Any]:
     raise RuntimeError(f"application did not become healthy within {timeout}s; last={last}")
 
 
-def request_graceful_shutdown(proc: subprocess.Popen[str], collector: LogCollector) -> dict[str, Any]:
+def _signal_shutdown(proc: subprocess.Popen[str]) -> None:
+    """Request graceful shutdown, portably.
+
+    POSIX processes accept SIGINT; on Windows ``Popen.send_signal`` raises
+    ``ValueError`` for it (there is no concept of a signal number a child
+    can be handed without a console control event). Fall back to the Win32
+    CTRL_BREAK_EVENT, which uvicorn maps to a graceful shutdown the same way
+    it maps CTRL_C_EVENT.
+    """
+    if sys.platform == "win32":
+        if proc.poll() is None:
+            proc.send_signal(signal.CTRL_BREAK_EVENT)  # type: ignore[attr-defined]
+        return
+    if proc.poll() is None:
+        proc.send_signal(signal.SIGINT)
+
+
+def request_graceful_shutdown(
+    proc: subprocess.Popen[str], collector: LogCollector
+) -> dict[str, Any]:
     started = time.perf_counter()
     signal_sent = False
     forced_kill = False
-    if proc.poll() is None:
-        proc.send_signal(signal.SIGINT)
-        signal_sent = True
+    _signal_shutdown(proc)
+    signal_sent = True
 
     deadline = time.monotonic() + 35
     while time.monotonic() < deadline:
@@ -704,7 +771,9 @@ def main() -> int:
     parser.add_argument("--provider", choices=("sqlite", "postgres"), required=True)
     parser.add_argument("--duration", type=int, default=SOAK_SEC)
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=int(os.environ.get("NSE_RUNTIME_SOAK_PORT", "18080")))
+    parser.add_argument(
+        "--port", type=int, default=int(os.environ.get("NSE_RUNTIME_SOAK_PORT", "18080"))
+    )
     parser.add_argument(
         "--evidence-dir",
         type=Path,
@@ -719,9 +788,7 @@ def main() -> int:
     if str(REPO_ROOT / "src") not in sys.path:
         sys.path.insert(0, str(REPO_ROOT / "src"))
 
-    evidence_root = Path(
-        os.environ.get("RUNNER_TEMP", str(REPO_ROOT / ".ci-runtime"))
-    ).resolve()
+    evidence_root = Path(os.environ.get("RUNNER_TEMP", str(REPO_ROOT / ".ci-runtime"))).resolve()
     state_root = prepare_runtime_environment(
         args.provider,
         evidence_root / ("nse-runtime-" + args.provider),
@@ -776,16 +843,23 @@ def main() -> int:
     ]
 
     started = time.perf_counter()
+    popen_kwargs: dict[str, Any] = {
+        "cwd": str(REPO_ROOT),
+        "env": env,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "bufsize": 1,
+    }
+    if sys.platform == "win32":
+        # A new process group is required for CTRL_BREAK_EVENT to reach the
+        # child (and only the child) instead of this harness too.
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
     proc = subprocess.Popen(
         command,
-        cwd=str(REPO_ROOT),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        bufsize=1,
+        **popen_kwargs,
     )
     collector = LogCollector(proc, log_path)
     collector.start()
@@ -829,25 +903,21 @@ def main() -> int:
 
             now = time.monotonic()
 
-            # Exercise the hot control-plane surface concurrently. Request
+            # Exercise the hot control-plane surface sequentially. Request
             # failures are collected as evidence; they do NOT shorten the
-            # fixed 120-second observation window.
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=len(HOT_ENDPOINTS)
-            ) as pool:
-                hot_batch = list(
-                    pool.map(lambda path: http_request(base_url, path), HOT_ENDPOINTS)
-                )
-            for probe in hot_batch:
+            # fixed 120-second observation window. Probes are serialized (not
+            # fanned out) because the engine process runs one uvicorn worker:
+            # concurrent probes serialize on its event loop anyway, and a
+            # parallel fan-out only multiplies the latency each probe observes.
+            for path in HOT_ENDPOINTS:
+                probe = http_request(base_url, path)
                 probe["sweep"] = "hot"
                 hot_probes.append(probe)
                 if probe.get("status", 0) >= 500 or probe.get("status") == 0:
                     runtime_findings.append({"type": "api", **probe})
 
             if now >= next_api_sweep:
-                api_result = api_battery(
-                    base_url, routes, f"repeat-{len(api_sweeps)}"
-                )
+                api_result = api_battery(base_url, routes, f"repeat-{len(api_sweeps)}")
                 api_sweeps.append(api_result)
                 for result in api_result["results"]:
                     status_code = int(result.get("status", 0))
@@ -863,9 +933,7 @@ def main() -> int:
 
             if now >= next_db_pass:
                 try:
-                    db_result = run_db_battery(
-                        args.provider, "late-boot", max_tables=40
-                    )
+                    db_result = run_db_battery(args.provider, "late-boot", max_tables=40)
                     db_runs.append(db_result)
                     for query in db_result["queries"]:
                         if query["status"] == "FAIL":
@@ -944,10 +1012,24 @@ def main() -> int:
         )
         status = "FAIL"
     if api_queries < 30:
-        findings.insert(0, {"type": "coverage-floor", "message": "API battery executed fewer than 30 GET requests", "count": api_queries})
+        findings.insert(
+            0,
+            {
+                "type": "coverage-floor",
+                "message": "API battery executed fewer than 30 GET requests",
+                "count": api_queries,
+            },
+        )
         status = "FAIL"
     if db_queries < 250:
-        findings.insert(0, {"type": "coverage-floor", "message": "database battery executed fewer than 250 provider-native queries", "count": db_queries})
+        findings.insert(
+            0,
+            {
+                "type": "coverage-floor",
+                "message": "database battery executed fewer than 250 provider-native queries",
+                "count": db_queries,
+            },
+        )
         status = "FAIL"
 
     result = {
@@ -1030,7 +1112,21 @@ def main() -> int:
     else:
         runtime_log.touch(exist_ok=True)
 
-    errors = [f for f in findings if f.get("type") in ("process-log", "traceback", "api", "database-query", "process-exit", "harness", "coverage-floor", "soak-duration")]
+    errors = [
+        f
+        for f in findings
+        if f.get("type")
+        in (
+            "process-log",
+            "traceback",
+            "api",
+            "database-query",
+            "process-exit",
+            "harness",
+            "coverage-floor",
+            "soak-duration",
+        )
+    ]
     warnings = [f for f in findings if f.get("type") not in {x.get("type") for x in errors}]
     print(
         json.dumps(

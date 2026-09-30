@@ -750,13 +750,9 @@ def test_no_ml_qa_target_production_file_changed() -> None:
     forbidden = [
         p
         for p in changed
-        if p == _MODULE_UNDER_TEST
-        or p.startswith("src/nexus_scalp/model_generation/")
+        if p == _MODULE_UNDER_TEST or p.startswith("src/nexus_scalp/model_generation/")
     ]
-    assert not forbidden, (
-        "ML-QA-019 target production files changed: "
-        f"{forbidden}"
-    )
+    assert not forbidden, f"ML-QA-019 target production files changed: {forbidden}"
 
 
 def test_critical_suite_manifest_entry() -> None:

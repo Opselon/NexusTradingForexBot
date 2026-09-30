@@ -2073,8 +2073,7 @@ def register_debug_research_routes(
                 payload["blocking_reasons"] = [
                     f"{check_id} [{check.get('status')}]"
                     for check_id, check in engine.dashboard().get("rows", {}).items()
-                    if isinstance(check, dict)
-                    and check.get("status") in ("DEGRADED", "UNKNOWN")
+                    if isinstance(check, dict) and check.get("status") in ("DEGRADED", "UNKNOWN")
                 ][:20]
             last = load_last_gate_result()
             return serialize_enums({"available": True, "gate": payload, "last_gate": last})

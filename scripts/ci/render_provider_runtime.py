@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Render provider runtime evidence into GitHub annotations and a step summary."""
+
 from __future__ import annotations
 
 import argparse
@@ -77,8 +78,7 @@ def main() -> int:
         suffix = f" [{source.get('file')}:{source.get('line')}]" if source else ""
         trace = "\n".join(str(x) for x in tb.get("lines", [])[-12:])
         print(
-            f"::error title=Runtime traceback {tb.get('traceback_id', '?')}::"
-            f"{trace[:4000]}{suffix}"
+            f"::error title=Runtime traceback {tb.get('traceback_id', '?')}::{trace[:4000]}{suffix}"
         )
 
     return 0

@@ -262,6 +262,7 @@ def _is_idempotent_index_race(exc: BaseException, sql: str) -> bool:
         and "relnamespace" in message
     )
 
+
 def apply_schema(
     statements: list[str], execute, *, stop_on_error: bool = False, domain: str = ""
 ) -> dict[str, object]:

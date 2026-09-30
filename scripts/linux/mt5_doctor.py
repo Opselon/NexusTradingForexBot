@@ -37,18 +37,10 @@ def resolve_terminal() -> Path:
     """Locate the terminal regardless of MetaQuotes install-directory variation."""
     if DEFAULT_TERMINAL.exists():
         return DEFAULT_TERMINAL
-    candidates = sorted(
-        p
-        for p in PREFIX.glob("drive_c/**/terminal64.exe")
-        if p.is_file()
-    )
+    candidates = sorted(p for p in PREFIX.glob("drive_c/**/terminal64.exe") if p.is_file())
     if candidates:
         return candidates[0]
-    candidates = sorted(
-        p
-        for p in PREFIX.glob("drive_c/**/terminal.exe")
-        if p.is_file()
-    )
+    candidates = sorted(p for p in PREFIX.glob("drive_c/**/terminal.exe") if p.is_file())
     return candidates[0] if candidates else DEFAULT_TERMINAL
 
 

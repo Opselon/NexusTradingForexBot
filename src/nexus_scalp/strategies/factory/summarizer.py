@@ -105,11 +105,7 @@ def build_summary(
         validated=len(validated),
         rejected=len(rejected),
         elite=len(
-            [
-                e
-                for e in registry_entries
-                if score_verdict(e) == "VALIDATED" and _score_of(e) >= 0.6
-            ]
+            [e for e in registry_entries if score_verdict(e) == "VALIDATED" and _score_of(e) >= 0.6]
         ),
         avg_score=avg,
         best_score=best,

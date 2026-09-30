@@ -159,13 +159,6 @@ cmd_install() {
         if [ -z "$found" ]; then
             found="$(find "$PREFIX/drive_c" -type f -iname "terminal.exe" -print -quit 2>/dev/null)"
         fi
-        [ -n "$found" ] && break
-        sleep 1
-    done
-        found="$(find "$PREFIX/drive_c" -type f -iname "terminal64.exe" -print -quit 2>/dev/null)"
-        if [ -z "$found" ]; then
-            found="$(find "$PREFIX/drive_c" -type f -iname "terminal.exe" -print -quit 2>/dev/null)"
-        fi
         if [ -n "$found" ]; then
             break
         fi
