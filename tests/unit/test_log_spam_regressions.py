@@ -267,3 +267,59 @@ def test_recovery_sweep_connect_uses_provider_read_connection(monkeypatch) -> No
     conn = sweep._connect()
     assert connections, "sweep must route through provider_store.read_connection"
     assert conn is connections[0], "sweep must return the fabric connection verbatim"
+
+
+# ---------------------------------------------------------------------------
+# research dataset builder: _iter_records must be ONE query, not an N+1
+# (live cluster 2026-09-30: 74 [WORKER_KICK] TIMEOUT errors per hour, every
+# research cycle 94-145s against a 45s budget, because _iter_records ran one
+# get_experiences_for_strategy query PER strategy — 4,113 round trips)
+# ---------------------------------------------------------------------------
+
+
+def test_iter_records_is_a_single_query_not_an_n_plus_one(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """``_iter_records`` must issue ONE bounded read, not one per strategy."""
+    from nexus_scalp.experience.ledger import ExperienceLedger
+    from nexus_scalp.research.dataset import ResearchDatasetBuilder
+
+    queries: list[str] = []
+
+    def _fake_list_all(self: Any, limit: int = 20000) -> list[Any]:
+        queries.append("list_all_experiences")
+        return []
+
+    def _no_per_strategy(self: Any, sid: Any, limit: int = 0, **kw: Any) -> list[Any]:
+        queries.append(f"get_experiences_for_strategy({sid})")
+        return []
+
+    monkeypatch.setattr(ExperienceLedger, "list_all_experiences", _fake_list_all)
+    monkeypatch.setattr(ExperienceLedger, "get_experiences_for_strategy", _no_per_strategy)
+
+    builder = ResearchDatasetBuilder(ledger=ExperienceLedger(audit_repo=object()))
+    builder._iter_records()
+
+    assert queries == ["list_all_experiences"], (
+        f"_iter_records must use the single-query accessor, not an N+1; saw {queries}"
+    )
+
+
+def test_iter_records_dedupes_and_returns_merged_records() -> None:
+    """The single-query path keeps the per-key dedupe the N+1 loop had.
+
+    Dedupe lives in ``list_all_experiences`` (the accessor owns it, so every
+    caller benefits); ``_iter_records`` returns what the accessor yields.
+    """
+    from nexus_scalp.research.dataset import ResearchDatasetBuilder
+
+    class _Rec:
+        def __init__(self, key: str) -> None:
+            self.idempotency_key = key
+
+    class _Ledger:
+        def list_all_experiences(self, limit: int = 20000) -> list[Any]:
+            # The accessor dedupes by key before returning (its own contract).
+            return [_Rec("dup"), _Rec("unique")]
+
+    builder = ResearchDatasetBuilder(ledger=_Ledger())
+    records = builder._iter_records()
+    assert [r.idempotency_key for r in records] == ["dup", "unique"]
