@@ -14,6 +14,8 @@ database is never confused with application tables.  No production database
 is touched.
 """
 
+# fmt: off
+
 from __future__ import annotations
 
 import argparse
