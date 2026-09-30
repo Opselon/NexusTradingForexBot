@@ -34,6 +34,7 @@ import yaml
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+from nexus_scalp.database.maintenance_gate import engine_start_guard, migration_guard
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.web.errors import log_web_error, new_request_id
 
@@ -1439,13 +1440,22 @@ def register_diagnostics_state_routes(
             raise HTTPException(status_code=400, detail="Trading Engine reference not loaded.")
 
         if req.active:
-            if not engine._running:
-                logger.info("Web Dashboard triggered system start command.")
-                task = asyncio.create_task(engine.run_loop())
-                if not hasattr(app.state, "background_tasks"):
-                    app.state.background_tasks = set()
-                app.state.background_tasks.add(task)
-                task.add_done_callback(app.state.background_tasks.discard)
+            try:
+                with engine_start_guard(app):
+                    if not engine._running:
+                        logger.info("Web Dashboard triggered system start command.")
+                        task = asyncio.create_task(engine.run_loop())
+                        if not hasattr(app.state, "background_tasks"):
+                            app.state.background_tasks = set()
+                        app.state.background_tasks.add(task)
+                        task.add_done_callback(app.state.background_tasks.discard)
+            except RuntimeError as exc:
+                if str(exc) == "DB_MAINTENANCE_IN_PROGRESS":
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Database maintenance is in progress; engine start is temporarily blocked.",
+                    ) from exc
+                raise
         else:
             logger.info("Web Dashboard triggered system stop command.")
             await engine.stop()
@@ -1961,6 +1971,8 @@ def register_diagnostics_state_routes(
             engine = getattr(app.state, "engine", None)
             if engine is not None and bool(getattr(engine, "_running", False)):
                 return _err("DB_ENGINE_MUST_BE_STOPPED")
+            if getattr(app.state, "db_maintenance_active", False):
+                return _err("DB_MAINTENANCE_IN_PROGRESS")
 
             import threading
 
@@ -2002,42 +2014,43 @@ def register_diagnostics_state_routes(
             # land on app.state.db_migration_state for the poll endpoints.
             def _run() -> None:
                 try:
-                    state: dict[str, Any] = {
-                        "done": False,
-                        "progress": 0.0,
-                        "current_table": "",
-                        "rows_copied": 0,
-                        "total_rows": 0,
-                        "report": None,
-                    }
-                    app.state.db_migration_state = state
-
-                    def _on_progress(table: str, done_i: int, total: int, batch: int) -> None:
-                        state["current_table"] = table
-                        state["rows_copied"] = done_i
-                        state["total_rows"] = total
-                        state["progress"] = (done_i / total) if total else 0.0
-                        state["batch"] = batch
-
-                    try:
-                        report = mig.run(on_progress=_on_progress)
-                    except Exception:
-                        state["report"] = {
-                            "status": "FAILED",
-                            "code": "DB_MIGRATION_FAILED",
+                    with migration_guard(app):
+                        state: dict[str, Any] = {
+                            "done": False,
+                            "progress": 0.0,
+                            "current_table": "",
+                            "rows_copied": 0,
+                            "total_rows": 0,
+                            "report": None,
                         }
+                        app.state.db_migration_state = state
+
+                        def _on_progress(table: str, done_i: int, total: int, batch: int) -> None:
+                            state["current_table"] = table
+                            state["rows_copied"] = done_i
+                            state["total_rows"] = total
+                            state["progress"] = (done_i / total) if total else 0.0
+                            state["batch"] = batch
+
+                        try:
+                            report = mig.run(on_progress=_on_progress)
+                        except Exception:
+                            state["report"] = {
+                                "status": "FAILED",
+                                "code": "DB_MIGRATION_FAILED",
+                            }
+                            state["done"] = True
+                            state["progress"] = 0.0
+                            return
+                        state["report"] = report.to_dict()
                         state["done"] = True
-                        state["progress"] = 0.0
-                        return
-                    state["report"] = report.to_dict()
-                    state["done"] = True
-                    state["progress"] = 1.0
-                    # switch active provider only when validation passed
-                    if report.provider_switch_ready:
-                        _settings_service().set_database_provider("postgresql")
-                        state["provider_switched"] = True
-                    else:
-                        state["provider_switched"] = False
+                        state["progress"] = 1.0
+                        # switch active provider only when validation passed
+                        if report.provider_switch_ready:
+                            _settings_service().set_database_provider("postgresql")
+                            state["provider_switched"] = True
+                        else:
+                            state["provider_switched"] = False
                 except Exception:
                     app.state.db_migration_state = {
                         "done": True,
