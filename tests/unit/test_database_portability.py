@@ -854,6 +854,26 @@ class TestDbConsoleQueryGuard:
         with pytest.raises(ValueError):
             assert_safe_sql("-- benign\nATTACH DATABASE ':memory:' AS aux")
 
+    def test_verb_guard_stays_linear_on_comment_only_statements(self):
+        """A comment-only statement must not blow up the verb check.
+
+        The comment-skipping step was once a regex with a nested quantifier
+        (``(?:\\s*--[^\\r\\n]*[\\r\\n]+)*``), which backtracks exponentially on
+        a long run of empty comment lines (CodeQL redos). Replacing it with a
+        line scan keeps the guard linear; a comment-only input is simply no
+        verb at all and is rejected, not scanned forever.
+        """
+        import time
+
+        from nexus_scalp.database.drivers._sql_guard import assert_safe_sql
+
+        evil = "-- " + "\n\n--" * 4000
+        start = time.perf_counter()
+        with pytest.raises(ValueError):
+            assert_safe_sql(evil)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 1.0, f"verb check took {elapsed:.3f}s on a comment-only statement"
+
     def test_placeholder_translation_used_for_pg(self):
         from nexus_scalp.web.db_console import _query_console_sql
 
