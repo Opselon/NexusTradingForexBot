@@ -914,12 +914,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install Wine + Xvfb
+      - name: Install Wine staging + Xvfb
         run: |
           set -euo pipefail
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends wine wine32:i386 winbind xvfb x11-utils
+          sudo apt-get install -y --no-install-recommends ca-certificates curl wget gnupg xvfb x11-utils winbind
+          sudo mkdir -pm755 /etc/apt/keyrings
+          wget -qO- https://dl.winehq.org/wine-builds/winehq.key | sudo gpg --dearmor -o /etc/apt/keyrings/winehq-archive.key
+          sudo wget -qNP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/noble/winehq-noble.sources
+          sudo apt-get update
+          sudo apt-get install -y --install-recommends winehq-staging
+          wine --version
 
       - name: Prepare isolated MT5 runtime root
         run: |
