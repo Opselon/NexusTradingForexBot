@@ -272,20 +272,51 @@ def query_corpus(
     }
 
 
+# Provider/runtime tables that are deliberately not part of the portable
+# domain-data contract. They are inspected and queried, but they are allowed
+# to differ in population or exist only on the destination provider.
+EPHEMERAL_RUNTIME_TABLES = {
+    "research_worker_heartbeat",
+}
+INTERNAL_MIGRATION_TABLES = {
+    "_nse_migration_checkpoints",
+}
+
+
+def _canonical_columns(columns: list[str]) -> list[str]:
+    # PostgreSQL folds unquoted identifiers to lowercase while SQLite preserves
+    # source spelling. The application refers to both through quoted/translated
+    # DDL, so parity here is semantic/case-insensitive, not byte-for-byte case.
+    return [column.casefold() for column in columns]
+
+
 def compare_states(left: dict[str, list[str]], right: dict[str, list[str]]) -> dict[str, Any]:
     left_tables = set(left)
     right_tables = set(right)
-    missing_right = sorted(left_tables - right_tables)
-    extra_right = sorted(right_tables - left_tables)
+    required_tables = left_tables - INTERNAL_MIGRATION_TABLES
+    missing_right = sorted(required_tables - right_tables)
+
+    # PostgreSQL owns a private migration checkpoint table created by the
+    # production migrator. It is evidence, not an application-domain table.
+    extra_right = sorted(
+        (right_tables - left_tables) - INTERNAL_MIGRATION_TABLES
+    )
+
     column_diffs = {
-        table: {"left": left[table], "right": right[table]}
-        for table in sorted(left_tables & right_tables)
-        if left[table] != right[table]
+        table: {
+            "left": left[table],
+            "right": right[table],
+            "left_canonical": _canonical_columns(left[table]),
+            "right_canonical": _canonical_columns(right[table]),
+        }
+        for table in sorted(required_tables & right_tables)
+        if _canonical_columns(left[table]) != _canonical_columns(right[table])
     }
     return {
         "missing_right": missing_right,
         "extra_right": extra_right,
         "column_diffs": column_diffs,
+        "ephemeral_runtime_tables": sorted(EPHEMERAL_RUNTIME_TABLES & left_tables),
         "match": not missing_right and not extra_right and not column_diffs,
     }
 
@@ -419,7 +450,14 @@ def main() -> int:
         count_diffs = {
             table: {"sqlite": sqlite_counts[table], "postgres": pg_counts.get(table)}
             for table in sqlite_counts
-            if sqlite_counts[table] != pg_counts.get(table)
+            if table not in EPHEMERAL_RUNTIME_TABLES
+            and sqlite_counts[table] != pg_counts.get(table)
+        }
+        ephemeral_count_diffs = {
+            table: {"sqlite": sqlite_counts[table], "postgres": pg_counts.get(table)}
+            for table in sqlite_counts
+            if table in EPHEMERAL_RUNTIME_TABLES
+            and sqlite_counts[table] != pg_counts.get(table)
         }
         pg_queries = query_corpus("postgres", pg_conn, pg_schema)
         pg_conn.close()
@@ -430,6 +468,12 @@ def main() -> int:
         }
         evidence["schema_compare"] = schema_compare
         evidence["count_diffs"] = count_diffs
+        evidence["ephemeral_count_diffs"] = ephemeral_count_diffs
+        evidence["parity_notes"] = [
+            "Column parity is case-insensitive because SQLite preserves casing and PostgreSQL normalizes unquoted identifiers.",
+            "research_worker_heartbeat is runtime state and is queried on both providers but excluded from persistent row-count equality.",
+            "_nse_migration_checkpoints is migrator-owned metadata and is excluded from application-domain table parity.",
+        ]
         if not schema_compare["match"] or count_diffs:
             raise RuntimeError(
                 f"SQLite/PostgreSQL schema or count mismatch: {schema_compare}; {count_diffs}"
