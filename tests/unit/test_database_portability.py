@@ -846,8 +846,8 @@ class TestDbConsoleQueryGuard:
 
     def test_ddl_port_translates_sqlite_datetime_default(self):
         sqlite_ddl = (
-            'CREATE TABLE IF NOT EXISTS archive_events ('
-            'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+            "CREATE TABLE IF NOT EXISTS archive_events ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "occurred_at TEXT, archived_at TEXT NOT NULL DEFAULT (datetime('now')))"
         )
         pg_ddl = port_create_table(sqlite_ddl)
