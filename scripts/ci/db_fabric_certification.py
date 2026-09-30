@@ -717,15 +717,40 @@ def main() -> int:
         evidence["phases"].append({"phase": "postgres_restart", "status": "PASS"})
 
         # Establish the reverse-migration source baseline AFTER the actual
-        # PostgreSQL restart. Startup legitimately materializes schema_migrations
-        # and runtime state, so a pre-restart snapshot is not the state being
-        # reversed and must not be used as the reverse integrity baseline.
-        reverse_source_conn = open_db("postgres", sqlite_work)
-        reverse_pg_schema = tables_and_columns("postgres", reverse_source_conn)
-        reverse_pg_counts = row_counts(reverse_source_conn, reverse_pg_schema)
-        reverse_pg_queries = query_corpus("postgres", reverse_source_conn, reverse_pg_schema)
-        reverse_source_conn.close()
-        evidence["postgres_reverse_source_before_quiesce"] = {
+        # Reverse migration is a maintenance operation, so first establish
+        # the real quiesced PostgreSQL source state. The stop endpoint now waits
+        # for the engine's complete worker/adapter/audit teardown, not merely the
+        # _running flag. This freezes both schema and data before the copy.
+        stop_engine = http_json(
+            base,
+            "POST",
+            "/api/engine/toggle",
+            {"active": False},
+        )
+        if stop_engine.get("success") is not True:
+            raise RuntimeError(f"engine quiesce request failed: {stop_engine}")
+        if (
+            stop_engine.get("engine_running") is not False
+            or stop_engine.get("shutdown", {}).get("phase") != "CLOSED"
+        ):
+            raise RuntimeError(
+                f"engine quiesce did not reach CLOSED: {stop_engine}"
+            )
+
+        evidence["engine_quiesce"] = stop_engine
+        evidence["phases"].append({"phase": "engine_quiesced_before_reverse", "status": "PASS"})
+
+        pg_conn_reverse = open_db("postgres", sqlite_work)
+        try:
+            reverse_pg_schema = tables_and_columns("postgres", pg_conn_reverse)
+            reverse_pg_counts = row_counts(pg_conn_reverse, reverse_pg_schema)
+            reverse_pg_queries = query_corpus(
+                "postgres", pg_conn_reverse, reverse_pg_schema
+            )
+        finally:
+            pg_conn_reverse.close()
+
+        evidence["postgres_reverse_source_before_reverse"] = {
             "schema": reverse_pg_schema,
             "counts": reverse_pg_counts,
             "queries": reverse_pg_queries,
@@ -735,47 +760,8 @@ def main() -> int:
                 f"PostgreSQL reverse-source query corpus failed: {reverse_pg_queries['failed']}"
             )
 
-        # Reverse migration is a destructive-risk maintenance operation for the
-        # destination copy if application writers remain active. Quiesce the
-        # actual engine through the same operator API the UI uses, then wait for
-        # the run loop to report STOPPED before taking the reverse-migration
-        # source snapshot. This tests the real operational precondition instead
-        # of racing a live writer and then weakening the integrity assertion.
-        stop_engine = http_json(
-            base,
-            "POST",
-            "/api/engine/toggle",
-            {"active": False},
-        )
-        if stop_engine.get("success") is not True:
-            raise RuntimeError(f"engine quiesce request failed: {stop_engine}")
-
-        quiesce_deadline = time.monotonic() + 30
-        quiesced_status: dict[str, Any] | None = None
-        while time.monotonic() < quiesce_deadline:
-            status = http_json(base, "GET", "/api/status")
-            quiesced_status = status
-            if status.get("engine_running") is False:
-                break
-            time.sleep(0.5)
-        if not quiesced_status or quiesced_status.get("engine_running") is not False:
-            raise RuntimeError(
-                f"engine did not quiesce before reverse migration: {quiesced_status}"
-            )
-        evidence["engine_quiesce"] = quiesced_status
-        evidence["phases"].append({"phase": "engine_quiesced_before_reverse", "status": "PASS"})
-
-        # The PostgreSQL run can still lazily create tables AFTER the snapshot
-        # above (shadow/shadow70/governance stores, release_metadata, the
-        # strategy research store). The reverse migration copies whatever
-        # exists at this point, so the final comparison must use a schema
-        # captured at the same moment — not the pre-run snapshot.
-        pg_conn_reverse = open_db("postgres", sqlite_work)
-        try:
-            pg_schema_at_reverse = tables_and_columns("postgres", pg_conn_reverse)
-        finally:
-            pg_conn_reverse.close()
-
+        # Reverse migration now runs against the same frozen provider state we
+        # will use for exact destination verification below.
         reverse = http_json(
             base,
             "POST",
@@ -814,9 +800,24 @@ def main() -> int:
             for table, detail in reverse_per_table.items()
             if isinstance(detail, dict) and detail.get("source_rows") is not None
         }
+        source_baseline_mismatches = {
+            table: {
+                "frozen_postgres": reverse_pg_counts.get(table),
+                "reverse_report_source": detail.get("source_rows"),
+            }
+            for table, detail in reverse_per_table.items()
+            if isinstance(detail, dict)
+            and detail.get("source_rows") is not None
+            and reverse_pg_counts.get(table) != int(detail["source_rows"])
+        }
+        if source_baseline_mismatches:
+            raise RuntimeError(
+                "reverse migration observed a changing PostgreSQL source: "
+                f"{source_baseline_mismatches}"
+            )
         evidence["phases"].append({"phase": "postgres_to_sqlite_reverse", "status": "PASS"})
-        pg_schema = pg_schema_at_reverse
-        pg_counts = row_counts(open_db("postgres", sqlite_work), pg_schema)
+        pg_schema = reverse_pg_schema
+        pg_counts = reverse_pg_counts
 
         switched_back = http_json(base, "POST", "/api/db/manage/provider", {"provider": "sqlite"})
         if switched_back.get("success") is not True:
