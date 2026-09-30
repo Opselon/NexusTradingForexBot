@@ -60,7 +60,7 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
     checks = {
         "sqlite_cert_passed": sqlite.get("status") == "PASS",
         "postgres_cert_passed": postgres.get("status") == "PASS",
-        "same_table_set": not missing_in_pg and not missing_in_sqlite,
+        # SQLite is the compatibility baseline. A table that exists in SQLite\n        # but not PostgreSQL is a hard parity defect because migration/PG cannot\n        # represent data the default install can persist. PostgreSQL-only tables\n        # remain explicit evidence and do not hide SQLite->PG loss.\n        "sqlite_tables_present_in_postgres": not missing_in_pg,
         "same_column_contract": not column_mismatches,
         "sqlite_queries_all_passed": sq_work.get("failed", 1) == 0,
         "postgres_queries_all_passed": pg_work.get("failed", 1) == 0,
@@ -73,7 +73,7 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
         "status": status,
         "checks": checks,
         "missing_in_postgres": missing_in_pg,
-        "missing_in_sqlite": missing_in_sqlite,
+        "postgres_only_tables": missing_in_sqlite,
         "column_mismatches": column_mismatches,
         "query_failures": query_failures,
         "query_counts": {
@@ -87,7 +87,7 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
         "static_sql_counts": source_sql_counts,
         "dialect_hits": dialect,
         "notes": [
-            "Schema parity compares live table and column contracts.",
+            "SQLite is the compatibility baseline; SQLite-only tables are hard failures.",\n            "PostgreSQL-only tables are explicit evidence and do not mask SQLite-to-PostgreSQL loss.",
             "PostgreSQL type spelling is not required to equal SQLite because the production DDL translator intentionally maps types.",
             "Index names are evidence only; migration may legitimately rename indexes.",
             "Every provider independently executed the same bounded query contract; no synthetic TestClient-only query is used.",
