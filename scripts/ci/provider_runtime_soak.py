@@ -254,6 +254,11 @@ def prepare_runtime_environment(provider: str, evidence_dir: Path) -> Path:
     set_env("NSE_EXECUTION__MODE", "PAPER")
     set_env("NSE_EXECUTION__SYMBOL", "XAUUSD")
     set_env("NSE_PAPER_DATA__MODE", "SYNTHETIC")
+    # Force the deterministic stress-history provider so every PAPER runtime
+    # arm gets stable, sufficiently populated HTF history for a real WARMUP=READY
+    # assertion instead of a random cold-start that can legitimately produce
+    # zero HTF indicators on one runner but not another.
+    set_env("NEXUS_PAPER_STRESS_SEED", "42")
     set_env("NSE_NO_TELEGRAM", "1")
     set_env("NSE_TELEGRAM__ENABLED", "false")
     set_env("NSE_NEWS__ENABLED", "false")
