@@ -1008,11 +1008,11 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/db-fabric/evidence"
-          python scripts/ci/db_fabric_certification.py \
+          python -u scripts/ci/db_fabric_certification.py \
             --sqlite-db "$SQLITE_RUNTIME_DB" \
             --settings-db "$RUNNER_TEMP/db-fabric/settings.db" \
             --evidence-dir "$RUNNER_TEMP/db-fabric/evidence" \
-            --port 18090 | tee "$RUNNER_TEMP/db-fabric/certification.log"
+            --port 18090 2>&1 | tee "$RUNNER_TEMP/db-fabric/certification.log"
 
       - name: Run deep SQLite provider query certification
         run: |
@@ -1132,20 +1132,25 @@ jobs:
               raise SystemExit(1)
           PY
 
-      - name: Print DB fabric diagnostics
+      - name: Print DB fabric full diagnostics
         if: always()
         continue-on-error: true
         run: |
-          echo "=== DB FABRIC CERTIFICATION ==="
-          if [ -f "$RUNNER_TEMP/db-fabric/evidence/db_fabric_certification.json" ]; then
-            cat "$RUNNER_TEMP/db-fabric/evidence/db_fabric_certification.json"
-          fi
-          echo "=== APP LOGS ==="
-          for f in "$RUNNER_TEMP/db-fabric"/db-fabric-*.log; do
-            [ -f "$f" ] || continue
-            echo "--- $f ---"
-            grep -Ein 'warn|error|critical|exception|fatal|traceback|failed|locked' "$f" | tail -200 || true
+          echo "=== DB FABRIC CERTIFICATION LOG ==="
+          cat "$RUNNER_TEMP/db-fabric/certification.log" 2>/dev/null || true
+          echo "=== DB FABRIC EVIDENCE ==="
+          cat "$RUNNER_TEMP/db-fabric/evidence/db_fabric_certification.json" 2>/dev/null || true
+          echo "=== ALL DB FABRIC FILES ==="
+          find "$RUNNER_TEMP/db-fabric" -type f -print | sort
+          echo "=== ALL DB FABRIC LOGS ==="
+          find "$RUNNER_TEMP/db-fabric" -type f -name '*.log' -print0 | while IFS= read -r -d '' f; do
+            echo "===== $f ====="
+            cat "$f" || true
           done
+          echo "=== POSTGRES CONTAINER LOG ==="
+          docker logs nse-db-fabric-pg 2>&1 || true
+          echo "=== PROCESS SNAPSHOT ==="
+          ps -ef | grep -E 'nexus|uvicorn|python|postgres' | grep -v grep || true
 
       - name: Upload DB fabric evidence
         if: always()
