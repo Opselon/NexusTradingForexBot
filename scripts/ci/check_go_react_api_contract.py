@@ -170,7 +170,10 @@ def normalize_template_path(path: str) -> str:
         out.append(path[i])
         i += 1
 
-    return "".join(out).rstrip("?") or "/"
+    normalized = "".join(out).rstrip("?") or "/"
+    # Go route templates use {param_name}; React template literals use
+    # ${expression}. Compare both as the same structural path parameter.
+    return re.sub(r"\{[^}]+\}", "{param}", normalized)
 
 
 def react_calls() -> list[dict[str, Any]]:
