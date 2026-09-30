@@ -41,6 +41,10 @@ _CREATE_TABLE_RE = re.compile(
     r"""CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s*"?([A-Za-z_][\w$]*)"?""",
     re.IGNORECASE,
 )
+_INDEX_RE = re.compile(
+    r"""^\s*CREATE\s+(?:UNIQUE\s+)?INDEX""",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -103,7 +107,17 @@ class PostgresToSqliteMigrator:
                             column,
                         )
                         continue
-                dst_driver.execute(statement)
+                try:
+                    dst_driver.execute(statement)
+                except Exception as exc:
+                    if _INDEX_RE.match(statement) and "no such column" in str(exc).lower():
+                        logger.warning(
+                            "[DB-MIGRATE] skipping index creation for missing column: %s (%s)",
+                            statement.strip(),
+                            exc,
+                        )
+                        continue
+                    raise
 
         apply_statements(replay_schema(domain=DatabaseDomain.AUDIT))
 
@@ -256,7 +270,7 @@ class PostgresToSqliteMigrator:
             report.provider_switch_ready = val.status == "PASS"
             report.status = "SUCCESS" if report.provider_switch_ready else "FAILED"
         except Exception as exc:
-            logger.error("Reverse migration failed: %s", exc)
+            logger.exception("Reverse migration failed: %s", exc)
             report.status = "FAILED"
             report.errors.append(str(exc))
         finally:
@@ -298,9 +312,11 @@ class PostgresToSqliteMigrator:
                 f"Destination SQLite table {table} is missing source columns: {missing}"
             )
 
+        matched_dest = [name for name in destination_columns if name.casefold() in source_by_key]
+        matched_src = [source_by_key[name.casefold()] for name in matched_dest]
         return (
-            [source_by_key[name.casefold()] for name in destination_columns],
-            destination_columns,
+            matched_src,
+            matched_dest,
         )
 
     def _migrate_table(

@@ -87,13 +87,13 @@ def _pytest_env() -> tuple[list[str], dict[str, str]]:
     every provider.
     """
     env = dict(os.environ)
-    env["PYTEST_ADDOPTS"] = "-p no:cacheprovider"
+    env["PYTEST_ADDOPTS"] = "-p no:cacheprovider -o addopts="
     # ``src`` and ``.`` first so the worktree's own modules win over any
     # editable install pointing at a different checkout; then whatever the
     # parent already had, so a venv with a shim keeps resolving it.
     pythonpath = [p for p in ("src", ".", os.environ.get("PYTHONPATH", "")) if p]
     env["PYTHONPATH"] = os.pathsep.join(pythonpath)
-    return [sys.executable, "-m", "pytest"], env
+    return [sys.executable, "-m", "pytest", "-o", "addopts="], env
 
 
 # ---------------------------------------------------------------------------

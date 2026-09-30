@@ -24,7 +24,8 @@ import re
 #: plus the DML/DDL the internal store layer legitimately issues (built from
 #: allow-listed identifiers, never raw user text).
 _ALLOWED_VERBS = re.compile(
-    r"^\s*(SELECT|EXPLAIN|WITH|PRAGMA|VALUES|INSERT|UPDATE|DELETE|REPLACE"
+    r"^(?:\s*--[^\r\n]*[\r\n]+)*\s*"
+    r"(SELECT|EXPLAIN|WITH|PRAGMA|VALUES|INSERT|UPDATE|DELETE|REPLACE"
     r"|CREATE|ALTER|DROP|BEGIN|COMMIT|END|ANALYZE|REINDEX)\b",
     re.IGNORECASE,
 )
