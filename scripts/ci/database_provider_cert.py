@@ -365,16 +365,41 @@ def _provider_sql_supported(sql: str, provider: str) -> bool:
     keyword = _first_sql_keyword(sql)
     if keyword not in _READ_VERBS:
         return False
+    # A WITH statement may legally contain INSERT/UPDATE/DELETE. Skip those
+    # forms so this probe remains strictly read-only on certification data.
+    if keyword == "WITH" and re.search(r"\b(?:INSERT|UPDATE|DELETE)\b", sql, re.I):
+        return False
+    if keyword == "PRAGMA":
+        if provider != "sqlite":
+            return False
+        # Only metadata/read PRAGMAs are admitted. Configuration PRAGMAs such
+        # as journal_mode/synchronous/foreign_keys can mutate connection state.
+        safe = {
+            "integrity_check",
+            "foreign_keys",
+            "table_info",
+            "database_list",
+            "foreign_key_list",
+            "index_list",
+            "index_info",
+            "user_version",
+            "schema_version",
+            "page_count",
+            "freelist_count",
+            "encoding",
+            "compile_options",
+        }
+        match = re.fullmatch(
+            r"PRAGMA\s+([A-Za-z_][A-Za-z0-9_]*)\s*;?",
+            sql,
+            re.I,
+        )
+        return bool(match and match.group(1).lower() in safe)
     if provider == "postgres":
-        # PRAGMA and SQLite's datetime('now') are intentionally SQLite-only.
-        if re.search(r"\\bPRAGMA\\b", sql, re.I):
-            return False
-        if re.search(r"datetime\\s*\\(\\s*['\"]now['\"]", sql, re.I):
-            return False
-        return True
-    # PostgreSQL casts are not valid SQLite syntax; the source inventory marks
-    # those statements so the SQLite lane does not confuse a PG-only path with
-    # a portability failure.
+        # SQLite's datetime('now') is intentionally SQLite-only.
+        return not re.search(r"datetime\s*\(\s*['\"]now['\"]", sql, re.I)
+    # PostgreSQL casts are not valid SQLite syntax; provider-native statements
+    # are skipped in the SQLite lane rather than misclassified as drift.
     return not re.search(r"::[A-Za-z_][A-Za-z0-9_]*", sql)
 
 
