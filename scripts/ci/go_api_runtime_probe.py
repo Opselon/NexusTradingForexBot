@@ -262,7 +262,8 @@ def main() -> int:
             )
 
         failures = [
-            item for item in results
+            item
+            for item in results
             if item.get("transport_error")
             or item.get("status") is None
             or item.get("status") == 405
@@ -307,9 +308,7 @@ def main() -> int:
                     "api_probe_count": result["api_probe_count"],
                     "unauthenticated_status": unauth_status,
                     "failures": len(failures),
-                    "frontend_runtime": result.get("frontend_runtime", {}).get(
-                        "status", "NOT_RUN"
-                    ),
+                    "frontend_runtime": result.get("frontend_runtime", {}).get("status", "NOT_RUN"),
                 },
                 indent=2,
                 sort_keys=True,
