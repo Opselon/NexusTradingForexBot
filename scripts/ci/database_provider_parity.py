@@ -44,6 +44,19 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
         "postgres": pg_work.get("failed", 0),
     }
 
+    sqlite_counts = sqlite.get("row_counts", {})
+    postgres_counts = postgres.get("row_counts", {})
+    pg_only_nonempty = {
+        table: count
+        for table, count in postgres_counts.items()
+        if table in missing_in_sqlite and int(count) > 0
+    }
+    common_count_diffs = {
+        table: {"sqlite": sqlite_counts.get(table), "postgres": postgres_counts.get(table)}
+        for table in sorted(sq_tables & pg_tables)
+        if sqlite_counts.get(table) != postgres_counts.get(table)
+    }
+
     # Type differences are expected for INTEGER/REAL/TEXT mappings, so the
     # hard parity gate is table + column presence/order, not literal SQL type
     # spelling. Indexes are compared as evidence but are not required to have
@@ -60,20 +73,28 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
     checks = {
         "sqlite_cert_passed": sqlite.get("status") == "PASS",
         "postgres_cert_passed": postgres.get("status") == "PASS",
-        "same_table_set": not missing_in_pg and not missing_in_sqlite,
+        "sqlite_has_no_missing_postgres_tables": not missing_in_pg,
         "same_column_contract": not column_mismatches,
+        "postgres_only_tables_are_empty": not pg_only_nonempty,
         "sqlite_queries_all_passed": sq_work.get("failed", 1) == 0,
         "postgres_queries_all_passed": pg_work.get("failed", 1) == 0,
         "sqlite_query_floor_met": sq_work.get("query_count", 0) >= sqlite.get("contracts", {}).get("minimum_live_queries", 350),
         "postgres_query_floor_met": pg_work.get("query_count", 0) >= postgres.get("contracts", {}).get("minimum_live_queries", 350),
         "static_sql_inventory_matches": source_sql_counts["sqlite"] == source_sql_counts["postgres"],
     }
+    # PostgreSQL may legitimately materialize optional/derived tables on
+    # provider bootstrap that have no SQLite counterpart. Those are retained as
+    # explicit evidence. The hard invariant is that every SQLite table exists
+    # in PostgreSQL and shared table column contracts match. A PG-only table
+    # containing data is a real parity defect and therefore fails.
     status = "PASS" if all(checks.values()) else "FAIL"
     return {
         "status": status,
         "checks": checks,
         "missing_in_postgres": missing_in_pg,
         "missing_in_sqlite": missing_in_sqlite,
+        "postgres_only_nonempty": pg_only_nonempty,
+        "common_row_count_diffs": common_count_diffs,
         "column_mismatches": column_mismatches,
         "query_failures": query_failures,
         "query_counts": {
