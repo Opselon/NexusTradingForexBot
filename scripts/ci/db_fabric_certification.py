@@ -754,10 +754,58 @@ def main() -> int:
         }
         evidence["status"] = "PASS"
     except Exception as exc:
-        evidence["errors"].append(f"{type(exc).__name__}: {exc}")
+        # Never collapse a certification failure into a single one-line error.
+        # CI needs the exact phase, subprocess state, HTTP payload, and runtime
+        # logs to make failures actionable without reproducing the run locally.
+        error = {
+            "type": type(exc).__name__,
+            "message": str(exc),
+            "phase": evidence["phases"][-1] if evidence["phases"] else None,
+        }
+        evidence["errors"].append(error)
+        evidence["failure_context"] = {
+            "command": "db_fabric_certification.py",
+            "argv": sys.argv,
+            "cwd": str(REPO_ROOT),
+            "python": sys.version,
+            "pid": os.getpid(),
+            "sqlite_db": str(args.sqlite_db),
+            "sqlite_work": str(sqlite_work),
+            "settings_db": str(args.settings_db),
+            "evidence_dir": str(args.evidence_dir),
+            "postgres": {**pg, "password": "***REDACTED***"},
+            "process": {
+                "pid": proc.pid if proc is not None else None,
+                "poll": proc.poll() if proc is not None else None,
+            },
+        }
+        import traceback
+
+        evidence["traceback"] = traceback.format_exc()
+        # Emit the complete evidence object immediately as well as in finally.
+        # This makes the failure visible in the Actions log before artifact upload.
+        print("=== DB FABRIC CERTIFICATION FAILURE ===", flush=True)
+        print(json.dumps(evidence, indent=2, sort_keys=True, default=str), flush=True)
+        print("=== DB FABRIC CERTIFICATION TRACEBACK ===", flush=True)
+        traceback.print_exc()
     finally:
         if proc is not None:
             evidence["shutdown"] = stop_app(proc)
+        # Always capture the application logs, including on the failure path.
+        log_candidates = [
+            args.settings_db.parent / "db-fabric-sqlite.log",
+            args.settings_db.parent / "db-fabric-postgresql.log",
+            args.evidence_dir / "db-fabric-sqlite.log",
+            args.evidence_dir / "db-fabric-postgresql.log",
+        ]
+        logs = {}
+        for log_path in log_candidates:
+            if log_path.exists():
+                try:
+                    logs[str(log_path)] = log_path.read_text(encoding="utf-8", errors="replace")[-100000:]
+                except OSError as log_exc:
+                    logs[str(log_path)] = f"<log read failed: {log_exc}>"
+        evidence["runtime_logs"] = logs
         write_json(args.evidence_dir / "db_fabric_certification.json", evidence)
 
     return 0 if evidence["status"] == "PASS" else 1
