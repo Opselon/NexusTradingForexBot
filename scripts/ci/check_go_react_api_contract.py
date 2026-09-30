@@ -57,6 +57,22 @@ def react_calls() -> list[dict[str, Any]]:
             continue
         source = path.read_text(encoding="utf-8")
 
+        # The realtime client consumes the centralized ENDPOINTS map rather
+        # than calling getV1/getLegacy/send directly. Include those canonical
+        # backend paths in the same contract set so SSE/API backbone routes
+        # cannot drift away from Go.
+        if path.as_posix().endswith("frontend/src/core/config.ts"):
+            endpoint_re = re.compile(r'\b\w+\s*:\s*["\'](/api[^"\']+)["\']')
+            for endpoint in endpoint_re.findall(source):
+                calls.append(
+                    {
+                        "file": str(path.relative_to(ROOT)).replace("\\", "/"),
+                        "function": "ENDPOINTS",
+                        "method": "GET",
+                        "path": endpoint,
+                    }
+                )
+
         for match in CALL_RE.finditer(source):
             fn = match.group("fn").lower()
             path_value = (
