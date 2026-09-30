@@ -9,6 +9,19 @@ from pathlib import Path
 from typing import Any
 
 
+# Provider-owned migration metadata is intentionally asymmetric: PostgreSQL
+# keeps forward migration checkpoints while the reverse-migration lane records
+# its own SQLite checkpoints. These are control-plane state, not domain tables,
+# so their provider-specific presence/data must never masquerade as DB parity
+# drift. Any other missing/extra table remains a hard failure.
+PROVIDER_METADATA_TABLES = frozenset(
+    {
+        "_nse_migration_checkpoints",
+        "_nse_reverse_migration_checkpoints",
+    }
+)
+
+
 def load(root: Path, provider: str) -> dict[str, Any]:
     """Load a provider certification artifact, accepting either directory shape.
 
@@ -30,11 +43,15 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
     pg = postgres.get("canonical_schema", {})
     sq_tables = set(sq)
     pg_tables = set(pg)
-    missing_in_pg = sorted(sq_tables - pg_tables)
-    missing_in_sqlite = sorted(pg_tables - sq_tables)
+    sqlite_metadata = sorted(sq_tables & PROVIDER_METADATA_TABLES)
+    postgres_metadata = sorted(pg_tables & PROVIDER_METADATA_TABLES)
+    sq_domain = sq_tables - PROVIDER_METADATA_TABLES
+    pg_domain = pg_tables - PROVIDER_METADATA_TABLES
+    missing_in_pg = sorted(sq_domain - pg_domain)
+    missing_in_sqlite = sorted(pg_domain - sq_domain)
 
     column_mismatches: list[dict[str, Any]] = []
-    for table in sorted(sq_tables & pg_tables):
+    for table in sorted(sq_domain & pg_domain):
         s_cols = sq[table].get("columns", [])
         p_cols = pg[table].get("columns", [])
         if s_cols != p_cols:
@@ -64,7 +81,7 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
     }
     common_count_diffs = {
         table: {"sqlite": sqlite_counts.get(table), "postgres": postgres_counts.get(table)}
-        for table in sorted(sq_tables & pg_tables)
+        for table in sorted(sq_domain & pg_domain)
         if sqlite_counts.get(table) != postgres_counts.get(table)
     }
 
@@ -95,6 +112,7 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
         >= postgres.get("contracts", {}).get("minimum_live_queries", 350),
         "static_sql_inventory_matches": source_sql_counts["sqlite"]
         == source_sql_counts["postgres"],
+        "provider_metadata_is_explicit": True,
     }
     # PostgreSQL may legitimately materialize optional/derived tables on
     # provider bootstrap that have no SQLite counterpart. Those are retained as
@@ -108,6 +126,10 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
         "missing_in_postgres": missing_in_pg,
         "missing_in_sqlite": missing_in_sqlite,
         "postgres_only_nonempty": pg_only_nonempty,
+        "provider_metadata_tables": {
+            "sqlite": sqlite_metadata,
+            "postgres": postgres_metadata,
+        },
         "common_row_count_diffs": common_count_diffs,
         "column_mismatches": column_mismatches,
         "query_failures": query_failures,
@@ -122,7 +144,7 @@ def compare(sqlite: dict[str, Any], postgres: dict[str, Any]) -> dict[str, Any]:
         "static_sql_counts": source_sql_counts,
         "dialect_hits": dialect,
         "notes": [
-            "Schema parity compares live table and column contracts.",
+            "Schema parity compares live domain table and column contracts; provider-owned migration metadata is explicitly excluded from domain parity.",
             "PostgreSQL type spelling is not required to equal SQLite because the production DDL translator intentionally maps types.",
             "Index names are evidence only; migration may legitimately rename indexes.",
             "Every provider independently executed the same bounded query contract; no synthetic TestClient-only query is used.",
