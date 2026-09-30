@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -27,6 +28,11 @@ logger = get_logger("nexus_scalp.database.migrate_reverse")
 
 CHECKPOINT_TABLE = "_nse_reverse_migration_checkpoints"
 SKIP_TABLES = frozenset({"_nse_migration_checkpoints", CHECKPOINT_TABLE})
+
+_ADD_COLUMN_RE = re.compile(
+    r"""^\s*ALTER\s+TABLE\s+"?([A-Za-z_][\w$]*)"?\s+ADD\s+COLUMN\s+"?([A-Za-z_][\w$]*)"?""",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -56,11 +62,35 @@ class PostgresToSqliteMigrator:
         self.opts = options or MigrationOptions()
 
     def _ensure_destination_schema(self, dst_driver: Any) -> None:
-        """Replay the canonical SQLite audit schema before copying PostgreSQL rows."""
+        """Replay the canonical schema idempotently onto the existing SQLite DB.
+
+        ``replay_schema()`` is built by executing the migration chain against an
+        empty in-memory SQLite database, so an ``ALTER TABLE ... ADD COLUMN``
+        statement that was necessary during replay may already exist in the
+        real destination. SQLite has no ``ADD COLUMN IF NOT EXISTS`` spelling;
+        inspect the live destination first and skip only that exact already-
+        present column. All other DDL errors remain fatal.
+        """
         from nexus_scalp.database.migration.schema_snapshot import replay_schema
         from nexus_scalp.database.registry import DatabaseDomain
 
         for statement in replay_schema(domain=DatabaseDomain.AUDIT):
+            match = _ADD_COLUMN_RE.match(statement)
+            if match and dst_driver.table_exists(match.group(1)):
+                table = match.group(1)
+                column = match.group(2)
+                existing = {
+                    str(item["name"]).casefold()
+                    for item in dst_driver.table_columns(table)
+                    if isinstance(item, dict) and "name" in item
+                }
+                if column.casefold() in existing:
+                    logger.info(
+                        "[DB-MIGRATE] reverse schema column already present: %s.%s",
+                        table,
+                        column,
+                    )
+                    continue
             dst_driver.execute(statement)
 
     def _ensure_checkpoint_table(self, dst_driver: Any) -> None:
