@@ -71,7 +71,11 @@ HOT_ENDPOINTS = (
     "/api/models/integrity",
     "/openapi.json",
 )
-SEVERITY_RE = re.compile(r"\b(CRITICAL|FATAL|ERROR|WARNING|WARN)\b", re.IGNORECASE)
+SEVERITY_RE = re.compile(
+    r"(?:\[(CRITICAL|FATAL|ERROR|WARNING|WARN)\s*\]|"
+    r"\b(?:level|log_level|severity)=(CRITICAL|FATAL|ERROR|WARNING|WARN)\b)",
+    re.IGNORECASE,
+)
 TRACEBACK_RE = re.compile(r"Traceback \(most recent call last\):")
 FRAME_RE = re.compile(r'File "(.+?)", line (\d+), in (.+)')
 SOURCE_RE = re.compile(
@@ -726,6 +730,32 @@ def main() -> int:
     evidence_dir.mkdir(parents=True, exist_ok=True)
     log_path = evidence_dir / "launcher.log"
     config_path = REPO_ROOT / "configs" / "base.yaml"
+    # CI must exercise the real application without depending on external news
+    # feeds. Generate a complete config copy so the runtime still boots through
+    # the same configuration path while disabling only network-driven news and
+    # background hygiene that would otherwise dominate a deterministic soak.
+    ci_config_path = state_root / "runtime.yaml"
+    try:
+        import yaml
+
+        config_data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        if isinstance(config_data, dict):
+            news_cfg = config_data.setdefault("news", {})
+            if isinstance(news_cfg, dict):
+                news_cfg["enabled"] = False
+                analysis_cfg = news_cfg.setdefault("analysis", {})
+                if isinstance(analysis_cfg, dict):
+                    analysis_cfg["enabled"] = False
+            hygiene_cfg = config_data.setdefault("database_hygiene", {})
+            if isinstance(hygiene_cfg, dict):
+                hygiene_cfg["enabled"] = False
+        ci_config_path.write_text(
+            yaml.safe_dump(config_data, sort_keys=False),
+            encoding="utf-8",
+        )
+        config_path = ci_config_path
+    except Exception as exc:
+        raise RuntimeError(f"failed to prepare isolated CI runtime config: {exc}") from exc
     base_url = f"http://{args.host}:{args.port}"
 
     env = dict(os.environ)
