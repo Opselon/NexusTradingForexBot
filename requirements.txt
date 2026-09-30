@@ -34,7 +34,7 @@ pyyaml==6.0.3
 rich==15.0.0
 ruff==0.16.8
 structlog==26.1.0
-torch==2.14.0
+torch==2.14.1
 typer==0.27.2
 types-pyyaml==6.0.12.20260906
 types-requests==2.33.0.20260906
