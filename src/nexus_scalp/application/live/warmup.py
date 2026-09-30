@@ -123,11 +123,7 @@ class WarmupService:
                 else:
                     valid_count += 1
 
-        is_ready = (
-            h1_status == "READY"
-            and h4_status == "READY"
-            and htf_fallbacks == 0
-        )
+        is_ready = h1_status == "READY" and h4_status == "READY" and htf_fallbacks == 0
 
         if not is_ready:
             missing_h1 = max(0, self.H1_REQUIRED_BARS - len(h1_bars))
