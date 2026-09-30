@@ -9,8 +9,9 @@ agnostic; it coordinates the web lifecycle only.
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, Iterator
+from typing import Any
 
 _MAINTENANCE_LOCK = threading.RLock()
 
