@@ -84,7 +84,12 @@ class ShadowWorker:
         logger.info("[SHADOW_WORKER] event=CANCEL_REQUESTED")
 
     def _mark_interrupted_runs(self) -> None:
-        """Restart safety: any RUNNING shadow run becomes INCOMPLETE."""
+        """Repair RUNNING shadow rows when shadow is attached."""
+        # shadow_runs is lazy-initialized. A detached/disabled shadow engine
+        # has no active run to recover, so probing the optional table on boot
+        # only creates noisy "no such table" diagnostics.
+        if not getattr(self.engine, "active_run_id", None):
+            return
         try:
             rows = ops_query_rows(
                 self.audit_repo,
