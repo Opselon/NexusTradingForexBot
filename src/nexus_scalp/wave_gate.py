@@ -154,15 +154,21 @@ def _classify(evidence: Any, required: tuple[str, ...]) -> LaneState:
     branch = meta.branch
     name = getattr(evidence, "_lane_name", UNKNOWN) or UNKNOWN
 
-    # check-run map at the CI head: name -> conclusion
+    # Check-run map at the CI head: name -> normalized conclusion.
+    # A run that has not finished (status QUEUED/IN_PROGRESS) or that finished
+    # without a conclusion must read as PENDING, never FAILED: right after a
+    # push the rollup reports an empty conclusion, and treating that as red
+    # aborts a healthy wave while CI is still running.
     by_name: dict[str, str] = {}
     for check in evidence.checks:
-        concl = str(check.conclusion).upper()
-        # A check still running has status != COMPLETED: treat as pending.
-        if str(check.status).upper() == "COMPLETED":
-            by_name[str(check.name)] = concl
-        else:
+        if str(check.status).upper() != "COMPLETED":
             by_name[str(check.name)] = "PENDING"
+            continue
+        concl = str(check.conclusion or "").upper()
+        if not concl or concl == UNKNOWN.upper():
+            by_name[str(check.name)] = "PENDING"
+        else:
+            by_name[str(check.name)] = concl
 
     failed_req: list[str] = []
     pending_req: list[str] = []
@@ -232,7 +238,7 @@ def _options() -> EvidenceOptions:
         fetch_codeql=False,
         local_tests=False,
         reviews=False,
-        fetch_logs=False,
+        fetch_logs=True,
         fetch_artifacts=False,
     )
 

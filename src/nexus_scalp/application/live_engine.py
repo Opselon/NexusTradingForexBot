@@ -2258,8 +2258,16 @@ class LiveEngine:
     #: froze the whole tick loop (inference/features/AI-Hub) while web stayed
     #: responsive. With wait_for, a hung kick is abandoned (the thread may
     #: linger but is detached from the loop) and the loop keeps ticking.
+    #:
+    #: LD-4 (live cluster, 2026-09-30): the default was 45s while a healthy
+    #: RESEARCH dataset pass measures 94-150s, so EVERY kick abandoned a
+    #: healthy in-flight cycle, logged a spurious ``[WORKER_KICK]
+    #: event=TIMEOUT`` ERROR (74 in one hour), and re-ran the work. 180s
+    #: clears the measured ceiling with headroom; the cycle itself is also
+    #: single-query now (see ExperienceLedger.list_all_experiences), so this
+    #: is the budget fix, not a license to be slow.
     WORKER_KICK_TIMEOUT_SEC: float = float(
-        __import__("os").environ.get("NSE_WORKER_KICK_TIMEOUT", "45")
+        __import__("os").environ.get("NSE_WORKER_KICK_TIMEOUT", "180")
     )
 
     def _kick_worker(self, name: str, fn) -> None:

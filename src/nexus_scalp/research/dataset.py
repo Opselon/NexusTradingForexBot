@@ -440,16 +440,17 @@ class ResearchDatasetBuilder:
     # ------------------------------------------------------------------
 
     def _iter_records(self) -> list[ExperienceRecord]:
-        """All ledger records (bounded) with duplicate keys collapsed."""
-        records: list[ExperienceRecord] = []
-        seen: set[str] = set()
-        for sid in self.ledger.list_strategy_ids():
-            for rec in self.ledger.get_experiences_for_strategy(sid, limit=10000):
-                if rec.idempotency_key in seen:
-                    continue
-                seen.add(rec.idempotency_key)
-                records.append(rec)
-        return records
+        """All ledger records (bounded) with duplicate keys collapsed.
+
+        LOG-SPAM / WORKER_KICK (live cluster, 2026-09-30): previously looped
+        ``list_strategy_ids()`` + one ``get_experiences_for_strategy()`` PER
+        strategy (an N+1: 4,113 queries over 4,113 strategies on the live
+        PostgreSQL box), which drove every research cycle to 94-145s against
+        the 45s ``WORKER_KICK`` budget (74 TIMEOUT errors in one hour). Now a
+        single bounded query through the ledger's own batched accessor, which
+        returns the same merged records with the same per-key dedupe.
+        """
+        return self.ledger.list_all_experiences(limit=20000)
 
     def _classify_sample(self, rec: ExperienceRecord) -> tuple[bool, str, str]:
         """ML-PHASE1 STEP-9: ONE classification path for audit() and build().

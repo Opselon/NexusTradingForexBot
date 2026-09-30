@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -23,6 +24,9 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from nexus_scalp.pr_evidence.models import UNKNOWN
+
+#: ``/actions/runs/<run>/job/<job-id>`` — the job id inside a check-run URL.
+_CHECK_RUN_JOB_ID_RE = re.compile(r"/actions/runs/\d{1,20}/job/(\d{1,20})")
 
 __all__ = [
     "DEFAULT_API_BASE",
@@ -176,9 +180,15 @@ class SubprocessTransport:
         return self._invoke(["-X", "PATCH", url, "--input", "-"], timeout, body)
 
     def get_bytes(self, url: str, *, timeout: float = _TIMEOUT_SEC) -> bytes:
-        """Binary GET via ``gh api`` (artifact zip download). Raises on failure."""
+        """Binary GET via ``gh api`` (artifact zip, job log).
+
+        ``--allow-escape-sequences`` is required for the Actions job-log
+        endpoint: ``gh`` otherwise rejects the body (exit 1, ``the response
+        contains terminal escape sequences``) and the real failure cause never
+        reaches the report. Raises on failure.
+        """
         proc = subprocess.run(
-            ["gh", "api", url],
+            ["gh", "api", "--allow-escape-sequences", url],
             capture_output=True,
             timeout=timeout,
             cwd=self._cwd,
@@ -225,12 +235,16 @@ class FakeTransport:
         return self._lookup("PUT", url, body)
 
     def get_bytes(self, url: str, *, timeout: float = _TIMEOUT_SEC) -> bytes:
-        """Binary GET: scripted bytes keyed by URL, recorded like the rest."""
+        """Binary GET: scripted bytes keyed by URL, recorded like the rest.
+
+        Keys match by substring, longest first, so ``jobs/123/logs`` is not
+        shadowed by a shorter ``jobs/123`` key scripted for the JSON endpoint.
+        """
         self.recorded.append(("GET-BYTES", url, None))
         key_url = url.split("?", 1)[0]
         payload = self.responses.get(key_url)
         if payload is None:
-            for key in self.responses:
+            for key in sorted(self.responses, key=len, reverse=True):
                 if key in key_url:
                     payload = self.responses[key]
                     break
@@ -619,6 +633,42 @@ class GitHubClient:
         try:
             return self._transport.get_bytes(url)
         except Exception:
+            return None
+
+    def get_job_log(self, job_id: int) -> bytes | None:
+        """Raw Actions job log bytes for a failed job (binary endpoint).
+
+        Some failed checks carry no annotation but a bare exit code — the
+        canonical case is GitHub's Copilot code-scanning agent
+        (``github-advanced-security``), whose real cause
+        (``CAPIError: 400 The requested model is not supported``) is only
+        visible in the job log. ``None`` when the log is unreachable so the
+        collector degrades honestly instead of raising.
+        """
+        if not job_id:
+            return None
+        url = f"{self._api_base}/repos/{self._repo}/actions/jobs/{job_id}/logs"
+        try:
+            return self._transport.get_bytes(url)
+        except Exception:
+            return None
+
+    def get_job_id_for_check(self, check_run_id: int) -> int | None:
+        """Resolve a check-run id to its Actions job id (``None`` if not Actions)."""
+        if not check_run_id:
+            return None
+        payload = self._get(f"/repos/{self._repo}/check-runs/{check_run_id}")
+        if not isinstance(payload, dict) or _error_of(payload):
+            return None
+        url = payload.get("html_url") or payload.get("details_url") or ""
+        if "/actions/runs/" not in url:
+            return None
+        match = _CHECK_RUN_JOB_ID_RE.search(str(url))
+        if match is None:
+            return None
+        try:
+            return int(match.group(1))
+        except (TypeError, ValueError):
             return None
 
     def get_annotations(self, check_run_id: int) -> list[dict[str, Any]]:

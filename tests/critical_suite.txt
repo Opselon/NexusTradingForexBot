@@ -34,6 +34,7 @@ tests/unit/test_accounting_pnl_regression.py
 tests/unit/test_accounting_timezone.py
 tests/unit/test_agent11_execution_risk_forensic.py
 tests/unit/test_agent12_execution_forensic.py
+tests/unit/test_agent13_methodology_integrity.py
 tests/unit/test_agent14_dataset_integrity.py
 tests/unit/test_agent16_walkforward_purge_embargo_leakage.py
 tests/unit/test_agent17_oos_hard_gate.py
@@ -91,7 +92,6 @@ tests/unit/test_bug298_model_provisioning.py
 tests/unit/test_bug298_provisioning_web_api.py
 tests/unit/test_bug299_friction_cap_saturation.py
 tests/unit/test_bug300_ai_triage_fallback.py
-tests/unit/test_bug300_workflow_ai_wiring.py
 tests/unit/test_bug303_ci_notify_env_and_report.py
 tests/unit/test_bug305_broker_offset_env_consumer_parity.py
 tests/unit/test_bug306_windows_ci_compat.py
