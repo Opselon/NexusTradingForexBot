@@ -105,6 +105,88 @@ class TestProviderLifecycleStateMachine:
 class TestPostgresToSqliteMigrator:
     """Verifies streaming batch migration from PostgreSQL to SQLite."""
 
+    def test_reverse_schema_create_table_regex_matches_real_ddl(self) -> None:
+        """The owner-detection regex must match the DDL it is written against.
+
+        ``r\"\\s\"`` is a literal backslash-s and matches nothing, so an
+        over-escaped pattern silently emptied the owner table set and skipped
+        every auxiliary schema (DB-FABRIC reverse migration: missing
+        ``shadow70_drift_alerts`` in the SQLite destination).
+        """
+        from nexus_scalp.database.migrate_reverse import _CREATE_TABLE_RE
+
+        for ddl, expected in (
+            ("CREATE TABLE IF NOT EXISTS shadow70_drift_alerts (id INTEGER)",
+             "shadow70_drift_alerts"),
+            ("CREATE TABLE model_governance_state (model_id TEXT)",
+             "model_governance_state"),
+            ('CREATE TABLE IF NOT EXISTS "learning_cycles" (id INTEGER)',
+             "learning_cycles"),
+        ):
+            match = _CREATE_TABLE_RE.search(ddl)
+            assert match is not None, f"pattern failed to match: {ddl}"
+            assert match.group(1) == expected
+
+    def test_reverse_schema_replay_provisional_owner_when_source_has_table(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A source-present ops_shadow table must be provisioned downstream.
+
+        Regression for the over-escaped owner-detection regex: the destination
+        ended up without ``shadow70_drift_alerts`` and the copy aborted with
+        "does not exist in SQLite destination".
+        """
+        src_db = tmp_path / "source.db"
+        dst_db = tmp_path / "destination.db"
+        src_cfg = DatabaseConfig.for_sqlite("audit", path=str(src_db))
+        dst_cfg = DatabaseConfig.for_sqlite("audit", path=str(dst_db))
+
+        source = SQLiteDriver(src_cfg)
+        source.execute(
+            "CREATE TABLE IF NOT EXISTS shadow70_drift_alerts ("
+            "id INTEGER PRIMARY KEY, alert_id TEXT NOT NULL)"
+        )
+        source.execute(
+            "INSERT INTO shadow70_drift_alerts (id, alert_id) VALUES (?, ?)",
+            (1, "alert-1"),
+        )
+        source.close()
+
+        destination = SQLiteDriver(dst_cfg)
+        destination.close()
+
+        from nexus_scalp.database.migration import schema_snapshot
+
+        monkeypatch.setattr(
+            schema_snapshot,
+            "ops_shadow_schema_statements",
+            lambda: (
+                "CREATE TABLE IF NOT EXISTS shadow70_drift_alerts ("
+                "id INTEGER PRIMARY KEY, alert_id TEXT NOT NULL)",
+            ),
+            raising=False,
+        )
+
+        report = PostgresToSqliteMigrator(
+            src_cfg,
+            dst_cfg,
+            MigrationOptions(batch_size=10, validate_checksums=True),
+        ).run()
+
+        assert report.status == "SUCCESS"
+        verify = SQLiteDriver(dst_cfg)
+        try:
+            assert verify.table_exists("shadow70_drift_alerts")
+            assert (
+                verify.scalar(
+                    "SELECT alert_id FROM shadow70_drift_alerts WHERE id = ?",
+                    (1,),
+                )
+                == "alert-1"
+            )
+        finally:
+            verify.close()
+
     def test_reverse_schema_replay_skips_existing_add_column(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:

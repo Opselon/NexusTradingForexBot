@@ -30,7 +30,15 @@ CHECKPOINT_TABLE = "_nse_reverse_migration_checkpoints"
 SKIP_TABLES = frozenset({"_nse_migration_checkpoints", CHECKPOINT_TABLE})
 
 _ADD_COLUMN_RE = re.compile(
-    r"""^\s*ALTER\s+TABLE\s+"?([A-Za-z_][\w$]*)"?\s+ADD\s+COLUMN\s+"?([A-Za-z_][\w$]*)"?""",
+    r"""^\s*ALTER\s+TABLE\s*"?([A-Za-z_][\w$]*)"?\s+ADD\s+COLUMN\s*"?([A-Za-z_][\w$]*)"?""",
+    re.IGNORECASE,
+)
+
+#: Extract the table name from a ``CREATE TABLE`` DDL statement. Used to decide
+#: whether an auxiliary owner's schema is needed at all, so the pattern must
+#: match the real DDL (``\s`` in a raw string), not a literal backslash-s.
+_CREATE_TABLE_RE = re.compile(
+    r"""CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s*"?([A-Za-z_][\w$]*)"?""",
     re.IGNORECASE,
 )
 
@@ -116,13 +124,7 @@ class PostgresToSqliteMigrator:
             expected = {
                 match.group(1).casefold()
                 for statement in statements
-                for match in (
-                    re.search(
-                        r"CREATE\\s+TABLE(?:\\s+IF\\s+NOT\\s+EXISTS)?\\s+\"?([A-Za-z_][\\w$]*)",
-                        statement,
-                        re.IGNORECASE,
-                    ),
-                )
+                for match in (_CREATE_TABLE_RE.search(statement),)
                 if match
             }
             if not expected.intersection(source_keys):
