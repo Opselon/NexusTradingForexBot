@@ -476,6 +476,7 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
         severity: str = "INFO",
         event_type: str = "GENERIC",
         correlation_id: str | None = None,
+        wait_timeout: float | None = None,
     ) -> int | None:
         """Enqueue a notification; returns message_id only on sync resolution.
 
@@ -590,11 +591,12 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
         if callback is not None:
             return None
         # Synchronous-ish wait for tests/simple scripts (bounded, non-blocking for prod).
-        deadline = time.time() + 0.05
+        timeout = 0.05 if wait_timeout is None else max(0.01, float(wait_timeout))
+        deadline = time.time() + timeout
         while time.time() < deadline:
             if record.status in ("DELIVERED", "FAILED_FINAL", "SEND_FAILED"):
                 break
-            time.sleep(0.002)
+            time.sleep(0.005)
         return record.message_id if record.status == "DELIVERED" else None
 
     # =====================================================================

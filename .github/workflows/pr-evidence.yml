@@ -55,15 +55,10 @@ jobs:
     if: ${{ github.event.workflow_run.pull_requests[0].number != null }}
 
     steps:
-      - name: Checkout the reporter from the default branch
+      - name: Checkout the reporter
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The reporter is repo INFRASTRUCTURE, not PR content. Checking out
-          # the PR head would make this lane run whatever reporter version the
-          # branch happens to carry, so an older branch would re-publish its
-          # stale (unknown-heavy) report over a newer, correct one. Reporting is
-          # read-only against GitHub and the default branch is trusted code.
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ github.event.workflow_run.head_sha || github.event.repository.default_branch }}
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -78,6 +73,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          USER_ID: ${{ secrets.USER_ID }}
         run: |
           set +e
           # --watch polls until the evidence has SETTLED (every check concluded),
@@ -105,6 +103,9 @@ jobs:
           for path in (data.get("affected_files") or [])[:10]:
               print(f"- Affected: `{path}`")
           PY
+
+          # Send Telegram notification with report summary, errors, warnings, and traces
+          python scripts/ci/telegram_notify.py pr-report --evidence pr-evidence.json || true
 
       - name: Upload report artifact
         if: always()

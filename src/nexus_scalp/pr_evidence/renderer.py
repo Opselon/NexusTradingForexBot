@@ -34,10 +34,10 @@ __all__ = ["MAX_MESSAGE_CHARS", "REPORT_MARKER", "render_report", "sanitize"]
 MAX_MESSAGE_CHARS = 60_000
 
 #: Bounded excerpt length for a single error message.
-_MAX_MSG = 300
+_MAX_MSG = 1500
 
 #: Bounded traceback excerpt lines per failure (spec §20: no log dumps).
-_MAX_TB_LINES = 6
+_MAX_TB_LINES = 30
 
 
 def sanitize(text: str) -> str:
@@ -92,6 +92,7 @@ def render_report(evidence: EvidenceCollection, *, marker: str = REPORT_MARKER) 
             _test_matrix(evidence),
             _affected_files(failures),
             _failed_tests(failures),
+            _warnings(evidence, [w.with_unknowns() for w in evidence.all_warnings()]),
             _skipped(evidence.skipped),
             _failure_chains(failures),
             _checks(evidence.checks),
@@ -424,7 +425,7 @@ def _failed_tests(failures: list[Failure]) -> str:
         if f.error_type != UNKNOWN:
             lines.append(f"**Error / rule:** `{f.error_type}`\n")
         if f.message != UNKNOWN:
-            lines.append(f"**Why:**\n\n```text\n{sanitize(f.message[:_MAX_MSG])}\n```\n")
+            lines.append(f"**Result / Why:**\n\n```text\n{sanitize(f.message[:_MAX_MSG])}\n```\n")
         if f.traceback and f.traceback != UNKNOWN:
             tb_lines = [ln for ln in f.traceback.splitlines() if ln.strip()][:_MAX_TB_LINES]
             if tb_lines:
@@ -442,6 +443,51 @@ def _failed_tests(failures: list[Failure]) -> str:
             lines.append(f"**Evidence:** source `{f.source}`, via `{f.evidence_source}`\n")
         if f.commit != UNKNOWN:
             lines.append(f"**Commit:** `{_short(f.commit)}`\n")
+    return "\n".join(lines)
+
+
+def _warnings(evidence: EvidenceCollection, warnings: list[Failure]) -> str:
+    """Render structured warnings and advisory diagnostics with exact result and trace."""
+    raw_warnings = [w for w in evidence.warnings if w and w != UNKNOWN]
+    if not warnings and not raw_warnings:
+        return ""
+    lines = ["## ⚠️ Warnings"]
+    if warnings:
+        for i, w in enumerate(warnings, start=1):
+            title = next(
+                (v for v in (w.test, w.error_type, w.step, w.check, w.job) if v != UNKNOWN and v),
+                "Warning",
+            )
+            lines.append(f"\n### {i}. `{title}`\n")
+            if w.severity != UNKNOWN:
+                lines.append(f"**Severity:** {w.severity}\n")
+            lines.append(f"**Where:** `{w.location.rendered()}`\n")
+            if w.step != UNKNOWN:
+                lines.append(f"**Step:** `{w.step}`\n")
+            if w.error_type != UNKNOWN and w.error_type != title:
+                lines.append(f"**Warning / rule:** `{w.error_type}`\n")
+            if w.message != UNKNOWN:
+                lines.append(
+                    f"**Result / Details:**\n\n```text\n{sanitize(w.message[:_MAX_MSG])}\n```\n"
+                )
+            if w.traceback and w.traceback != UNKNOWN:
+                tb_lines = [ln for ln in w.traceback.splitlines() if ln.strip()][:_MAX_TB_LINES]
+                if tb_lines:
+                    lines.append("**Trace:**\n\n```text\n" + "\n".join(tb_lines) + "\n```\n")
+            if w.check != UNKNOWN:
+                where = f"**CI:** `{w.check}`"
+                if w.check_url != UNKNOWN:
+                    where += f" ([logs]({w.check_url}))"
+                lines.append(where + "\n")
+            if w.source != UNKNOWN or w.evidence_source != UNKNOWN:
+                lines.append(f"**Evidence:** source `{w.source}`, via `{w.evidence_source}`\n")
+    if raw_warnings:
+        if warnings:
+            lines.append("\n### Advisory Notices\n")
+        else:
+            lines.append("")
+        for item in raw_warnings[:15]:
+            lines.append(f"- {sanitize(str(item))}")
     return "\n".join(lines)
 
 

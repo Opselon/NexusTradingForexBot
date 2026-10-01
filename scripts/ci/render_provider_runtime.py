@@ -189,6 +189,63 @@ def main() -> int:
         except Exception as exc:
             print(f"::warning::Failed to write step summary: {exc}")
 
+    # Deliver Telegram notification if credentials are configured
+    tg_token = os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("NEXUS_TELEGRAM_BOT_TOKEN")
+    tg_chat = (
+        os.environ.get("TELEGRAM_CHAT_ID")
+        or os.environ.get("NEXUS_TELEGRAM_ADMIN_ID")
+        or os.environ.get("USER_ID")
+    )
+    if tg_token and tg_chat:
+        try:
+            from nexus_scalp.observability.telegram_notifier import TelegramNotifier
+
+            notifier = TelegramNotifier(bot_token=tg_token, admin_id=tg_chat, enabled=True)
+            icon = (
+                "💥"
+                if is_crashed
+                else (
+                    "🔴"
+                    if status not in ("PASS", "PASS_WITH_WARNINGS")
+                    else ("🟡" if (warnings or finding_warnings) else "🟢")
+                )
+            )
+            tg_lines = [
+                f"{icon} <b>NSE Runtime Soak Test: <code>{provider}</code></b>",
+                f"<b>Status:</b> <code>{status}</code> · <b>Duration:</b> {soak_sec}s / {req_soak}s",
+                f"<b>Exit code:</b> <code>{exit_code if exit_code is not None else 0}</code>",
+                f"<b>API Queries:</b> {data.get('api', {}).get('query_count_total', 0)} · <b>DB Queries:</b> {data.get('database', {}).get('query_count_total', 0)}",
+                f"<b>Errors:</b> {max(len(errors), len(finding_errors))} · <b>Warnings:</b> {len(warnings) + len(finding_warnings)} · <b>Tracebacks:</b> {len(tracebacks)}",
+            ]
+            if tracebacks:
+                tg_lines.append("\n<b>Tracebacks:</b>")
+                for tb in tracebacks[:3]:
+                    exc_title = f"{tb.get('exception_type', 'Traceback')}: {tb.get('exception_message', '')}".strip(": ")
+                    tb_tail = "\n".join(tb.get("lines", [])[-6:])
+                    tg_lines.append(
+                        f"• <b>{html.escape(exc_title or 'Traceback')}</b>\n<pre>{html.escape(tb_tail)}</pre>"
+                    )
+            if errors or finding_errors:
+                tg_lines.append("\n<b>Errors:</b>")
+                for err in (errors + finding_errors)[:3]:
+                    msg = err.get("message") or err.get("error") or str(err)
+                    tg_lines.append(f"• <code>{html.escape(str(msg)[:150])}</code>")
+            elif warnings or finding_warnings:
+                tg_lines.append("\n<b>Top Warnings:</b>")
+                for w in (warnings + finding_warnings)[:3]:
+                    msg = w.get("message") or w.get("error") or str(w)
+                    tg_lines.append(f"• <code>{html.escape(str(msg)[:150])}</code>")
+
+            notifier.send(
+                "\n".join(tg_lines),
+                event_type="RUNTIME_SOAK",
+                severity="INFO",
+                wait_timeout=10.0,
+            )
+            notifier.stop_worker(timeout=5.0)
+        except Exception as tg_err:
+            print(f"::warning::Telegram notification skipped: {tg_err}")
+
     return 0
 
 

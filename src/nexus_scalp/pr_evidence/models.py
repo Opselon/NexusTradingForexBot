@@ -396,6 +396,12 @@ class EvidenceCollection:
     #: whose real cause (``The requested model is not supported``) lives only
     #: in the Actions job log.
     log_failures: list[Failure] = field(default_factory=list)
+    #: Structured warnings collected from check annotations, job logs, and artifacts.
+    warning_findings: list[Failure] = field(default_factory=list)
+
+    def all_warnings(self) -> list[Failure]:
+        """All structured warning findings observed across checks."""
+        return list(self.warning_findings)
 
     def all_failures(self) -> list[Failure]:
         """CI-collected + artifact-collected + log-collected + local failures.

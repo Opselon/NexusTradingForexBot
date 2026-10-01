@@ -775,9 +775,16 @@ jobs:
           echo "NSE_EXECUTION__MODE=PAPER" >> "$GITHUB_ENV"
           echo "NSE_EXECUTION__SYMBOL=XAUUSD" >> "$GITHUB_ENV"
           echo "NSE_NO_BROWSER=1" >> "$GITHUB_ENV"
-          echo "NSE_NO_TELEGRAM=1" >> "$GITHUB_ENV"
+          if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "NSE_TELEGRAM__ENABLED=true" >> "$GITHUB_ENV"
+            echo "NSE_NO_TELEGRAM=0" >> "$GITHUB_ENV"
+            echo "NEXUS_TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}" >> "$GITHUB_ENV"
+            echo "NEXUS_TELEGRAM_ADMIN_ID=${TELEGRAM_CHAT_ID}" >> "$GITHUB_ENV"
+          else
+            echo "NSE_NO_TELEGRAM=1" >> "$GITHUB_ENV"
+            echo "NSE_TELEGRAM__ENABLED=false" >> "$GITHUB_ENV"
+          fi
           echo "NSE_NEWS__ENABLED=false" >> "$GITHUB_ENV"
-          echo "NSE_TELEGRAM__ENABLED=false" >> "$GITHUB_ENV"
           echo "NSE_NO_AUTO_INSTALL=1" >> "$GITHUB_ENV"
           echo "NSE_WEB_ACTUAL_PORT=$NSE_RUNTIME_SOAK_PORT" >> "$GITHUB_ENV"
           if [ "${{ matrix.provider }}" = "postgres" ]; then

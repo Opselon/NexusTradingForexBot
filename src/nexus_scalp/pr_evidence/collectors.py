@@ -13,7 +13,7 @@ fields, never to an exception (spec §22: "GitHub API failure" must be handled).
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -143,6 +143,30 @@ def _text(value: Any) -> str:
     return str(value)
 
 
+def _extract_message_and_trace(title: str, text: str) -> tuple[str, str]:
+    """Split annotation message and title into clean result message and exact traceback."""
+    if not text:
+        return title or UNKNOWN, UNKNOWN
+    tb_pattern = (
+        r"(Traceback \(most recent call last\):[\s\S]+|"
+        r"\s+File\s+[\"'][^\"']+[\"'],\s+line\s+\d+[\s\S]+|"
+        r"^\s*at\s+[\s\S]+)"
+    )
+    m = re.search(tb_pattern, text, re.MULTILINE)
+    if m:
+        tb = m.group(0).strip()
+        msg = text[: m.start()].strip() or title.strip()
+        if not msg:
+            last_line = tb.splitlines()[-1].strip()
+            msg = last_line if ":" in last_line else (title or "Runtime error")
+        return msg, tb
+    if "traceback" in title.lower():
+        last_line = text.strip().splitlines()[-1].strip()
+        msg = last_line if ":" in last_line else title
+        return msg, text.strip()
+    return text.strip(), UNKNOWN
+
+
 @dataclass
 class CheckRunCollector:
     """GitHub check runs → :class:`CheckResult` + annotation-derived failures.
@@ -153,6 +177,7 @@ class CheckRunCollector:
 
     client: GitHubClient
     repo_root: str | None = None
+    warning_findings: list[Failure] = field(default_factory=list)
 
     def collect(
         self, sha: str, *, fetch_annotations: bool = True
@@ -160,6 +185,7 @@ class CheckRunCollector:
         raw_runs = self.client.get_check_runs_for_ref(sha)
         checks: list[CheckResult] = []
         failures: list[Failure] = []
+        warnings: list[Failure] = []
         for raw in raw_runs:
             check = self._to_check(raw)
             resolved_workflow = self._workflow_for(raw)
@@ -188,6 +214,8 @@ class CheckRunCollector:
             checks.append(check)
             if check.is_failure or check.annotations:
                 failures.extend(self._failures_from_check(check, raw_annotations))
+                warnings.extend(self._warnings_from_check(check, raw_annotations))
+        self.warning_findings = warnings
         return checks, failures
 
     def _workflow_for(self, raw: dict[str, Any]) -> str:
@@ -350,20 +378,63 @@ class CheckRunCollector:
                 loc = embedded_locs[0]
         rule = self._extract_rule(anno.title, anno.message)
         category = self._classify_check(check, anno, rule)
+        msg, tb = _extract_message_and_trace(anno.title, anno.message)
         return Failure(
             source="github-checks",
             suite=check.workflow,
             test=UNKNOWN,
             location=loc,
             production_location=None,
-            error_type=rule or _classify_error_type(anno.message),
-            message=anno.message[:400],
+            error_type=rule or anno.title or _classify_error_type(anno.message),
+            message=msg[:1500],
+            traceback=tb if tb != UNKNOWN else UNKNOWN,
             category=category,
             workflow=check.workflow,
             job=check.job,
             check=check.name,
             check_url=check.url,
             evidence_source="github-checks",
+            severity="ERROR",
+            step=check.step,
+            workflow_file=check.workflow_file,
+        )
+
+    def _warnings_from_check(
+        self, check: CheckResult, raw_annotations: list[dict[str, Any]]
+    ) -> list[Failure]:
+        warnings: list[Failure] = []
+        for anno in self._to_annotations(raw_annotations):
+            if anno.level not in ("WARNING", "WARN"):
+                continue
+            warnings.append(self._warning_from_annotation(check, anno))
+        return warnings
+
+    def _warning_from_annotation(self, check: CheckResult, anno: CheckAnnotation) -> Failure:
+        path = normalize_or_unknown(anno.path, self.repo_root)
+        loc = self._locate(check, path, anno.start_line, anno.start_column)
+        if loc.path in (UNKNOWN, check.workflow_file) and (anno.title or anno.message):
+            embedded_locs = extract_locations(f"{anno.title}\n{anno.message}", self.repo_root)
+            if embedded_locs:
+                loc = embedded_locs[0]
+        rule = self._extract_rule(anno.title, anno.message)
+        category = self._classify_check(check, anno, rule)
+        msg, tb = _extract_message_and_trace(anno.title, anno.message)
+        return Failure(
+            source="github-checks",
+            suite=check.workflow,
+            test=UNKNOWN,
+            location=loc,
+            production_location=None,
+            error_type=rule or anno.title or _classify_error_type(anno.message),
+            message=msg[:1500],
+            traceback=tb if tb != UNKNOWN else UNKNOWN,
+            category=category,
+            workflow=check.workflow,
+            job=check.job,
+            check=check.name,
+            check_url=check.url,
+            evidence_source="github-checks",
+            severity="WARNING",
             step=check.step,
             workflow_file=check.workflow_file,
         )
@@ -763,12 +834,14 @@ def collect_evidence(
 
     checks: list[CheckResult] = []
     failures: list[Failure] = []
+    warning_findings: list[Failure] = []
     ci_sha = UNKNOWN
     if head_sha != UNKNOWN:
         run_collector = CheckRunCollector(client=client, repo_root=repo_root)
         checks, failures = run_collector.collect(
             head_sha, fetch_annotations=options.fetch_annotations
         )
+        warning_findings.extend(run_collector.warning_findings)
         raw["check_runs"] = [c.__dict__ for c in checks]
         # The CI revision is what the checks actually ran against. A divergence
         # from the PR HEAD is a first-class finding (spec §16).
@@ -886,6 +959,7 @@ def collect_evidence(
             options=options,
             errors=errors,
         ),
+        warning_findings=warning_findings,
     )
 
 

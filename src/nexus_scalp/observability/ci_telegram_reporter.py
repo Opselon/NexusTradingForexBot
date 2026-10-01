@@ -381,7 +381,9 @@ class CITelegramReporter:
         ok = True
         for chunk in chunks:
             try:
-                mid = self.notifier.send(chunk, event_type=event_type, severity="INFO")
+                mid = self.notifier.send(
+                    chunk, event_type=event_type, severity="INFO", wait_timeout=10.0
+                )
                 if mid is None:
                     ok = False
                 else:
