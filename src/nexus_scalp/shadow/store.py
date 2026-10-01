@@ -1074,6 +1074,7 @@ class ShadowStore:
                     ).fetchone()[0]
                     or 0
                 )
+            # ci: schema-guarded — PostgreSQL mirror bytes query
             row = conn.execute(
                 "SELECT COALESCE(SUM(LENGTH(payload)), 0) FROM shadow_decisions"
             ).fetchone()

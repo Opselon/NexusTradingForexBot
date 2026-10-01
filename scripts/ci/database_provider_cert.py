@@ -436,11 +436,17 @@ def _provider_sql_supported(sql: str, provider: str) -> bool:
             return False
         if re.search(r"datetime\s*\(\s*['\"]now['\"]", sql, re.I):
             return False
-        return not re.search(r"\b(?:lastval|current_database|version)\s*\(", sql, re.I)
-    # PostgreSQL casts, placeholders, and system catalogs are not SQLite syntax.
+        return True
+    # PostgreSQL casts, placeholders, functions, and system catalogs are not SQLite syntax.
     if re.search(r"::[A-Za-z_][A-Za-z0-9_]*|%s", sql):
         return False
-    return not re.search(r"\b(?:information_schema|pg_catalog)\.", sql, re.I)
+    if re.search(
+        r"\b(?:lastval|current_database|version|pg_database_size|pg_get_serial_sequence|setval)\s*\(",
+        sql,
+        re.I,
+    ):
+        return False
+    return not re.search(r"\b(?:information_schema|pg_catalog)\b", sql, re.I)
 
 
 def _probe_parameters(sql: str, provider: str) -> tuple[str, tuple[Any, ...]]:
