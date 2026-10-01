@@ -68,8 +68,28 @@ jobs:
         run: |
           python scripts/ci/check_dependency_drift.py
 
+  migration-safety:
+    name: Migration safety (fail-loud + version postconditions)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11 (lowest supported — resolver needs it)
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          enable-cache: false
+          version: "0.12.10"
+
       - name: Install locked dependencies for migration safety
         run: uv pip install --system -r requirements.lock
+
       - name: Migration safety check (disposable DBs only)
         run: |
           python scripts/ci/check_migration_safety.py
