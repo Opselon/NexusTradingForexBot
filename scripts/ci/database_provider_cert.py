@@ -431,10 +431,19 @@ def _provider_sql_supported(sql: str, provider: str) -> bool:
         )
         return bool(match and match.group(1).lower() in safe)
     if provider == "postgres":
-        # SQLite catalog/functions are intentionally SQLite-only.
+        # SQLite catalog/functions/pseudo-columns are intentionally SQLite-only.
         if re.search(r"\bsqlite_master\b|\bsqlite_temp_master\b", sql, re.I):
             return False
         if re.search(r"datetime\s*\(\s*['\"]now['\"]", sql, re.I):
+            return False
+        if re.search(
+            r"\b(?:rowid|_rowid_|last_insert_rowid|sqlite_version)\b",
+            sql,
+            re.I,
+        ):
+            return False
+        # Sequence-modifying or session-dependent calls are not static read queries.
+        if re.search(r"\b(?:lastval|setval|pg_get_serial_sequence)\s*\(", sql, re.I):
             return False
         return True
     # PostgreSQL casts, placeholders, functions, and system catalogs are not SQLite syntax.

@@ -816,7 +816,7 @@ class AuditRepository:
         _dup_rows = conn.execute(
             "SELECT execution_id, COUNT(*) AS c FROM audit_orders "
             "WHERE execution_id IS NOT NULL AND execution_id != '' "
-            "GROUP BY execution_id HAVING c > 1 LIMIT ?",
+            "GROUP BY execution_id HAVING COUNT(*) > 1 LIMIT ?",
             (self._ORDERS_DEDUP_REPAIR_BATCH,),
         ).fetchall()
         for _dup_id, _ in _dup_rows:
