@@ -439,6 +439,10 @@ INTERNAL_MIGRATION_TABLES = {
     # Forward/reverse checkpoint ledgers are migration metadata, not domain data.
     "_nse_migration_checkpoints",
     "_nse_reverse_migration_checkpoints",
+    # Alembic-style version ledger: engine-internal bookkeeping that only
+    # exists on the provider that ran the migration tooling (the SQLite side
+    # in the fabric lane). Never part of the portable domain-data contract.
+    "schema_migrations",
 }
 
 
