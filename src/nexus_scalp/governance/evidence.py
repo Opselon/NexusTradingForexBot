@@ -89,8 +89,9 @@ def outcome_for_decision(
             try:
                 conn.row_factory = sqlite3.Row
                 row = conn.execute(
-                    "SELECT * FROM audit_experience_outcomes WHERE decision_id=? "
-                    "ORDER BY closed_at DESC LIMIT 1;",
+                    "SELECT o.* FROM audit_experience_outcomes o "
+                    "JOIN audit_experiences e ON e.idempotency_key = o.idempotency_key "
+                    "WHERE e.decision_id=? ORDER BY o.outcome_timestamp DESC LIMIT 1;",
                     (decision_id,),
                 ).fetchone()
                 if row is not None:

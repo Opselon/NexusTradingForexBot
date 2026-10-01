@@ -964,6 +964,7 @@ def register_debug_research_routes(
                 # the id and all dispatch rows whose reason embeds it.
                 sig_cols = [d[0] for d in con.execute("PRAGMA table_info(audit_signals)")]
                 if "execution_id" in sig_cols:
+                    # ci: schema-guarded — executes only when execution_id exists in live schema.
                     sig = con.execute(
                         "SELECT * FROM audit_signals WHERE execution_id = ? ORDER BY generated_at DESC LIMIT 5",
                         (execution_id,),

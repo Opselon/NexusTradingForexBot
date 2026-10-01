@@ -429,15 +429,16 @@ def model_lifecycle_schema_statements() -> tuple[str, ...]:
 def strategy_factory_schema_statements() -> tuple[str, ...]:
     """The complete strategy-factory domain schema as SQLite DDL statements.
 
-    Same contract as ``ai_provider_decisions_schema_statements``: the schema is
-    authored directly in ``strategies.factory.store._SCHEMA`` (SQLite dialect,
-    mirrored by the audit bootstrap for PostgreSQL), so the statements are read
-    from it verbatim and the store is deliberately NOT constructed (its
-    constructor opens a real database file).
+    The DDL is authored by the owning package in
+    ``strategies.research_store.ALL_DDL`` (SQLite dialect, mirrored by the audit
+    bootstrap for PostgreSQL): that is the store's full declared set, including
+    ``strategy_research_meta``, which the older ``factory.store._SCHEMA``
+    transcription does not carry. Statements are read verbatim and the store is
+    deliberately NOT constructed (its constructor opens a real database file).
     """
-    from nexus_scalp.strategies.factory.store import _SCHEMA
+    from nexus_scalp.strategies.research_store import ALL_DDL
 
-    return tuple(s.strip() for s in _SCHEMA.split(";") if s.strip())
+    return tuple(ddl.strip() for _name, ddl in ALL_DDL if ddl.strip())
 
 
 def ops_shadow_schema_statements() -> tuple[str, ...]:

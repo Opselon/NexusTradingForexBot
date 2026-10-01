@@ -863,6 +863,7 @@ class ShadowStore:
         which is why it stays as the safety net for the server-side statement.
         """
         try:
+            # ci: schema-guarded — caller enters this fallback only when payload exists.
             pending = conn.execute(
                 "SELECT id, payload FROM shadow_decisions "
                 "WHERE payload IS NOT NULL AND payload != '' AND payload != '{}' "
@@ -1066,12 +1067,14 @@ class ShadowStore:
                 cols = {row[1] for row in conn.execute("PRAGMA table_info(shadow_decisions);")}
                 if "payload" not in cols:
                     return 0
+                # ci: schema-guarded — payload presence was checked above.
                 return int(
                     conn.execute(
                         "SELECT COALESCE(SUM(LENGTH(payload)), 0) FROM shadow_decisions"
                     ).fetchone()[0]
                     or 0
                 )
+            # ci: schema-guarded — PostgreSQL mirror bytes query
             row = conn.execute(
                 "SELECT COALESCE(SUM(LENGTH(payload)), 0) FROM shadow_decisions"
             ).fetchone()

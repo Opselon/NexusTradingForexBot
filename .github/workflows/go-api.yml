@@ -9,12 +9,10 @@ name: Go API
 # creationflags on the supervised child), so a Linux-only green run is not
 # evidence the shipped binary builds or passes on the target OS.
 #
-# Scope: this gate fires ONLY when go-api/** changes (plus workflow self-
-# edits), so an unrelated Python/docs push pays no toolchain cost. Note the
-# push trigger still fires on main merges of those paths — that is the
-# post-merge regression signal, and it is the SAME job as the PR check
-# (there is no separate blocking release gate here; branch-protection makes
-# the PR check required).
+# Scope: this gate fires for Go API, React API-client, Python web/API route,
+# migration-contract, or gate-script changes. This keeps the Go plane and its
+# frontend/API contract coupled: a Python route change cannot land without
+# exercising the generated Go surface and React compatibility checks.
 #
 # Route parity with Python is NOT this gate. Full route-for-route parity
 # against the live FastAPI dump is the harness in api/migration/, regenerated
@@ -28,11 +26,21 @@ on:
     tags-ignore: ["v*"]
     paths:
       - "go-api/**"
+      - "frontend/**"
+      - "src/nexus_scalp/web/**"
+      - "api/migration/**"
+      - "scripts/ci/go_api_runtime_probe.py"
+      - "scripts/ci/check_go_react_api_contract.py"
       - ".github/workflows/go-api.yml"
   pull_request:
     branches: [main, develop]
     paths:
       - "go-api/**"
+      - "frontend/**"
+      - "src/nexus_scalp/web/**"
+      - "api/migration/**"
+      - "scripts/ci/go_api_runtime_probe.py"
+      - "scripts/ci/check_go_react_api_contract.py"
       - ".github/workflows/go-api.yml"
   workflow_dispatch:
 
@@ -46,15 +54,99 @@ permissions:
   contents: read
 
 jobs:
+  react-go-api-contract:
+    name: React ↔ Go API Contract (Ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node 24
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Go
+        uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+        with:
+          go-version: ">=1.23"
+          cache: true
+          cache-dependency-path: |
+            go-api/go.sum
+            go-api/go.mod
+
+      - name: Install React dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: React typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: React production build
+        working-directory: frontend
+        run: npm run build
+
+      - name: React JavaScript tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Build Go API for React runtime integration
+        working-directory: go-api
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/nse-go-react"
+          go build -o "$RUNNER_TEMP/nse-go-react/nexus-api" ./cmd/nexus-api
+
+      - name: Static React ↔ Go API contract check
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/nse-go-react/evidence"
+          python scripts/ci/check_go_react_api_contract.py \
+            --output "$RUNNER_TEMP/nse-go-react/evidence/react-go-contract.json"
+
+      - name: Go runtime serving React + all APIs
+        shell: bash
+        run: |
+          set -uo pipefail
+          python scripts/ci/go_api_runtime_probe.py \
+            --binary "$RUNNER_TEMP/nse-go-react/nexus-api" \
+            --frontend-dist "$PWD/frontend/dist" \
+            --port 18788 \
+            --output "$RUNNER_TEMP/nse-go-react/evidence/runtime.json"
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "=== Go/React runtime log tail ==="
+            tail -n 400 "$RUNNER_TEMP/nse-go-react/evidence/go-api-runtime.log" 2>/dev/null || true
+            echo "=== Go/React runtime evidence ==="
+            cat "$RUNNER_TEMP/nse-go-react/evidence/runtime.json" 2>/dev/null || true
+          fi
+          exit "$rc"
+
+      - name: Upload React ↔ Go evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: react-go-api-contract-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/nse-go-react/evidence/
+          if-no-files-found: error
+          retention-days: 14
+
   go-api:
     name: Go API (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
 
     strategy:
-      # Windows is a hard requirement, not a best-effort leg: a fail-fast
-      # false would let the shipped-OS failure hide behind a Linux pass.
-      fail-fast: true
+      # Keep Linux and Windows independent so every shipped OS reports its own
+      # Go build, unit-test, and full API-runtime result.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
 
@@ -80,6 +172,52 @@ jobs:
       - name: Build
         working-directory: go-api
         run: go build ./...
+
+      - name: Build runnable nexus-api binary
+        working-directory: go-api
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/nse-go-api"
+          exe_suffix="$(go env GOEXE)"
+          binary="$RUNNER_TEMP/nse-go-api/nexus-api$exe_suffix"
+          go build -o "$binary" ./cmd/nexus-api
+          test -f "$binary"
+          if [ "${RUNNER_OS:-}" = "Windows" ] && command -v cygpath >/dev/null 2>&1; then
+            binary="$(cygpath -w "$binary")"
+          fi
+          echo "NSE_GO_BINARY=$binary" >> "$GITHUB_ENV"
+          echo "Built: $binary"
+
+      - name: Go API runtime + full API surface probe
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/nse-go-api/evidence"
+          set +e
+          python scripts/ci/go_api_runtime_probe.py \
+            --binary "$NSE_GO_BINARY" \
+            --output "$RUNNER_TEMP/nse-go-api/evidence/runtime.json"
+          rc=$?
+          echo "GO_API_RUNTIME_RC=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo "=== Go API runtime log tail ==="
+            tail -n 400 "$RUNNER_TEMP/nse-go-api/evidence/go-api-runtime.log" 2>/dev/null || true
+            echo "=== Go API runtime evidence ==="
+            cat "$RUNNER_TEMP/nse-go-api/evidence/runtime.json" 2>/dev/null || true
+          fi
+          exit "$rc"
+
+      - name: Upload Go API runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: go-api-runtime-${{ matrix.os }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/nse-go-api/evidence/
+            ${{ runner.temp }}/nse-go-api/nexus-api*
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Vet
         working-directory: go-api

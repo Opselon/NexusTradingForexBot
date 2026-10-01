@@ -237,17 +237,33 @@ def copy_table(
     columns = _sqlite_table_columns(src_driver, table)
     if not columns:
         return {"table": table, "status": "SKIPPED_EMPTY", "rows_copied": 0, "duration_ms": 0.0}
-    col_names = [c["name"] for c in columns]
+
     # Intersect with the columns that actually exist on the PostgreSQL target.
     # Prevents "column X of relation Y does not exist" when SQLite carried
     # historical or migration-dropped columns that the target DDL omitted.
+    # We resolve case-insensitively so SQLite casing (e.g. "MAE_usd") maps
+    # cleanly to PostgreSQL target casing (e.g. "mae_usd") instead of being dropped.
+    src_cols: list[str] = []
+    dst_cols: list[str] = []
     with contextlib.suppress(Exception):
-        pg_cols = {c["name"] for c in pg_driver.table_columns(table)}
+        pg_cols = {
+            str(c["name"]).casefold(): str(c["name"]) for c in pg_driver.table_columns(table)
+        }
         if pg_cols:
-            col_names = [c for c in col_names if c in pg_cols]
+            for c in columns:
+                sname = str(c["name"])
+                pg_target = pg_cols.get(sname.casefold())
+                if pg_target is not None:
+                    src_cols.append(sname)
+                    dst_cols.append(pg_target)
+    if not src_cols:
+        src_cols = [str(c["name"]) for c in columns]
+        dst_cols = list(src_cols)
+
     # identity/order column: prefer rowid alias 'id' if present else first pk
     pks = [c["name"] for c in columns if c.get("pk")]
-    order_col = "id" if "id" in col_names else (pks[0] if pks else col_names[0])
+    order_col = "id" if "id" in src_cols else (pks[0] if pks else src_cols[0])
+    pg_order_col = dst_cols[src_cols.index(order_col)]
 
     # The destination table may have been provisioned with a GENERATED ALWAYS
     # identity column. Copying the SQLite ``id`` verbatim into that column is
@@ -264,7 +280,7 @@ def copy_table(
                     "WHERE t.table_type = 'BASE TABLE' AND c.table_schema = 'public' "
                     "  AND c.table_name = %s AND c.column_name = %s "
                     "  AND c.identity_generation = 'ALWAYS'",
-                    (table, order_col),
+                    (table, pg_order_col),
                 )
                 override_identity = cur.fetchone() is not None
 
@@ -295,8 +311,8 @@ def copy_table(
     batch_no = 0
 
     # destination insert template
-    col_list = ", ".join(f'"{c}"' for c in col_names)
-    placeholders = ",".join("%s" for _ in col_names)
+    col_list = ", ".join(f'"{c}"' for c in dst_cols)
+    placeholders = ",".join("%s" for _ in dst_cols)
     insert_prefix = f"INSERT INTO {table} ({col_list}) OVERRIDING SYSTEM VALUE"
     if not override_identity:
         insert_prefix = f"INSERT INTO {table} ({col_list})"
@@ -329,7 +345,7 @@ def copy_table(
         for batch in iter_table_batches(
             src_driver,
             table,
-            col_names,
+            src_cols,
             batch_size=batch_size,
             order_col=order_col,
             start_after=last_rowid,
@@ -340,7 +356,7 @@ def copy_table(
                 break
             with pg_driver.connect() as conn:
                 with conn.cursor() as cur:
-                    cur.executemany(insert_sql, [tuple(r.get(c) for c in col_names) for r in batch])
+                    cur.executemany(insert_sql, [tuple(r.get(c) for c in src_cols) for r in batch])
                 conn.commit()
             batch_last = (
                 last_rowid_of_batch(batch, order_col) if order_is_int else last_rowid + len(batch)

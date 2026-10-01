@@ -94,15 +94,20 @@ class WarmupService:
             )
             sample_fv = self.feature_engine.compute_from_bars(completed_bars, last_tick)
 
-            # 0.0 is the documented HTF cold-start fallback value (not a real
-            # reading); counting fallbacks here quantifies warmup progress.
-            if sample_fv.htf_h4_trend == 0.0:
+            # Do not infer fallback state from the numeric value of a feature.
+            # Zero is a legitimate H1 momentum value when the last two H1
+            # closes are equal. The feature engine emits 0.0 both for that valid
+            # case and for insufficient history, so readiness must use the
+            # actual history cardinality contract instead.
+            h4_feature_ready = len(h4_bars) >= 3
+            h1_feature_ready = len(h1_bars) >= 2
+            if not h4_feature_ready:
                 htf_fallbacks += 1
                 logger.warning(
                     "[FEATURE_FALLBACK]\ntimeframe=H4\nfeature=htf_h4_trend\nreason=INSUFFICIENT_H4_BARS\nsource=adapter.get_historical_bars\nfallback=0.0\nwarmup_state="
                     + self.warmup_state
                 )
-            if sample_fv.htf_h1_momentum == 0.0:
+            if not h1_feature_ready:
                 htf_fallbacks += 1
                 logger.warning(
                     "[FEATURE_FALLBACK]\ntimeframe=H1\nfeature=htf_h1_momentum\nreason=INSUFFICIENT_H1_BARS\nsource=adapter.get_historical_bars\nfallback=0.0\nwarmup_state="
@@ -118,7 +123,7 @@ class WarmupService:
                 else:
                     valid_count += 1
 
-        is_ready = (h1_status == "READY") and (h4_status == "READY") and (htf_fallbacks == 0)
+        is_ready = h1_status == "READY" and h4_status == "READY" and htf_fallbacks == 0
 
         if not is_ready:
             missing_h1 = max(0, self.H1_REQUIRED_BARS - len(h1_bars))

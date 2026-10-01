@@ -682,6 +682,14 @@ class LiveEngine:
         self._incident_telemetry: IncidentTelemetryCollector | None = None
 
         self._running: bool = False
+        # BUG-304: shutdown lifecycle has two distinct states. The previous
+        # implementation set _shutdown_completed at the START of teardown,
+        # which made "completed" observable while workers/queues were still
+        # draining and allowed maintenance operations to race outstanding
+        # writes. _shutdown_in_progress serializes concurrent teardown callers;
+        # _shutdown_completed is true only after every teardown phase returns.
+        self._shutdown_in_progress: bool = False
+        self._shutdown_completed: bool = False
         self.server_state: Any = None
 
         # Thread-safe model bundle swaps (model+scaler together)
@@ -2210,6 +2218,7 @@ class LiveEngine:
     # ------------------------------------------------------------------
 
     async def stop(self) -> None:
+        """Request a loop stop without claiming teardown is already complete."""
         self._running = False
 
     def shutdown_status(self) -> dict[str, Any]:
@@ -2301,79 +2310,91 @@ class LiveEngine:
         )
 
     async def _shutdown_async(self) -> None:
-        # BUG-304: idempotent teardown. RuntimeLoop calls this when its
-        # while-loop exits, and the process-level ShutdownSupervisor calls
-        # it as the bounded fallback when the loop was cancelled (Ctrl+C /
-        # console close). Both must converge on ONE teardown; a second call
-        # returns immediately instead of re-flushing a closed queue or
-        # re-disconnecting a dead adapter (which logged spurious errors and
-        # could double-close the shared SQLite connection).
+        # BUG-304: idempotent teardown with truthful completion state.
+        # RuntimeLoop calls this on normal loop exit, while ShutdownSupervisor
+        # can call it concurrently as a bounded process-level fallback. A
+        # concurrent caller waits for the in-flight teardown rather than
+        # observing a premature "completed" flag or starting a second close.
         if getattr(self, "_shutdown_completed", False):
             return
-        self._shutdown_completed = True
-        # Stop the accounting worker first (derived refresh, not financial truth).
-        with contextlib.suppress(Exception):
-            await self._stop_accounting_worker()
+        if getattr(self, "_shutdown_in_progress", False):
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + 30.0
+            while (
+                getattr(self, "_shutdown_in_progress", False)
+                and not getattr(self, "_shutdown_completed", False)
+                and loop.time() < deadline
+            ):
+                await asyncio.sleep(0.05)
+            return
+        self._shutdown_in_progress = True
+        try:
+            # Stop the accounting worker first (derived refresh, not financial truth).
+            with contextlib.suppress(Exception):
+                await self._stop_accounting_worker()
 
-        # ACCOUNT HISTORY: stop the broker-history sync worker.
-        with contextlib.suppress(Exception):
-            await self._stop_history_sync_worker()
+            # ACCOUNT HISTORY: stop the broker-history sync worker.
+            with contextlib.suppress(Exception):
+                await self._stop_history_sync_worker()
 
-        # PHASE 09: stop the intelligence worker (derived intelligence, isolated).
-        with contextlib.suppress(Exception):
-            await self._stop_intelligence_worker()
+            # PHASE 09: stop the intelligence worker (derived intelligence, isolated).
+            with contextlib.suppress(Exception):
+                await self._stop_intelligence_worker()
 
-        # PHASE 09B: stop the strategy research worker (isolated).
-        with contextlib.suppress(Exception):
-            await self._stop_research_worker()
+            # PHASE 09B: stop the strategy research worker (isolated).
+            with contextlib.suppress(Exception):
+                await self._stop_research_worker()
 
-        # STRATEGY FACTORY: stop the autonomous loop worker (kill switch).
-        with contextlib.suppress(Exception):
-            await self._stop_factory_worker()
+            # STRATEGY FACTORY: stop the autonomous loop worker (kill switch).
+            with contextlib.suppress(Exception):
+                await self._stop_factory_worker()
 
-        # PHASE 10: stop the controlled training worker (isolated).
-        with contextlib.suppress(Exception):
-            await self._stop_training_worker()
+            # PHASE 10: stop the controlled training worker (isolated).
+            with contextlib.suppress(Exception):
+                await self._stop_training_worker()
 
-        # PHASE 11: stop the shadow-aggregation worker (isolated).
-        with contextlib.suppress(Exception):
-            await self._stop_shadow_worker()
+            # PHASE 11: stop the shadow-aggregation worker (isolated).
+            with contextlib.suppress(Exception):
+                await self._stop_shadow_worker()
 
-        # PHASE 12: stop the news intelligence worker (isolated, optional).
-        with contextlib.suppress(Exception):
-            await self._stop_news_worker()
+            # PHASE 12: stop the news intelligence worker (isolated, optional).
+            with contextlib.suppress(Exception):
+                await self._stop_news_worker()
 
-        # TASK-13: stop the incident response worker (isolated).
-        with contextlib.suppress(Exception):
-            await self._stop_incident_worker()
+            # TASK-13: stop the incident response worker (isolated).
+            with contextlib.suppress(Exception):
+                await self._stop_incident_worker()
 
-        # Cancel retrain task safely
-        with contextlib.suppress(Exception):
-            if self._retrain_task and not self._retrain_task.done():
-                self._retrain_task.cancel()
-                with contextlib.suppress(Exception):
-                    await self._retrain_task
+            # Cancel retrain task safely
+            with contextlib.suppress(Exception):
+                if self._retrain_task and not self._retrain_task.done():
+                    self._retrain_task.cancel()
+                    with contextlib.suppress(Exception):
+                        await self._retrain_task
 
-        with contextlib.suppress(Exception):
-            self.adapter.disconnect()
+            with contextlib.suppress(Exception):
+                self.adapter.disconnect()
 
-        # BUG-297: release the evaluator's reused SQLite handles before the
-        # repository closes, so no registry-reader handle outlives shutdown.
-        with contextlib.suppress(Exception):
-            self.experience_evaluator.close()
+            # BUG-297: release the evaluator's reused SQLite handles before the
+            # repository closes, so no registry-reader handle outlives shutdown.
+            with contextlib.suppress(Exception):
+                self.experience_evaluator.close()
 
-        with contextlib.suppress(Exception):
-            self.audit.close()
+            with contextlib.suppress(Exception):
+                self.audit.close()
 
-        with contextlib.suppress(Exception):
-            ci = getattr(self, "candle_intel", None)
-            if ci is not None:
-                ci.store.close()
+            with contextlib.suppress(Exception):
+                ci = getattr(self, "candle_intel", None)
+                if ci is not None:
+                    ci.store.close()
 
-        with contextlib.suppress(Exception):
-            self.notifier.notify_shutdown(reason="Engine Stopped")
+            with contextlib.suppress(Exception):
+                self.notifier.notify_shutdown(reason="Engine Stopped")
 
-        logger.info("Engine shutdown complete.")
+            logger.info("Engine shutdown complete.")
+        finally:
+            self._shutdown_in_progress = False
+            self._shutdown_completed = True
 
     # -------------------------
     # Preflight

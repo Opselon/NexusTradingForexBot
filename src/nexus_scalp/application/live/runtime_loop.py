@@ -174,6 +174,12 @@ class RuntimeLoop:
         # SEES the retry in progress (perfect-UI-UX requirement).
         import time as _time  # noqa: F401 - reserved for backoff timing telemetry
 
+        # BUG-304: a reused LiveEngine instance can be started again after a
+        # completed stop. Reset lifecycle markers only when a NEW run begins;
+        # never from the shutdown path itself.
+        self.om._shutdown_completed = False
+        self.om._shutdown_in_progress = False
+
         # HEALTH-TRUTH-001: boot phase markers so the health surface can tell
         # a boot in flight from a stable stopped engine. ``_run_loop_alive``
         # marks "a run_loop task exists and has not returned"; ``_boot_state``

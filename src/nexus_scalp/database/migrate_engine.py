@@ -350,12 +350,14 @@ class SqliteToPostgresMigrator:
             report.validation = "NOT_RUN"
         else:
             report.status = "COMPLETE"
-            report.validation = self.validate() if not self.options.dry_run else "NOT_RUN"
+            report.validation = (
+                self.validate(report=report) if not self.options.dry_run else "NOT_RUN"
+            )
         report.provider_switch_ready = report.status == "COMPLETE" and report.validation == "PASSED"
         return report
 
     # ---------------------------------------------------------- validation
-    def validate(self) -> str:
+    def validate(self, report: MigrationReport | None = None) -> str:
         """Compare source vs destination: row counts, identities, financial
         aggregates and row checksums.  Returns PASSED / FAILED."""
         try:
@@ -373,33 +375,119 @@ class SqliteToPostgresMigrator:
                 if src_n != dst_n:
                     problems.append(f"{t}: row count {src_n} != {dst_n}")
                     continue
+                # Resolve names from each provider's live catalog before
+                # generating SQL. PostgreSQL folds unquoted identifiers to
+                # lowercase during migration, while SQLite preserves source
+                # casing; quoting the SQLite spelling (e.g. "MAE_usd") against
+                # PostgreSQL therefore creates a real query failure. Case-folded
+                # catalog resolution keeps the source contract intact without
+                # guessing at destination names.
+                try:
+                    src_columns = self._src_driver.table_columns(t)
+                    pg_columns = self._pg_driver.table_columns(t)
+                    src_names = {
+                        str(col["name"]).casefold(): str(col["name"]) for col in src_columns
+                    }
+                    pg_names = {str(col["name"]).casefold(): str(col["name"]) for col in pg_columns}
+                    pg_table_name = next(
+                        (
+                            str(name)
+                            for name in self._pg_driver.list_tables()
+                            if str(name).casefold() == t.casefold()
+                        ),
+                        None,
+                    )
+                    if pg_table_name is None:
+                        problems.append(f"{t}: PostgreSQL table missing during validation")
+                        continue
+                except Exception as exc:
+                    problems.append(
+                        f"{t}: schema-resolution query failed: {type(exc).__name__}: {exc}"
+                    )
+                    continue
+
                 # identity max (sequence carry-over proof)
-                with contextlib.suppress(Exception):
-                    cols = self._src_driver.table_columns(t)
-                    pk = [c["name"] for c in cols if c.get("pk")]
-                    id_col = "id" if "id" in [c["name"] for c in cols] else (pk[0] if pk else None)
-                    if id_col:
-                        m1 = self._src_driver.scalar(f"SELECT MAX({id_col}) FROM {t}")
-                        m2 = self._pg_driver.scalar(f'SELECT MAX("{id_col}") FROM "{t}"')
-                        if (m1 or 0) != (m2 or 0):
-                            problems.append(f"{t}: identity max {m1} != {m2}")
-                # financial aggregates
+                id_col = src_names.get("id")
+                if id_col is None:
+                    pk_names = [str(col["name"]) for col in src_columns if col.get("pk")]
+                    id_col = pk_names[0] if pk_names else None
+                if id_col is not None:
+                    pg_id_col = pg_names.get(id_col.casefold())
+                    if pg_id_col is None:
+                        problems.append(
+                            f"{t}: PostgreSQL identity column missing for source column {id_col}"
+                        )
+                    else:
+                        src_table_sql = self._src_driver.quote_ident(t)
+                        src_id_sql = self._src_driver.quote_ident(id_col)
+                        pg_table_sql = self._pg_driver.quote_ident(pg_table_name)
+                        pg_id_sql = self._pg_driver.quote_ident(pg_id_col)
+                        try:
+                            m1 = self._src_driver.scalar(
+                                f"SELECT MAX({src_id_sql}) FROM {src_table_sql}"
+                            )
+                            m2 = self._pg_driver.scalar(
+                                f"SELECT MAX({pg_id_sql}) FROM {pg_table_sql}"
+                            )
+                        except Exception as exc:
+                            problems.append(
+                                f"{t}.identity: query failed: {type(exc).__name__}: {exc}"
+                            )
+                        else:
+                            if (m1 or 0) != (m2 or 0) and str(m1 or 0) != str(m2 or 0):
+                                problems.append(f"{t}: identity max {m1} != {m2}")
+
+                # financial aggregates. Every configured column is checked
+                # explicitly; a missing column or failed statement is a hard
+                # validation error, never a suppressed best-effort check.
                 cols_to_check = financial.get(t, [])
-                for c in cols_to_check[:8]:
-                    with contextlib.suppress(Exception):
+                for source_col in cols_to_check[:8]:
+                    src_col = src_names.get(source_col.casefold())
+                    pg_col = pg_names.get(source_col.casefold())
+                    if src_col is None:
+                        problems.append(
+                            f"{t}.{source_col}: SQLite source column missing during validation"
+                        )
+                        continue
+                    if pg_col is None:
+                        problems.append(
+                            f"{t}.{source_col}: PostgreSQL destination column missing during validation"
+                        )
+                        continue
+                    src_table_sql = self._src_driver.quote_ident(t)
+                    src_col_sql = self._src_driver.quote_ident(src_col)
+                    pg_table_sql = self._pg_driver.quote_ident(pg_table_name)
+                    pg_col_sql = self._pg_driver.quote_ident(pg_col)
+                    try:
                         s1 = float(
-                            self._src_driver.scalar(f"SELECT COALESCE(SUM({c}),0) FROM {t}") or 0
+                            self._src_driver.scalar(
+                                f"SELECT COALESCE(SUM({src_col_sql}),0) FROM {src_table_sql}"
+                            )
+                            or 0
                         )
                         s2 = float(
-                            self._pg_driver.scalar(f'SELECT COALESCE(SUM("{c}"),0) FROM "{t}"') or 0
+                            self._pg_driver.scalar(
+                                f"SELECT COALESCE(SUM({pg_col_sql}),0) FROM {pg_table_sql}"
+                            )
+                            or 0
                         )
-                        if abs(s1 - s2) > max(0.01, abs(s1) * 1e-9):
-                            problems.append(f"{t}.{c}: sum {s1} != {s2}")
+                    except Exception as exc:
+                        problems.append(
+                            f"{t}.{source_col}: aggregate query failed: {type(exc).__name__}: {exc}"
+                        )
+                        continue
+                    if abs(s1 - s2) > max(0.01, abs(s1) * 1e-9):
+                        problems.append(f"{t}.{source_col}: sum {s1} != {s2}")
             if problems:
+                if report is not None:
+                    report.errors.extend(problems)
+                logger.warning("migration validation failed with problems: %s", problems)
                 return "FAILED"
             return "PASSED"
         except Exception as exc:  # pragma: no cover
             logger.warning("migration validation failed", exc_info=exc)
+            if report is not None:
+                report.errors.append(str(exc))
             return "FAILED"
 
 

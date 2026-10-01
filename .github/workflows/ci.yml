@@ -889,12 +889,345 @@ jobs:
             ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/query_matrix.json
             ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/provider_runtime_soak.json
             ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/runtime.log
+            ${{ runner.temp }}/nse-runtime-${{ matrix.provider }}/audit.db
+            artifacts/models/scalp/XAUUSD/70d_liquidity/
           if-no-files-found: error
           retention-days: 14
 
       - name: Cleanup PostgreSQL
         if: always() && matrix.provider == 'postgres'
         run: docker rm -f nse-ci-pg >/dev/null 2>&1 || true
+
+  # ---------------------------------------------------------------------------
+  # DATABASE FABRIC CERTIFICATION — real UI-driven SQLite -> PostgreSQL -> SQLite.
+  # Uses the SQLite audit DB produced by the full real-process runtime lane,
+  # starts a disposable PostgreSQL, and exercises the same HTTP workflow the
+  # Database Management UI uses: config -> connection test -> preview ->
+  # migration -> validation -> automatic cutover -> restart -> reverse migration
+  # -> switch back -> restart. The same bounded query corpus runs statement by
+  # statement against both providers and a small p95 benchmark is recorded.
+  # This is a certification lane, not a load test.
+  # ---------------------------------------------------------------------------
+  db-fabric-certification:
+    name: DB Fabric Certification (SQLite ↔ PostgreSQL)
+    if: always() && needs.full-runtime-provider.result == 'success'
+    needs:
+      - full-runtime-provider
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+
+    env:
+      NSE_PG_TEST_PASSWORD: nse_password_dev
+      NSE_DATABASE__PG_HOST: 127.0.0.1
+      NSE_DATABASE__PG_PORT: "5432"
+      NSE_DATABASE__PG_DATABASE: nse_audit
+      NSE_DATABASE__PG_USER: nse_user
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web,postgres]"
+
+      - name: Download SQLite runtime evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: ci-full-runtime-sqlite-*
+          path: ${{ runner.temp }}/db-fabric/input
+          merge-multiple: true
+
+      - name: Restore certified model bundle from SQLite runtime lane
+        run: |
+          set -euo pipefail
+          model_pt="$(find "$RUNNER_TEMP/db-fabric/input" -type f -name model.pt -print -quit)"
+          test -n "$model_pt"
+          model_dir="$(dirname "$model_pt")"
+          target="artifacts/models/scalp/XAUUSD/70d_liquidity"
+          mkdir -p "$target"
+          cp "$model_dir"/* "$target"/
+
+      - name: Locate SQLite audit database
+        run: |
+          set -euo pipefail
+          sqlite_db="$(find "$RUNNER_TEMP/db-fabric/input" -type f -name audit.db -print -quit)"
+          test -n "$sqlite_db"
+          echo "SQLITE_RUNTIME_DB=$sqlite_db" >> "$GITHUB_ENV"
+
+      - name: Start disposable PostgreSQL 16
+        run: |
+          set -euo pipefail
+          docker rm -f nse-db-fabric-pg >/dev/null 2>&1 || true
+          docker run -d --name nse-db-fabric-pg \
+            -e POSTGRES_DB=nse_audit \
+            -e POSTGRES_USER=nse_user \
+            -e POSTGRES_PASSWORD="$NSE_PG_TEST_PASSWORD" \
+            -p 5432:5432 \
+            postgres:16-alpine
+          for i in $(seq 1 45); do
+            if docker exec nse-db-fabric-pg pg_isready -U nse_user -d nse_audit >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs nse-db-fabric-pg | tail -120 || true
+          exit 1
+
+
+      - name: Prepare deterministic market data
+        run: |
+          python - <<'PY'
+          from datetime import UTC, datetime, timedelta
+          from pathlib import Path
+          import polars as pl
+
+          path = Path("data/raw/XAUUSD_M1.parquet")
+          path.parent.mkdir(parents=True, exist_ok=True)
+          start = datetime(2026, 1, 1, tzinfo=UTC)
+          n = 20000
+          close = [2000.0 + ((i % 200) - 100) * 0.02 + (i % 17) * 0.003 for i in range(n)]
+          pl.DataFrame({
+              "time_utc": [start + timedelta(minutes=i) for i in range(n)],
+              "open": close,
+              "high": [v + 0.15 for v in close],
+              "low": [v - 0.15 for v in close],
+              "close": [v + (0.01 if i % 2 else -0.01) for i, v in enumerate(close)],
+              "tick_volume": [100 + (i % 31) for i in range(n)],
+          }).write_parquet(path)
+          PY
+
+      - name: Run end-to-end DB fabric certification with full trace
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/db-fabric/evidence"
+          log="$RUNNER_TEMP/db-fabric/certification.log"
+
+          # Stream complete Python stdout/stderr to Actions and persist the exact
+          # same stream. Capture the Python exit code explicitly.
+          set +e
+          set -x
+          python -u scripts/ci/db_fabric_certification.py \
+            --sqlite-db "$SQLITE_RUNTIME_DB" \
+            --settings-db "$RUNNER_TEMP/db-fabric/settings.db" \
+            --evidence-dir "$RUNNER_TEMP/db-fabric/evidence" \
+            --port 18090 2>&1 | tee "$log"
+          rc=${PIPESTATUS[0]}
+          set +x
+
+          echo "DB_FABRIC_CERTIFICATION_RC=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo "=== DB FABRIC STRUCTURED FAILURE ==="
+            python - <<'PY' || true
+          import json
+          import os
+          from pathlib import Path
+
+          p = Path(os.environ["RUNNER_TEMP"]) / "db-fabric" / "evidence" / "db_fabric_certification.json"
+          if p.exists():
+              data = json.loads(p.read_text(encoding="utf-8"))
+              print(json.dumps({
+                  "status": data.get("status"),
+                  "errors": data.get("errors"),
+                  "phases": data.get("phases"),
+                  "final_count_diffs": data.get("final_count_diffs"),
+                  "preserved_sqlite_diffs": data.get("preserved_sqlite_diffs"),
+                  "final_schema_compare": data.get("final_schema_compare"),
+                  "traceback": data.get("traceback"),
+              }, indent=2, sort_keys=True, default=str))
+          else:
+              print("certification evidence file was not produced")
+          PY
+            echo "=== CERTIFICATION LOG: LAST 500 LINES ==="
+            tail -n 500 "$log" || true
+            echo "=== CERTIFICATION LOG: ERROR/FAIL FILTER ==="
+            grep -Ein 'error|fail|exception|traceback|mismatch|does not exist|cannot' "$log" | tail -n 250 || true
+            echo "=== APPLICATION LOG TAILS ==="
+            for f in "$RUNNER_TEMP"/db-fabric/db-fabric-*.log "$RUNNER_TEMP"/db-fabric/evidence/db-fabric-*.log; do
+              [ -f "$f" ] || continue
+              echo "===== $f ====="
+              tail -n 500 "$f" || true
+            done
+            exit "$rc"
+          fi
+
+      - name: Run deep SQLite provider query certification
+        run: |
+          set -euo pipefail
+          export NEXUS_AUDIT_DB="$RUNNER_TEMP/db-fabric/evidence/certification.sqlite"
+          export NSE_DATABASE__PROVIDER=sqlite
+          mkdir -p "$RUNNER_TEMP/db-fabric/evidence/ci-db-cert-sqlite"
+          python scripts/ci/database_provider_cert.py \
+            --provider sqlite \
+            --evidence-dir "$RUNNER_TEMP/db-fabric/evidence/ci-db-cert-sqlite"
+
+      - name: Run deep PostgreSQL provider query certification
+        run: |
+          set -euo pipefail
+          unset NEXUS_AUDIT_DB || true
+          export NSE_DATABASE__PROVIDER=postgresql
+          export NSE_DATABASE__PG_HOST=127.0.0.1
+          export NSE_DATABASE__PG_PORT=5432
+          export NSE_DATABASE__PG_DATABASE=nse_audit
+          export NSE_DATABASE__PG_USER=nse_user
+          export HOME="$RUNNER_TEMP/db-fabric/home"
+          mkdir -p "$HOME"
+          python - <<'PY'
+          import os
+          import sys
+          sys.path.insert(0, "src")
+          from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
+          from nexus_scalp.settings.secret_store import SecureSecretStore
+          SecureSecretStore().set_secret(PG_PASSWORD_SECRET_KEY, os.environ["NSE_PG_TEST_PASSWORD"])
+          PY
+          mkdir -p "$RUNNER_TEMP/db-fabric/evidence/ci-db-cert-postgres"
+          python scripts/ci/database_provider_cert.py \
+            --provider postgres \
+            --evidence-dir "$RUNNER_TEMP/db-fabric/evidence/ci-db-cert-postgres"
+
+      - name: Compare SQLite/PostgreSQL live schema and query contract
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/db-fabric/evidence/ci-db-cert-root"
+          export DB_CERT_ROOT="$RUNNER_TEMP/db-fabric/evidence"
+          python scripts/ci/database_provider_parity.py \
+            --evidence-dir "$DB_CERT_ROOT"
+
+      - name: Run production migrator deep round-trip certification
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/db-fabric/evidence/ci-migration-cert"
+          python scripts/ci/database_migration_cert.py \
+            --evidence-dir "$RUNNER_TEMP/db-fabric/evidence/ci-migration-cert"
+
+      - name: Enforce deep DB certification contract and emit benchmark
+        run: |
+          set -euo pipefail
+          export DB_CERT_ROOT="$RUNNER_TEMP/db-fabric/evidence"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["DB_CERT_ROOT"])
+          sqlite_report = json.loads((root / "ci-db-cert-sqlite" / "database_provider_cert.json").read_text())
+          postgres_report = json.loads((root / "ci-db-cert-postgres" / "database_provider_cert.json").read_text())
+          parity = json.loads((root / "provider_parity.json").read_text())
+          migration = json.loads((root / "ci-migration-cert" / "database_migration_cert.json").read_text())
+
+          checks = {
+              "sqlite_provider_cert_pass": sqlite_report.get("status") == "PASS",
+              "postgres_provider_cert_pass": postgres_report.get("status") == "PASS",
+              "sqlite_query_floor_350": int(sqlite_report.get("workload", {}).get("query_count", 0)) >= 350,
+              "postgres_query_floor_350": int(postgres_report.get("workload", {}).get("query_count", 0)) >= 350,
+              "sqlite_query_failures_zero": int(sqlite_report.get("workload", {}).get("failed", 1)) == 0,
+              "postgres_query_failures_zero": int(postgres_report.get("workload", {}).get("failed", 1)) == 0,
+              "every_sqlite_table_exists_in_postgres": bool(
+                  parity.get("checks", {}).get("sqlite_has_no_missing_postgres_tables")
+              ),
+              "shared_columns_equal": bool(parity.get("checks", {}).get("same_column_contract")),
+              "postgres_only_data_free": bool(
+                  parity.get("checks", {}).get("postgres_only_tables_are_empty")
+              ),
+              "migration_cert_pass": migration.get("status") == "PASS",
+              "migration_roundtrip_digest": bool(migration.get("digest_match")),
+              "migration_idempotent": bool(migration.get("idempotent_forward_pass")),
+          }
+
+          benchmark = {
+              "sqlite_mean_ms": sqlite_report.get("workload", {}).get("mean_ms"),
+              "sqlite_p95_ms": sqlite_report.get("workload", {}).get("p95_ms"),
+              "postgres_p95_ms": postgres_report.get("workload", {}).get("p95_ms"),
+              "postgres_max_ms": postgres_report.get("workload", {}).get("max_ms"),
+              "sqlite_query_count": sqlite_report.get("workload", {}).get("query_count"),
+              "postgres_query_count": postgres_report.get("workload", {}).get("query_count"),
+              "migration_elapsed_ms": migration.get("elapsed_ms"),
+          }
+
+          result = {
+              "status": "PASS" if all(checks.values()) else "FAIL",
+              "checks": checks,
+              "benchmark": benchmark,
+          }
+          (root / "deep_db_certification_overall.json").write_text(
+              json.dumps(result, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+
+          summary = "## Deep DB Fabric Certification\n\n"
+          summary += "| Check | Result |\n|---|---|\n"
+          for name, ok in checks.items():
+              summary += f"| {name} | {'PASS' if ok else 'FAIL'} |\n"
+          summary += "\n### Approximate benchmark\n"
+          for name, value in benchmark.items():
+              summary += f"- {name}: {value}\n"
+          print(summary)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write(summary)
+
+          if result["status"] != "PASS":
+              raise SystemExit(1)
+          PY
+
+      - name: Print DB fabric diagnostics
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "=== DB FABRIC DIAGNOSTIC SUMMARY ==="
+          if [ -f "$RUNNER_TEMP/db-fabric/evidence/db_fabric_certification.json" ]; then
+            python - <<'PY' || true
+          import json
+          import os
+          from pathlib import Path
+
+          p = Path(os.environ["RUNNER_TEMP"]) / "db-fabric" / "evidence" / "db_fabric_certification.json"
+          data = json.loads(p.read_text(encoding="utf-8"))
+          print(json.dumps({
+              "status": data.get("status"),
+              "errors": data.get("errors"),
+              "phases": data.get("phases"),
+              "final_count_diffs": data.get("final_count_diffs"),
+              "preserved_sqlite_diffs": data.get("preserved_sqlite_diffs"),
+              "final_schema_compare": data.get("final_schema_compare"),
+              "shutdown": data.get("shutdown"),
+          }, indent=2, sort_keys=True, default=str))
+          PY
+          fi
+          echo "=== CERTIFICATION LOG TAIL ==="
+          tail -n 500 "$RUNNER_TEMP/db-fabric/certification.log" 2>/dev/null || true
+          echo "=== APPLICATION WARN/ERROR TAILS ==="
+          for f in "$RUNNER_TEMP"/db-fabric/db-fabric-*.log; do
+            [ -f "$f" ] || continue
+            echo "===== $f ====="
+            grep -Ein 'warn|error|critical|exception|fatal|failed|cannot|mismatch' "$f" | tail -n 250 || true
+          done
+          echo "=== POSTGRES CONTAINER LOG (TAIL) ==="
+          docker logs --tail 250 nse-db-fabric-pg 2>&1 || true
+          echo "=== PROCESS SNAPSHOT ==="
+          ps -ef | grep -E 'nexus|uvicorn|python|postgres' | grep -v grep || true
+
+      - name: Upload DB fabric evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-db-fabric-certification-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/db-fabric/evidence/
+            ${{ runner.temp }}/db-fabric/certification.log
+            ${{ runner.temp }}/db-fabric/db-fabric-*.log
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup PostgreSQL
+        if: always()
+        run: docker rm -f nse-db-fabric-pg >/dev/null 2>&1 || true
 
   # ---------------------------------------------------------------------------
   # MT5/WINE — independent terminal runtime line.

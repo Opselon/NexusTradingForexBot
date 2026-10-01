@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -27,6 +28,23 @@ logger = get_logger("nexus_scalp.database.migrate_reverse")
 
 CHECKPOINT_TABLE = "_nse_reverse_migration_checkpoints"
 SKIP_TABLES = frozenset({"_nse_migration_checkpoints", CHECKPOINT_TABLE})
+
+_ADD_COLUMN_RE = re.compile(
+    r"""^\s*ALTER\s+TABLE\s*"?([A-Za-z_][\w$]*)"?\s+ADD\s+COLUMN\s*"?([A-Za-z_][\w$]*)"?""",
+    re.IGNORECASE,
+)
+
+#: Extract the table name from a ``CREATE TABLE`` DDL statement. Used to decide
+#: whether an auxiliary owner's schema is needed at all, so the pattern must
+#: match the real DDL (``\s`` in a raw string), not a literal backslash-s.
+_CREATE_TABLE_RE = re.compile(
+    r"""CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s*"?([A-Za-z_][\w$]*)"?""",
+    re.IGNORECASE,
+)
+_INDEX_RE = re.compile(
+    r"""^\s*CREATE\s+(?:UNIQUE\s+)?INDEX""",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -54,6 +72,86 @@ class PostgresToSqliteMigrator:
         self.src_cfg = src_config
         self.dst_cfg = dst_config
         self.opts = options or MigrationOptions()
+
+    def _ensure_destination_schema(
+        self, dst_driver: Any, source_tables: set[str] | None = None
+    ) -> None:
+        """Replay the canonical schema idempotently onto the existing SQLite DB.
+
+        ``replay_schema()`` is built by executing the migration chain against an
+        empty in-memory SQLite database, so an ``ALTER TABLE ... ADD COLUMN``
+        statement that was necessary during replay may already exist in the
+        real destination. SQLite has no ``ADD COLUMN IF NOT EXISTS`` spelling;
+        inspect the live destination first and skip only that exact already-
+        present column. All other DDL errors remain fatal.
+        """
+        from nexus_scalp.database import migration
+        from nexus_scalp.database.migration.schema_snapshot import replay_schema
+        from nexus_scalp.database.registry import DatabaseDomain
+
+        def apply_statements(statements: tuple[str, ...]) -> None:
+            for statement in statements:
+                match = _ADD_COLUMN_RE.match(statement)
+                if match and dst_driver.table_exists(match.group(1)):
+                    table = match.group(1)
+                    column = match.group(2)
+                    existing = {
+                        str(item["name"]).casefold()
+                        for item in dst_driver.table_columns(table)
+                        if isinstance(item, dict) and "name" in item
+                    }
+                    if column.casefold() in existing:
+                        logger.info(
+                            "[DB-MIGRATE] reverse schema column already present: %s.%s",
+                            table,
+                            column,
+                        )
+                        continue
+                try:
+                    dst_driver.execute(statement)
+                except Exception as exc:
+                    if _INDEX_RE.match(statement) and (
+                        "no such column" in str(exc).lower()
+                        or "has no column named" in str(exc).lower()
+                    ):
+                        logger.warning(
+                            "[DB-MIGRATE] skipping index creation for missing column: %s (%s)",
+                            statement.strip(),
+                            exc,
+                        )
+                        continue
+                    raise
+
+        apply_statements(replay_schema(domain=DatabaseDomain.AUDIT))
+
+        # The PostgreSQL audit database can also contain lazy-owned operational
+        # tables that are not part of AUDIT replay (for example shadow70_*).
+        # Only replay an auxiliary owner when at least one of its tables is
+        # actually present in the source, so an unrelated fresh destination is
+        # not polluted with every optional schema.
+        source_keys = {table.casefold() for table in (source_tables or set())}
+        auxiliary = (
+            ("model_lifecycle", migration.schema_snapshot.model_lifecycle_schema_statements),
+            ("strategy_factory", migration.schema_snapshot.strategy_factory_schema_statements),
+            ("ops_shadow", migration.schema_snapshot.ops_shadow_schema_statements),
+            ("ops_hygiene", migration.schema_snapshot.ops_hygiene_schema_statements),
+        )
+        for owner, extractor in auxiliary:
+            statements = tuple(extractor())
+            expected = {
+                match.group(1).casefold()
+                for statement in statements
+                for match in (_CREATE_TABLE_RE.search(statement),)
+                if match
+            }
+            if not expected.intersection(source_keys):
+                continue
+            logger.info(
+                "[DB-MIGRATE] reverse schema owner=%s source_tables=%d",
+                owner,
+                len(expected.intersection(source_keys)),
+            )
+            apply_statements(statements)
 
     def _ensure_checkpoint_table(self, dst_driver: Any) -> None:
         ddl = (
@@ -150,9 +248,13 @@ class PostgresToSqliteMigrator:
         dst_driver = get_driver(self.dst_cfg)
 
         try:
+            tables = [t for t in src_driver.list_tables() if t not in SKIP_TABLES]
+            self._ensure_destination_schema(
+                dst_driver,
+                source_tables={table for table in tables},
+            )
             self._ensure_checkpoint_table(dst_driver)
             checkpoints = self._load_checkpoints(dst_driver)
-            tables = [t for t in src_driver.list_tables() if t not in SKIP_TABLES]
             if self.opts.tables:
                 tables = [t for t in tables if t in self.opts.tables]
 
@@ -171,7 +273,7 @@ class PostgresToSqliteMigrator:
             report.provider_switch_ready = val.status == "PASS"
             report.status = "SUCCESS" if report.provider_switch_ready else "FAILED"
         except Exception as exc:
-            logger.error("Reverse migration failed: %s", exc)
+            logger.exception("Reverse migration failed: %s", exc)
             report.status = "FAILED"
             report.errors.append(str(exc))
         finally:
@@ -180,6 +282,45 @@ class PostgresToSqliteMigrator:
             report.duration_ms = round((time.perf_counter() - t_start) * 1000.0, 1)
 
         return report
+
+    @staticmethod
+    def _column_mapping(src: Any, dst: Any, table: str) -> tuple[list[str], list[str]]:
+        """Map source columns to destination columns case-insensitively."""
+        source_columns = [str(c["name"]) for c in src.table_columns(table)]
+        destination_columns = [str(c["name"]) for c in dst.table_columns(table)]
+        source_by_key: dict[str, str] = {}
+        destination_by_key: dict[str, str] = {}
+
+        for name in source_columns:
+            key = name.casefold()
+            previous = source_by_key.get(key)
+            if previous is not None and previous != name:
+                raise RuntimeError(
+                    f"Ambiguous source columns on {table}: {previous!r} and {name!r}"
+                )
+            source_by_key[key] = name
+
+        for name in destination_columns:
+            key = name.casefold()
+            previous = destination_by_key.get(key)
+            if previous is not None and previous != name:
+                raise RuntimeError(
+                    f"Ambiguous destination columns on {table}: {previous!r} and {name!r}"
+                )
+            destination_by_key[key] = name
+
+        missing = [source_by_key[key] for key in source_by_key if key not in destination_by_key]
+        if missing:
+            raise RuntimeError(
+                f"Destination SQLite table {table} is missing source columns: {missing}"
+            )
+
+        matched_dest = [name for name in destination_columns if name.casefold() in source_by_key]
+        matched_src = [source_by_key[name.casefold()] for name in matched_dest]
+        return (
+            matched_src,
+            matched_dest,
+        )
 
     def _migrate_table(
         self,
@@ -197,17 +338,20 @@ class PostgresToSqliteMigrator:
             report.errors.append(message)
             raise RuntimeError(message)
 
-        cols = [c["name"] for c in dst.table_columns(table)]
-        if not cols:
+        source_cols, destination_cols = self._column_mapping(src, dst, table)
+        if not destination_cols:
             return
 
-        has_id = "id" in cols
-        order_col = "id" if has_id else cols[0]
+        source_by_key = {name.casefold(): name for name in source_cols}
+        destination_by_key = {name.casefold(): name for name in destination_cols}
+        order_key = "id" if "id" in destination_by_key else destination_cols[0].casefold()
+        source_order_col = source_by_key[order_key]
         total_rows = src.scalar(f"SELECT COUNT(*) FROM {table}") or 0
 
-        col_str = ", ".join(f'"{c}"' for c in cols)
-        qmarks = ", ".join("?" for _ in cols)
-        insert_sql = f'INSERT OR REPLACE INTO "{table}" ({col_str}) VALUES ({qmarks})'
+        source_col_str = ", ".join(f'"{name}"' for name in source_cols)
+        destination_col_str = ", ".join(f'"{name}"' for name in destination_cols)
+        qmarks = ", ".join("?" for _ in destination_cols)
+        insert_sql = f'INSERT OR REPLACE INTO "{table}" ({destination_col_str}) VALUES ({qmarks})'
 
         batch_size = self.opts.batch_size or DEFAULT_BATCH_SIZE
         copied = int((checkpoint or {}).get("rows_copied") or 0)
@@ -236,23 +380,24 @@ class PostgresToSqliteMigrator:
             if last_val is not None:
                 is_pg = getattr(src, "config", None) and src.config.is_postgresql
                 ph = "%s" if is_pg else "?"
-                where = f'WHERE "{order_col}" > {ph}'
+                where = f'WHERE "{source_order_col}" > {ph}'
                 args.append(last_val)
 
             fetch_sql = (
-                f'SELECT {col_str} FROM "{table}" {where} '
-                f'ORDER BY "{order_col}" ASC LIMIT {batch_size}'
+                f'SELECT {source_col_str} FROM "{table}" {where} '
+                f'ORDER BY "{source_order_col}" ASC LIMIT {batch_size}'
             )
             rows = src.query(fetch_sql, tuple(args))
             if not rows:
                 break
 
-            # Convert row dicts to tuples in column order
-            tuples = [tuple(r.get(c) for c in cols) for r in rows]
+            # Source rows use the PostgreSQL spelling; destination INSERTs use
+            # the SQLite spelling. The mapping above makes this case-safe.
+            tuples = [tuple(row.get(column) for column in source_cols) for row in rows]
             dst.executemany(insert_sql, tuples)
 
             copied += len(rows)
-            last_val = rows[-1].get(order_col)
+            last_val = rows[-1].get(source_order_col)
             self._save_checkpoint(
                 dst,
                 table,
@@ -332,17 +477,44 @@ class PostgresToSqliteMigrator:
                     "dest_rows": d_cnt,
                     "match": match,
                 }
-                columns = [c["name"] for c in src.table_columns(t)]
-                dst_columns = {c["name"] for c in dst.table_columns(t)}
-                if columns and set(columns) <= dst_columns:
-                    order = next((c for c in columns if c == "id"), columns[0])
-                    source_digest = self._table_digest(src, t, columns, order)
-                    dest_digest = self._table_digest(dst, t, columns, order)
-                    detail.update({"source_digest": source_digest, "dest_digest": dest_digest})
+                try:
+                    source_columns, destination_columns = self._column_mapping(src, dst, t)
+                except RuntimeError as exc:
+                    row_ok = False
+                    errors.append(str(exc))
+                    details[t] = {
+                        **detail,
+                        "match": False,
+                        "column_mapping_error": str(exc),
+                    }
+                    continue
+
+                if source_columns and destination_columns:
+                    destination_keys = {name.casefold() for name in destination_columns}
+                    order_key = (
+                        "id" if "id" in destination_keys else destination_columns[0].casefold()
+                    )
+                    source_order = next(
+                        name for name in source_columns if name.casefold() == order_key
+                    )
+                    destination_order = next(
+                        name for name in destination_columns if name.casefold() == order_key
+                    )
+                    source_digest = self._table_digest(src, t, source_columns, source_order)
+                    dest_digest = self._table_digest(dst, t, destination_columns, destination_order)
+                    detail.update(
+                        {
+                            "source_digest": source_digest,
+                            "dest_digest": dest_digest,
+                            "source_columns": source_columns,
+                            "destination_columns": destination_columns,
+                        }
+                    )
                     detail["match"] = detail["match"] and source_digest == dest_digest
                     if source_digest != dest_digest:
                         row_ok = False
                         errors.append(f"Value digest mismatch on {t}")
+
                 details[t] = detail
 
             # Financial comparison on audit_ledger

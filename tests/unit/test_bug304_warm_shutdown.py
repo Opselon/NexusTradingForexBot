@@ -305,6 +305,68 @@ def test_engine_shutdown_async_is_idempotent_guard():
     assert "_shutdown_completed" in src
 
 
+@pytest.mark.asyncio
+async def test_live_engine_shutdown_completed_means_teardown_finished():
+    """BUG-304: completion must not become true while teardown is still running."""
+    from nexus_scalp.application.live_engine import LiveEngine
+
+    engine = LiveEngine.__new__(LiveEngine)
+    engine._running = False
+    engine._shutdown_completed = False
+    engine._shutdown_in_progress = False
+    engine._retrain_task = None
+    engine.candle_intel = None
+    events: list[str] = []
+
+    async def _slow_stop(name: str) -> None:
+        events.append(f"{name}:start")
+        await asyncio.sleep(0.05)
+        events.append(f"{name}:done")
+
+    for name in (
+        "_stop_accounting_worker",
+        "_stop_history_sync_worker",
+        "_stop_intelligence_worker",
+        "_stop_research_worker",
+        "_stop_factory_worker",
+        "_stop_training_worker",
+        "_stop_shadow_worker",
+        "_stop_news_worker",
+        "_stop_incident_worker",
+    ):
+        setattr(engine, name, lambda n=name: _slow_stop(n))
+
+    class _Closable:
+        def close(self) -> None:
+            events.append("close")
+
+    class _Adapter:
+        def disconnect(self) -> None:
+            events.append("disconnect")
+
+    class _Notifier:
+        def notify_shutdown(self, *, reason: str) -> None:
+            events.append(f"notify:{reason}")
+
+    engine.adapter = _Adapter()
+    engine.experience_evaluator = _Closable()
+    engine.audit = _Closable()
+    engine.notifier = _Notifier()
+
+    task = asyncio.create_task(engine._shutdown_async())
+    await asyncio.sleep(0.01)
+
+    assert engine._shutdown_in_progress is True
+    assert engine.shutdown_completed is False, "completion must wait for worker teardown"
+
+    await task
+
+    assert engine.shutdown_completed is True
+    assert engine._shutdown_in_progress is False
+    assert events.count("disconnect") == 1
+    assert "notify:Engine Stopped" in events
+
+
 def test_cli_engine_boot_composes_supervisor():
     """`nexus start` uses the same supervisor and the same honest report."""
     import inspect
