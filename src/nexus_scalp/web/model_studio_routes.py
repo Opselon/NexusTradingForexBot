@@ -468,6 +468,19 @@ class ModelStudioVerifyRequest(BaseModel):
     model_id: str = Field(..., description="Model ID or filename to verify")
 
 
+class ModelStudioCertifyRequest(BaseModel):
+    model_id: str = Field(..., description="Registered model ID to certify")
+
+
+class ModelStudioLoadContractRequest(BaseModel):
+    model_id: str = Field(..., description="Registered model ID to verify for load")
+    expected_schema_id: str = Field(default="", description="Required feature schema id")
+    expected_dimension: int = Field(default=0, description="Required feature dimension")
+    expected_sequence_length: int = Field(default=1, description="Required sequence length")
+    expected_label_schema_id: str = Field(default="", description="Required label schema id")
+    expected_weights_sha256: str = Field(default="", description="Required weights SHA-256")
+
+
 class ModelStudioRegisterRequest(BaseModel):
     path: str = Field(..., description="Filesystem path to .pt weights")
     name: str = Field(default="", description="Friendly model name")
@@ -2016,12 +2029,33 @@ def execute_hot_load(req: ModelStudioHotLoadRequest, engine: Any = None) -> dict
             detail=f"Failed to safely load model checkpoint: {exc}",
         ) from exc
 
-    # Infer dimension from weights input projection
-    dim = 50
+    # Resolve the model's feature dimension from the CHECKPOINT only. There is
+    # deliberately NO default: silently assuming 50D would let a 70D artifact
+    # be loaded against a 50D contract (forbidden silent fallback, contract
+    # Section 26/33), so an unresolvable dimension is a LOAD_REJECTED.
+    dim: int | None = None
     if "input_projection.weight" in weights:
         dim = int(weights["input_projection.weight"].shape[1])
-    elif rec is not None and rec.dimension in (50, 70):
+    if dim is None and rec is not None and rec.dimension in (50, 70):
         dim = rec.dimension
+    if dim is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "LOAD_REJECTED: the checkpoint records no input projection and "
+                "the registry carries no dimension for this model — the feature "
+                "dimension cannot be resolved, so no contract can be verified. "
+                "Refusing to assume a dimension."
+            ),
+        )
+    if dim not in (50, 70):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"LOAD_REJECTED: feature dimension {dim} is not a canonical "
+                "50D/70D contract (scalp_v1 / scalp_v3). Refusing to adapt it."
+            ),
+        )
 
     # Instantiate model and load state. Head width follows the CHECKPOINT
     # (byte-truth), not a hardcoded 3: legacy 4-logit heads exist on disk
@@ -2866,6 +2900,161 @@ def execute_drift_check(req: ModelStudioDriftRequest) -> dict[str, Any]:
 
 
 # =============================================================================
+# MODEL FACTORY certification (contract Sections 18-27)
+# =============================================================================
+
+
+def _bundle_dir_for(model_id: str) -> Path | None:
+    """Resolves the artifact bundle directory for a registered model.
+
+    Reads the registry record (never request input) so the certification path
+    stays inside the operator's artifact roots.
+    """
+    registry = get_model_registry()
+    rec = registry.get_model(model_id)
+    if rec is None or not rec.manifest_path:
+        return None
+    p = _repo_root() / rec.manifest_path
+    if not p.is_file():
+        return None
+    return p.parent
+
+
+def execute_certify_model(req: ModelStudioCertifyRequest) -> dict[str, Any]:
+    """Runs the mandatory MODEL FACTORY gate set on a registered model.
+
+    Reads the persisted quality reports the trainer wrote next to the bundle
+    and mints/refreshes ``<model_id>.certificate.json``. Any mandatory gate
+    failure yields ``MODEL_STATUS = REJECTED`` with the exact per-stage
+    reasons — never READY.
+    """
+    bundle_dir = _bundle_dir_for(req.model_id)
+    if bundle_dir is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Model {req.model_id!r} not found or has no artifact bundle.",
+        )
+    manifest_path = bundle_dir / f"{req.model_id}.meta.json"
+    if not manifest_path.is_file():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model {req.model_id!r} has no manifest; cannot certify.",
+        )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    def _load_report(suffix: str) -> dict[str, Any] | None:
+        p = bundle_dir / f"{req.model_id}.{suffix}.json"
+        if not p.is_file():
+            return None
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
+    from nexus_scalp.model_generation.certification import certify_model
+
+    metrics = manifest.get("training_metrics") or {}
+    schema_id = str(manifest.get("schema_id") or "")
+    dim = int(manifest.get("dimension") or 0)
+    cert = certify_model(
+        req.model_id,
+        manifest=manifest,
+        dataset_report=_load_report("dataset_quality"),
+        feature_report=_load_report("feature_quality"),
+        label_report=_load_report("label_quality"),
+        training_metrics=metrics,
+        walk_forward_result=None,
+        oos_metrics=metrics,
+        bundle_dir=bundle_dir,
+        out_dir=bundle_dir,
+        expected_schema_id=schema_id,
+        expected_dimension=dim,
+        expected_sequence_length=int(manifest.get("sequence_length") or 1),
+        expected_label_schema_id=str(manifest.get("label_schema_id") or ""),
+    )
+    return {"status": "OK", "certificate": cert.to_dict()}
+
+
+def execute_model_certificate(model_id: str) -> dict[str, Any]:
+    """Reads the persisted certificate for a model (404 when none exists)."""
+    bundle_dir = _bundle_dir_for(model_id)
+    if bundle_dir is None:
+        raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
+    p = bundle_dir / f"{model_id}.certificate.json"
+    if not p.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Model {model_id!r} has no certificate — it has not been through "
+                "certification. Use POST /api/model-studio/models/certify."
+            ),
+        )
+    return {"status": "OK", "certificate": json.loads(p.read_text(encoding="utf-8"))}
+
+
+def execute_quality_reports(model_id: str) -> dict[str, Any]:
+    """Returns the dataset/feature/label quality evidence for a model."""
+    bundle_dir = _bundle_dir_for(model_id)
+    if bundle_dir is None:
+        raise HTTPException(status_code=404, detail=f"Model {model_id!r} not found.")
+
+    def _load(suffix: str) -> dict[str, Any] | None:
+        p = bundle_dir / f"{model_id}.{suffix}.json"
+        if not p.is_file():
+            return None
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
+    return {
+        "status": "OK",
+        "model_id": model_id,
+        "dataset_quality": _load("dataset_quality"),
+        "feature_quality": _load("feature_quality"),
+        "label_quality": _load("label_quality"),
+    }
+
+
+def execute_verify_load_contract(req: ModelStudioLoadContractRequest) -> dict[str, Any]:
+    """Strict pre-load compatibility verification (contract Section 26).
+
+    Refuses with an EXACT reason on any mismatch. Never adapts, truncates,
+    zero-pads or substitutes a model.
+    """
+    from nexus_scalp.model_generation.certification import (
+        CompatibilityError,
+        verify_artifact_bundle,
+    )
+
+    bundle_dir = _bundle_dir_for(req.model_id)
+    if bundle_dir is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Model {req.model_id!r} not found or has no artifact bundle.",
+        )
+    try:
+        result = verify_artifact_bundle(
+            bundle_dir,
+            req.model_id,
+            expected_schema_id=req.expected_schema_id or "",
+            expected_dimension=req.expected_dimension or 0,
+            expected_sequence_length=req.expected_sequence_length or 1,
+            expected_label_schema_id=req.expected_label_schema_id or "",
+            expected_weights_sha256=req.expected_weights_sha256 or "",
+        )
+    except CompatibilityError as exc:
+        return {
+            "status": "LOAD_REJECTED",
+            "load_rejected": True,
+            "reason": str(exc),
+            "model_id": req.model_id,
+        }
+    result["load_rejected"] = False
+    return result
+
+
+# =============================================================================
 # Router Registration
 # =============================================================================
 
@@ -3054,6 +3243,27 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     @app.get("/api/model-studio/artifact-locations")
     def route_artifact_locations() -> dict[str, Any]:
         return get_artifact_locations()
+
+    # -------------------------------------------------------------------------
+    # MODEL FACTORY certification (contract Sections 18-27)
+    # -------------------------------------------------------------------------
+
+    @app.post("/api/model-studio/models/certify")
+    def route_certify_model(req: ModelStudioCertifyRequest) -> dict[str, Any]:
+        return execute_certify_model(req)
+
+    @app.get("/api/model-studio/models/{model_id}/certificate")
+    def route_model_certificate(model_id: str) -> dict[str, Any]:
+        return execute_model_certificate(model_id)
+
+    @app.get("/api/model-studio/models/{model_id}/quality-reports")
+    def route_quality_reports(model_id: str) -> dict[str, Any]:
+        return execute_quality_reports(model_id)
+
+    @app.post("/api/model-studio/models/verify-load-contract")
+    @app.post("/api/model-studio/models/load-contract/verify")
+    def route_verify_load_contract(req: ModelStudioLoadContractRequest) -> dict[str, Any]:
+        return execute_verify_load_contract(req)
 
     # -------------------------------------------------------------------------
     # MODEL BUILDER / FEATURE CONTRACT / RUNTIME STATE (this wave)
