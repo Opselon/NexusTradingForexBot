@@ -665,3 +665,95 @@ export const ARTIFACT_LOCATION_META: Record<
   training_datasets: { label: "Training Datasets", hint: "artifacts/.../datasets" },
   registry_database: { label: "SQLite Registry", hint: "artifacts/models.db" },
 };
+
+// =============================================================================
+// MODEL FACTORY Certification & Quality DTOs (Sections 18-27)
+// =============================================================================
+
+export interface CertificationGateBattery {
+  gate: string;
+  passed: boolean;
+  message: string;
+  detail?: Record<string, unknown>;
+}
+
+export interface ModelCertificateDto {
+  model_id: string;
+  model_status: "CERTIFIED" | "REJECTED" | "DRAFT" | "TRAINING" | "VALIDATING" | "OOS_TESTING" | "LOADED" | "ACTIVE";
+  certified: boolean;
+  certified_at: string;
+  certification_version: string;
+  schema_id: string;
+  dimension: number;
+  sequence_length: number;
+  label_schema_id: string;
+  weights_sha256: string;
+  scaler_sha256?: string;
+  manifest_sha256?: string;
+  failed_stages: string[];
+  passed_stages: string[];
+  rejection_reason?: string;
+  gates: CertificationGateBattery[];
+}
+
+export interface ModelCertificateResponse {
+  status: string;
+  certificate: ModelCertificateDto;
+}
+
+export interface QualityReportsResponse {
+  status: string;
+  model_id: string;
+  dataset_quality?: {
+    quality_status: "PASS" | "WARN" | "FAIL";
+    raw_rows: number;
+    valid_rows: number;
+    duplicate_rows: number;
+    rejected_rows: number;
+    gap_events: number;
+    outlier_candidates: number;
+    fingerprint: string;
+    rejection_breakdown: Record<string, number>;
+  };
+  feature_quality?: {
+    quality_status: "PASS" | "WARN" | "FAIL";
+    dimension: number;
+    schema_id: string;
+    passed: number;
+    warned: number;
+    failed: number;
+    constant_features: string[];
+    nan_features: string[];
+    alias_groups: string[][];
+  };
+  label_quality?: {
+    quality_status: "PASS" | "WARN" | "FAIL";
+    labeled_rows: number;
+    label_density: number;
+    class_distribution: Record<string, number>;
+    no_trade_percentage: number;
+    collapsed_classes: string[];
+    regime_collapse: string[];
+    fold_spreads: Record<string, number>;
+  };
+}
+
+export interface LoadContractVerifyRequest {
+  model_id: string;
+  expected_schema_id?: string;
+  expected_dimension?: number;
+  expected_sequence_length?: number;
+}
+
+export interface LoadContractVerifyResponse {
+  status: string;
+  model_id: string;
+  verified: boolean;
+  schema_id: string;
+  dimension: number;
+  sequence_length: number;
+  model_status: string;
+  weights_sha256: string;
+  detail: string;
+  error?: string;
+}
