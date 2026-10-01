@@ -287,20 +287,15 @@ def prepare_runtime_environment(provider: str, evidence_dir: Path) -> Path:
     # assertion instead of a random cold-start that can legitimately produce
     # zero HTF indicators on one runner but not another.
     set_env("NEXUS_PAPER_STRESS_SEED", "42")
-    tg_token = os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("NEXUS_TELEGRAM_BOT_TOKEN")
-    tg_chat = (
-        os.environ.get("TELEGRAM_CHAT_ID")
-        or os.environ.get("NEXUS_TELEGRAM_ADMIN_ID")
-        or os.environ.get("USER_ID")
-    )
-    if tg_token and tg_chat:
-        set_env("NSE_NO_TELEGRAM", "0")
-        set_env("NSE_TELEGRAM__ENABLED", "true")
-        set_env("NEXUS_TELEGRAM_BOT_TOKEN", tg_token)
-        set_env("NEXUS_TELEGRAM_ADMIN_ID", tg_chat)
-    else:
-        set_env("NSE_NO_TELEGRAM", "1")
-        set_env("NSE_TELEGRAM__ENABLED", "false")
+    # The ENGINE must never send Telegram during the deterministic soak: a
+    # runner-side network timeout on api.telegram.org surfaces as a runtime
+    # ERROR in the captured process log and turns the lane red (it did:
+    # [TELEGRAM] event=SEND_FAILED category=TELEGRAM_TIMEOUT). Delivery of the
+    # soak result to Telegram is owned by the CI notification step
+    # (render_provider_runtime.py / telegram_notify.py), which is isolated from
+    # the certification verdict.
+    set_env("NSE_NO_TELEGRAM", "1")
+    set_env("NSE_TELEGRAM__ENABLED", "false")
     set_env("NSE_LATENCY_WARNING_THRESHOLD_MS", "150.0")
     set_env("NSE_NEWS__ENABLED", "false")
     set_env("NSE_NEWS__ANALYSIS__ENABLED", "false")

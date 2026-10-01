@@ -396,7 +396,10 @@ class RuntimeLoop:
         self.om._boot_detail = "engine armed · workers started · tick loop live"
 
         self.om._last_tick_processed_time = time.time()
-        self.om._last_fresh_tick_at = time.time()
+        # NOTE: the stall clock (_last_fresh_tick_at) is deliberately NOT
+        # stamped here — BUG-279 pins it to the first NEW tick completing
+        # _process_tick_pipeline below. The pre-boot delay (settings load,
+        # parquet load, web bind) must NOT count as feed silence.
 
         while self.om._running:
             try:
@@ -406,6 +409,11 @@ class RuntimeLoop:
                 # (non-duplicate) tick, stamped after the pipeline below —
                 # immune to the BUG-169 duplicate early-return and to the
                 # watchdog's own 15s timer resets.
+                # BUGFIX-SOAK: first pass of a cold CI start has a pre-boot
+                # stall age (settings DB load, parquet load, web bind) baked
+                # in; seeding the clock on the FIRST watchdog pass only (when
+                # it is still unset) keeps that age out of the episode while
+                # every later pass keeps the true NEW-tick clock.
                 if getattr(self.om, "_last_fresh_tick_at", None) is None:  # init-order safe
                     self.om._last_fresh_tick_at = current_time
                 _stall_age_sec = current_time - self.om._last_fresh_tick_at

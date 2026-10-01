@@ -258,7 +258,7 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
         enabled: bool = True,
         environment: str = "production",
         minimum_severity: str = "INFO",
-        timeout_seconds: float = 4.0,
+        timeout_seconds: float = 30.0,
         maximum_retries: int = 3,
         retry_backoff: float = 2.0,
         queue_capacity: int = 100,
