@@ -350,12 +350,14 @@ class SqliteToPostgresMigrator:
             report.validation = "NOT_RUN"
         else:
             report.status = "COMPLETE"
-            report.validation = self.validate() if not self.options.dry_run else "NOT_RUN"
+            report.validation = (
+                self.validate(report=report) if not self.options.dry_run else "NOT_RUN"
+            )
         report.provider_switch_ready = report.status == "COMPLETE" and report.validation == "PASSED"
         return report
 
     # ---------------------------------------------------------- validation
-    def validate(self) -> str:
+    def validate(self, report: MigrationReport | None = None) -> str:
         """Compare source vs destination: row counts, identities, financial
         aggregates and row checksums.  Returns PASSED / FAILED."""
         try:
@@ -432,7 +434,7 @@ class SqliteToPostgresMigrator:
                                 f"{t}.identity: query failed: {type(exc).__name__}: {exc}"
                             )
                         else:
-                            if (m1 or 0) != (m2 or 0):
+                            if (m1 or 0) != (m2 or 0) and str(m1 or 0) != str(m2 or 0):
                                 problems.append(f"{t}: identity max {m1} != {m2}")
 
                 # financial aggregates. Every configured column is checked
@@ -477,10 +479,15 @@ class SqliteToPostgresMigrator:
                     if abs(s1 - s2) > max(0.01, abs(s1) * 1e-9):
                         problems.append(f"{t}.{source_col}: sum {s1} != {s2}")
             if problems:
+                if report is not None:
+                    report.errors.extend(problems)
+                logger.warning("migration validation failed with problems: %s", problems)
                 return "FAILED"
             return "PASSED"
         except Exception as exc:  # pragma: no cover
             logger.warning("migration validation failed", exc_info=exc)
+            if report is not None:
+                report.errors.append(str(exc))
             return "FAILED"
 
 
