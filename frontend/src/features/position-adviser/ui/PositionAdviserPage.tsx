@@ -211,9 +211,23 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
       } catch (err) {
         const status = (err as { status?: number }).status;
         if (status === 404) {
-          // The route genuinely does not exist on this build. Nothing to show.
-          args.setMissing(true);
+          // Two different 404s reach here and they must not be conflated:
+          //  - the route genuinely does not exist on this build -> the panel
+          //    renders its permanent UNAVAILABLE state and we stop polling;
+          //  - the route exists but no evaluation has run yet -> the adviser
+          //    just has no sample to show, which changes the moment an
+          //    evaluation fires. Treating THAT as "route missing" permanently
+          //    freezes the panel on a misleading message and stops it ever
+          //    filling in.
+          const message = errorDetailText(err).toLowerCase();
+          const notWired = !message.includes("no evaluation") && !message.includes("no decision");
+          args.setMissing(notWired);
+          if (notWired) {
+            args.setData(null);
+            return;
+          }
           args.setData(null);
+          args.setError(errorDetailText(err));
           return;
         }
         // 409 = the route exists but has no sample yet (no model loaded or no
