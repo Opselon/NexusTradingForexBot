@@ -396,6 +396,7 @@ class RuntimeLoop:
         self.om._boot_detail = "engine armed · workers started · tick loop live"
 
         self.om._last_tick_processed_time = time.time()
+        self.om._last_fresh_tick_at = time.time()
 
         while self.om._running:
             try:

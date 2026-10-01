@@ -492,7 +492,7 @@ class RiskEngine:
                 entry_market_dist = current_tick.bid - proposal.proposed_entry
 
             if entry_market_dist < min_dist_price:
-                logger.warning(
+                logger.info(
                     "Proposal rejected: Pending entry price is too close to market (Stops Level violation)"
                 )
                 return None
@@ -501,7 +501,7 @@ class RiskEngine:
         tp_dist_price = abs(proposal.proposed_entry - proposal.take_profit)
 
         if sl_dist_price < min_dist_price or tp_dist_price < min_dist_price:
-            logger.warning("Proposal rejected: SL/TP distance smaller than broker stops level")
+            logger.info("Proposal rejected: SL/TP distance smaller than broker stops level")
             return None
 
         # ----------------------------------------------------------------------

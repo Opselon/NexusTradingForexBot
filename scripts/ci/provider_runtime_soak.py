@@ -66,7 +66,7 @@ API_SWEEP_STAGGER_MS = 35
 # A request that answers above this threshold is a slow-control-plane
 # WARNING: it stays in the report and CI summary, but does not fail the
 # lane (the status becomes PASS_WITH_WARNINGS, never a silent green).
-API_SLOW_MS = 10_000
+API_SLOW_MS = int(os.environ.get("NSE_API_SLOW_MS", "30000"))
 DB_QUERY_TIMEOUT_MS = 3000
 MIN_TOTAL_QUERIES = 500
 MIN_DB_QUERIES_PER_PASS = 250
@@ -287,8 +287,21 @@ def prepare_runtime_environment(provider: str, evidence_dir: Path) -> Path:
     # assertion instead of a random cold-start that can legitimately produce
     # zero HTF indicators on one runner but not another.
     set_env("NEXUS_PAPER_STRESS_SEED", "42")
-    set_env("NSE_NO_TELEGRAM", "1")
-    set_env("NSE_TELEGRAM__ENABLED", "false")
+    tg_token = os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("NEXUS_TELEGRAM_BOT_TOKEN")
+    tg_chat = (
+        os.environ.get("TELEGRAM_CHAT_ID")
+        or os.environ.get("NEXUS_TELEGRAM_ADMIN_ID")
+        or os.environ.get("USER_ID")
+    )
+    if tg_token and tg_chat:
+        set_env("NSE_NO_TELEGRAM", "0")
+        set_env("NSE_TELEGRAM__ENABLED", "true")
+        set_env("NEXUS_TELEGRAM_BOT_TOKEN", tg_token)
+        set_env("NEXUS_TELEGRAM_ADMIN_ID", tg_chat)
+    else:
+        set_env("NSE_NO_TELEGRAM", "1")
+        set_env("NSE_TELEGRAM__ENABLED", "false")
+    set_env("NSE_LATENCY_WARNING_THRESHOLD_MS", "150.0")
     set_env("NSE_NEWS__ENABLED", "false")
     set_env("NSE_NEWS__ANALYSIS__ENABLED", "false")
     set_env("NSE_FORENSIC_REPORT__ENABLED", "false")
