@@ -1073,13 +1073,13 @@ class SignalPolicy:
                 )
             elif stat_arb_bullish and is_range_market:
                 proposed_action = ActionType.BUY_LIMIT
-                target_entry_price = min(tenkan, round(current_tick.ask - 0.10, 2))
+                target_entry_price = min(tenkan, round(current_tick.ask - 0.15, 2))
                 reason_code = f"STAT_ARB_MEAN_REVERSION_BUY_LIMIT (Z: {z_score:+.2f})"
             elif feature_vector.fvg_bullish_active or (
                 exec_type == RecommendedExecutionType.PASSIVE_LIMIT and not high_velocity_momentum
             ):
                 proposed_action = ActionType.BUY_LIMIT
-                target_entry_price = min(tenkan, round(current_tick.ask - 0.10, 2))
+                target_entry_price = min(tenkan, round(current_tick.ask - 0.15, 2))
                 reason_code = "ICT_FVG_PULLBACK_BUY_LIMIT"
             elif feature_vector.broke_previous_high or high_velocity_momentum:
                 proposed_action = (
@@ -1121,13 +1121,13 @@ class SignalPolicy:
                 )
             elif stat_arb_bearish and is_range_market:
                 proposed_action = ActionType.SELL_LIMIT
-                target_entry_price = max(tenkan, round(current_tick.bid + 0.10, 2))
+                target_entry_price = max(tenkan, round(current_tick.bid + 0.15, 2))
                 reason_code = f"STAT_ARB_MEAN_REVERSION_SELL_LIMIT (Z: {z_score:+.2f})"
             elif feature_vector.fvg_bearish_active or (
                 exec_type == RecommendedExecutionType.PASSIVE_LIMIT and not high_velocity_momentum
             ):
                 proposed_action = ActionType.SELL_LIMIT
-                target_entry_price = max(tenkan, round(current_tick.bid + 0.10, 2))
+                target_entry_price = max(tenkan, round(current_tick.bid + 0.15, 2))
                 reason_code = "ICT_FVG_PULLBACK_SELL_LIMIT"
             elif feature_vector.broke_previous_low or high_velocity_momentum:
                 proposed_action = (

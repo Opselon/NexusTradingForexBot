@@ -612,7 +612,7 @@ class DecisionExecutor:
                             ),
                         )
                     if risk_order is None:
-                        logger.info(
+                        logger.warning(
                             "[ENTRY_BLOCKED] layer=RISK_ENGINE reason=RISK_EVALUATION_REJECTED "
                             "action=%s symbol=%s request_id=%s",
                             policy_decision.action.value,

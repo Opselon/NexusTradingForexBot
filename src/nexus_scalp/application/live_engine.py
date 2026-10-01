@@ -747,7 +747,7 @@ class LiveEngine:
         # identical warnings). Wall-clock of the last NEW (non-duplicate)
         # tick; grace before escalation; episode flags for once-per-episode
         # telemetry.
-        self._last_fresh_tick_at: float = time.time()
+        self._last_fresh_tick_at: float | None = None
         self._feed_stall_grace_sec: float = float(
             getattr(getattr(config, "freshness", None), "stall_grace_sec", 900.0) or 900.0
         )
