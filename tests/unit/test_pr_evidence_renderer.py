@@ -317,3 +317,57 @@ class TestEndToEndComment:
         reporter = self._reporter()
         result = reporter.report_once(999)
         assert "src/nse/db/postgres.py" in result.affected_files
+
+
+class TestWarningsAndTraces:
+    def test_warnings_rendered_with_trace_and_details(self) -> None:
+        f = Failure(
+            source="github-checks",
+            suite="CI",
+            location=SourceLocation("src/nexus_scalp/trading.py", 42, 1),
+            error_type="HighLatencyWarning",
+            message="Tick delay exceeded 150ms during live session",
+            traceback="  File 'engine.py', line 10\n    process_tick()\nHighLatencyWarning",
+            category=FailureCategory.UNKNOWN,
+            check="test-live",
+            check_url="https://ci/test-live",
+            severity="WARNING",
+        )
+        coll = EvidenceCollection(
+            meta=ReportMeta(pr=42, pr_head_sha="b" * 40),
+            warning_findings=[f],
+            warnings=["Advisory: Telegram credentials active"],
+        )
+        out = render_report(coll)
+        assert "## ⚠️ Warnings" in out
+        assert "HighLatencyWarning" in out
+        assert "Result / Details:" in out
+        assert "Tick delay exceeded 150ms" in out
+        assert "**Trace:**" in out
+        assert "process_tick()" in out
+        assert "Advisory: Telegram credentials active" in out
+
+    def test_failures_rendered_with_full_trace_and_result(self) -> None:
+        f = Failure(
+            source="github-checks",
+            suite="CI",
+            location=SourceLocation("src/nexus_scalp/order.py", 100, 5),
+            error_type="OrderExecutionError",
+            message="Broker rejected BUY order due to margin",
+            traceback="Traceback (most recent call last):\n  File 'order.py', line 100\n    broker.send()\nOrderExecutionError: Broker rejected BUY order due to margin",
+            category=FailureCategory.CI_FAILURE,
+            check="test-execution",
+            check_url="https://ci/test-execution",
+            severity="ERROR",
+        )
+        coll = EvidenceCollection(
+            meta=ReportMeta(pr=42, pr_head_sha="b" * 40),
+            failures=[f],
+        )
+        out = render_report(coll)
+        assert "## 🔴 What Failed and Why" in out
+        assert "OrderExecutionError" in out
+        assert "Result / Why:" in out
+        assert "Broker rejected BUY order" in out
+        assert "**Trace:**" in out
+        assert "broker.send()" in out

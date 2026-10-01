@@ -747,7 +747,7 @@ class LiveEngine:
         # identical warnings). Wall-clock of the last NEW (non-duplicate)
         # tick; grace before escalation; episode flags for once-per-episode
         # telemetry.
-        self._last_fresh_tick_at: float = time.time()
+        self._last_fresh_tick_at: float | None = None
         self._feed_stall_grace_sec: float = float(
             getattr(getattr(config, "freshness", None), "stall_grace_sec", 900.0) or 900.0
         )
@@ -896,8 +896,12 @@ class LiveEngine:
 
         # Env override wins for diagnosis; otherwise the secure store is
         # authoritative (never live.yaml).
-        env_token = os.getenv("NEXUS_TELEGRAM_BOT_TOKEN")
-        env_admin = os.getenv("NEXUS_TELEGRAM_ADMIN_ID")
+        env_token = os.getenv("NEXUS_TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+        env_admin = (
+            os.getenv("NEXUS_TELEGRAM_ADMIN_ID")
+            or os.getenv("TELEGRAM_CHAT_ID")
+            or os.getenv("USER_ID")
+        )
         sec_token, sec_admin = self.settings_service.get_telegram_credentials()
         bot_token = env_token or sec_token or ""
         admin_id = env_admin or sec_admin or ""
@@ -905,11 +909,19 @@ class LiveEngine:
 
         # telegram.enabled default: config value until user settings override it
         cfg_enabled_row = self.settings_service.db.get("telegram.enabled")
-        tg_enabled = (
-            bool(cfg_enabled_row.value)
-            if cfg_enabled_row and cfg_enabled_row.value is not None
-            else bool(config.telegram.enabled)
-        )
+        if cfg_enabled_row and cfg_enabled_row.value is not None:
+            tg_enabled = bool(cfg_enabled_row.value)
+        elif (
+            os.getenv("NSE_NO_TELEGRAM") == "1"
+            or os.getenv("NSE_TELEGRAM__ENABLED", "").lower() == "false"
+        ):
+            tg_enabled = False
+        elif (env_token and env_admin) and (
+            os.getenv("NSE_TELEGRAM__ENABLED", "").lower() == "true" or config.telegram.enabled
+        ):
+            tg_enabled = True
+        else:
+            tg_enabled = bool(config.telegram.enabled)
 
         # UI-controlled execution mode: the settings DB is authoritative
         # when the user changed it from the dashboard (UI == source of
@@ -2423,7 +2435,9 @@ class LiveEngine:
 
         # Telegram hardening: never log token
         if self.config.telegram.enabled and (
-            not os.getenv("NEXUS_TELEGRAM_BOT_TOKEN") and not self.config.telegram.bot_token
+            not os.getenv("NEXUS_TELEGRAM_BOT_TOKEN")
+            and not os.getenv("TELEGRAM_BOT_TOKEN")
+            and not self.config.telegram.bot_token
         ):
             logger.warning("Telegram enabled but token missing (env override recommended)")
 

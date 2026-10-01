@@ -22,7 +22,7 @@ from rich.panel import Panel
 
 from nexus_scalp.cli.styling import _emit, console
 from nexus_scalp.pr_evidence.collectors import EvidenceOptions
-from nexus_scalp.pr_evidence.models import Status
+from nexus_scalp.pr_evidence.models import UNKNOWN, Status
 from nexus_scalp.pr_evidence.reporter import (
     DEFAULT_POLL_SEC,
     DEFAULT_WATCH_TIMEOUT_SEC,
@@ -84,7 +84,8 @@ def _result_payload(result: Any) -> dict[str, Any]:
                     f.production_location.rendered() if f.production_location is not None else None
                 ),
                 "error_type": f.error_type,
-                "message": (f.message or "")[:200],
+                "message": f.message or "",
+                "traceback": f.traceback if f.traceback != UNKNOWN else None,
                 "category": f.category.value,
                 "check": f.check,
                 "workflow": f.workflow,
@@ -95,6 +96,23 @@ def _result_payload(result: Any) -> dict[str, Any]:
                 "finding": f.rule_url,
             }
             for f in collection.all_failures()
+        ]
+        payload["warnings"] = collection.warnings
+        payload["warning_findings"] = [
+            {
+                "file": w.location.rendered(),
+                "error_type": w.error_type,
+                "message": w.message or "",
+                "traceback": w.traceback if w.traceback != UNKNOWN else None,
+                "category": w.category.value,
+                "check": w.check,
+                "workflow": w.workflow,
+                "job": w.job,
+                "step": w.step,
+                "workflow_file": w.workflow_file,
+                "severity": w.severity,
+            }
+            for w in collection.all_warnings()
         ]
         payload["head"] = {
             "pr": collection.meta.pr_head_sha,

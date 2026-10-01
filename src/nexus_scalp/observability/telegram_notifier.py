@@ -258,7 +258,7 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
         enabled: bool = True,
         environment: str = "production",
         minimum_severity: str = "INFO",
-        timeout_seconds: float = 4.0,
+        timeout_seconds: float = 30.0,
         maximum_retries: int = 3,
         retry_backoff: float = 2.0,
         queue_capacity: int = 100,
@@ -476,6 +476,7 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
         severity: str = "INFO",
         event_type: str = "GENERIC",
         correlation_id: str | None = None,
+        wait_timeout: float | None = None,
     ) -> int | None:
         """Enqueue a notification; returns message_id only on sync resolution.
 
@@ -491,7 +492,12 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
             self._blocked_log_count += 1
             if (now_log - self._last_blocked_log_time) >= 60.0:
                 self._last_blocked_log_time = now_log
-                logger.warning(
+                log_fn = (
+                    logger.warning
+                    if severity.upper() in ("WARNING", "WARN", "ERROR", "CRITICAL")
+                    else logger.info
+                )
+                log_fn(
                     "[TELEGRAM] event=BLOCKED_NOT_CONFIGURED severity=%s reason=DELIVERY_DISABLED (ENABLED=false - credentials presence is NOT a send intent) "
                     "notification_id=%s correlation_id=%s blocked_since_start=%d",
                     severity,
@@ -590,11 +596,12 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
         if callback is not None:
             return None
         # Synchronous-ish wait for tests/simple scripts (bounded, non-blocking for prod).
-        deadline = time.time() + 0.05
+        timeout = 0.05 if wait_timeout is None else max(0.01, float(wait_timeout))
+        deadline = time.time() + timeout
         while time.time() < deadline:
             if record.status in ("DELIVERED", "FAILED_FINAL", "SEND_FAILED"):
                 break
-            time.sleep(0.002)
+            time.sleep(0.005)
         return record.message_id if record.status == "DELIVERED" else None
 
     # =====================================================================

@@ -775,9 +775,16 @@ jobs:
           echo "NSE_EXECUTION__MODE=PAPER" >> "$GITHUB_ENV"
           echo "NSE_EXECUTION__SYMBOL=XAUUSD" >> "$GITHUB_ENV"
           echo "NSE_NO_BROWSER=1" >> "$GITHUB_ENV"
-          echo "NSE_NO_TELEGRAM=1" >> "$GITHUB_ENV"
+          if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "NSE_TELEGRAM__ENABLED=true" >> "$GITHUB_ENV"
+            echo "NSE_NO_TELEGRAM=0" >> "$GITHUB_ENV"
+            echo "NEXUS_TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}" >> "$GITHUB_ENV"
+            echo "NEXUS_TELEGRAM_ADMIN_ID=${TELEGRAM_CHAT_ID}" >> "$GITHUB_ENV"
+          else
+            echo "NSE_NO_TELEGRAM=1" >> "$GITHUB_ENV"
+            echo "NSE_TELEGRAM__ENABLED=false" >> "$GITHUB_ENV"
+          fi
           echo "NSE_NEWS__ENABLED=false" >> "$GITHUB_ENV"
-          echo "NSE_TELEGRAM__ENABLED=false" >> "$GITHUB_ENV"
           echo "NSE_NO_AUTO_INSTALL=1" >> "$GITHUB_ENV"
           echo "NSE_WEB_ACTUAL_PORT=$NSE_RUNTIME_SOAK_PORT" >> "$GITHUB_ENV"
           if [ "${{ matrix.provider }}" = "postgres" ]; then
@@ -843,11 +850,14 @@ jobs:
               else:
                   query = payload
           diag = report.get("diagnostics", {})
-          print("=== FULL RUNTIME RESULT ===")
+          rc = report.get("process_exit_code")
+          print("=" * 60)
+          print("=== FULL RUNTIME REPORT: ${{ matrix.provider }} ===")
+          print("=" * 60)
           print("STATUS:", report.get("status", "FAIL"))
           print("CONFIG:", report.get("config_path", "unknown"))
           print("SOAK_SECONDS:", report.get("elapsed_sec", "n/a"))
-          print("PROCESS_RC:", report.get("process_exit_code", "n/a"))
+          print("PROCESS_RC:", rc if rc is not None else "0 (alive)")
           print("QUERIES:", f"{query.get('queries_ok', 0)}/{query.get('queries_total', 0)}")
           print("QUERY_FAILURES:", query.get("queries_failed", 0))
           print("QUERY_FLOOR:", query.get("minimum_query_floor", "n/a"))
@@ -857,19 +867,57 @@ jobs:
           print("TRACEBACKS:", diag.get("traceback_count", 0))
           if report.get("runtime_error"):
               print("RUNTIME_ERROR:", report["runtime_error"])
-          for item in diag.get("warnings", [])[:50]:
-              print(f"[WARN] line={item.get('line_no', '?')} {item.get('message', item.get('error', ''))}")
-          for item in diag.get("errors", [])[:50]:
-              print(f"[ERROR] line={item.get('line_no', '?')} {item.get('message', item.get('error', ''))}")
-          for trace in diag.get("tracebacks", [])[:25]:
-              frames = " -> ".join(
-                  f"{frame['file']}:{frame['line']}" +
-                  (f"::{frame['function']}" if frame.get("function") else "")
-                  for frame in trace.get("frames", [])
-              )
-              print(f"[TRACE] lines={trace.get('start_line_no')}-{trace.get('end_line_no')} {frames or 'no parsed frames'}")
-          for item in query.get("failure_samples", [])[:50]:
-              print(f"[QUERY-FAIL] {item.get('label', 'unknown')}: {item.get('error', '')}")
+
+          if rc not in (0, None):
+              print("\n" + "!" * 60)
+              print(f"💥 CRASH DETECTED: Engine process exited with code {rc}!")
+              print("!" * 60)
+              log_file = root / "runtime.log"
+              if log_file.exists():
+                  print("\n--- [LAST 50 LINES OF RUNTIME LOG] ---")
+                  lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+                  print("\n".join(lines[-50:]))
+          else:
+              print(f"\n✅ Engine process remained ALIVE for the full {report.get('elapsed_sec', 'n/a')}s soak window.")
+              if diag.get("warning_count", 0) > 0 or diag.get("error_count", 0) > 0:
+                  print(f"⚠️ Process ran successfully but recorded {diag.get('warning_count', 0)} warning(s) and {diag.get('error_count', 0)} error(s).")
+
+          tracebacks = diag.get("tracebacks", [])
+          if tracebacks:
+              print("\n" + "=" * 60)
+              print(f"=== FULL TRACEBACKS ({len(tracebacks)}) ===")
+              print("=" * 60)
+              for idx, trace in enumerate(tracebacks[:25], 1):
+                  lines = trace.get("lines", [])
+                  print(f"\n--- [TRACEBACK #{idx}] lines {trace.get('start_line_no')}-{trace.get('end_line_no')} ---")
+                  if lines:
+                      print("\n".join(lines))
+                  else:
+                      frames = " -> ".join(
+                          f"{frame['file']}:{frame['line']}" +
+                          (f"::{frame['function']}" if frame.get("function") else "")
+                          for frame in trace.get("frames", [])
+                      )
+                      print(frames or "no parsed frames")
+
+          warnings = diag.get("warnings", [])
+          if warnings:
+              print("\n--- [WARNINGS] ---")
+              for item in warnings[:50]:
+                  print(f"[WARN] line={item.get('line_no', '?')} {item.get('message', item.get('error', ''))}")
+
+          errors = diag.get("errors", [])
+          if errors:
+              print("\n--- [ERRORS] ---")
+              for item in errors[:50]:
+                  print(f"[ERROR] line={item.get('line_no', '?')} {item.get('message', item.get('error', ''))}")
+
+          query_fails = query.get("failure_samples", [])
+          if query_fails:
+              print("\n--- [QUERY FAILURES] ---")
+              for item in query_fails[:50]:
+                  print(f"[QUERY-FAIL] {item.get('label', 'unknown')}: {item.get('error', '')}")
+          print("\n" + "=" * 60)
           PY
 
       - name: Emit GitHub runtime annotations
@@ -1292,6 +1340,10 @@ jobs:
           bash scripts/linux/mt5_runtime.sh install
 
       - name: Start MT5 and health-soak for 120s with complete trace log
+        env:
+          NEXUS_MT5_DEMO_LOGIN: ${{ secrets.MT5_DEMO_LOGIN }}
+          NEXUS_MT5_DEMO_PASSWORD: ${{ secrets.MT5_DEMO_PASSWORD }}
+          NEXUS_MT5_DEMO_SERVER: ${{ secrets.MT5_DEMO_SERVER }}
         run: |
           set -euo pipefail
           export NEXUS_MT5_WINE="$(command -v wine)"
@@ -1306,6 +1358,7 @@ jobs:
               bash scripts/linux/mt5_runtime.sh health
             done
             python scripts/linux/mt5_doctor.py
+            bash scripts/linux/mt5_runtime.sh check-login || true
             bash scripts/linux/mt5_runtime.sh logs || true
             bash scripts/linux/mt5_runtime.sh stop
             trap - EXIT

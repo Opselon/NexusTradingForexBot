@@ -39,7 +39,7 @@ from nexus_scalp.observability.logging import get_logger
 logger = get_logger("nexus_scalp.database.migrate_engine")
 
 #: Tables never migrated (internal / derived state that rebuilds itself).
-SKIP_TABLES = frozenset({"_nse_migration_checkpoints"})
+SKIP_TABLES = frozenset({"_nse_migration_checkpoints", "schema_migrations"})
 
 
 @dataclass

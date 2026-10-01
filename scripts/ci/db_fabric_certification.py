@@ -439,6 +439,10 @@ INTERNAL_MIGRATION_TABLES = {
     # Forward/reverse checkpoint ledgers are migration metadata, not domain data.
     "_nse_migration_checkpoints",
     "_nse_reverse_migration_checkpoints",
+    # Alembic-style version ledger: engine-internal bookkeeping that only
+    # exists on the provider that ran the migration tooling (the SQLite side
+    # in the fabric lane). Never part of the portable domain-data contract.
+    "schema_migrations",
 }
 
 
@@ -691,7 +695,8 @@ def main() -> int:
         count_diffs = {
             table: {"sqlite": sqlite_counts[table], "postgres": pg_counts.get(table)}
             for table in sqlite_counts
-            if table not in EPHEMERAL_RUNTIME_TABLES
+            if table not in INTERNAL_MIGRATION_TABLES
+            and table not in EPHEMERAL_RUNTIME_TABLES
             and sqlite_counts[table] != pg_counts.get(table)
         }
         ephemeral_count_diffs = {

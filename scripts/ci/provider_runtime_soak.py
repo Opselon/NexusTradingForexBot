@@ -85,7 +85,9 @@ HOT_ENDPOINTS = (
 )
 SEVERITY_RE = re.compile(
     r"(?:\[(CRITICAL|FATAL|ERROR|WARNING|WARN)\s*\]|"
-    r"\b(?:level|log_level|severity)=(CRITICAL|FATAL|ERROR|WARNING|WARN)\b)",
+    r"\b(?:level|log_level|severity)=(CRITICAL|FATAL|ERROR|WARNING|WARN)\b|"
+    r"\b(CRITICAL|FATAL|ERROR|WARNING|WARN):\s+|"
+    r"\b([A-Za-z0-9_]*Warning):\s+)",
     re.IGNORECASE,
 )
 TRACEBACK_RE = re.compile(r"Traceback \(most recent call last\):")
@@ -143,12 +145,22 @@ class LogCollector:
                     continue
                 if traceback_buf:
                     traceback_buf.append(line)
-                    if len(traceback_buf) >= 80 or (
-                        line
-                        and not line.startswith(
-                            (" ", "File ", "Traceback", "During handling", "The above")
+                    is_exc_line = bool(
+                        re.match(
+                            r"^[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Interrupt|Exit):",
+                            line.strip(),
                         )
-                        and SEVERITY_RE.search(line)
+                    )
+                    if (
+                        is_exc_line
+                        or len(traceback_buf) >= 80
+                        or (
+                            line
+                            and not line.startswith(
+                                (" ", "File ", "Traceback", "During handling", "The above")
+                            )
+                            and SEVERITY_RE.search(line)
+                        )
                     ):
                         self._record_traceback(traceback_buf, traceback_start, now)
                         traceback_buf = []
@@ -160,8 +172,12 @@ class LogCollector:
                     (group.upper() for group in match.groups() if group),
                     "ERROR",
                 )
-                if severity == "WARN":
+                if severity == "WARN" or severity.endswith("WARNING"):
                     severity = "WARNING"
+                elif severity in ("FATAL", "CRITICAL"):
+                    severity = "CRITICAL"
+                else:
+                    severity = "ERROR"
                 source = SOURCE_RE.search(line)
                 normalized = re.sub(r"\d{4}-\d{2}-\d{2}[T ][0-9:.+-]+", "<ts>", line)
                 normalized = re.sub(r"\bpid[= ]\d+\b", "pid=<n>", normalized, flags=re.IGNORECASE)
@@ -205,6 +221,16 @@ class LogCollector:
             m = SOURCE_RE.search(line)
             if m and source is None:
                 source = {"file": m.group(1), "line": int(m.group(2))}
+
+        exc_type = ""
+        exc_message = ""
+        if lines:
+            last = lines[-1].strip()
+            if ":" in last:
+                exc_type, _, exc_message = last.partition(":")
+                exc_type = exc_type.strip()
+                exc_message = exc_message.strip()
+
         payload = {
             "traceback_id": hashlib.sha256("\n".join(lines).encode("utf-8", "replace")).hexdigest()[
                 :16
@@ -215,6 +241,8 @@ class LogCollector:
             "source": source,
             "frames": frames,
             "lines": lines,
+            "exception_type": exc_type,
+            "exception_message": exc_message,
         }
         with self.lock:
             self.tracebacks.append(payload)
@@ -259,8 +287,16 @@ def prepare_runtime_environment(provider: str, evidence_dir: Path) -> Path:
     # assertion instead of a random cold-start that can legitimately produce
     # zero HTF indicators on one runner but not another.
     set_env("NEXUS_PAPER_STRESS_SEED", "42")
+    # The ENGINE must never send Telegram during the deterministic soak: a
+    # runner-side network timeout on api.telegram.org surfaces as a runtime
+    # ERROR in the captured process log and turns the lane red (it did:
+    # [TELEGRAM] event=SEND_FAILED category=TELEGRAM_TIMEOUT). Delivery of the
+    # soak result to Telegram is owned by the CI notification step
+    # (render_provider_runtime.py / telegram_notify.py), which is isolated from
+    # the certification verdict.
     set_env("NSE_NO_TELEGRAM", "1")
     set_env("NSE_TELEGRAM__ENABLED", "false")
+    set_env("NSE_LATENCY_WARNING_THRESHOLD_MS", "150.0")
     set_env("NSE_NEWS__ENABLED", "false")
     set_env("NSE_NEWS__ANALYSIS__ENABLED", "false")
     set_env("NSE_FORENSIC_REPORT__ENABLED", "false")
@@ -308,6 +344,16 @@ def prepare_runtime_environment(provider: str, evidence_dir: Path) -> Path:
         }
     )
     frame.write_parquet(data_path)
+
+    # Pre-warm dependency intelligence cache so REST endpoints (/api/dependency/*)
+    # resolve from cache in <500ms rather than scanning all 2700 AST files during live HTTP query.
+    try:
+        from nexus_scalp.dependency_intelligence.engine import DependencyIntelligenceEngine
+
+        DependencyIntelligenceEngine(REPO_ROOT / "src" / "nexus_scalp").analyze(use_cache=True)
+    except Exception:
+        pass
+
     return state_root
 
 
@@ -667,10 +713,18 @@ def process_alive_for(proc: subprocess.Popen[str], seconds: int) -> tuple[bool, 
     return True, None
 
 
-def wait_http(base_url: str, timeout: int) -> dict[str, Any]:
+def wait_http(
+    base_url: str,
+    timeout: int,
+    proc: subprocess.Popen[str] | None = None,
+) -> dict[str, Any]:
     deadline = time.monotonic() + timeout
     last: dict[str, Any] = {}
     while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            raise RuntimeError(
+                f"engine process crashed during startup with exit code {proc.returncode}"
+            )
         last = http_request(base_url, "/health")
         if last.get("status") == 200:
             status = http_request(base_url, "/api/status")
@@ -891,7 +945,7 @@ def main() -> int:
     failure: str | None = None
     routes: list[str] = []
     try:
-        startup_evidence = wait_http(base_url, 60)
+        startup_evidence = wait_http(base_url, 60, proc=proc)
         route_info, discovery_evidence = discover_get_routes(base_url)
         routes = route_info
         startup_evidence["route_discovery"] = discovery_evidence
