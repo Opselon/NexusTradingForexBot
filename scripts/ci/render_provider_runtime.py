@@ -220,7 +220,9 @@ def main() -> int:
             if tracebacks:
                 tg_lines.append("\n<b>Tracebacks:</b>")
                 for tb in tracebacks[:3]:
-                    exc_title = f"{tb.get('exception_type', 'Traceback')}: {tb.get('exception_message', '')}".strip(": ")
+                    exc_title = f"{tb.get('exception_type', 'Traceback')}: {tb.get('exception_message', '')}".strip(
+                        ": "
+                    )
                     tb_tail = "\n".join(tb.get("lines", [])[-6:])
                     tg_lines.append(
                         f"• <b>{html.escape(exc_title or 'Traceback')}</b>\n<pre>{html.escape(tb_tail)}</pre>"

@@ -464,7 +464,7 @@ def _warnings(evidence: EvidenceCollection, warnings: list[Failure]) -> str:
             lines.append(f"**Where:** `{w.location.rendered()}`\n")
             if w.step != UNKNOWN:
                 lines.append(f"**Step:** `{w.step}`\n")
-            if w.error_type != UNKNOWN and w.error_type != title:
+            if w.error_type not in (UNKNOWN, title):
                 lines.append(f"**Warning / rule:** `{w.error_type}`\n")
             if w.message != UNKNOWN:
                 lines.append(

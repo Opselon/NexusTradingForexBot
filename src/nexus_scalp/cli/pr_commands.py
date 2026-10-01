@@ -22,7 +22,7 @@ from rich.panel import Panel
 
 from nexus_scalp.cli.styling import _emit, console
 from nexus_scalp.pr_evidence.collectors import EvidenceOptions
-from nexus_scalp.pr_evidence.models import Status, UNKNOWN
+from nexus_scalp.pr_evidence.models import UNKNOWN, Status
 from nexus_scalp.pr_evidence.reporter import (
     DEFAULT_POLL_SEC,
     DEFAULT_WATCH_TIMEOUT_SEC,
