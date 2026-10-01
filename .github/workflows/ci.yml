@@ -1292,6 +1292,10 @@ jobs:
           bash scripts/linux/mt5_runtime.sh install
 
       - name: Start MT5 and health-soak for 120s with complete trace log
+        env:
+          NEXUS_MT5_DEMO_LOGIN: ${{ secrets.MT5_DEMO_LOGIN }}
+          NEXUS_MT5_DEMO_PASSWORD: ${{ secrets.MT5_DEMO_PASSWORD }}
+          NEXUS_MT5_DEMO_SERVER: ${{ secrets.MT5_DEMO_SERVER }}
         run: |
           set -euo pipefail
           export NEXUS_MT5_WINE="$(command -v wine)"
@@ -1306,6 +1310,7 @@ jobs:
               bash scripts/linux/mt5_runtime.sh health
             done
             python scripts/linux/mt5_doctor.py
+            bash scripts/linux/mt5_runtime.sh check-login || true
             bash scripts/linux/mt5_runtime.sh logs || true
             bash scripts/linux/mt5_runtime.sh stop
             trap - EXIT

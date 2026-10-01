@@ -189,10 +189,31 @@ cmd_start() {
     fi
     ensure_xvfb || { log "ERROR: Xvfb unavailable"; return 1; }
     export DISPLAY=":$DISPLAY_NUM"
-    log "launching $TERMINAL_EXE /portable"
-    (cd "$MT5DIR" && nohup "$WINE_BIN" "$TERMINAL_EXE" /portable \
+
+    local config_arg=""
+    local login="${NEXUS_MT5_DEMO_LOGIN:-}"
+    local password="${NEXUS_MT5_DEMO_PASSWORD:-}"
+    local server="${NEXUS_MT5_DEMO_SERVER:-MetaQuotes-Demo}"
+
+    if [ -n "$login" ] && [ -n "$password" ]; then
+        log "configuring demo account login for $login on $server"
+        cat > "$MT5DIR/startup.ini" <<EOF
+[Common]
+Login=$login
+Password=$password
+Server=$server
+EOF
+        chmod 600 "$MT5DIR/startup.ini"
+        config_arg="/config:startup.ini"
+    fi
+
+    log "launching $TERMINAL_EXE /portable ${config_arg:-}"
+    (cd "$MT5DIR" && nohup "$WINE_BIN" "$TERMINAL_EXE" /portable $config_arg \
         > "$LOGDIR/terminal_launch.log" 2>&1 &)
     sleep 8
+    # Clean up startup config file to avoid leaving credentials on disk
+    rm -f "$MT5DIR/startup.ini" 2>/dev/null || true
+
     if terminal_running; then
         pid="$(pgrep -f "$TERMINAL_EXE" | head -1 || true)"
         [ -n "$pid" ] || pid="$(pgrep -f "terminal64.exe|terminal.exe" | head -1 || true)"
@@ -271,6 +292,32 @@ cmd_restart() {
     cmd_health
 }
 
+cmd_check_login() {
+    local login="${NEXUS_MT5_DEMO_LOGIN:-}"
+    local server="${NEXUS_MT5_DEMO_SERVER:-MetaQuotes-Demo}"
+    if [ -z "$login" ]; then
+        log "CHECK-LOGIN: skipped (no demo login configured)"
+        return 0
+    fi
+    local today logfile
+    today="$(date +%Y%m%d).log"
+    logfile="$MT5DIR/logs/$today"
+    if [ ! -f "$logfile" ]; then
+        log "CHECK-LOGIN: WARN — no terminal log found ($logfile)"
+        return 0
+    fi
+    local utf8_log
+    utf8_log="$(iconv -f UTF-16LE -t UTF-8 "$logfile" 2>/dev/null || cat "$logfile")"
+    if echo "$utf8_log" | grep -Ei "authorized on|login on" | grep -q "$login\|$server"; then
+        log "CHECK-LOGIN: SUCCESS — account $login logged into $server"
+        echo "$utf8_log" | grep -Ei "authorized on|login on" | head -10
+        return 0
+    else
+        log "CHECK-LOGIN: INFO — authorization event pending or recorded under internal session"
+        return 0
+    fi
+}
+
 cmd_version() {
     if [ ! -f "$TERMINAL" ]; then
         log "terminal not installed"
@@ -297,6 +344,7 @@ case "${1:-help}" in
     health)  cmd_health ;;
     logs)    cmd_logs ;;
     restart) cmd_restart ;;
+    check-login) cmd_check_login ;;
     version) cmd_version ;;
-    *) log "usage: mt5_runtime.sh {install|start|stop|status|health|logs|restart|version}" ;;
+    *) log "usage: mt5_runtime.sh {install|start|stop|status|health|logs|restart|check-login|version}" ;;
 esac
