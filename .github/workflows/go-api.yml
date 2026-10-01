@@ -72,7 +72,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ">=1.23"
+          go-version: ">=1.27"
           cache: true
           cache-dependency-path: |
             go-api/go.sum
@@ -159,7 +159,7 @@ jobs:
         with:
           # go.mod declares `go 1.27`; the setup-go directive lets the
           # toolchain resolve a matching release on both runners.
-          go-version: ">=1.23"
+          go-version: ">=1.27"
           # go-api has no go.sum (no external module deps yet), so the
           # cache key falls back to go.mod. Cache is inert without it.
           cache: true
