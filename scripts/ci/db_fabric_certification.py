@@ -695,7 +695,8 @@ def main() -> int:
         count_diffs = {
             table: {"sqlite": sqlite_counts[table], "postgres": pg_counts.get(table)}
             for table in sqlite_counts
-            if table not in EPHEMERAL_RUNTIME_TABLES
+            if table not in INTERNAL_MIGRATION_TABLES
+            and table not in EPHEMERAL_RUNTIME_TABLES
             and sqlite_counts[table] != pg_counts.get(table)
         }
         ephemeral_count_diffs = {
