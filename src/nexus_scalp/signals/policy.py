@@ -1760,12 +1760,28 @@ class SignalPolicy:
                 actual_rr = round(reward_amount / risk_amount, 2)
 
             reason_code = f"PREDICTIVE_OB_{proposed_action.name}_EQUILIBRIUM"
+            # EXECUTION-TRUTH (§D): this layer only CREATES A PROPOSAL. Nothing
+            # has been gated, dispatched, or accepted by a broker yet — the
+            # returned object is a TradeProposal whose decision_stage is
+            # PREDICTIVE_LIMIT_GENERATION. A completed-order word here is a
+            # log-as-authority defect (it is read downstream as broker
+            # evidence it can never be), so the line states INTENT, keeps the
+            # operator-useful action + price, and carries the same structured
+            # fields the other policy.py trace sites emit (stage / request_id /
+            # execution_id).
+            proposal_request_id = str(uuid.uuid4())
             logger.info(
-                f"PREDICTIVE LIMIT EXECUTED: Placing {proposed_action.value} at 50% Equilibrium {target_entry_price}!"
+                "PREDICTIVE LIMIT ORDER_INTENT_CREATED: structural setup "
+                f"proposing {proposed_action.value} at 50% Equilibrium {target_entry_price}!",
+                decision_stage="PREDICTIVE_LIMIT_GENERATION",
+                request_id=proposal_request_id,
+                execution_id=execution_id,
+                action=proposed_action.value,
+                proposed_entry=float(target_entry_price),
             )
 
             return TradeProposal(
-                request_id=str(uuid.uuid4()),
+                request_id=proposal_request_id,
                 execution_id=execution_id,
                 symbol=current_tick.symbol,
                 generated_at=now,

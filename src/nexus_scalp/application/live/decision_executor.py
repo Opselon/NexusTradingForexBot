@@ -487,9 +487,18 @@ class DecisionExecutor:
                     symbol_info=self.om._symbol_info,
                 )
                 logger.info(
-                    f"[info] AI REVERSAL EXECUTED ticket={policy_decision.ticket} "
-                    f"new_action={getattr(policy_decision.reversal_action, 'value', None)} "
-                    f"volume={reversal_volume} success={success}"
+                    "[info] AI REVERSAL OUTCOME ticket=%s new_action=%s volume=%s success=%s",
+                    getattr(policy_decision, "ticket", 0) or 0,
+                    getattr(policy_decision.reversal_action, "value", None),
+                    reversal_volume,
+                    bool(success),
+                    # EXECUTION-TRUTH (§D): execute_ai_reversal's bool is NOT a
+                    # broker-acceptance verdict — it is False for pre-broker
+                    # refusals (flip suspended, no position to reverse, close
+                    # refused) and True even on close-only outcomes with no new
+                    # order dispatched. "EXECUTED" is broker evidence this
+                    # layer cannot claim, so the line reports the OUTCOME and
+                    # lets success= carry the verdict.
                 )
                 # DECISION-TRACE: terminal order-state for this trace path.
                 if _trace is not None:
