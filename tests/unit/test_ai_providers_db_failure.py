@@ -16,6 +16,14 @@ target), which is the honest environment for a unit suite that must never
 touch the user's real PostgreSQL. The ``OperationalError`` class is psycopg's
 on both providers, so the classification is identical — this is the incident's
 AUTH_FAILED shape, not a driver-specific one.
+
+The target MUST be a ``Path``, not a ``str``: ``ProviderRegistryStore``
+discriminates a SQLite path from a PostgreSQL DSN *by type*
+(``isinstance(db_path, str)`` means DSN), mirroring
+``resolve_registry_target``'s documented ``Path | str`` contract. A string
+path here would be read as a DSN, build a live PostgreSQL driver, and the
+driver-class patch below would never land — the suite would silently hit the
+user's real database instead of the temp file.
 """
 
 from __future__ import annotations
@@ -69,7 +77,7 @@ def _isolated_ai_providers(tmp_path: object, monkeypatch: pytest.MonkeyPatch) ->
     """
     from nexus_scalp.settings import paths
 
-    monkeypatch.setattr(paths, "resolve_registry_target", lambda: str(tmp_path / "settings.db"))
+    monkeypatch.setattr(paths, "resolve_registry_target", lambda: tmp_path / "settings.db")
 
     from nexus_scalp.web import ai_providers_routes
 
