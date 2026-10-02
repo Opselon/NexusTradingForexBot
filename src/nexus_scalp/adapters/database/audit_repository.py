@@ -3624,6 +3624,12 @@ class AuditRepository:
         {
             "TICK_DUPLICATE_SUPPRESSED",
             "ORDER_FREQUENCY_THROTTLED",
+            # TASK-DEDUP-REPLAY-001 (2026-10-01): replay-flood guard classes.
+            # The policy now downgrades replayed actionable decisions upstream;
+            # these codes keep the per-minute / per-symbol / per-reason answer
+            # in audit_guard_telemetry (a few bytes per event) instead of one
+            # log line per tick.
+            "DECISION_DUPLICATE",
         }
     )
 

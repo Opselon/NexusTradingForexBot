@@ -1465,6 +1465,20 @@ class LiveEngine:
         # in-memory bundle metadata; a missing bundle stamps
         # MODEL_IDENTITY_UNAVAILABLE (honest absence, never a fake hash).
         self.signal_policy.model_identity_fn = self._serving_model_identity
+        # TASK-DEDUP-REPLAY-001: decision-identity wiring. The broker tick size
+        # anchors the semantic fingerprint's price quantization to the real
+        # price grid (float noise dies, one real tick lives). The serving model
+        # identity is the decision's strategy revision: a champion swap is a
+        # genuine decision change and re-arms the replay dedup. Both are pure
+        # in-memory reads (INV-001); symbol info arrives at loop startup, so the
+        # tick size is refreshed there — see RuntimeLoop.
+        self.signal_policy.configure_decision_identity(
+            strategy_revision=(
+                (self._serving_model_identity() or (None, None, None))[0]
+                or (self._serving_model_identity() or (None, None, None))[2]
+                or None
+            )
+        )
         # TASK-AUDREV-C3 gate (b) runtime wiring (NSE-Swarm 2026-09-11): bind
         # the read-only session spread-percentile provider so the gate is
         # LIVE. Before this, the C3 (b) policy hook existed (76eb23b9) but
@@ -4854,6 +4868,92 @@ class LiveEngine:
                 correlation_id="tick-stream",
             )
             logger.info("[FEED_STALL] event=RECOVERED escalated_was=%s", was)
+
+    # ------------------------------------------------------------------
+    # TASK-DEDUP-REPLAY-001: epoch-aware replay telemetry (Part 6).
+    # ------------------------------------------------------------------
+    # The old failure mode emitted ONE info line per replayed tick and the
+    # executor echoed one per refusal — 3,476 lines/hour. Telemetry here is
+    # aggregated: per-class counters accumulate silently and a bounded summary
+    # is emitted on a quiet tick-cadence (default 60s) naming the epoch, the
+    # class split, and one representative detail. Nothing is dropped: counts
+    # survive until the next summary, and the representative sample keeps the
+    # "what exactly happened" answerable. All state lives on the engine (one
+    # canonical owner) and every method is failure-isolated.
+    # ------------------------------------------------------------------
+
+    def note_tick_rejected(self, *, tick_class: str, epoch: int, detail: str = "") -> None:
+        """Count one epoch-tracker tick rejection (REPLAY/DUPLICATE/STALE).
+
+        In-memory + O(1); never blocks the loop. A periodic
+        :meth:`_summarize_replay_telemetry` emits the aggregate.
+        """
+        try:
+            counts: dict[str, int] = getattr(self, "_tick_reject_counts", None) or {}
+            counts[tick_class] = counts.get(tick_class, 0) + 1
+            self._tick_reject_counts = counts
+            self._tick_reject_last_epoch = int(epoch)
+            if detail:
+                self._tick_reject_last_detail = str(detail)[:160]
+        except Exception:  # telemetry must never disturb the tick loop
+            pass
+
+    def note_feed_reconnected(self, *, epoch: int, reacquire_ticks: int = 0) -> None:
+        """One INFO line per FEED RECONNECT (state transition, not per tick)."""
+        try:
+            logger.info(
+                "[FEED_EPOCH] event=RECONNECTED epoch=%s re_acquiring=True "
+                "max_ticks=%s (cached pre-disconnect quotes are rejected until a "
+                "fresh quote or the bounded window expires)",
+                int(epoch),
+                int(reacquire_ticks),
+            )
+            self.emit_incident_telemetry(
+                event_type="MT5_FEED_EPOCH_BUMPED",
+                component="mt5",
+                severity="INFO",
+                correlation_id="tick-stream",
+            )
+        except Exception:
+            pass
+
+    def _summarize_replay_telemetry(self, *, now: float | None = None) -> None:
+        """Emit the aggregated replay/duplicate summary on a quiet cadence.
+
+        Called from the tick loop's maintenance cadence. Emits ONE line per
+        interval only when something was counted — a silent feed emits nothing.
+        """
+        import time as _time
+
+        now = float(now if now is not None else _time.monotonic())
+        try:
+            counts: dict[str, int] = getattr(self, "_tick_reject_counts", {}) or {}
+            if not counts:
+                return
+            total = sum(counts.values())
+            last_summary_at: float = getattr(self, "_replay_summary_last_at", 0.0)
+            if now - last_summary_at < self._REPLAY_SUMMARY_INTERVAL_SEC:
+                return
+            parts = " ".join(f"{k}={v}" for k, v in sorted(counts.items()))
+            epoch = int(getattr(self, "_tick_reject_last_epoch", 0) or 0)
+            detail = str(getattr(self, "_tick_reject_last_detail", "") or "")
+            logger.info(
+                "[REPLAY_TELEMETRY] event=SUPPRESSED_SUMMARY total=%s epoch=%s %s%s",
+                total,
+                epoch,
+                parts,
+                f" representative={detail}" if detail else "",
+            )
+            # Reset after a summary: the next window starts clean; the counts
+            # were just reported (nothing is silently dropped mid-window).
+            self._tick_reject_counts = {}
+            self._tick_reject_last_detail = ""
+            self._replay_summary_last_at = now
+        except Exception:  # telemetry must never disturb the tick loop
+            pass
+
+    #: Quiet cadence for the aggregated replay summary (seconds).
+    _REPLAY_SUMMARY_INTERVAL_SEC: float = 60.0
 
     def release_persisted_safety_state(self, *, actor: str, note: str = "") -> bool:
         """In-process explicit release (audited, durable, observable).
