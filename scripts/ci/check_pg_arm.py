@@ -59,6 +59,7 @@ PG_ARM_FILES: tuple[str, ...] = (
     "tests/unit/test_rt003_guard_telemetry_counter.py",
     "tests/unit/test_sqlite_runtime_trap.py",
     "tests/unit/test_strategy_research_store.py",
+    "tests/unit/test_ai_provider_registry_upsert_arity.py",
 )
 
 _SKIP_REASONS_RE = re.compile(

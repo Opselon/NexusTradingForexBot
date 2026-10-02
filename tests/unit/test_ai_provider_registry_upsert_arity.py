@@ -31,9 +31,13 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-import psycopg
 import pytest
 from fastapi.testclient import TestClient
+
+try:
+    import psycopg
+except ImportError:  # pragma: no cover - the [postgres] extra is optional in CI
+    psycopg = None  # type: ignore[assignment]
 
 from nexus_scalp.settings.secret_store import SecureSecretStore
 
@@ -84,9 +88,10 @@ def _seed_secret(password: str) -> None:
 
     ``build_postgres_url`` reads ``db.postgresql.password`` from the store, so
     a ``NSE_PG_TEST_URL`` carrying the password must seed it before the store
-    resolves its DSN.
+    resolves its DSN. This helper never logs the credential — the import guard
+    above is the only psycopg dependency (optional).
     """
-    if not password:
+    if not password or psycopg is None:  # pragma: no cover - guarded by needs_postgres
         return
     try:
         if not SecureSecretStore().has_secret("db.postgresql.password"):
@@ -95,10 +100,12 @@ def _seed_secret(password: str) -> None:
         pass
 
 
-ADMIN_DSN = _resolve_admin_dsn()
+ADMIN_DSN = _resolve_admin_dsn()  # resolved once for the module-level docs; the
+# fixture-time path (admin_dsn) is authoritative.
 
 needs_postgres = pytest.mark.skipif(
-    not ADMIN_DSN, reason="no PostgreSQL arm reachable (NSE_PG_TEST_URL / persisted provider)"
+    psycopg is None,
+    reason="psycopg is not installed (the optional [postgres] extra)",
 )
 
 
@@ -112,7 +119,7 @@ def _seed_pg_secret_in_isolated_store() -> None:
     isolated store, so the password the ``NSE_PG_TEST_URL`` arm carries has to
     be re-seeded here, after isolation is installed. The value is never logged.
     """
-    if not PG_URL:
+    if not PG_URL or psycopg is None:
         return
     try:
         from psycopg.conninfo import conninfo_to_dict
@@ -128,31 +135,45 @@ def _seed_pg_secret_in_isolated_store() -> None:
         pass
 
 
+@pytest.fixture(scope="module")
+def admin_dsn() -> str:
+    """The PostgreSQL instance URL, resolved at fixture time.
+
+    Deferred from module scope on purpose: ``_resolve_admin_dsn`` reaches the
+    settings DB / secret store, and the conftest isolation fixtures are not
+    installed at import time. Resolving here keeps a no-PG box on the skip
+    branch instead of erroring the fixture setup.
+    """
+    dsn = _resolve_admin_dsn()
+    if not dsn:
+        pytest.skip("no PostgreSQL arm reachable (NSE_PG_TEST_URL / persisted provider)")
+    return dsn
+
+
 #: Throwaway database, unique to this module so a concurrent lane cannot
 #: collide. The live database is only ever CREATE/DROP'd on this name.
 SCRATCH_DB = f"nse_ai_registry_pg_{uuid.uuid4().hex[:8]}"
 
 
 @pytest.fixture(scope="module")
-def scratch_dsn() -> Iterator[str]:
-    if not ADMIN_DSN:
-        pytest.skip("no PostgreSQL arm reachable")
-    with psycopg.connect(ADMIN_DSN, connect_timeout=15, autocommit=True) as conn:
+def scratch_dsn(admin_dsn: str) -> Iterator[str]:
+    admin = admin_dsn
+    with psycopg.connect(admin, connect_timeout=15, autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(f'DROP DATABASE IF EXISTS "{SCRATCH_DB}"')
             cur.execute(f'CREATE DATABASE "{SCRATCH_DB}"')
     try:
-        yield f"{ADMIN_DSN}/{SCRATCH_DB}"
+        yield f"{admin}/{SCRATCH_DB}"
     finally:
         with contextlib.suppress(Exception):
-            with psycopg.connect(ADMIN_DSN, connect_timeout=15, autocommit=True) as conn:
+            with psycopg.connect(admin, connect_timeout=15, autocommit=True) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
                         "WHERE datname = %s AND pid <> pg_backend_pid()",
                         (SCRATCH_DB,),
                     )
-        with psycopg.connect(ADMIN_DSN, connect_timeout=15, autocommit=True) as conn:
+        with psycopg.connect(admin, connect_timeout=15, autocommit=True) as conn:
             with conn.cursor() as cur:
                 cur.execute(f'DROP DATABASE IF EXISTS "{SCRATCH_DB}"')
 
@@ -264,7 +285,7 @@ def test_sqlite_activation_round_trip(sqlite_store: object) -> None:
 
 
 @pytest.fixture()
-def pg_store(scratch_dsn: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[object]:
+def pg_store(admin_dsn: str, scratch_dsn: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[object]:
     """A registry store whose driver is a real psycopg connection.
 
     No mocking: the store resolves PostgreSQL exactly as it does after
@@ -274,10 +295,15 @@ def pg_store(scratch_dsn: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[obje
     from nexus_scalp.ai_providers.registry import ProviderRegistryStore
     from nexus_scalp.database.config import DatabaseConfig, build_postgres_url
 
+    user = "postgres"
+    try:
+        user = psycopg.conninfo_to_dict(admin_dsn).get("user", "postgres") or "postgres"
+    except Exception:
+        pass
     monkeypatch.setenv("NSE_DATABASE__PROVIDER", "postgresql")
     monkeypatch.setenv("NSE_DATABASE__PG_HOST", _host_of(scratch_dsn))
     monkeypatch.setenv("NSE_DATABASE__PG_PORT", str(_port_of(scratch_dsn)))
-    monkeypatch.setenv("NSE_DATABASE__PG_USER", "postgres")
+    monkeypatch.setenv("NSE_DATABASE__PG_USER", user)
     monkeypatch.setenv("NSE_DATABASE__PG_DATABASE", SCRATCH_DB)
 
     cfg = DatabaseConfig.for_postgres(
@@ -285,7 +311,7 @@ def pg_store(scratch_dsn: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[obje
         host=_host_of(scratch_dsn),
         port=_port_of(scratch_dsn),
         database=SCRATCH_DB,
-        username="postgres",
+        username=user,
     )
     store = ProviderRegistryStore(build_postgres_url(cfg, SecureSecretStore()))
     try:
