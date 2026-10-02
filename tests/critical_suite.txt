@@ -146,6 +146,9 @@ tests/unit/test_ml_phase1_census_consistency.py
 tests/unit/test_ml_phase1_data_contract.py
 tests/unit/test_ml_phase1_labeling_identity.py
 tests/unit/test_ml_phase1_serving_contract.py
+tests/unit/test_model_factory_e2e_lifecycle.py
+tests/unit/test_model_factory_negative_battery.py
+tests/unit/test_model_factory_quality_gates.py
 tests/unit/test_model_registry_hot_load.py
 tests/unit/test_model_studio.py
 tests/unit/test_model_studio_dataset_order.py

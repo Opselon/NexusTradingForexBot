@@ -28,6 +28,9 @@ import type {
   InspectFeaturesRequest,
   InspectFeaturesResponse,
   InspectScalerResponse,
+  LoadContractVerifyRequest,
+  LoadContractVerifyResponse,
+  ModelCertificateResponse,
   ModelDetailResponse,
   ModelsListResponse,
   ModelStudioDatasetsDto,
@@ -38,6 +41,7 @@ import type {
   PositionDatasetRequest,
   PositionDatasetResponse,
   PredictResponse,
+  QualityReportsResponse,
   RuntimeStateResponse,
   StressTestResponse,
   SwitchModelRequest,
@@ -129,6 +133,23 @@ export const modelStudioApi = {
   /** POST /api/model-studio/models/verify — pre-load verification battery. */
   verifyModel: (req: VerifyModelRequest): Promise<VerifyModelResponse> =>
     send<VerifyModelResponse>(`${BASE}/models/verify`, req),
+
+  // ---- MODEL FACTORY Certification (Sections 18-27) -----------------------
+  /** POST /api/model-studio/models/certify — run 10-gate certification on candidate bundle. */
+  certifyModel: (modelId: string): Promise<ModelCertificateResponse> =>
+    send<ModelCertificateResponse>(`${BASE}/models/certify`, { model_id: modelId }),
+
+  /** GET /api/model-studio/models/{id}/certificate — read signed certification verdict & gate report. */
+  modelCertificate: (modelId: string, signal?: AbortSignal): Promise<ModelCertificateResponse> =>
+    getLegacy<ModelCertificateResponse>(`${BASE}/models/${encodeURIComponent(modelId)}/certificate`, signal),
+
+  /** GET /api/model-studio/models/{id}/quality-reports — raw dataset, feature, and label quality reports. */
+  qualityReports: (modelId: string, signal?: AbortSignal): Promise<QualityReportsResponse> =>
+    getLegacy<QualityReportsResponse>(`${BASE}/models/${encodeURIComponent(modelId)}/quality-reports`, signal),
+
+  /** POST /api/model-studio/models/load-contract/verify — test compatibility before loading. */
+  verifyLoadContract: (req: LoadContractVerifyRequest): Promise<LoadContractVerifyResponse> =>
+    send<LoadContractVerifyResponse>(`${BASE}/models/load-contract/verify`, req),
 
   /** GET /api/model-studio/models/{id}/scaler — inspect mean/std vectors of attached scaler. */
   inspectScaler: (modelId: string, signal?: AbortSignal): Promise<InspectScalerResponse> =>
