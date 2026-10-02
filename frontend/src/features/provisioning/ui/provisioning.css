@@ -704,3 +704,137 @@
 .pv-mi-plane.studio { color: var(--violet); background: color-mix(in srgb, var(--violet) 14%, transparent); }
 .pv-mi-plane.bundle { color: var(--text-dim); background: color-mix(in srgb, var(--text-dim) 12%, transparent); }
 .pv-mi-active { color: var(--green); font-weight: 700; }
+
+/* =====================================================================
+ * PostgreSQL health badge (wave §C1/§C2, brief §26) — ADDITIVE classes.
+ * Renders only when the database is in a known bad state or its health
+ * state is honestly UNKNOWN. Healthy renders nothing (no markup at all),
+ * so the page is unchanged when PostgreSQL is well.
+ *
+ * Built on the feature's .pv-banner base (shared tone vocabulary) plus the
+ * .pv-dbh-* family below; theme tokens only.
+ * ===================================================================== */
+
+.pv-banner.pv-dbh-bad,
+.pv-banner.pv-dbh-warn {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
+}
+.pv-banner.pv-dbh-warn {
+  background: rgba(235, 161, 63, 0.10);
+  color: var(--amber);
+  border-color: rgba(235, 161, 63, 0.4);
+}
+
+.pv-dbh-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.pv-dbh-glyph {
+  inline-size: 18px;
+  block-size: 18px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+.pv-dbh-warn .pv-dbh-glyph {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+}
+.pv-dbh-title {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+.pv-dbh-tag {
+  margin-inline-start: auto;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  opacity: 0.7;
+}
+
+.pv-dbh-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+.pv-dbh-fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+}
+.pv-dbh-fact-k {
+  text-transform: uppercase;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.pv-dbh-fact-v {
+  color: var(--text);
+}
+
+.pv-dbh-detail,
+.pv-dbh-remedy {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pv-dbh-detail {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pv-dbh-detail-k {
+  text-transform: uppercase;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.pv-dbh-detail-v {
+  color: var(--text-dim);
+  word-break: break-word;
+}
+.pv-dbh-remedy {
+  color: var(--text);
+}
+
+.pv-dbh-hints {
+  margin: 0;
+  padding-inline-start: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pv-dbh-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.pv-dbh-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.pv-dbh-note {
+  color: var(--text-faint);
+}
