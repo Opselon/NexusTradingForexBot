@@ -629,6 +629,65 @@ def _audit_0011_rollback(conn: sqlite3.Connection, db_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# AUDIT-0012: index audit_experience_outcomes(execution_id) (P0 pg-read fix)
+# ---------------------------------------------------------------------------
+# The P0 slow query in the live log (359ms / 315 rows against a 200ms
+# pg-read threshold):
+#
+#     SELECT o.execution_id, e.experience_id, e.strategy_id, ...
+#     FROM audit_experience_outcomes o
+#     JOIN audit_experiences e ON e.idempotency_key = o.idempotency_key
+#     WHERE o.execution_id IN (?,?,?, ... hundreds of placeholders ...)
+#
+# Root cause (MEASURED on nexusdb @ 2026-10-01): the only indexes on
+# audit_experience_outcomes were its PK and the idempotency_key UNIQUE
+# constraint. execution_id — the column the WHERE clause actually filters
+# on — had NO index, so the planner resolved the IN-list as a full
+# SEQ SCAN of the outcomes table and then hashed it against a full SEQ SCAN
+# of audit_experiences (22k rows, 1463 shared buffers). EXPLAIN ANALYZE
+# showed both Seq Scans; the join key's own UNIQUE index was never used.
+#
+# The same access shape serves AccountingCore._attach_experience_detail
+# (WHERE o.execution_id = ?) and incidents/trace lineage, so one index
+# covers the whole family. A plain btree (not a composite/covering index):
+# the join then resolves through the existing UNIQUE index on
+# audit_experiences(idempotency_key), so no second index is needed there.
+
+
+def _audit_0012_outcome_execution_id_index(conn: sqlite3.Connection, db_path: Path) -> None:
+    """P0 pg-read remediation: index the broker-ticket probe path.
+
+    Pure additive: no row is touched and no history is rewritten; the
+    statement is idempotent (IF NOT EXISTS) so a replay of the schema
+    statements can never race or double-create.
+    """
+    if _table_exists(conn, "audit_experience_outcomes"):
+        _ensure_index(
+            conn,
+            "idx_exp_outcome_exec",
+            "audit_experience_outcomes",
+            "(execution_id)",
+        )
+        # Refresh planner statistics so the new access path is actually chosen
+        # over the pre-existing indexes (cheap here; runs once per migration).
+        with contextlib.suppress(sqlite3.Error):
+            conn.execute("ANALYZE")
+
+
+def _audit_0012_verify(conn: sqlite3.Connection, db_path: Path) -> bool:
+    if not _table_exists(conn, "audit_experience_outcomes"):
+        # A database whose baseline has not created the table yet has nothing
+        # to index — not a failure (same contract as AUDIT-0008).
+        return True
+    return _index_exists(conn, "idx_exp_outcome_exec")
+
+
+def _audit_0012_rollback(conn: sqlite3.Connection, db_path: Path) -> None:
+    if _index_exists(conn, "idx_exp_outcome_exec"):
+        conn.execute("DROP INDEX idx_exp_outcome_exec")
+
+
+# ---------------------------------------------------------------------------
 # NEWS migrations
 # ---------------------------------------------------------------------------
 
@@ -846,6 +905,22 @@ AUDIT_MIGRATIONS: tuple[Migration, ...] = (
         risk=MigrationRisk.LOW,
         transaction_kind=TransactionKind.TRANSACTIONAL,
         rollback=_audit_0011_rollback,
+    ),
+    Migration(
+        migration_id="AUDIT-0012-experience-outcome-execution-id-index",
+        domain=DatabaseDomain.AUDIT,
+        from_version=11,
+        to_version=12,
+        description=(
+            "add idx_exp_outcome_exec on audit_experience_outcomes(execution_id) "
+            "— the broker-ticket probe behind the accounting identity join and "
+            "the trace/experience-detail lookups (P0 pg-read slow query)"
+        ),
+        apply=_audit_0012_outcome_execution_id_index,
+        verify=_audit_0012_verify,
+        risk=MigrationRisk.LOW,
+        transaction_kind=TransactionKind.NON_TRANSACTIONAL_WITH_SAFETY_PROTOCOL,
+        rollback=_audit_0012_rollback,
     ),
 )
 

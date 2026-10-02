@@ -75,6 +75,12 @@ MAX_SNAPSHOT_ROWS = 50_000
 #: recompute of a derived row-set — never lost truth.
 REPORT_CACHE_MAX = 512
 
+#: Chunk size for the _attach_identity ticket IN-list. Kept well under
+#: SQLite's per-statement variable limit (999 historically, 32766 on modern
+#: builds) so one statement covers a full report batch. `load_trades` is
+#: capped at MAX_TRADE_ROWS, so the worst case is a handful of chunks.
+_IDENTITY_CHUNK_SIZE = 500
+
 
 class AccountingCore:
     """
@@ -510,11 +516,21 @@ class AccountingCore:
         if not tickets:
             return records
 
+        #: Deduplicate the input list. `records` is built from a ledger scan
+        #: that can contain the same ticket more than once (a ticket can appear
+        #: on multiple ledger rows — the same position's entries/exits), and the
+        #: caller only ever consumes the result as a ``{ticket: row}`` map, so
+        #: duplicates were pure extra parameters for the IN-list: no extra rows,
+        #: just a bigger placeholder list for the planner to cost. Measured on
+        #: the production-sized set (315 rows, 313 distinct) the repeats
+        #: contributed nothing to the result and were removed.
+        unique_tickets = list(dict.fromkeys(tickets))
+
         mapping: dict[str, dict[str, Any]] = {}
         try:
             # Chunked IN() to stay under SQLite's variable limit.
-            for start in range(0, len(tickets), 400):
-                chunk = tickets[start : start + 400]
+            for start in range(0, len(unique_tickets), _IDENTITY_CHUNK_SIZE):
+                chunk = unique_tickets[start : start + _IDENTITY_CHUNK_SIZE]
                 placeholders = ",".join("?" * len(chunk))
                 sql = (
                     "SELECT o.execution_id, e.experience_id, e.strategy_id, "
