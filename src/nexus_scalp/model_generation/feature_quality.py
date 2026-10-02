@@ -444,18 +444,18 @@ def certify_feature_quality(
     matrix plus ``names``.
     """
     if isinstance(frame_or_matrix, pl.DataFrame):
-        cert = FeatureQualityFrameCertifier(
+        frame_cert = FeatureQualityFrameCertifier(
             feature_schema_id=feature_schema_id,
             feature_schema_hash=feature_schema_hash,
         )
-        report = cert.certify(frame_or_matrix, dataset_id=dataset_id)
+        report = frame_cert.certify(frame_or_matrix, dataset_id=dataset_id)
     else:
         if names is None:
             raise ValueError("certify_feature_quality: a numpy matrix requires explicit names")
-        cert = FeatureQualityCertifier(
+        matrix_cert = FeatureQualityCertifier(
             feature_schema_id=feature_schema_id, feature_schema_hash=feature_schema_hash
         )
-        report = cert.certify(np.asarray(frame_or_matrix), names, dataset_id=dataset_id)
+        report = matrix_cert.certify(np.asarray(frame_or_matrix), names, dataset_id=dataset_id)
 
     if out_path is not None:
         p = Path(out_path)

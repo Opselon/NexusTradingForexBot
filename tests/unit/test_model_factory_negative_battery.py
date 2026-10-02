@@ -584,3 +584,67 @@ def test_certify_model_rejects_failed_walk_forward(valid_bundle: tuple[Path, str
     assert cert.certified is False
     assert cert.model_status == "REJECTED"
     assert "WALK_FORWARD" in cert.failed_stages
+
+
+# =============================================================================
+# 6. LOAD CONTRACT ENDPOINT — STACK TRACE EXPOSURE REGRESSION (CodeQL #1184)
+# =============================================================================
+
+
+def test_load_contract_endpoint_never_leaks_exception_text(
+    valid_bundle: tuple[Path, str, dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``execute_verify_load_contract`` must not mirror ``str(exc)``.
+
+    SEC (CodeQL py/stack-trace-exposure #1184): the CompatibilityError message
+    is built from the manifest/request, but the exception object can also carry
+    filesystem paths and source locations from its construction context. The
+    endpoint must log the traceback and return a stable refusal payload.
+    """
+    from nexus_scalp.web.model_studio_routes import (
+        ModelStudioLoadContractRequest,
+        execute_verify_load_contract,
+    )
+
+    bundle_dir, model_id, _ = valid_bundle
+    monkeypatch.setattr(
+        "nexus_scalp.web.model_studio_routes._bundle_dir_for",
+        lambda _mid: bundle_dir,
+    )
+    (bundle_dir / f"{model_id}.pt").unlink()  # forces CompatibilityError
+
+    req = ModelStudioLoadContractRequest(model_id=model_id)
+    out = execute_verify_load_contract(req)
+
+    assert out["status"] == "LOAD_REJECTED"
+    assert out["load_rejected"] is True
+    assert out["verified"] is False
+    # The payload must NOT contain the raw exception text (no artifact paths,
+    # no checksum fragments, no source locations).
+    payload = json.dumps(out)
+    assert "model.pt missing" not in payload
+    assert "artifact bundle is incomplete" not in payload
+    assert out["reason"] == out["detail"]
+    assert "LOAD_REJECTED" in out["reason"]
+
+
+def test_load_contract_success_reports_verified_and_detail(
+    valid_bundle: tuple[Path, str, dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The success payload must satisfy the typed client contract."""
+    from nexus_scalp.web.model_studio_routes import (
+        ModelStudioLoadContractRequest,
+        execute_verify_load_contract,
+    )
+
+    bundle_dir, model_id, _ = valid_bundle
+    monkeypatch.setattr(
+        "nexus_scalp.web.model_studio_routes._bundle_dir_for",
+        lambda _mid: bundle_dir,
+    )
+
+    out = execute_verify_load_contract(ModelStudioLoadContractRequest(model_id=model_id))
+    assert out["status"] == "OK"
+    assert out["load_rejected"] is False
+    assert out["verified"] is True
+    assert out["detail"]

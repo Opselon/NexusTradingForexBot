@@ -3044,13 +3044,35 @@ def execute_verify_load_contract(req: ModelStudioLoadContractRequest) -> dict[st
             expected_weights_sha256=req.expected_weights_sha256 or "",
         )
     except CompatibilityError as exc:
+        # SEC (CodeQL py/stack-trace-exposure #1184): the CompatibilityError
+        # message is built from the request/manifest (schema ids, dimensions,
+        # checksum prefixes) and is the contract-mandated refusal payload, but
+        # the exception object itself can carry filesystem paths or source
+        # locations from its construction context. Log the full record with its
+        # traceback and hand the client only the stable, derived refusal text.
+        logger.warning(
+            "model-studio load-contract/verify refused model %s: %s",
+            req.model_id,
+            exc,
+            exc_info=True,
+        )
         return {
             "status": "LOAD_REJECTED",
             "load_rejected": True,
-            "reason": str(exc),
+            "verified": False,
+            "reason": "LOAD_REJECTED: the artifact does not match the load contract — "
+            "see the model certificate and the bundle manifest for the exact mismatch.",
+            "detail": "LOAD_REJECTED: the artifact does not match the load contract — "
+            "see the model certificate and the bundle manifest for the exact mismatch.",
             "model_id": req.model_id,
         }
     result["load_rejected"] = False
+    result["verified"] = True
+    result.setdefault(
+        "detail",
+        f"OK: artifact matches the load contract (schema={result.get('schema_id')}, "
+        f"dim={result.get('dimension')}D).",
+    )
     return result
 
 

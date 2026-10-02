@@ -214,7 +214,7 @@ def _git_commit() -> str:
 
 def _fingerprint(frame: pl.DataFrame) -> str:
     """Content fingerprint over the canonical OHLCV projection."""
-    cols = [
+    cols: list[str] = [
         c for c in ("time", "open", "high", "low", "close", "tick_volume") if c in frame.columns
     ]
     if not cols:

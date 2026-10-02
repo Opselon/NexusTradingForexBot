@@ -222,9 +222,9 @@ class LabelQualityAudit:
             order = np.argsort(ts, kind="stable")
             decile = int(n // 10) or 1
             for d in range(10):
-                idx = order[d * decile : (d + 1) * decile if d < 9 else n]
-                if len(idx):
-                    over_time[f"decile_{d + 1}"] = _dist(labels_all[idx])
+                d_idx = order[d * decile : (d + 1) * decile if d < 9 else n]
+                if len(d_idx):
+                    over_time[f"decile_{d + 1}"] = _dist(labels_all[d_idx])
 
         # ---- detections -----------------------------------------------------
         collapsed: list[str] = []
@@ -250,11 +250,11 @@ class LabelQualityAudit:
                 )
 
         regime_collapse: list[str] = []
-        for r, d in by_regime.items():
-            total = sum(d.values())
+        for r, reg_dist in by_regime.items():
+            total = sum(reg_dist.values())
             if not total:
                 continue
-            for cls, cnt in d.items():
+            for cls, cnt in reg_dist.items():
                 if cnt / total >= self.max_regime_dominance and cls != "NO_TRADE":
                     regime_collapse.append(f"regime {r}: {cls} at {cnt / total:.2%}")
 
@@ -262,8 +262,8 @@ class LabelQualityAudit:
         signal_total = buy + sell
         if signal_total and over_time:
             shares = []
-            for _, d in over_time.items():
-                shares.append((d.get("BUY", 0) + d.get("SELL", 0)) / signal_total)
+            for _, time_dist in over_time.items():
+                shares.append((time_dist.get("BUY", 0) + time_dist.get("SELL", 0)) / signal_total)
             if max(shares) > self.max_time_decile_concentration:
                 temporal_conc.append(
                     f"{max(shares):.2%} of all BUY+SELL labels fall in one time decile"
