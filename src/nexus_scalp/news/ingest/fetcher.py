@@ -87,10 +87,63 @@ class NewsFetcher:
                 pass
         return False
 
+    #: Sentinel value stored on the health record so the misconfiguration is
+    #: reported ONCE per source (per process health cache) instead of once per
+    #: poll cycle. Read back via ``health.get("misconfigured")``.
+    _MISCONFIGURED = "no feed_url configured"
+
+    def _handle_misconfigured_source(
+        self, source_id: str, health: dict[str, Any]
+    ) -> SourceFetchResult:
+        """A source with no feed_url is a config error, not a fetch failure.
+
+        Reports it ONCE at WARNING with a remediation hint, marks the health
+        record misconfigured (unhealthy, following the existing _save_health
+        shape) and returns without incrementing the transient failure counter
+        or arming any backoff — the source is never retried for its lifetime.
+        """
+        already_reported = bool(health.get("misconfigured"))
+        if not already_reported:
+            # Exactly one WARNING per misconfigured source, naming the source
+            # id and the fix, so an operator sees the config gap once and the
+            # log never repeats it for the rest of the process lifetime.
+            logger.warning(
+                "[NEWS_FETCH] source=%s status=MISCONFIGURED error=%s "
+                "hint=set feed_url on the source (or disable it) — "
+                "source will not be polled until configured",
+                source_id,
+                self._MISCONFIGURED,
+            )
+            # Mark the health record ONCE: unhealthy + misconfigured, with NO
+            # consecutive_failures increment and NO backoff. The health panel
+            # then shows the true state (config gap, not a failing network
+            # path) and the failure counter keeps its meaning (transient fetch
+            # failures). Subsequent cycles see the flag and do no DB write.
+            health.update(
+                misconfigured=self._MISCONFIGURED,
+                healthy=False,
+                last_status=None,
+                last_failure_at=datetime.now(UTC).isoformat(),
+            )
+            self._save_health(source_id, health)
+        return SourceFetchResult(ok=False, error=self._MISCONFIGURED, status=None)
+
     def fetch_source(self, source_config: dict[str, Any]) -> SourceFetchResult:
         source_id = source_config["source_id"]
         now = time.time()
         health = self._load_health(source_id)
+
+        # A source whose feed_url was never configured is a CONFIGURATION
+        # error, not a transient fetch failure: every poll returns
+        # 'no feed_url configured', so the old path incremented the failure
+        # counter on every cycle, rode the exponential backoff to 3600s and
+        # then kept cycling forever — a permanent WARNING generator and a
+        # health panel that reads degraded for the process lifetime. Report
+        # it ONCE (rate-limited by the persisted health record, not per
+        # cycle), mark the source misconfigured in its health record and
+        # return WITHOUT touching the transient failure counter or backoff.
+        if not str(source_config.get("feed_url") or "").strip():
+            return self._handle_misconfigured_source(source_id, health)
 
         if self._backed_off(health, now):
             # AGENT-2 (2026-09-01): backoff skips are aggregated, not silent.

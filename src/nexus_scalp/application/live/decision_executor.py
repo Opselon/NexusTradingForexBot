@@ -14,6 +14,7 @@ the executor reads/writes through ``self.om``. Explicit inputs only.
 from __future__ import annotations
 
 import contextlib
+import time
 from typing import Any
 
 from nexus_scalp.domain.enums import ActionType, ExecutionMode
@@ -221,6 +222,27 @@ class DecisionExecutor:
             )
             return None
 
+    @staticmethod
+    def _count_open_directional_positions(
+        active_positions: list[Any],
+        reversal_symbol: str,
+        closed_ticket: int,
+    ) -> int:
+        """Count still-open positions on the reversal symbol, excluding the
+        ticket the reversal protocol just confirmed closed.
+
+        Used for the ``freed_active_count`` observability key. ``active_positions``
+        is the caller's PRE-close broker snapshot, so the closed ticket is
+        filtered out explicitly rather than trusted to have vanished.
+        """
+        if not active_positions:
+            return 0
+        return sum(
+            1
+            for p in active_positions
+            if p.ticket != closed_ticket and getattr(p, "symbol", "") == reversal_symbol
+        )
+
     def execute_decision_stage(
         self,
         tick: TickData,
@@ -338,25 +360,126 @@ class DecisionExecutor:
                 policy_decision.action == ActionType.CLOSE_POSITION
                 and "AI_REVERSAL_SIGNAL" in (policy_decision.reason_code or "")
             ):
-                # BUG-258 (Agent-15 capital-protection wave 3): the flip
-                # entry is gated through RiskEngine.evaluate_proposal on a
-                # DIRECTIONAL TradeProposal (kill switch, breakers, RR,
-                # spread, stops-level, exposure, margin, impact). None =>
-                # close-only: the protective close still happens, no flip
-                # order. The old mirrored-volume fallback is removed.
-                reversal_volume = 0.0
-                if (
-                    self.om._symbol_info
-                    and getattr(policy_decision, "reversal_action", None) is not None
-                ):
+                # DEADLOCK FIX (close-then-evaluate, fail-closed): the flip
+                # MUST be risk-evaluated only AFTER the protective close is
+                # confirmed. Evaluating first deadlocks under
+                # risk.max_concurrent_positions=1: the position being closed
+                # still counts as active, so evaluate_proposal ALWAYS rejects
+                # the directional flip at the concurrent-position gate, the
+                # reversal leaves the loop with volume 0.0, and the losing
+                # position rides to a hard HOLD_SCORE_DECAY exit. The close
+                # is the protective action, so it goes first; the flip is
+                # best-effort on the freed slot. BUG-258's risk-approval
+                # contract is preserved: the flip still runs through
+                # evaluate_proposal (kill switch, breakers, RR, spread,
+                # stops-level, exposure, margin, impact) on a DIRECTIONAL
+                # TradeProposal, and an unapproved flip is refused close-only.
+                _reversal_started = time.monotonic()
+                _reversal_ticket = getattr(policy_decision, "ticket", 0) or 0
+                _has_reversal_action = getattr(policy_decision, "reversal_action", None) is not None
+
+                # ----------------------------------------------------------------
+                # PHASE 1 — PROTECTIVE CLOSE. execute_ai_reversal is handed a
+                # pure-close payload: it closes every conflicting ticket,
+                # stamps exit_mechanism=AI_REVERSAL_EXIT, and drops the ticket
+                # from _live_tickets_cache. It returns False when the flip is
+                # suppressed by algo.ai_flip_exit_enabled (default False) — in
+                # that case the close itself is suppressed and the existing
+                # designed behavior is kept: no close, no flip.
+                # ----------------------------------------------------------------
+                close_decision = policy_decision
+                if _has_reversal_action:
+                    close_decision = policy_decision.model_copy(update={"reversal_action": None})
+                close_ok = self.om.order_manager.execute_ai_reversal(
+                    decision=close_decision,
+                    volume=0.0,
+                    current_tick=tick,
+                    symbol_info=self.om._symbol_info,
+                )
+                logger.info(
+                    "[AI_REVERSAL] close-phase done ticket=%s close_ok=%s",
+                    _reversal_ticket,
+                    close_ok,
+                )
+
+                # The flip is only reachable when the close confirmed AND a
+                # directional follow-up was requested. A suppressed flip
+                # (operator flag) or a failed/no-op close stops here: never
+                # stack an opposing order on an unclosed position.
+                flip_dispatched = False
+                flip_volume = 0.0
+                if not (close_ok and _has_reversal_action):
+                    # A suppressed flip (operator flag) or a failed/no-op close
+                    # stops here: never stack an opposing order on an unclosed
+                    # position. No risk evaluation runs in this branch.
+                    logger.info(
+                        "[AI_REVERSAL] close-only",
+                        ticket=_reversal_ticket,
+                        close_ok=close_ok,
+                        volume=0.0,
+                        duration_ms=(time.monotonic() - _reversal_started) * 1000.0,
+                        note="no flip requested",
+                    )
+                elif not self.om._symbol_info:
+                    logger.warning(
+                        "[ENTRY_BLOCKED] layer=RISK_ENGINE reason=AI_REVERSAL_NO_SYMBOL_INFO "
+                        "ticket=%s - position already closed, flip refused (no symbol info)",
+                        _reversal_ticket,
+                    )
+                else:
+                    # ----------------------------------------------------------
+                    # PHASE 2 — RISK EVALUATION on the freed slot. The
+                    # directional proposal is rebuilt (full model validation:
+                    # an inverted geometry is rejected fail-closed) and sized
+                    # through the canonical risk chain.
+                    # ----------------------------------------------------------
                     directional = self._build_directional_reversal_proposal(policy_decision)
-                    if directional is not None:
+                    if directional is None:
+                        logger.warning(
+                            "[ENTRY_BLOCKED] layer=RISK_ENGINE "
+                            "reason=AI_REVERSAL_GEOMETRY_UNAVAILABLE - position "
+                            "already closed, flip refused (degenerate direction)",
+                            ticket=_reversal_ticket,
+                        )
+                    else:
+                        # The caller's ``active_positions`` is the PRE-close
+                        # broker snapshot (manage_active_positions runs before
+                        # the decision stage), so the position the protocol
+                        # just closed would still occupy the
+                        # max_concurrent_positions slot. Read the POST-close
+                        # broker state instead — the close was confirmed in
+                        # PHASE 1 (all_closed is required for close_ok), so a
+                        # live query is exact, never optimistic. Only if the
+                        # live query fails do we fall back to filtering the
+                        # caller's snapshot by the confirmed-close predicate.
+                        _reversal_symbol = str(getattr(policy_decision, "symbol", "") or "")
+                        _target_ticket = _reversal_ticket
+
+                        def _closed_by_reversal(
+                            pos: Any, _sym: str = _reversal_symbol, _tk: int = _target_ticket
+                        ) -> bool:
+                            if _tk and pos.ticket != _tk:
+                                return False
+                            return bool(_sym) and pos.symbol == _sym
+
+                        freed_positions: list[Any]
+                        try:
+                            freed_positions = list(
+                                self.om.adapter.get_positions(symbol=_reversal_symbol) or []
+                            )
+                        except Exception:
+                            freed_positions = [
+                                p for p in active_positions if not _closed_by_reversal(p)
+                            ]
+                        _freed_active_count = len(
+                            [p for p in freed_positions if p.symbol == directional.symbol]
+                        )
                         atr_for_risk = max(float(getattr(fv, "atr_m1", 1.5) or 0.0), 0.5)
                         reversal_risk_order = self.om.risk_engine.evaluate_proposal(
                             proposal=directional,
                             account=account,
                             symbol_info=self.om._symbol_info,
-                            active_positions=active_positions,
+                            active_positions=freed_positions,
                             current_tick=tick,
                             regime_state=regime_state,
                             atr=atr_for_risk,
@@ -419,28 +542,63 @@ class DecisionExecutor:
                                 ),
                             )
                         if reversal_risk_order is None:
+                            # Fail-closed: the position is already safely
+                            # closed; the flip is refused, not stacked.
                             logger.warning(
-                                "[ENTRY_BLOCKED] layer=RISK_ENGINE reason=AI_REVERSAL_RISK_REJECTED "
-                                "reversal_action=%s ticket=%s request_id=%s - close-only, "
-                                "no flip order will be dispatched",
-                                getattr(policy_decision.reversal_action, "value", None),
-                                getattr(policy_decision, "ticket", 0) or 0,
-                                getattr(policy_decision, "request_id", ""),
+                                "[ENTRY_BLOCKED] layer=RISK_ENGINE "
+                                "reason=AI_REVERSAL_RISK_REJECTED_POST_CLOSE - position already "
+                                "closed, flip refused (post-close risk rejection)",
+                                ticket=_reversal_ticket,
+                                request_id=str(getattr(policy_decision, "request_id", "") or ""),
+                                freed_active_count=_freed_active_count,
                             )
                         else:
-                            reversal_volume = reversal_risk_order.volume
-                    else:
-                        logger.warning(
-                            "[ENTRY_BLOCKED] layer=RISK_ENGINE reason=AI_REVERSAL_GEOMETRY_UNAVAILABLE "
-                            "ticket=%s - close-only, no flip order will be dispatched",
-                            getattr(policy_decision, "ticket", 0) or 0,
+                            flip_volume = float(reversal_risk_order.volume)
+                            # ------------------------------------------------
+                            # PHASE 3 — FLIP DISPATCH on the risk-approved
+                            # volume through the canonical entry router. The
+                            # close already happened in PHASE 1, so the
+                            # reversal protocol must not be re-entered (it
+                            # would find no position to close and refuse).
+                            # dispatch_order keeps the flip under the full
+                            # gate stack (kill switch, SAFE_MODE, maintenance
+                            # window, duplicate guard, exposure, lot clamp).
+                            # ------------------------------------------------
+                            flip_decision = policy_decision
+                            if (
+                                getattr(policy_decision, "action", None)
+                                == ActionType.CLOSE_POSITION
+                            ):
+                                flip_decision = policy_decision.model_copy(
+                                    update={
+                                        "action": getattr(policy_decision, "reversal_action", None)
+                                    }
+                                )
+                            flip_dispatched = self.om.order_manager.dispatch_order(
+                                flip_decision, flip_volume
+                            )
+                            logger.info(
+                                "[AI_REVERSAL] flip-phase done ticket=%s "
+                                "reversal_action=%s volume=%s flip_dispatched=%s",
+                                _reversal_ticket,
+                                getattr(policy_decision.reversal_action, "value", None),
+                                flip_volume,
+                                flip_dispatched,
+                            )
+                    if not flip_dispatched:
+                        logger.info(
+                            "[AI_REVERSAL] close-only",
+                            ticket=_reversal_ticket,
+                            close_ok=close_ok,
+                            volume=flip_volume,
+                            freed_active_count=self._count_open_directional_positions(
+                                active_positions,
+                                reversal_symbol=str(getattr(policy_decision, "symbol", "") or ""),
+                                closed_ticket=_reversal_ticket,
+                            ),
+                            duration_ms=(time.monotonic() - _reversal_started) * 1000.0,
+                            note="flip refused, position is closed",
                         )
-                elif not self.om._symbol_info:
-                    logger.warning(
-                        "[ENTRY_BLOCKED] layer=RISK_ENGINE reason=AI_REVERSAL_NO_SYMBOL_INFO "
-                        "ticket=%s - close-only, no flip order will be dispatched",
-                        getattr(policy_decision, "ticket", 0) or 0,
-                    )
 
                 # DECISION-TRACE: execution stage boundary for the reversal
                 # (pre-dispatch evidence; the gateway event follows inside
@@ -471,8 +629,8 @@ class DecisionExecutor:
                             "reversal_action": getattr(
                                 policy_decision.reversal_action, "value", None
                             ),
-                            "volume": reversal_volume,
-                            "close_only": reversal_volume <= 0,
+                            "volume": flip_volume,
+                            "close_only": flip_volume <= 0,
                             "ticket": getattr(policy_decision, "ticket", 0) or None,
                             "engine_mode": getattr(
                                 getattr(self.om.config, "execution", None), "mode", None
@@ -480,16 +638,31 @@ class DecisionExecutor:
                             "request_id": policy_decision.request_id,
                         },
                     )
-                success = self.om.order_manager.execute_ai_reversal(
-                    decision=policy_decision,
-                    volume=reversal_volume,
-                    current_tick=tick,
-                    symbol_info=self.om._symbol_info,
-                )
+                flip_decision = policy_decision
+                if getattr(policy_decision, "action", None) == ActionType.CLOSE_POSITION:
+                    flip_decision = policy_decision.model_copy(
+                        update={"action": getattr(policy_decision, "reversal_action", None)}
+                    )
+                success = False
+                if flip_volume > 0.0 and flip_decision.action is not None:
+                    # The close already happened in PHASE 1; dispatch the flip
+                    # through the canonical entry router (kill switch, SAFE_MODE,
+                    # maintenance window, duplicate guard, exposure, lot clamp).
+                    success = bool(self.om.order_manager.dispatch_order(flip_decision, flip_volume))
+                else:
+                    logger.info(
+                        "[AI_REVERSAL] flip refused",
+                        ticket=_reversal_ticket,
+                        volume=flip_volume,
+                        note="no risk-approved flip volume",
+                    )
                 logger.info(
-                    f"[info] AI REVERSAL EXECUTED ticket={policy_decision.ticket} "
-                    f"new_action={getattr(policy_decision.reversal_action, 'value', None)} "
-                    f"volume={reversal_volume} success={success}"
+                    "[AI_REVERSAL] protocol-complete",
+                    ticket=_reversal_ticket,
+                    close_ok=close_ok,
+                    flip_dispatched=flip_dispatched,
+                    volume=flip_volume,
+                    duration_ms=(time.monotonic() - _reversal_started) * 1000.0,
                 )
                 # DECISION-TRACE: terminal order-state for this trace path.
                 if _trace is not None:
@@ -515,7 +688,7 @@ class DecisionExecutor:
                         detail={
                             "success": bool(success),
                             "action": "AI_REVERSAL",
-                            "volume": reversal_volume,
+                            "volume": flip_volume,
                             "ticket": getattr(policy_decision, "ticket", 0) or None,
                             "request_id": policy_decision.request_id,
                         },
