@@ -25,6 +25,280 @@ from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig
 
+
+def _split_top_level(body: str) -> list[str]:
+    """Split ``body`` on top-level commas (outside parens and quotes).
+
+    Shared by the upsert-statement parsers that must read a column list without
+    being fooled by a comma inside a value literal.
+    """
+    parts: list[str] = []
+    depth = 0
+    last = 0
+    i = 0
+    n = len(body)
+    while i < n:
+        ch = body[i]
+        if ch in "'\"":
+            j = i + 1
+            while j < n:
+                if body[j] == ch:
+                    if j + 1 < n and body[j + 1] == ch:
+                        j += 2
+                        continue
+                    break
+                j += 1
+            i = j + 1
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            if depth > 0:
+                depth -= 1
+        elif ch == "," and depth == 0:
+            parts.append(body[last:i])
+            last = i + 1
+        i += 1
+    parts.append(body[last:])
+    return parts
+
+
+#: ``INSERT INTO <t> (<cols>) ...`` — the single shape ``execute_upsert`` and
+#: the upsert-key resolver both need. Bounded and linear (no nested
+#: quantifiers), so it cannot backtrack super-linearly.
+_UPSERT_HEAD = re.compile(
+    r"\s*INSERT\s+(?:OR\s+\w+\s+)?INTO\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^()]*)\)", re.IGNORECASE
+)
+
+
+def parse_upsert_columns(sql: str) -> list[str] | None:
+    """The column list of an ``INSERT INTO <t> (<cols>)`` statement, or None.
+
+    The columns are the authority for the placeholder count and the ON CONFLICT
+    target: the driver rebuilds the statement around them, so a caller's
+    hand-authored shape can never desync the placeholders from the parameters.
+
+    Returns None for any shape the parser is not confident about (a missing
+    column list, an unbalanced paren, a statement longer than the bound) — the
+    caller then executes its own statement through the generic path rather
+    than risk malformed SQL.
+    """
+    if not isinstance(sql, str) or len(sql) > _MAX_UPSERT_PARSE_CHARS:
+        return None
+    m = _UPSERT_HEAD.match(sql)
+    if m is None:
+        return None
+    cols = [c.strip().strip('"') for c in _split_top_level(m.group(2))]
+    if not cols or any(not c for c in cols):
+        return None
+    return cols
+
+
+#: Bind-parameter arity failures are reported through the driver's own
+#: diagnostic channel with the same masking as every other statement, so a
+#: future statement shape that loses its placeholders is diagnosable without
+#: a debugger attached.
+class BindArityError(ValueError):
+    """The statement's bind placeholders do not match the parameter count."""
+
+    def __init__(self, sql: str, placeholders: int, params: int, driver: str) -> None:
+        self.sql = sql
+        self.placeholders = placeholders
+        self.params = params
+        self.driver = driver
+        super().__init__(
+            f"{driver}: statement binds {placeholders} placeholder(s) but {params} "
+            f"parameter(s) were passed"
+        )
+
+
+def _log_bind_arity_failure(
+    operation: str, sql: str, placeholders: int, params: int, driver: str
+) -> None:
+    """Record a placeholder/parameter mismatch without ever logging values."""
+    try:
+        from nexus_scalp.database.query_logging import log_query_failure
+
+        log_query_failure(
+            operation=f"driver.{operation}",
+            exc=BindArityError(sql, placeholders, params, driver),
+            sql=sql,
+            args=None,
+            domain=driver,
+            kind="write",
+            extra={"placeholder_count": placeholders, "arg_count": params},
+        )
+    except Exception:
+        pass
+
+
+def check_bind_arity(sql: str, args: Any, *, driver: str, operation: str) -> None:
+    """Prove the statement's placeholders match the parameters before execute.
+
+    ``sql`` is the statement as the DRIVER is about to issue it (already
+    translated to this driver's paramstyle), and ``args`` is the parameter
+    sequence the caller passed. The live incident this guards is
+    ``the query has 0 placeholders but 4 parameters were passed``: a statement
+    whose placeholders were lost in translation reaches the driver with N
+    values bound against zero bind points, and psycopg reports it at the
+    server boundary. Checking here turns it into a loud, actionable driver
+    error that names the operation and keeps both counts in the log — no
+    bound value is ever rendered.
+
+    Raises :class:`BindArityError` on a mismatch. Zero/zero is allowed: a
+    statement with no placeholders legitimately takes no parameters.
+    """
+    placeholders = bind_placeholder_count(sql, driver)
+    params = arg_count(args)
+    if placeholders == params:
+        return
+    _log_bind_arity_failure(operation, sql, placeholders, params, driver)
+    raise BindArityError(sql, placeholders, params, driver)
+
+
+def bind_placeholder_count(sql: Any, driver: str = "") -> int:
+    """Number of bind placeholders in ``sql`` for the given driver.
+
+    Counts per paramstyle and never sums them: a legal statement uses ONE
+    placeholder style only, and a statement mixing styles is itself the defect
+    (see the query-logging helper's count for the same rule). The largest
+    per-style count wins so a statement reported as qmark-only is not
+    miscounted when the driver speaks ``format``.
+    """
+    if not isinstance(sql, str) or not sql:
+        return 0
+    try:
+        positional = len(_POSITIONAL_PLACEHOLDERS.findall(sql))
+        named = len(_NAMED_PLACEHOLDERS.findall(sql))
+        dollar = len(_DOLLAR_PLACEHOLDERS.findall(sql))
+        pg = max(positional, named, dollar)
+        if pg:
+            return pg
+        return len(_QMARK_PLACEHOLDERS.findall(sql))
+    except Exception:
+        return 0
+
+
+def arg_count(args: Any) -> int:
+    """Number of bound values passed alongside a statement (never raises).
+
+    Accepts a sequence of values or a sequence of parameter rows
+    (``executemany`` shape); a scalar counts as one value, the same contract
+    the query-logging helper applies.
+    """
+    try:
+        if args is None:
+            return 0
+        if isinstance(args, (str, bytes, bytearray, dict)):
+            return 1
+        n = len(args)
+        if n == 0:
+            return 0
+        first = args[0]
+        if isinstance(first, (tuple, list)):
+            return len(first)  # executemany: the first parameter row
+        return n
+    except Exception:
+        return 0
+
+
+#: Placeholder styles the arity check recognizes. ``%s`` / ``%(name)s`` /
+#: ``$1`` are the PostgreSQL formats; ``?`` is SQLite qmark (SQLite also
+#: accepts the named and dollar styles, so the PG counts win when present).
+_POSITIONAL_PLACEHOLDERS = re.compile(r"%(?:[sbt]|\([A-Za-z_][A-Za-z0-9_$]*\)s)")
+_NAMED_PLACEHOLDERS = re.compile(r":[A-Za-z_][A-Za-z0-9_$]*")
+_DOLLAR_PLACEHOLDERS = re.compile(r"\$\d+")
+_QMARK_PLACEHOLDERS = re.compile(r"\?")
+
+
+#: Bound on the statement text the upsert parsers read (same rationale as the
+#: PostgreSQL driver's shape parser: an oversized statement is not the shape
+#: they rewrite, and the bound keeps the work linear).
+_MAX_UPSERT_PARSE_CHARS = 16_384
+
+
+def build_upsert_statement(
+    table: str,
+    columns: Sequence[str],
+    *,
+    conflict_target: Sequence[str],
+    paramstyle: str,
+) -> str:
+    """Build a driver-native single-row upsert statement.
+
+    The placeholders, the column list and the ON CONFLICT clause are all
+    derived from ``columns`` in ONE place, so the statement the driver executes
+    cannot carry a placeholder count that disagrees with the row it binds —
+    the exact defect a hand-authored cross-provider string produced when its
+    ``?`` markers were translated (or a ``:name`` list was flattened) by a
+    different layer than the one that counted the parameters.
+
+    ``paramstyle`` selects the placeholder text this driver speaks; the ON
+    CONFLICT clause is ANSI UPSERT syntax both providers accept.
+    """
+    if not columns:
+        raise ValueError("build_upsert_statement: empty column list")
+    if not conflict_target:
+        raise ValueError("build_upsert_statement: empty conflict target")
+    quoted_table = _quote_ident(table)
+    quoted_cols = ", ".join(_quote_ident(c) for c in columns)
+    if paramstyle == "qmark":
+        placeholders = ", ".join("?" for _ in columns)
+    elif paramstyle in ("format", "pyformat"):
+        placeholders = ", ".join("%s" for _ in columns)
+    else:  # pragma: no cover - defensive, the drivers own the paramstyles
+        placeholders = ", ".join(f":c{i}" for i, _c in enumerate(columns))
+    target = ", ".join(_quote_ident(c) for c in conflict_target)
+    updates = [c for c in columns if c not in set(conflict_target)]
+    set_clause = ", ".join(f"{_quote_ident(c)} = EXCLUDED.{_quote_ident(c)}" for c in updates)
+    sql = (
+        f"INSERT INTO {quoted_table} ({quoted_cols}) VALUES ({placeholders}) ON CONFLICT ({target})"
+    )
+    if set_clause:
+        sql += f" DO UPDATE SET {set_clause}"
+    else:
+        sql += " DO NOTHING"
+    return sql
+
+
+def _quote_ident(ident: str) -> str:
+    """Validate and quote a simple SQL identifier (module-level helper)."""
+    if not isinstance(ident, str):
+        raise ValueError("invalid SQL identifier")
+    m = _IDENT_SHAPE.fullmatch(ident)
+    if m is None:
+        raise ValueError("invalid SQL identifier")
+    return f'"{m.group(0)}"'
+
+
+def _table_of(sql: str) -> str | None:
+    """The target table of an ``INSERT INTO <t> (...)`` statement."""
+    if not isinstance(sql, str):
+        return None
+    m = _UPSERT_HEAD.match(sql)
+    return m.group(1) if m else None
+
+
+def statement_shape(sql: Any, fallback: str = "statement") -> str:
+    """A short, value-free label identifying one execution path.
+
+    Used wherever a diagnostic needs to name WHAT ran without ever rendering
+    the statement's bound values: the driver name + verb + table is enough to
+    attribute a failure, and it is the only thing logged on the arity path.
+    """
+    if not isinstance(sql, str) or not sql:
+        return fallback
+    try:
+        m = _UPSERT_HEAD.match(sql)
+        if m:
+            verb = "insert" if sql.lstrip().upper().startswith("INSERT OR") else "upsert"
+            return f"{verb}:{m.group(1)}"
+        first = sql.strip().split(None, 1)[0].upper()
+        return f"{first.lower()}:?"
+    except Exception:
+        return fallback
+
+
 #: SEC (py/sql-injection): the only characters admitted into SQL identifier
 #: text. ``quote_ident`` EXTRACTS this match rather than interpolating the
 #: caller's string, so nothing outside the whitelist can reach a statement.
@@ -231,6 +505,67 @@ class DatabaseDriver(ABC):
     @abstractmethod
     def upsert(self, table: str, row: dict[str, Any], conn: Any = None) -> None:
         """Portable upsert (REPLACE vs ON CONFLICT DO UPDATE)."""
+
+    def execute_upsert(
+        self,
+        sql: str,
+        params: Sequence[Any],
+        *,
+        table: str | None = None,
+        conflict_target: Sequence[str] | None = None,
+        conn: Any = None,
+    ) -> Any:
+        """Execute a single-row upsert whose SQL the DRIVER generates.
+
+        This is the seam a store uses when it cannot trust its own
+        hand-authored placeholder shape across providers. The caller supplies:
+
+          * ``sql`` — its own statement, used ONLY to name the table and the
+            column list (both parsed, never interpolated verbatim);
+          * ``params`` — the row values in the column order ``sql`` declares;
+          * ``conflict_target`` — the ON CONFLICT key columns. Omit to resolve
+            them from the upsert-key registry (``upsert_columns``), which is
+            validated against the table's DDL.
+
+        The driver rebuilds the statement in its OWN paramstyle with ONE
+        placeholder per column, so the placeholders and the parameters are
+        produced by the same code from the same column list. The live failure
+        this erases — ``the query has 0 placeholders but 4 parameters were
+        passed`` — was a statement whose ``?`` markers were rewritten by a
+        layer that never saw the parameter tuple.
+
+        Raises :class:`BindArityError` before touching the connection when the
+        column list and the parameters disagree.
+        """
+        columns = parse_upsert_columns(sql)
+        if columns is None:
+            # Not the single-row INSERT shape: refuse rather than guess what
+            # the caller meant — a silently-wrong rewrite is the failure mode
+            # this seam exists to eliminate.
+            raise ValueError(
+                f"{self.name}.execute_upsert: statement is not a single-row "
+                f"INSERT INTO <table> (<columns>) statement"
+            )
+        if len(columns) != len(params):
+            _log_bind_arity_failure(
+                "execute_upsert", statement_shape(sql), len(columns), len(params), self.name
+            )
+            raise BindArityError(sql, len(columns), len(params), self.name)
+        resolved_table = table or _table_of(sql) or ""
+        if not resolved_table:
+            raise ValueError(f"{self.name}.execute_upsert: cannot read the target table")
+        if conflict_target is None:
+            from nexus_scalp.database.upsert import upsert_columns
+
+            conflict_target = upsert_columns(resolved_table)
+        statement = build_upsert_statement(
+            resolved_table,
+            columns,
+            conflict_target=conflict_target,
+            paramstyle=self.paramstyle,
+        )
+        check_bind_arity(statement, params, driver=self.name, operation="execute_upsert")
+        return self.execute(statement, params, conn=conn)
 
     @abstractmethod
     def insert_ignore(self, table: str, row: dict[str, Any], conn: Any = None) -> None:
