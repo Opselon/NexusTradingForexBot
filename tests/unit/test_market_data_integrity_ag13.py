@@ -232,16 +232,44 @@ def test_md6b_reseed_empty_clears_monotonic_state() -> None:
 
 
 def test_md7_loop_duplicate_guard_reads_engine_state_not_wrapper() -> None:
-    """The BUG-169 guard compares against the ENGINE's stamp. The pre-fix
-    code read getattr(self, ...) on the RuntimeLoop wrapper where the
-    attributes never exist, so identical quotes always fell through."""
+    """The BUG-169 guard compares against state that is WRITTEN by the same
+    object that reads it. The pre-fix code read getattr(self, ...) on the
+    RuntimeLoop wrapper where the attributes never existed, so identical
+    quotes always fell through.
+
+    TASK-DEDUP-REPLAY-001 (2026-10-01): the guard predicate is now the live
+    FEED EPOCH TRACKER (constructed in RuntimeLoop.__init__, consulted in
+    run()), which subsumes the old ts+bid+ask equality test and additionally
+    rejects reconnect-replayed quotes. The pin is behavioral, not literal:
+    the loop must consult the tracker, the legacy engine stamps must survive
+    for their other readers, and the DEAD-CODE wrapper read must never return.
+    """
     import inspect
 
     from nexus_scalp.application.live.runtime_loop import RuntimeLoop
 
     src = inspect.getsource(RuntimeLoop.run)
-    assert 'getattr(self.om, "_pipeline_last_ts", None)' in src
-    assert 'getattr(self, "_pipeline_last_ts", None)' not in src
+    # The live guard: the loop classifies every tick through the tracker.
+    assert "self._feed_epoch.classify(" in src
+    assert 'getattr(self, "_pipeline_last_ts", None)' not in src, (
+        "the pre-fix DEAD-CODE wrapper read must never come back"
+    )
+    # Legacy engine stamps preserved (other readers rely on them).
+    assert 'self.om._pipeline_last_ts = tick.timestamp' in src
+
+    # The tracker is real state on the loop (constructed, not assumed):
+    init_src = inspect.getsource(RuntimeLoop.__init__)
+    assert "FeedEpochTracker()" in init_src
+
+    # And it actually rejects an identical quote (the guard is not dead code).
+    from nexus_scalp.application.live.feed_epoch import FeedEpochTracker
+
+    import datetime as _dt
+
+    t = _dt.datetime(2026, 10, 1, tzinfo=_dt.timezone.utc)
+    tr = FeedEpochTracker()
+    assert tr.classify(timestamp=t, bid=2400.0, ask=2400.2).accept is True
+    assert tr.classify(timestamp=t, bid=2400.0, ask=2400.2).accept is False
 
 
 def test_md7b_engine_stamp_roundtrip_detects_duplicate() -> None:

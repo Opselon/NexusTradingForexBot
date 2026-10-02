@@ -190,6 +190,16 @@ _HIGH_ENTROPY_RE = re.compile(r"[A-Za-z0-9_\-+/=]{24,}")
 _ENTROPY_ALNUM_THRESHOLD = 0.75
 _ENTROPY_BITS_THRESHOLD = 3.2
 
+#: TASK-DEDUP-REPLAY-001 (2026-10-01): structured-telemetry KEY shape for the
+#: lowercase-word value carve-out. A key that is plain snake_case observability
+#: (event, action, stage, reason, suppressed_action, detail, ...) carrying a
+#: lowercase dictionary word is a structured VALUE, not a credential. The
+#: secret-fragment keys (password/passwd/secret/token/api_key/...) are matched
+#: FIRST by the key-based layer and by _SECRET_ASSIGN_RE, so they can never
+#: reach the carve-out — this regex never needs to know them.
+_TELEMETRY_KEY_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{1,40}")
+
+
 #: Path-shape anchors that mark a high-entropy run as a FILESYSTEM PATH, not
 #: a secret. A real secret is an opaque token with no directory structure;
 #: an exception message carries the artifact path the engine tried to open.
@@ -397,6 +407,25 @@ def _redact_value(value: Any) -> Any:
             # (DB_HYGIENE audit summary lost its counts). Numbers are not
             # credentials: exempt them like the constant-shape guard above.
             if val_part and all(ch.isdigit() or ch in "+-.,%" for ch in val_part):
+                return token
+            # TASK-DEDUP-REPLAY-001 (2026-10-01): a LOWERCASE WORD-SHAPED
+            # telemetry value is structured observability, not a credential.
+            # 'suppressed_action=replayed' measured 3.80 bits/char and was
+            # masked as [REDACTED_SECRET], destroying the executor-boundary
+            # forensic line. A secret is an OPAQUE token (random charset mix:
+            # digits inside, mixed case, punctuation) — a plain lowercase
+            # dictionary word has none of that shape. Guard: the whole value is
+            # lowercase alpha AND the key looks like a structured-telemetry key
+            # (snake_case, and NOT itself a secret-fragment key — password=,
+            # token=, api_key= are redacted earlier by the key-based layer, so
+            # they can never reach this branch). Real credentials never match:
+            # they are not lowercase-alpha words.
+            if (
+                val_part
+                and val_part.isalpha()
+                and val_part.islower()
+                and _TELEMETRY_KEY_RE.fullmatch(_key or "")
+            ):
                 return token
         alnum_ratio = sum(1 for ch in token if ch.isalnum()) / len(token)
         if (

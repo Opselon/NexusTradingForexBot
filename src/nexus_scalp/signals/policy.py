@@ -166,10 +166,57 @@ class SignalPolicy:
         self._dedup_last_time: datetime | None = None
         self._dedup_last_bid: float = 0.0
         self._dedup_last_ask: float = 0.0
-        # BUG-169: last NON-duplicate evaluation's proposal, surfaced on a
-        # duplicate tick instead of a synthetic NO_TRADE conf=0.0 (which the
-        # UI displayed as the Active Intelligence Output).
+        # BUG-169: last NON-duplicate evaluation's proposal. RETAINED for UI
+        # state, diagnostics and observability (the debug snapshot / Active
+        # Intelligence Output read it). TASK-DEDUP-REPLAY-001: it is NO LONGER
+        # re-emitted as an actionable proposal on a duplicate/replayed tick —
+        # that re-surface (fresh request_id + DEDUP_GATE) is exactly the
+        # amplification that flooded the executor boundary 3,476x/hour. A
+        # duplicate now downgrades to NO_TRADE with an explicit stage.
         self._last_real_proposal: TradeProposal | None = None
+        # TASK-DEDUP-REPLAY-001: semantic decision-identity replay dedup.
+        # In-memory, O(1) per tick, state-aware (re-arms on broker/order state
+        # change). Stops the upstream amplification; the executor DEDUP_GATE net
+        # stays as the final defense.
+        from nexus_scalp.signals.decision_dedup import ReplayDecisionDedup
+
+        self._replay_dedup = ReplayDecisionDedup()
+        #: Broker tick size, injected by the engine with the symbol info so the
+        #: fingerprint quantization matches the broker's real price grid. None
+        #: => a sub-tick noise floor (float noise dies, real levels live).
+        self._tick_size: float | None = None
+        #: Strategy/model revision, injected by the engine. A revision change is
+        #: a genuine decision change, so it participates in decision identity.
+        self._strategy_revision: str | None = None
+
+    def configure_decision_identity(
+        self,
+        *,
+        tick_size: float | None = None,
+        strategy_revision: str | None = None,
+    ) -> None:
+        """Inject the broker tick size + strategy revision (engine wiring).
+
+        Both feed the semantic decision fingerprint only; neither influences a
+        trading threshold. Idempotent; a ``None`` argument leaves the previous
+        value untouched.
+        """
+        if tick_size is not None and float(tick_size) > 0.0:
+            self._tick_size = float(tick_size)
+        if strategy_revision is not None and str(strategy_revision).strip():
+            self._strategy_revision = str(strategy_revision).strip()
+
+    def reset_replay_dedup(self) -> None:
+        """Drop all replay-suppression state (feed reconnect / engine restart).
+
+        A reconnect invalidates the broker/order context the suppression was
+        built against, so no decision identity may survive it.
+        """
+        self._replay_dedup.reset()
+
+    def replay_dedup_snapshot(self) -> dict[str, Any]:
+        """Bounded replay-dedup state for diagnostics/UI (never trading)."""
+        return self._replay_dedup.snapshot()
 
     def evaluate_probabilities(
         self,
@@ -1554,10 +1601,63 @@ class SignalPolicy:
             self._last_telemetry_time = now
             self._last_logged_action = final_proposal.action
 
-        # BUG-169: remember the latest REAL (non-duplicate) evaluation so a
-        # duplicate tick can re-surface it instead of a fabricated NO_TRADE.
-        if final_proposal is not None and getattr(final_proposal, "decision_stage", "") != (
-            "DEDUP_GATE"
+        # ------------------------------------------------------------------
+        # TASK-DEDUP-REPLAY-001: SEMANTIC DECISION-DEDUP GATE.
+        # ------------------------------------------------------------------
+        # This is the upstream fix for the replay flood. A duplicate/replayed
+        # market event used to slip past the engine's 3-field duplicate guard
+        # (ts+bid+ask) whenever bid/ask drift while the decision is unchanged,
+        # then produce a FRESH actionable proposal identical in intent to the
+        # last one. Each replay reached the executor and was refused by the
+        # DEDUP_GATE net, one ORDER_MUTATION_SUPPRESSED line per replay.
+        #
+        # Here we classify the FINAL proposal by its ACTIONABLE BUSINESS INTENT
+        # (symbol + action/side + entry/SL/TP + ticket + volume + strategy
+        # revision) — never by request_id. A proposal whose intent was already
+        # accepted, while the broker/order state that made it actionable is
+        # UNCHANGED, is a replay: it is downgraded to NO_TRADE with the existing
+        # NSE vocabulary (DECISION_DUPLICATE / DECISION_DEDUP_REPLAY) and never
+        # reaches the executor. The executor net stays armed for anything that
+        # still gets through.
+        #
+        # Non-actionable proposals (NO_TRADE/WAIT/blocked/shadow) pass through
+        # untouched — they mutate no broker state and cannot duplicate.
+        # ------------------------------------------------------------------
+        if final_proposal is not None:
+            _verdict = self._replay_dedup.check(
+                final_proposal,
+                tick_size=self._tick_size,
+                strategy_revision=self._strategy_revision,
+                order_manager=order_manager,
+            )
+            if _verdict.duplicate:
+                final_proposal = final_proposal.model_copy(
+                    update={
+                        "action": ActionType.NO_TRADE,
+                        "final_action": "NO_TRADE",
+                        "reason_code": "DECISION_DUPLICATE",
+                        "rejection_reason": (
+                            "replayed actionable decision is suppressed upstream "
+                            "of the executor (semantic decision identity)"
+                        ),
+                        "decision_stage": "DECISION_DEDUP_REPLAY",
+                        "blocked_by": "DECISION_DEDUP",
+                        "is_ai_reversal": False,
+                        "reversal_action": None,
+                        # Zero-information by contract: never fabricate confidence.
+                        "confidence": 0.0,
+                        "confidence_before_filters": 0.0,
+                        "confidence_after_filters": 0.0,
+                    }
+                )
+
+        # BUG-169: the latest REAL (non-duplicate) evaluation, retained for UI
+        # state, diagnostics and observability (the debug snapshot / Active
+        # Intelligence Output read it). TASK-DEDUP-REPLAY-001: it is never
+        # re-emitted as an actionable proposal (see the dedup gate above).
+        if final_proposal is not None and getattr(final_proposal, "decision_stage", "") not in (
+            "DEDUP_GATE",
+            "DECISION_DEDUP_REPLAY",
         ):
             self._last_real_proposal = final_proposal
 
@@ -2075,28 +2175,47 @@ class SignalPolicy:
             # and freezing the displayed confidence at 0.00%. The duplicate
             # still never touches cooldown/direction/price-lock state.
             #
-            # RUNTIME RESILIENCE (Agent-7 failure injection): the re-surfaced
-            # proposal keeps the LAST REAL decision's observability payload
-            # (BUG-169 UI-truth: action/confidence visible, never a fabricated
-            # 0.0) BUT is stamped decision_stage="DEDUP_GATE". A duplicate
-            # event must never become an executable order: the replayed
-            # proposal carries a FRESH request_id, so the dispatch-layer
-            # idempotency guard cannot recognize it — the decision executor
-            # therefore refuses any non-NO_TRADE proposal stamped DEDUP_GATE
-            # (FI-3 regression: test_runtime_failure_injection.py).
-            last = getattr(self, "_last_real_proposal", None)
-            if last is not None:
-                return last.model_copy(
-                    update={
-                        "request_id": str(uuid.uuid4()),
-                        "execution_id": execution_id,
-                        "generated_at": current_tick.timestamp,
-                        "decision_stage": "DEDUP_GATE",
-                    }
-                )
+            # TASK-DEDUP-REPLAY-001 (2026-10-01): the replay path is REMOVED.
+            # -----------------------------------------------------------------
+            # Before this fix a duplicate tick returned a copy of the LAST REAL
+            # proposal carrying a FRESH request_id and decision_stage="DEDUP_GATE".
+            # That design amplified instead of suppressing: the engine's 3-field
+            # duplicate guard (ts+bid+ask) is blind to a replayed quote whose
+            # bid/ask drift while the decision is unchanged, so the full
+            # pipeline re-ran every 50ms, the policy re-emitted the same
+            # BUY_LIMIT/SELL_LIMIT with a new identity, and the executor's
+            # DEDUP_GATE boundary refused it — 3,476 ORDER_MUTATION_SUPPRESSED
+            # log lines in one hour on a single reconnect episode.
+            #
+            # A duplicate market event carries ZERO new information by contract
+            # (the dedup predicate above just proved it). It must not become a
+            # NEW actionable proposal, and it must not re-surface the last one.
+            # Both branches below converge on the same semantics: a NO_TRADE
+            # proposal with the existing NSE vocabulary
+            # (reason_code/rejection_reason=TICK_DUPLICATE_SUPPRESSED,
+            # blocked_by=TICK_DEDUP, decision_stage=DEDUP_GATE) so the audit
+            # guard-telemetry aggregator and the executor safety net both keep
+            # recognizing it. The last real decision stays available in
+            # _last_real_proposal for the UI / diagnostics / observability, but
+            # is never re-emitted as an order intent.
+            # -----------------------------------------------------------------
             _pb = probs[1] if len(probs) > 1 else 0.0
             _ps = probs[2] if len(probs) > 2 else 0.0
             _pnt = probs[0] if len(probs) > 0 else 0.0
+            # TASK-DEDUP-REPLAY-001: preserve the LAST REAL decision's reason
+            # vocabulary on the duplicate NO_TRADE (BUG-169 UI truth — the
+            # displayed decision must not flip to a synthetic reason just
+            # because the feed repeated). The stage still marks it a duplicate
+            # so the executor boundary and the guard-telemetry aggregator both
+            # recognize it, and the reason stays machine-readable.
+            _reason = "TICK_DUPLICATE_SUPPRESSED"
+            _model_action = "NO_TRADE"
+            if (
+                self._last_real_proposal is not None
+                and self._last_real_proposal.action == ActionType.NO_TRADE
+            ):
+                _reason = self._last_real_proposal.reason_code or _reason
+                _model_action = self._last_real_proposal.model_action or _model_action
             return TradeProposal(
                 request_id=str(uuid.uuid4()),
                 execution_id=execution_id,
@@ -2108,8 +2227,8 @@ class SignalPolicy:
                 stop_loss=current_tick.bid * 0.99,
                 take_profit=current_tick.bid * 1.01,
                 risk_reward_ratio=1.0,
-                reason_code="TICK_DUPLICATE_SUPPRESSED",
-                model_action="NO_TRADE",
+                reason_code=_reason,
+                model_action=_model_action,
                 buy_probability=float(_pb),
                 sell_probability=float(_ps),
                 no_trade_probability=float(_pnt),
