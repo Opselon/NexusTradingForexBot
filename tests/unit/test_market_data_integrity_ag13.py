@@ -244,8 +244,10 @@ def test_md7_loop_duplicate_guard_reads_engine_state_not_wrapper() -> None:
     the loop must consult the tracker, the legacy engine stamps must survive
     for their other readers, and the DEAD-CODE wrapper read must never return.
     """
+    import datetime as _dt
     import inspect
 
+    from nexus_scalp.application.live.feed_epoch import FeedEpochTracker
     from nexus_scalp.application.live.runtime_loop import RuntimeLoop
 
     src = inspect.getsource(RuntimeLoop.run)
@@ -262,11 +264,7 @@ def test_md7_loop_duplicate_guard_reads_engine_state_not_wrapper() -> None:
     assert "FeedEpochTracker()" in init_src
 
     # And it actually rejects an identical quote (the guard is not dead code).
-    from nexus_scalp.application.live.feed_epoch import FeedEpochTracker
-
-    import datetime as _dt
-
-    t = _dt.datetime(2026, 10, 1, tzinfo=_dt.timezone.utc)
+    t = _dt.datetime(2026, 10, 1, tzinfo=_dt.UTC)
     tr = FeedEpochTracker()
     assert tr.classify(timestamp=t, bid=2400.0, ask=2400.2).accept is True
     assert tr.classify(timestamp=t, bid=2400.0, ask=2400.2).accept is False
