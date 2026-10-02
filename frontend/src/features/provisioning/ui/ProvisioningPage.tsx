@@ -61,6 +61,8 @@ import type {
   TrainSource,
 } from "../model";
 import { TRAIN_BACKENDS, TRAIN_SOURCES } from "../model";
+import { DbHealthBadge } from "./DbHealthBadge";
+import { shouldRenderDbHealth, useDbHealth } from "./useDbHealth";
 import {
   CANDLE_OPTIONS,
   classNames,
@@ -843,6 +845,11 @@ export default function ProvisioningPage(_props: ShellPageProps) {
   const typedError = isTypedError(error);
   const officialError = typedError && error?.source === "official" ? error : null;
 
+  /** PostgreSQL health state (wave §C1/§C2, brief §26): the engine's
+   *  centralized health snapshot. HEALTHY renders nothing; the badge is
+   *  additive only and the page's content is otherwise unchanged. */
+  const dbHealth = useDbHealth();
+
   return (
     <div className="pv-page">
       {/* ------------------------------------------------------------- hero */}
@@ -892,6 +899,12 @@ export default function ProvisioningPage(_props: ShellPageProps) {
       </header>
 
       {/* ---------------------------------------------------------- banners */}
+      {/* PostgreSQL health state (brief §26). ADDITIVE: renders ONLY on a
+          classified bad state or an honest UNKNOWN — a healthy database
+          yields no markup, so the banners below and the rest of the page
+          render exactly as before. */}
+      {shouldRenderDbHealth(dbHealth) ? <DbHealthBadge state={dbHealth} /> : null}
+
       {error && !typedError ? <ErrorState message={error.message} onRetry={() => setError(null)} /> : null}
       {typedError && error && error.source !== "official" ? (
         <div className="banner bad pv-banner" role="alert">
