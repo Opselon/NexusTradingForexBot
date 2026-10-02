@@ -109,7 +109,7 @@ def resolve_decision_store_target() -> Path | str:
             try:
                 from nexus_scalp.database.config_diagnostics import effective_config_diagnostics
 
-                report = effective_config_diagnostics(cfg, settings_db_path=settings_db_path())
+                report = effective_config_diagnostics(cfg, settings_db_path=str(settings_db_path()))
                 raise RuntimeError(f"{exc}\n[PG_CONFIG_DIAGNOSTICS {report}]") from exc
             except RuntimeError:
                 raise

@@ -483,7 +483,7 @@ def effective_config_diagnostics(
     cannot be consulted, or an unresolvable module path each degrade to an
     explicit ``UNKNOWN`` entry in the payload. Never logs.
     """
-    envd = env if env is not None else os.environ
+    envd = env if env is not None else dict(os.environ)
     result = ConfigDiagnosticsResult()
 
     # -- effective, non-secret fields ------------------------------------
