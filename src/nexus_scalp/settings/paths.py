@@ -102,7 +102,20 @@ def resolve_decision_store_target() -> Path | str:
         # catch-all below used to swallow it and the box kept writing the
         # ledger to a file while believing it was on PostgreSQL.
         if "password not found in secret store" in str(exc):
-            raise
+            # GROUND_TRUTH §C2: attach the redacted effective-config report so
+            # the fatal error names WHICH layer supplied every field the
+            # operator is now stuck on. Never raises, never carries a secret;
+            # a diagnostics failure degrades to the plain RuntimeError.
+            try:
+                from nexus_scalp.database.config_diagnostics import effective_config_diagnostics
+
+                report = effective_config_diagnostics(cfg, settings_db_path=settings_db_path())
+                raise RuntimeError(f"{exc}\n[PG_CONFIG_DIAGNOSTICS {report}]") from exc
+            except RuntimeError:
+                raise
+            except Exception:
+                raise RuntimeError(exc) from exc
+        raise
     except Exception:  # pragma: no cover - settings DB unavailable / malformed
         pass
     return decisions_db_path()

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import sqlite3
 import sys
@@ -269,6 +270,34 @@ def _pg_conflict_hint(cfg: Any, env: dict[str, str] | None = None) -> str:
         + "). Clear it (env -u NSE_DATABASE__PG_USER ...) or run "
         "`nexus db-portability switch postgresql` to persist the new value."
     )
+
+
+def _pg_failure_diagnostics(
+    cfg: Any, settings_db_path: str | None = None, secret_root: Path | None = None
+) -> dict[str, Any]:
+    """Redacted effective-config diagnostics for a DATABASE failure report.
+
+    HEALTH-DBPROVENANCE: the operator needs to know WHICH layer of the
+    resolver's precedence ladder supplied the field that just failed. On the
+    incident, ``password authentication failed for user "postgres"`` did not
+    say whether the role came from the persisted
+    ``database.postgresql_config`` row or from an
+    ``NSE_DATABASE__PG_USER`` export — and the remediation depended entirely
+    on which one it was.
+
+    Never raises and never blocks the health entry: a diagnostics failure
+    degrades to an empty marker, not a broken doctor run. Never emits
+    credential material (see config_diagnostics: fields + sources only, the
+    password as a boolean).
+    """
+    try:
+        from nexus_scalp.database.config_diagnostics import effective_config_diagnostics
+
+        return effective_config_diagnostics(
+            cfg, settings_db_path=settings_db_path, secret_root=secret_root
+        )
+    except Exception:  # pragma: no cover - diagnostics must never break doctor
+        return {}
 
 
 def _postgres_failure_suggestion(err: str, cfg: Any, env: dict[str, str] | None = None) -> str:
@@ -700,13 +729,29 @@ class HealthEngine:
             # point at the exact knob. The env-vs-persisted hint is only
             # offered when the resolver actually applied an override.
             suggestion = _postgres_failure_suggestion(err, cfg, env=dict(os.environ))
-            return HealthEntry(
+            entry = HealthEntry(
                 "DATABASE",
                 verdict,
                 f"{label}: {status} ({err})",
                 suggestion,
                 state=state,
             )
+            # HEALTH-DBPROVENANCE: attach the redacted diagnostics so the
+            # operator sees WHICH source supplied WHICH field. Auth failures
+            # are the case the incident turned on, but any disconnected
+            # server deserves the same provenance evidence. Never crashes
+            # the entry, never carries a secret (config_diagnostics
+            # contract), JSON-serializable for the web surface.
+            diag = _pg_failure_diagnostics(cfg)
+            if diag:
+                try:
+                    entry.suggestion = (
+                        f"{entry.suggestion} "
+                        f"[PG_CONFIG_DIAGNOSTICS {json.dumps(diag, sort_keys=True, default=str)}]"
+                    )
+                except (TypeError, ValueError):
+                    pass
+            return entry
         missing = [t for t, s in (snap.get("critical_tables") or {}).items() if s != "OK"]
         detail = f"{label}: connected, {tables} tables"
         if snap.get("schema_version") is not None:

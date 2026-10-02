@@ -609,6 +609,44 @@ def resolve_password(cfg: DatabaseConfig, secret_store: SecureSecretStore | None
     return pw
 
 
+# -- diagnostics export (additive; the resolver itself is untouched) --------
+# GROUND_TRUTH §C2: one canonical effective-config diagnostic lives in
+# nexus_scalp.database.config_diagnostics. Re-exported here so callers of
+# the config module reach the provenance report without a second import
+# path — and so the resolver's docstring ladder and its reporting surface
+# stay visibly paired.
+from nexus_scalp.database.config_diagnostics import (  # noqa: E402
+    SOURCE_AUDIT_SEAM,
+    SOURCE_DEFAULT,
+    SOURCE_ENV,
+    SOURCE_PERSISTED,
+    SOURCE_SEAM,
+    SOURCE_UNKNOWN,
+    ConfigDiagnosticsResult,
+    effective_config_diagnostics,
+)
+
+__all__ = [
+    "PG_CONFIG_SETTING_KEY",
+    "PG_PASSWORD_SECRET_KEY",
+    "PROVIDER_SETTING_KEY",
+    "SOURCE_AUDIT_SEAM",
+    "SOURCE_DEFAULT",
+    "SOURCE_ENV",
+    "SOURCE_PERSISTED",
+    "SOURCE_SEAM",
+    "SOURCE_UNKNOWN",
+    "ConfigDiagnosticsResult",
+    "DatabaseConfig",
+    "DatabaseConfigError",
+    "build_postgres_url",
+    "effective_config_diagnostics",
+    "load_database_config",
+    "mask_url_password",
+    "resolve_password",
+]
+
+
 def build_postgres_url(cfg: DatabaseConfig, secret_store: SecureSecretStore | None = None) -> str:
     """Assemble the real PostgreSQL URL, injecting the secret password."""
     pw = resolve_password(cfg, secret_store)
