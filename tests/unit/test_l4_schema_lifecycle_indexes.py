@@ -295,7 +295,7 @@ class TestR8DuplicateReleaseMetadataKey:
 
 
 # ---------------------------------------------------------------------------
-# Registry / manifest SSOT agreement (BUG-194 pin, extended to v11)
+# Registry / manifest SSOT agreement (BUG-194 pin, extended to v11, then v12)
 # ---------------------------------------------------------------------------
 
 
@@ -305,8 +305,8 @@ class TestSchemaVersionAgreement:
             DatabaseDomain.AUDIT
         )
 
-    def test_expected_version_is_11(self) -> None:
-        assert expected_version_for_domain(DatabaseDomain.AUDIT) == 11
+    def test_expected_version_is_12(self) -> None:
+        assert expected_version_for_domain(DatabaseDomain.AUDIT) == 12
 
     def test_manifest_declares_the_new_indexes(self) -> None:
         expected = MANIFESTS[DatabaseDomain.AUDIT].expected_indexes()

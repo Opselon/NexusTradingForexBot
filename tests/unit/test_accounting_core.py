@@ -1113,6 +1113,77 @@ class TestStrategyAttribution:
         assert trades[0].strategy_id == ""
         assert trades[0].experience_id == ""
 
+    def test_duplicate_ledger_tickets_do_not_duplicate_lookups(self, audit, core) -> None:
+        """Two records for the same ticket still resolve to ONE lookup.
+
+        The ticket list is deduplicated before the IN-list is built (the P0
+        pg-read fix). `records` can repeat a ticket — the same position's
+        entries/exits — and the caller consumes the result purely as a
+        {ticket: row} map, so the repeats were only extra placeholders for the
+        planner to cost: no extra rows, no extra semantics. Asserted directly
+        on _attach_identity so the test does not depend on the ledger's own
+        ticket dedup making duplicates visible at the load_trades boundary.
+        """
+        ledger = ExperienceLedger(audit_repo=audit)
+        core.experience_ledger = ledger
+        decision_ts = datetime(2026, 8, 15, 9, 0, tzinfo=UTC)
+        outcome_ts = decision_ts + timedelta(minutes=5)
+        _seed_experience(
+            ledger,
+            request_id="req_dup",
+            execution_id="555",
+            strategy_id="strat_dup",
+            decision_ts=decision_ts,
+            outcome_ts=outcome_ts,
+            realized_pnl=10.0,
+            realized_r=0.5,
+        )
+        _ledger_closed(
+            audit,
+            555,
+            exit_price=2001.0,
+            pnl=11.0,
+            close_ts=outcome_ts,
+            exit_mechanism="TAKE_PROFIT_HIT",
+        )
+        # Drive _attach_identity with the SAME ticket twice.
+        base = core.load_trades()
+        assert len(base) == 1
+        out = core._attach_identity(list(base) * 4)
+        assert len(out) == 4
+        assert all(t.strategy_id == "strat_dup" for t in out)
+        assert all(t.experience_id == "exp_req_dup" for t in out)
+
+    def test_repeated_load_trades_stay_stable(self, audit, core) -> None:
+        """The dedup path is stable across calls (no cached-state drift)."""
+        ledger = ExperienceLedger(audit_repo=audit)
+        core.experience_ledger = ledger
+        decision_ts = datetime(2026, 8, 15, 9, 0, tzinfo=UTC)
+        outcome_ts = decision_ts + timedelta(minutes=5)
+        _seed_experience(
+            ledger,
+            request_id="req_rep",
+            execution_id="444",
+            strategy_id="strat_rep",
+            decision_ts=decision_ts,
+            outcome_ts=outcome_ts,
+            realized_pnl=10.0,
+            realized_r=0.5,
+        )
+        _ledger_closed(
+            audit,
+            444,
+            exit_price=2001.0,
+            pnl=11.0,
+            close_ts=outcome_ts,
+            exit_mechanism="TAKE_PROFIT_HIT",
+        )
+        for _ in range(3):
+            trades = core.load_trades()
+            assert len(trades) == 1
+            assert trades[0].strategy_id == "strat_rep"
+            assert trades[0].experience_id == "exp_req_rep"
+
     def test_strategy_contributions_aggregate(self, audit, core) -> None:
         ledger = ExperienceLedger(audit_repo=audit)
         core.experience_ledger = ledger
