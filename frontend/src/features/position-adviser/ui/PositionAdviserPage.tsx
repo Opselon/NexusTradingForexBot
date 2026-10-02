@@ -227,7 +227,7 @@ export default function PositionAdviserPage(_props: ShellPageProps) {
             return;
           }
           args.setData(null);
-          args.setError(errorDetailText(err));
+          args.setError("");
           return;
         }
         // 409 = the route exists but has no sample yet (no model loaded or no
