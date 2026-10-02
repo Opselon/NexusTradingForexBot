@@ -255,7 +255,7 @@ def test_md7_loop_duplicate_guard_reads_engine_state_not_wrapper() -> None:
         "the pre-fix DEAD-CODE wrapper read must never come back"
     )
     # Legacy engine stamps preserved (other readers rely on them).
-    assert 'self.om._pipeline_last_ts = tick.timestamp' in src
+    assert "self.om._pipeline_last_ts = tick.timestamp" in src
 
     # The tracker is real state on the loop (constructed, not assumed):
     init_src = inspect.getsource(RuntimeLoop.__init__)

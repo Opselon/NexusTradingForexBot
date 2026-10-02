@@ -677,9 +677,7 @@ class RuntimeLoop:
                     # broker's real tick grid (one-shot; pure in-memory).
                     with contextlib.suppress(Exception):
                         self.om.signal_policy.configure_decision_identity(
-                            tick_size=float(
-                                getattr(self.om._symbol_info, "tick_size", 0.0) or 0.0
-                            )
+                            tick_size=float(getattr(self.om._symbol_info, "tick_size", 0.0) or 0.0)
                             or None
                         )
 
