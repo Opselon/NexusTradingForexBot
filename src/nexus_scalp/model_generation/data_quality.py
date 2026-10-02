@@ -434,9 +434,9 @@ class DataQualityCertifier:
             negative_volume = int(np.sum(vol_finite < 0))
             if self.reject_zero_volume:
                 zero_mask = np.isfinite(vol) & (vol == 0)
-                for i in np.nonzero(zero_mask)[0]:
-                    if i < len(keep_mask):
-                        keep_mask[int(i)] = False
+                for row_idx in np.nonzero(zero_mask)[0]:
+                    if int(row_idx) < len(keep_mask):
+                        keep_mask[int(row_idx)] = False
                 if zero_volume:
                     rejection_breakdown["ZERO_VOLUME"] = zero_volume
             if negative_volume:
