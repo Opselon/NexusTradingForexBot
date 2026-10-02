@@ -915,6 +915,76 @@ class PostgreSQLDriver(DatabaseDriver):
             if own:
                 c.close()
 
+    def execute_upsert(
+        self,
+        sql: str,
+        params: Sequence[Any],
+        *,
+        table: str | None = None,
+        conflict_target: Sequence[str] | None = None,
+        conn: Any = None,
+    ) -> Any:
+        """Execute a driver-generated single-row upsert (PostgreSQL).
+
+        Overrides the base seam for one reason: the generic ``execute`` this
+        would otherwise route through re-runs the placeholder translator, and
+        the statement ``build_upsert_statement`` emits already speaks psycopg's
+        ``format`` paramstyle (``%s``). Translating it again is a no-op for the
+        placeholders but would double any literal ``%`` in a value-bearing
+        column list, so the generated statement goes to the server unchanged.
+        """
+        from nexus_scalp.database.drivers.base import (
+            BindArityError,
+            _table_of,
+            build_upsert_statement,
+            check_bind_arity,
+            parse_upsert_columns,
+            statement_shape,
+        )
+
+        columns = parse_upsert_columns(sql)
+        if columns is None:
+            raise ValueError(
+                "postgresql.execute_upsert: statement is not a single-row "
+                "INSERT INTO <table> (<columns>) statement"
+            )
+        if len(columns) != len(params):
+            from nexus_scalp.database.drivers.base import _log_bind_arity_failure
+
+            _log_bind_arity_failure(
+                "execute_upsert", statement_shape(sql), len(columns), len(params), self.name
+            )
+            raise BindArityError(sql, len(columns), len(params), self.name)
+        resolved_table = table or _table_of(sql) or ""
+        if not resolved_table:
+            raise ValueError("postgresql.execute_upsert: cannot read the target table")
+        if conflict_target is None:
+            from nexus_scalp.database.upsert import upsert_columns
+
+            conflict_target = upsert_columns(resolved_table)
+        statement = build_upsert_statement(
+            resolved_table,
+            columns,
+            conflict_target=conflict_target,
+            paramstyle=self.paramstyle,
+        )
+        check_bind_arity(statement, params, driver=self.name, operation="execute_upsert")
+        active_tx = getattr(self, "_active_tx_conn", None)
+        if conn is None and active_tx is not None:
+            conn = active_tx  # join the open transaction (no autocommit)
+        own = conn is None
+        c = conn or self.connect()
+        try:
+            # The generated statement is already psycopg-native; the guard is
+            # the only translation applied here.
+            cur = c.execute(assert_safe_sql(statement), tuple(params))
+            if own:
+                c.commit()
+            return cur
+        finally:
+            if own:
+                c.close()
+
     def query(self, sql: str, args: Sequence[Any] = (), conn: Any = None) -> list[dict[str, Any]]:
         own = conn is None
         c = conn or self.connect()

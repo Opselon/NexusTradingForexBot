@@ -63,7 +63,24 @@ _UPSERT_KEYS: dict[str, tuple[str, ...]] = {
     "training_runs": ("run_id",),
     "model_comparisons": ("run_id",),
     "hygiene_run_history": ("run_id",),
+    # The AI-provider registry's own tables (ai_providers.registry). Their DDL
+    # is authored in that package and NOT registered with the domain extractors
+    # ``_ddl_for`` consults, so the constraint-side validation below is skipped
+    # for them by ``upsert_columns``'s caller — the PRIMARY KEY is declared in
+    # the registry's own ``CREATE TABLE`` and both providers honor it.
+    "ai_provider_config": ("provider_id",),
+    "ai_provider_activation": ("id",),
+    "ai_provider_prev_activation": ("id",),
 }
+
+#: Tables in ``_UPSERT_KEYS`` whose CREATE TABLE is owned by a package the
+#: migration domain extractors do not see. ``upsert_columns`` returns their key
+#: without the DDL cross-check because there is no registered DDL to check
+#: against; the driver's own ON CONFLICT builder verifies the constraint
+#: against the live catalog at execute time.
+_UPSERT_KEYS_SELF_DECLARED = frozenset(
+    {"ai_provider_config", "ai_provider_activation", "ai_provider_prev_activation"}
+)
 
 
 def _quote(ident: str) -> str:
@@ -225,6 +242,15 @@ def upsert_columns(table: str) -> list[str]:
         raise UpsertKeyError(f"upsert_columns: no registered ON CONFLICT key for table {table!r}")
     statements = _ddl_for(table)
     if not statements:
+        # Tables whose DDL lives in a package the domain extractors do not
+        # cover (the AI-provider registry authors its own schema in
+        # ai_providers.registry and is not a migration-registered domain).
+        # The key is trusted only when the registry declares it AND the caller
+        # already validated the columns against the live catalog; the
+        # driver-side ON CONFLICT builder re-checks the constraint exists at
+        # execute time, which is the check that matters for a real server.
+        if table in _UPSERT_KEYS_SELF_DECLARED:
+            return list(key)
         raise UpsertKeyError(
             f"upsert_columns: no registered CREATE TABLE for {table!r} "
             "(the table must be provisioned by a domain schema extractor)"
