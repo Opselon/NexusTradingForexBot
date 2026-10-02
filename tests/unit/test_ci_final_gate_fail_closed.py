@@ -310,3 +310,38 @@ def test_classify_gate_covers_all_downstream_checks(tmp_path: Path) -> None:
     assert "layered_smoke=blocked" in r.stdout
     # Crucially, zero missing results!
     assert "MISSING RESULTS" not in r.stdout
+
+
+def test_rich_report_renders_under_non_utf8_output(tmp_path: Path) -> None:
+    """The rich gate report must survive a cp1252 (windows-latest) stdout.
+
+    Regression for the OS-Matrix red on every main push: the U+1F534 rule banner
+    raised UnicodeEncodeError under the runner's default charmap codec, which
+    truncated stdout before the diagnostic traces were emitted and broke all
+    four diagnostic-extraction tests. The console is now wrapped in a UTF-8
+    text layer, so the full report (including the glyph) is produced on any OS.
+    """
+
+    root = _init_tree(tmp_path)
+    for check in CHECKS:
+        _record(root, check, "0")
+    _record(root, "ruff_lint", "1", "violations found")
+    lint_payload = [
+        {
+            "filename": "src/nexus_scalp/risk/risk_engine.py",
+            "location": {"row": 42, "column": 5},
+            "code": "F401",
+            "message": "'sys' imported but unused",
+        }
+    ]
+    ruff_dir = root / "ruff"
+    ruff_dir.mkdir(exist_ok=True)
+    (ruff_dir / "lint.json").write_text(json.dumps(lint_payload), encoding="utf-8")
+
+    r = _run_gate(root, env_extra={"PYTHONIOENCODING": "cp1252", "PYTHONUTF8": "0"})
+
+    assert r.returncode == 1, "a failing ruff_lint must fail the gate"
+    assert "FAILING CHECKS: ruff_lint" in r.stdout
+    # The diagnostic trace that the UnicodeEncodeError used to eat:
+    assert "src/nexus_scalp/risk/risk_engine.py" in r.stdout
+    assert "F401" in r.stdout
