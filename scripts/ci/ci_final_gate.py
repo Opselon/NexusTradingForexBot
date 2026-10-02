@@ -540,32 +540,122 @@ def emit_github_annotations(diagnostics: list[StepDiagnostic]) -> None:
             print(f"::error{p_str}::{escaped}")
 
 
-def _utf8_console(width: int = 120) -> Console:
-    """A rich console that cannot die on non-UTF-8 default output encodings.
+_ASCII_STANDINS = {
+    "\U0001f534": "[FAIL]",
+    "\u274c": "[FAIL]",
+    "\u2705": "[PASS]",
+    "\u23ed\ufe0f": "[SKIP]",
+    "\U0001f4a5": "[BREAK]",
+    "\U0001f50d": "[TRACE]",
+    "\u2014": "-",
+    # rich rule/table borders draw with box-drawing characters; the terminal
+    # report must stay 7-bit clean so a cp1252 reader cannot choke on it.
+    "\u2500": "-",
+    "\u2501": "=",
+    "\u2502": "|",
+    "\u2503": "|",
+    "\u250c": "+",
+    "\u250f": "+",
+    "\u2510": "+",
+    "\u2513": "+",
+    "\u2514": "+",
+    "\u2517": "+",
+    "\u2518": "+",
+    "\u251b": "+",
+    "\u251c": "+",
+    "\u2523": "+",
+    "\u2524": "+",
+    "\u252b": "+",
+    "\u252c": "-",
+    "\u2533": "-",
+    "\u2534": "-",
+    "\u253b": "-",
+    "\u2540": "+",
+    "\u2541": "+",
+    "\u2542": "+",
+    "\u2543": "+",
+    "\u2544": "+",
+    "\u2545": "+",
+    "\u2546": "+",
+    "\u2547": "+",
+    "\u2548": "+",
+    "\u2549": "+",
+    "\u254a": "+",
+    "\u254b": "+",
+    "\u254c": "-",
+    "\u254d": "-",
+    "\u254e": "-",
+    "\u254f": "-",
+    "\u2550": "=",
+    "\u2551": "|",
+    "\u2554": "+",
+    "\u2557": "+",
+    "\u255a": "+",
+    "\u255d": "+",
+}
 
-    On the windows-latest CI runner the process locale is cp1252, so a rich
-    Console writing to the captured stdout raises UnicodeEncodeError on the
-    first non-ASCII glyph (the U+1F534 rule banner). That truncated the gate's
-    stdout before the diagnostic traces were emitted, which is exactly what the
-    fail-closed regression tests assert on. Route through a UTF-8 text wrapper
-    instead so the report renders on every OS leg.
+
+def _ascii_safe(text: str) -> str:
+    """Replace the terminal report's non-ASCII glyphs with ASCII stand-ins.
+
+    The terminal report is machine-readable stdout, and it must survive every
+    combination of process locale and pipe encoding on all OS legs. The
+    windows-latest runner speaks cp1252, so the emoji broke the write side
+    (UnicodeEncodeError on U+1F534) and, once that was fixed, the read side
+    (UnicodeDecodeError on 0x90, a trailing byte of the emoji's UTF-8
+    encoding, raised when the test parent decodes the pipe with its own
+    charmap locale). Markdown output goes through an explicit UTF-8 file
+    handle and keeps its full glyph set.
+    """
+
+    out = text
+    for glyph, standin in _ASCII_STANDINS.items():
+        out = out.replace(glyph, standin)
+    if out.isascii():
+        return out
+    # Defensive last mile: never let an unanticipated glyph (a new emoji in a
+    # failure message, a non-Latin filename) break the pipe for a reader using
+    # a narrow default codec. Markdown keeps the exact characters.
+    return out.encode("ascii", "backslashreplace").decode("ascii")
+
+
+def _ascii_console(width: int = 120) -> Console:
+    """A rich console whose rendered output is guaranteed 7-bit clean.
+
+    The terminal report is machine-readable stdout that must survive every
+    combination of writer locale and reader locale on all OS legs. The
+    windows-latest runner speaks cp1252, so the emoji broke the write side
+    (UnicodeEncodeError on U+1F534) and the box-drawing characters broke the
+    read side once that was fixed (UnicodeDecodeError on 0x90 when the test
+    parent decodes the pipe with its own charmap locale). Wrapping the raw
+    stdout buffer in an ASCII/backslashreplace text layer makes every byte the
+    console can ever emit decodable by any single-byte codec; the emoji
+    stand-ins in ``_ascii_safe`` keep the common glyphs readable, and this
+    layer is the guarantee for anything rich draws on its own. Markdown
+    output goes through an explicit UTF-8 file handle and keeps full glyphs.
     """
 
     target: IO[str] = sys.stdout
     try:
         enc = (getattr(sys.stdout, "encoding", None) or "").lower()
-        if enc and enc.replace("-", "") not in ("utf8", "utf16", "utf32"):
+        if enc and enc.replace("-", "").replace("_", "") not in (
+            "utf8",
+            "utf16",
+            "utf32",
+            "usascii",
+            "ascii",
+        ):
             wrapper = io.TextIOWrapper(
-                sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True
+                sys.stdout.buffer, encoding="ascii", errors="backslashreplace", line_buffering=True
             )
-            _UTF8_WRAPPERS.append(wrapper)  # keep the wrapper alive for the process
+            _CONSOLE_WRAPPERS.append(wrapper)  # keep the wrapper alive for the process
             target = wrapper
     except Exception:
         pass
     return Console(file=target, width=width, force_terminal=True)
 
 
-_UTF8_WRAPPERS: list[IO[str]] = []
+_CONSOLE_WRAPPERS: list[IO[str]] = []
 
 
 def render_rich_report(
@@ -579,9 +669,9 @@ def render_rich_report(
         _render_plain_report(statuses, diagnostics, blocked, failed, missing)
         return
 
-    console = _utf8_console(width=120)
+    console = _ascii_console(width=120)
     console.print()
-    console.rule("[bold red]🔴 CI GATE RESULTS & DIAGNOSTIC TRACES[/bold red]")
+    console.rule(_ascii_safe("[bold red]\U0001f534 CI GATE RESULTS & DIAGNOSTIC TRACES[/bold red]"))
     console.print()
 
     summary_table = Table(
@@ -604,7 +694,9 @@ def render_rich_report(
             st_text = "[bold red]FAILED[/bold red]"
 
         v_count = len(diag.failures) if diag.failures else 0
-        v_summary = f"{v_count} violation(s) / trace(s)" if v_count else (diag.detail or "—")
+        v_summary = (
+            f"{v_count} violation(s) / trace(s)" if v_count else _ascii_safe(diag.detail or "—")
+        )
         summary_table.add_row(diag.check, st_text, str(diag.exit_code), v_summary)
 
     console.print(summary_table)
@@ -616,7 +708,10 @@ def render_rich_report(
 
     console.rule("[bold red]Detailed Step Failures, Locations & Traces[/bold red]")
     for diag in failing_diags:
-        panel_title = f"[bold white on red] ❌ STEP: {diag.check} [/bold white on red] (exit code {diag.exit_code})"
+        panel_title = _ascii_safe(
+            f"[bold white on red] \u274c STEP: {diag.check} [/bold white on red]"
+            f" (exit code {diag.exit_code})"
+        )
         detail_table = Table(show_header=True, header_style="bold cyan", expand=True)
         detail_table.add_column("#", width=4)
         detail_table.add_column("Location (File:Line:Col)", style="yellow", width=36)
@@ -624,23 +719,30 @@ def render_rich_report(
         detail_table.add_column("Message / Context")
 
         for idx, f in enumerate(diag.failures, 1):
-            loc_str = f.file or "—"
+            loc_str = _ascii_safe(f.file or "—")
             if f.line:
                 loc_str += f":{f.line}"
                 if f.column:
                     loc_str += f":{f.column}"
-            detail_table.add_row(str(idx), loc_str, f.rule_or_type or "—", f.message or "—")
+            detail_table.add_row(
+                str(idx), loc_str, _ascii_safe(f.rule_or_type or "—"), _ascii_safe(f.message or "—")
+            )
 
         console.print(Panel(detail_table, title=panel_title, border_style="red"))
 
         for f in diag.failures:
             if f.traceback:
-                header = (
-                    f"[bold red]── Traceback: {f.test_node or f.file or diag.check} ──[/bold red]"
+                header = _ascii_safe(
+                    f"[bold red]\u2500\u2500 Traceback: {f.test_node or f.file or diag.check}"
+                    f" \u2500\u2500[/bold red]"
                 )
                 console.print(header)
-                syntax = Syntax(f.traceback.strip(), "python", theme="monokai", line_numbers=False)
-                console.print(Panel(syntax, border_style="red", title=f.test_node or "Bug Trace"))
+                syntax = Syntax(
+                    _ascii_safe(f.traceback.strip()), "python", theme="monokai", line_numbers=False
+                )
+                console.print(
+                    Panel(syntax, border_style="red", title=_ascii_safe(f.test_node or "Bug Trace"))
+                )
                 console.print()
 
 

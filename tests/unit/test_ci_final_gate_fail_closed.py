@@ -313,13 +313,22 @@ def test_classify_gate_covers_all_downstream_checks(tmp_path: Path) -> None:
 
 
 def test_rich_report_renders_under_non_utf8_output(tmp_path: Path) -> None:
-    """The rich gate report must survive a cp1252 (windows-latest) stdout.
+    """The rich gate report must survive a cp1252 (windows-latest) pipe, both ends.
 
-    Regression for the OS-Matrix red on every main push: the U+1F534 rule banner
-    raised UnicodeEncodeError under the runner's default charmap codec, which
-    truncated stdout before the diagnostic traces were emitted and broke all
-    four diagnostic-extraction tests. The console is now wrapped in a UTF-8
-    text layer, so the full report (including the glyph) is produced on any OS.
+    Regression for the OS-Matrix red on every main push. Two distinct failures
+    on the windows-latest runner, whose process locale is cp1252:
+
+    1. the write side — rich's U+1F534 rule banner raised UnicodeEncodeError,
+       which truncated stdout before the diagnostic traces were emitted and
+       broke all four diagnostic-extraction tests;
+    2. the read side — once the write side was fixed, the emoji's UTF-8 bytes
+       (0x90 trailing byte) still raised UnicodeDecodeError when the test
+       parent decoded the pipe with its own charmap locale, so ``r.stdout``
+       came back None.
+
+    The console is now wrapped in an ASCII/backslashreplace text layer with
+    ASCII stand-ins for the glyphs, so the report is 7-bit clean and decodable
+    by any single-byte codec. Markdown output keeps its full glyph set.
     """
 
     root = _init_tree(tmp_path)
@@ -341,6 +350,10 @@ def test_rich_report_renders_under_non_utf8_output(tmp_path: Path) -> None:
     r = _run_gate(root, env_extra={"PYTHONIOENCODING": "cp1252", "PYTHONUTF8": "0"})
 
     assert r.returncode == 1, "a failing ruff_lint must fail the gate"
+    assert r.stdout is not None, (
+        "stdout was None — the parent hit UnicodeDecodeError decoding the pipe "
+        "(the read-side half of this bug)"
+    )
     assert "FAILING CHECKS: ruff_lint" in r.stdout
     # The diagnostic trace that the UnicodeEncodeError used to eat:
     assert "src/nexus_scalp/risk/risk_engine.py" in r.stdout
