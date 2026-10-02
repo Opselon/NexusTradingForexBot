@@ -107,6 +107,16 @@ class NewsEngine:
         stops the others.
         """
         sources = self.db.list_sources(enabled_only=True)
+        # A source the fetcher has already flagged misconfigured (no feed_url
+        # — a configuration error, not a transient failure) is never due
+        # again. The fetcher reports it ONCE at WARNING; re-polling it every
+        # cycle would spin a permanent failure generator for the process
+        # lifetime. Read through the fetcher's health cache so the flag
+        # survives without a schema change on news_sources.
+        flagged = getattr(self.fetcher, "_health", {}) or {}
+        sources = [
+            s for s in sources if not (flagged.get(s["source_id"]) or {}).get("misconfigured")
+        ]
         due = self.scheduler.due_sources(sources)
         stats: dict[str, Any] = {
             "sources_polled": 0,
