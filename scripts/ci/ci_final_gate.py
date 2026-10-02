@@ -20,6 +20,7 @@ Local probe (no CI needed):
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
@@ -27,6 +28,7 @@ import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import IO
 
 try:
     from rich.console import Console
@@ -538,6 +540,34 @@ def emit_github_annotations(diagnostics: list[StepDiagnostic]) -> None:
             print(f"::error{p_str}::{escaped}")
 
 
+def _utf8_console(width: int = 120) -> Console:
+    """A rich console that cannot die on non-UTF-8 default output encodings.
+
+    On the windows-latest CI runner the process locale is cp1252, so a rich
+    Console writing to the captured stdout raises UnicodeEncodeError on the
+    first non-ASCII glyph (the U+1F534 rule banner). That truncated the gate's
+    stdout before the diagnostic traces were emitted, which is exactly what the
+    fail-closed regression tests assert on. Route through a UTF-8 text wrapper
+    instead so the report renders on every OS leg.
+    """
+
+    target: IO[str] = sys.stdout
+    try:
+        enc = (getattr(sys.stdout, "encoding", None) or "").lower()
+        if enc and enc.replace("-", "") not in ("utf8", "utf16", "utf32"):
+            wrapper = io.TextIOWrapper(
+                sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True
+            )
+            _UTF8_WRAPPERS.append(wrapper)  # keep the wrapper alive for the process
+            target = wrapper
+    except Exception:
+        pass
+    return Console(file=target, width=width, force_terminal=True)
+
+
+_UTF8_WRAPPERS: list[IO[str]] = []
+
+
 def render_rich_report(
     statuses: dict[str, str],
     diagnostics: list[StepDiagnostic],
@@ -549,7 +579,7 @@ def render_rich_report(
         _render_plain_report(statuses, diagnostics, blocked, failed, missing)
         return
 
-    console = Console(width=120, force_terminal=True)
+    console = _utf8_console(width=120)
     console.print()
     console.rule("[bold red]🔴 CI GATE RESULTS & DIAGNOSTIC TRACES[/bold red]")
     console.print()
