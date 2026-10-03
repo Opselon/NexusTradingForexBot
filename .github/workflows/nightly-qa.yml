@@ -111,6 +111,7 @@ jobs:
         # child processes we own — never the operator's real profile,
         # never production install paths, never a real engine/MT5.
         run: |
+          New-Item -ItemType Directory -Force -Path "$CI_RESULTS_DIR/chaos" | Out-Null
           pytest tests/unit/test_lifecycle_chaos.py `
                  tests/unit/test_update_lifecycle_scenarios.py `
                  -q --tb=short `
