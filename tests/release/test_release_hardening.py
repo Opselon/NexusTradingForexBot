@@ -108,7 +108,7 @@ def test_release_yml_bakes_the_go_api_plane() -> None:
     pyinstaller_idx = src.find("name: PyInstaller onedir")
     assert pyinstaller_idx > build_idx, "the Go build must run before PyInstaller"
 
-    adddata = src[pyinstaller_idx:src.find("name: PyInstaller onefile CLI")]
+    adddata = src[pyinstaller_idx : src.find("name: PyInstaller onefile CLI")]
     assert "go-api" in adddata, (
         "the onedir build no longer add-data's the go-api ship dir — ISCC would "
         "then fail on the .iss go-api contract entry"
@@ -118,15 +118,36 @@ def test_release_yml_bakes_the_go_api_plane() -> None:
 def test_release_yml_go_build_uses_the_ship_dir_the_adddata_references() -> None:
     """The build step's output dir must be exactly the dir add-data consumes."""
     src = RELEASE_YML.read_text(encoding="utf-8")
-    build_idx = src.find("Build Go API plane")
-    adddata_idx = src.find("--add-data", src.find("name: PyInstaller onedir"))
-    ship = re.search(r'Join-Path \$PWD "([^"]*go-api)"', src[build_idx:adddata_idx])
-    consume = re.search(r"--add-data [`\"]?\$PWD\\([^;`\" ]*go-api)", src[adddata_idx:])
-    assert ship and consume, "could not locate the ship dir and its add-data consumer"
-    assert ship.group(1).replace("\\", "/") == consume.group(1).replace("\\", "/"), (
-        f"build writes to {ship.group(1)!r} but PyInstaller consumes {consume.group(1)!r}"
+    build_step = src[src.find("Build Go API plane") :]
+    # The build step runs with working-directory: go-api, so a $PWD-relative
+    # ship dir lands under go-api/... while PyInstaller (rooted at the repo
+    # root) consumes $PWD\release\build\... — the paths must be reconciled
+    # through GITHUB_WORKSPACE, not $PWD.
+    has_wd = "working-directory: go-api" in build_step
+    # the anchor must be a repo-rooted variable ($env:GITHUB_WORKSPACE or an
+    # explicit $RepoRoot over it) — never bare $PWD under that working dir
+    ship = re.search(r'Join-Path (\$\S+) "([^"]*go-api)"', build_step)
+    assert ship, "could not locate the go-api ship dir in the build step"
+    anchor, ship_dir = ship.group(1), ship.group(2)
+    onedir = src[src.find("name: PyInstaller onedir") :]
+    consume = re.search(r"--add-data [`\"]?\$PWD\\([^;`\" ]*go-api)", onedir)
+    assert consume, "could not locate the go-api add-data consumer in the onedir build"
+    if has_wd:
+        # under working-directory: go-api the ship dir MUST be anchored at the
+        # workspace root: $PWD there is the go-api module dir, so the same
+        # relative path lands under go-api/ and PyInstaller never sees it.
+        # An indirection ($RepoRoot = $env:GITHUB_WORKSPACE) is fine as long
+        # as the assignment is itself rooted.
+        if "GITHUB_WORKSPACE" not in anchor:
+            assignment = re.search(r"(\$\S+)\s*=\s*(.*)", build_step.split("Join-Path")[0])
+            assert assignment and "GITHUB_WORKSPACE" in assignment.group(2), (
+                f"build runs under working-directory: go-api but anchors the ship "
+                f"dir at {anchor!r} — that resolves to go-api/... and PyInstaller "
+                f"never finds the dir it add-data's"
+            )
+    assert ship_dir.replace("\\", "/") == consume.group(1).replace("\\", "/"), (
+        f"build writes to {ship_dir!r} but PyInstaller consumes {consume.group(1)!r}"
     )
-
 
 
 # ---------------------------------------------------------------------------
