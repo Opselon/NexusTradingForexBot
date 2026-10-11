@@ -261,7 +261,8 @@ jobs:
           # exactly. At runtime a missing binary falls back to the Python FastAPI
           # plane, so a release that omits it is a broken release — this is why
           # installer/NexusScalpEngine.iss asserts the file exists.
-          $GoApiShipDir = Join-Path $PWD "release\build\windows-x64\go-api"
+          $RepoRoot = $env:GITHUB_WORKSPACE
+          $GoApiShipDir = Join-Path $RepoRoot "release\build\windows-x64\go-api"
           if (Test-Path $GoApiShipDir) { Remove-Item $GoApiShipDir -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $GoApiShipDir | Out-Null
           $GoExe = & python -c "from nexus_scalp.web.go_api_bootstrap import _find_go; print(_find_go() or '')"
