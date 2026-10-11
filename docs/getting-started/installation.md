@@ -16,6 +16,35 @@ Download `NexusScalpEngine-<version>-win-x64-setup.exe` (or the portable ZIP
 The installer bundles the full Python runtime (PyInstaller) — you never touch
 Python, pip or PyTorch.
 
+### One command (recommended)
+
+```powershell
+iex (irm https://raw.githubusercontent.com/Opselon/NexusTradingForexBot/main/installer/install-release.ps1)
+```
+
+That downloads the release installer, verifies the payload against its
+published SHA-256 digest **before** installing anything, runs the per-user
+installer (no admin), then makes the installed build prove itself
+(`verify-release`). Nothing is installed unless every check passes. Useful
+variants:
+
+```powershell
+# pin an exact release (skips the GitHub API lookup entirely - use this on
+# rate-limited or locked-down networks)
+iex (irm https://raw.githubusercontent.com/Opselon/NexusTradingForexBot/main/installer/install-release.ps1) -Version 9.1.0
+
+# portable ZIP instead of the setup.exe
+iex (irm https://raw.githubusercontent.com/Opselon/NexusTradingForexBot/main/installer/install-release.ps1) -Portable
+
+# see exactly what would happen: no download, no install, no mutation
+iex (irm https://raw.githubusercontent.com/Opselon/NexusTradingForexBot/main/installer/install-release.ps1) -DryRun
+```
+
+Full parameter and exit-code reference:
+[`docs/INSTALL_WINDOWS.md`](https://github.com/Opselon/NexusTradingForexBot/blob/main/docs/INSTALL_WINDOWS.md).
+
+### Manually
+
 1. Run the installer (per-user, **no admin**) or unpack the portable ZIP.
 2. First run opens the **setup wizard** (`nexus setup`): compatibility report →
    mode (**default: PAPER**, never silently LIVE) → symbol → health check.
