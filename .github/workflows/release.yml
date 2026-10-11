@@ -549,13 +549,25 @@ jobs:
                     Set-Content "$Out\checksums\SHA256SUMS.txt" $lines -Encoding ascii
           python -c "import sys; sys.path.insert(0,'src'); from pathlib import Path; from nexus_scalp.release import packaging as p; root=Path(r'$Out'); arts=list(root.glob('portable/*.exe'))+list(root.glob('cli/*.exe'))+list(root.glob('*.zip'))+list(root.glob('*-setup.exe')); p.generate_manifest(arts, root/'manifests'/'release-manifest.json', channel='stable', base_dir=root); p.generate_sbom(out=root/'sbom'/'sbom.spdx.json'); print('manifest+sbom ok')"
 
-      - name: Embed release manifest in portable bundle
+      - name: Embed release contract in portable bundle
         shell: pwsh
         run: |
+          $V = $env:NSE_VERSION
           $Out = $env:NSE_OUT
 
           Copy-Item "$Out\manifests\release-manifest.json" "$Out\portable\release-manifest.json" -Force
-          Write-Host "manifest embedded in portable tree"
+          # F1: the portable zip must be SELF-CONTAINING. Until now only the
+          # manifest was embedded; SHA256SUMS.txt stayed in checksums\ OUTSIDE
+          # the archive, so a user who extracted the zip and ran verify-release
+          # got "SHA256SUMS.txt missing". Embed the sums next to the manifest.
+          Copy-Item "$Out\checksums\SHA256SUMS.txt" "$Out\portable\SHA256SUMS.txt" -Force
+          # Re-zip so the archive carries both contract files. The zip built at
+          # the Stage step predates them; rebuild it from the same portable tree.
+          $zip = "$Out\NexusScalpEngine-$V-win-x64.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path "$Out\portable\*" -DestinationPath $zip
+          if (-not (Test-Path $zip)) { throw "PORTABLE_ZIP_REBUILD_FAILED: could not re-zip the portable tree" }
+          Write-Host "manifest + SHA256SUMS embedded in portable tree; zip rebuilt ($((Get-Item $zip).Length) bytes)"
       # P0 TRUST ROOT: sign the release update manifest with the Ed25519
       # release key (private seed ONLY via the NSE_UPDATE_SIGNING_KEY secret).
       # docs/ARTIFACT_TRUST_CHAIN.md section 3: a release without a valid
@@ -679,6 +691,7 @@ jobs:
           echo "" >> notes.md
           echo "> Tests ran in this workflow (gates job). No claims beyond that." >> notes.md
       - name: Publish release
+        id: publish
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
         with:
           draft: false
@@ -692,7 +705,7 @@ jobs:
             release-assets/**/*.json
 
       - name: Undraft release (post-publish safety)
-        if: always()
+        if: failure() && steps.publish.outcome == 'failure'
         shell: bash
         run: |
           set -e
@@ -751,9 +764,10 @@ jobs:
               print("NO ASSETS UPLOADED"); ok = False
           published = {a["name"]: a for a in assets}
           expected = [l.strip() for l in open("/tmp/expected.txt") if l.strip()]
-          # COUNT contract: a dropped producer would shrink the list.
-          if len(published) < len(expected):
-              print(f"ASSET COUNT {len(published)} < expected {len(expected)}")
+          # COUNT contract: a dropped producer would shrink the list, and a
+          # stale asset from a previous run would swell it. Both are defects.
+          if len(published) != len(expected):
+              print(f"ASSET COUNT {len(published)} != expected {len(expected)}")
               ok = False
           for name in expected:
               a = published.get(name)
@@ -762,22 +776,31 @@ jobs:
               if a.get("size", 0) <= 0:
                   print(f"  ZERO-SIZE ASSET: {name}"); ok = False
           # DIGEST contract: cross-check the uploaded sums file against the
-          # GitHub-reported digests. A tampered or stale upload breaks here.
+          # digests GitHub reports. Every expected asset MUST appear in the sums
+          # file with a matching hash — an unmatched basename means the sums
+          # file carries a previous version's digests and fails open.
           sums = published.get("SHA256SUMS.txt")
           if sums is not None:
               import urllib.request
               try:
                   with urllib.request.urlopen(sums["browser_download_url"]) as f:
-                      for line in f.read().decode(errors="replace").splitlines():
-                          parts = line.split()
-                          if len(parts) != 2: continue
-                          h, an = parts
-                          base = an.split("\\")[-1].split("/")[-1]
-                          got = published.get(base, {}).get("digest", "").replace("sha256:", "")
-                          if got and got != h:
-                              print(f"  DIGEST MISMATCH: {base} (SHA256SUMS vs GitHub)"); ok = False
+                      sums_lines = f.read().decode(errors="replace").splitlines()
               except Exception as e:
-                  print(f"  could not cross-check SHA256SUMS: {e}")
+                  print(f"  could not fetch SHA256SUMS: {e}"); sums_lines = []
+              seen = set()
+              for line in sums_lines:
+                  parts = line.split()
+                  if len(parts) != 2: continue
+                  h, an = parts
+                  base = an.split("\\")[-1].split("/")[-1]
+                  seen.add(base)
+                  got = published.get(base, {}).get("digest", "").replace("sha256:", "")
+                  if got and got != h:
+                      print(f"  DIGEST MISMATCH: {base} (SHA256SUMS vs GitHub)"); ok = False
+              # Every expected asset must be covered by the sums file.
+              for name in expected:
+                  if name != "SHA256SUMS.txt" and name not in seen:
+                      print(f"  UNCHECKED ASSET: {name} absent from SHA256SUMS.txt"); ok = False
           print(f'verified release: tag={data.get("tag_name")} assets={len(assets)}')
           for a in assets:
               print(f'  asset: {a.get("name")} {a.get("size")} bytes')

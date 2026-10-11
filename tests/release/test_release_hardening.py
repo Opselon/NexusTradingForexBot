@@ -560,3 +560,56 @@ def test_release_yml_post_publish_verify_checks_asset_contract() -> None:
         "update-manifest.signed.json",
     ):
         assert name in step, f"post-publish verify does not assert {name}"
+
+
+# ---------------------------------------------------------------------------
+# Round 2 of the v9.0.15 audit (three independent audit reports):
+#
+# F1 (user-visible): the portable zip shipped WITHOUT SHA256SUMS.txt, so a
+#   user who extracted the zip and ran `verify-release` saw
+#   "SHA256SUMS.txt missing". Only the manifest was embedded; the sums file
+#   lived in checksums/ OUTSIDE the archive.
+# F3: the post-publish check used `<` instead of `!=` (extra stale assets
+#   from a previous run passed) and did not require every expected asset to
+#   appear in SHA256SUMS.txt (a sums file carrying a previous version's
+#   digests passed).
+# F4 (dangerous): `Undraft release` ran `if: always()`, so a PARTIAL upload
+#   failure still un-drafted (published) the incomplete release.
+# ---------------------------------------------------------------------------
+
+
+def test_embed_step_puts_the_checksums_file_inside_the_portable_tree() -> None:
+    """F1: the portable bundle must carry SHA256SUMS.txt, not just the manifest."""
+    yml = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    idx = yml.find("Embed release contract in portable bundle")
+    assert idx != -1, "embed step renamed/removed"
+    step = yml[idx : yml.find("P0 TRUST ROOT", idx)]
+    # The sums file is copied into the tree ...
+    assert '"$Out\\checksums\\SHA256SUMS.txt" "$Out\\portable\\SHA256SUMS.txt"' in step, step
+    # ... and the zip is rebuilt, because the archive built at the Stage step
+    # predates both contract files.
+    assert "Compress-Archive" in step
+    assert "PORTABLE_ZIP_REBUILD_FAILED" in step
+
+
+def test_release_yml_undraft_only_runs_when_publish_actually_failed() -> None:
+    """F4: undraft must not publish a release whose upload failed."""
+    yml = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    idx = yml.find("Undraft release")
+    assert idx != -1
+    step = yml[idx : yml.find("shell:", idx)]
+    # `if: always()` would run even on a successful publish; the step must be
+    # gated on the publish step having failed.
+    assert "always()" not in step, step
+    assert "steps.publish.outcome == 'failure'" in step
+    # and the publish step must carry the id the guard references
+    assert re.search(r"name: Publish release\s*\n\s*id: publish", yml)
+
+
+def test_post_publish_verify_requires_exact_asset_count() -> None:
+    """F3a: `!=` not `<` — stale assets from a previous run must fail."""
+    yml = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    idx = yml.find("Verify published release")
+    step = yml[idx : yml.find("env:", idx)]
+    assert "len(published) != len(expected)" in step
+    assert "UNCHECKED ASSET" in step
