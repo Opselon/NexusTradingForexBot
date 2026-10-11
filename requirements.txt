@@ -7,7 +7,7 @@
 # Drift is enforced by scripts/ci/check_dependency_drift.py (CI + local).
 # =============================================================================
 
-fastapi==0.142.2
+fastapi==0.142.4
 feedparser==6.0.14
 httpx==0.28.1
 metatrader5==5.0.6231 ; sys_platform == 'win32'
@@ -17,7 +17,7 @@ networkx==3.7 ; python_full_version >= '3.12'
 numpy==2.4.6 ; python_full_version < '3.12'
 numpy==2.5.3 ; python_full_version >= '3.12'
 playwright==1.63.0
-polars==1.44.2
+polars==2.0.0
 psycopg-pool==3.3.3
 psycopg==3.3.6
 pyarrow==25.0.1
@@ -35,7 +35,7 @@ rich==15.0.0
 ruff==0.16.9
 structlog==26.1.0
 torch==2.14.1
-typer==0.27.2
+typer==0.27.3
 types-pyyaml==6.0.12.20260906
 types-requests==2.33.0.20260906
 types-setuptools==84.0.0.20260812
