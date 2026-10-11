@@ -472,6 +472,15 @@ class AuditRepository:
         # compared against time.monotonic() silently skips the first pass on
         # hosts with uptime < interval, the BUG-273 class).
         self._last_overflow_drain: float | None = None
+        # BUG-285-RACE (windows-latest CI red): the audit worker's idle pass
+        # calls _drain_financial_overflow_due on the SAME object the test
+        # (or any explicit caller) may drain directly. Without mutual
+        # exclusion the worker can drain the file between the caller's write
+        # and the caller's explicit drain — the explicit drain then observes
+        # a second (or zero) increment and the counting assertion flakes.
+        # One lock around each drain pass makes explicit + worker passes
+        # strictly serial: exactly-once counting per file, whoever wins.
+        self._overflow_drain_lock = threading.Lock()
         self.telemetry_dropped: int = 0
         # CHG-0067 / CR-02: provider-read degradation observability. Every
         # SQLite-gated read under a non-SQLite provider used to return its
@@ -3822,6 +3831,12 @@ class AuditRepository:
             never retried forever, never silently dropped.
         """
         now = time.monotonic() if now is None else now
+        with self._overflow_drain_lock:
+            return self._drain_financial_overflow_due_locked(conn, now=now)
+
+    def _drain_financial_overflow_due_locked(
+        self, conn: sqlite3.Connection, now: float
+    ) -> None:
         if (
             self._last_overflow_drain is not None
             and now - self._last_overflow_drain < self.OVERFLOW_RECOVERY_INTERVAL_SEC
