@@ -15,14 +15,14 @@ mypy==2.4.0
 networkx==3.6.1 ; python_full_version < '3.12'
 networkx==3.7 ; python_full_version >= '3.12'
 numpy==2.4.6 ; python_full_version < '3.12'
-numpy==2.5.3 ; python_full_version >= '3.12'
+numpy==2.5.4 ; python_full_version >= '3.12'
 playwright==1.63.0
 polars==1.44.2
 psycopg-pool==3.3.3
 psycopg==3.3.6
 pyarrow==25.0.1
 pydantic-settings==2.15.0
-pydantic==2.13.5
+pydantic==2.14.0
 pygments==2.21.0
 pyinstaller==6.22.3
 pynacl==1.6.2
@@ -35,9 +35,9 @@ rich==15.0.0
 ruff==0.16.9
 structlog==26.1.0
 torch==2.14.1
-typer==0.27.2
+typer==0.27.3
 types-pyyaml==6.0.12.20260906
-types-requests==2.33.0.20260906
-types-setuptools==84.0.0.20260812
+types-requests==2.33.0.20261006
+types-setuptools==84.0.0.20261006
 tzdata==2026.5
 uvicorn==0.54.0
