@@ -223,6 +223,13 @@ jobs:
           npx vite build
           if ($LASTEXITCODE -ne 0) { throw "frontend production build failed" }
           Pop-Location
+      - name: Set up Go (API plane build toolchain)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ">=1.27"
+          cache: true
+          cache-dependency-path: |
+            go-api/go.sum
       - name: Validate frontend bundle (fail-loud asset contract)
         shell: pwsh
         run: |
