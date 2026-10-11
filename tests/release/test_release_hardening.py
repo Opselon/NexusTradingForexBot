@@ -501,3 +501,62 @@ def test_real_release_artifacts_verify_passes_then_fails_on_tamper(tmp_path: Pat
     assert "MISMATCH" in cks["detail"] or "MISSING" in cks["detail"], cks["detail"]
     # sha256 of the original is what the sums file records — sanity invariant
     assert len(hashlib.sha256(original).hexdigest()) == 64
+
+
+# ---------------------------------------------------------------------------
+# DevOps hardening (v9.0.15 cycle): the two silent-pass gates fixed in this PR.
+#
+# 1. clean_install_test.ps1 used to `exit 0` when the setup exe was absent,
+#    which contradicted the workflow's own BUG293_CLEAN_INSTALL_FAILED gate:
+#    a producer step that silently failed to emit the installer would publish
+#    a release whose lifecycle test never ran at all.
+# 2. The post-publish verify step only checked that the release EXISTED and had
+#    at least one asset. A short or tampered asset list passed.
+# ---------------------------------------------------------------------------
+
+_REPO = Path(__file__).resolve().parents[2]
+
+
+def _read_clean_install_script() -> str:
+    p = _REPO / "scripts" / "build" / "clean_install_test.ps1"
+    assert p.is_file(), f"clean_install_test.ps1 missing at {p}"
+    return p.read_text(encoding="utf-8")
+
+
+def test_clean_install_test_does_not_silently_skip_a_missing_setup_exe() -> None:
+    """BUG-293-QUIET: absence of the setup exe must FAIL the release, not skip."""
+    text = _read_clean_install_script()
+    guard = text.split("Resolve-Path", 1)[0]
+    # The old silent-skip guard is gone ...
+    assert re.search(r"if\s*\(\s*-not\s+\$SetupExe\s+-or\s+-not\s*\(Test-Path", guard) is None
+    # ... and both absence branches now exit non-zero.
+    assert re.search(r"if\s*\(\s*-not\s+\$SetupExe\s*\)\s*{[^}]*exit\s+2", guard, re.S)
+    assert re.search(r"if\s*\(\s*-not\s*\(Test-Path\s+\$SetupExe\)\)\s*{[^}]*exit\s+3", guard, re.S)
+    # No executed `exit 0` remains before the script starts real work. Only the
+    # code lines matter — the comment block may quote the removed behaviour.
+    code_lines = [ln for ln in guard.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+    assert not any(re.search(r"exit\s+0", ln) for ln in code_lines), code_lines
+
+
+def test_release_yml_post_publish_verify_checks_asset_contract() -> None:
+    """The post-publish check must assert the asset CONTRACT, not just existence."""
+    yml = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    step_idx = yml.find("Verify published release")
+    assert step_idx != -1
+    step = yml[step_idx : yml.find("env:", step_idx)]
+    assert "TAG MISMATCH" in step
+    assert "ASSET COUNT" in step
+    assert "MISSING ASSET" in step
+    assert "ZERO-SIZE ASSET" in step
+    assert "DIGEST MISMATCH" in step
+    # The 7 contract assets must be named explicitly.
+    for name in (
+        "setup.exe",
+        "win-x64.zip",
+        "NexusScalpEngine-CLI.exe",
+        "release-manifest.json",
+        "sbom.spdx.json",
+        "SHA256SUMS.txt",
+        "update-manifest.signed.json",
+    ):
+        assert name in step, f"post-publish verify does not assert {name}"

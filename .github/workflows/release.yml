@@ -729,18 +729,55 @@ jobs:
             echo "::error::Release verification FAILED: HTTP $RESP for tag $TAG"
             exit 1
           fi
+          # The 7 contract assets the build job pre-stages. The upload step
+          # globs release-assets/**, so a silently missing producer file
+          # would only surface as a short asset list HERE.
+          EXPECTED="NexusScalpEngine-$(echo "$RELEASE_TAG" | sed 's/^v//')-win-x64-setup.exe
+          NexusScalpEngine-$(echo "$RELEASE_TAG" | sed 's/^v//')-win-x64.zip
+          NexusScalpEngine-CLI.exe
+          release-manifest.json
+          sbom.spdx.json
+          SHA256SUMS.txt
+          update-manifest.signed.json"
+          echo "$EXPECTED" > /tmp/expected.txt
           python - <<PY
-          import json, os, sys
+          import json, os, sys, hashlib
           data = json.load(open("/tmp/release.json"))
-          expect = {"tag_name", "name"}
           ok = True
           if data.get("tag_name") != os.environ.get("RELEASE_TAG", ""):
-              print("TAG MISMATCH")
-              ok = False
+              print("TAG MISMATCH"); ok = False
           assets = data.get("assets", [])
           if not assets:
-              print("NO ASSETS UPLOADED")
+              print("NO ASSETS UPLOADED"); ok = False
+          published = {a["name"]: a for a in assets}
+          expected = [l.strip() for l in open("/tmp/expected.txt") if l.strip()]
+          # COUNT contract: a dropped producer would shrink the list.
+          if len(published) < len(expected):
+              print(f"ASSET COUNT {len(published)} < expected {len(expected)}")
               ok = False
+          for name in expected:
+              a = published.get(name)
+              if a is None:
+                  print(f"  MISSING ASSET: {name}"); ok = False; continue
+              if a.get("size", 0) <= 0:
+                  print(f"  ZERO-SIZE ASSET: {name}"); ok = False
+          # DIGEST contract: cross-check the uploaded sums file against the
+          # GitHub-reported digests. A tampered or stale upload breaks here.
+          sums = published.get("SHA256SUMS.txt")
+          if sums is not None:
+              import urllib.request
+              try:
+                  with urllib.request.urlopen(sums["browser_download_url"]) as f:
+                      for line in f.read().decode(errors="replace").splitlines():
+                          parts = line.split()
+                          if len(parts) != 2: continue
+                          h, an = parts
+                          base = an.split("\\")[-1].split("/")[-1]
+                          got = published.get(base, {}).get("digest", "").replace("sha256:", "")
+                          if got and got != h:
+                              print(f"  DIGEST MISMATCH: {base} (SHA256SUMS vs GitHub)"); ok = False
+              except Exception as e:
+                  print(f"  could not cross-check SHA256SUMS: {e}")
           print(f'verified release: tag={data.get("tag_name")} assets={len(assets)}')
           for a in assets:
               print(f'  asset: {a.get("name")} {a.get("size")} bytes')
