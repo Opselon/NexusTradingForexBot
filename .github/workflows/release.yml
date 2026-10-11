@@ -246,6 +246,28 @@ jobs:
             feature_schema = "scalp_v1"; installer_version = "1.0.0"
           } | ConvertTo-Json
           [System.IO.File]::WriteAllText((Join-Path $PWD "build-info.json"), $info, (New-Object System.Text.UTF8Encoding($false)))
+      - name: Build Go API plane (nexus-api.exe)
+        shell: pwsh
+        run: |
+          # GO-API-SHIP: the release-baked Go API plane. The end user has NO Go
+          # toolchain and never installs one. Mirrors scripts/build/build_release.ps1
+          # exactly. At runtime a missing binary falls back to the Python FastAPI
+          # plane, so a release that omits it is a broken release — this is why
+          # installer/NexusScalpEngine.iss asserts the file exists.
+          $GoApiShipDir = Join-Path $PWD "release\build\windows-x64\go-api"
+          if (Test-Path $GoApiShipDir) { Remove-Item $GoApiShipDir -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $GoApiShipDir | Out-Null
+          $GoExe = & python -c "from nexus_scalp.web.go_api_bootstrap import _find_go; print(_find_go() or '')"
+          $GoExe = "$GoExe".Trim()
+          if (-not $GoExe) { throw "go toolchain not found on the BUILD machine - a release without the Go API plane is a broken release" }
+          Write-Host "go toolchain: $GoExe ($(& $GoExe version))"
+          & $GoExe build -o (Join-Path $GoApiShipDir "nexus-api.exe") "./cmd/nexus-api"
+          if ($LASTEXITCODE -ne 0) { throw "go build of the API plane failed" }
+          $bin = Join-Path $GoApiShipDir "nexus-api.exe"
+          if (-not (Test-Path $bin)) { throw "go build reported success but $bin is missing" }
+          if ((Get-Item $bin).Length -le 0) { throw "go api build produced a zero-byte $bin" }
+          Write-Host "go api plane: $bin ($((Get-Item $bin).Length) bytes)"
+        working-directory: go-api
       - name: Generate application icon
         shell: pwsh
         run: |
@@ -275,6 +297,7 @@ jobs:
             --add-data "$PWD\Web;Web" --add-data "$PWD\configs;configs" `
             --add-data "$PWD\docs;docs" --add-data "$PWD\build-info.json;." `
             --add-data "$PWD\frontend\dist;frontend/dist" `
+            --add-data "$PWD\release\build\windows-x64\go-api;go-api" `
             --collect-submodules "uvicorn" --collect-submodules "fastapi" `
             --collect-submodules "feedparser" `
             --collect-submodules "psycopg" --collect-submodules "psycopg_pool" `

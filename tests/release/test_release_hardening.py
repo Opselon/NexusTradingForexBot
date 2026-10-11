@@ -94,6 +94,41 @@ def test_release_yml_bug143_preflight_intact() -> None:
     assert "NexusScalpEngine-$V-win-x64-setup.exe" in src or ("win-x64-setup.exe" in src)
 
 
+# GO-API-SHIP regression: the .iss asserts _internal\go-api\nexus-api.exe exists
+# (contract assertion, not a skipifsourcedoesntexist), so the release workflow
+# MUST bake the binary. v9.0.15 died at ISCC because the workflow never built
+# the Go plane — build_release.ps1 did, release.yml did not.
+def test_release_yml_bakes_the_go_api_plane() -> None:
+    """The workflow must build nexus-api.exe and add it to the onedir payload."""
+    src = RELEASE_YML.read_text(encoding="utf-8")
+
+    build_idx = src.find("Build Go API plane")
+    assert build_idx > 0, "the Go API build step was removed from release.yml"
+
+    pyinstaller_idx = src.find("name: PyInstaller onedir")
+    assert pyinstaller_idx > build_idx, "the Go build must run before PyInstaller"
+
+    adddata = src[pyinstaller_idx:src.find("name: PyInstaller onefile CLI")]
+    assert "go-api" in adddata, (
+        "the onedir build no longer add-data's the go-api ship dir — ISCC would "
+        "then fail on the .iss go-api contract entry"
+    )
+
+
+def test_release_yml_go_build_uses_the_ship_dir_the_adddata_references() -> None:
+    """The build step's output dir must be exactly the dir add-data consumes."""
+    src = RELEASE_YML.read_text(encoding="utf-8")
+    build_idx = src.find("Build Go API plane")
+    adddata_idx = src.find("--add-data", src.find("name: PyInstaller onedir"))
+    ship = re.search(r'Join-Path \$PWD "([^"]*go-api)"', src[build_idx:adddata_idx])
+    consume = re.search(r"--add-data [`\"]?\$PWD\\([^;`\" ]*go-api)", src[adddata_idx:])
+    assert ship and consume, "could not locate the ship dir and its add-data consumer"
+    assert ship.group(1).replace("\\", "/") == consume.group(1).replace("\\", "/"), (
+        f"build writes to {ship.group(1)!r} but PyInstaller consumes {consume.group(1)!r}"
+    )
+
+
+
 # ---------------------------------------------------------------------------
 # Part 2 — guard existence semantics exercised on a real tmp tree
 # ---------------------------------------------------------------------------
