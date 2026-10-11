@@ -238,7 +238,7 @@ def test_install_includes_locked_application_stack(monkeypatch, tmp_path):
     assert app[app.index("--index-url") + 1] == "https://pypi.org/simple"
     assert "structlog==26.1.0" in app
     assert "pydantic==2.14.0" in app
-    assert "polars==1.44.2" in app
+    assert "polars==2.0.0" in app
     assert "numpy==2.4.6 ; python_full_version < '3.12'" in app
     lock = (Path(__file__).parents[2] / "requirements.lock").read_text().lower()
     for requirement in manager.contract["runtime"]["packages"]:

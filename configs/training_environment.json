@@ -38,8 +38,8 @@
       "typing-extensions==4.16.0",
       "numpy==2.4.6 ; python_full_version < '3.12'",
       "numpy==2.5.4 ; python_full_version >= '3.12'",
-      "polars==1.44.2",
-      "polars-runtime-32==1.44.2"
+      "polars==2.0.0",
+      "polars-runtime-32==2.0.0"
     ]
   },
   "smoke": {
