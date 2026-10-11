@@ -3834,9 +3834,7 @@ class AuditRepository:
         with self._overflow_drain_lock:
             return self._drain_financial_overflow_due_locked(conn, now=now)
 
-    def _drain_financial_overflow_due_locked(
-        self, conn: sqlite3.Connection, now: float
-    ) -> None:
+    def _drain_financial_overflow_due_locked(self, conn: sqlite3.Connection, now: float) -> None:
         if (
             self._last_overflow_drain is not None
             and now - self._last_overflow_drain < self.OVERFLOW_RECOVERY_INTERVAL_SEC

@@ -480,7 +480,7 @@ def test_concurrent_drains_count_each_file_exactly_once(ovf) -> None:
         try:
             barrier.wait(timeout=10.0)
             repo._drain_financial_overflow_due(conn)
-        except BaseException as exc:  # noqa: BLE001 — collected, then raised
+        except BaseException as exc:  # collected, then re-raised by the caller
             results[slot] = exc
 
     workers = [threading.Thread(target=_drain, args=(i,)) for i in (0, 1)]
@@ -523,7 +523,6 @@ def test_worker_idle_pass_cannot_double_count_explicit_drain(ovf, monkeypatch) -
     mark = threading.Event()
     started = threading.Event()
     results: list[BaseException | None] = [None, None]
-    deadline = []
 
     def _worker_drain() -> None:
         try:
@@ -534,7 +533,7 @@ def test_worker_idle_pass_cannot_double_count_explicit_drain(ovf, monkeypatch) -
             while not mark.is_set() and t < 5.0:
                 repo._drain_financial_overflow_due(conn, now=t)
                 t += 0.001
-        except BaseException as exc:  # noqa: BLE001 — collected, then raised
+        except BaseException as exc:  # collected, then re-raised by the caller
             results[1] = exc
 
     w = threading.Thread(target=_worker_drain, name="BUG285-IdlePass")
