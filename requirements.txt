@@ -23,7 +23,7 @@ psycopg-pool==3.3.3
 psycopg==3.3.6
 pyarrow==25.0.1
 pydantic-settings==2.15.0
-pydantic==2.14.0
+pydantic==2.14.1
 pygments==2.21.0
 pyinstaller==6.22.3
 pynacl==1.6.2
