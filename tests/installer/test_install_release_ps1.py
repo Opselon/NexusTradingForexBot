@@ -67,9 +67,7 @@ class TestSourceHygiene:
         # Code lines only: the docstring mention of 'no interactive prompt'
         # is prose, and assertions must be against real code.
         code_lines = [
-            ln
-            for ln in src.splitlines()
-            if ln.strip() and not ln.lstrip().startswith("#")
+            ln for ln in src.splitlines() if ln.strip() and not ln.lstrip().startswith("#")
         ]
         code = "\n".join(code_lines)
         assert "Read-Host" not in code
@@ -80,15 +78,11 @@ class TestSourceHygiene:
         payload and executes it as a process, never through the evaluator."""
         src = _src()
         code_lines = [
-            ln
-            for ln in src.splitlines()
-            if ln.strip() and not ln.lstrip().startswith("#")
+            ln for ln in src.splitlines() if ln.strip() and not ln.lstrip().startswith("#")
         ]
         code = "\n".join(code_lines)
         for token in ("Invoke-Expression", "iex(", "| iex"):
-            assert token not in code, (
-                f"uncontrolled execution token present: {token!r}"
-            )
+            assert token not in code, f"uncontrolled execution token present: {token!r}"
         # 'iex (' as a statement start (the iex | iex pattern). The docstring
         # example 'iex (irm ...)' is prose and is excluded above.
         assert not re.search(r"(?m)^\s*iex\s+\(", code), (
@@ -133,9 +127,7 @@ class TestSourceHygiene:
         works on both hosts."""
         src = _src()
         code_lines = [
-            ln
-            for ln in src.splitlines()
-            if ln.strip() and not ln.lstrip().startswith("#")
+            ln for ln in src.splitlines() if ln.strip() and not ln.lstrip().startswith("#")
         ]
         code = "\n".join(code_lines)
         assert "utf8NoBOM" not in code
@@ -145,7 +137,7 @@ class TestSourceHygiene:
     def test_error_action_preference_is_stop(self):
         """$ErrorActionPreference = 'Stop' is the fail-closed posture:
         an unexpected error terminates instead of being swallowed."""
-        assert "$ErrorActionPreference = \"Stop\"" in _src()
+        assert '$ErrorActionPreference = "Stop"' in _src()
 
     def test_irm_pipe_documented_one_liner_uses_runable_form(self):
         """The documented one-liner must invoke the script (not dot-source
@@ -195,7 +187,7 @@ class TestExitCodeContract:
                 continue
             # Either passed to Exit-NexusRelease (-Code $Script:EXIT_*) or
             # used in a bare `exit <number>` literal.
-            reachable = (f"$Script:{token}" in src.replace(f"$Script:{token} = {code}", ""))
+            reachable = f"$Script:{token}" in src.replace(f"$Script:{token} = {code}", "")
             if not reachable and (f"exit {code}" not in src):
                 unreachable.append(token)
         assert not unreachable, f"unreachable exit codes: {unreachable}"
@@ -293,7 +285,9 @@ class TestIntegrityGate:
 
     def test_partial_residue_is_cleaned_on_every_failure_path(self):
         src = _src()
-        assert 'if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial -Force' in src
+        assert (
+            "if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial -Force" in src
+        )
         # At least two sites: the pre-attempt cleanup and the catch branch.
         assert src.count("Remove-Item -LiteralPath $partial -Force") >= 2
 
@@ -364,11 +358,11 @@ class TestIntegrityGate:
         # download sits in a try block whose catch exits before the install
         # section is reached.
         payload_catch = src.index("catch {", payload_call.start())
-        install_section = src.index("Write-Step \"Installing\"")
+        install_section = src.index('Write-Step "Installing"')
         assert payload_catch < install_section, (
             "the payload-download catch must run before the install section"
         )
-        assert "Exit-NexusRelease" in src[payload_catch : install_section], (
+        assert "Exit-NexusRelease" in src[payload_catch:install_section], (
             "a payload-download failure must exit before the install section"
         )
 
@@ -379,10 +373,7 @@ class TestIntegrityGate:
         for call in ("Install-NexusReleaseSetup", "Expand-NexusReleaseZip"):
             # Only real call sites: the invocation carries call arguments
             # (-SetupExe / -ZipPath), which the function definition does not.
-            call_sites = [
-                m.start()
-                for m in re.finditer(rf"{call}\s+\-", src)
-            ]
+            call_sites = [m.start() for m in re.finditer(rf"{call}\s+\-", src)]
             assert call_sites, f"{call} must have at least one call site"
             for site in call_sites:
                 before = src[max(0, site - 1500) : site]
@@ -450,7 +441,9 @@ class TestInstallInvocation:
         """The exit code must be the Inno installer's own, not a spawned-shell
         approximation."""
         src = _src()
-        assert "Start-Process -FilePath $SetupExe -ArgumentList $installerArgs -Wait -PassThru" in src
+        assert (
+            "Start-Process -FilePath $SetupExe -ArgumentList $installerArgs -Wait -PassThru" in src
+        )
         assert "$p.ExitCode -ne 0" in src
 
     def test_nonzero_installer_exit_is_reported_with_log_tail(self):
@@ -491,7 +484,7 @@ class TestInstallInvocation:
         DEGRADED, never falsely AVAILABLE."""
         src = _src()
         no_launch = src.index("if ($NoLaunch)")
-        block = src[no_launch:no_launch + 700]
+        block = src[no_launch : no_launch + 700]
         assert "DEGRADED" in block
         assert "skipped-no-launch" in block
 
@@ -503,9 +496,7 @@ class TestInstallInvocation:
         assert r"state\install-release.json" in src
         assert r"logs\install-release.log" in src
         code_lines = [
-            ln
-            for ln in src.splitlines()
-            if ln.strip() and not ln.lstrip().startswith("#")
+            ln for ln in src.splitlines() if ln.strip() and not ln.lstrip().startswith("#")
         ]
         code = "\n".join(code_lines)
         # No recursive delete may ever target the user-data root.
@@ -521,16 +512,17 @@ class TestInstallInvocation:
         installer/NexusScalpEngine.iss, otherwise two installs of the same
         release would land in different trees."""
         src = _src()
-        iss = (REPO_ROOT / "installer" / "NexusScalpEngine.iss").read_bytes().decode(
-            "ascii", errors="replace"
+        iss = (
+            (REPO_ROOT / "installer" / "NexusScalpEngine.iss")
+            .read_bytes()
+            .decode("ascii", errors="replace")
         )
         m = re.search(r"DefaultDirName=(\{localappdata\}\\[^\r\n]+)", iss)
         assert m, "could not read DefaultDirName from the .iss"
         # {localappdata}\Programs\NexusScalpEngine -> Programs\NexusScalpEngine
         relative = m.group(1).split("}", 1)[1]
         assert relative in src, (
-            "default install dir diverged from the Inno DefaultDirName "
-            f"({relative!r})"
+            f"default install dir diverged from the Inno DefaultDirName ({relative!r})"
         )
 
 
@@ -553,7 +545,7 @@ class TestIdempotency:
 
     def test_already_current_exits_zero(self):
         src = _src()
-        idx = src.index("action           = \"already-current\"")
+        idx = src.index('action           = "already-current"')
         tail = src[idx - 200 : idx + 700]
         assert "EXIT_OK" in tail
 
@@ -579,7 +571,9 @@ class TestIdempotency:
         assert "Release-NexusReleaseInstallLock" in src
         # Held across the whole mutating section via try/finally.
         assert "finally {" in src
-        assert src.index("Wait-NexusReleaseInstallLock") < src.index("Release-NexusReleaseInstallLock")
+        assert src.index("Wait-NexusReleaseInstallLock") < src.index(
+            "Release-NexusReleaseInstallLock"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -741,8 +735,10 @@ class TestReleaseResolution:
 
 class TestPipelineContractSync:
     def test_payload_names_agree_with_the_iss_output_base(self):
-        iss = (REPO_ROOT / "installer" / "NexusScalpEngine.iss").read_bytes().decode(
-            "ascii", errors="replace"
+        iss = (
+            (REPO_ROOT / "installer" / "NexusScalpEngine.iss")
+            .read_bytes()
+            .decode("ascii", errors="replace")
         )
         base = re.search(r"OutputBaseFilename=([^\r\n]+)", iss)
         assert base, "could not read OutputBaseFilename from the .iss"
@@ -753,8 +749,10 @@ class TestPipelineContractSync:
         assert "win-x64.zip" in src
 
     def test_inno_privileges_are_lowest_so_no_admin_is_needed(self):
-        iss = (REPO_ROOT / "installer" / "NexusScalpEngine.iss").read_bytes().decode(
-            "ascii", errors="replace"
+        iss = (
+            (REPO_ROOT / "installer" / "NexusScalpEngine.iss")
+            .read_bytes()
+            .decode("ascii", errors="replace")
         )
         assert "PrivilegesRequired=lowest" in iss
         src = _src()
@@ -763,7 +761,7 @@ class TestPipelineContractSync:
     def test_ci_gate_commands_are_mirrored(self):
         """scripts/build/clean_install_test.ps1 is the authority for how the
         built setup.exe is driven; assert the same switch set."""
-        ci = (REPO_ROOT / "scripts" / "build" / "clean_install_test.ps1")
+        ci = REPO_ROOT / "scripts" / "build" / "clean_install_test.ps1"
         if not ci.exists():
             pytest.skip("scripts/build/clean_install_test.ps1 not present")
         ci_src = ci.read_bytes().decode("ascii", errors="replace")
@@ -773,7 +771,7 @@ class TestPipelineContractSync:
             assert switch in src, f"release installer diverged from CI gate on {switch}"
 
     def test_ci_post_install_checks_are_mirrored(self):
-        ci = (REPO_ROOT / "scripts" / "build" / "clean_install_test.ps1")
+        ci = REPO_ROOT / "scripts" / "build" / "clean_install_test.ps1"
         if not ci.exists():
             pytest.skip("scripts/build/clean_install_test.ps1 not present")
         ci_src = ci.read_bytes().decode("ascii", errors="replace")
@@ -792,8 +790,8 @@ class TestPipelineContractSync:
         wf_src = wf.read_bytes().decode("ascii", errors="replace")
         assert '"$h  $rel"' in wf_src
         src = _src()
-        assert '[0-9a-fA-F]{64}' in src
-        assert '\\*?' in src
+        assert "[0-9a-fA-F]{64}" in src
+        assert "\\*?" in src
 
     def test_manifest_artifact_shape_matches_the_pipeline(self):
         """release-manifest.json artifacts carry name/relative_path/
@@ -804,6 +802,5 @@ class TestPipelineContractSync:
         wf_src = wf.read_bytes().decode("ascii", errors="replace")
         assert "generate_manifest" in wf_src
         src = _src()
-        assert '$a.name' in src
-        assert '$a.sha256' in src
-
+        assert "$a.name" in src
+        assert "$a.sha256" in src
