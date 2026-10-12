@@ -36,6 +36,7 @@ import abc
 import contextlib
 import json
 import logging
+import os
 import queue as _stdlib_queue
 import re
 import threading
@@ -48,6 +49,38 @@ if TYPE_CHECKING:  # pragma: no cover - import-cycle guard
     from nexus_scalp.adapters.database.dead_letter_store import DeadLetterStore
 
 logger = logging.getLogger("nexus_scalp.audit")
+
+_WriteItem = tuple[str, tuple]
+
+
+def group_batch_for_commit(batch: Sequence[_WriteItem]) -> list[tuple[str, list[tuple]]]:
+    """Group an audit batch for one backend transaction.
+
+    Collapses RUNS of identical statements into one executemany payload — the
+    optimization the plane was built for — while preserving the order the
+    producers enqueued the rows in.
+
+    Deliberately NOT a sort. Sorting by statement text reorders statements that
+    share a target row, and in the financial ledger the two statements are a
+    lifecycle pair: ``log_ledger_opened`` seeds a placeholder,
+    ``log_ledger_closed`` upserts the autopsy onto it, and both can land in one
+    batch when a position is closed inside the same flush window as its open.
+    The OPEN statement sorts AFTER the CLOSE (the column lists differ), so a
+    sorted batch applies the close first: the upsert inserts a row that was
+    never opened, the OPEN then hits ``ON CONFLICT DO NOTHING``, and the entry
+    context (``open_time`` / ``order_id`` / ``entry_reason`` /
+    ``account_source``) is silently lost. ACID-01.
+
+    Every group is applied inside a single backend transaction, so an
+    interleaved batch costs extra round trips but never atomicity.
+    """
+    import itertools
+
+    return [
+        (q_text, [item[1] for item in group])
+        for q_text, group in itertools.groupby(batch, key=lambda x: x[0])
+    ]
+
 
 #: Producer SQL shapes that differ between providers.  Kept deliberately
 #: small: every producer statement is already portable except these.
@@ -698,19 +731,26 @@ class AuditWritePlane:
             try:
                 # GROUPING: consecutive identical statements are collapsed into
                 # one executemany call (one round trip per distinct statement).
-                # itertools.groupby only groups RUNS of equal keys, so the batch
-                # is sorted by statement text first — without the sort an
-                # interleaved batch emits N separate single-row calls and, far
-                # worse, a producer that repeats the same statement down the
-                # queue gets its rows split across groups.  Sorting is stable,
-                # so rows for one statement keep their enqueue order exactly.
-                import itertools
+                #
+                # Adjacent-run grouping only — deliberately NOT a sort. A sort by
+                # statement text reorders statements that share a target row, and
+                # in the financial ledger the two statements are a lifecycle pair:
+                # log_ledger_opened seeds a placeholder, log_ledger_closed upserts
+                # the autopsy onto it. Both can land in one batch (a position
+                # closed in the same flush window as its open). The OPEN statement
+                # sorts AFTER the CLOSE (its column list differs), so a sorted
+                # batch applies the close first: the upsert inserts a row that was
+                # never opened, the OPEN then hits ON CONFLICT DO NOTHING, and the
+                # entry context (open_time / order_id / entry_reason /
+                # account_source) is silently lost. ACID-01.
+                #
+                # Adjacent grouping still collapses the common case — a producer
+                # emitting a run of identical statements — because groupby only
+                # ever needed the sort to merge runs the queue had already
+                # interleaved, and interleaving is not required for correctness.
+                import itertools  # noqa: F401  (kept for the grouping helper)
 
-                ordered = sorted(batch, key=lambda item: item[0])
-                grouped = [
-                    (q_text, [item[1] for item in group])
-                    for q_text, group in itertools.groupby(ordered, key=lambda x: x[0])
-                ]
+                grouped = group_batch_for_commit(batch)
                 backend.execute_batch(grouped)
                 for _ in batch:
                     q.task_done()
@@ -820,9 +860,19 @@ class AuditWritePlane:
                 "args": self._dead_letter_store.json_safe_args(args),
                 "error": type(error).__name__ if error else "QUEUE_SATURATED",
             }
-            (overflow_dir / fname).write_text(
-                json.dumps(payload, ensure_ascii=False), encoding="utf-8"
-            )
+            # Write -> fsync -> atomic rename. This is the last-resort
+            # durability path for a financial row: a truncated JSON would be
+            # worse than none because the replay path re-enqueues from it.
+            target = overflow_dir / fname
+            tmp = target.with_suffix(".json.tmp")
+            encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+            try:
+                os.write(fd, encoded)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            os.replace(tmp, target)
             logger.critical(
                 "FINANCIAL AUDIT OVERFLOW — event persisted to durable overflow file %s",
                 fname,
