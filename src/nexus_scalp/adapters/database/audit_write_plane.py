@@ -692,8 +692,31 @@ class AuditWritePlane:
         q = self._effective_queue()  # local ref: never GC'd while the loop runs (BUG-058)
         if ready is not None:
             ready.set()
-        backend = self._backend_factory()
-        self._backend = backend
+        # Backend construction is supervised the same way the fabric plane's
+        # writer connect is: an exception here used to kill the worker before
+        # the loop was entered, leaving enqueue() accepting financial rows into
+        # a queue with no consumer (ACID audit H-1). Retrying is correct
+        # because the loop only exits on stop(); every attempt is logged so a
+        # persistent condition stays visible, and stop() during construction
+        # short-circuits to the running loop instead of looping forever.
+        backend_attempt = 0
+        while True:
+            try:
+                backend = self._backend_factory()
+                self._backend = backend
+            except BaseException as be_err:
+                backend_attempt += 1
+                logger.critical(
+                    "audit worker backend unavailable; retrying attempt=%s error_type=%s error=%s",
+                    backend_attempt,
+                    type(be_err).__name__,
+                    str(be_err)[:200],
+                )
+                time.sleep(min(0.1 * backend_attempt, 5.0))
+                if not self._running:
+                    return
+                continue
+            break
         if isinstance(backend, SqliteAuditWriteBackend):
             # Force the connection to be born HERE, on the worker thread:
             # sqlite3 objects are thread-bound and the backend is constructed

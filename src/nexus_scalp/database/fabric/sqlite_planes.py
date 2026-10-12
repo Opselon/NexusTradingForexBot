@@ -466,6 +466,11 @@ class SQLiteWritePlane:
                         str(err)[:200],
                     )
         # stop() was called while we were connecting: nothing to drain to.
+        # Re-checked here because the loop above can exit through the backoff
+        # branch (an inflight sleep returns after _running flips); raising from
+        # a thread pytest reports as an unhandled thread exception.
+        if not self._running:
+            return None
         return self._connect_writer()
 
     def _commit_batch(self, conn: Any, batch: list[WriteItem]) -> None:
