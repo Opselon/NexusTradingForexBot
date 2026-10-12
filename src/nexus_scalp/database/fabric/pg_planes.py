@@ -466,18 +466,29 @@ class PgWritePlane:
     def _execute_translated(self, sql: str, args: Sequence[Any]) -> None:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
 
-        with self._pool.connection() as conn, conn.cursor() as cur:
-            # Resolve at the execution seam: it needs the connection to look
-            # up the ON CONFLICT target in the catalog, which the pure
-            # translate_sql() cannot do (it left INSERT OR REPLACE and
-            # :name placeholders untouched on this pooled write path).
-            translated = PostgreSQLDriver.translate_sql_for_execution(sql, conn)
-            cur.execute(translated, tuple(args))
-            # The pool lends connections with autocommit OFF (the psycopg
-            # default); without an explicit commit the write is discarded when
-            # the connection is returned. Financial rows must never be
-            # silently dropped, so commit before returning to the pool.
-            conn.commit()
+        with self._pool.connection() as conn:
+            try:
+                with conn.cursor() as cur:
+                    # Resolve at the execution seam: it needs the connection to look
+                    # up the ON CONFLICT target in the catalog, which the pure
+                    # translate_sql() cannot do (it left INSERT OR REPLACE and
+                    # :name placeholders untouched on this pooled write path).
+                    translated = PostgreSQLDriver.translate_sql_for_execution(sql, conn)
+                    cur.execute(translated, tuple(args))
+                # The pool lends connections with autocommit OFF (the psycopg
+                # default); without an explicit commit the write is discarded when
+                # the connection is returned. Financial rows must never be
+                # silently dropped, so commit before returning to the pool.
+                conn.commit()
+            except Exception:
+                # Explicit rollback, same as _apply_batch does: the pool does
+                # roll back on putconn, but leaving the connection INERROR
+                # until then makes any same-handle re-use fail with
+                # "current transaction is aborted". Rollback here keeps the
+                # failure local to this write.
+                with contextlib_suppress():
+                    conn.rollback()
+                raise
 
     def execute_batch(self, statements: Sequence[tuple[str, Sequence[Sequence[Any]]]]) -> None:
         """Apply one batched transaction: grouped statements, one commit.
@@ -623,12 +634,21 @@ class PgWritePlane:
     def _apply_many(self, sql: str, seq: Sequence[Sequence[Any]]) -> None:
         from nexus_scalp.database.drivers.postgres_driver import PostgreSQLDriver
 
-        with self._pool.connection() as conn, conn.cursor() as cur:
-            # Resolve at the execution seam: the connection is needed to
-            # resolve the ON CONFLICT target from the catalog.
-            translated = PostgreSQLDriver.translate_sql_for_execution(sql, conn)
-            cur.executemany(translated, [tuple(a) for a in seq])
-            conn.commit()
+        with self._pool.connection() as conn:
+            try:
+                with conn.cursor() as cur:
+                    # Resolve at the execution seam: the connection is needed to
+                    # resolve the ON CONFLICT target from the catalog.
+                    translated = PostgreSQLDriver.translate_sql_for_execution(sql, conn)
+                    cur.executemany(translated, [tuple(a) for a in seq])
+                conn.commit()
+            except Exception:
+                # Same guard as _apply_batch: roll back before the connection
+                # goes back to the pool instead of relying on putconn to clean
+                # an aborted transaction.
+                with contextlib_suppress():
+                    conn.rollback()
+                raise
 
 
 @contextmanager

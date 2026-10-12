@@ -22,9 +22,12 @@ trading writer never fights a reader for the write lock.
 
 from __future__ import annotations
 
+import os
 import queue
+import sqlite3
 import threading
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -222,6 +225,7 @@ class SQLiteWritePlane:
         "_closed",
         "_cond",
         "_config",
+        "_connect_factory",
         "_driver",
         "_flush_interval",
         "_lock",
@@ -263,6 +267,12 @@ class SQLiteWritePlane:
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)
         self._closed = False
+        #: The raw connection factory the writer uses (separate from the driver
+        #: so a failing connector can be substituted in tests — the supervised
+        #: reconnect path only exists if it can be exercised).
+        self._connect_factory: Callable[[str], Any] = lambda path: sqlite3.connect(
+            path, timeout=BUSY_TIMEOUT_MS / 1000.0
+        )
 
     # -- properties -------------------------------------------------------
 
@@ -361,6 +371,10 @@ class SQLiteWritePlane:
         switching the journal mode to WAL needs it briefly.  We retry with a
         bounded busy_timeout rather than crashing the writer thread (an
         unhandled thread exception leaves the queue un-drained).
+
+        The connection factory this uses is ``self._connect_factory`` so a test
+        can substitute a failing connector without patching a bound method —
+        the supervised reconnect path has to be reachable to be pinned.
         """
         import sqlite3
 
@@ -370,7 +384,7 @@ class SQLiteWritePlane:
             if self._driver.is_in_memory:
                 conn = self._driver.connect_shared()
             else:
-                conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT_MS / 1000.0)
+                conn = self._connect_factory(path)
                 conn.row_factory = sqlite3.Row
             try:
                 # WAL + performance PRAGMAs belong to the WRITE connection.
@@ -393,7 +407,7 @@ class SQLiteWritePlane:
 
     def _writer_loop(self) -> None:
         q = self._queue
-        conn = self._connect_writer()
+        conn = self._connect_writer_supervised()
         try:
             while self._running or (not q.empty() and q.unfinished_tasks > 0):
                 batch: list[WriteItem] = []
@@ -421,6 +435,38 @@ class SQLiteWritePlane:
         finally:
             with contextlib_suppress():
                 conn.close()
+
+    def _connect_writer_supervised(self, deadline_interval: float = 5.0) -> Any:
+        """Open the write connection, or keep retrying instead of dying.
+
+        An unsupervised failure here used to kill the worker thread: nothing
+        restarted it, and ``enqueue`` kept accepting financial rows into a queue
+        with no consumer — returning True (success) with both ``committed`` and
+        ``failed`` at zero, so the loss channel was silent (ACID audit,
+        CRITICAL-2). Retrying forever is correct because the loop only exits on
+        a successful connect or on ``stop()``; every retry is logged with the
+        error so a persistent condition stays visible.
+        """
+        attempt = 0
+        while self._running:
+            try:
+                return self._connect_writer()
+            except BaseException as err:
+                attempt += 1
+                # Backoff capped at the deadline interval so a disk that comes
+                # back is picked up promptly.
+                time.sleep(min(0.1 * attempt, deadline_interval))
+                if attempt == 1 or attempt % 12 == 0:
+                    logger.critical(
+                        "db write plane worker could not connect; retrying domain=%s "
+                        "attempt=%s error_type=%s error=%s",
+                        self._config.domain,
+                        attempt,
+                        type(err).__name__,
+                        str(err)[:200],
+                    )
+        # stop() was called while we were connecting: nothing to drain to.
+        return self._connect_writer()
 
     def _commit_batch(self, conn: Any, batch: list[WriteItem]) -> None:
         """Commit one batch in a single transaction; salvage on failure."""
@@ -476,25 +522,41 @@ class SQLiteWritePlane:
     # -- durable overflow --------------------------------------------------
 
     def _write_overflow(self, item: WriteItem) -> None:
-        """Persist a stranded financial write to disk (never silently lost)."""
+        """Persist a stranded financial write to disk (never silently lost).
+
+        Crashproof: written to a temp name, fsynced, then atomically renamed —
+        a power loss mid-write can truncate the JSON the same way it can
+        truncate the WAL (the ACID audit's CRITICAL-1/MEDIUM-3 pairing). A
+        truncated overflow file is worse than none: the replay path would
+        re-enqueue a half-written row. Rename-then-delete retirement of the
+        replayed file is already atomic; this makes the write end atomic too.
+        """
         try:
             self._overflow_dir.mkdir(parents=True, exist_ok=True)
             import json
 
             ts = time.strftime("%Y%m%d_%H%M%S")
             fname = f"overflow_{ts}_{self._stats.overflowed:08d}.json"
-            (self._overflow_dir / fname).write_text(
-                json.dumps(
-                    {
-                        "failed_at": ts,
-                        "domain": self._config.domain,
-                        "sql": item.sql,
-                        "args": _json_safe_args(item.args),
-                    },
-                    ensure_ascii=False,
-                ),
-                encoding="utf-8",
+            target = self._overflow_dir / fname
+            tmp = target.with_suffix(".json.tmp")
+            payload = json.dumps(
+                {
+                    "failed_at": ts,
+                    "domain": self._config.domain,
+                    "sql": item.sql,
+                    "args": _json_safe_args(item.args),
+                },
+                ensure_ascii=False,
             )
+            # Write -> fsync -> atomic rename: the reader never sees a partial
+            # file, and a crash cannot lose a row that already escaped the queue.
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+            try:
+                os.write(fd, payload.encode("utf-8"))
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            os.replace(tmp, target)
             logger.critical(
                 "db write plane FINANCIAL OVERFLOW persisted to disk domain=%s file=%s",
                 self._config.domain,
