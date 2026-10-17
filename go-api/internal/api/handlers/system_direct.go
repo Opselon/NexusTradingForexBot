@@ -34,8 +34,12 @@ const (
 	DefaultProductName = "NexusScalpEngine"
 	// DefaultProductDisplay is the human-facing product title.
 	DefaultProductDisplay = "Nexus Trading Forex Bot"
-	// DefaultVersion is the release version fallback.
-	DefaultVersion = "9.0.14"
+	// DefaultVersion is the release version fallback, used when no
+	// pyproject.toml is reachable (e.g. the frozen installed tree, which ships
+	// no repo root). It MUST equal pyproject.toml's version:
+	// TestDefaultVersionMatchesPyproject fails otherwise. Rotting here is not
+	// cosmetic — an installed release would report the wrong version.
+	DefaultVersion = "9.0.15"
 	// DefaultChannel is the release distribution channel.
 	DefaultChannel = "production"
 

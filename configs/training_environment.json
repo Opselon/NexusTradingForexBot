@@ -31,7 +31,7 @@
       "structlog==26.1.0",
       "pydantic==2.14.1",
       "pydantic-core==2.50.1",
-      "pydantic-settings==2.15.0",
+      "pydantic-settings==2.16.0",
       "PyYAML==6.0.3",
       "python-dotenv==1.2.4",
       "annotated-types==0.8.0",

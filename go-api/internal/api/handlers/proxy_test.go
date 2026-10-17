@@ -53,6 +53,43 @@ func TestLegacyErrorIsReplayed(t *testing.T) {
 	}
 }
 
+// TestWriteRawJSONKeepsDocumentsLabeled is the SHIPPED-BUG gate for the proxy
+// Content-Type: with the SPA unmounted, "/" was forwarded to Python and the
+// index document was re-emitted as application/json. Chrome then rendered the
+// Control Center's HTML SOURCE as text instead of running the app. A non-JSON
+// body must keep a type the browser treats as a document.
+func TestWriteRawJSONKeepsDocumentsLabeled(t *testing.T) {
+	doc := []byte("<!doctype html>\n<html><head><title>NSE</title></head><body>x</body></html>")
+
+	rec := httptest.NewRecorder()
+	writeRawJSON(rec, http.StatusOK, doc)
+	if got := rec.Header().Get("Content-Type"); got == "application/json" {
+		t.Fatalf("writeRawJSON labeled an HTML document as application/json (%q); "+
+			"the browser prints the source instead of rendering the app", got)
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
+		t.Errorf("writeRawJSON content-type = %q, want text/html*", got)
+	}
+
+	recStatus := httptest.NewRecorder()
+	writeRawJSONStatus(recStatus, http.StatusNotFound, doc)
+	if got := recStatus.Header().Get("Content-Type"); got == "application/json" {
+		t.Errorf("writeRawJSONStatus labeled an HTML document as application/json")
+	}
+
+	// A real JSON payload keeps its JSON label (byte-exact replay contract).
+	for _, body := range [][]byte{[]byte(`{"data":1,"meta":{}}`), []byte("[]")} {
+		rec2 := httptest.NewRecorder()
+		writeRawJSON(rec2, http.StatusOK, body)
+		if got := rec2.Header().Get("Content-Type"); got != "application/json" {
+			t.Errorf("writeRawJSON(%s) content-type = %q, want application/json", body, got)
+		}
+		if rec2.Body.String() != string(body) {
+			t.Errorf("writeRawJSON altered the payload: %q", rec2.Body.String())
+		}
+	}
+}
+
 // TestLegacyResponseNotBoundary guards the classification itself: a legacy
 // answer is neither a BoundaryError nor ErrUnavailable.
 func TestLegacyResponseNotBoundary(t *testing.T) {
