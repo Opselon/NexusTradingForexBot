@@ -91,6 +91,57 @@ def test_import_failure_is_isolated(monkeypatch):
     assert _TOKEN_ENV not in os.environ
 
 
+def test_lazy_middleware_stack_is_built_before_the_token_is_read(monkeypatch):
+    """THE SHIPPED-BUG GATE: a lazy middleware stack made the export a no-op.
+
+    Starlette builds the middleware stack on FIRST REQUEST, so immediately
+    after create_app() the stack is None and the token the middleware will
+    enforce does not exist yet. An export that reads the token at that moment
+    silently exports nothing — verified against a real install, where the
+    console was fixed but Go still answered AUTH_CONFIG_ERROR 500. The helper
+    must materialize the stack before reading.
+    """
+    built: list[int] = []
+
+    class _LazyApp:
+        middleware_stack = None
+
+        def build_middleware_stack(self):
+            built.append(1)
+            # Building is what resolves the token in the real app.
+            web_auth._LIVE_WEB_AUTH_TOKEN["token"] = "tok-from-stack"
+            return object()
+
+    app = _LazyApp()
+
+    engine_boot._export_web_auth_token_to_child(app)
+
+    assert built == [1], "the middleware stack was never built, so the token was read too early"
+    assert os.environ.get(_TOKEN_ENV) == "tok-from-stack", (
+        "the enforced token did not reach the child env: a lazy middleware "
+        "stack makes the export a silent no-op (the shipped AUTH_CONFIG_ERROR)"
+    )
+
+
+def test_already_built_stack_is_not_rebuilt(monkeypatch):
+    """Building is only a bootstrap aid; an already-built stack is left alone."""
+    monkeypatch.setattr(web_auth, "_LIVE_WEB_AUTH_TOKEN", {"token": "tok-live"}, raising=False)
+
+    rebuilds: list[int] = []
+
+    class _BuiltApp:
+        middleware_stack = object()
+
+        def build_middleware_stack(self):  # pragma: no cover - must not run
+            rebuilds.append(1)
+            return object()
+
+    engine_boot._export_web_auth_token_to_child(_BuiltApp())
+
+    assert rebuilds == []
+    assert os.environ.get(_TOKEN_ENV) == "tok-live"
+
+
 def test_go_api_boot_exports_the_token_before_spawning(monkeypatch):
     """GATE ON THE CALL SITE: booting the Go plane must hand over the token.
 
