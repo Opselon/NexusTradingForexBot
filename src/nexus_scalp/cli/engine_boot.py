@@ -195,6 +195,35 @@ def _go_api_origin() -> str:
         return ""
 
 
+def _export_web_auth_token_to_child() -> None:
+    """WEB-AUTH-P0: export the enforced token so the Go child can read it.
+
+    ``create_app`` resolves/creates the control-plane token and REMEMBERS it
+    (``auth.web_auth_token_in_process``), but only the double-click launcher
+    re-exported it to ``NSE_WEB_AUTH_TOKEN``. On the packaged ``nexus start``
+    path nothing did, so the Go child inherited no token, could not read
+    ``.env`` (the frozen tree has no repo-root ``pyproject.toml``, so
+    ``auth_boot.publish`` writes nothing and Go's CWD is ``_internal/go-api``)
+    and failed closed with ``AUTH_CONFIG_ERROR: web auth token unresolvable``
+    on EVERY request — while Python answered 401 on the same path. The console
+    then showed the red "web auth token unresolvable (fail-closed)" banner and
+    an empty dashboard. The token must reach the child's environment.
+
+    Never generates: only a token this process already enforces is exported,
+    so this cannot mint a competing value. Failure-isolated — a token that
+    cannot be read leaves the existing (fail-closed) behavior untouched.
+    """
+    try:
+        from nexus_scalp.web.auth import web_auth_token_in_process
+
+        enforced = web_auth_token_in_process()
+        if enforced and not os.environ.get("NSE_WEB_AUTH_TOKEN", "").strip():
+            os.environ["NSE_WEB_AUTH_TOKEN"] = enforced
+            logger.info("[WEB-AUTH] exported enforced token for the go api child")
+    except Exception as exc:  # pragma: no cover - boot must never break here
+        logger.warning("[WEB-AUTH] token export to the go api child skipped: %s", exc)
+
+
 def _boot_go_api_plane(bind_host: str, python_port: int) -> Any:
     """GO-API-GATE: build + launch the Go API server as a supervised child.
 
@@ -207,6 +236,7 @@ def _boot_go_api_plane(bind_host: str, python_port: int) -> Any:
     returns None, leaving the FastAPI app serving the full API on its own
     port. The product boots either way.
     """
+    _export_web_auth_token_to_child()
     try:
         from nexus_scalp.web.go_api_bootstrap import boot_go_api
 

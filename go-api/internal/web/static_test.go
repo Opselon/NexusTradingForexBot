@@ -483,3 +483,57 @@ func TestResolveFrontendDistNoCandidates(t *testing.T) {
 			got, "")
 	}
 }
+
+// TestResolveFrontendDistNestedReleaseLayout is the SHIPPED-BUG gate: in the
+// real onedir release the Go binary lives at <install>/_internal/go-api/
+// nexus-api.exe, one level BELOW the install root that carries
+// _internal/frontend/dist. Probing the binary's own directory for
+// "_internal/frontend/dist" therefore looked at
+// <install>/_internal/go-api/_internal/frontend/dist, which cannot exist — Go
+// logged "no built frontend dist found" on a complete release, never mounted
+// the SPA, and "/" fell through to the Python proxy, which relabelled the
+// index document as application/json so the browser showed the Control
+// Center's HTML SOURCE. The resolver must walk up to the install root.
+func TestResolveFrontendDistNestedReleaseLayout(t *testing.T) {
+	t.Setenv(DistEnvVar, "")
+	resetCache()
+	defer resetCache()
+
+	install := t.TempDir()
+	// The React console and the legacy bundle both live under the INSTALL
+	// root's _internal, exactly as PyInstaller stages them.
+	react := makeDist(t, filepath.Join(install, "_internal", "frontend", "dist"),
+		"REACT-CONTROL-CENTER")
+	makeDist(t, filepath.Join(install, "_internal", "Web"), "LEGACY-INTERNAL")
+	// The Go binary ships one level deeper, inside _internal/go-api.
+	exeDir := filepath.Join(install, "_internal", "go-api")
+	if err := os.MkdirAll(exeDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", exeDir, err)
+	}
+
+	if got := resolveSlots(exeDir, emptyRepo(t), t.TempDir()); got != react {
+		t.Errorf("nested release layout: resolved %q, want the React dist %q "+
+			"(the binary's own dir is NOT the install root; the SPA must mount "+
+			"from <install>/_internal/frontend/dist)", got, react)
+	}
+}
+
+// TestResolveFrontendDistNestedReleaseLegacyOnly covers an old nested release
+// that ships ONLY the legacy bundle: the walk-up must find _internal/Web under
+// the install root too, not just the React dist.
+func TestResolveFrontendDistNestedReleaseLegacyOnly(t *testing.T) {
+	t.Setenv(DistEnvVar, "")
+	resetCache()
+	defer resetCache()
+
+	install := t.TempDir()
+	legacy := makeDist(t, filepath.Join(install, "_internal", "Web"), "LEGACY-INTERNAL")
+	exeDir := filepath.Join(install, "_internal", "go-api")
+	if err := os.MkdirAll(exeDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", exeDir, err)
+	}
+
+	if got := resolveSlots(exeDir, emptyRepo(t), t.TempDir()); got != legacy {
+		t.Errorf("nested legacy-only release: resolved %q, want %q", got, legacy)
+	}
+}

@@ -168,8 +168,19 @@ func (p *Proxy) Handler(method, path string) http.Handler {
 // Python's key order and float formatting byte-for-byte. w.Write(b) is used
 // directly — io.WriteString(w, string(b)) would heap-copy the whole payload
 // (up to tens of MiB on the research surface) for no benefit.
+//
+// The Content-Type is set ONLY when the bytes really are JSON. Claiming
+// application/json for a non-JSON upstream body makes the browser print a
+// document instead of rendering it: with the SPA unmounted, the proxied index
+// document reached Chrome as application/json and the user saw the Control
+// Center's HTML SOURCE rather than the app. A non-JSON body is served with the
+// type the bytes sniff as, so a proxy hop can never mislabel a document.
 func writeRawJSON(w http.ResponseWriter, status int, b []byte) {
-	w.Header().Set("Content-Type", "application/json")
+	if json.Valid(b) {
+		w.Header().Set("Content-Type", "application/json")
+	} else if ct := http.DetectContentType(b); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
 	w.WriteHeader(status)
 	_, _ = w.Write(b)
 }
@@ -178,7 +189,11 @@ func writeRawJSON(w http.ResponseWriter, status int, b []byte) {
 // upstream's own status code, for the legacy surface where {"detail": ...}
 // must reach the client unchanged.
 func writeRawJSONStatus(w http.ResponseWriter, status int, b []byte) {
-	w.Header().Set("Content-Type", "application/json")
+	if json.Valid(b) {
+		w.Header().Set("Content-Type", "application/json")
+	} else if ct := http.DetectContentType(b); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
 	w.WriteHeader(status)
 	_, _ = w.Write(b)
 }
