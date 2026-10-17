@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -144,8 +145,8 @@ func TestDirectVersionFieldsAndEnvelope(t *testing.T) {
 	if data.ProductDisplay != "Nexus Trading Forex Bot" {
 		t.Errorf("expected product_display 'Nexus Trading Forex Bot', got %q", data.ProductDisplay)
 	}
-	if data.Version != "9.0.14" {
-		t.Errorf("expected version '9.0.14', got %q", data.Version)
+	if data.Version != DefaultVersion {
+		t.Errorf("expected version %q, got %q", DefaultVersion, data.Version)
 	}
 	if len(data.Commit) != 40 {
 		t.Errorf("expected 40-character commit hash, got %q", data.Commit)
@@ -302,8 +303,8 @@ func TestVersionFallbackToBinary(t *testing.T) {
 	if env.Data.Product != "NexusScalpEngine" {
 		t.Errorf("expected product 'NexusScalpEngine', got %q", env.Data.Product)
 	}
-	if env.Data.Version != "9.0.14" {
-		t.Errorf("expected version '9.0.14', got %q", env.Data.Version)
+	if env.Data.Version != DefaultVersion {
+		t.Errorf("expected version %q, got %q", DefaultVersion, env.Data.Version)
 	}
 }
 
@@ -407,6 +408,32 @@ func TestDirectServingDisabledEnv(t *testing.T) {
 
 	if env.Data.Commit != "disabled_env_commit" {
 		t.Errorf("expected commit from Python fallback when direct serving disabled, got %q", env.Data.Commit)
+	}
+}
+
+// TestDefaultVersionMatchesPyproject is the ANTI-ROT gate. DefaultVersion is
+// the version an INSTALLED (frozen) release reports when no repo root is
+// reachable, so a stale constant ships a wrong version to end users — which is
+// exactly how main went red when pyproject bumped to 9.0.15 and this stayed
+// 9.0.14. Fails closed if the two ever diverge again.
+func TestDefaultVersionMatchesPyproject(t *testing.T) {
+	root := findRepoRoot()
+	if root == "" {
+		t.Skip("no repo root reachable (frozen tree); pyproject cross-check N/A")
+	}
+	data, err := os.ReadFile(filepath.Join(root, "pyproject.toml"))
+	if err != nil {
+		t.Skipf("pyproject.toml unreadable: %v", err)
+	}
+	m := versionRegex.FindSubmatch(data)
+	if len(m) < 2 {
+		t.Fatalf("pyproject.toml has no parseable version line")
+	}
+	if got := string(m[1]); got != DefaultVersion {
+		t.Errorf(
+			"DefaultVersion %q != pyproject.toml version %q; an installed release would report the wrong version — bump both together",
+			DefaultVersion, got,
+		)
 	}
 }
 
