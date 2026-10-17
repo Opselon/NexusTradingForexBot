@@ -5,8 +5,8 @@ verify machine-readable release metadata, and by the CLI tests.
 """
 
 from __future__ import annotations
-import contextlib
 
+import contextlib
 import hashlib
 import json
 import platform
@@ -26,6 +26,9 @@ MANIFEST_FILE_NAME = "release-manifest.json"
 
 #: Sub-directory a CI-staged (non-embedded) tree keeps the manifest in.
 MANIFEST_SUBDIR = "manifests"
+
+#: Canonical name of the checksum file shipped in the release/embedded tree.
+CHECKSUMS_FILE_NAME = "SHA256SUMS.txt"
 
 _SHA256_HEX_CHARS = frozenset("0123456789abcdefABCDEF")
 
@@ -262,6 +265,93 @@ _PAYLOAD_ROOT_SEGMENTS = ("portable/", "cli/")
 #: SHA-256 digests are 64 hex characters; a record claiming anything else is
 #: malformed and must fail closed (never be coerced into a comparable value).
 _SHA256_HEX_LENGTH = 64
+
+
+def embedded_contract_entries(portable_root: Path) -> list[dict[str, Any]]:
+    """Manifest entries for every file that ships inside a portable bundle.
+
+    Portable-rooted (no ``portable/`` prefix), so one record resolves in an
+    extracted zip, an installed tree and the CI staging tree alike. The two
+    contract files never list themselves — they are the contract, not payload.
+    """
+    entries: list[dict[str, Any]] = []
+    for f in sorted(portable_root.rglob("*")):
+        if not f.is_file() or f.name in (MANIFEST_FILE_NAME, CHECKSUMS_FILE_NAME):
+            continue
+        rel = f.relative_to(portable_root).as_posix()
+        entries.append(
+            {
+                "name": rel,
+                "relative_path": rel,
+                "size_bytes": f.stat().st_size,
+                "sha256": sha256_file(f),
+            }
+        )
+    return entries
+
+
+def write_embedded_contract(
+    portable_root: Path, *, channel: str = "stable", extra: dict[str, Any] | None = None
+) -> dict[str, Path]:
+    """Write the SELF-CONTAINED verification contract into a portable bundle.
+
+    ``release-manifest.json`` records every shipped payload file;
+    ``SHA256SUMS.txt`` records the payload executables (the same artifact
+    notion the release-root sums uses for ``portable/*.exe``). Both use
+    PORTABLE-rooted paths, so ``verify-release`` succeeds on an extracted zip,
+    on an installed tree and on the CI staging tree without a layout remap.
+
+    Regression: the pipeline used to copy the RELEASE-ROOT contract into the
+    bundle. Its ``cli/...``, ``*.zip`` and ``*-setup.exe`` entries can never
+    exist inside the payload, so a user who extracted the zip — or installed
+    the product — got ``checksum: ... MISSING`` / ``manifest file missing: ...``
+    and a failing post-install self-verification (exit 9).
+
+    Returns the two paths written.
+    """
+    info = get_version_info()
+    for candidate in (
+        portable_root / "build-info.json",
+        portable_root / "_internal" / "build-info.json",
+    ):
+        if candidate.is_file():
+            with contextlib.suppress(Exception):
+                info = {**info, **json.loads(candidate.read_text(encoding="utf-8"))}
+            break
+
+    manifest: dict[str, Any] = {
+        "product": info.get("product"),
+        "product_display": info.get("product_display"),
+        "version": info.get("version") or get_version(),
+        "git_commit": info.get("git_commit") or info.get("commit"),
+        # CHG-0043: emit the timestamp ONLY when the build recorded one.
+        **({"build_timestamp": info["build_timestamp"]} if info.get("build_timestamp") else {}),
+        "channel": channel or info.get("channel") or "stable",
+        "platform": "windows",
+        "architecture": info.get("architecture") or platform.machine(),
+        "build_mode": info.get("build_mode") or "Release",
+        "artifacts": embedded_contract_entries(portable_root),
+    }
+    if extra:
+        # Callers may record extra contract metadata (e.g. the shipped frontend
+        # bundle). Never let a caller silently redefine the payload entry set.
+        for key, value in extra.items():
+            if key == "artifacts":
+                raise ValueError("extra must not override the payload 'artifacts' entry set")
+            manifest[key] = value
+    manifest_path = portable_root / MANIFEST_FILE_NAME
+    manifest_path.write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")
+
+    payload_exes = sorted(p for p in portable_root.glob("*.exe") if p.is_file())
+    if not payload_exes:
+        raise ValueError(
+            f"no payload executable under {portable_root} — refusing to write an "
+            "empty embedded SHA256SUMS.txt (a bundle must carry its own payload)"
+        )
+    sums_path = checksums_file(
+        payload_exes, portable_root / CHECKSUMS_FILE_NAME, base_dir=portable_root
+    )
+    return {"manifest": manifest_path, "checksums": sums_path}
 
 
 def manifest_records(data: Any) -> list[dict[str, str]] | None:

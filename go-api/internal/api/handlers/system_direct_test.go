@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -229,7 +230,7 @@ func TestVersionFallbackToPython(t *testing.T) {
 			"data": map[string]any{
 				"product":         "NexusScalpEngine",
 				"product_display": "Nexus Trading Forex Bot",
-				"version":         "9.0.14",
+				"version":         DefaultVersion,
 				"commit":          "11223344556677889900aabbccddeeff11223344",
 				"commit_source":   "python",
 				"commit_status":   "RELEASE_COMMIT",
@@ -373,7 +374,7 @@ func TestDirectServingDisabledEnv(t *testing.T) {
 			"data": map[string]any{
 				"product":         "NexusScalpEngine",
 				"product_display": "Nexus Trading Forex Bot",
-				"version":         "9.0.14",
+				"version":         DefaultVersion,
 				"commit":          "disabled_env_commit",
 				"commit_source":   "python",
 				"commit_status":   "RELEASE_COMMIT",
@@ -485,5 +486,29 @@ func TestSystemHandlersDirectMethods(t *testing.T) {
 	verHandler(recVer2, reqVer)
 	if recVer2.Code != http.StatusOK {
 		t.Errorf("SystemVersionDirectHandler: expected 200, got %d", recVer2.Code)
+	}
+}
+
+// GO-VERSION-DRIFT regression: the packaged bundle ships build-info.json but
+// NOT pyproject.toml. resolveVersion must read the version from build-info.json
+// in that layout; before this fix it fell back to DefaultVersion and the Go
+// plane reported a version that disagreed with the release tag.
+func TestResolveVersionPrefersBuildInfo(t *testing.T) {
+	t.Chdir(t.TempDir())
+	commit := "a" + strings.Repeat("0", 39)
+	if err := os.WriteFile("build-info.json",
+		[]byte(`{"product":"NexusScalpEngine","version":"9.9.9-test","git_commit":"`+commit+`"}`),
+		0o644); err != nil {
+		t.Fatalf("write build-info.json: %v", err)
+	}
+	if got := resolveVersion(); got != "9.9.9-test" {
+		t.Errorf("expected build-info version '9.9.9-test', got %q", got)
+	}
+}
+
+func TestResolveVersionFallsBackToDefault(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if got := resolveVersion(); got != DefaultVersion {
+		t.Errorf("expected default %q, got %q", DefaultVersion, got)
 	}
 }

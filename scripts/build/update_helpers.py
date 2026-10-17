@@ -188,6 +188,10 @@ def action_manifest(args: list[str]) -> int:
     in the manifest payload so a tampered/rolled-back Control Center is
     detectable (hash exists but the file is absent, or the file exists with
     a different sha256).
+
+    The embedded copy comes from ``packaging.write_embedded_contract`` — the
+    ONE writer CI also uses — so the local and CI pipelines cannot ship
+    different embedded contracts.
     """
     out_dir = Path(args[0])
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
@@ -207,40 +211,16 @@ def action_manifest(args: list[str]) -> int:
     # release-root manifest references cli/*.exe and *.zip that live OUTSIDE
     # the portable tree (real contract bug found during payload verification).
     portable_root = out_dir / "portable"
-    portable_manifest = portable_root / "release-manifest.json"
-    base_meta = json.loads(manifest.read_text(encoding="utf-8"))
-    payload_files = sorted(
-        f for f in portable_root.rglob("*") if f.is_file() and f.name != "release-manifest.json"
+    written = p.write_embedded_contract(
+        portable_root,
+        channel="stable",
+        extra={"frontend_bundle": _frontend_bundle_record(portable_root)},
     )
-    embedded_arts = [
-        {
-            "name": f.relative_to(portable_root).as_posix(),
-            "relative_path": f.relative_to(portable_root).as_posix(),
-            "size_bytes": f.stat().st_size,
-            "sha256": p.sha256_file(f),
-        }
-        for f in payload_files
-    ]
-    embedded = {
-        "product": base_meta.get("product"),
-        "product_display": base_meta.get("product_display"),
-        "version": base_meta.get("version"),
-        "git_commit": base_meta.get("git_commit"),
-        "channel": base_meta.get("channel"),
-        "platform": base_meta.get("platform"),
-        "architecture": base_meta.get("architecture"),
-        "build_mode": base_meta.get("build_mode"),
-        "minimum_supported_version": base_meta.get("minimum_supported_version"),
-        "migration_required_from": base_meta.get("migration_required_from"),
-        "database_schema": base_meta.get("database_schema"),
-        "config_schema": base_meta.get("config_schema"),
-        "model_runtime_schema": base_meta.get("model_runtime_schema"),
-        "artifacts": embedded_arts,
-    }
-    embedded["frontend_bundle"] = _frontend_bundle_record(portable_root)
-    portable_manifest.write_text(json.dumps(embedded, indent=2), encoding="utf-8")
+    editable_manifest = written["manifest"]
+    payload_files = p.embedded_contract_entries(portable_root)
     print(
-        f"manifest: {len(artifacts)} artifacts -> {manifest} (embedded: {len(payload_files)} files)"
+        f"manifest: {len(artifacts)} artifacts -> {manifest} "
+        f"(embedded: {len(payload_files)} files -> {editable_manifest.parent})"
     )
     return 0
 

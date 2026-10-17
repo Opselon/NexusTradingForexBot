@@ -37,8 +37,9 @@ const (
 	// DefaultVersion is the release version fallback, used when no
 	// pyproject.toml is reachable (e.g. the frozen installed tree, which ships
 	// no repo root). It MUST equal pyproject.toml's version:
-	// TestDefaultVersionMatchesPyproject fails otherwise. Rotting here is not
-	// cosmetic — an installed release would report the wrong version.
+	// TestDefaultVersionMatchesPyproject (system_direct_test.go) fails
+	// otherwise — the gate that stops it rotting, which is exactly how main
+	// went red when pyproject bumped to 9.0.15 and this stayed 9.0.14.
 	DefaultVersion = "9.0.15"
 	// DefaultChannel is the release distribution channel.
 	DefaultChannel = "production"
@@ -438,19 +439,46 @@ func isFallbackRequested(r *http.Request) bool {
 
 var versionRegex = regexp.MustCompile(`(?m)^version\s*=\s*["']([^"']+)["']`)
 
+// buildInfoVersionRegex extracts "version" from build-info.json, which PyInstaller
+// embeds at the payload root (release.yml --add-data build-info.json). pyproject.toml
+// is NOT shipped inside the bundle, so in a packaged install this is the only
+// trustworthy source; without it the Go plane would fall back to DefaultVersion
+// and report a version that disagrees with the Python plane and the release tag.
+var buildInfoVersionRegex = regexp.MustCompile(`(?m)"version"\s*:\s*"([^"]+)"`)
+
 func resolveVersion() string {
 	repoRoot := findRepoRoot()
-	var candidates []string
+	var pyprojectCandidates []string
 	if repoRoot != "" {
-		candidates = append(candidates, filepath.Join(repoRoot, "pyproject.toml"))
+		pyprojectCandidates = append(pyprojectCandidates, filepath.Join(repoRoot, "pyproject.toml"))
 	}
-	candidates = append(candidates,
+	pyprojectCandidates = append(pyprojectCandidates,
 		"pyproject.toml",
 		"../pyproject.toml",
 		"../../pyproject.toml",
 	)
 
-	for _, p := range candidates {
+	// Prefer build-info.json: it is stamped per-build and ships inside the
+	// packaged payload, so it agrees with the release tag even when the source
+	// tree is absent.
+	var buildInfoCandidates []string
+	if repoRoot != "" {
+		buildInfoCandidates = append(buildInfoCandidates, filepath.Join(repoRoot, "build-info.json"))
+	}
+	buildInfoCandidates = append(buildInfoCandidates,
+		"build-info.json",
+		"../build-info.json",
+		"../../build-info.json",
+	)
+	for _, p := range buildInfoCandidates {
+		if data, err := os.ReadFile(p); err == nil {
+			if m := buildInfoVersionRegex.FindSubmatch(data); len(m) > 1 {
+				return string(m[1])
+			}
+		}
+	}
+
+	for _, p := range pyprojectCandidates {
 		if data, err := os.ReadFile(p); err == nil {
 			m := versionRegex.FindSubmatch(data)
 			if len(m) > 1 {
