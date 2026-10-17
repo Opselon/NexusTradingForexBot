@@ -806,7 +806,7 @@ jobs:
           SHA256SUMS.txt
           update-manifest.signed.json"
           echo "$EXPECTED" > /tmp/expected.txt
-          python - <<PY
+          python - <<'PY'
           import json, os, sys, hashlib
           data = json.load(open("/tmp/release.json"))
           ok = True
