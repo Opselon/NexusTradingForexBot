@@ -550,13 +550,58 @@ if ($LASTEXITCODE -ne 0) { Fail "SBOM generation failed" }
 # Secrets scan (shared helper — scans the staged tree)
 & $Py (Join-Path $PSScriptRoot "update_helpers.py") scan-tree $Stage
 if ($LASTEXITCODE -ne 0) { Fail "secrets scan failed" }
-# Embed the release manifest inside the portable tree so `nexus update`
+# Embed the verification contract inside the portable tree so `nexus update`
 # can verify release-manifest.json from inside the payload zip (TASK-9 §64).
-$ManifestSrc = Join-Path $OutDir "manifests\release-manifest.json"
-if (Test-Path $ManifestSrc) {
-    Copy-Item $ManifestSrc (Join-Path $Stage "release-manifest.json") -Force
-    Pass "release-manifest.json embedded in portable tree"
+# The contract is written by the SHARED helper (packaging.write_embedded_contract,
+# invoked by update_helpers.py manifest above) and is PORTABLE-ROOTED. It must
+# NOT be overwritten with the release-root manifests/ copy: that one records
+# cli/..., *.zip and *-setup.exe, none of which can exist inside the payload, so
+# post-install verify-release reported "checksum: ... MISSING" and exited 9.
+$EmbeddedManifest = Join-Path $Stage "release-manifest.json"
+$EmbeddedSums = Join-Path $Stage "SHA256SUMS.txt"
+if (-not (Test-Path $EmbeddedManifest)) {
+    Fail "portable tree has no embedded release-manifest.json - verify-release cannot self-verify"
 }
+if (-not (Test-Path $EmbeddedSums)) {
+    Fail "portable tree has no embedded SHA256SUMS.txt - verify-release cannot self-verify"
+}
+Pass "portable-scoped release contract embedded (manifest + SHA256SUMS.txt)"
+
+# The portable ZIP must carry that contract, so (re)build it AFTER the contract
+# exists. Building it earlier would ship an archive whose own contents fail
+# verification - and the published zip digest is recorded further below.
+if (Test-Path $PortableZip) { Remove-Item $PortableZip -Force }
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory($Stage, $PortableZip)
+if (-not (Test-Path $PortableZip)) { Fail "portable zip rebuild failed after embedding the contract" }
+$zipEntries = [System.IO.Compression.ZipFile]::OpenRead($PortableZip)
+$zipNames = $zipEntries.Entries.FullName
+$zipEntries.Dispose()
+foreach ($want in @("release-manifest.json", "SHA256SUMS.txt")) {
+    if ($zipNames -notcontains $want) { Fail "portable zip is missing embedded contract file: $want" }
+}
+Pass "portable zip rebuilt with embedded contract ($((Get-Item $PortableZip).Length) bytes)"
+
+# The published SHA256SUMS.txt records this zip, and its bytes just changed -
+# rewrite the sums so it describes what ships (a stale entry would otherwise
+# fail the post-publish digest contract).
+$shaLines = foreach ($a in $Artifacts) {
+    $h = (Get-FileHash -Algorithm SHA256 -Path $a).Hash.ToLower()
+    Try { $rel = [System.IO.Path]::GetRelativePath($OutDir, $a) } Catch { $rel = $a.Substring($OutDir.Length).TrimStart("\\") }
+    "$h  $rel"
+}
+Set-Content -Path $SHA256Sums -Value $shaLines -Encoding ascii
+Pass "SHA256SUMS.txt regenerated after the zip rebuild ($($Artifacts.Count) artifacts)"
+
+# Metadata assets published alongside the payloads: the post-publish gate
+# requires every published asset to be covered by SHA256SUMS.txt.
+foreach ($meta in @((Join-Path $OutDir "manifests\release-manifest.json"), (Join-Path $OutDir "sbom\sbom.spdx.json"))) {
+    if (-not (Test-Path $meta)) { Fail "published metadata asset missing: $meta" }
+    $h = (Get-FileHash -Algorithm SHA256 -Path $meta).Hash.ToLower()
+    $rel = [System.IO.Path]::GetRelativePath($OutDir, $meta)
+    Add-Content -Path $SHA256Sums -Value "$h  $rel" -Encoding ascii
+}
+Pass "SHA256SUMS.txt covers the published metadata assets"
 Pass "checksums + manifest + SBOM + secrets scan complete"
 
 # ---------------------------------------------------------------------------

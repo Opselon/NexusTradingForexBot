@@ -579,17 +579,83 @@ def test_release_yml_post_publish_verify_checks_asset_contract() -> None:
 
 
 def test_embed_step_puts_the_checksums_file_inside_the_portable_tree() -> None:
-    """F1: the portable bundle must carry SHA256SUMS.txt, not just the manifest."""
+    """F1: the portable bundle must carry SHA256SUMS.txt, not just the manifest.
+
+    The contract is WRITTEN portable-scoped by the shared helper (not copied
+    from the release root — see the F1/F2 regression test below) and the zip is
+    rebuilt so the archive carries it.
+    """
     yml = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
     idx = yml.find("Embed release contract in portable bundle")
     assert idx != -1, "embed step renamed/removed"
-    step = yml[idx : yml.find("P0 TRUST ROOT", idx)]
-    # The sums file is copied into the tree ...
-    assert '"$Out\\checksums\\SHA256SUMS.txt" "$Out\\portable\\SHA256SUMS.txt"' in step, step
+    step = yml[idx : yml.find("Pre-stage verification contract for installer", idx)]
+    # The bundle contract is written by the shared helper, portable-rooted.
+    assert "write_embedded_contract" in step, step
     # ... and the zip is rebuilt, because the archive built at the Stage step
     # predates both contract files.
     assert "Compress-Archive" in step
     assert "PORTABLE_ZIP_REBUILD_FAILED" in step
+
+
+def test_embed_step_runs_before_anything_hashes_the_zip() -> None:
+    """F1 ORDERING: the zip must be final before its digest is recorded.
+
+    Regression: the embed+rezip used to run AFTER the Checksums step, so
+    SHA256SUMS.txt recorded the digest of a zip that had already been replaced
+    -> the post-publish DIGEST contract failed on every release.
+    """
+    yml = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    stage_idx = yml.find("name: Stage release tree")
+    embed_idx = yml.find("Embed release contract in portable bundle")
+    sums_idx = yml.find("name: Checksums + manifest + SBOM")
+    assert 0 < stage_idx < embed_idx < sums_idx, (
+        "the embed+rezip step must run after Staging and BEFORE the checksums step"
+    )
+    assert "Compress-Archive" not in yml[sums_idx:], (
+        "nothing may rebuild the zip after the checksums step"
+    )
+
+
+def test_embedded_contract_is_portable_scoped_not_the_release_root_copy() -> None:
+    """F2/F4: the bundle contract must list only files the bundle contains.
+
+    Regression: the release-root contract (cli/..., *.zip, *-setup.exe) was
+    copied into the portable tree, so `verify-release` on an extracted zip — and
+    on the installed tree, which IS that payload — reported
+    "checksum: ... MISSING" / "manifest file missing: ...".
+    """
+    yml = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    idx = yml.find("Pre-stage verification contract for installer")
+    pre = yml[idx : yml.find("name: Installer (Inno Setup)", idx)]
+    # The pre-stage step must RELOCATE the bundle contract, never author a
+    # release-root one.
+    assert "Copy-Item $PortableSums" in pre and "Copy-Item $PortableManifest" in pre, pre
+    assert "$Subset" not in pre, "the release-root 3-artifact subset must be gone"
+    # Release-root sums are still produced for publication, but only by the
+    # Checksums step (4 artifacts, incl. setup.exe).
+    assert '"$Out\\NexusScalpEngine-$V-win-x64-setup.exe"' in yml
+
+
+def test_published_sums_covers_the_metadata_assets() -> None:
+    """F3: the strict coverage rule needs the metadata assets in SHA256SUMS.
+
+    Regression: the gate requires every published asset to appear in
+    SHA256SUMS.txt, but the sums was generated over the 4 payload binaries only
+    — release-manifest.json / sbom.spdx.json / update-manifest.signed.json were
+    never covered, so the gate could not pass.
+    """
+    yml = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    idx = yml.find("Finalize SHA256SUMS coverage")
+    assert idx != -1, "the SHA256SUMS coverage step is missing"
+    step = yml[idx : yml.find("verify-release (full self-check", idx)]
+    for asset in ("release-manifest.json", "sbom.spdx.json", "update-manifest.signed.json"):
+        assert asset in step, f"{asset} is not covered by the sums step"
+    assert "Add-Content" in step
+    # It must run AFTER signing (that file does not exist before) and BEFORE the
+    # tree self-check / upload.
+    sign_idx = yml.find("Sign update manifest (Ed25519 trust root)")
+    verify_idx = yml.find("verify-release (full self-check")
+    assert 0 < sign_idx < idx < verify_idx, "coverage step ordering changed"
 
 
 def test_release_yml_undraft_only_runs_when_publish_actually_failed() -> None:

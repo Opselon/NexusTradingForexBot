@@ -418,42 +418,80 @@ jobs:
             throw "EUR_FRONTEND_MISSING: staged portable tree has no _internal/frontend/dist/index.html"
           }
           Write-Host "staged: $Out"
-      # BUG-166 pre-stage: the installer EMBEDS the verification contract
-      # (SHA256SUMS.txt + release-manifest.json) into the installed tree so
-      # post-install `verify-release` self-verifies (BUG-160). The FULL
-      # contract files cannot exist yet (they hash the installer itself),
-      # so pre-stage a SUBSET over the already-staged portable + CLI + zip
-      # payloads. Portable hashes are byte-identical in the final generation,
-      # so post-install verification of those entries stays semantically
-      # valid; the Checksums step below still regenerates the complete
-      # release SHA256SUMS.txt (incl. setup.exe, BUG-143 pre-flight intact).
-      - name: Pre-stage verification contract for installer (BUG-166)
+      # F1 ORDERING: the portable zip must be FINAL before anything hashes it.
+      # The Stage step's zip predates the embedded contract, and the release
+      # SHA256SUMS.txt is written by the Checksums step below — so embedding the
+      # contract and re-zipping at the END (which this pipeline used to do) left
+      # the recorded digest describing a zip that no longer existed, and the
+      # post-publish DIGEST contract failed. Embed HERE, rezip HERE, so every
+      # later hash describes the bytes that actually ship.
+      - name: Embed release contract in portable bundle
         shell: pwsh
         run: |
           $V = $env:NSE_VERSION
           $Out = $env:NSE_OUT
+
+          # PORTABLE-SCOPED, SELF-CONTAINED contract. A copy of the RELEASE-ROOT
+          # contract is not usable inside the bundle: its cli/..., *.zip and
+          # *-setup.exe records can never exist in a payload, so verify-release
+          # on an extracted zip (and on the installed tree, which IS this tree)
+          # reported "checksum: ... MISSING" / "manifest file missing: ...".
+          # One shared helper writes both files portable-rooted so the CI and
+          # local pipelines cannot diverge.
+          python -c "import sys; sys.path.insert(0,'src'); from pathlib import Path; from nexus_scalp.release import packaging as p; w=p.write_embedded_contract(Path(r'$Out\portable')); print('embedded contract:', w['manifest'].name, w['checksums'].name)"
+          if ($LASTEXITCODE -ne 0) { throw "PORTABLE_CONTRACT_FAILED: could not write the embedded verification contract" }
+          foreach ($f in @("$Out\portable\release-manifest.json", "$Out\portable\SHA256SUMS.txt")) {
+            if (-not (Test-Path $f)) { throw "PORTABLE_CONTRACT_MISSING: '$f' was not written" }
+            if ((Get-Item $f).Length -lt 50) { throw "PORTABLE_CONTRACT_EMPTY: '$f' is suspiciously small" }
+          }
+
+          # Re-zip so the archive carries the contract. The zip built at the
+          # Stage step predates it.
+          $zip = "$Out\NexusScalpEngine-$V-win-x64.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path "$Out\portable\*" -DestinationPath $zip
+          if (-not (Test-Path $zip)) { throw "PORTABLE_ZIP_REBUILD_FAILED: could not re-zip the portable tree" }
+          # The rebuilt archive must actually CONTAIN the contract: a silent
+          # re-zip of a tree without them would still publish a zip that fails
+          # its own self-verification.
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $z = [System.IO.Compression.ZipFile]::OpenRead($zip)
+          $names = $z.Entries.FullName
+          $z.Dispose()
+          foreach ($want in @("release-manifest.json", "SHA256SUMS.txt")) {
+            if ($names -notcontains $want) { throw "PORTABLE_ZIP_CONTRACT_ABSENT: '$want' is not inside the rebuilt zip" }
+          }
+          Write-Host "portable contract embedded; zip rebuilt with both contract files ($((Get-Item $zip).Length) bytes)"
+
+      # BUG-166 pre-stage: the installer EMBEDS the verification contract
+      # (SHA256SUMS.txt + release-manifest.json) into the installed tree so
+      # post-install `verify-release` self-verifies (BUG-160). The installed
+      # tree IS the portable payload, so what gets embedded must be the
+      # PORTABLE-SCOPED contract written by the step above. The previous
+      # release-root contract recorded cli/..., *.zip and *-setup.exe — none of
+      # which can exist inside an install dir — so post-install verify-release
+      # reported "checksum: ... MISSING" and install-release.ps1 exited 9.
+      # This step only RELOCATES the already-written bundle contract into the
+      # checksums/ + manifests/ spellings the .iss embeds: re-authoring it here
+      # could hand the installer different bytes than the published zip carries.
+      - name: Pre-stage verification contract for installer (BUG-166)
+        shell: pwsh
+        run: |
+          $Out = $env:NSE_OUT
           New-Item -ItemType Directory -Force -Path "$Out\checksums" | Out-Null
           New-Item -ItemType Directory -Force -Path "$Out\manifests" | Out-Null
-          $Subset = @(
-            "$Out\portable\NexusScalpEngine.exe",
-            "$Out\cli\NexusScalpEngine-CLI.exe",
-            "$Out\NexusScalpEngine-$V-win-x64.zip"
-          )
-          foreach ($a in $Subset) {
-            if (-not (Test-Path $a)) { throw "BUG166_MISSING_PRESTAGE_ARTIFACT: '$a'" }
-          }
-          $lines = foreach ($a in $Subset) {
-            $h = (Get-FileHash -Algorithm SHA256 -Path $a).Hash.ToLower()
-            $rel = [System.IO.Path]::GetRelativePath("$PWD\$Out", $a)
-            "$h  $rel"
-          }
-          Set-Content "$Out\checksums\SHA256SUMS.txt" $lines -Encoding ascii
-          python -c "import sys; sys.path.insert(0,'src'); from pathlib import Path; from nexus_scalp.release import packaging as p; root=Path(r'$Out'); arts=list(root.glob('portable/*.exe'))+list(root.glob('cli/*.exe'))+list(root.glob('*.zip')); p.generate_manifest(arts, root/'manifests'/'release-manifest.json', channel='stable', base_dir=root); print('pre-stage contract ok')"
+          $PortableSums = "$Out\portable\SHA256SUMS.txt"
+          $PortableManifest = "$Out\portable\release-manifest.json"
           # BUG-166 defense-in-depth: the Inno `skipifsourcedoesntexist` flag is
           # resilience, NOT protection. If either contract file failed to be
           # written, the installer would silently embed nothing and post-install
           # verify-release would report "build without verification" AFTER the
           # release was already published. Fail the build HERE instead.
+          foreach ($f in @($PortableSums, $PortableManifest)) {
+            if (-not (Test-Path $f)) { throw "BUG166_MISSING_PRESTAGE_CONTRACT: '$f' missing after the embed step" }
+          }
+          Copy-Item $PortableSums "$Out\checksums\SHA256SUMS.txt" -Force
+          Copy-Item $PortableManifest "$Out\manifests\release-manifest.json" -Force
           if (-not (Test-Path "$Out\checksums\SHA256SUMS.txt")) {
             throw "BUG166_MISSING_PRESTAGE_CONTRACT: checksums/SHA256SUMS.txt missing after pre-stage"
           }
@@ -549,25 +587,6 @@ jobs:
                     Set-Content "$Out\checksums\SHA256SUMS.txt" $lines -Encoding ascii
           python -c "import sys; sys.path.insert(0,'src'); from pathlib import Path; from nexus_scalp.release import packaging as p; root=Path(r'$Out'); arts=list(root.glob('portable/*.exe'))+list(root.glob('cli/*.exe'))+list(root.glob('*.zip'))+list(root.glob('*-setup.exe')); p.generate_manifest(arts, root/'manifests'/'release-manifest.json', channel='stable', base_dir=root); p.generate_sbom(out=root/'sbom'/'sbom.spdx.json'); print('manifest+sbom ok')"
 
-      - name: Embed release contract in portable bundle
-        shell: pwsh
-        run: |
-          $V = $env:NSE_VERSION
-          $Out = $env:NSE_OUT
-
-          Copy-Item "$Out\manifests\release-manifest.json" "$Out\portable\release-manifest.json" -Force
-          # F1: the portable zip must be SELF-CONTAINING. Until now only the
-          # manifest was embedded; SHA256SUMS.txt stayed in checksums\ OUTSIDE
-          # the archive, so a user who extracted the zip and ran verify-release
-          # got "SHA256SUMS.txt missing". Embed the sums next to the manifest.
-          Copy-Item "$Out\checksums\SHA256SUMS.txt" "$Out\portable\SHA256SUMS.txt" -Force
-          # Re-zip so the archive carries both contract files. The zip built at
-          # the Stage step predates them; rebuild it from the same portable tree.
-          $zip = "$Out\NexusScalpEngine-$V-win-x64.zip"
-          if (Test-Path $zip) { Remove-Item $zip -Force }
-          Compress-Archive -Path "$Out\portable\*" -DestinationPath $zip
-          if (-not (Test-Path $zip)) { throw "PORTABLE_ZIP_REBUILD_FAILED: could not re-zip the portable tree" }
-          Write-Host "manifest + SHA256SUMS embedded in portable tree; zip rebuilt ($((Get-Item $zip).Length) bytes)"
       # P0 TRUST ROOT: sign the release update manifest with the Ed25519
       # release key (private seed ONLY via the NSE_UPDATE_SIGNING_KEY secret).
       # docs/ARTIFACT_TRUST_CHAIN.md section 3: a release without a valid
@@ -593,6 +612,40 @@ jobs:
           assert v["verified"] and v["covered_digest"] == m["artifact_sha256"]
           print("client-side signed-manifest verify OK:", v["key_id"], v["covered_digest"][:12])
           PY
+      - name: Finalize SHA256SUMS coverage (every published asset)
+        shell: pwsh
+        run: |
+          $Out = $env:NSE_OUT
+          $sums = "$Out\checksums\SHA256SUMS.txt"
+          if (-not (Test-Path $sums)) { throw "SUMS_COVERAGE_NO_SUMS: checksums/SHA256SUMS.txt missing" }
+          # The published release carries metadata assets next to the payloads
+          # (release-manifest.json, sbom.spdx.json, update-manifest.signed.json).
+          # The post-publish gate requires EVERY published asset to appear in
+          # SHA256SUMS.txt with a matching digest, so append the entries whose
+          # producer steps run after the Checksums step. An already-recorded
+          # basename is left untouched (never a silent re-hash of a payload).
+          $recorded = @()
+          foreach ($line in (Get-Content $sums)) {
+            $f = $line.Trim() -split '\s+'
+            if ($f.Count -eq 2) { $recorded += $f[1].Split([char[]]@('\','/'))[-1] }
+          }
+          $extra = @(
+            "$Out\manifests\release-manifest.json",
+            "$Out\sbom\sbom.spdx.json",
+            "$Out\manifests\update-manifest.signed.json"
+          )
+          $added = 0
+          foreach ($a in $extra) {
+            if (-not (Test-Path $a)) { throw "SUMS_COVERAGE_MISSING_ASSET: '$a' does not exist" }
+            $name = Split-Path $a -Leaf
+            if ($recorded -contains $name) { continue }
+            $h = (Get-FileHash -Algorithm SHA256 -Path $a).Hash.ToLower()
+            $rel = [System.IO.Path]::GetRelativePath("$PWD\$Out", $a)
+            Add-Content -Path $sums -Value "$h  $rel" -Encoding ascii
+            $added++
+          }
+          $count = (Get-Content $sums | Where-Object { $_.Trim() }).Count
+          Write-Host "SHA256SUMS coverage finalized (+$added metadata entries, $count total)"
       - name: verify-release (full self-check incl. secrets)
         shell: pwsh
         run: |
