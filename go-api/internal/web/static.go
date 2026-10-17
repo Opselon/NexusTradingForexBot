@@ -133,6 +133,46 @@ func executableDir() string {
 	return filepath.Dir(exe)
 }
 
+// installRoot derives the RELEASE install root from the running binary's
+// directory, honouring the onedir nesting. Python's sys.executable.parent IS
+// the install root, so frontend_assets.py can join "_internal/..." onto it
+// directly; the Go binary ships one level deeper — <install>/_internal/go-api/
+// nexus-api.exe — so joining the same slots onto the BINARY's directory probes
+// <install>/_internal/go-api/_internal/frontend/dist, which can never exist.
+// That defect shipped: Go logged "no built frontend dist found" on a tree that
+// contained _internal/frontend/dist/index.html, never mounted the SPA, left "/"
+// to the Python proxy, and the proxy relabelled Python's index document as
+// application/json — so the browser printed the Control Center's HTML source
+// instead of running it.
+//
+// Walks up from exeDir until a directory containing "_internal" is found, so
+// both the nested release layout (above) and the flat layout the tests pin
+// (exeDir itself holds _internal) resolve to the same root. "" when neither
+// the dir nor any ancestor up to the volume root carries the data tree, so the
+// packaged candidates are skipped exactly as before.
+func installRoot(exeDir string) string {
+	if exeDir == "" {
+		return ""
+	}
+	dir := exeDir
+	// Four hops covers <install>/_internal/go-api -> <install> with room for a
+	// deeper staging dir; the volume-root guard ends the walk regardless.
+	for i := 0; i < 4; i++ {
+		if info, err := os.Stat(filepath.Join(dir, "_internal")); err == nil && info.IsDir() {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir { // reached the volume root
+			break
+		}
+		dir = parent
+	}
+	// No ancestor carries the data tree: fall back to the binary's own
+	// directory. That is the pre-existing behavior, so a layout that ships the
+	// legacy bundle flat next to the binary keeps resolving exactly as before.
+	return exeDir
+}
+
 // repoRoot derives the repository root from this package's own source path
 // (go-api/internal/web/static.go -> the go-api parent is the repo root),
 // mirroring _repo_root() in frontend_assets.py (parents[3] of the src layout).
@@ -168,12 +208,14 @@ func repoRoot() string {
 //
 // Search order (FROZEN — never reorder, never add slots):
 //  1. env NEXUS_ALT_UI_DIR               — authoritative; invalid -> no dist
-//  2. <exe_dir>/_internal/frontend/dist  — packaged release (PyInstaller
-//     onedir; THE RELEASE LAYOUT)
+//  2. <install_root>/_internal/frontend/dist — packaged release (PyInstaller
+//     onedir; THE RELEASE LAYOUT). install_root is derived from the binary's
+//     directory by walking up to the dir that carries `_internal`, because the
+//     binary itself ships at <install>/_internal/go-api/nexus-api.exe.
 //  3. <repo>/frontend/dist               — dev checkout (vite build output)
 //  4. <cwd>/frontend/dist                — dev checkout, cwd form
-//  5. <exe_dir>/_internal/Web            — legacy HTML bundle (packaged)
-//  6. <exe_dir>/Web                      — legacy HTML bundle (portable)
+//  5. <install_root>/_internal/Web       — legacy HTML bundle (packaged)
+//  6. <install_root>/Web                 — legacy HTML bundle (portable)
 //  7. <repo>/Web                         — legacy HTML bundle (dev tree)
 //
 // SLOTS 2-4 mirror the Python seam EXACTLY (contract #9): in a packaged tree
@@ -217,8 +259,10 @@ func resolveFrontendDistWith(exeDir, repo, cwd string) string {
 	// shipping both bundles served the legacy UI while Python served the
 	// React console (contract #9 mirrors frontend_assets.py exactly).
 	if exeDir != "" {
-		if cand := filepath.Join(exeDir, "_internal", "frontend", "dist"); hasIndex(cand) {
-			return cand
+		if root := installRoot(exeDir); root != "" {
+			if cand := filepath.Join(root, "_internal", "frontend", "dist"); hasIndex(cand) {
+				return cand
+			}
 		}
 	}
 	for _, base := range [...]string{repo, cwd} {
@@ -234,12 +278,14 @@ func resolveFrontendDistWith(exeDir, repo, cwd string) string {
 	// every frontend/dist candidate (parity fix; zero regression for old
 	// releases that shipped only the legacy bundle).
 	if exeDir != "" {
-		for _, cand := range [...]string{
-			filepath.Join(exeDir, "_internal", "Web"),
-			filepath.Join(exeDir, "Web"),
-		} {
-			if hasIndex(cand) {
-				return cand
+		if root := installRoot(exeDir); root != "" {
+			for _, cand := range [...]string{
+				filepath.Join(root, "_internal", "Web"),
+				filepath.Join(root, "Web"),
+			} {
+				if hasIndex(cand) {
+					return cand
+				}
 			}
 		}
 	}
