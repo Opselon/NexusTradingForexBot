@@ -16,13 +16,13 @@ networkx==3.6.1 ; python_full_version < '3.12'
 networkx==3.7 ; python_full_version >= '3.12'
 numpy==2.4.6 ; python_full_version < '3.12'
 numpy==2.5.4 ; python_full_version >= '3.12'
-pillow==12.3.0
-playwright==1.63.0
+pillow==13.0.0
+playwright==1.64.0
 polars==2.0.0
 psycopg-pool==3.3.3
 psycopg==3.3.6
 pyarrow==25.0.1
-pydantic-settings==2.15.0
+pydantic-settings==2.16.0
 pydantic==2.14.1
 pygments==2.21.0
 pyinstaller==6.22.3
