@@ -65,6 +65,31 @@ class TelegramConfig(BaseModel):
     admin_id: str = ""
 
 
+class MT5MCPConfig(BaseModel):
+    """MetaTrader 5 MCP transport (IMPL-F, MT5-PARITY-FORENSICS).
+
+    Optional, additive, and OFF by default so an existing operator's config
+    loads byte-identically with no `mcp:` key present. Enabling it does not
+    change the active transport by itself — this section is consumed by
+    callers that explicitly construct MCPMT5Adapter; the engine still boots
+    on the native/remote adapters.
+    """
+
+    #: Disabled by default (missing capability before IMPL-F). Flip to true
+    #: only where the local terminal bridge is running.
+    enabled: bool = False
+    #: Endpoint base URL. The empty default means "read NSE_MT5_MCP_URL from
+    #: the environment / repo .env"; the MCP adapter itself applies the
+    #: documented fallback when neither is set.
+    url: str = ""
+    #: Read-only contract: the MCP transport NEVER issues trade_* tools, so
+    #: there is no key here for a trading mode. Surfaced explicitly so the
+    #: intent is visible in the config schema rather than implicit.
+    read_only: bool = True
+    #: Per-call HTTP timeout for MCP tool reads (seconds).
+    timeout_s: float = 60.0
+
+
 class MT5Config(BaseModel):
     account: int | None = None
     password: str | None = None
@@ -73,6 +98,9 @@ class MT5Config(BaseModel):
     retries: int = 3
     path: str | None = None
     portable_mode: bool = False
+    #: IMPL-F: the read-only MCP transport section. Optional and disabled by
+    #: default; absent from an existing operator's YAML = no behavior change.
+    mcp: MT5MCPConfig | None = None
 
 
 class ModelConfig(BaseModel):

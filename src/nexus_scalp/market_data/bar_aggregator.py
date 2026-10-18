@@ -87,6 +87,31 @@ class BarAggregator:
     """
     Maintains active forming bars and yields completed bars upon timeframe boundary crossing.
 
+    MEMORY BOUND (H-05, MT5-PARITY-FORENSICS lane H): the completed-bar series
+    is a bounded ring, not an unbounded list. Every completed M1 bar used to be
+    appended to ``_completed_bars`` and never released, so a long live session
+    grew it linearly (one bar/minute ≈ 1440/day ≈ 525k/year) *and* paid an O(n)
+    full copy on every ``get_completed_bars()`` call — the hot path reads it on
+    every tick. The bound is set from the largest legitimate consumer window:
+
+    * the liquidity governor runs on the FULL window by deliberate contract
+      (``features/liquidity_runtime.py:537-548`` — a cap was probed and
+      REJECTED because old daily pools fell outside it, 0/594 parity loss;
+      its lifecycle loop is vectorized instead), and
+    * ``_resync_from_broker`` (``live_engine.py:2916-2921``) reseeds with up to
+      ``chart_count = 20000`` broker M1 bars (~14 days), and
+    * ``HTF_HISTORY_BARS = 4000`` (``features/scalp_features.py:50``) is the
+      shared train==live HTF contract the dataset builder mirrors.
+
+    ``COMPLETED_BARS_MAXLEN = 20000`` therefore admits the largest legitimate
+    reseed whole and keeps every consumer's semantics identical; the live tick
+    path additionally trims to 4000 (``tick_pipeline.py:463-464``), so in steady
+    state the ring sits far below the cap. A reseed that exceeds the cap keeps
+    the NEWEST bars (the causal tail every consumer reads) and counts the
+    dropped prefix in ``dropped_completed_bars``. Nothing is dropped under any
+    observed production path; the counter exists so the API can never silently
+    under-report history (see ``dropped_completed_bars`` below).
+
     Market-data integrity contract (Agent-13, 2026-09-09):
       * Symbol identity: a tick whose ``symbol`` differs from the aggregator's
         own symbol is rejected (ValueError, fail closed) — a foreign-symbol
@@ -106,6 +131,13 @@ class BarAggregator:
     Dropped ticks never touch any bar state; they carry zero bar information.
     """
 
+    #: H-05: hard ceiling on the retained completed-bar series (see the class
+    #: MEMORY BOUND docstring for the sizing derivation). Chosen as the largest
+    #: legitimate consumer window: ``_resync_from_broker`` reseeds with up to
+    #: 20000 broker M1 bars, and the liquidity governor deliberately runs on the
+    #: FULL window (a cap was probed and rejected for losing 0/594 parity).
+    COMPLETED_BARS_MAXLEN: int = 20000
+
     def __init__(self, symbol: str, timeframe_minutes: int = 1) -> None:
         self.symbol = symbol
         self.timeframe_minutes = timeframe_minutes
@@ -117,6 +149,12 @@ class BarAggregator:
         self._close: float = 0.0
         self._volume: int = 0
         self._completed_bars: list[BarData] = []
+        #: H-05: monotonic count of completed bars evicted from the head of the
+        #: ring to keep it at ``COMPLETED_BARS_MAXLEN``. Zero on every observed
+        #: production path (the cap admits the 20000-bar broker reseed whole);
+        #: exposed so a consumer that assumes complete history can detect that
+        #: the retained window is a tail and not the whole series.
+        self.dropped_completed_bars: int = 0
         # Monotonic stamp of the last ACCEPTED tick (UTC-aware). None until
         # the first valid tick arrives; rebased by reseed() from broker bars.
         self._last_accepted_ts: datetime | None = None
@@ -201,6 +239,16 @@ class BarAggregator:
                 is_complete=True,
             )
             self._completed_bars.append(completed_bar)
+            # H-05: bound the completed-bar series. O(1) amortized (the trim
+            # runs only when the ring is exactly one over the cap, and the live
+            # tick path already trims to 4000 at tick_pipeline.py:463-464 so
+            # this is defense-in-depth for non-engine consumers of the
+            # aggregator). Keep the NEWEST bars: every consumer reads the
+            # causal tail (55/60/900-bar windows, HTF aggregation).
+            if len(self._completed_bars) > self.COMPLETED_BARS_MAXLEN:
+                overflow = len(self._completed_bars) - self.COMPLETED_BARS_MAXLEN
+                self._completed_bars = self._completed_bars[overflow:]
+                self.dropped_completed_bars += overflow
             logger.info(
                 "Bar completed",
                 symbol=self.symbol,
@@ -269,6 +317,16 @@ class BarAggregator:
             return None
 
         last_bar = deduped[-1]
+        # H-05: bound the reseeded series the same way as the live append path
+        # (the caller fetches at most 20000 broker M1 bars, so this normally
+        # trims nothing). Keep the NEWEST bars: every consumer reads the causal
+        # tail. reseed() is an atomic replace, so the head we drop here is the
+        # oldest broker history, never live-minted bars.
+        if len(deduped) > self.COMPLETED_BARS_MAXLEN:
+            overflow = len(deduped) - self.COMPLETED_BARS_MAXLEN
+            deduped = deduped[overflow:]
+            self.dropped_completed_bars += overflow
+            last_bar = deduped[-1]
         self._completed_bars = deduped
 
         # Seed the forming bar at the NEXT minute boundary after the last
