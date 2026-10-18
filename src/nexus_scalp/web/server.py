@@ -55,6 +55,9 @@ from nexus_scalp.web.errors import (
 # frontend/dist resolution seam — single source of truth for "/" document
 # serving, the /alt mount, the root SPA fallback and /health's frontend block.
 from nexus_scalp.web.frontend_assets import resolve_frontend_dist
+from nexus_scalp.web.transports import (
+    is_transport_disconnect_exception,
+)
 
 
 def serialize_enums(obj: Any) -> Any:
@@ -2339,10 +2342,27 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                 # Keep connection alive
                 await websocket.receive_text()
         except WebSocketDisconnect:
-            active_connections.remove(websocket)
-        except Exception:
-            if websocket in active_connections:
-                active_connections.remove(websocket)
+            # WIN-DISCONNECT-001: an ordinary client departure. discard() is
+            # used because the SSE broadcast loop may have removed this same
+            # socket already (a client that goes away is typically noticed by
+            # the streaming broadcast first, then by this receive loop); a
+            # double remove() would raise KeyError and escape the handler as
+            # a spurious ERROR traceback.
+            active_connections.discard(websocket)
+        except Exception as exc:
+            active_connections.discard(websocket)
+            # WIN-DISCONNECT-001: a socket-level reset on a client that just
+            # walked away is expected; anything else is a real failure and
+            # must stay visible (the classification only accepts the remote-
+            # gone errno/winerror codes, never the exception type alone).
+            if not is_transport_disconnect_exception(exc):
+                log_web_error(
+                    logger,
+                    "/ws",
+                    None,
+                    exc,
+                    context={"msg": "WebSocket endpoint failure"},
+                )
 
     # ------------------------------------------------------------------
     # END-USER-RUNTIME-UI-INTEGRATION document routes (contract frozen
@@ -3706,7 +3726,21 @@ def create_app(engine_ref: Any = None) -> FastAPI:
                                 if event_name == "tick"
                                 else payload
                             )
-                        except Exception:
+                        except Exception as exc:
+                            # WIN-DISCONNECT-001: a client that has gone away
+                            # is dropped silently — this is the ordinary
+                            # disconnect path for a live dashboard socket.
+                            # Unexpected failures (protocol/encoding errors,
+                            # server-side faults) still reach the structured
+                            # web-error log so they never disappear.
+                            if not is_transport_disconnect_exception(exc):
+                                log_web_error(
+                                    logger,
+                                    "/api",
+                                    None,
+                                    exc,
+                                    context={"msg": "WebSocket broadcast failed"},
+                                )
                             active_connections.discard(ws)
                 except Exception as e:
                     log_web_error(
@@ -3763,6 +3797,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     # every route (current and future) is behind token auth (audit B1).
     _install_web_auth_if_enabled(app)
 
+    # WIN-DISCONNECT-001: classify expected Windows Proactor transport
+    # disconnects so an ordinary client departure (browser tab close, SSE
+    # abort, proxy idle drop) no longer logs a full ERROR traceback while
+    # every genuine transport/application failure stays fully visible.
+    # Installed LAST so the fully-wrapped app is what the handler guards.
+    _install_transport_disconnect_handling(app)
+
     return app
 
 
@@ -3788,3 +3829,65 @@ def _install_web_auth_if_enabled(app) -> None:
     from nexus_scalp.web.auth import install_web_auth
 
     install_web_auth(app)
+
+
+# ------------------------------------------------------------------------------
+# WIN-DISCONNECT-001: Windows Proactor transport disconnect handling.
+#
+# ``_install_transport_disconnect_handling`` runs at the very end of
+# create_app because it needs a live event loop (the Proactor transport
+# callbacks it classifies are loop-owned). On an event loop it installs the
+# classification handler once, idempotently; outside one (import-time,
+# sync callers, tooling) it degrades to a no-op so ``create_app`` never
+# hard-fails on a runtime that has no loop.
+# ------------------------------------------------------------------------------
+def _install_transport_disconnect_handling(app: Any) -> None:
+    """Attach the WIN-DISCONNECT-001 classification handler to the serving loop.
+
+    The handler must live on the loop that OWNS the Proactor transports,
+    because that is the loop whose exception handler receives the teardown
+    callbacks. uvicorn creates its own event loop only when it starts serving
+    — AFTER ``create_app`` returns — so the handler is bound by an ASGI
+    startup hook that runs on the serving loop.
+
+    ``NSE_WEB_TRANSPORT_DISCONNECT_HANDLER=1`` installs on the running loop
+    immediately as well, so tests can exercise the classification
+    deterministically without driving a full ASGI startup.
+    """
+    import asyncio as _asyncio
+
+    from nexus_scalp.web.transports import install_transport_disconnect_handler
+
+    force = os.environ.get("NSE_WEB_TRANSPORT_DISCONNECT_HANDLER", "").strip() == "1"
+
+    def _install_once() -> None:
+        try:
+            loop = _asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        try:
+            install_transport_disconnect_handler(loop)
+        except Exception as exc:  # pragma: no cover - never block server boot
+            logger.warning("[WIN-DISCONNECT] handler install failed (isolated): %s", exc)
+
+    if force:
+        _install_once()
+
+    if getattr(app.state, "_transport_disconnect_hooked", False):
+        return
+    app.state._transport_disconnect_hooked = True
+
+    # Starlette's startup event fires on the loop that serves the app —
+    # exactly the loop that owns the transports being guarded. The hook is
+    # installed through the ASGI-lifespan seam (router.lifespan_context) so it
+    # works with and without a custom lifespan, and so it never degrades to
+    # the deprecated ``on_event`` API.
+    original_lifespan = app.router.lifespan_context
+
+    @contextlib.asynccontextmanager
+    async def _wrapped_lifespan(app: Any):
+        _install_once()
+        async with original_lifespan(app):
+            yield
+
+    app.router.lifespan_context = _wrapped_lifespan

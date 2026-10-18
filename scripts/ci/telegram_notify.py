@@ -281,6 +281,17 @@ def main(argv: list[str] | None = None) -> int:
     # BUG-300: AI failure triage appended to the summary lanes. The analysis
     # is advisory; the command exits 0 even when the AI endpoint is down —
     # then the deterministic rules fallback carries the message instead.
+    p = sub.add_parser("pr-report")
+    p.add_argument("--evidence", default="pr-evidence.json", help="Path to pr-evidence.json")
+    p.set_defaults(
+        func=lambda a: _emit(
+            _send_custom(
+                _reporter(a),
+                _format_pr_evidence_report(a.evidence),
+            )
+        )
+    )
+
     p = sub.add_parser("ai-triage")
     p.add_argument(
         "--kind",
@@ -344,6 +355,57 @@ def main(argv: list[str] | None = None) -> int:
 
 def _send_custom(reporter: CITelegramReporter, html_text: str) -> dict:
     return reporter._send_text(html_text, event_type="CUSTOM")
+
+
+def _format_pr_evidence_report(evidence_path: str) -> str:
+    """Format a concise Telegram HTML alert from a pr-evidence.json payload."""
+    import html
+    import json
+    from pathlib import Path
+
+    p = Path(evidence_path)
+    if not p.exists():
+        return "<b>⚠️ NSE Evidence Report:</b> Evidence JSON not found."
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return f"<b>⚠️ NSE Evidence Report:</b> JSON parse error: {exc}"
+
+    pr_num = data.get("pr", "?")
+    status = data.get("status", "UNKNOWN")
+    dot = "🟢" if status == "PASS" else ("🟡" if status == "IN_PROGRESS" else "🔴")
+    merge = data.get("merge", {})
+    verdict = merge.get("verdict", "UNKNOWN")
+    lines = [
+        f"<b>{dot} NSE Evidence Report — PR #{pr_num}</b>",
+        f"<b>Status:</b> <code>{status}</code> · <b>Merge?</b> <b>{verdict}</b>",
+        f"<b>Failures:</b> {data.get('failure_count', 0)}",
+    ]
+    failures = data.get("failures", [])
+    if failures:
+        lines.append("\n<b>🔴 Failures & Errors:</b>")
+        for f in failures[:5]:
+            err = f.get("error_type") or f.get("check") or "Error"
+            msg = f.get("message") or ""
+            tb = f.get("traceback")
+            lines.append(
+                f"• <b>{html.escape(str(err))}</b>: <code>{html.escape(str(msg)[:140])}</code>"
+            )
+            if tb:
+                last_tb = "\n".join(str(tb).splitlines()[-4:])
+                lines.append(f"<pre>{html.escape(last_tb)}</pre>")
+
+    warnings = data.get("warning_findings", [])
+    if warnings:
+        lines.append(f"\n<b>⚠️ Warnings ({len(warnings)}):</b>")
+        for w in warnings[:5]:
+            w_err = w.get("error_type") or w.get("check") or "Warning"
+            w_msg = w.get("message") or ""
+            lines.append(
+                f"• <b>{html.escape(str(w_err))}</b>: <code>{html.escape(str(w_msg)[:140])}</code>"
+            )
+
+    return "\n".join(lines)
 
 
 def _ai_triage(

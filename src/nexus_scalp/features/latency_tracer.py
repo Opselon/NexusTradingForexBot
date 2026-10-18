@@ -37,6 +37,7 @@ The UI must not call all of these "Prediction Latency".
 from __future__ import annotations
 
 import math
+import os
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -226,4 +227,10 @@ class LatencyStats:
 
 def latency_warning_threshold_ms() -> float:
     """Configurable observability threshold (brief 39); config-driven later."""
+    raw = os.getenv("NSE_LATENCY_WARNING_THRESHOLD_MS")
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
     return 100.0

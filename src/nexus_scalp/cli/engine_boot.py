@@ -195,7 +195,51 @@ def _go_api_origin() -> str:
         return ""
 
 
-def _boot_go_api_plane(bind_host: str, python_port: int) -> Any:
+def _export_web_auth_token_to_child(app_obj: Any = None) -> None:
+    """WEB-AUTH-P0: export the enforced token so the Go child can read it.
+
+    ``create_app`` resolves/creates the control-plane token and REMEMBERS it
+    (``auth.web_auth_token_in_process``), but only the double-click launcher
+    re-exported it to ``NSE_WEB_AUTH_TOKEN``. On the packaged ``nexus start``
+    path nothing did, so the Go child inherited no token, could not read
+    ``.env`` (the frozen tree has no repo-root ``pyproject.toml``, so
+    ``auth_boot.publish`` writes nothing and Go's CWD is ``_internal/go-api``)
+    and failed closed with ``AUTH_CONFIG_ERROR: web auth token unresolvable``
+    on EVERY request — while Python answered 401 on the same path. The console
+    then showed the red "web auth token unresolvable (fail-closed)" banner and
+    an empty dashboard. The token must reach the child's environment.
+
+    LAZY-MIDDLEWARE TRAP (proven, not assumed): Starlette builds the middleware
+    stack on FIRST REQUEST, so ``app.middleware_stack`` is ``None`` and
+    ``web_auth_token_in_process()`` is ``None`` immediately after
+    ``create_app()``. Reading the token at that instant always yields None, so
+    an export written that way silently does nothing (this is exactly how the
+    first attempt at this fix failed against a real install). Building the
+    stack here materializes the REAL enforced token before the child spawns.
+    Building is idempotent and also warms what the first request would build.
+
+    Never generates: only a token this process already enforces is exported,
+    so this cannot mint a competing value. Failure-isolated — a token that
+    cannot be read leaves the existing (fail-closed) behavior untouched.
+    """
+    try:
+        from nexus_scalp.web.auth import web_auth_token_in_process
+
+        if app_obj is not None and getattr(app_obj, "middleware_stack", None) is None:
+            try:
+                app_obj.middleware_stack = app_obj.build_middleware_stack()
+            except Exception as build_err:  # pragma: no cover - boot isolation
+                logger.warning("[WEB-AUTH] middleware stack prebuild skipped: %s", build_err)
+
+        enforced = web_auth_token_in_process()
+        if enforced and not os.environ.get("NSE_WEB_AUTH_TOKEN", "").strip():
+            os.environ["NSE_WEB_AUTH_TOKEN"] = enforced
+            logger.info("[WEB-AUTH] exported enforced token for the go api child")
+    except Exception as exc:  # pragma: no cover - boot must never break here
+        logger.warning("[WEB-AUTH] token export to the go api child skipped: %s", exc)
+
+
+def _boot_go_api_plane(bind_host: str, python_port: int, app_obj: Any = None) -> Any:
     """GO-API-GATE: build + launch the Go API server as a supervised child.
 
     The user starts the app and the Go plane is simply there — no manual
@@ -206,7 +250,12 @@ def _boot_go_api_plane(bind_host: str, python_port: int) -> Any:
     build failure, port taken, readiness timeout) logs a clear warning and
     returns None, leaving the FastAPI app serving the full API on its own
     port. The product boots either way.
+
+    ``app_obj`` is the FastAPI app whose middleware layer owns the web auth
+    token; passing it lets the handoff materialize that token BEFORE the child
+    is spawned (see ``_export_web_auth_token_to_child``).
     """
+    _export_web_auth_token_to_child(app_obj)
     try:
         from nexus_scalp.web.go_api_bootstrap import boot_go_api
 
@@ -1450,7 +1499,7 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
     # build/launch fails, this returns None and the FastAPI app keeps serving
     # the full API on its own port. Go is an acceleration plane, never a
     # dependency the product cannot boot without.
-    go_api_supervisor = _boot_go_api_plane(bind_host, port)
+    go_api_supervisor = _boot_go_api_plane(bind_host, port, app_obj)
 
     # GO-API-GATE (Wave 5): the Go plane is the product's single origin when it
     # is up — read the origin HERE, once, so the readiness gate, the "Web

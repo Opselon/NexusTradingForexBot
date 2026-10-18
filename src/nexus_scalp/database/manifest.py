@@ -43,7 +43,9 @@ from nexus_scalp.database.models import (
 # 2026-09-29: AUDIT-0010-evidence-reader-indexes + AUDIT-0011
 # -drop-duplicate-release-metadata-key (wave db-lifecycle-2, lane L4)
 # extend the chain to v11 — manifest bumped in the same change.
-AUDIT_SCHEMA_VERSION: int = 11
+# 2026-10-01: AUDIT-0012-experience-outcome-execution-id-index (P0 pg-read
+# slow query) extends the chain to v12 — manifest bumped in the same change.
+AUDIT_SCHEMA_VERSION: int = 12
 
 AUDIT_TABLES: tuple[SchemaTable, ...] = (
     SchemaTable(
@@ -122,7 +124,7 @@ AUDIT_TABLES: tuple[SchemaTable, ...] = (
     ),
     SchemaTable(
         name="audit_experience_outcomes",
-        indexes=("idx_exp_outcome_key",),
+        indexes=("idx_exp_outcome_key", "idx_exp_outcome_exec"),
     ),
     SchemaTable(name="audit_experience_corrections", indexes=("idx_exp_corrections_key",)),
     SchemaTable(

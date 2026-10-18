@@ -472,6 +472,15 @@ class AuditRepository:
         # compared against time.monotonic() silently skips the first pass on
         # hosts with uptime < interval, the BUG-273 class).
         self._last_overflow_drain: float | None = None
+        # BUG-285-RACE (windows-latest CI red): the audit worker's idle pass
+        # calls _drain_financial_overflow_due on the SAME object the test
+        # (or any explicit caller) may drain directly. Without mutual
+        # exclusion the worker can drain the file between the caller's write
+        # and the caller's explicit drain — the explicit drain then observes
+        # a second (or zero) increment and the counting assertion flakes.
+        # One lock around each drain pass makes explicit + worker passes
+        # strictly serial: exactly-once counting per file, whoever wins.
+        self._overflow_drain_lock = threading.Lock()
         self.telemetry_dropped: int = 0
         # CHG-0067 / CR-02: provider-read degradation observability. Every
         # SQLite-gated read under a non-SQLite provider used to return its
@@ -816,7 +825,7 @@ class AuditRepository:
         _dup_rows = conn.execute(
             "SELECT execution_id, COUNT(*) AS c FROM audit_orders "
             "WHERE execution_id IS NOT NULL AND execution_id != '' "
-            "GROUP BY execution_id HAVING c > 1 LIMIT ?",
+            "GROUP BY execution_id HAVING COUNT(*) > 1 LIMIT ?",
             (self._ORDERS_DEDUP_REPAIR_BATCH,),
         ).fetchall()
         for _dup_id, _ in _dup_rows:
@@ -2795,6 +2804,15 @@ class AuditRepository:
         # sequence, raising "dictionary update sequence element #0 has length
         # N; 2 is required" and silently returning [] from every read.
         conn.row_factory = sqlite3.Row
+        # The audit domain has several independent writers (the write plane's
+        # dedicated writer, per-request repository reads that promote to a
+        # short write, and the CI/probe readers). WAL keeps a writer from
+        # blocking readers, but two writers still contend on the write lock.
+        # The connect `timeout` already makes sqlite3 wait, but only after
+        # acquiring does a statement honor busy_timeout, and several callers
+        # hold a read transaction while a writer commits. Wait in both places
+        # instead of surfacing SQLITE_BUSY as an application error.
+        conn.execute("PRAGMA busy_timeout = " + str(int(timeout * 1000)))
         return conn
 
     def provision_sqlite_schema(self, statements: list[str]) -> bool:
@@ -3615,6 +3633,12 @@ class AuditRepository:
         {
             "TICK_DUPLICATE_SUPPRESSED",
             "ORDER_FREQUENCY_THROTTLED",
+            # TASK-DEDUP-REPLAY-001 (2026-10-01): replay-flood guard classes.
+            # The policy now downgrades replayed actionable decisions upstream;
+            # these codes keep the per-minute / per-symbol / per-reason answer
+            # in audit_guard_telemetry (a few bytes per event) instead of one
+            # log line per tick.
+            "DECISION_DUPLICATE",
         }
     )
 
@@ -3807,6 +3831,10 @@ class AuditRepository:
             never retried forever, never silently dropped.
         """
         now = time.monotonic() if now is None else now
+        with self._overflow_drain_lock:
+            return self._drain_financial_overflow_due_locked(conn, now=now)
+
+    def _drain_financial_overflow_due_locked(self, conn: sqlite3.Connection, now: float) -> None:
         if (
             self._last_overflow_drain is not None
             and now - self._last_overflow_drain < self.OVERFLOW_RECOVERY_INTERVAL_SEC

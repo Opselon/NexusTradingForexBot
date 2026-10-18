@@ -73,13 +73,16 @@ def test_duplicate_tick_resurfaces_last_real_decision():
         current_tick=dup2,
         feature_vector=fv,
     )
-    # The duplicate re-surfaces the LAST REAL decision: action and confidence
-    # come from the real evaluation, never a fabricated 0.0.
-    assert p3.action == ActionType.SELL_MARKET
-    assert abs(p3.confidence - 0.61) < 1e-9
-    # But it is a fresh evaluation artifact (new request id, current ts).
-    assert p3.request_id != p1.request_id
-    assert p3.generated_at == dup2.timestamp
+    # TASK-DEDUP-REPLAY-001: the replay is REMOVED. A duplicate tick must never
+    # re-emit the last real decision as a fresh actionable proposal — the old
+    # path (action=SELL_MARKET, confidence=0.61, new request_id, DEDUP_GATE
+    # stage) amplified a stale quote into 3,476 ORDER_MUTATION_SUPPRESSED lines
+    # per hour at the executor boundary. The last real decision stays available
+    # for UI diagnostics; it is simply not re-emitted as an order proposal.
+    assert p3.action == ActionType.NO_TRADE, (
+        "a duplicate tick must not re-emit the last real actionable decision"
+    )
+    assert p3.action != ActionType.SELL_MARKET
 
 
 def test_duplicate_tick_does_not_touch_trading_state():

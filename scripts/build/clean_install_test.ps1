@@ -22,9 +22,17 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-if (-not $SetupExe -or -not (Test-Path $SetupExe)) {
-    Write-Host "[CLEAN-INSTALL] No setup exe provided. Skipping." -ForegroundColor Yellow
-    exit 0
+if (-not $SetupExe) {
+    Write-Host "[CLEAN-INSTALL] FAILED: -SetupExe is required (the release contract makes this test BLOCKING)" -ForegroundColor Red
+    exit 2
+}
+if (-not (Test-Path $SetupExe)) {
+    # BUG-293-QUIET: this used to `exit 0` (skip), which contradicted the
+    # workflow gate `BUG293_CLEAN_INSTALL_FAILED`. A producer step that
+    # silently failed to emit the setup exe would then publish a release
+    # whose lifecycle test never ran at all. Fail loud instead.
+    Write-Host "[CLEAN-INSTALL] FAILED: setup exe not found at '$SetupExe' — the installer producer step failed; release blocked" -ForegroundColor Red
+    exit 3
 }
 $SetupExe = (Resolve-Path $SetupExe).Path
 $TestRoot = Join-Path $env:TEMP "nexus-clean-install-test"

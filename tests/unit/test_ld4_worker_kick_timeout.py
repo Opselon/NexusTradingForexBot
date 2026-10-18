@@ -245,12 +245,20 @@ class TestFastPathUntouched:
 
 
 def run_fresh_import(env_value: str | None) -> float:
-    """Import ``LiveEngine`` in a clean interpreter with a controlled env var."""
+    """Import ``LiveEngine`` in a clean interpreter with a controlled env var.
+
+    The subprocess must run in THIS checkout (the module under test is
+    ``src/`` of the repo that ships this test). A previous revision
+    hard-coded a lane-specific ``REPO_ROOT`` that only existed on one
+    agent's machine, so every other checkout failed with
+    ``NotADirectoryError`` before asserting anything.
+    """
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     env = dict(os.environ)
     env.pop(ENV_OVERRIDE_NAME, None)
     if env_value is not None:
         env[ENV_OVERRIDE_NAME] = env_value
-    env["PYTHONPATH"] = os.path.join(REPO_ROOT, "src")
+    env["PYTHONPATH"] = os.path.join(repo_root, "src")
 
     script = (
         "from nexus_scalp.application.live_engine import LiveEngine;"
@@ -261,7 +269,7 @@ def run_fresh_import(env_value: str | None) -> float:
         capture_output=True,
         text=True,
         env=env,
-        cwd=REPO_ROOT,
+        cwd=repo_root,
         timeout=180,
         check=False,
     )

@@ -808,3 +808,141 @@
 .aipage-pre.fail {
   color: var(--red);
 }
+
+/* =====================================================================
+ * PostgreSQL health banner (wave §C1/§C2, brief §26) — ADDITIVE classes.
+ * Renders only when the database is in a known bad state or its health
+ * state is honestly UNKNOWN. Healthy renders nothing (no markup at all),
+ * so the page is unchanged when PostgreSQL is well.
+ * ===================================================================== */
+
+.aipage-dbh {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid rgba(242, 86, 77, 0.45);
+  border-left: 3px solid var(--red);
+  border-radius: 8px;
+  background: rgba(242, 86, 77, 0.07);
+  color: var(--text);
+}
+.aipage-dbh-warn {
+  border-color: rgba(235, 161, 63, 0.45);
+  border-left-color: var(--amber);
+  background: rgba(235, 161, 63, 0.07);
+}
+
+.aipage-dbh-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.aipage-dbh-glyph {
+  inline-size: 18px;
+  block-size: 18px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+.aipage-dbh-warn .aipage-dbh-glyph {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+}
+.aipage-dbh-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+.aipage-dbh-tag {
+  margin-inline-start: auto;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  color: var(--text-dim);
+}
+
+.aipage-dbh-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+.aipage-dbh-fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+}
+.aipage-dbh-fact-k {
+  text-transform: uppercase;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.aipage-dbh-fact-v {
+  color: var(--text);
+}
+
+.aipage-dbh-detail,
+.aipage-dbh-remedy {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.aipage-dbh-detail {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.aipage-dbh-detail-k {
+  text-transform: uppercase;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.aipage-dbh-detail-v {
+  color: var(--text-dim);
+  word-break: break-word;
+}
+.aipage-dbh-remedy {
+  color: var(--text);
+}
+
+.aipage-dbh-hints {
+  margin: 0;
+  padding-inline-start: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.aipage-dbh-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.aipage-dbh-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.aipage-dbh-note {
+  color: var(--text-faint);
+}

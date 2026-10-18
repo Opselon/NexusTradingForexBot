@@ -88,6 +88,14 @@ class RuntimeLoop:
         self._last_reconnect_at: float = 0.0
         self._next_reconnect_at: float = 0.0
         self._last_stall_notice_at: float = 0.0
+        # TASK-DEDUP-REPLAY-001 (Part 1): per-feed connection epoch + bounded
+        # reconnect re-acquisition window. Lives on the loop wrapper because the
+        # loop owns the tick-ingestion cadence; consulted ONLY by run() below
+        # (the pre-BUG-169 lesson: tick-guard state on the wrapper that no one
+        # reads is dead code — this object is both written and read here).
+        from nexus_scalp.application.live.feed_epoch import FeedEpochTracker
+
+        self._feed_epoch = FeedEpochTracker()
 
     def _refresh_observable_account_state(self) -> None:
         """Populate the OBSERVABLE account state (read-only, no trading effect).
@@ -173,6 +181,12 @@ class RuntimeLoop:
         # Every attempt is surfaced to the console + Telegram so the operator
         # SEES the retry in progress (perfect-UI-UX requirement).
         import time as _time  # noqa: F401 - reserved for backoff timing telemetry
+
+        # BUG-304: a reused LiveEngine instance can be started again after a
+        # completed stop. Reset lifecycle markers only when a NEW run begins;
+        # never from the shutdown path itself.
+        self.om._shutdown_completed = False
+        self.om._shutdown_in_progress = False
 
         # HEALTH-TRUTH-001: boot phase markers so the health surface can tell
         # a boot in flight from a stable stopped engine. ``_run_loop_alive``
@@ -390,6 +404,10 @@ class RuntimeLoop:
         self.om._boot_detail = "engine armed · workers started · tick loop live"
 
         self.om._last_tick_processed_time = time.time()
+        # NOTE: the stall clock (_last_fresh_tick_at) is deliberately NOT
+        # stamped here — BUG-279 pins it to the first NEW tick completing
+        # _process_tick_pipeline below. The pre-boot delay (settings load,
+        # parquet load, web bind) must NOT count as feed silence.
 
         while self.om._running:
             try:
@@ -399,6 +417,11 @@ class RuntimeLoop:
                 # (non-duplicate) tick, stamped after the pipeline below —
                 # immune to the BUG-169 duplicate early-return and to the
                 # watchdog's own 15s timer resets.
+                # BUGFIX-SOAK: first pass of a cold CI start has a pre-boot
+                # stall age (settings DB load, parquet load, web bind) baked
+                # in; seeding the clock on the FIRST watchdog pass only (when
+                # it is still unset) keeps that age out of the episode while
+                # every later pass keeps the true NEW-tick clock.
                 if getattr(self.om, "_last_fresh_tick_at", None) is None:  # init-order safe
                     self.om._last_fresh_tick_at = current_time
                 _stall_age_sec = current_time - self.om._last_fresh_tick_at
@@ -440,9 +463,30 @@ class RuntimeLoop:
                             )
                             try:
                                 self._last_reconnect_at = current_time
+                                # TASK-DEDUP-REPLAY-001: the pre-disconnect
+                                # quote becomes the replay anchor BEFORE the
+                                # feed goes down, so post-reconnect cached
+                                # state can be recognized as stale.
+                                self._feed_epoch.note_disconnect()
                                 self.om.adapter.disconnect()
                                 await asyncio.sleep(1.0)
                                 reconnected = self.om.adapter.connect()
+                                # TASK-DEDUP-REPLAY-001: bump the feed epoch
+                                # and open the bounded re-acquisition window.
+                                # The very next polled quote is classified
+                                # against the pre-disconnect anchor instead of
+                                # being trusted blindly.
+                                self._feed_epoch.note_reconnect()
+                                self.om.note_feed_reconnected(
+                                    epoch=self._feed_epoch.epoch,
+                                    reacquire_ticks=self._feed_epoch.reacquire_tick_count,
+                                )
+                                # A reconnect invalidates the broker/order
+                                # context the replay suppression was built
+                                # against: drop it (fail-open to fresh
+                                # evaluation, never to a stale identity).
+                                with contextlib.suppress(Exception):
+                                    self.om.signal_policy.reset_replay_dedup()
                                 # RT-008: schedule the next attempt from the
                                 # failure COUNT (never the stall clock). A
                                 # success is only provisional here — the feed
@@ -628,6 +672,14 @@ class RuntimeLoop:
 
                 if self.om._symbol_info is None:
                     self.om._symbol_info = self.om.adapter.get_symbol_info(symbol)
+                    # TASK-DEDUP-REPLAY-001: once the symbol info exists, anchor
+                    # the decision fingerprint's price quantization to the
+                    # broker's real tick grid (one-shot; pure in-memory).
+                    with contextlib.suppress(Exception):
+                        self.om.signal_policy.configure_decision_identity(
+                            tick_size=float(getattr(self.om._symbol_info, "tick_size", 0.0) or 0.0)
+                            or None
+                        )
 
                 # PHASE 14: periodically refresh the typed broker-aware account
                 # snapshot + REAL runtime mode (throttled - never per tick).
@@ -645,20 +697,47 @@ class RuntimeLoop:
                 # which is what the UI then displays. A duplicate carries ZERO
                 # new information: keep the previous proposal/state untouched
                 # and service the heartbeat workers below.
+                #
                 # BUG-169 duplicate-tick predicate. State is OWNED BY THE
                 # ENGINE (self.om._pipeline_last_*) — the pre-fix guard read
                 # `getattr(self, ...)` on the RuntimeLoop wrapper, where those
                 # attributes never exist, so the predicate was DEAD CODE and
                 # every repeated quote re-ran the full pipeline (Agent-13
                 # probe 2026-09-09: identical bid/ask/ts always fell through).
-                if (
-                    tick.timestamp == getattr(self.om, "_pipeline_last_ts", None)
-                    and float(tick.bid) == getattr(self.om, "_pipeline_last_bid", 0.0)
-                    and float(tick.ask) == getattr(self.om, "_pipeline_last_ask", 0.0)
-                ):
+                #
+                # TASK-DEDUP-REPLAY-001 (Part 1): the BUG-169 duplicate-tick
+                # predicate is now the live FEED EPOCH TRACKER, which subsumes
+                # the old ts+bid+ask equality test and adds the reconnect
+                # dimension the old guard was blind to. After an MT5 IPC
+                # reconnect the broker re-serves its last cached quote; the old
+                # guard let it through whenever bid/ask had drifted, so the full
+                # pipeline ran on stale state and amplified into the executor
+                # (3,476 ORDER_MUTATION_SUPPRESSED lines in one hour). The
+                # tracker classifies every tick (FRESH / RECONNECT_REPLAY /
+                # DUPLICATE / STALE / REORDERED_FRESH) and refuses replayed
+                # ones inside a BOUNDED re-acquisition window — bounded so a
+                # frozen quote can never block the feed.
+                _tick_verdict = self._feed_epoch.classify(
+                    timestamp=tick.timestamp,
+                    bid=float(tick.bid),
+                    ask=float(tick.ask),
+                    now=time.time(),
+                )
+                if not _tick_verdict.accept:
+                    # Telemetry stays class-distinct (never one generic
+                    # "duplicate") and is rate-limited by the engine's epoch-
+                    # aware summary so a replay episode cannot flood the log.
+                    self.om.note_tick_rejected(
+                        tick_class=_tick_verdict.tick_class.value,
+                        epoch=_tick_verdict.epoch,
+                        detail=_tick_verdict.detail,
+                    )
+                    self.om._summarize_replay_telemetry()
                     await self.om._service_pipeline_workers(now_t=time.time())
                     await asyncio.sleep(0.05)
                     continue
+                # Preserve the legacy engine stamps (other readers rely on
+                # them) alongside the tracker's own anchors.
                 self.om._pipeline_last_ts = tick.timestamp
                 self.om._pipeline_last_bid = float(tick.bid)
                 self.om._pipeline_last_ask = float(tick.ask)

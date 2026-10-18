@@ -34,11 +34,13 @@ tests/unit/test_accounting_pnl_regression.py
 tests/unit/test_accounting_timezone.py
 tests/unit/test_agent11_execution_risk_forensic.py
 tests/unit/test_agent12_execution_forensic.py
+tests/unit/test_agent13_methodology_integrity.py
 tests/unit/test_agent14_dataset_integrity.py
 tests/unit/test_agent16_walkforward_purge_embargo_leakage.py
 tests/unit/test_agent17_oos_hard_gate.py
 tests/unit/test_agent5_bug249_251_252.py
 tests/unit/test_agent6_execution_contract.py
+tests/unit/test_ai_reversal_deadlock.py
 tests/unit/test_audit_flush_contract.py
 tests/unit/test_audit_legacy4_surface.py
 tests/unit/test_audit_pg_read_plane.py
@@ -47,6 +49,7 @@ tests/unit/test_backtest_report_asset.py
 tests/unit/test_backtest_report_integration.py
 tests/unit/test_broker_identity_ownership.py
 tests/unit/test_broker_valuation_forensics.py
+tests/unit/test_live_log_remediation_news_telemetry.py
 tests/unit/test_bug185_terminal_state_resolver.py
 tests/unit/test_bug217_news_state_bounds.py
 tests/unit/test_bug225_untrained_champion_canary.py
@@ -91,7 +94,6 @@ tests/unit/test_bug298_model_provisioning.py
 tests/unit/test_bug298_provisioning_web_api.py
 tests/unit/test_bug299_friction_cap_saturation.py
 tests/unit/test_bug300_ai_triage_fallback.py
-tests/unit/test_bug300_workflow_ai_wiring.py
 tests/unit/test_bug303_ci_notify_env_and_report.py
 tests/unit/test_bug305_broker_offset_env_consumer_parity.py
 tests/unit/test_bug306_windows_ci_compat.py
@@ -146,6 +148,9 @@ tests/unit/test_ml_phase1_census_consistency.py
 tests/unit/test_ml_phase1_data_contract.py
 tests/unit/test_ml_phase1_labeling_identity.py
 tests/unit/test_ml_phase1_serving_contract.py
+tests/unit/test_model_factory_e2e_lifecycle.py
+tests/unit/test_model_factory_negative_battery.py
+tests/unit/test_model_factory_quality_gates.py
 tests/unit/test_model_registry_hot_load.py
 tests/unit/test_model_studio.py
 tests/unit/test_model_studio_dataset_order.py
@@ -262,6 +267,7 @@ tests/unit/test_ml_qa_011_shadow70_clock_determinism.py
 tests/unit/test_ml_qa_012_outcome_flush_clock_determinism.py
 tests/unit/test_fabric_guards.py
 tests/unit/test_ai_provider_registry_driver_migration_chg0067.py
+tests/unit/test_ai_provider_registry_upsert_arity.py
 tests/unit/test_ml_qa_013_overflow_drain_clock_determinism.py
 tests/unit/test_ml_qa_014_causal_conv_cpu_budget.py
 tests/unit/test_ml_qa_015_hygiene_cadence_clock_determinism.py
@@ -293,3 +299,5 @@ tests/unit/test_l7_news_archive_retirement.py
 tests/unit/test_l7_managed_db_retirement.py
 tests/unit/test_research_archive_pg_write_plane.py
 tests/unit/test_l4_schema_lifecycle_indexes.py
+tests/unit/test_db_pg_env_overlay_doctor.py
+tests/unit/test_decision_dedup_replay.py

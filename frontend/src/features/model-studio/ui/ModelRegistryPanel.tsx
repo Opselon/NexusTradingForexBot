@@ -1,11 +1,15 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Panel } from "@/components/primitives";
 import { useI18n } from "@/stores/i18nStore";
+import { modelStudioApi } from "../api";
 import type {
   ActiveModelResponse,
   HotLoadResponse,
   InspectScalerResponse,
+  LoadContractVerifyResponse,
+  ModelCertificateDto,
   ModelRecordDto,
+  QualityReportsResponse,
   VerifyModelResponse,
 } from "../model";
 
@@ -89,6 +93,83 @@ export function ModelRegistryPanel({
   onInspectScaler,
 }: ModelRegistryPanelProps) {
   const t = useI18n((s) => s.t);
+
+  const [certifyBusy, setCertifyBusy] = useState(false);
+  const [certificateResult, setCertificateResult] = useState<ModelCertificateDto | null>(null);
+  const [certificateError, setCertificateError] = useState("");
+
+  const [qualityBusy, setQualityBusy] = useState(false);
+  const [qualityResult, setQualityResult] = useState<QualityReportsResponse | null>(null);
+  const [qualityError, setQualityError] = useState("");
+
+  const [contractBusy, setContractBusy] = useState(false);
+  const [contractResult, setContractResult] = useState<LoadContractVerifyResponse | null>(null);
+  const [contractError, setContractError] = useState("");
+
+  useEffect(() => {
+    setCertificateResult(null);
+    setCertificateError("");
+    setQualityResult(null);
+    setQualityError("");
+    setContractResult(null);
+    setContractError("");
+    if (selectedModelId) {
+      modelStudioApi
+        .modelCertificate(selectedModelId)
+        .then((res) => {
+          if (res?.certificate) setCertificateResult(res.certificate);
+        })
+        .catch(() => {
+          /* uncertified or pending */
+        });
+    }
+  }, [selectedModelId]);
+
+  const handleCertify = async () => {
+    if (!selectedModelId) return;
+    setCertifyBusy(true);
+    setCertificateError("");
+    try {
+      const res = await modelStudioApi.certifyModel(selectedModelId);
+      setCertificateResult(res.certificate);
+    } catch (err) {
+      setCertificateError(err instanceof Error ? err.message : String(err));
+      setCertificateResult(null);
+    } finally {
+      setCertifyBusy(false);
+    }
+  };
+
+  const handleInspectQuality = async () => {
+    if (!selectedModelId) return;
+    setQualityBusy(true);
+    setQualityError("");
+    try {
+      const res = await modelStudioApi.qualityReports(selectedModelId);
+      setQualityResult(res);
+    } catch (err) {
+      setQualityError(err instanceof Error ? err.message : String(err));
+      setQualityResult(null);
+    } finally {
+      setQualityBusy(false);
+    }
+  };
+
+  const handleVerifyContract = async () => {
+    if (!selectedModelId) return;
+    setContractBusy(true);
+    setContractError("");
+    try {
+      const res = await modelStudioApi.verifyLoadContract({ model_id: selectedModelId });
+      setContractResult(res);
+    } catch (err) {
+      setContractError(err instanceof Error ? err.message : String(err));
+      setContractResult(null);
+    } finally {
+      setContractBusy(false);
+    }
+  };
+
   // One derivation: the catalog's model option labels (accessor chains over
   // the models array). Memo deps are exactly that array, so an unrelated
   // parent re-render (slider drag, hot-load busy flip) never rebuilds it.
@@ -222,6 +303,27 @@ export function ModelRegistryPanel({
             {verifyBusy ? "⏳ Verifying…" : "✓ Run Integrity Battery"}
           </button>
           <button
+            onClick={handleCertify}
+            disabled={certifyBusy || !selectedModelId}
+            className="ms-btn-action ms-btn-ghost tx-accent"
+          >
+            {certifyBusy ? "⏳ Certifying…" : "🏆 Certify Model (10 Gates)"}
+          </button>
+          <button
+            onClick={handleInspectQuality}
+            disabled={qualityBusy || !selectedModelId}
+            className="ms-btn-action ms-btn-ghost"
+          >
+            {qualityBusy ? "⏳ Loading…" : "📋 Quality Reports"}
+          </button>
+          <button
+            onClick={handleVerifyContract}
+            disabled={contractBusy || !selectedModelId}
+            className="ms-btn-action ms-btn-ghost tx-good"
+          >
+            {contractBusy ? "⏳ Checking…" : "🔒 Verify Load Contract"}
+          </button>
+          <button
             onClick={onRollback}
             disabled={rollbackBusy}
             className="ms-btn-action ms-btn-ghost tx-warn"
@@ -297,6 +399,187 @@ export function ModelRegistryPanel({
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* Model Certificate Banner & Gates */}
+        {certificateError && (
+          <div className="ms-banner-err">
+            <span>⚠</span>
+            <div>
+              <strong>Certification Check Failed</strong>
+              <div className="tiny" style={{ marginTop: 2 }}>{certificateError}</div>
+            </div>
+          </div>
+        )}
+
+        {certificateResult && (
+          <div style={{ padding: 12, borderRadius: 8, background: "var(--bg-inset)", border: `1px solid ${certificateResult.certified ? "var(--green)" : "var(--warn)"}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+              <div>
+                <span className="small font-bold" style={{ color: certificateResult.certified ? "var(--green)" : "var(--warn)" }}>
+                  {certificateResult.certified ? "🏆 MODEL CERTIFIED" : "⛔ MODEL CERTIFICATION REJECTED"}
+                </span>
+                <span className="tiny inline-mono tx-dim" style={{ marginLeft: 8 }}>
+                  v: {certificateResult.certification_version} • {certificateResult.schema_id} ({certificateResult.dimension}D) • L={certificateResult.sequence_length}
+                </span>
+              </div>
+              <span className={`badge ${certificateResult.certified ? "good" : "bad"}`}>
+                {certificateResult.model_status}
+              </span>
+            </div>
+
+            {certificateResult.rejection_reason && (
+              <div className="tiny" style={{ color: "var(--warn)", marginBottom: 8, background: "rgba(255, 100, 100, 0.1)", padding: "6px 10px", borderRadius: 4 }}>
+                <strong>Rejection Reason:</strong> {certificateResult.rejection_reason}
+              </div>
+            )}
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+              <span className="tiny font-bold uppercase faint" style={{ alignSelf: "center", marginRight: 4 }}>Stages:</span>
+              {certificateResult.passed_stages.map((st) => (
+                <span key={st} className="badge good" style={{ fontSize: 10 }}>✓ {st}</span>
+              ))}
+              {certificateResult.failed_stages.map((st) => (
+                <span key={st} className="badge bad" style={{ fontSize: 10 }}>✗ {st}</span>
+              ))}
+            </div>
+
+            {certificateResult.gates && certificateResult.gates.length > 0 && (
+              <div tabIndex={0} className="table-wrap" style={{ maxHeight: 200 }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Gate</th>
+                      <th scope="col" style={{ textAlign: "center" }}>Verdict</th>
+                      <th scope="col">Evaluation Summary</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {certificateResult.gates.map((g, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: 600, color: "var(--text)" }}>{g.gate}</td>
+                        <td style={{ textAlign: "center" }}>
+                          <span className={`badge ${g.passed ? "good" : "bad"}`}>
+                            {g.passed ? "PASS" : "FAIL"}
+                          </span>
+                        </td>
+                        <td className="tx-dim">{g.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Quality Reports Section */}
+        {qualityError && (
+          <div className="ms-banner-err">
+            <span>⚠</span>
+            <div>
+              <strong>Failed to Load Quality Reports</strong>
+              <div className="tiny" style={{ marginTop: 2 }}>{qualityError}</div>
+            </div>
+          </div>
+        )}
+
+        {qualityResult && (
+          <div style={{ padding: 12, borderRadius: 8, background: "var(--bg-inset)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="small font-bold tx-accent">
+              📊 Certified Pipeline Quality Reports ({qualityResult.model_id})
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
+              {/* Dataset Quality */}
+              {qualityResult.dataset_quality ? (
+                <div style={{ padding: 8, background: "var(--bg)", borderRadius: 6, border: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <span className="tiny font-bold uppercase">1. Dataset Quality</span>
+                    <span className={`badge ${qualityResult.dataset_quality.quality_status === "PASS" ? "good" : "bad"}`}>
+                      {qualityResult.dataset_quality.quality_status}
+                    </span>
+                  </div>
+                  <div className="tiny tx-dim">Valid: {qualityResult.dataset_quality.valid_rows.toLocaleString()} / {qualityResult.dataset_quality.raw_rows.toLocaleString()} rows</div>
+                  <div className="tiny tx-dim">Rejected: {qualityResult.dataset_quality.rejected_rows} • Gaps: {qualityResult.dataset_quality.gap_events}</div>
+                  <div className="tiny tx-dim">Outliers: {qualityResult.dataset_quality.outlier_candidates}</div>
+                  <div className="tiny inline-mono tx-faint" style={{ marginTop: 4, wordBreak: "break-all" }}>FP: {qualityResult.dataset_quality.fingerprint?.substring(0, 16)}…</div>
+                </div>
+              ) : (
+                <div className="tiny faint" style={{ padding: 8 }}>Dataset quality report not attached.</div>
+              )}
+
+              {/* Feature Quality */}
+              {qualityResult.feature_quality ? (
+                <div style={{ padding: 8, background: "var(--bg)", borderRadius: 6, border: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <span className="tiny font-bold uppercase">2. Feature Quality</span>
+                    <span className={`badge ${qualityResult.feature_quality.quality_status === "PASS" ? "good" : "bad"}`}>
+                      {qualityResult.feature_quality.quality_status}
+                    </span>
+                  </div>
+                  <div className="tiny tx-dim">Schema: {qualityResult.feature_quality.schema_id} ({qualityResult.feature_quality.dimension}D)</div>
+                  <div className="tiny tx-dim">Passed: {qualityResult.feature_quality.passed} • Warned: {qualityResult.feature_quality.warned} • Failed: {qualityResult.feature_quality.failed}</div>
+                  {qualityResult.feature_quality.constant_features.length > 0 && (
+                    <div className="tiny tx-warn">Constants: {qualityResult.feature_quality.constant_features.join(", ")}</div>
+                  )}
+                  {qualityResult.feature_quality.nan_features.length > 0 && (
+                    <div className="tiny tx-warn">NaNs: {qualityResult.feature_quality.nan_features.join(", ")}</div>
+                  )}
+                </div>
+              ) : (
+                <div className="tiny faint" style={{ padding: 8 }}>Feature quality report not attached.</div>
+              )}
+
+              {/* Label Quality */}
+              {qualityResult.label_quality ? (
+                <div style={{ padding: 8, background: "var(--bg)", borderRadius: 6, border: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <span className="tiny font-bold uppercase">3. Label Quality</span>
+                    <span className={`badge ${qualityResult.label_quality.quality_status === "PASS" ? "good" : "bad"}`}>
+                      {qualityResult.label_quality.quality_status}
+                    </span>
+                  </div>
+                  <div className="tiny tx-dim">Density: {(qualityResult.label_quality.label_density * 100).toFixed(1)}% ({qualityResult.label_quality.labeled_rows.toLocaleString()} bars)</div>
+                  <div className="tiny tx-dim">NO_TRADE: {(qualityResult.label_quality.no_trade_percentage * 100).toFixed(1)}%</div>
+                  <div className="tiny inline-mono tx-faint">
+                    {Object.entries(qualityResult.label_quality.class_distribution || {}).map(([k, v]) => `${k}:${v}`).join(" | ")}
+                  </div>
+                  {qualityResult.label_quality.collapsed_classes.length > 0 && (
+                    <div className="tiny tx-warn">Collapsed: {qualityResult.label_quality.collapsed_classes.join("; ")}</div>
+                  )}
+                </div>
+              ) : (
+                <div className="tiny faint" style={{ padding: 8 }}>Label quality report not attached.</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Load Contract Verification Section */}
+        {contractError && (
+          <div className="ms-banner-err">
+            <span>⚠</span>
+            <div>
+              <strong>Load Contract Check Refused</strong>
+              <div className="tiny" style={{ marginTop: 2 }}>{contractError}</div>
+            </div>
+          </div>
+        )}
+
+        {contractResult && (
+          <div className={contractResult.verified ? "ms-banner-ok" : "ms-banner-err"}>
+            <div>
+              <strong>{contractResult.verified ? "✓ Load Contract Compatible" : "⛔ Load Contract Incompatible"}</strong>
+              <div className="tiny" style={{ marginTop: 2 }}>{contractResult.detail}</div>
+              <div className="tiny inline-mono tx-faint" style={{ marginTop: 2 }}>
+                Schema: {contractResult.schema_id} • Dim: {contractResult.dimension}D • L={contractResult.sequence_length} • Status: {contractResult.model_status}
+              </div>
+            </div>
+            <span className={`badge ${contractResult.verified ? "good" : "bad"}`}>
+              {contractResult.verified ? "COMPATIBLE" : "REFUSED"}
+            </span>
           </div>
         )}
 

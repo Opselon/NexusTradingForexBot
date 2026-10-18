@@ -108,7 +108,14 @@ class TrainingWorker:
     # ------------------------------------------------------------------
 
     def _restore_inflight_state(self) -> None:
-        """On restart, any RUNNING row is marked INCOMPLETE (never VALIDATED)."""
+        """Restore RUNNING training only when training is enabled.
+
+        training_runs is intentionally lazy-initialized. A fresh install
+        with auto-training disabled must not probe that optional table and
+        turn its absence into a database ERROR during every boot.
+        """
+        if not self.auto_train_enabled:
+            return
         row = query_one(
             self.audit_repo,
             "SELECT run_id FROM training_runs WHERE status='RUNNING' LIMIT 1;",

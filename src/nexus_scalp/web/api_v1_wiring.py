@@ -34,6 +34,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from nexus_scalp.web.api_v1.errors import register_v1_exception_handlers
+from nexus_scalp.web.legacy_errors import register_web_error_boundary
 
 API_V1_PREFIX = "/api/v1"
 
@@ -74,6 +75,10 @@ def _include_routers(app: FastAPI) -> None:
 def register_api_v1(app: FastAPI) -> None:
     """Mounts the versioned read-dominant API platform on the EXISTING app."""
     register_v1_exception_handlers(app)
+    # Legacy-route DB error boundary (TASK-API-DB-ERROR-BOUNDARY): installed
+    # right AFTER the v1 handlers so it can chain onto the v1 ``Exception``
+    # entry instead of overwriting it — see legacy_errors.register_web_error_boundary.
+    register_web_error_boundary(app)
     _include_routers(app)
     _ensure_correlation_middleware(app)
     _prewarm_health_cache(app)

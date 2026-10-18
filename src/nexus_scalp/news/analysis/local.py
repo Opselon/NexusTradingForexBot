@@ -646,5 +646,33 @@ def _count_occurrences(text: str, token: str) -> int:
     """Word-boundary count of a token in upper-cased text."""
     if not token:
         return 0
-    pattern = r"(?<![A-Z0-9])" + re.escape(token.upper()) + r"(?![A-Z0-9])"
-    return len(re.findall(pattern, text))
+    return len(_matcher_for(token).findall(text))
+
+
+#: Lexicon matchers compiled once (the token set is constant). Wave-6 lane-4
+#: cProfile over the 5k benchmark workload attributed ~63% of gateway CPU to
+#: ``re.Pattern.findall`` + ``re._compile`` + ``re.escape``: the previous
+#: per-call path rebuilt and re-compiled the SAME pattern for every article.
+#: The pattern string is byte-identical (same lookbehind/lookahead, same
+#: escaped body, same ``.upper()``), so this reuses the compile, not the
+#: semantics — validated by tests/unit/news/test_admission_hot_loop.py.
+_MATCHERS: dict[str, re.Pattern[str]] = {}
+
+
+def _matcher(token: str) -> re.Pattern[str]:
+    """Pre-compiled word-boundary matcher for one lexicon token."""
+    return re.compile(r"(?<![A-Z0-9])" + re.escape(token.upper()) + r"(?![A-Z0-9])")
+
+
+def _matcher_for(token: str) -> re.Pattern[str]:
+    """Cached matcher for ``token`` (the lexicon set is fixed and small).
+
+    ``functools.lru_cache`` is deliberately avoided: the token stream is a
+    tiny constant set (a bounded dict), and a plain dict has no per-call
+    wrapper overhead.
+    """
+    pattern = _MATCHERS.get(token)
+    if pattern is None:
+        pattern = _matcher(token)
+        _MATCHERS[token] = pattern
+    return pattern

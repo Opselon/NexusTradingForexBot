@@ -487,7 +487,16 @@ def route_current_decision() -> dict[str, Any]:
 
 @router.post("/unload")
 def route_unload() -> dict[str, Any]:
-    return get_position_adviser_service().unload()
+    out = get_position_adviser_service().unload()
+    # Persist DISABLED + clear the selection so a restart does not resurrect a
+    # model the operator explicitly unloaded (mission §4/§41).
+    try:
+        AdviserSettingsStore(_settings_database()).clear_selection()
+        out["persisted"] = True
+    except Exception as exc:
+        logger.warning("[ADVISER] event=UNLOAD_PERSIST_FAILED err=%s", exc)
+        out["persisted"] = False
+    return out
 
 
 @router.post("/activate")
@@ -506,6 +515,15 @@ def route_activate(req: AdviserActivateRequest) -> dict[str, Any]:
     out = svc.set_activation(req.activation, checks=checks)
     if out["status"] != "OK":
         raise HTTPException(status_code=400, detail=out.get("reason", "activation rejected"))
+    # Persist the rung so a restart rehydrates the adviser at the SAME rung the
+    # operator selected (mission §4/§41). A failed write does not undo the
+    # activation the operator just made — it is reported, not raised.
+    try:
+        if AdviserSettingsStore(_settings_database()).save_activation(str(req.activation)):
+            out["persisted_activation"] = True
+    except Exception as exc:
+        logger.warning("[ADVISER] event=ACTIVATION_PERSIST_FAILED err=%s", exc)
+        out["persisted_activation"] = False
     return out
 
 
@@ -804,6 +822,17 @@ def route_auto_tune(req: AdviserAutoTuneRequest) -> dict[str, Any]:
                 scaler_path=best["scaler_path"],
                 model_id=best["model_id"],
             )
+            # The winner is now the live model: persist its selection so a
+            # restart rehydrates the SAME adviser the sweep picked (route_load
+            # does this for a manual load; auto mode must not regress it).
+            try:
+                AdviserSettingsStore(_settings_database()).save_selection(
+                    model_id=best["model_id"],
+                    weights_path=str(best["weights_path"]),
+                    scaler_path=str(best["scaler_path"]),
+                )
+            except Exception as exc:
+                logger.warning("[ADVISER] event=AUTOTUNE_PERSIST_FAILED err=%s", exc)
         except Exception as exc:  # the sweep still succeeded; report the load
             logger.warning("[ADVISER] event=AUTOTUNE_LOAD_FAIL err=%s", exc)
             best["load_error"] = "auto-load failed (see server logs)"
@@ -844,6 +873,52 @@ def _prune_losing_trials(trials: list[dict[str, Any]], winner_id: str) -> None:
 
 def register_position_adviser_routes(app: Any) -> None:
     app.include_router(router)
+    # STARTUP REHYDRATION (mission §4/§41): the adviser's selection is process
+    # state, so without this a restart silently forgets which model the
+    # operator loaded and reverts to DISABLED — the old policy keeps managing
+    # every order and the trained adviser is dead code until someone reloads
+    # it by hand. Restore from the persisted settings now; the restored rung
+    # is only ever what the operator persisted (DISABLED by default), so a
+    # fresh install is unchanged. Failure-isolated by design: a corrupt or
+    # unreadable settings DB must never block the web server from booting.
+    try:
+        _rehydrate_at_startup()
+    except Exception as exc:
+        logger.warning("[ADVISER] event=STARTUP_REHYDRATE_FAILED err=%s", exc)
+
+
+def _rehydrate_at_startup() -> None:
+    """Reload the persisted adviser selection into the live service."""
+    settings = AdviserSettingsStore(_settings_database()).load()
+    if not settings.auto_load or not settings.model_id:
+        return
+    svc = get_position_adviser_service()
+    if svc.status().get("model_id"):
+        return  # already loaded by an earlier boot stage; do not clobber it
+    out = svc.rehydrate(
+        model_id=settings.model_id,
+        weights_path=settings.weights_path,
+        scaler_path=settings.scaler_path,
+        activation=settings.activation,
+    )
+    if out.get("status") == "OK":
+        logger.info(
+            "[ADVISER] event=STARTUP_REHYDRATED model_id=%s activation=%s",
+            out.get("model_id"),
+            out.get("activation_result", {}).get("activation", settings.activation),
+        )
+    else:
+        # The persisted artifact may be gone or corrupt. Log it loudly and
+        # continue DISABLED rather than crashing the boot.
+        logger.warning(
+            "[ADVISER] event=STARTUP_REHYDRATE_REJECTED model_id=%s reason=%s",
+            settings.model_id,
+            out.get("reason"),
+        )
+        try:
+            AdviserSettingsStore(_settings_database()).clear_selection()
+        except Exception:
+            pass
 
 
 __all__ = [

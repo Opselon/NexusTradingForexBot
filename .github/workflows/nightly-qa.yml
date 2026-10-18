@@ -78,7 +78,7 @@ jobs:
 
       - name: Upload slow-suite results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: nightly-slow-suite-${{ github.run_number }}
           path: ${{ env.CI_RESULTS_DIR }}/
@@ -111,6 +111,7 @@ jobs:
         # child processes we own — never the operator's real profile,
         # never production install paths, never a real engine/MT5.
         run: |
+          New-Item -ItemType Directory -Force -Path "$CI_RESULTS_DIR/chaos" | Out-Null
           pytest tests/unit/test_lifecycle_chaos.py `
                  tests/unit/test_update_lifecycle_scenarios.py `
                  -q --tb=short `
@@ -129,7 +130,7 @@ jobs:
 
       - name: Upload chaos evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: nightly-chaos-${{ github.run_number }}
           path: |
@@ -180,7 +181,7 @@ jobs:
 
       - name: Upload mutation evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: nightly-mutations-${{ github.run_number }}
           path: ${{ env.CI_RESULTS_DIR }}/

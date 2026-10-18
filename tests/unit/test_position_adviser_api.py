@@ -319,3 +319,120 @@ def test_load_then_rollback_round_trip(client: TestClient, artifact_dir: Path) -
     assert r.json()["model_id"] == "pa_api_rb_a"
     # The active model really did move back.
     assert client.get("/api/position-adviser/status").json()["model_id"] == "pa_api_rb_a"
+
+
+# ============================================ restart persistence contract
+# BUG: activation and the auto-loaded selection were written to the settings DB
+# on /load but never READ at boot, and /activate did not persist the rung at
+# all — so a restart always reverted to DISABLED and the old policy kept
+# managing every order. These tests pin the round-trip.
+
+
+def test_activate_persists_the_rung(client: TestClient, artifact_dir: Path) -> None:
+    weights, scaler = _write_model(artifact_dir, "pa_api_act_001")
+    client.post(
+        "/api/position-adviser/load",
+        json={"weights_path": str(weights), "scaler_path": str(scaler)},
+    )
+    r = client.post("/api/position-adviser/activate", json={"activation": "PAPER"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "OK"
+    # The rung reached the settings DB, not just memory.
+    persisted = client.get("/api/position-adviser/settings").json()["settings"]
+    assert persisted["model_id"] == "pa_api_act_001"
+    assert persisted["activation"] == "PAPER"
+
+
+def test_unload_clears_the_persisted_selection(client: TestClient, artifact_dir: Path) -> None:
+    weights, scaler = _write_model(artifact_dir, "pa_api_unload_001")
+    client.post(
+        "/api/position-adviser/load",
+        json={"weights_path": str(weights), "scaler_path": str(scaler)},
+    )
+    client.post("/api/position-adviser/activate", json={"activation": "PAPER"})
+
+    r = client.post("/api/position-adviser/unload")
+    assert r.status_code == 200, r.text
+    persisted = client.get("/api/position-adviser/settings").json()["settings"]
+    # An explicit unload must not be resurrected by a restart.
+    assert persisted["activation"] == "DISABLED"
+    assert persisted["model_id"] == ""
+
+
+def test_startup_rehydration_restores_the_persisted_selection(
+    tmp_path: Path, artifact_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A boot re-reads the settings DB and reloads the persisted adviser."""
+    weights, scaler = _write_model(artifact_dir, "pa_api_boot_001")
+    db_path = tmp_path / "boot_settings.db"
+
+    # Boot 1: the operator loads + activates PAPER, which persists both.
+    svc = PositionAdviserService()
+    monkeypatch.setattr(par, "get_position_adviser_service", lambda: svc)
+    monkeypatch.setattr(par, "_settings_database", lambda: _StubSettings(db_path))
+    api = FastAPI()
+    api.include_router(par.router)
+    boot1 = TestClient(api)
+    assert (
+        boot1.post(
+            "/api/position-adviser/load",
+            json={"weights_path": str(weights), "scaler_path": str(scaler)},
+        ).status_code
+        == 200
+    )
+    assert (
+        boot1.post("/api/position-adviser/activate", json={"activation": "PAPER"}).status_code
+        == 200
+    )
+
+    # Boot 2: a FRESH process (new service instance, empty memory) must come
+    # back with the persisted model loaded at the persisted rung.
+    fresh = PositionAdviserService()
+    assert fresh.status()["model_id"] == ""  # really empty before rehydration
+    monkeypatch.setattr(par, "get_position_adviser_service", lambda: fresh)
+    api2 = FastAPI()
+    par.register_position_adviser_routes(api2)
+
+    status = fresh.status()
+    assert status["model_id"] == "pa_api_boot_001"
+    assert status["activation"] == "PAPER"
+    assert status["ready"] is True
+
+
+def test_startup_rehydration_is_a_noop_when_nothing_persisted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fresh install (empty settings) stays DISABLED — the default is safe."""
+    svc = PositionAdviserService()
+    monkeypatch.setattr(par, "get_position_adviser_service", lambda: svc)
+    monkeypatch.setattr(par, "_settings_database", lambda: _StubSettings(tmp_path / "empty.db"))
+    par.register_position_adviser_routes(FastAPI())
+
+    status = svc.status()
+    assert status["model_id"] == ""
+    assert status["activation"] == "DISABLED"
+
+
+def test_startup_rehydration_survives_a_missing_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A persisted selection whose artifact vanished boots DISABLED, not dead."""
+    db_path = tmp_path / "gone_settings.db"
+    store = AdviserSettingsStore(_StubSettings(db_path))
+    assert store.save_selection(
+        model_id="pa_vanished",
+        weights_path=str(tmp_path / "gone.pt"),
+        scaler_path=str(tmp_path / "gone.scaler.npz"),
+    )
+    store.save_activation("PAPER")
+
+    svc = PositionAdviserService()
+    monkeypatch.setattr(par, "get_position_adviser_service", lambda: svc)
+    monkeypatch.setattr(par, "_settings_database", lambda: _StubSettings(db_path))
+    # Must not raise — a boot is never blocked by a bad artifact.
+    par.register_position_adviser_routes(FastAPI())
+
+    assert svc.status()["model_id"] == ""
+    assert svc.status()["activation"] == "DISABLED"
+    # The stale selection is cleared so the next boot does not retry it.
+    assert AdviserSettingsStore(_StubSettings(db_path)).load().model_id == ""

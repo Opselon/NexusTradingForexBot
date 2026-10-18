@@ -22,12 +22,50 @@ import re
 
 #: Statement verbs a driver may execute on behalf of callers: the read paths
 #: plus the DML/DDL the internal store layer legitimately issues (built from
-#: allow-listed identifiers, never raw user text).
-_ALLOWED_VERBS = re.compile(
-    r"^\s*(SELECT|EXPLAIN|WITH|PRAGMA|VALUES|INSERT|UPDATE|DELETE|REPLACE"
-    r"|CREATE|ALTER|DROP|BEGIN|COMMIT|END|ANALYZE|REINDEX)\b",
-    re.IGNORECASE,
+#: allow-listed identifiers, never raw user text). Leading ``-- ...`` line
+#: comments are skipped: schema DDL documents itself inline (e.g.
+#: ``strategies.factory.store._SCHEMA`` prefixes a retained index with the
+#: rationale for the one it replaced), and a line comment cannot hide a second
+#: statement once the interior-``;`` check below has already rejected it.
+_VERBS = (
+    "SELECT",
+    "EXPLAIN",
+    "WITH",
+    "PRAGMA",
+    "VALUES",
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "REPLACE",
+    "CREATE",
+    "ALTER",
+    "DROP",
+    "BEGIN",
+    "COMMIT",
+    "END",
+    "ANALYZE",
+    "REINDEX",
 )
+
+
+def _verb_allowed(sql: str) -> bool:
+    """Whether ``sql`` begins with an allow-listed verb.
+
+    A linear line scan, deliberately not a regex: anchoring the verb behind a
+    ``--`` comment loop with quantifiers (``(?:\\s*--[^\\r\\n]*[\\r\\n]+)*``)
+    makes the engine backtrack exponentially on a comment-only statement
+    (CodeQL redos). ``str.splitlines`` cannot backtrack, so this stays linear.
+    """
+    for line in sql.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("--"):
+            continue
+        # Compare the first SQL token exactly; "startswith" would accept
+        # prefixes such as "SELECTED" or "DROPPED" as valid verbs.
+        first_token = stripped.split(None, 1)[0].upper()
+        return first_token in _VERBS
+    return False
+
 
 #: Stacked statements are never legitimate in driver input; a caller needing
 #: multiple statements issues them one by one. Block comments are banned;
@@ -59,7 +97,7 @@ def assert_safe_sql(sql: str) -> str:
     # is rejected.
     if _INTERIOR_SEMICOLON.search(sql):
         raise ValueError("SQL contains stacked statements (driver guard)")
-    if not _ALLOWED_VERBS.match(sql):
+    if not _verb_allowed(sql):
         raise ValueError("SQL verb not allowed at driver boundary (driver guard)")
     return sql
 

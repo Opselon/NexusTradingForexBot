@@ -34,8 +34,13 @@ const (
 	DefaultProductName = "NexusScalpEngine"
 	// DefaultProductDisplay is the human-facing product title.
 	DefaultProductDisplay = "Nexus Trading Forex Bot"
-	// DefaultVersion is the release version fallback.
-	DefaultVersion = "9.0.14"
+	// DefaultVersion is the release version fallback, used when no
+	// pyproject.toml is reachable (e.g. the frozen installed tree, which ships
+	// no repo root). It MUST equal pyproject.toml's version:
+	// TestDefaultVersionMatchesPyproject (system_direct_test.go) fails
+	// otherwise — the gate that stops it rotting, which is exactly how main
+	// went red when pyproject bumped to 9.0.15 and this stayed 9.0.14.
+	DefaultVersion = "9.0.17"
 	// DefaultChannel is the release distribution channel.
 	DefaultChannel = "production"
 
@@ -131,11 +136,38 @@ type SystemDirectHandler struct {
 type SystemDirect = SystemDirectHandler
 type SystemDirectHandlers = SystemDirectHandler
 
+// commitOnce + commitCache guarantee ONE git resolution per PROCESS. The
+// legacy VersionDirect path rebuilt the handler on every request, which reset
+// cachedVersion to nil each call — so every request re-ran `git rev-parse
+// HEAD` (~43ms on Windows) and the "direct" route ended up slower than the
+// Python proxy it replaced. Caching the resolved commit process-wide makes
+// any handler built later (including per-request rebuilds) reuse it.
+var (
+	commitOnce     sync.Once
+	commitCache    string
+	commitErr      error
+	commitResolved bool
+)
+
+// resolveCommitOnce runs the (expensive, exec-based) git resolution exactly
+// once per process, then returns the cached result.
+func resolveCommitOnce() (string, error) {
+	commitOnce.Do(func() {
+		commitCache, commitErr = resolveGitCommit()
+		commitResolved = true
+	})
+	return commitCache, commitErr
+}
+
 // NewSystemDirect constructs a direct handler with an optional Python client.
+//
+// The handler caches VersionData on first use, and the git commit it embeds
+// is cached process-wide (resolveCommitOnce), so the exec happens at most
+// once per process no matter how many handlers are constructed.
 func NewSystemDirect(py *python.Client) *SystemDirectHandler {
 	return &SystemDirectHandler{
 		py:          py,
-		gitResolver: resolveGitCommit,
+		gitResolver: resolveCommitOnce,
 	}
 }
 
@@ -155,10 +187,26 @@ func (h *SystemDirectHandler) SetForceFallback(force bool) {
 }
 
 // SetGitCommitResolver overrides the git commit resolution func (useful in tests).
+//
+// The override replaces the process-wide cached resolver for THIS handler:
+// resolution still runs at most ONCE (the default is once per process, an
+// override is once per handler), instead of on every request. Without that
+// guarantee a rebuilt or reset handler would re-run resolution per request —
+// exactly the Wave-6 regression this package guards against.
 func (h *SystemDirectHandler) SetGitCommitResolver(resolver func() (string, error)) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.gitResolver = resolver
+	if resolver == nil {
+		h.gitResolver = resolveCommitOnce
+		return
+	}
+	var sha string
+	var err error
+	var once sync.Once
+	h.gitResolver = func() (string, error) {
+		once.Do(func() { sha, err = resolver() })
+		return sha, err
+	}
 }
 
 // Capabilities serves GET /api/v1/system/capabilities directly from Go.
@@ -206,13 +254,17 @@ func (h *SystemDirectHandler) Version(w http.ResponseWriter, r *http.Request) {
 }
 
 // CapabilitiesDirect provides direct Go serving on the legacy SystemHandlers receiver.
+// It reuses the ONE long-lived SystemDirectHandler built in NewSystem so the
+// cached capabilities survive across requests.
 func (h *SystemHandlers) CapabilitiesDirect(w http.ResponseWriter, r *http.Request) {
-	NewSystemDirect(h.py).Capabilities(w, r)
+	h.direct.Capabilities(w, r)
 }
 
 // VersionDirect provides direct Go serving on the legacy SystemHandlers receiver.
+// It reuses the ONE long-lived SystemDirectHandler built in NewSystem so the
+// cached VersionData survives across requests (see SystemHandlers.direct).
 func (h *SystemHandlers) VersionDirect(w http.ResponseWriter, r *http.Request) {
-	NewSystemDirect(h.py).Version(w, r)
+	h.direct.Version(w, r)
 }
 
 // SystemCapabilitiesDirectHandler returns a standalone http.HandlerFunc.
@@ -387,19 +439,46 @@ func isFallbackRequested(r *http.Request) bool {
 
 var versionRegex = regexp.MustCompile(`(?m)^version\s*=\s*["']([^"']+)["']`)
 
+// buildInfoVersionRegex extracts "version" from build-info.json, which PyInstaller
+// embeds at the payload root (release.yml --add-data build-info.json). pyproject.toml
+// is NOT shipped inside the bundle, so in a packaged install this is the only
+// trustworthy source; without it the Go plane would fall back to DefaultVersion
+// and report a version that disagrees with the Python plane and the release tag.
+var buildInfoVersionRegex = regexp.MustCompile(`(?m)"version"\s*:\s*"([^"]+)"`)
+
 func resolveVersion() string {
 	repoRoot := findRepoRoot()
-	var candidates []string
+	var pyprojectCandidates []string
 	if repoRoot != "" {
-		candidates = append(candidates, filepath.Join(repoRoot, "pyproject.toml"))
+		pyprojectCandidates = append(pyprojectCandidates, filepath.Join(repoRoot, "pyproject.toml"))
 	}
-	candidates = append(candidates,
+	pyprojectCandidates = append(pyprojectCandidates,
 		"pyproject.toml",
 		"../pyproject.toml",
 		"../../pyproject.toml",
 	)
 
-	for _, p := range candidates {
+	// Prefer build-info.json: it is stamped per-build and ships inside the
+	// packaged payload, so it agrees with the release tag even when the source
+	// tree is absent.
+	var buildInfoCandidates []string
+	if repoRoot != "" {
+		buildInfoCandidates = append(buildInfoCandidates, filepath.Join(repoRoot, "build-info.json"))
+	}
+	buildInfoCandidates = append(buildInfoCandidates,
+		"build-info.json",
+		"../build-info.json",
+		"../../build-info.json",
+	)
+	for _, p := range buildInfoCandidates {
+		if data, err := os.ReadFile(p); err == nil {
+			if m := buildInfoVersionRegex.FindSubmatch(data); len(m) > 1 {
+				return string(m[1])
+			}
+		}
+	}
+
+	for _, p := range pyprojectCandidates {
 		if data, err := os.ReadFile(p); err == nil {
 			m := versionRegex.FindSubmatch(data)
 			if len(m) > 1 {

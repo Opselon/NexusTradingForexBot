@@ -655,7 +655,7 @@ jobs:
       # (aggregate does not run).
       - name: Upload CI results artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-results-quality-${{ github.workflow }}-${{ github.run_number }}-${{ github.sha }}
           path: ci-results/
@@ -725,6 +725,730 @@ jobs:
         run: python scripts/ci/ci_final_gate.py
 
   # ---------------------------------------------------------------------------
+  # FULL REAL-PROCESS RUNTIME — SQLite + PostgreSQL matrix.
+  # Each matrix leg launches NexusTradingForexBot.py itself in PAPER mode,
+  # keeps the real engine + FastAPI process alive for >=120 seconds, performs
+  # a large bounded read-only query workload (>=500 queries), checks live API
+  # endpoints, captures and traces warnings/errors/tracebacks, then requires
+  # graceful process shutdown. This is deliberately not TestClient smoke.
+  # ---------------------------------------------------------------------------
+  full-runtime-provider:
+    name: Full NSE Runtime (${{ matrix.provider }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [sqlite, postgres]
+
+    env:
+      NSE_PG_TEST_PASSWORD: nse_password_dev
+      NSE_DATABASE__PG_HOST: 127.0.0.1
+      NSE_DATABASE__PG_PORT: "5432"
+      NSE_DATABASE__PG_DATABASE: nse_audit
+      NSE_DATABASE__PG_USER: nse_user
+      NSE_RUNTIME_SOAK_PORT: "18080"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install full runtime dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web,postgres]"
+
+      - name: Prepare isolated provider environment
+        run: |
+          root="$RUNNER_TEMP/nse-full-runtime-${{ matrix.provider }}"
+          mkdir -p "$root"
+          echo "NEXUS_SETTINGS_DB=$root/app_settings.db" >> "$GITHUB_ENV"
+          echo "NEXUS_AUDIT_DB=$root/audit.db" >> "$GITHUB_ENV"
+          echo "NEXUS_DATA_ROOT=$root/data" >> "$GITHUB_ENV"
+          echo "NSE_EXECUTION__MODE=PAPER" >> "$GITHUB_ENV"
+          echo "NSE_EXECUTION__SYMBOL=XAUUSD" >> "$GITHUB_ENV"
+          echo "NSE_NO_BROWSER=1" >> "$GITHUB_ENV"
+          if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "NSE_TELEGRAM__ENABLED=true" >> "$GITHUB_ENV"
+            echo "NSE_NO_TELEGRAM=0" >> "$GITHUB_ENV"
+            echo "NEXUS_TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}" >> "$GITHUB_ENV"
+            echo "NEXUS_TELEGRAM_ADMIN_ID=${TELEGRAM_CHAT_ID}" >> "$GITHUB_ENV"
+          else
+            echo "NSE_NO_TELEGRAM=1" >> "$GITHUB_ENV"
+            echo "NSE_TELEGRAM__ENABLED=false" >> "$GITHUB_ENV"
+          fi
+          echo "NSE_NEWS__ENABLED=false" >> "$GITHUB_ENV"
+          echo "NSE_NO_AUTO_INSTALL=1" >> "$GITHUB_ENV"
+          echo "NSE_WEB_ACTUAL_PORT=$NSE_RUNTIME_SOAK_PORT" >> "$GITHUB_ENV"
+          if [ "${{ matrix.provider }}" = "postgres" ]; then
+            echo "NSE_DATABASE__PROVIDER=postgresql" >> "$GITHUB_ENV"
+          else
+            echo "NSE_DATABASE__PROVIDER=sqlite" >> "$GITHUB_ENV"
+            echo "NSE_DATABASE__SQLITE_PATH=$root/audit.sqlite" >> "$GITHUB_ENV"
+          fi
+
+      - name: Start disposable PostgreSQL
+        if: matrix.provider == 'postgres'
+        run: |
+          set -euo pipefail
+          docker rm -f nse-ci-pg >/dev/null 2>&1 || true
+          docker run -d --name nse-ci-pg \
+            -e POSTGRES_DB=nse_audit \
+            -e POSTGRES_USER=nse_user \
+            -e POSTGRES_PASSWORD="$NSE_PG_TEST_PASSWORD" \
+            -p 5432:5432 \
+            postgres:16-alpine
+          for i in $(seq 1 40); do
+            if docker exec nse-ci-pg pg_isready -U nse_user -d nse_audit >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs nse-ci-pg | tail -100 || true
+          echo "::error::PostgreSQL service did not become ready"
+          exit 1
+
+      - name: Provision and certify runtime model
+        run: |
+          python scripts/ci/runtime_gate.py --json --evidence
+
+      - name: Boot full NSE process + 120s soak + query workload
+        run: |
+          python scripts/ci/provider_runtime_soak.py \
+            --provider "${{ matrix.provider }}" \
+            --duration 120 \
+            --port "$NSE_RUNTIME_SOAK_PORT" \
+            --evidence-dir "$RUNNER_TEMP/nse-full-runtime-${{ matrix.provider }}"
+
+      - name: Print full runtime warnings, errors, tracebacks and query verdict
+        if: always()
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "nse-full-runtime-${{ matrix.provider }}"
+          report = {}
+          query = {}
+          for name, target in (("report", root / "full_runtime_report.json"), ("query", root / "query_matrix.json")):
+              try:
+                  payload = json.loads(target.read_text(encoding="utf-8"))
+              except Exception as exc:
+                  print(f"{name.upper()}_REPORT_ERROR: {type(exc).__name__}: {exc}")
+                  continue
+              if name == "report":
+                  report = payload
+              else:
+                  query = payload
+          diag = report.get("diagnostics", {})
+          rc = report.get("process_exit_code")
+          print("=" * 60)
+          print("=== FULL RUNTIME REPORT: ${{ matrix.provider }} ===")
+          print("=" * 60)
+          print("STATUS:", report.get("status", "FAIL"))
+          print("CONFIG:", report.get("config_path", "unknown"))
+          print("SOAK_SECONDS:", report.get("elapsed_sec", "n/a"))
+          print("PROCESS_RC:", rc if rc is not None else "0 (alive)")
+          print("QUERIES:", f"{query.get('queries_ok', 0)}/{query.get('queries_total', 0)}")
+          print("QUERY_FAILURES:", query.get("queries_failed", 0))
+          print("QUERY_FLOOR:", query.get("minimum_query_floor", "n/a"))
+          print("QUERY_FLOOR_MET:", query.get("query_floor_met", False))
+          print("WARNINGS:", diag.get("warning_count", 0))
+          print("ERRORS:", diag.get("error_count", 0))
+          print("TRACEBACKS:", diag.get("traceback_count", 0))
+          if report.get("runtime_error"):
+              print("RUNTIME_ERROR:", report["runtime_error"])
+
+          if rc not in (0, None):
+              print("\n" + "!" * 60)
+              print(f"💥 CRASH DETECTED: Engine process exited with code {rc}!")
+              print("!" * 60)
+              log_file = root / "runtime.log"
+              if log_file.exists():
+                  print("\n--- [LAST 50 LINES OF RUNTIME LOG] ---")
+                  lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+                  print("\n".join(lines[-50:]))
+          else:
+              print(f"\n✅ Engine process remained ALIVE for the full {report.get('elapsed_sec', 'n/a')}s soak window.")
+              if diag.get("warning_count", 0) > 0 or diag.get("error_count", 0) > 0:
+                  print(f"⚠️ Process ran successfully but recorded {diag.get('warning_count', 0)} warning(s) and {diag.get('error_count', 0)} error(s).")
+
+          tracebacks = diag.get("tracebacks", [])
+          if tracebacks:
+              print("\n" + "=" * 60)
+              print(f"=== FULL TRACEBACKS ({len(tracebacks)}) ===")
+              print("=" * 60)
+              for idx, trace in enumerate(tracebacks[:25], 1):
+                  lines = trace.get("lines", [])
+                  print(f"\n--- [TRACEBACK #{idx}] lines {trace.get('start_line_no')}-{trace.get('end_line_no')} ---")
+                  if lines:
+                      print("\n".join(lines))
+                  else:
+                      frames = " -> ".join(
+                          f"{frame['file']}:{frame['line']}" +
+                          (f"::{frame['function']}" if frame.get("function") else "")
+                          for frame in trace.get("frames", [])
+                      )
+                      print(frames or "no parsed frames")
+
+          warnings = diag.get("warnings", [])
+          if warnings:
+              print("\n--- [WARNINGS] ---")
+              for item in warnings[:50]:
+                  print(f"[WARN] line={item.get('line_no', '?')} {item.get('message', item.get('error', ''))}")
+
+          errors = diag.get("errors", [])
+          if errors:
+              print("\n--- [ERRORS] ---")
+              for item in errors[:50]:
+                  print(f"[ERROR] line={item.get('line_no', '?')} {item.get('message', item.get('error', ''))}")
+
+          query_fails = query.get("failure_samples", [])
+          if query_fails:
+              print("\n--- [QUERY FAILURES] ---")
+              for item in query_fails[:50]:
+                  print(f"[QUERY-FAIL] {item.get('label', 'unknown')}: {item.get('error', '')}")
+          print("\n" + "=" * 60)
+          PY
+
+      - name: Emit GitHub runtime annotations
+        if: always()
+        continue-on-error: true
+        run: |
+          python scripts/ci/render_provider_runtime.py \
+            --evidence "$RUNNER_TEMP/nse-full-runtime-${{ matrix.provider }}/provider_runtime_soak.json"
+
+      - name: Upload full runtime evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-full-runtime-${{ matrix.provider }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/full_runtime_report.json
+            ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/query_matrix.json
+            ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/provider_runtime_soak.json
+            ${{ runner.temp }}/nse-full-runtime-${{ matrix.provider }}/runtime.log
+            ${{ runner.temp }}/nse-runtime-${{ matrix.provider }}/audit.db
+            artifacts/models/scalp/XAUUSD/70d_liquidity/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup PostgreSQL
+        if: always() && matrix.provider == 'postgres'
+        run: docker rm -f nse-ci-pg >/dev/null 2>&1 || true
+
+  # ---------------------------------------------------------------------------
+  # DATABASE FABRIC CERTIFICATION — real UI-driven SQLite -> PostgreSQL -> SQLite.
+  # Uses the SQLite audit DB produced by the full real-process runtime lane,
+  # starts a disposable PostgreSQL, and exercises the same HTTP workflow the
+  # Database Management UI uses: config -> connection test -> preview ->
+  # migration -> validation -> automatic cutover -> restart -> reverse migration
+  # -> switch back -> restart. The same bounded query corpus runs statement by
+  # statement against both providers and a small p95 benchmark is recorded.
+  # This is a certification lane, not a load test.
+  # ---------------------------------------------------------------------------
+  db-fabric-certification:
+    name: DB Fabric Certification (SQLite ↔ PostgreSQL)
+    if: always() && needs.full-runtime-provider.result == 'success'
+    needs:
+      - full-runtime-provider
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+
+    env:
+      NSE_PG_TEST_PASSWORD: nse_password_dev
+      NSE_DATABASE__PG_HOST: 127.0.0.1
+      NSE_DATABASE__PG_PORT: "5432"
+      NSE_DATABASE__PG_DATABASE: nse_audit
+      NSE_DATABASE__PG_USER: nse_user
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web,postgres]"
+
+      - name: Download SQLite runtime evidence
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: ci-full-runtime-sqlite-*
+          path: ${{ runner.temp }}/db-fabric/input
+          merge-multiple: true
+
+      - name: Restore certified model bundle from SQLite runtime lane
+        run: |
+          set -euo pipefail
+          model_pt="$(find "$RUNNER_TEMP/db-fabric/input" -type f -name model.pt -print -quit)"
+          test -n "$model_pt"
+          model_dir="$(dirname "$model_pt")"
+          target="artifacts/models/scalp/XAUUSD/70d_liquidity"
+          mkdir -p "$target"
+          cp "$model_dir"/* "$target"/
+
+      - name: Locate SQLite audit database
+        run: |
+          set -euo pipefail
+          sqlite_db="$(find "$RUNNER_TEMP/db-fabric/input" -type f -name audit.db -print -quit)"
+          test -n "$sqlite_db"
+          echo "SQLITE_RUNTIME_DB=$sqlite_db" >> "$GITHUB_ENV"
+
+      - name: Start disposable PostgreSQL 16
+        run: |
+          set -euo pipefail
+          docker rm -f nse-db-fabric-pg >/dev/null 2>&1 || true
+          docker run -d --name nse-db-fabric-pg \
+            -e POSTGRES_DB=nse_audit \
+            -e POSTGRES_USER=nse_user \
+            -e POSTGRES_PASSWORD="$NSE_PG_TEST_PASSWORD" \
+            -p 5432:5432 \
+            postgres:16-alpine
+          for i in $(seq 1 45); do
+            if docker exec nse-db-fabric-pg pg_isready -U nse_user -d nse_audit >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs nse-db-fabric-pg | tail -120 || true
+          exit 1
+
+
+      - name: Prepare deterministic market data
+        run: |
+          python - <<'PY'
+          from datetime import UTC, datetime, timedelta
+          from pathlib import Path
+          import polars as pl
+
+          path = Path("data/raw/XAUUSD_M1.parquet")
+          path.parent.mkdir(parents=True, exist_ok=True)
+          start = datetime(2026, 1, 1, tzinfo=UTC)
+          n = 20000
+          close = [2000.0 + ((i % 200) - 100) * 0.02 + (i % 17) * 0.003 for i in range(n)]
+          pl.DataFrame({
+              "time_utc": [start + timedelta(minutes=i) for i in range(n)],
+              "open": close,
+              "high": [v + 0.15 for v in close],
+              "low": [v - 0.15 for v in close],
+              "close": [v + (0.01 if i % 2 else -0.01) for i, v in enumerate(close)],
+              "tick_volume": [100 + (i % 31) for i in range(n)],
+          }).write_parquet(path)
+          PY
+
+      - name: Run end-to-end DB fabric certification with full trace
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/db-fabric/evidence"
+          log="$RUNNER_TEMP/db-fabric/certification.log"
+
+          # Stream complete Python stdout/stderr to Actions and persist the exact
+          # same stream. Capture the Python exit code explicitly.
+          set +e
+          set -x
+          python -u scripts/ci/db_fabric_certification.py \
+            --sqlite-db "$SQLITE_RUNTIME_DB" \
+            --settings-db "$RUNNER_TEMP/db-fabric/settings.db" \
+            --evidence-dir "$RUNNER_TEMP/db-fabric/evidence" \
+            --port 18090 2>&1 | tee "$log"
+          rc=${PIPESTATUS[0]}
+          set +x
+
+          echo "DB_FABRIC_CERTIFICATION_RC=$rc"
+          if [ "$rc" -ne 0 ]; then
+            echo "=== DB FABRIC STRUCTURED FAILURE ==="
+            python - <<'PY' || true
+          import json
+          import os
+          from pathlib import Path
+
+          p = Path(os.environ["RUNNER_TEMP"]) / "db-fabric" / "evidence" / "db_fabric_certification.json"
+          if p.exists():
+              data = json.loads(p.read_text(encoding="utf-8"))
+              print(json.dumps({
+                  "status": data.get("status"),
+                  "errors": data.get("errors"),
+                  "phases": data.get("phases"),
+                  "final_count_diffs": data.get("final_count_diffs"),
+                  "preserved_sqlite_diffs": data.get("preserved_sqlite_diffs"),
+                  "final_schema_compare": data.get("final_schema_compare"),
+                  "traceback": data.get("traceback"),
+              }, indent=2, sort_keys=True, default=str))
+          else:
+              print("certification evidence file was not produced")
+          PY
+            echo "=== CERTIFICATION LOG: LAST 500 LINES ==="
+            tail -n 500 "$log" || true
+            echo "=== CERTIFICATION LOG: ERROR/FAIL FILTER ==="
+            grep -Ein 'error|fail|exception|traceback|mismatch|does not exist|cannot' "$log" | tail -n 250 || true
+            echo "=== APPLICATION LOG TAILS ==="
+            for f in "$RUNNER_TEMP"/db-fabric/db-fabric-*.log "$RUNNER_TEMP"/db-fabric/evidence/db-fabric-*.log; do
+              [ -f "$f" ] || continue
+              echo "===== $f ====="
+              tail -n 500 "$f" || true
+            done
+            exit "$rc"
+          fi
+
+      - name: Run deep SQLite provider query certification
+        run: |
+          set -euo pipefail
+          export NEXUS_AUDIT_DB="$RUNNER_TEMP/db-fabric/evidence/certification.sqlite"
+          export NSE_DATABASE__PROVIDER=sqlite
+          mkdir -p "$RUNNER_TEMP/db-fabric/evidence/ci-db-cert-sqlite"
+          python scripts/ci/database_provider_cert.py \
+            --provider sqlite \
+            --evidence-dir "$RUNNER_TEMP/db-fabric/evidence/ci-db-cert-sqlite"
+
+      - name: Run deep PostgreSQL provider query certification
+        run: |
+          set -euo pipefail
+          unset NEXUS_AUDIT_DB || true
+          export NSE_DATABASE__PROVIDER=postgresql
+          export NSE_DATABASE__PG_HOST=127.0.0.1
+          export NSE_DATABASE__PG_PORT=5432
+          export NSE_DATABASE__PG_DATABASE=nse_audit
+          export NSE_DATABASE__PG_USER=nse_user
+          export HOME="$RUNNER_TEMP/db-fabric/home"
+          mkdir -p "$HOME"
+          python - <<'PY'
+          import os
+          import sys
+          sys.path.insert(0, "src")
+          from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
+          from nexus_scalp.settings.secret_store import SecureSecretStore
+          SecureSecretStore().set_secret(PG_PASSWORD_SECRET_KEY, os.environ["NSE_PG_TEST_PASSWORD"])
+          PY
+          mkdir -p "$RUNNER_TEMP/db-fabric/evidence/ci-db-cert-postgres"
+          python scripts/ci/database_provider_cert.py \
+            --provider postgres \
+            --evidence-dir "$RUNNER_TEMP/db-fabric/evidence/ci-db-cert-postgres"
+
+      - name: Compare SQLite/PostgreSQL live schema and query contract
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/db-fabric/evidence/ci-db-cert-root"
+          export DB_CERT_ROOT="$RUNNER_TEMP/db-fabric/evidence"
+          python scripts/ci/database_provider_parity.py \
+            --evidence-dir "$DB_CERT_ROOT"
+
+      - name: Run production migrator deep round-trip certification
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/db-fabric/evidence/ci-migration-cert"
+          python scripts/ci/database_migration_cert.py \
+            --evidence-dir "$RUNNER_TEMP/db-fabric/evidence/ci-migration-cert"
+
+      - name: Enforce deep DB certification contract and emit benchmark
+        run: |
+          set -euo pipefail
+          export DB_CERT_ROOT="$RUNNER_TEMP/db-fabric/evidence"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["DB_CERT_ROOT"])
+          sqlite_report = json.loads((root / "ci-db-cert-sqlite" / "database_provider_cert.json").read_text())
+          postgres_report = json.loads((root / "ci-db-cert-postgres" / "database_provider_cert.json").read_text())
+          parity = json.loads((root / "provider_parity.json").read_text())
+          migration = json.loads((root / "ci-migration-cert" / "database_migration_cert.json").read_text())
+
+          checks = {
+              "sqlite_provider_cert_pass": sqlite_report.get("status") == "PASS",
+              "postgres_provider_cert_pass": postgres_report.get("status") == "PASS",
+              "sqlite_query_floor_350": int(sqlite_report.get("workload", {}).get("query_count", 0)) >= 350,
+              "postgres_query_floor_350": int(postgres_report.get("workload", {}).get("query_count", 0)) >= 350,
+              "sqlite_query_failures_zero": int(sqlite_report.get("workload", {}).get("failed", 1)) == 0,
+              "postgres_query_failures_zero": int(postgres_report.get("workload", {}).get("failed", 1)) == 0,
+              "every_sqlite_table_exists_in_postgres": bool(
+                  parity.get("checks", {}).get("sqlite_has_no_missing_postgres_tables")
+              ),
+              "shared_columns_equal": bool(parity.get("checks", {}).get("same_column_contract")),
+              "postgres_only_data_free": bool(
+                  parity.get("checks", {}).get("postgres_only_tables_are_empty")
+              ),
+              "migration_cert_pass": migration.get("status") == "PASS",
+              "migration_roundtrip_digest": bool(migration.get("digest_match")),
+              "migration_idempotent": bool(migration.get("idempotent_forward_pass")),
+          }
+
+          benchmark = {
+              "sqlite_mean_ms": sqlite_report.get("workload", {}).get("mean_ms"),
+              "sqlite_p95_ms": sqlite_report.get("workload", {}).get("p95_ms"),
+              "postgres_p95_ms": postgres_report.get("workload", {}).get("p95_ms"),
+              "postgres_max_ms": postgres_report.get("workload", {}).get("max_ms"),
+              "sqlite_query_count": sqlite_report.get("workload", {}).get("query_count"),
+              "postgres_query_count": postgres_report.get("workload", {}).get("query_count"),
+              "migration_elapsed_ms": migration.get("elapsed_ms"),
+          }
+
+          result = {
+              "status": "PASS" if all(checks.values()) else "FAIL",
+              "checks": checks,
+              "benchmark": benchmark,
+          }
+          (root / "deep_db_certification_overall.json").write_text(
+              json.dumps(result, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+
+          summary = "## Deep DB Fabric Certification\n\n"
+          summary += "| Check | Result |\n|---|---|\n"
+          for name, ok in checks.items():
+              summary += f"| {name} | {'PASS' if ok else 'FAIL'} |\n"
+          summary += "\n### Approximate benchmark\n"
+          for name, value in benchmark.items():
+              summary += f"- {name}: {value}\n"
+          print(summary)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write(summary)
+
+          if result["status"] != "PASS":
+              raise SystemExit(1)
+          PY
+
+      - name: Print DB fabric diagnostics
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "=== DB FABRIC DIAGNOSTIC SUMMARY ==="
+          if [ -f "$RUNNER_TEMP/db-fabric/evidence/db_fabric_certification.json" ]; then
+            python - <<'PY' || true
+          import json
+          import os
+          from pathlib import Path
+
+          p = Path(os.environ["RUNNER_TEMP"]) / "db-fabric" / "evidence" / "db_fabric_certification.json"
+          data = json.loads(p.read_text(encoding="utf-8"))
+          print(json.dumps({
+              "status": data.get("status"),
+              "errors": data.get("errors"),
+              "phases": data.get("phases"),
+              "final_count_diffs": data.get("final_count_diffs"),
+              "preserved_sqlite_diffs": data.get("preserved_sqlite_diffs"),
+              "final_schema_compare": data.get("final_schema_compare"),
+              "shutdown": data.get("shutdown"),
+          }, indent=2, sort_keys=True, default=str))
+          PY
+          fi
+          echo "=== CERTIFICATION LOG TAIL ==="
+          tail -n 500 "$RUNNER_TEMP/db-fabric/certification.log" 2>/dev/null || true
+          echo "=== APPLICATION WARN/ERROR TAILS ==="
+          for f in "$RUNNER_TEMP"/db-fabric/db-fabric-*.log; do
+            [ -f "$f" ] || continue
+            echo "===== $f ====="
+            grep -Ein 'warn|error|critical|exception|fatal|failed|cannot|mismatch' "$f" | tail -n 250 || true
+          done
+          echo "=== POSTGRES CONTAINER LOG (TAIL) ==="
+          docker logs --tail 250 nse-db-fabric-pg 2>&1 || true
+          echo "=== PROCESS SNAPSHOT ==="
+          ps -ef | grep -E 'nexus|uvicorn|python|postgres' | grep -v grep || true
+
+      - name: Upload DB fabric evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-db-fabric-certification-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/db-fabric/evidence/
+            ${{ runner.temp }}/db-fabric/certification.log
+            ${{ runner.temp }}/db-fabric/db-fabric-*.log
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup PostgreSQL
+        if: always()
+        run: docker rm -f nse-db-fabric-pg >/dev/null 2>&1 || true
+
+  # ---------------------------------------------------------------------------
+  # MT5/WINE — independent terminal runtime line.
+  # Validates install/start/health/stop for the official terminal under
+  # Wine/Xvfb. It never places an order and does not fabricate demo creds.
+  # ---------------------------------------------------------------------------
+  mt5-wine-runtime:
+    name: MetaTrader 5 Wine Runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    env:
+      NEXUS_MT5_DISPLAY: "99"
+      NEXUS_MT5_WINEDEBUG: "-all"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Wine staging + Xvfb
+        run: |
+          set -euo pipefail
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates curl wget gnupg xvfb x11-utils winbind
+          sudo mkdir -pm755 /etc/apt/keyrings
+          wget -qO- https://dl.winehq.org/wine-builds/winehq.key | sudo gpg --dearmor -o /etc/apt/keyrings/winehq-archive.key
+          sudo wget -qNP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/noble/winehq-noble.sources
+          sudo apt-get update
+          sudo apt-get install -y --install-recommends winehq-staging
+          wine --version
+
+      - name: Prepare isolated MT5 runtime root
+        run: |
+          echo "NEXUS_MT5_ROOT=$RUNNER_TEMP/nexus-mt5" >> "$GITHUB_ENV"
+
+      - name: Start Xvfb
+        run: |
+          Xvfb ":$NEXUS_MT5_DISPLAY" -screen 0 1280x1024x24 > "$RUNNER_TEMP/nexus-mt5-xvfb.log" 2>&1 &
+          echo "DISPLAY=:$NEXUS_MT5_DISPLAY" >> "$GITHUB_ENV"
+
+      - name: Set up Python 3.11 for repository diagnostics
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install repository runtime dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web,postgres]"
+
+      - name: Verify Wine
+        run: |
+          wine --version
+          wineserver --version
+
+      - name: Install official MetaTrader 5
+        run: |
+          export NEXUS_MT5_WINE="$(command -v wine)"
+          export NEXUS_MT5_WINESERVER="$(command -v wineserver)"
+          bash scripts/linux/mt5_runtime.sh install
+
+      - name: Start MT5 and health-soak for 120s with complete trace log
+        env:
+          NEXUS_MT5_DEMO_LOGIN: ${{ secrets.MT5_DEMO_LOGIN }}
+          NEXUS_MT5_DEMO_PASSWORD: ${{ secrets.MT5_DEMO_PASSWORD }}
+          NEXUS_MT5_DEMO_SERVER: ${{ secrets.MT5_DEMO_SERVER }}
+        run: |
+          set -euo pipefail
+          export NEXUS_MT5_WINE="$(command -v wine)"
+          export NEXUS_MT5_WINESERVER="$(command -v wineserver)"
+          trap 'bash scripts/linux/mt5_runtime.sh stop || true' EXIT
+          {
+            bash scripts/linux/mt5_runtime.sh start
+            python scripts/linux/mt5_doctor.py
+            bash scripts/linux/mt5_runtime.sh health
+            for i in $(seq 1 24); do
+              sleep 5
+              bash scripts/linux/mt5_runtime.sh health
+            done
+            python scripts/linux/mt5_doctor.py
+            bash scripts/linux/mt5_runtime.sh check-login || true
+            bash scripts/linux/mt5_runtime.sh logs || true
+            bash scripts/linux/mt5_runtime.sh stop
+            trap - EXIT
+          } 2>&1 | tee "$RUNNER_TEMP/nexus-mt5-runtime.log"
+
+      - name: Trace MT5 warnings and errors
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "=== MT5/WINE INSTALL + RUNTIME DIAGNOSTICS ==="
+          find "$NEXUS_MT5_ROOT/logs" -maxdepth 1 -type f -print -exec sh -c 'echo "--- $1 ---"; tail -200 "$1"' _ {} \; 2>/dev/null || true
+          for log in "$NEXUS_MT5_ROOT"/logs/*.log; do
+            [ -f "$log" ] || continue
+            echo "=== WARN/ERROR: $log ==="
+            grep -Ein 'warn|error|critical|exception|fatal|failed|cannot|err:' "$log" | head -200 || true
+          done
+          if [ -f "$RUNNER_TEMP/nexus-mt5-runtime.log" ]; then
+            cat "$RUNNER_TEMP/nexus-mt5-runtime.log"
+          fi
+
+      - name: Upload MT5/Wine evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-mt5-wine-runtime-${{ github.run_id }}
+          # $NEXUS_MT5_ROOT wholesale is NOT uploadable: the Wine prefix's
+          # dosdevices/ holds per-drive symlinks back to the host filesystem
+          # (z: -> /), so the artifact walk descends into / and dies with
+          # EACCES on paths like dosdevices/z:/boot/efi. Upload the
+          # diagnostics that actually matter instead of the whole prefix.
+          path: |
+            ${{ runner.temp }}/nexus-mt5/logs/
+            ${{ runner.temp }}/nexus-mt5/cache/*.sha256
+            ${{ runner.temp }}/nexus-mt5-runtime.log
+            ${{ runner.temp }}/nexus-mt5-xvfb.log
+          if-no-files-found: error
+          retention-days: 14
+
+  full-runtime-verdict:
+    name: Full Runtime Overall Verdict
+    if: always()
+    needs:
+      - full-runtime-provider
+      - mt5-wine-runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download provider runtime evidence
+        if: always()
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: ci-full-runtime-*
+          path: full-runtime-results
+          merge-multiple: false
+
+      - name: Aggregate provider warnings, errors, traces and query counts
+        if: always()
+        continue-on-error: true
+        run: |
+          python scripts/ci/aggregate_provider_runtime.py \
+            --root full-runtime-results \
+            --output runtime-provider-overall.json
+
+      - name: Upload provider overall runtime evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-provider-runtime-overall-${{ github.run_id }}
+          path: runtime-provider-overall.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Require every runtime line to pass
+        run: |
+          echo "SQLite/PostgreSQL matrix: ${{ needs.full-runtime-provider.result }}"
+          echo "MT5/Wine line:             ${{ needs.mt5-wine-runtime.result }}"
+          if [ "${{ needs.full-runtime-provider.result }}" != "success" ]; then
+            echo "::error::Full SQLite/PostgreSQL runtime matrix failed"
+            exit 1
+          fi
+          if [ "${{ needs.mt5-wine-runtime.result }}" != "success" ]; then
+            echo "::error::MetaTrader 5 Wine runtime failed"
+            exit 1
+          fi
+          echo "FULL RUNTIME CERTIFICATION: PASS"
+  # ---------------------------------------------------------------------------
   # TIER 2 — EXTENDED validation (brief section 19). Runs on MAIN PUSH
   # (post-merge evidence) and explicit dispatch, never on the PR lane. Holds
   # the production-truth tests whose MEASURED wall cost (bug276 1252s,
@@ -793,7 +1517,7 @@ jobs:
 
       - name: Upload extended results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-results-extended-${{ github.run_number }}-${{ github.sha }}
           path: ci-results-extended/
@@ -949,7 +1673,7 @@ jobs:
 
       - name: Upload suite artifact
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-results-${{ matrix.suite }}-${{ github.run_number }}-${{ github.sha }}
           path: ci-results/
@@ -988,7 +1712,7 @@ jobs:
 
     steps:
       - name: Download all suite artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: artifacts
           # merge-multiple is intentionally OFF: each arm's ci-results/ tree
@@ -1024,7 +1748,7 @@ jobs:
           find ci-results/run-info -type f | sort
 
       - name: Upload canonical aggregate artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-results-${{ github.workflow }}-${{ github.run_number }}-${{ github.sha }}
           path: ci-results/

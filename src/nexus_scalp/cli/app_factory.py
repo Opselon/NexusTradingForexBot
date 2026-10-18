@@ -24,12 +24,18 @@ from typing import Any
 
 import typer
 
-from nexus_scalp.cli.ai_commands import register_ai_commands
 from nexus_scalp.cli.analyze_commands import register_analyze_commands
 from nexus_scalp.cli.db_commands import db_app, make_portability_app
-from nexus_scalp.cli.dependency_commands import register_dependency_commands
 from nexus_scalp.cli.incident_commands import incidents_app
+from nexus_scalp.cli.lazy_subapps import lazy_group_cls
 from nexus_scalp.release.metadata import PRODUCT_DISPLAY
+
+# LAZY (EU-03, wave-6 perf): ai_commands (ai_providers.orchestrator),
+# dependency_commands (networkx), gateway_commands (fastapi -> torch+polars)
+# and model_studio_commands (model_studio_routes -> torch) are NOT imported
+# here anymore — see cli/lazy_subapps.py. Importing them eagerly made even
+# `nexus --version` pay the whole neural/provider/graph stack; the group
+# class below registers them on the first subcommand resolution instead.
 
 app: typer.Typer = typer.Typer(
     name="nexus",
@@ -43,6 +49,11 @@ app: typer.Typer = typer.Typer(
     ),
     add_completion=False,
     rich_markup_mode="rich",
+    # EU-03 (wave-6 perf): the heavy sub-apps above are imported and registered
+    # ON DEMAND by this group's ``get_command`` (first subcommand resolution),
+    # not eagerly at import. ``nexus --version`` / ``nexus help`` never resolve
+    # a subcommand, so they stay torch-free. See cli/lazy_subapps.py.
+    cls=lazy_group_cls(None),
 )
 
 
@@ -113,10 +124,10 @@ app.add_typer(
 # G29: Enterprise Code Analyzer (``nse analyze``)
 register_analyze_commands(app)
 # AI PROVIDER ECOSYSTEM (``nexus ai ...``) — same backend contracts as the API
-# and the UI (Section 61: backend is the source of truth).
-register_ai_commands(app)
-# Dependency Intelligence (``nse dependency``)
-register_dependency_commands(app)
+# and the UI (Section 61: backend is the source of truth). LAZY (EU-03): the
+# orchestrator import chain (~1s) is deferred to first use — see lazy_subapps.
+# Dependency Intelligence (``nse dependency``) — LAZY (EU-03): networkx import
+# chain deferred to first use, same invariant as ``nexus help`` must not pay.
 # API PLATFORM v1 (``nexus api ...``) — same HTTP contracts as external clients.
 from nexus_scalp.cli.api_commands import api_app  # noqa: E402  (registration side effect)
 
@@ -142,17 +153,13 @@ app.add_typer(
     name="risk",
     help="Runtime safety state: inspect and explicitly release persisted halts.",
 )
-# GATEWAY — Windows MT5 bridge server for the existing Linux gateway client
-try:
-    import nexus_scalp.cli.gateway_commands as _gateway_commands  # noqa: F401 (side effect: registers nexus gateway)
-except Exception:
-    pass
-
-# MODEL STUDIO — Neural inspection, prediction, stress testing, and training (ML-UI-001)
-try:
-    import nexus_scalp.cli.model_studio_commands as _model_studio_commands  # noqa: F401
-except Exception:
-    pass
+# MODEL STUDIO — Neural inspection, prediction, stress testing, and training
+# (ML-UI-001). LAZY (EU-03, wave-6 perf): importing this module eagerly pulled
+# nexus_scalp.web.model_studio_routes -> torch (~4s), which every CLI invocation
+# paid even for `nexus --version`. It is now imported on first use by the lazy
+# Typer group — see cli/lazy_subapps.py. Same for AI/dependency/gateway: heavy
+# stacks (orchestrator/networkx/fastapi) moved to lazy registration for the
+# same latency reason as the _heavy_* shims.
 
 # PR EVIDENCE REPORTER — file-level failure intelligence inside any PR
 # (``nexus pr report [--pr N] [--watch] [--json]``). Guarded like the other

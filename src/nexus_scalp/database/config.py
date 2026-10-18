@@ -146,6 +146,10 @@ class DatabaseConfig:
     sqlite_path: str = ""
     #: Optional explicit file:// URI for SQLite (e.g. file::memory:?cache=shared).
     sqlite_uri: str = ""
+    #: True when an NSE_DATABASE__* environment override shaped this config
+    #: (set by load_database_config; never persisted). Health/diagnostic
+    #: surfaces read it to report env-vs-persisted credential conflicts.
+    env_overrode_persisted: bool = False
     #: PostgreSQL pool sizing.  ``None`` = "the fabric's own default applies"
     #: (the value an operator never set); an explicit 0 is a real choice
     #: (min_size 0 = open the pool lazily, idle/lifetime 0 = never reap).
@@ -474,7 +478,14 @@ def load_database_config(
     # override is skipped for that path. Every other run (seam absent, another
     # domain, or an explicit env provider) keeps today's behavior.
     db = None
-    if (settings_db_path is not None or not provider_env) and not audit_seam_applies:
+    # The persisted settings are ALWAYS consulted (BUG-PGENV): gating this
+    # block on `not provider_env` meant an operator exporting
+    # NSE_DATABASE__PROVIDER=postgresql alone never read their persisted
+    # database.postgresql_config, so the env branch below rebuilt from
+    # for_postgres defaults and silently replaced nexusdb with nse_audit
+    # and the configured command_timeout_sec with 0. Env still wins
+    # per-key below; the persisted row supplies every key no env var names.
+    if not audit_seam_applies:
         # Opening the settings DB is best-effort: a fresh environment (no
         # app_settings.db yet) must fall back to SQLite defaults silently.
         try:
@@ -529,23 +540,52 @@ def load_database_config(
                     pass
 
     # --- environment overrides (containers / CI / one-off runs) ------------
+    # BUG-PGENV / doctor-credential-mismatch: an operator who exports ONLY
+    # NSE_DATABASE__PROVIDER=postgresql (no PG_HOST/PG_PORT/PG_DATABASE/
+    # PG_USER) previously got here with the persisted block above fully
+    # SKIPPED — its entry guard was `not provider_env` — so this branch
+    # rebuilt the config from `for_postgres` defaults and silently erased
+    # the persisted database (`nexusdb` -> `nse_audit`) and the operator's
+    # command_timeout_sec. The doctor then connected to a database the
+    # operator never named, failed, and pointed at "start the service".
+    # The override must be an OVERLAY on the resolved config, never a
+    # fresh default: only the keys actually present in the environment
+    # replace their persisted values. An unset key keeps cfg's value.
     if provider_env:
+        _env_overrode_persisted = True
         env_provider = DatabaseProvider.parse(provider_env)
         if env_provider.is_postgresql:
-            cfg = DatabaseConfig.for_postgres(
+            # Seed from the RESOLVED config (persisted settings when the
+            # guard above let them load) instead of `for_postgres` defaults
+            # so an incomplete env override only overwrites what it names.
+            base = cfg if cfg.is_postgresql else DatabaseConfig.for_postgres(domain=domain)
+            host = envd.get("NSE_DATABASE__PG_HOST", base.host or "localhost")
+            port_raw = envd.get("NSE_DATABASE__PG_PORT", str(base.port or DEFAULT_PG_PORT))
+            database = envd.get("NSE_DATABASE__PG_DATABASE", base.database or f"nse_{domain}")
+            username = envd.get("NSE_DATABASE__PG_USER", base.username or "nse_user")
+            ssl_mode = envd.get("NSE_DATABASE__PG_SSLMODE", base.ssl_mode or "")
+            cfg = DatabaseConfig(
+                provider=DatabaseProvider.POSTGRESQL,
                 domain=domain,
-                host=envd.get("NSE_DATABASE__PG_HOST", cfg.host or "localhost"),
-                port=int(envd.get("NSE_DATABASE__PG_PORT", str(cfg.port or DEFAULT_PG_PORT))),
-                database=envd.get("NSE_DATABASE__PG_DATABASE", cfg.database or f"nse_{domain}"),
-                username=envd.get("NSE_DATABASE__PG_USER", cfg.username or "nse_user"),
+                host=host,
+                port=int(port_raw),
+                database=database,
+                username=username,
                 password_secret=PG_PASSWORD_SECRET_KEY,
-                ssl_mode=envd.get("NSE_DATABASE__PG_SSLMODE", cfg.ssl_mode or ""),
-                migrate_on_startup=cfg.migrate_on_startup,
-                pooling_enabled=cfg.pooling_enabled,
+                ssl_mode=ssl_mode,
+                command_timeout_sec=base.command_timeout_sec,
+                migrate_on_startup=base.migrate_on_startup,
+                pooling_enabled=base.pooling_enabled,
+                connect_timeout_sec=base.connect_timeout_sec,
+                sqlite_path=base.sqlite_path,
+                sqlite_uri=base.sqlite_uri,
             )
         else:
             path = envd.get("NSE_DATABASE__SQLITE_PATH", "")
             cfg = DatabaseConfig.for_sqlite(domain, path=path)
+    else:
+        _env_overrode_persisted = False
+    cfg.env_overrode_persisted = _env_overrode_persisted
     return cfg
 
 

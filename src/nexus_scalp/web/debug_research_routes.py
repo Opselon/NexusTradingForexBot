@@ -964,6 +964,7 @@ def register_debug_research_routes(
                 # the id and all dispatch rows whose reason embeds it.
                 sig_cols = [d[0] for d in con.execute("PRAGMA table_info(audit_signals)")]
                 if "execution_id" in sig_cols:
+                    # ci: schema-guarded — executes only when execution_id exists in live schema.
                     sig = con.execute(
                         "SELECT * FROM audit_signals WHERE execution_id = ? ORDER BY generated_at DESC LIMIT 5",
                         (execution_id,),
@@ -2071,9 +2072,9 @@ def register_debug_research_routes(
             # degraded/unknown review conditions also surface as reasons
             if payload["decision"] == "REVIEW_REQUIRED":
                 payload["blocking_reasons"] = [
-                    f"{c['check_id']} [{c['status']}]"
-                    for c in engine.dashboard()["rows"].values()
-                    if c["status"] in ("DEGRADED", "UNKNOWN")
+                    f"{check_id} [{check.get('status')}]"
+                    for check_id, check in engine.dashboard().get("rows", {}).items()
+                    if isinstance(check, dict) and check.get("status") in ("DEGRADED", "UNKNOWN")
                 ][:20]
             last = load_last_gate_result()
             return serialize_enums({"available": True, "gate": payload, "last_gate": last})

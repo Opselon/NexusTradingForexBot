@@ -43,6 +43,8 @@ import type {
   TestModelResponse,
 } from "../model";
 import { isFailureLifecycle, isHealthyLifecycle, LIFECYCLE_STATES } from "../model";
+import { DbHealthBanner } from "./DbHealthBanner";
+import { shouldRenderDbHealth, useDbHealth } from "./useDbHealth";
 import "./ai-providers.css";
 
 const REFRESH_MS = 5000;
@@ -914,6 +916,11 @@ export default function AIProvidersPage(_props: ShellPageProps) {
   const providers = data?.providers ?? [];
   const rollback = useMemo(() => rollbackHint(act?.active_provider), [act?.active_provider]);
 
+  /** PostgreSQL health state (wave §C1/§C2): the classified 503 from this
+   *  page's own route when it hit one, else the engine's centralized health
+   *  snapshot. HEALTHY renders nothing; the banner is additive only. */
+  const dbHealth = useDbHealth(error);
+
   /** Templates are loaded once when the wizard opens (the registry is small
    *  and stable; no reason to fetch it on every render). */
   const openWizard = useCallback(async () => {
@@ -1131,6 +1138,12 @@ export default function AIProvidersPage(_props: ShellPageProps) {
 
   return (
     <div className="aipage">
+      {/* ---- PostgreSQL health state (brief §26) -------------------------- */}
+      {/* ADDITIVE: renders ONLY on a classified bad state or an honest
+          UNKNOWN. A healthy database yields no markup here, so the rest of
+          the page renders exactly as before. */}
+      {shouldRenderDbHealth(dbHealth) ? <DbHealthBanner state={dbHealth} /> : null}
+
       {/* ---- hero: kicker -> glyph + gradient title -> desc -> chips -------- */}
       <section className="aipage-hero" aria-labelledby="aipage-h1">
         <div className="aipage-hero-main">

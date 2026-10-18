@@ -272,6 +272,16 @@ class OfficialSourceAdapter(RSSNewsSourceAdapter):
     def fetch(self, limit: int = 100) -> SourceFetchResult:
         result = super().fetch(limit=limit)
         if result.ok and not result.items:
+            # 304 / "not modified" is a SUCCESS with zero items, not a
+            # failure: the conditional GET proved the feed is UNCHANGED, so
+            # no body was downloaded and there is simply nothing new. Treating
+            # it as a failure punished every healthy official source on every
+            # poll once it went quiet (live log: source=fed status=FAILURE
+            # error=official feed returned no items). Only a genuine 200 body
+            # that parsed to zero items is the typed failure the strict
+            # validation below exists for.
+            if result.status == 304:
+                return result
             return SourceFetchResult(
                 ok=False, status=result.status, error="official feed returned no items"
             )

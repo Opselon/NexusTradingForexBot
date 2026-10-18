@@ -382,7 +382,7 @@ def _duplicate_outcome_anomalies(
         "SELECT execution_id, COUNT(*) AS c, "
         "MIN(realized_pnl_usd) AS min_pnl, MAX(realized_pnl_usd) AS max_pnl "
         "FROM audit_experience_outcomes WHERE is_closed = 1 "
-        "GROUP BY execution_id HAVING c > 1",
+        "GROUP BY execution_id HAVING COUNT(*) > 1",
         operation="behavior_canonical.duplicate_outcomes",
     )
     if not rows:

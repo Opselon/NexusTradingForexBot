@@ -570,15 +570,16 @@ class ProviderRegistryStore:
     def _ensure_schema(self) -> None:
         with self._lock:
             with self._driver.transaction() as conn:
-                conn.execute(
+                self._driver.execute(
                     f"""CREATE TABLE IF NOT EXISTS {self._TABLE_CONFIG} (
                     provider_id TEXT PRIMARY KEY,
                     blob TEXT NOT NULL,
                     configuration_version TEXT NOT NULL,
                     updated_at TEXT NOT NULL
-                )"""
+                )""",
+                    conn=conn,
                 )
-                conn.execute(
+                self._driver.execute(
                     f"""CREATE TABLE IF NOT EXISTS {self._TABLE_ACTIVATION} (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     primary_provider TEXT NOT NULL,
@@ -588,13 +589,14 @@ class ProviderRegistryStore:
                     shadow_provider TEXT,
                     configuration_version TEXT NOT NULL,
                     updated_at TEXT NOT NULL
-                )"""
+                )""",
+                    conn=conn,
                 )
                 # ROLLBACK target (Section 17): the activation that was live
                 # BEFORE the current one. Additive — an older registry simply
                 # has an empty history and rollback then reports "nothing to
                 # restore", which is the honest answer.
-                conn.execute(
+                self._driver.execute(
                     f"""CREATE TABLE IF NOT EXISTS {self._TABLE_PREV_ACTIVATION} (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     primary_provider TEXT NOT NULL,
@@ -604,7 +606,8 @@ class ProviderRegistryStore:
                     shadow_provider TEXT,
                     configuration_version TEXT NOT NULL,
                     updated_at TEXT NOT NULL
-                )"""
+                )""",
+                    conn=conn,
                 )
 
     # -- provider rows ------------------------------------------------------------
@@ -622,15 +625,19 @@ class ProviderRegistryStore:
         blob = json.dumps(cfg.to_storage_dict(), default=str)
         with self._lock:
             with self._driver.transaction() as conn:
-                conn.execute(
+                # The driver GENERATES the executed statement from this column
+                # list (driver.execute_upsert), so the placeholders and the
+                # parameters can never disagree across providers. The string
+                # here only names the table + columns + conflict key; its
+                # placeholder text is not the text that reaches the server.
+                self._driver.execute_upsert(
                     f"""INSERT INTO {self._TABLE_CONFIG}
                         (provider_id, blob, configuration_version, updated_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(provider_id) DO UPDATE SET
-                        blob=excluded.blob,
-                        configuration_version=excluded.configuration_version,
-                        updated_at=excluded.updated_at""",
+                    VALUES (?, ?, ?, ?)""",
                     (cfg.provider_id, blob, cfg.configuration_version, _now_iso()),
+                    table=self._TABLE_CONFIG,
+                    conflict_target=("provider_id",),
+                    conn=conn,
                 )
         logger.info(
             "[AI-PROV] saved provider=%s actor=%s v=%s",
@@ -707,9 +714,10 @@ class ProviderRegistryStore:
             # DELETE, both return True while only one removed a row. On
             # PostgreSQL MVCC the snapshot can disagree too.
             with self._driver.transaction() as conn:
-                removed = conn.execute(
+                removed = self._driver.execute(
                     f"DELETE FROM {self._TABLE_CONFIG} WHERE provider_id = ?",
                     (provider_id,),
+                    conn=conn,
                 ).rowcount
         if removed:
             logger.info("[AI-PROV] removed provider=%s", provider_id)
@@ -769,20 +777,13 @@ class ProviderRegistryStore:
                 # that never corresponded to a live configuration).
                 self._snapshot_prev_activation(conn)
                 _PENDING_PRIMARY["value"] = None
-                conn.execute(
+                self._driver.execute_upsert(
                     f"""INSERT INTO {self._TABLE_ACTIVATION}
                         (id, primary_provider, secondary_provider, fallback_provider,
                          decision_mode, shadow_provider, configuration_version, updated_at)
-                    VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                        primary_provider=excluded.primary_provider,
-                        secondary_provider=excluded.secondary_provider,
-                        fallback_provider=excluded.fallback_provider,
-                        decision_mode=excluded.decision_mode,
-                        shadow_provider=excluded.shadow_provider,
-                        configuration_version=excluded.configuration_version,
-                        updated_at=excluded.updated_at""",
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
+                        1,
                         state.primary_provider,
                         state.secondary_provider,
                         state.fallback_provider,
@@ -791,6 +792,9 @@ class ProviderRegistryStore:
                         state.configuration_version,
                         state.updated_at,
                     ),
+                    table=self._TABLE_ACTIVATION,
+                    conflict_target=("id",),
+                    conn=conn,
                 )
         logger.info(
             "[AI-PROV] activation primary=%s secondary=%s fallback=%s mode=%s shadow=%s actor=%s",
@@ -825,26 +829,24 @@ class ProviderRegistryStore:
         the rollback target with the same activation would erase the last good
         rollback point for nothing.
         """
-        row = conn.execute(f"SELECT * FROM {self._TABLE_ACTIVATION} WHERE id = 1").fetchone()
+        row = self._driver.query_one(
+            f"SELECT * FROM {self._TABLE_ACTIVATION} WHERE id = 1",
+            conn=conn,
+        )
         if row is None:
             return
-        as_dict = dict(row)
+        as_dict = dict(row) if not isinstance(row, dict) else row
         if as_dict.get("primary_provider") == _PENDING_PRIMARY["value"]:
             return
-        conn.execute(
+        # Same driver-generated upsert as the activation write: the snapshot
+        # must bind 7 values against 7 placeholders on both providers.
+        self._driver.execute_upsert(
             f"""INSERT INTO {self._TABLE_PREV_ACTIVATION}
                 (id, primary_provider, secondary_provider, fallback_provider,
                  decision_mode, shadow_provider, configuration_version, updated_at)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                primary_provider=excluded.primary_provider,
-                secondary_provider=excluded.secondary_provider,
-                fallback_provider=excluded.fallback_provider,
-                decision_mode=excluded.decision_mode,
-                shadow_provider=excluded.shadow_provider,
-                configuration_version=excluded.configuration_version,
-                updated_at=excluded.updated_at""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
+                1,
                 as_dict["primary_provider"],
                 as_dict.get("secondary_provider"),
                 as_dict.get("fallback_provider"),
@@ -853,6 +855,9 @@ class ProviderRegistryStore:
                 as_dict.get("configuration_version"),
                 as_dict.get("updated_at"),
             ),
+            table=self._TABLE_PREV_ACTIVATION,
+            conflict_target=("id",),
+            conn=conn,
         )
 
     def get_previous_activation(self) -> ActivationState | None:
@@ -877,7 +882,10 @@ class ProviderRegistryStore:
         """Drop the rollback target (after a rollback consumes it)."""
         with self._lock:
             with self._driver.transaction() as conn:
-                conn.execute(f"DELETE FROM {self._TABLE_PREV_ACTIVATION} WHERE id = 1")
+                self._driver.execute(
+                    f"DELETE FROM {self._TABLE_PREV_ACTIVATION} WHERE id = 1",
+                    conn=conn,
+                )
 
 
 def _blob_to_config(blob: str) -> ProviderConfig | None:

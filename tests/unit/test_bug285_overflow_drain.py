@@ -31,6 +31,7 @@ from __future__ import annotations
 import inspect
 import json
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -449,3 +450,104 @@ def test_overflow_counter_semantics_are_exact(ovf) -> None:
     assert repo.overflow_pending_count() == 0
     # the rejected poison must NOT have dropped the good row's table
     assert conn.execute("SELECT COUNT(*) FROM audit_orders").fetchone()[0] == 1
+
+
+# ======================================================================
+# 6. BUG-285-RACE (windows-latest CI red): concurrent drains are serial
+# ======================================================================
+
+
+def test_concurrent_drains_count_each_file_exactly_once(ovf) -> None:
+    """Two threads draining the same poison file must not double-count.
+
+    Regression for the windows-latest flake where
+    ``test_unreplayable_overflow_is_dead_lettered_not_retried[bad-args-json]``
+    observed ``financial_overflow_failed == 2`` for a single file: the audit
+    worker's idle pass raced the explicit drain, both passes read the same
+    file, and both incremented the counter. The drain lock serialises
+    passes, so exactly one pass wins the file and the counter is exactly 1.
+    """
+    repo, d, conn = ovf
+    _write_ovf_file(
+        d,
+        "overflow_20260101_000000_00000030.json",
+        {"query": "DELETE FROM audit_orders", "args": "[1]"},
+    )
+    barrier = threading.Barrier(2)
+    results: list[BaseException | None] = [None, None]
+
+    def _drain(slot: int) -> None:
+        try:
+            barrier.wait(timeout=10.0)
+            repo._drain_financial_overflow_due(conn)
+        except BaseException as exc:  # collected, then re-raised by the caller
+            results[slot] = exc
+
+    workers = [threading.Thread(target=_drain, args=(i,)) for i in (0, 1)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join(timeout=30.0)
+    assert not any(w.is_alive() for w in workers)
+    for exc in results:
+        if exc is not None:
+            raise exc
+    assert repo.overflow_pending_count() == 0
+    assert repo.financial_overflow_failed == 1
+    assert repo.financial_overflow_recovered == 0
+    # exactly one durable dead-letter row — no duplicate terminal home
+    dl = repo.get_dead_letter_rows()
+    bug285 = [r for r in dl if "BUG-285" in str(r.get("payload_note", ""))]
+    assert len(bug285) == 1, dl
+
+
+def test_worker_idle_pass_cannot_double_count_explicit_drain(ovf, monkeypatch) -> None:
+    """A worker idle pass interleaved with an explicit drain counts once.
+
+    Deterministic form of the same race (no sleeps, no wall clock): the
+    worker's idle pass is simulated by a thread that repeatedly drains
+    while the explicit drain is held inside the critical section. The
+    cadence gate (`now` argument, defaulting to the monotonic domain) makes
+    a second pass eligible, so without the lock both would process the same
+    file and the counter would read 2 — the exact windows-latest symptom.
+    """
+    repo, d, conn = ovf
+    _write_ovf_file(
+        d,
+        "overflow_20260101_000000_00000031.json",
+        {"query": "DELETE FROM audit_orders", "args": "[1]"},
+    )
+    # Force the worker's idle-pass clock eligibility: cadence compares the
+    # caller domain, so passing explicit later timestamps makes repeated
+    # passes due without touching the wall clock.
+    mark = threading.Event()
+    started = threading.Event()
+    results: list[BaseException | None] = [None, None]
+
+    def _worker_drain() -> None:
+        try:
+            started.wait(timeout=10.0)
+            # drain repeatedly (the worker's idle-pass shape) until the
+            # explicit pass has committed its retire
+            t = 0.0
+            while not mark.is_set() and t < 5.0:
+                repo._drain_financial_overflow_due(conn, now=t)
+                t += 0.001
+        except BaseException as exc:  # collected, then re-raised by the caller
+            results[1] = exc
+
+    w = threading.Thread(target=_worker_drain, name="BUG285-IdlePass")
+    w.start()
+    started.set()
+    try:
+        # the explicit drain must win the file: holding the lock first
+        repo._drain_financial_overflow_due(conn, now=1.0)
+    finally:
+        mark.set()
+        w.join(timeout=10.0)
+    assert not w.is_alive()
+    if results[1] is not None:
+        raise results[1]
+    assert repo.overflow_pending_count() == 0
+    assert repo.financial_overflow_failed == 1
+    assert repo.financial_overflow_recovered == 0

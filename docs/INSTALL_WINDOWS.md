@@ -21,6 +21,73 @@ irm https://<your-nexus-domain>/installer/install.ps1 -OutFile install.ps1
 Requirements: Windows 10/11, PowerShell 5.1 or 7+, internet access.
 Admin rights are **not** required for the standard install.
 
+## One-line packaged-release install
+
+The bootstrap installer above provisions a **source** checkout. To install the
+**packaged release** instead (the Windows build published on GitHub Releases —
+no Python, no Git, no venv), use `installer/install-release.ps1`:
+
+```powershell
+iex (irm https://raw.githubusercontent.com/Opselon/NexusTradingForexBot/main/installer/install-release.ps1)
+```
+
+Same posture, no admin, and a mandatory integrity chain: it resolves the
+release, downloads the payload plus its `SHA256SUMS.txt` / `release-manifest.json`
+contract, verifies the payload's SHA-256 **before** installing, installs
+per-user, then makes the installed build prove itself with `verify-release`.
+A missing checksum entry, a malformed digest, a digest mismatch, or a
+SHA256SUMS-vs-manifest disagreement BLOCKS the install with a precise reason
+and a distinct exit code — an unverified artifact is never installed.
+
+```powershell
+.\install-release.ps1 -Version 9.1.0   # pin (no GitHub API call at all)
+.\install-release.ps1 -Portable        # install the ZIP instead of setup.exe
+.\install-release.ps1 -DryRun          # resolve + plan, mutate nothing
+.\install-release.ps1 -Repair          # re-install the recorded version
+.\install-release.ps1 -ShowResolvedPaths   # resolved-path JSON, no network
+.\install-release.ps1 -Json            # one machine-readable frame on stdout
+```
+
+| Parameter | Purpose |
+|---|---|
+| `-Version <x.y.z>` | Pin an exact release (`v` prefix accepted). Builds the download URLs directly and skips the GitHub API lookup — the recommended form for CI and rate-limited networks. Empty = latest stable release via the GitHub API. |
+| `-InstallDir <path>` | Install directory. Default: `%LOCALAPPDATA%\Programs\NexusScalpEngine` (matches the Inno `DefaultDirName`). |
+| `-Portable` | Expand the portable ZIP instead of running the Inno setup.exe. |
+| `-DryRun` | Resolve the release and print the plan; download nothing, install nothing. |
+| `-Repair` | Re-run the install for the recorded version, bypassing the already-current short-circuit. User data is never touched. |
+| `-NoLaunch` | Never execute the installed EXE. The post-install proof is then skipped and the install is recorded `DEGRADED`, never `AVAILABLE`. |
+| `-Json` | Emit exactly one machine-readable JSON frame on stdout; human diagnostics go to stderr. |
+| `-ProtocolVersion <n>` | JSON protocol version. An unsupported version is refused (exit 2) rather than misinterpreted. |
+| `-ShowResolvedPaths` | Print resolved paths as JSON and exit — no network, no mutation (first probe for any path question). |
+
+Exit codes (`exit_code` is mirrored into the `-Json` frame):
+
+| Code | Meaning |
+|---|---|
+| 0 | success: installed / repaired / already current / dry-run plan |
+| 1 | unexpected internal failure |
+| 2 | usage error (bad parameters, unsupported `-ProtocolVersion`) |
+| 3 | environment error (not Windows x64, no `%LOCALAPPDATA%`, unwritable staging) |
+| 4 | release resolution failed (release/asset not found, no assets, draft) |
+| 5 | GitHub API rate limited (unauthenticated 60/h) — pin with `-Version` |
+| 6 | download failed (HTTP error, timeout, empty or undersized payload) |
+| 7 | integrity blocked (no SHA256SUMS entry, malformed digest, digest mismatch, contract disagreement) — nothing installed |
+| 8 | install failed (Inno setup.exe non-zero exit, ZIP expansion failure) |
+| 9 | post-install verification failed (`version` / `verify-release`) |
+
+State and provenance are recorded in
+`%LOCALAPPDATA%\NexusScalpEngine\state\install-release.json` (version, asset
+name, expected/actual SHA-256, verification mode, `install_state` of
+`AVAILABLE` / `DEGRADED` / `BLOCKED`, download telemetry) — the same
+truth-table contract the bootstrap installer uses
+([`docs/INSTALL_INTEGRITY.md`](INSTALL_INTEGRITY.md)). A bounded log is kept at
+`%LOCALAPPDATA%\NexusScalpEngine\logs\install-release.log`.
+
+User data (`config`, `logs`, `data`, `models`) is never deleted or
+overwritten: the script only adds its own state and log files under the same
+root. Re-running it over an already-current install exits 0 without
+reinstalling.
+
 ## What it installs and where
 
 Everything lives under `%LOCALAPPDATA%\Nexus` by default (override with

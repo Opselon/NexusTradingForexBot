@@ -21,6 +21,7 @@ import json
 import math
 import os
 import random
+import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, ClassVar
@@ -381,9 +382,24 @@ class PaperMT5Adapter(IMT5Port):
                 "symbol": str(self.symbol),
                 "initial_balance": float(getattr(self, "_initial_balance", self.balance)),
             }
-            tmp = path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            tmp.replace(path)
+            # Multiple PAPER workers can persist concurrently. A shared
+            # path.with_suffix(".tmp") races when one writer replaces the
+            # temp file while another writer is still using it. Use a unique
+            # sibling temp file and an atomic replace instead.
+            fd, tmp_name = tempfile.mkstemp(
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                dir=str(path.parent),
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+                    tmp_file.write(json.dumps(payload, indent=2))
+                    tmp_file.flush()
+                    os.fsync(tmp_file.fileno())
+                os.replace(tmp_name, path)
+            finally:
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(tmp_name)
             with contextlib.suppress(Exception):
                 if os.name != "nt":
                     os.chmod(path, 0o600)

@@ -383,9 +383,13 @@ def test_fi3_replayed_duplicate_never_reaches_dispatch() -> None:
         probabilities=STRONG_BUY, current_tick=tf(), feature_vector=_fv()
     )
     assert first.action == ActionType.BUY_MARKET
-    # The replay re-surfaces the last real action (BUG-169 UI truth) but is
-    # stamped DEDUP_GATE — the executor boundary must refuse it.
-    assert replay.decision_stage == "DEDUP_GATE"
+    # TASK-DEDUP-REPLAY-001: the replay no longer carries the last real action
+    # to the executor. The upstream semantic dedup downgrades an identical
+    # actionable intent to NO_TRADE (stage DECISION_DEDUP_REPLAY) so the
+    # executor boundary is never even reached by a replayed decision. The
+    # DEDUP_GATE net stays armed for anything that still gets through.
+    assert replay.action == ActionType.NO_TRADE
+    assert replay.decision_stage in ("DECISION_DEDUP_REPLAY", "DEDUP_GATE")
 
     om = MagicMock()
     om.config.execution.mode = ExecutionMode.LIVE

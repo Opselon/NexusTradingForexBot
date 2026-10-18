@@ -682,6 +682,14 @@ class LiveEngine:
         self._incident_telemetry: IncidentTelemetryCollector | None = None
 
         self._running: bool = False
+        # BUG-304: shutdown lifecycle has two distinct states. The previous
+        # implementation set _shutdown_completed at the START of teardown,
+        # which made "completed" observable while workers/queues were still
+        # draining and allowed maintenance operations to race outstanding
+        # writes. _shutdown_in_progress serializes concurrent teardown callers;
+        # _shutdown_completed is true only after every teardown phase returns.
+        self._shutdown_in_progress: bool = False
+        self._shutdown_completed: bool = False
         self.server_state: Any = None
 
         # Thread-safe model bundle swaps (model+scaler together)
@@ -739,7 +747,7 @@ class LiveEngine:
         # identical warnings). Wall-clock of the last NEW (non-duplicate)
         # tick; grace before escalation; episode flags for once-per-episode
         # telemetry.
-        self._last_fresh_tick_at: float = time.time()
+        self._last_fresh_tick_at: float | None = None
         self._feed_stall_grace_sec: float = float(
             getattr(getattr(config, "freshness", None), "stall_grace_sec", 900.0) or 900.0
         )
@@ -888,8 +896,12 @@ class LiveEngine:
 
         # Env override wins for diagnosis; otherwise the secure store is
         # authoritative (never live.yaml).
-        env_token = os.getenv("NEXUS_TELEGRAM_BOT_TOKEN")
-        env_admin = os.getenv("NEXUS_TELEGRAM_ADMIN_ID")
+        env_token = os.getenv("NEXUS_TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+        env_admin = (
+            os.getenv("NEXUS_TELEGRAM_ADMIN_ID")
+            or os.getenv("TELEGRAM_CHAT_ID")
+            or os.getenv("USER_ID")
+        )
         sec_token, sec_admin = self.settings_service.get_telegram_credentials()
         bot_token = env_token or sec_token or ""
         admin_id = env_admin or sec_admin or ""
@@ -897,11 +909,19 @@ class LiveEngine:
 
         # telegram.enabled default: config value until user settings override it
         cfg_enabled_row = self.settings_service.db.get("telegram.enabled")
-        tg_enabled = (
-            bool(cfg_enabled_row.value)
-            if cfg_enabled_row and cfg_enabled_row.value is not None
-            else bool(config.telegram.enabled)
-        )
+        if cfg_enabled_row and cfg_enabled_row.value is not None:
+            tg_enabled = bool(cfg_enabled_row.value)
+        elif (
+            os.getenv("NSE_NO_TELEGRAM") == "1"
+            or os.getenv("NSE_TELEGRAM__ENABLED", "").lower() == "false"
+        ):
+            tg_enabled = False
+        elif (env_token and env_admin) and (
+            os.getenv("NSE_TELEGRAM__ENABLED", "").lower() == "true" or config.telegram.enabled
+        ):
+            tg_enabled = True
+        else:
+            tg_enabled = bool(config.telegram.enabled)
 
         # UI-controlled execution mode: the settings DB is authoritative
         # when the user changed it from the dashboard (UI == source of
@@ -1445,6 +1465,20 @@ class LiveEngine:
         # in-memory bundle metadata; a missing bundle stamps
         # MODEL_IDENTITY_UNAVAILABLE (honest absence, never a fake hash).
         self.signal_policy.model_identity_fn = self._serving_model_identity
+        # TASK-DEDUP-REPLAY-001: decision-identity wiring. The broker tick size
+        # anchors the semantic fingerprint's price quantization to the real
+        # price grid (float noise dies, one real tick lives). The serving model
+        # identity is the decision's strategy revision: a champion swap is a
+        # genuine decision change and re-arms the replay dedup. Both are pure
+        # in-memory reads (INV-001); symbol info arrives at loop startup, so the
+        # tick size is refreshed there — see RuntimeLoop.
+        self.signal_policy.configure_decision_identity(
+            strategy_revision=(
+                (self._serving_model_identity() or (None, None, None))[0]
+                or (self._serving_model_identity() or (None, None, None))[2]
+                or None
+            )
+        )
         # TASK-AUDREV-C3 gate (b) runtime wiring (NSE-Swarm 2026-09-11): bind
         # the read-only session spread-percentile provider so the gate is
         # LIVE. Before this, the C3 (b) policy hook existed (76eb23b9) but
@@ -2210,6 +2244,7 @@ class LiveEngine:
     # ------------------------------------------------------------------
 
     async def stop(self) -> None:
+        """Request a loop stop without claiming teardown is already complete."""
         self._running = False
 
     def shutdown_status(self) -> dict[str, Any]:
@@ -2258,8 +2293,16 @@ class LiveEngine:
     #: froze the whole tick loop (inference/features/AI-Hub) while web stayed
     #: responsive. With wait_for, a hung kick is abandoned (the thread may
     #: linger but is detached from the loop) and the loop keeps ticking.
+    #:
+    #: LD-4 (live cluster, 2026-09-30): the default was 45s while a healthy
+    #: RESEARCH dataset pass measures 94-150s, so EVERY kick abandoned a
+    #: healthy in-flight cycle, logged a spurious ``[WORKER_KICK]
+    #: event=TIMEOUT`` ERROR (74 in one hour), and re-ran the work. 180s
+    #: clears the measured ceiling with headroom; the cycle itself is also
+    #: single-query now (see ExperienceLedger.list_all_experiences), so this
+    #: is the budget fix, not a license to be slow.
     WORKER_KICK_TIMEOUT_SEC: float = float(
-        __import__("os").environ.get("NSE_WORKER_KICK_TIMEOUT", "45")
+        __import__("os").environ.get("NSE_WORKER_KICK_TIMEOUT", "180")
     )
 
     def _kick_worker(self, name: str, fn) -> None:
@@ -2293,79 +2336,91 @@ class LiveEngine:
         )
 
     async def _shutdown_async(self) -> None:
-        # BUG-304: idempotent teardown. RuntimeLoop calls this when its
-        # while-loop exits, and the process-level ShutdownSupervisor calls
-        # it as the bounded fallback when the loop was cancelled (Ctrl+C /
-        # console close). Both must converge on ONE teardown; a second call
-        # returns immediately instead of re-flushing a closed queue or
-        # re-disconnecting a dead adapter (which logged spurious errors and
-        # could double-close the shared SQLite connection).
+        # BUG-304: idempotent teardown with truthful completion state.
+        # RuntimeLoop calls this on normal loop exit, while ShutdownSupervisor
+        # can call it concurrently as a bounded process-level fallback. A
+        # concurrent caller waits for the in-flight teardown rather than
+        # observing a premature "completed" flag or starting a second close.
         if getattr(self, "_shutdown_completed", False):
             return
-        self._shutdown_completed = True
-        # Stop the accounting worker first (derived refresh, not financial truth).
-        with contextlib.suppress(Exception):
-            await self._stop_accounting_worker()
+        if getattr(self, "_shutdown_in_progress", False):
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + 30.0
+            while (
+                getattr(self, "_shutdown_in_progress", False)
+                and not getattr(self, "_shutdown_completed", False)
+                and loop.time() < deadline
+            ):
+                await asyncio.sleep(0.05)
+            return
+        self._shutdown_in_progress = True
+        try:
+            # Stop the accounting worker first (derived refresh, not financial truth).
+            with contextlib.suppress(Exception):
+                await self._stop_accounting_worker()
 
-        # ACCOUNT HISTORY: stop the broker-history sync worker.
-        with contextlib.suppress(Exception):
-            await self._stop_history_sync_worker()
+            # ACCOUNT HISTORY: stop the broker-history sync worker.
+            with contextlib.suppress(Exception):
+                await self._stop_history_sync_worker()
 
-        # PHASE 09: stop the intelligence worker (derived intelligence, isolated).
-        with contextlib.suppress(Exception):
-            await self._stop_intelligence_worker()
+            # PHASE 09: stop the intelligence worker (derived intelligence, isolated).
+            with contextlib.suppress(Exception):
+                await self._stop_intelligence_worker()
 
-        # PHASE 09B: stop the strategy research worker (isolated).
-        with contextlib.suppress(Exception):
-            await self._stop_research_worker()
+            # PHASE 09B: stop the strategy research worker (isolated).
+            with contextlib.suppress(Exception):
+                await self._stop_research_worker()
 
-        # STRATEGY FACTORY: stop the autonomous loop worker (kill switch).
-        with contextlib.suppress(Exception):
-            await self._stop_factory_worker()
+            # STRATEGY FACTORY: stop the autonomous loop worker (kill switch).
+            with contextlib.suppress(Exception):
+                await self._stop_factory_worker()
 
-        # PHASE 10: stop the controlled training worker (isolated).
-        with contextlib.suppress(Exception):
-            await self._stop_training_worker()
+            # PHASE 10: stop the controlled training worker (isolated).
+            with contextlib.suppress(Exception):
+                await self._stop_training_worker()
 
-        # PHASE 11: stop the shadow-aggregation worker (isolated).
-        with contextlib.suppress(Exception):
-            await self._stop_shadow_worker()
+            # PHASE 11: stop the shadow-aggregation worker (isolated).
+            with contextlib.suppress(Exception):
+                await self._stop_shadow_worker()
 
-        # PHASE 12: stop the news intelligence worker (isolated, optional).
-        with contextlib.suppress(Exception):
-            await self._stop_news_worker()
+            # PHASE 12: stop the news intelligence worker (isolated, optional).
+            with contextlib.suppress(Exception):
+                await self._stop_news_worker()
 
-        # TASK-13: stop the incident response worker (isolated).
-        with contextlib.suppress(Exception):
-            await self._stop_incident_worker()
+            # TASK-13: stop the incident response worker (isolated).
+            with contextlib.suppress(Exception):
+                await self._stop_incident_worker()
 
-        # Cancel retrain task safely
-        with contextlib.suppress(Exception):
-            if self._retrain_task and not self._retrain_task.done():
-                self._retrain_task.cancel()
-                with contextlib.suppress(Exception):
-                    await self._retrain_task
+            # Cancel retrain task safely
+            with contextlib.suppress(Exception):
+                if self._retrain_task and not self._retrain_task.done():
+                    self._retrain_task.cancel()
+                    with contextlib.suppress(Exception):
+                        await self._retrain_task
 
-        with contextlib.suppress(Exception):
-            self.adapter.disconnect()
+            with contextlib.suppress(Exception):
+                self.adapter.disconnect()
 
-        # BUG-297: release the evaluator's reused SQLite handles before the
-        # repository closes, so no registry-reader handle outlives shutdown.
-        with contextlib.suppress(Exception):
-            self.experience_evaluator.close()
+            # BUG-297: release the evaluator's reused SQLite handles before the
+            # repository closes, so no registry-reader handle outlives shutdown.
+            with contextlib.suppress(Exception):
+                self.experience_evaluator.close()
 
-        with contextlib.suppress(Exception):
-            self.audit.close()
+            with contextlib.suppress(Exception):
+                self.audit.close()
 
-        with contextlib.suppress(Exception):
-            ci = getattr(self, "candle_intel", None)
-            if ci is not None:
-                ci.store.close()
+            with contextlib.suppress(Exception):
+                ci = getattr(self, "candle_intel", None)
+                if ci is not None:
+                    ci.store.close()
 
-        with contextlib.suppress(Exception):
-            self.notifier.notify_shutdown(reason="Engine Stopped")
+            with contextlib.suppress(Exception):
+                self.notifier.notify_shutdown(reason="Engine Stopped")
 
-        logger.info("Engine shutdown complete.")
+            logger.info("Engine shutdown complete.")
+        finally:
+            self._shutdown_in_progress = False
+            self._shutdown_completed = True
 
     # -------------------------
     # Preflight
@@ -2394,7 +2449,9 @@ class LiveEngine:
 
         # Telegram hardening: never log token
         if self.config.telegram.enabled and (
-            not os.getenv("NEXUS_TELEGRAM_BOT_TOKEN") and not self.config.telegram.bot_token
+            not os.getenv("NEXUS_TELEGRAM_BOT_TOKEN")
+            and not os.getenv("TELEGRAM_BOT_TOKEN")
+            and not self.config.telegram.bot_token
         ):
             logger.warning("Telegram enabled but token missing (env override recommended)")
 
@@ -4811,6 +4868,92 @@ class LiveEngine:
                 correlation_id="tick-stream",
             )
             logger.info("[FEED_STALL] event=RECOVERED escalated_was=%s", was)
+
+    # ------------------------------------------------------------------
+    # TASK-DEDUP-REPLAY-001: epoch-aware replay telemetry (Part 6).
+    # ------------------------------------------------------------------
+    # The old failure mode emitted ONE info line per replayed tick and the
+    # executor echoed one per refusal — 3,476 lines/hour. Telemetry here is
+    # aggregated: per-class counters accumulate silently and a bounded summary
+    # is emitted on a quiet tick-cadence (default 60s) naming the epoch, the
+    # class split, and one representative detail. Nothing is dropped: counts
+    # survive until the next summary, and the representative sample keeps the
+    # "what exactly happened" answerable. All state lives on the engine (one
+    # canonical owner) and every method is failure-isolated.
+    # ------------------------------------------------------------------
+
+    def note_tick_rejected(self, *, tick_class: str, epoch: int, detail: str = "") -> None:
+        """Count one epoch-tracker tick rejection (REPLAY/DUPLICATE/STALE).
+
+        In-memory + O(1); never blocks the loop. A periodic
+        :meth:`_summarize_replay_telemetry` emits the aggregate.
+        """
+        try:
+            counts: dict[str, int] = getattr(self, "_tick_reject_counts", None) or {}
+            counts[tick_class] = counts.get(tick_class, 0) + 1
+            self._tick_reject_counts = counts
+            self._tick_reject_last_epoch = int(epoch)
+            if detail:
+                self._tick_reject_last_detail = str(detail)[:160]
+        except Exception:  # telemetry must never disturb the tick loop
+            pass
+
+    def note_feed_reconnected(self, *, epoch: int, reacquire_ticks: int = 0) -> None:
+        """One INFO line per FEED RECONNECT (state transition, not per tick)."""
+        try:
+            logger.info(
+                "[FEED_EPOCH] event=RECONNECTED epoch=%s re_acquiring=True "
+                "max_ticks=%s (cached pre-disconnect quotes are rejected until a "
+                "fresh quote or the bounded window expires)",
+                int(epoch),
+                int(reacquire_ticks),
+            )
+            self.emit_incident_telemetry(
+                event_type="MT5_FEED_EPOCH_BUMPED",
+                component="mt5",
+                severity="INFO",
+                correlation_id="tick-stream",
+            )
+        except Exception:
+            pass
+
+    def _summarize_replay_telemetry(self, *, now: float | None = None) -> None:
+        """Emit the aggregated replay/duplicate summary on a quiet cadence.
+
+        Called from the tick loop's maintenance cadence. Emits ONE line per
+        interval only when something was counted — a silent feed emits nothing.
+        """
+        import time as _time
+
+        now = float(now if now is not None else _time.monotonic())
+        try:
+            counts: dict[str, int] = getattr(self, "_tick_reject_counts", {}) or {}
+            if not counts:
+                return
+            total = sum(counts.values())
+            last_summary_at: float = getattr(self, "_replay_summary_last_at", 0.0)
+            if now - last_summary_at < self._REPLAY_SUMMARY_INTERVAL_SEC:
+                return
+            parts = " ".join(f"{k}={v}" for k, v in sorted(counts.items()))
+            epoch = int(getattr(self, "_tick_reject_last_epoch", 0) or 0)
+            detail = str(getattr(self, "_tick_reject_last_detail", "") or "")
+            logger.info(
+                "[REPLAY_TELEMETRY] event=SUPPRESSED_SUMMARY total=%s epoch=%s %s%s",
+                total,
+                epoch,
+                parts,
+                f" representative={detail}" if detail else "",
+            )
+            # Reset after a summary: the next window starts clean; the counts
+            # were just reported (nothing is silently dropped mid-window).
+            self._tick_reject_counts = {}
+            self._tick_reject_last_detail = ""
+            self._replay_summary_last_at = now
+        except Exception:  # telemetry must never disturb the tick loop
+            pass
+
+    #: Quiet cadence for the aggregated replay summary (seconds).
+    _REPLAY_SUMMARY_INTERVAL_SEC: float = 60.0
 
     def release_persisted_safety_state(self, *, actor: str, note: str = "") -> bool:
         """In-process explicit release (audited, durable, observable).

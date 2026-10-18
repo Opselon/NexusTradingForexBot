@@ -537,6 +537,183 @@ class TestBootPaths:
         assert "configure_logging" in src or "LiveEngine" in src
 
 
+# ---------------------------------------------------------------------------
+# 8. legacy-schema migration (BUG-LOGSCHEMA)
+# ---------------------------------------------------------------------------
+#
+# The production ``db_operation_logs`` table was created by the earlier
+# 14-column DDL (timestamp..masked_sql). ``CREATE TABLE IF NOT EXISTS`` is a
+# silent NO-OP on that table, so the sink's INSERT — which writes the newer
+# event_name/logger_name/full_trace/context_json/fingerprint/first_seen_at/
+# last_seen_at/repeat_count columns — failed on every record and the failure
+# was swallowed by the store's own fail-closed handler. Symptom: no new rows
+# ever appeared after the sink shipped. ``ensure_table`` must therefore bring
+# an existing table up to the column contract with additive ADD COLUMN, and
+# the (fingerprint, last_seen_at) index must be created AFTER those columns
+# exist (the CREATE block cannot reference them on a legacy table).
+
+
+class TestLegacySchemaMigration:
+    _LEGACY_DDL_PG = (
+        "CREATE TABLE db_operation_logs ("
+        "  id BIGSERIAL PRIMARY KEY,"
+        "  timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+        "  level VARCHAR(16) NOT NULL,"
+        "  provider VARCHAR(32) NOT NULL,"
+        "  domain VARCHAR(64) NOT NULL,"
+        "  operation VARCHAR(128) NOT NULL,"
+        "  repository VARCHAR(128) NOT NULL DEFAULT '',"
+        "  query_name VARCHAR(128) NOT NULL DEFAULT '',"
+        "  duration_ms DOUBLE PRECISION NOT NULL DEFAULT 0.0,"
+        "  rows BIGINT NOT NULL DEFAULT 0,"
+        "  error_code VARCHAR(64) NOT NULL DEFAULT '',"
+        "  error_message TEXT NOT NULL DEFAULT '',"
+        "  correlation_id VARCHAR(64) NOT NULL DEFAULT '',"
+        "  masked_sql TEXT NOT NULL DEFAULT ''"
+        ")"
+    )
+    _LEGACY_DDL_SQLITE = (
+        "CREATE TABLE db_operation_logs ("
+        "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "  timestamp TEXT NOT NULL,"
+        "  level TEXT NOT NULL,"
+        "  provider TEXT NOT NULL,"
+        "  domain TEXT NOT NULL,"
+        "  operation TEXT NOT NULL,"
+        "  repository TEXT NOT NULL DEFAULT '',"
+        "  query_name TEXT NOT NULL DEFAULT '',"
+        "  duration_ms REAL NOT NULL DEFAULT 0.0,"
+        "  rows INTEGER NOT NULL DEFAULT 0,"
+        "  error_code TEXT NOT NULL DEFAULT '',"
+        "  error_message TEXT NOT NULL DEFAULT '',"
+        "  correlation_id TEXT NOT NULL DEFAULT '',"
+        "  masked_sql TEXT NOT NULL DEFAULT ''"
+        ")"
+    )
+
+    @staticmethod
+    def _restore(driver: Any, sink_config: Any) -> None:
+        """Recreate the CURRENT-contract table so later tests find the schema.
+
+        These tests DROP the shared table to install the legacy one; without
+        restoration, every subsequently-running test fails on a missing table
+        (a test-ordering contract the rest of this suite relies on).
+        """
+        from nexus_scalp.database.log_store import LOG_TABLE, DatabaseLogStore
+
+        try:
+            driver.execute(f"DROP TABLE IF EXISTS {LOG_TABLE}")
+        except Exception:
+            pass
+        DatabaseLogStore(config=sink_config).ensure_table(driver)
+
+    def test_legacy_table_is_migrated_and_writable(self, sink_config: Any) -> None:
+        """A pre-existing 14-column table must accept the sink's full row."""
+        from nexus_scalp.database.drivers import get_driver
+        from nexus_scalp.database.log_store import (
+            LOG_TABLE,
+            DatabaseLogEntry,
+            DatabaseLogStore,
+        )
+
+        driver = get_driver(sink_config)
+        try:
+            driver.execute(f"DROP TABLE IF EXISTS {LOG_TABLE}")
+            legacy = self._LEGACY_DDL_PG if sink_config.is_postgresql else self._LEGACY_DDL_SQLITE
+            driver.execute(legacy)
+
+            store = DatabaseLogStore(config=sink_config)
+            store.ensure_table(driver)  # must ALTER, not no-op
+
+            def _col(row: Any) -> str:
+                return str(row.get("name") if isinstance(row, dict) else row[0])
+
+            introspection = (
+                "SELECT column_name AS name FROM information_schema.columns "
+                "WHERE table_schema = current_schema() "
+                f"AND table_name = '{LOG_TABLE}'"
+                if sink_config.is_postgresql
+                else f"SELECT name FROM pragma_table_info('{LOG_TABLE}')"
+            )
+            cols = {_col(r) for r in driver.query(introspection)}
+            for required in (
+                "event_name",
+                "logger_name",
+                "full_trace",
+                "context_json",
+                "fingerprint",
+                "first_seen_at",
+                "last_seen_at",
+                "repeat_count",
+            ):
+                assert required in cols, f"legacy table missing {required} after ensure_table"
+
+            entry = DatabaseLogEntry(
+                level="ERROR",
+                provider=str(sink_config.provider.value)
+                if hasattr(sink_config.provider, "value")
+                else "sqlite",
+                domain="audit",
+                operation="legacy_schema_probe",
+                error_code="ValueError",
+                error_message="row written to a legacy-schema table",
+                event_name="probe.legacy",
+                logger_name="probe.legacy",
+                full_trace="Traceback (most recent call last):\n  ValueError: legacy",
+                fingerprint="fp-legacy-1",
+            )
+            assert store.record(entry, driver) is True
+            rows = driver.query(
+                f"SELECT full_trace, repeat_count FROM {LOG_TABLE} "
+                "WHERE operation = 'legacy_schema_probe'"
+            )
+
+            def _f(row: Any, key: str) -> Any:
+                return row.get(key) if isinstance(row, dict) else row
+
+            trace = _f(rows[0], "full_trace")
+            repeat = _f(rows[0], "repeat_count")
+            if not isinstance(rows[0], dict):
+                trace, repeat = rows[0][0], rows[0][1]
+            assert "ValueError: legacy" in trace, "full trace lost on legacy table"
+            assert repeat == 1
+        finally:
+            self._restore(driver, sink_config)
+            driver.close()
+
+    def test_ensure_table_is_idempotent_on_legacy_table(self, sink_config: Any) -> None:
+        """Running ensure_table repeatedly must not error or duplicate columns."""
+        from nexus_scalp.database.drivers import get_driver
+        from nexus_scalp.database.log_store import LOG_TABLE, DatabaseLogStore
+
+        driver = get_driver(sink_config)
+        try:
+            driver.execute(f"DROP TABLE IF EXISTS {LOG_TABLE}")
+            legacy = self._LEGACY_DDL_PG if sink_config.is_postgresql else self._LEGACY_DDL_SQLITE
+            driver.execute(legacy)
+            store = DatabaseLogStore(config=sink_config)
+            store.ensure_table(driver)
+            store.ensure_table(driver)
+            store.ensure_table(driver)
+            # No error, and the table still has exactly one of each column.
+
+            def _col(row: Any) -> str:
+                return str(row.get("name") if isinstance(row, dict) else row[0])
+
+            introspection = (
+                "SELECT column_name AS name FROM information_schema.columns "
+                "WHERE table_schema = current_schema() "
+                f"AND table_name = '{LOG_TABLE}'"
+                if sink_config.is_postgresql
+                else f"SELECT name FROM pragma_table_info('{LOG_TABLE}')"
+            )
+            cols = [_col(r) for r in driver.query(introspection)]
+            assert len(cols) == len(set(cols)), "duplicate columns after re-run"
+        finally:
+            self._restore(driver, sink_config)
+            driver.close()
+
+
 # Keep the module import-clean under the suite's own guard: sys is used by the
 # exc-info resolver, referenced here only for parity documentation.
 _ = (sys, os)

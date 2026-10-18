@@ -62,38 +62,18 @@ export function AnalysisSection({
   fleetQ: Queryish;
 }) {
   const t = useI18n((s) => s.t);
-  if (overviewQ.isPending && fleetQ.isPending) {
-    return (
-      <div className="grid cols-2">
-        <ChartCard title={t("command-center.analysis.loading_analysis", "loading analysis…")}>
-          <Skeleton count={5} />
-        </ChartCard>
-        <ChartCard title={t("command-center.analysis.loading_distributions", "loading distributions…")}>
-          <Skeleton count={5} />
-        </ChartCard>
-      </div>
-    );
-  }
-  if (!overview && overviewQ.isError) {
-    return (
-      <ErrorState
-        message={t("command-center.err.overview_endpoint", "overview endpoint failed — {e}", { e: overviewQ.error instanceof Error ? overviewQ.error.message : t("command-center.err.unknown", "unknown error") })}
-        onRetry={() => void overviewQ.refetch()}
-      />
-    );
-  }
-  if (!overview) {
-    return <EmptyState message={t("command-center.empty.no_overview", "Backend returned no overview payload.")} hint="overview.available !== true" />;
-  }
 
-  // perf: the 10 pure derivations in ../analysis are DOT-map/filter chains over
-  // the overview/fleet payloads — derived once per data identity instead of on
-  // every render of this section (both queries poll on 30s/60s intervals).
-  // Deps are the exact arguments the derivations read; the pure module
-  // functions are untouched and stay exportable.
-  const funnel = useMemo(() => pipelineFunnel(overview), [overview]);
-  const gates = useMemo(() => gateOutcomes(overview), [overview]);
-  const life = useMemo(() => lifecycleSegments(overview), [overview]);
+  // RULES OF HOOKS: all useMemo hooks must run UNCONDITIONALLY at the top of the
+  // component. Prior code placed them after three early returns (pending/error/empty),
+  // which violated React 19's hook-count invariant: when the queries resolved from
+  // pending to data, the component rendered more hooks than during the initial
+  // render, throwing "Minified React error #310" (Rendered more hooks than during
+  // the previous render) and crashing CommandCenterPage into ErrorBoundary.
+  // The derivations themselves accept null/undefined overview/fleet and return empty
+  // arrays, so running them eagerly on the loading render is completely safe.
+  const funnel = useMemo(() => pipelineFunnel(overview ?? undefined), [overview]);
+  const gates = useMemo(() => gateOutcomes(overview ?? undefined), [overview]);
+  const life = useMemo(() => lifecycleSegments(overview ?? undefined), [overview]);
   const elig = useMemo(() => eligibilityCounts(fleet), [fleet]);
   const conf = useMemo(
     () => histogram(fleetConfidenceSamples(fleet), { lo: 0, hi: 1, bins: 10 }),
@@ -118,6 +98,30 @@ export function AnalysisSection({
       })),
     [life],
   );
+
+  if (overviewQ.isPending && fleetQ.isPending) {
+    return (
+      <div className="grid cols-2">
+        <ChartCard title={t("command-center.analysis.loading_analysis", "loading analysis…")}>
+          <Skeleton count={5} />
+        </ChartCard>
+        <ChartCard title={t("command-center.analysis.loading_distributions", "loading distributions…")}>
+          <Skeleton count={5} />
+        </ChartCard>
+      </div>
+    );
+  }
+  if (!overview && overviewQ.isError) {
+    return (
+      <ErrorState
+        message={t("command-center.err.overview_endpoint", "overview endpoint failed — {e}", { e: overviewQ.error instanceof Error ? overviewQ.error.message : t("command-center.err.unknown", "unknown error") })}
+        onRetry={() => void overviewQ.refetch()}
+      />
+    );
+  }
+  if (!overview) {
+    return <EmptyState message={t("command-center.empty.no_overview", "Backend returned no overview payload.")} hint="overview.available !== true" />;
+  }
 
   return (
     <div className="cc-analysis">

@@ -59,7 +59,10 @@ class TestManifestRegistryAgreement:
         # 2026-09-29 (wave db-lifecycle-2, lane L4): AUDIT-0010
         # -evidence-reader-indexes + AUDIT-0011-drop-duplicate-release-metadata
         # -key extended the chain 9 -> 11, manifest bumped in the same change.
-        assert MANIFESTS[DatabaseDomain.AUDIT].schema_version == 11
+        # 2026-10-01: AUDIT-0012-experience-outcome-execution-id-index (the P0
+        # pg-read slow query) extended the chain 11 -> 12, manifest bumped in
+        # the same change.
+        assert MANIFESTS[DatabaseDomain.AUDIT].schema_version == 12
         assert MANIFESTS[DatabaseDomain.NEWS].schema_version == 2
         assert MANIFESTS[DatabaseDomain.CANDLE_INTEL].schema_version == 2
 

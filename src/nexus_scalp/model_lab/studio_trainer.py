@@ -125,6 +125,31 @@ def _restore_env(name: str, token: str | None) -> None:
         os.environ[name] = token
 
 
+def _hash_file_json(path: Path) -> str:
+    """Canonical SHA-256 over a manifest's logical content.
+
+    Both the trainer (stamp) and the certification gate (verification) MUST
+    use this same canonical form — raw file bytes would include the stamp
+    field itself and key-insertion order, so the two would never agree.
+    """
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    body = {k: v for k, v in payload.items() if k != "manifest_sha256"}
+    return hashlib.sha256(json.dumps(body, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+
+def _feature_schema_hash_of(schema_id: str) -> str:
+    """Canonical schema hash from the single source of truth."""
+    try:
+        from nexus_scalp.features.schema_contract import feature_schema_hash
+
+        return feature_schema_hash(schema_id)
+    except Exception:
+        return ""
+
+
 class NeuralStudioTrainer:
     """Contract-aware trainer driven by a ``ModelBuilderConfig``."""
 
@@ -276,6 +301,15 @@ class NeuralStudioTrainer:
             )
 
         labels = self._label(frame, n_rows)
+
+        # MODEL FACTORY quality gates: the three canonical reports are produced
+        # HERE, on the exact matrix/labels the fit is about to consume, so the
+        # certificate describes the real run rather than a separate audit pass.
+        # All three are descriptive (never fitted statistics) and are computed
+        # on the full frame — no block uses OOS as a reference.
+        dataset_report = self._dataset_quality_report(frame, cfg)
+        feature_report = self._feature_quality_report(mat, [str(x) for x in names], cfg, schema_id)
+        label_report = self._label_quality_report(labels, n_rows)
 
         # 5. OOS SPLIT — carved out FIRST and never fitted on (Phase 14)
         oos_ratio = float(cfg.oos_ratio) if 0.0 < cfg.oos_ratio < 0.5 else 0.2
@@ -433,10 +467,43 @@ class NeuralStudioTrainer:
             "weights_sha256": weights_sha256,
             "code_version": cfg.code_version,
             "training_version": cfg.training_version,
+            # LEAKAGE PROOF (MODEL FACTORY certification): the manifest must
+            # carry the evidence the LEAKAGE gate requires — the scaler was
+            # fitted on the FIT set only, the OOS block was carved out first
+            # and never fitted on, and the dataset identity is recorded.
+            "oos_isolated": True,
+            "oos_ratio": oos_ratio,
+            "oos_fitted": False,
+            "scaler_fit_scope": "fit_only",
+            "label_schema_id": "triple_barrier_v3",
+            "dataset_id": str(dataset_info.get("dataset_id") or dataset_info.get("path") or ""),
+            "feature_schema_hash": _feature_schema_hash_of(schema_id),
+            "scaler_sha256": _hash_file(scaler_path),
+            "manifest_sha256": "",
             "created_at": _now(),
         }
         with open(manifest_path, "w", encoding="utf-8") as fh:
             json.dump(manifest, fh, indent=2)
+        # The manifest hash is stamped over the PERSISTED bytes so the
+        # ARTIFACT_INTEGRITY gate can prove the on-disk manifest is the one
+        # that was certified. The stamp is written WITHOUT re-hashing: the
+        # hash field is excluded from its own input, so the value is stable
+        # and the persisted file remains exactly what was certified.
+        manifest["manifest_sha256"] = _hash_file_json(manifest_path)
+        with open(manifest_path, "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh, indent=2)
+
+        # Persist the three MODEL FACTORY quality reports next to the bundle so
+        # Model Studio renders the same evidence the certificate was minted
+        # from (contract Sections 21-23). Written AFTER the manifest so they
+        # never participate in the manifest hash.
+        self._persist_quality_reports(
+            ckpt_dir=ckpt_dir,
+            model_id=model_id,
+            dataset_report=dataset_report,
+            feature_report=feature_report,
+            label_report=label_report,
+        )
 
         # 10. VERIFY + 11. REGISTER
         registry = get_model_registry()
@@ -457,6 +524,7 @@ class NeuralStudioTrainer:
             dataset_path=dataset_info.get("path", ""),
             fine_tune_enabled=True,
             stage="STAGING",
+            training_status="TRAINED",
             metrics={
                 "run_id": run_id,
                 "schema_id": schema_id,
@@ -469,6 +537,22 @@ class NeuralStudioTrainer:
             },
         )
         registry.register_model(rec)
+
+        # 12. CERTIFY — the MODEL FACTORY gate set runs on the fresh bundle
+        # and mints <model_id>.certificate.json. A single mandatory failure
+        # yields MODEL_STATUS = REJECTED, never READY (contract §18/§34).
+        certificate = self._certify(
+            model_id=model_id,
+            manifest=manifest,
+            metrics=metrics,
+            cfg=cfg,
+            schema_id=schema_id,
+            ckpt_dir=ckpt_dir,
+            dataset_info=dataset_info,
+            dataset_report=dataset_report,
+            feature_report=feature_report,
+            label_report=label_report,
+        )
 
         return TrainingResult(
             run_id=run_id,
@@ -484,6 +568,13 @@ class NeuralStudioTrainer:
                 "manifest_path": self._rel(manifest_path),
                 "weights_sha256": weights_sha256,
                 "model_id": model_id,
+                "certificate_path": (
+                    self._rel(ckpt_dir / f"{model_id}.certificate.json")
+                    if certificate is not None
+                    else ""
+                ),
+                "model_status": certificate.model_status if certificate is not None else "",
+                "certification": certificate.to_dict() if certificate is not None else {},
             },
             metrics=metrics,
             config=cfg.to_dict(),
@@ -576,3 +667,149 @@ class NeuralStudioTrainer:
             return str(path.relative_to(self._root))
         except ValueError:
             return str(path)
+
+    # --------------------------------------------------- MODEL FACTORY gates
+
+    def _certify(
+        self,
+        *,
+        model_id: str,
+        manifest: dict[str, Any],
+        metrics: TrainingMetrics,
+        cfg: ModelBuilderConfig,
+        schema_id: str,
+        ckpt_dir: Path,
+        dataset_info: dict[str, Any],
+        dataset_report: Any = None,
+        feature_report: Any = None,
+        label_report: Any = None,
+    ) -> Any:
+        """Runs the MODEL FACTORY certification gate set on the fresh bundle.
+
+        Missing evidence fails loudly (a gate that has nothing to inspect
+        reports NOT_AVAILABLE and the model is REJECTED) — never silently
+        marked ready. Certification failing does NOT abort the run: the
+        artifact and the certificate both persist so the operator can see the
+        exact reasons in Model Studio.
+        """
+        try:
+            from nexus_scalp.model_generation.certification import certify_model
+
+            metrics_dict = metrics.to_dict()
+            # The studio path trains 2D (seq_len=1) and has no walk-forward
+            # fold record of its own; walk-forward is the canonical
+            # WalkForwardTrainer lane. Report honestly: no fold evidence here.
+            walk_forward_result = {
+                "passed": False,
+                "fold_count": 0,
+                "purge_embargo": True,
+                "note": (
+                    "studio 2D run; canonical walk-forward evaluation lives in "
+                    "the WalkForwardTrainer lane (training/walk_forward_trainer)"
+                ),
+            }
+            return certify_model(
+                model_id,
+                manifest=manifest,
+                dataset_report=dataset_report.to_dict() if dataset_report is not None else None,
+                feature_report=feature_report.to_dict() if feature_report is not None else None,
+                label_report=label_report.to_dict() if label_report is not None else None,
+                training_metrics=metrics_dict,
+                walk_forward_result=walk_forward_result,
+                oos_metrics=metrics_dict,
+                bundle_dir=ckpt_dir,
+                out_dir=ckpt_dir,
+                expected_schema_id=schema_id,
+                expected_dimension=cfg.dimension,
+                expected_sequence_length=cfg.sequence_length,
+                expected_label_schema_id="triple_barrier_v3",
+            )
+        except Exception:
+            # Certification must never destroy a completed training run; the
+            # caller sees an empty certificate path and the run still reports
+            # COMPLETE with the artifact bundle intact.
+            logger.exception("certification failed for run %s", model_id)
+            return None
+
+    # ----------------------------------------------- quality report builders
+
+    @staticmethod
+    def _persist_quality_reports(
+        *,
+        ckpt_dir: Path,
+        model_id: str,
+        dataset_report: Any = None,
+        feature_report: Any = None,
+        label_report: Any = None,
+    ) -> None:
+        """Writes ``<model_id>.{dataset,feature,label}_quality.json``.
+
+        Missing reports are simply not written (the certificate already
+        records the absence as a gate failure) — never an empty placeholder
+        that could be mistaken for a passed audit.
+        """
+        import json as _json
+
+        for suffix, report in (
+            ("dataset_quality", dataset_report),
+            ("feature_quality", feature_report),
+            ("label_quality", label_report),
+        ):
+            if report is None:
+                continue
+            try:
+                path = ckpt_dir / f"{model_id}.{suffix}.json"
+                path.write_text(
+                    _json.dumps(report.to_dict(), indent=2, default=str),
+                    encoding="utf-8",
+                )
+            except Exception:
+                logger.warning("could not persist %s report for %s", suffix, model_id)
+
+    @staticmethod
+    def _dataset_quality_report(frame: Any, cfg: ModelBuilderConfig) -> Any:
+        """Certifies the RAW bars the run consumed (data_quality stage)."""
+        try:
+            from nexus_scalp.model_generation.data_quality import DataQualityCertifier
+
+            symbol = str(getattr(cfg, "symbol", "") or "XAUUSD")
+            timeframe = str(getattr(cfg, "timeframe", "") or "M1")
+            cert = DataQualityCertifier(symbol=symbol, timeframe=timeframe)
+            _, report = cert.certify(frame)
+            return report
+        except Exception:
+            # A bar frame without the canonical OHLC columns cannot be
+            # certified; the gate then reports the absence honestly.
+            return None
+
+    @staticmethod
+    def _feature_quality_report(
+        mat: np.ndarray, names: list[str], cfg: ModelBuilderConfig, schema_id: str
+    ) -> Any:
+        """Certifies the feature matrix the fit consumed (feature_quality)."""
+        try:
+            from nexus_scalp.model_generation.feature_quality import (
+                FeatureQualityCertifier,
+            )
+
+            cert = FeatureQualityCertifier(
+                feature_schema_id=schema_id,
+                feature_schema_hash=_feature_schema_hash_of(schema_id),
+            )
+            return cert.certify(np.asarray(mat), names)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _label_quality_report(labels: np.ndarray, n_rows: int) -> Any:
+        """Audits the label vector the fit consumed (label_quality)."""
+        try:
+            import polars as pl
+
+            from nexus_scalp.model_generation.label_quality import LabelQualityAudit
+
+            audit = LabelQualityAudit()
+            frame = pl.DataFrame({"label": labels[:n_rows]})
+            return audit.audit(frame)
+        except Exception:
+            return None

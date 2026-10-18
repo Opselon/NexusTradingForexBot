@@ -94,6 +94,62 @@ def test_release_yml_bug143_preflight_intact() -> None:
     assert "NexusScalpEngine-$V-win-x64-setup.exe" in src or ("win-x64-setup.exe" in src)
 
 
+# GO-API-SHIP regression: the .iss asserts _internal\go-api\nexus-api.exe exists
+# (contract assertion, not a skipifsourcedoesntexist), so the release workflow
+# MUST bake the binary. v9.0.15 died at ISCC because the workflow never built
+# the Go plane — build_release.ps1 did, release.yml did not.
+def test_release_yml_bakes_the_go_api_plane() -> None:
+    """The workflow must build nexus-api.exe and add it to the onedir payload."""
+    src = RELEASE_YML.read_text(encoding="utf-8")
+
+    build_idx = src.find("Build Go API plane")
+    assert build_idx > 0, "the Go API build step was removed from release.yml"
+
+    pyinstaller_idx = src.find("name: PyInstaller onedir")
+    assert pyinstaller_idx > build_idx, "the Go build must run before PyInstaller"
+
+    adddata = src[pyinstaller_idx : src.find("name: PyInstaller onefile CLI")]
+    assert "go-api" in adddata, (
+        "the onedir build no longer add-data's the go-api ship dir — ISCC would "
+        "then fail on the .iss go-api contract entry"
+    )
+
+
+def test_release_yml_go_build_uses_the_ship_dir_the_adddata_references() -> None:
+    """The build step's output dir must be exactly the dir add-data consumes."""
+    src = RELEASE_YML.read_text(encoding="utf-8")
+    build_step = src[src.find("Build Go API plane") :]
+    # The build step runs with working-directory: go-api, so a $PWD-relative
+    # ship dir lands under go-api/... while PyInstaller (rooted at the repo
+    # root) consumes $PWD\release\build\... — the paths must be reconciled
+    # through GITHUB_WORKSPACE, not $PWD.
+    has_wd = "working-directory: go-api" in build_step
+    # the anchor must be a repo-rooted variable ($env:GITHUB_WORKSPACE or an
+    # explicit $RepoRoot over it) — never bare $PWD under that working dir
+    ship = re.search(r'Join-Path (\$\S+) "([^"]*go-api)"', build_step)
+    assert ship, "could not locate the go-api ship dir in the build step"
+    anchor, ship_dir = ship.group(1), ship.group(2)
+    onedir = src[src.find("name: PyInstaller onedir") :]
+    consume = re.search(r"--add-data [`\"]?\$PWD\\([^;`\" ]*go-api)", onedir)
+    assert consume, "could not locate the go-api add-data consumer in the onedir build"
+    if has_wd:
+        # under working-directory: go-api the ship dir MUST be anchored at the
+        # workspace root: $PWD there is the go-api module dir, so the same
+        # relative path lands under go-api/ and PyInstaller never sees it.
+        # An indirection ($RepoRoot = $env:GITHUB_WORKSPACE) is fine as long
+        # as the assignment is itself rooted.
+        if "GITHUB_WORKSPACE" not in anchor:
+            assignment = re.search(r"(\$\S+)\s*=\s*(.*)", build_step.split("Join-Path")[0])
+            assert assignment and "GITHUB_WORKSPACE" in assignment.group(2), (
+                f"build runs under working-directory: go-api but anchors the ship "
+                f"dir at {anchor!r} — that resolves to go-api/... and PyInstaller "
+                f"never finds the dir it add-data's"
+            )
+    assert ship_dir.replace("\\", "/") == consume.group(1).replace("\\", "/"), (
+        f"build writes to {ship_dir!r} but PyInstaller consumes {consume.group(1)!r}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Part 2 — guard existence semantics exercised on a real tmp tree
 # ---------------------------------------------------------------------------
@@ -445,3 +501,181 @@ def test_real_release_artifacts_verify_passes_then_fails_on_tamper(tmp_path: Pat
     assert "MISMATCH" in cks["detail"] or "MISSING" in cks["detail"], cks["detail"]
     # sha256 of the original is what the sums file records — sanity invariant
     assert len(hashlib.sha256(original).hexdigest()) == 64
+
+
+# ---------------------------------------------------------------------------
+# DevOps hardening (v9.0.15 cycle): the two silent-pass gates fixed in this PR.
+#
+# 1. clean_install_test.ps1 used to `exit 0` when the setup exe was absent,
+#    which contradicted the workflow's own BUG293_CLEAN_INSTALL_FAILED gate:
+#    a producer step that silently failed to emit the installer would publish
+#    a release whose lifecycle test never ran at all.
+# 2. The post-publish verify step only checked that the release EXISTED and had
+#    at least one asset. A short or tampered asset list passed.
+# ---------------------------------------------------------------------------
+
+_REPO = Path(__file__).resolve().parents[2]
+
+
+def _read_clean_install_script() -> str:
+    p = _REPO / "scripts" / "build" / "clean_install_test.ps1"
+    assert p.is_file(), f"clean_install_test.ps1 missing at {p}"
+    return p.read_text(encoding="utf-8")
+
+
+def test_clean_install_test_does_not_silently_skip_a_missing_setup_exe() -> None:
+    """BUG-293-QUIET: absence of the setup exe must FAIL the release, not skip."""
+    text = _read_clean_install_script()
+    guard = text.split("Resolve-Path", 1)[0]
+    # The old silent-skip guard is gone ...
+    assert re.search(r"if\s*\(\s*-not\s+\$SetupExe\s+-or\s+-not\s*\(Test-Path", guard) is None
+    # ... and both absence branches now exit non-zero.
+    assert re.search(r"if\s*\(\s*-not\s+\$SetupExe\s*\)\s*{[^}]*exit\s+2", guard, re.S)
+    assert re.search(r"if\s*\(\s*-not\s*\(Test-Path\s+\$SetupExe\)\)\s*{[^}]*exit\s+3", guard, re.S)
+    # No executed `exit 0` remains before the script starts real work. Only the
+    # code lines matter — the comment block may quote the removed behaviour.
+    code_lines = [ln for ln in guard.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+    assert not any(re.search(r"exit\s+0", ln) for ln in code_lines), code_lines
+
+
+def test_release_yml_post_publish_verify_checks_asset_contract() -> None:
+    """The post-publish check must assert the asset CONTRACT, not just existence."""
+    yml = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    step_idx = yml.find("Verify published release")
+    assert step_idx != -1
+    step = yml[step_idx : yml.find("env:", step_idx)]
+    assert "TAG MISMATCH" in step
+    assert "ASSET COUNT" in step
+    assert "MISSING ASSET" in step
+    assert "ZERO-SIZE ASSET" in step
+    assert "DIGEST MISMATCH" in step
+    # The 7 contract assets must be named explicitly.
+    for name in (
+        "setup.exe",
+        "win-x64.zip",
+        "NexusScalpEngine-CLI.exe",
+        "release-manifest.json",
+        "sbom.spdx.json",
+        "SHA256SUMS.txt",
+        "update-manifest.signed.json",
+    ):
+        assert name in step, f"post-publish verify does not assert {name}"
+
+
+# ---------------------------------------------------------------------------
+# Round 2 of the v9.0.15 audit (three independent audit reports):
+#
+# F1 (user-visible): the portable zip shipped WITHOUT SHA256SUMS.txt, so a
+#   user who extracted the zip and ran `verify-release` saw
+#   "SHA256SUMS.txt missing". Only the manifest was embedded; the sums file
+#   lived in checksums/ OUTSIDE the archive.
+# F3: the post-publish check used `<` instead of `!=` (extra stale assets
+#   from a previous run passed) and did not require every expected asset to
+#   appear in SHA256SUMS.txt (a sums file carrying a previous version's
+#   digests passed).
+# F4 (dangerous): `Undraft release` ran `if: always()`, so a PARTIAL upload
+#   failure still un-drafted (published) the incomplete release.
+# ---------------------------------------------------------------------------
+
+
+def test_embed_step_puts_the_checksums_file_inside_the_portable_tree() -> None:
+    """F1: the portable bundle must carry SHA256SUMS.txt, not just the manifest.
+
+    The contract is WRITTEN portable-scoped by the shared helper (not copied
+    from the release root — see the F1/F2 regression test below) and the zip is
+    rebuilt so the archive carries it.
+    """
+    yml = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    idx = yml.find("Embed release contract in portable bundle")
+    assert idx != -1, "embed step renamed/removed"
+    step = yml[idx : yml.find("Pre-stage verification contract for installer", idx)]
+    # The bundle contract is written by the shared helper, portable-rooted.
+    assert "write_embedded_contract" in step, step
+    # ... and the zip is rebuilt, because the archive built at the Stage step
+    # predates both contract files.
+    assert "Compress-Archive" in step
+    assert "PORTABLE_ZIP_REBUILD_FAILED" in step
+
+
+def test_embed_step_runs_before_anything_hashes_the_zip() -> None:
+    """F1 ORDERING: the zip must be final before its digest is recorded.
+
+    Regression: the embed+rezip used to run AFTER the Checksums step, so
+    SHA256SUMS.txt recorded the digest of a zip that had already been replaced
+    -> the post-publish DIGEST contract failed on every release.
+    """
+    yml = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    stage_idx = yml.find("name: Stage release tree")
+    embed_idx = yml.find("Embed release contract in portable bundle")
+    sums_idx = yml.find("name: Checksums + manifest + SBOM")
+    assert 0 < stage_idx < embed_idx < sums_idx, (
+        "the embed+rezip step must run after Staging and BEFORE the checksums step"
+    )
+    assert "Compress-Archive" not in yml[sums_idx:], (
+        "nothing may rebuild the zip after the checksums step"
+    )
+
+
+def test_embedded_contract_is_portable_scoped_not_the_release_root_copy() -> None:
+    """F2/F4: the bundle contract must list only files the bundle contains.
+
+    Regression: the release-root contract (cli/..., *.zip, *-setup.exe) was
+    copied into the portable tree, so `verify-release` on an extracted zip — and
+    on the installed tree, which IS that payload — reported
+    "checksum: ... MISSING" / "manifest file missing: ...".
+    """
+    yml = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    idx = yml.find("Pre-stage verification contract for installer")
+    pre = yml[idx : yml.find("name: Installer (Inno Setup)", idx)]
+    # The pre-stage step must RELOCATE the bundle contract, never author a
+    # release-root one.
+    assert "Copy-Item $PortableSums" in pre and "Copy-Item $PortableManifest" in pre, pre
+    assert "$Subset" not in pre, "the release-root 3-artifact subset must be gone"
+    # Release-root sums are still produced for publication, but only by the
+    # Checksums step (4 artifacts, incl. setup.exe).
+    assert '"$Out\\NexusScalpEngine-$V-win-x64-setup.exe"' in yml
+
+
+def test_published_sums_covers_the_metadata_assets() -> None:
+    """F3: the strict coverage rule needs the metadata assets in SHA256SUMS.
+
+    Regression: the gate requires every published asset to appear in
+    SHA256SUMS.txt, but the sums was generated over the 4 payload binaries only
+    — release-manifest.json / sbom.spdx.json / update-manifest.signed.json were
+    never covered, so the gate could not pass.
+    """
+    yml = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    idx = yml.find("Finalize SHA256SUMS coverage")
+    assert idx != -1, "the SHA256SUMS coverage step is missing"
+    step = yml[idx : yml.find("verify-release (full self-check", idx)]
+    for asset in ("release-manifest.json", "sbom.spdx.json", "update-manifest.signed.json"):
+        assert asset in step, f"{asset} is not covered by the sums step"
+    assert "Add-Content" in step
+    # It must run AFTER signing (that file does not exist before) and BEFORE the
+    # tree self-check / upload.
+    sign_idx = yml.find("Sign update manifest (Ed25519 trust root)")
+    verify_idx = yml.find("verify-release (full self-check")
+    assert 0 < sign_idx < idx < verify_idx, "coverage step ordering changed"
+
+
+def test_release_yml_undraft_only_runs_when_publish_actually_failed() -> None:
+    """F4: undraft must not publish a release whose upload failed."""
+    yml = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    idx = yml.find("Undraft release")
+    assert idx != -1
+    step = yml[idx : yml.find("shell:", idx)]
+    # `if: always()` would run even on a successful publish; the step must be
+    # gated on the publish step having failed.
+    assert "always()" not in step, step
+    assert "steps.publish.outcome == 'failure'" in step
+    # and the publish step must carry the id the guard references
+    assert re.search(r"name: Publish release\s*\n\s*id: publish", yml)
+
+
+def test_post_publish_verify_requires_exact_asset_count() -> None:
+    """F3a: `!=` not `<` — stale assets from a previous run must fail."""
+    yml = (_REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    idx = yml.find("Verify published release")
+    step = yml[idx : yml.find("env:", idx)]
+    assert "len(published) != len(expected)" in step
+    assert "UNCHECKED ASSET" in step

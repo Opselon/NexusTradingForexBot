@@ -64,7 +64,7 @@ class DuplicateDetector:
         #    double rows impossible; verify no drift.
         dup_keys = conn.execute(
             "SELECT idempotency_key, COUNT(*) n FROM audit_experience_outcomes "
-            "GROUP BY idempotency_key HAVING n > 1"
+            "GROUP BY idempotency_key HAVING COUNT(*) > 1"
         ).fetchall()
         for key, _n in dup_keys:
             rows = conn.execute(
@@ -92,7 +92,7 @@ class DuplicateDetector:
         family_overlap = conn.execute(
             "SELECT order_id, COUNT(DISTINCT ticket) n FROM audit_ledger "
             "WHERE order_id != '' AND order_id IS NOT NULL "
-            "GROUP BY order_id HAVING n > 1"
+            "GROUP BY order_id HAVING COUNT(DISTINCT ticket) > 1"
         ).fetchall()
         for order_id, n in family_overlap:
             # Families are recorded as PROTECTED, never as duplicates.
@@ -112,7 +112,7 @@ class DuplicateDetector:
         # 3) audit_broker_trades: position_id UNIQUE? check for true dup rows.
         try:
             trade_dups = conn.execute(
-                "SELECT trade_id, COUNT(*) n FROM audit_broker_trades GROUP BY trade_id HAVING n > 1"
+                "SELECT trade_id, COUNT(*) n FROM audit_broker_trades GROUP BY trade_id HAVING COUNT(*) > 1"
             ).fetchall()
         except sqlite3.OperationalError:
             trade_dups = []
@@ -268,7 +268,7 @@ class DuplicateDetector:
             a_dups = conn.execute(
                 "SELECT article_id, run_id, COUNT(*) n FROM news_analysis "
                 "WHERE run_id IS NOT NULL AND run_id != '' "
-                "GROUP BY article_id, run_id HAVING n > 1"
+                "GROUP BY article_id, run_id HAVING COUNT(*) > 1"
             ).fetchall()
         except sqlite3.OperationalError:
             a_dups = []
@@ -346,7 +346,7 @@ class OrphanDetector:
         try:
             orphan_autopsies = conn.execute(
                 "SELECT a.ticket FROM trade_autopsies a "
-                "LEFT JOIN audit_ledger l ON l.ticket = a.ticket "
+                "LEFT JOIN audit_ledger l ON CAST(l.ticket AS TEXT) = a.ticket "
                 "WHERE l.ticket IS NULL"
             ).fetchall()
         except sqlite3.OperationalError:

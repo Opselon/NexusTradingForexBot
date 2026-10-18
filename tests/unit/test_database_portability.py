@@ -33,6 +33,7 @@ from nexus_scalp.database.config import (  # noqa: E402
     load_database_config,
     mask_url_password,
 )
+from nexus_scalp.database.ddl_port import port_create_table  # noqa: E402
 from nexus_scalp.database.drivers import get_driver  # noqa: E402
 from nexus_scalp.database.drivers.postgres_driver import _translate_placeholders  # noqa: E402
 from nexus_scalp.database.migrate_engine import (  # noqa: E402
@@ -830,6 +831,64 @@ class TestDbConsoleQueryGuard:
         assert body["success"] is True
         assert len(body.get("rows", [])) <= 100
 
+    def test_verb_guard_accepts_ddl_with_leading_line_comments(self):
+        """Schema DDL may document itself before the verb.
+
+        ``strategies.factory.store._SCHEMA`` keeps a rationale block above a
+        retained index, and ``schema_snapshot.strategy_factory_schema_statements``
+        splits on ``;`` so that whole comment header lands at the front of one
+        statement. The guard documented line comments as permitted, so the verb
+        allow-list must look past them (DB-FABRIC: "SQL verb not allowed at
+        driver boundary" during reverse-migration schema replay).
+        """
+        from nexus_scalp.database.drivers._sql_guard import assert_safe_sql
+
+        sql = (
+            "-- idx_factory_cand_hash (definition_hash) REMOVED — 0 scans on the live ledger\n"
+            "-- and definition_hash is never a lookup key anywhere in the tree.\n"
+            "CREATE INDEX IF NOT EXISTS idx_factory_fail_gen ON factory_failures(generation_id)"
+        )
+        assert assert_safe_sql(sql) == sql
+
+        # a hostile verb hidden behind the same header is still rejected
+        with pytest.raises(ValueError):
+            assert_safe_sql("-- benign\nATTACH DATABASE ':memory:' AS aux")
+
+    def test_verb_guard_stays_linear_on_comment_only_statements(self):
+        """A comment-only statement must not blow up the verb check.
+
+        The comment-skipping step was once a regex with a nested quantifier
+        (``(?:\\s*--[^\\r\\n]*[\\r\\n]+)*``), which backtracks exponentially on
+        a long run of empty comment lines (CodeQL redos). Replacing it with a
+        line scan keeps the guard linear; a comment-only input is simply no
+        verb at all and is rejected, not scanned forever.
+        """
+        import time
+
+        from nexus_scalp.database.drivers._sql_guard import assert_safe_sql
+
+        evil = "-- " + "\n\n--" * 4000
+        start = time.perf_counter()
+        with pytest.raises(ValueError):
+            assert_safe_sql(evil)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 1.0, f"verb check took {elapsed:.3f}s on a comment-only statement"
+
+    def test_verb_guard_requires_exact_first_sql_token(self):
+        """Allow-listing must reject identifiers that only prefix an allowed verb."""
+        from nexus_scalp.database.drivers._sql_guard import assert_safe_sql
+
+        for sql in (
+            "SELECTED * FROM application_settings",
+            "DROPPED TABLE application_settings",
+            "CREATED TABLE application_settings",
+            "INSERTED INTO application_settings VALUES (1)",
+        ):
+            with pytest.raises(ValueError, match="SQL verb not allowed"):
+                assert_safe_sql(sql)
+
+        assert assert_safe_sql("  SELECT 1") == "  SELECT 1"
+
     def test_placeholder_translation_used_for_pg(self):
         from nexus_scalp.web.db_console import _query_console_sql
 
@@ -841,6 +900,18 @@ class TestDbConsoleQueryGuard:
             _query_console_sql("SELECT * FROM t WHERE x = ?", "sqlite")
             == "SELECT * FROM t WHERE x = ?"
         )
+
+    def test_ddl_port_translates_sqlite_datetime_default(self):
+        sqlite_ddl = (
+            "CREATE TABLE IF NOT EXISTS archive_events ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "occurred_at TEXT, archived_at TEXT NOT NULL DEFAULT (datetime('now')))"
+        )
+        pg_ddl = port_create_table(sqlite_ddl)
+        assert pg_ddl is not None
+        assert "datetime('now')" not in pg_ddl.lower()
+        assert "to_char(now() AT TIME ZONE 'utc'" in pg_ddl
+        assert "BIGSERIAL PRIMARY KEY" in pg_ddl
 
 
 class TestDbConsoleApiKeys:

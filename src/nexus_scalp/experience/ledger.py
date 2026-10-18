@@ -558,6 +558,42 @@ class ExperienceLedger:
             )
         return self._query_records("e.symbol = ?", (symbol,), limit)
 
+    def list_all_experiences(self, limit: int = 20000) -> list[ExperienceRecord]:
+        """All merged experiences in ONE bounded query (deduped by key).
+
+        LOG-SPAM / WORKER_KICK (live cluster, 2026-09-30): the research cycle
+        rebuilt the dataset every ~60s via ``list_strategy_ids()`` +
+        one ``get_experiences_for_strategy()`` query PER strategy — 4,113 round
+        trips over 4,113 strategies on the live PostgreSQL box, plus the
+        per-record evidence resolution, made every cycle 94-145s against a
+        45s ``WORKER_KICK`` budget (74 ``[WORKER_KICK] event=TIMEOUT`` errors
+        in one hour). This single-query form (measured: 301ms for 2,000 rows
+        vs 2.2s of round-trip latency alone for the N+1) replaces that loop
+        without changing the result semantics: same merged projection, same
+        per-key dedupe, still bounded by ``MAX_RETRIEVAL_LIMIT``-style caps.
+
+        ``_iter_records`` (research dataset builder) is the only sanctioned
+        caller; per-strategy retrieval keeps ``get_experiences_for_strategy``
+        for the causally-filtered lookups it exists for.
+        """
+        bounded = max(1, min(int(limit), 20000))
+        sql = f"{_SELECT_MERGED} ORDER BY e.decision_timestamp DESC LIMIT ?;"
+        rows = query_rows(
+            self.audit_repo,
+            sql,
+            (bounded,),
+            operation="experience.list_all_experiences",
+        )
+        records: list[ExperienceRecord] = []
+        seen: set[str] = set()
+        for row in rows:
+            merged = self._merge_row(row)
+            if merged is None or merged.idempotency_key in seen:
+                continue
+            seen.add(merged.idempotency_key)
+            records.append(merged)
+        return records
+
     def get_experience_by_key(self, idempotency_key: str) -> ExperienceRecord | None:
         """Fetches a single merged experience by its idempotency key."""
         rows = self._query_records("e.idempotency_key = ?", (idempotency_key,), 1)
