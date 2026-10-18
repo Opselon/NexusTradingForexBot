@@ -3648,22 +3648,33 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         if not dataset_id:
             return None
         key = dataset_id.strip()
-        if key in _KNOWN_DATASET_IDS:
-            return _KNOWN_DATASET_IDS[key]
         lower = key.lower()
-        if lower in _KNOWN_DATASET_IDS:
-            return _KNOWN_DATASET_IDS[lower]
+
+        def _resolve(candidate: str) -> str | None:
+            """Map one key to the canonical id str, or None. Tuple = alias of."""
+            value = _KNOWN_DATASET_IDS.get(candidate)
+            if isinstance(value, str):
+                return value
+            if isinstance(value, tuple):
+                return value[0] if value else None
+            return None
+
+        for candidate in (key, lower):
+            resolved = _resolve(candidate)
+            if resolved is not None:
+                return resolved
         # windowed canonical id: "XAUUSD_bars_m1_bfb4c25b9bca" -> prefix
         stripped = key.rsplit("_", 1)[0] if key.count("_") >= 2 else key
         if stripped != key:
-            if stripped in _KNOWN_DATASET_IDS:
-                return _KNOWN_DATASET_IDS[stripped]
-            lstripped = stripped.lower()
-            if lstripped in _KNOWN_DATASET_IDS:
-                return _KNOWN_DATASET_IDS[lstripped]
-        for _, alias in _KNOWN_DATASET_IDS.items():
-            if isinstance(alias, tuple) and key in alias:
-                return _KNOWN_DATASET_IDS.get(alias[0]) if alias else None
+            for candidate in (stripped, stripped.lower()):
+                resolved = _resolve(candidate)
+                if resolved is not None:
+                    return resolved
+        # alias membership: an alias tuple naming this id resolves through that
+        # entry's own canonical id (alias[0]), preserving the original lookup.
+        for alias in _KNOWN_DATASET_IDS.values():
+            if isinstance(alias, tuple) and key in alias and alias:
+                return _resolve(alias[0])
         return None
 
     def _local_dataset_fingerprint(path: Path) -> str:

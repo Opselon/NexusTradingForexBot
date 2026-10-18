@@ -1360,7 +1360,11 @@ class MCPMT5Adapter(IMT5Port):
                     "price": deal.price,
                     "profit": deal.profit,
                     "time": deal.time,
-                    "time_utc": deal.time_utc.isoformat() if deal.time_utc else None,
+                    "time_utc": (
+                        datetime.fromtimestamp(deal.time, tz=UTC).isoformat()
+                        if deal.time is not None
+                        else None
+                    ),
                     "source": "MCP",
                 }
             )
@@ -1667,9 +1671,8 @@ def _build_mcp_position(row: dict[str, Any], default_symbol: str) -> PositionSna
     snap.identifier = _int_or_none(row.get("position_id"))
     snap.symbol = str(row.get("symbol") or default_symbol)
     snap.type = _order_type_int(row.get("type"))
-    epoch, time_utc = _epoch_and_utc(row.get("open_time"))
+    epoch, _ = _epoch_and_utc(row.get("open_time"))
     snap.time = epoch
-    snap.time_utc = time_utc
     snap.volume = _float_or_none(row.get("open_volume"))
     snap.price_open = _float_or_none(row.get("open_price"))
     snap.price_current = _float_or_none(row.get("current_price") or row.get("price_current"))
@@ -1698,7 +1701,12 @@ def _build_mcp_pending_order(row: dict[str, Any]) -> OrderSnapshot:
     snap.source = "BROKER_NATIVE"
     snap.ticket = _int_or_none(row.get("order_id"))
     snap.identifier = _int_or_none(row.get("position_id"))
-    snap.external_id = row.get("order_external_id")
+    #: MCP order_external_id has no slot on main's OrderSnapshot dataclasses;
+    #: carry it in ``comment`` (the adapter contract: no field is fabricated,
+    #: no MCP datum silently dropped).
+    comment = row.get("order_external_id")
+    if comment:
+        snap.comment = str(comment)
     snap.symbol = str(row.get("symbol") or "")
     snap.type = _order_type_int(row.get("type"))
     setup_epoch, setup_utc = _epoch_and_utc(row.get("open_time"))
@@ -1738,7 +1746,12 @@ def _build_mcp_history_order(row: dict[str, Any]) -> HistoryOrderSnapshot:
     snap.source = "BROKER_NATIVE"
     snap.ticket = _int_or_none(row.get("order_id"))
     snap.identifier = _int_or_none(row.get("position_id"))
-    snap.external_id = row.get("order_external_id")
+    #: MCP order_external_id has no slot on main's OrderSnapshot dataclasses;
+    #: carry it in ``comment`` (the adapter contract: no field is fabricated,
+    #: no MCP datum silently dropped).
+    comment = row.get("order_external_id")
+    if comment:
+        snap.comment = str(comment)
     snap.symbol = str(row.get("symbol") or "")
     snap.type = _order_type_int(row.get("type"))
     setup_epoch, setup_utc = _epoch_and_utc(row.get("open_time"))
@@ -1787,8 +1800,11 @@ def _build_mcp_deal(row: dict[str, Any]) -> DealSnapshot:
     #: realized-PnL event, so it is authoritative. The open leg is preserved
     #: in notes for accounting reconciliation.
     snap.time = close_epoch if close_epoch is not None else open_epoch
-    snap.time_utc = close_utc or open_utc
-    snap.time_msc = round(snap.time_utc.timestamp() * 1000.0) if snap.time_utc is not None else None
+    snap.time_msc = (
+        round(close_utc.timestamp() * 1000.0)
+        if close_utc is not None
+        else (round(open_utc.timestamp() * 1000.0) if open_utc is not None else None)
+    )
     snap.volume = _float_or_none(row.get("close_volume") or row.get("open_volume"))
     snap.price = _float_or_none(row.get("close_price") or row.get("open_price"))
     snap.profit = _float_or_none(row.get("profit"))
