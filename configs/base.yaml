@@ -34,6 +34,22 @@ mt5:
   timeout_ms: 5000
   retries: 3
   portable_mode: false
+  # IMPL-F (MT5-PARITY-FORENSICS): read-only MCP transport section.
+  # ABSENT before this wave; disabled by default so an operator who does not
+  # run the local MetaTrader 5 MCP bridge keeps byte-identical behavior.
+  # Enabling this does not switch the engine's transport on its own — it is
+  # consumed only by callers that explicitly build MCPMT5Adapter.
+  mcp:
+    enabled: false
+    # Empty -> resolve the endpoint from NSE_MT5_MCP_URL (env or repo .env),
+    # which the adapter documents as the credential contract. NEVER put the
+    # API key in this file; it lives in the environment / .env only.
+    url: ""
+    # Hard contract: the MCP adapter is READ-ONLY and refuses every trade_*
+    # tool without ever issuing the call. This flag documents that intent in
+    # the schema; the enforcement itself is in the adapter (FORBIDDEN_TOOLS).
+    read_only: true
+    timeout_s: 60.0
 
 model:
   confidence_threshold: 0.35
