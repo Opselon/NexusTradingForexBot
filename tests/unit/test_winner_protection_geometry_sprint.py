@@ -240,7 +240,6 @@ def test_atr_is_a_noise_floor_instead_of_a_competing_trigger():
     assert adapter.modifications == []
 
 
-
 # ---------------------------------------------------------------------------
 # 2. BE lock offset covers round-trip cost
 # ---------------------------------------------------------------------------
