@@ -26,6 +26,7 @@ from nexus_scalp.features.regime_classifier import (
     RegimeType,
 )
 from nexus_scalp.features.scalp_features import FeatureVector
+from nexus_scalp.models.calibration import apply_temperature, artifacts_root, read_artifact
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.signals.rule_matrix import RuleMatrixEngine
 
@@ -43,6 +44,9 @@ PENDING_ORDER_LOCK_SECONDS: float = 30.0
 
 #: Reason code emitted with CLOSE_POSITION when the AI flips direction on us.
 AI_REVERSAL_REASON: str = "AI_REVERSAL_SIGNAL"
+
+#: Cache sentinel for the calibration artifact (None = 'no calibration').
+_CALIBRATION_UNSET: object = object()
 
 
 class SignalPolicy:
@@ -88,6 +92,8 @@ class SignalPolicy:
 
             confidence_threshold = ModelConfig().confidence_threshold
         self.confidence_threshold = confidence_threshold
+        #: Temperature-scaling artifact resolved once per policy instance.
+        self._calibration_cache: object = _CALIBRATION_UNSET
         self.cooldown_seconds = cooldown_seconds
         self.telemetry_interval = telemetry_interval_sec
         self.range_min_displacement = range_min_displacement
@@ -285,6 +291,7 @@ class SignalPolicy:
         probs = probabilities.squeeze().tolist()
         if not isinstance(probs, list):
             probs = [probs]
+        probs = self._calibrated(probs)
 
         dedup_proposal = self._evaluate_duplicate_tick(
             probs, current_tick, execution_id, regime_state
@@ -2729,6 +2736,39 @@ class SignalPolicy:
     # directional confidence. The gate now measures the leading trained-
     # class probability normalized over BUY+SELL+NO_TRADE. O(1), no I/O.
     # ------------------------------------------------------------------
+    def _calibrated(self, probs: list[float]) -> list[float]:
+        """Temperature-scale the head before ANY gate looks at it.
+
+        The gates were written against the raw-probability domain ("if the
+        model is 60% sure, take it"), while a cross-entropy head is
+        systematically over-confident on its own easy cases. Calibrating here
+        — one call, before the NO_TRADE read, the dedup fingerprint and every
+        confidence gate — means every consumer speaks the same units.
+
+        Fail-open by design: no artifact, a stale one, or anything malformed
+        returns the vector untouched. Calibration may never gate a trade that
+        the raw policy would take.
+        """
+        temperature = self._calibration_temperature()
+        if temperature is None or len(probs) < 2:
+            return probs
+        try:
+            scaled = apply_temperature(probs, temperature)[0].tolist()
+        except Exception:  # pragma: no cover - defensive, never blocks a tick
+            return probs
+        if not scaled or any(not math.isfinite(float(value)) for value in scaled):
+            return probs
+        return [float(value) for value in scaled]
+
+    def _calibration_temperature(self) -> float | None:
+        cached = self._calibration_cache
+        if cached is not _CALIBRATION_UNSET:
+            return cached if isinstance(cached, float) else None
+        artifact = read_artifact(artifacts_root() / "calibration.json")
+        temperature: float | None = float(artifact["temperature"]) if artifact else None
+        self._calibration_cache = temperature if temperature is not None else None
+        return temperature
+
     def _directional_confidence(self, probs: list[float]) -> tuple[float, str]:
         """Return (confidence, source) under trained-class semantics.
 

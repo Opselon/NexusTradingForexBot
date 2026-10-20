@@ -1,0 +1,12 @@
+{
+  "_comment": "Budget-only baseline: absolute p95 ceilings that catch algorithmic regressions on any machine. Medians are intentionally NOT recorded here because they are host-specific; record yours locally with `python tests/bench/run_benchmarks.py --write-baseline --baseline-json .bench-local.json`.",
+  "tool": "nse-bench/1",
+  "benchmarks": {
+    "exit_policy.plan (no modify)": {"budget_us": 250.0},
+    "calibration.apply_temperature (64x4)": {"budget_us": 60.0},
+    "calibration.ece (8k rows)": {"budget_us": 12000.0},
+    "web.middleware.gzip (JSON)": {"budget_us": 3000.0},
+    "web.middleware.304 revalidate": {"budget_us": 2000.0},
+    "exit_optimizer.optimize (3k obs)": {"budget_us": 400000.0}
+  }
+}

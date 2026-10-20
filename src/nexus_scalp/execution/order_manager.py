@@ -1797,10 +1797,12 @@ class OrderLifecycleManager:
         atr: float = 0.0,
         min_stop_gap: float = 0.0,
         current_tick: TickData | None = None,
+        regime: str = "",
+        hold_seconds: float | None = None,
     ) -> bool:
         """Delegate: priority-4 breakeven lock (owned by ProtectionEngine, S10)."""
         return self._protection.apply_breakeven_lock(
-            pos, symbol_info, atr, min_stop_gap, current_tick
+            pos, symbol_info, atr, min_stop_gap, current_tick, regime, hold_seconds
         )
 
     def _maybe_tighten_protective_sl(
@@ -4056,6 +4058,11 @@ class OrderLifecycleManager:
             atr=atr,
             min_stop_gap=min_stop_gap,
             current_tick=current_tick,
+            # The current regime and the ticket's own dwell time are what the
+            # adaptive exit policy needs; passing them here keeps the policy
+            # free of clock/state reads (INV-001).
+            regime=self._current_regime_str(regime_state, pos.ticket),
+            hold_seconds=holding_duration,
         )
 
         # --- MFE GIVEBACK TRAILING LOCK ---

@@ -623,6 +623,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    # RESPONSE-PATH PERFORMANCE: conditional GET (ETag/304) + gzip, one pass,
+    # skipping SSE and anything oversized. Registered before the routers so it
+    # wraps every response; opt out with NEXUS_WEB_PERF=0.
+    from nexus_scalp.web.performance import PerfConfig, PerfMiddleware
+
+    app.add_middleware(PerfMiddleware, config=PerfConfig.from_env())
+
     # Store engine reference in app state
     app.state.engine = engine_ref
     app.state.server_state = ServerState()

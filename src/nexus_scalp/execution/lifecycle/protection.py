@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import math
 import time
+from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.domain.enums import OrderType
@@ -113,6 +114,9 @@ class ProtectionEngine:
         # SL trackers, forced-exit bookkeeping) instead of copying any of it
         # (single source of truth, S5 discipline).
         self.om = om
+        #: Last exit-policy plan per ticket (bounded: one small dict per live
+        #: ticket, cleared with the ticket's protection state).
+        self._last_exit_plan: dict[int, Any] = {}
 
     def _should_modify_sl(self, ticket: int, new_sl: float) -> bool:
         """Determines if the proposed new stop loss step is significantly different from last sent modification."""
@@ -322,6 +326,8 @@ class ProtectionEngine:
         atr: float = 0.0,
         min_stop_gap: float = 0.0,
         current_tick: TickData | None = None,
+        regime: str = "",
+        hold_seconds: float | None = None,
     ) -> bool:
         """
         Priority-4 protection: locks a breakeven(+0.20 pip) stop once the position has
@@ -356,16 +362,83 @@ class ProtectionEngine:
         state.last_be_attempt_time = now_mono
 
         current_pnl_usd = float(pos.profit)
-        atr_threshold_usd = self.om._atr_profit_threshold_usd(pos.volume, symbol_info, atr)
-        # AGENT4-SPRINT: R-anchored trigger floor — the flat $15 threshold alone
-        # fires at ~0.09R and locks an entry-level stop before the move develops.
         initial_risk_usd = self.om._initial_risks.get(pos.ticket, 0.0)
-        r_trigger_usd = BREAKEVEN_TRIGGER_R * initial_risk_usd if initial_risk_usd > 0.0 else 0.0
-        be_trigger_usd = max(BREAKEVEN_PROFIT_USD, r_trigger_usd)
-        if current_pnl_usd < be_trigger_usd and current_pnl_usd < atr_threshold_usd:
-            return False
 
-        breakeven_sl = state.breakeven_sl_price or self.om.calculate_breakeven_sl(pos, symbol_info)
+        # ---------------------------------------------------------------- #
+        # EXIT-POLICY v2 (adaptive geometry) — the default path.
+        #
+        # The legacy trigger below (flat $15 / 0.15R / 1.5 ATR) is retained
+        # verbatim behind `algo.exit_policy_v2_enabled = False` for one
+        # release so a replay can be diffed against it, but it is NO LONGER
+        # the authority: it fired at a fraction of 1R, moved the stop to the
+        # entry and scratched winners before their move developed — the
+        # reported "opens a position then goes risk-free immediately" defect.
+        #
+        # ExitProtectionPolicy answers with geometry anchored in R units and
+        # the instrument's ATR, requires a minimum dwell and MFE persistence,
+        # lifts the stop to -0.45R first (partial de-risk) and only then
+        # applies a COST-AWARE lock (spread + commission + buffer).
+        # ---------------------------------------------------------------- #
+        policy_enabled = bool(
+            getattr(getattr(self.om, "algo_config", None), "exit_policy_v2_enabled", True)
+        )
+        if policy_enabled:
+            policy = getattr(self, "_exit_policy", None)
+            if policy is None:
+                from nexus_scalp.execution.lifecycle.exit_policy import build_policy
+
+                policy = self._exit_policy = build_policy()
+            if hold_seconds is None:
+                hold_seconds = self._holding_seconds(pos.ticket)
+            spread_price = (
+                float(current_tick.ask - current_tick.bid) if current_tick is not None else 0.0
+            )
+            contract_size = self._resolve_contract_size(symbol_info)
+            plan = policy.plan(
+                pos,
+                risk_usd=initial_risk_usd,
+                atr_price=float(atr or 0.0),
+                contract_size=contract_size,
+                spread_price=spread_price,
+                hold_seconds=float(hold_seconds or 0.0),
+                peak_win_usd=float(state.peak_win_usd or 0.0),
+                regime=regime,
+                symbol_info=symbol_info,
+            )
+            self._last_exit_plan[pos.ticket] = plan
+            if not plan.should_modify or plan.new_sl is None:
+                return False
+            breakeven_sl = float(plan.new_sl)
+            state.breakeven_sl_price = breakeven_sl
+            notifier = getattr(self.om, "notifier", None)
+            if (
+                plan.action == "PARTIAL_DE_RISK"
+                and notifier is not None
+                and hasattr(notifier, "notify_partial_de_risk")
+            ):
+                try:
+                    notifier.notify_partial_de_risk(
+                        ticket=pos.ticket,
+                        new_sl=breakeven_sl,
+                        reason=plan.reason,
+                        reply_to_message_id=self.om._order_message_ids.get(pos.ticket),
+                    )
+                except Exception:
+                    pass
+        else:
+            atr_threshold_usd = self.om._atr_profit_threshold_usd(pos.volume, symbol_info, atr)
+            # AGENT4-SPRINT: R-anchored trigger floor — the flat $15 threshold
+            # alone fires at ~0.09R and locks an entry-level stop before the
+            # move develops.
+            r_trigger_usd = (
+                BREAKEVEN_TRIGGER_R * initial_risk_usd if initial_risk_usd > 0.0 else 0.0
+            )
+            be_trigger_usd = max(BREAKEVEN_PROFIT_USD, r_trigger_usd)
+            if current_pnl_usd < be_trigger_usd and current_pnl_usd < atr_threshold_usd:
+                return False
+            breakeven_sl = state.breakeven_sl_price or self.om.calculate_breakeven_sl(
+                pos, symbol_info
+            )
         state.breakeven_sl_price = breakeven_sl
 
         # Already at/beyond breakeven on the broker side: nothing to send.
@@ -561,6 +634,20 @@ class ProtectionEngine:
                 old_sl=pos.sl,
             )
         return success
+
+    def _holding_seconds(self, ticket: int) -> float:
+        """Seconds since entry for this ticket (0.0 when unknown)."""
+        entry = None
+        try:
+            entry = self.om._entry_timestamps.get(ticket)
+        except Exception:
+            entry = None
+        if entry is None:
+            return 0.0
+        try:
+            return max(0.0, (datetime.now(UTC) - entry).total_seconds())
+        except Exception:
+            return 0.0
 
     def _resolve_contract_size(self, symbol_info: SymbolInfo | None) -> float:
         """Contract size with the project-wide 100.0 (gold) fallback."""
