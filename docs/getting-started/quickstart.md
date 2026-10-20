@@ -14,7 +14,7 @@ The shortest safe path. Every command below is part of the verified CLI surface
 git clone https://github.com/Opselon/NexusTradingForexBot.git
 cd NexusTradingForexBot
 python -m venv .venv && source .venv/bin/activate   # Windows: .\.venv\Scripts\Activate.ps1
-pip install -e .[dev]
+pip install -e ".[dev]"
 
 # 2. Verify your system
 nexus doctor          # read-only diagnostics, 19 categories + suggested fixes

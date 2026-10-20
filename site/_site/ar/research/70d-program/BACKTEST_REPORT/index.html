@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang='ar' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Backtest report: scope and interpretation · نكسوس سكالب إنجين</title>
+<meta name='description' content='Backtest report: scope and interpretation — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/BACKTEST_REPORT/'>
+<meta property='og:title' content='Backtest report: scope and interpretation'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/BACKTEST_REPORT/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta property='og:description' content='Backtest report: scope and interpretation — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
+<meta name='twitter:title' content='Backtest report: scope and interpretation'>
+<meta name='twitter:description' content='Backtest report: scope and interpretation — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/research/70d-program/BACKTEST_REPORT/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/BACKTEST_REPORT/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/BACKTEST_REPORT/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/BACKTEST_REPORT/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/BACKTEST_REPORT/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/research/70d-program/BACKTEST_REPORT/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Backtest report: scope and interpretation", "description": "Backtest report: scope and interpretation — Nexus Scalp Engine documentation", "inLanguage": "ar", "url": "https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/BACKTEST_REPORT/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>الانتقال إلى المحتوى</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='القائمة' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../../ar/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.17</span>
+  </div>
+  <div class='header-actions'>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='ابحث في التوثيق…' aria-label='ابحث في التوثيق…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='ابحث في التوثيق…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
+    <details class='theme-picker'>
+      <summary aria-label='المظهر' title='المظهر'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ فاتح</button>
+        <button type='button' data-theme-set='dark'>☾ داكن</button>
+        <button type='button' data-theme-set='system'>🖥 النظام</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='اللغة' title='اللغة'><span aria-hidden='true'>🌐</span><span class='lp-name'>العربية</span></summary>
+      <div class='lang-menu'><a href='../../../../research/70d-program/BACKTEST_REPORT/' lang='en' hreflang='en'>English</a> <a href='../../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <span class='lang-current' lang='ar'>العربية ✓</span> <a href='../../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>جيت هب ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../../ar/'>الرئيسية</a>
+<div class='nav-section'><a class='' href='../../../../ar/getting-started/'>البداية</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/getting-started/installation/'>التثبيت</a></li>
+<li><a class='' href='../../../../ar/getting-started/quickstart/'>البداية السريعة</a></li>
+<li><a class='' href='../../../../ar/getting-started/first-run/'>التشغيل الأول</a></li>
+<li><a class='' href='../../../../ar/getting-started/configuration/'>الإعداد</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../ar/project/'>المشروع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/project/vision/'>الرؤية والغاية</a></li>
+<li><a class='' href='../../../../ar/project/scope/'>النطاق</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/project/status/'>حالة المشروع</a></li>
+<li><a class='' href='../../../../ar/project/capabilities/'>مصفوفة القدرات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/project/roadmap/'>خارطة الطريق</a></li>
+<li><a class='' href='../../../../ar/project/milestones/'>المحطات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../ar/architecture/'>البنية</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/architecture/overview/'>نظرة عامة</a></li>
+<li><a class='' href='../../../../ar/architecture/system-map/'>خريطة النظام</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/data-flow/'>تدفق البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/runtime/'>وقت التشغيل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/research-stack/'>منظومة البحث</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/model-pipeline/'>خط أنابيب النموذج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/execution-pipeline/'>خط أنابيب التنفيذ</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/observability/'>قابلية المراقبة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/mcp-bridge/'>جسر MCP وتتبّع القرار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/database/'>قاعدة البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../../ar/research/'>البحث</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/research/methodology/'>المنهجية</a></li>
+<li><a class='' href='../../../../ar/research/datasets/'>مجموعات البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/research/backtesting/'>الاختبار الرجعي</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/research/out-of-sample/'>بوابة OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/research/replay/'>إعادة التشغيل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/research/counterfactuals/'>المضاد للواقع</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/research/validation/'>التحقق</a></li>
+<li><a class='' href='../../../../ar/research/reproducibility/'>قابلية إعادة الإنتاج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../ar/engineering/'>الهندسة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/engineering/quality/'>الجودة والاختبار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/engineering/ci/'>بنية CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/engineering/release-process/'>عملية الإصدار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/engineering/workflow-test-build-release/'>سير عمل الاختبار والبناء والإصدار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/engineering/security/'>الأمان</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../ar/guides/'>أدلة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/guides/cli/'>دليل CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/guides/api/'>مرجع API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/guides/troubleshooting/'>استكشاف الأخطاء</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/guides/common-workflows/'>سير العمل الشائعة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../ar/contributing/'>المساهمة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/contributing/contribution-guide/'>دليل المساهمة</a></li>
+<li><a class='' href='../../../../ar/contributing/documentation/'>سير عمل التوثيق</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/contributing/add-language/'>إضافة لغة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../ar/reference/'>مرجع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/reference/cli-reference/'>مرجع CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/reference/glossary/'>المسرد</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/reference/terminology/'>المصطلحات والترجمات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/reference/faq/'>الأسئلة الشائعة</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../ar/releases/'>الإصدارات</a></div>
+<ul class='nav-list'><li><a href='../../../../ar/releases/'>v9.0.17 &amp; التاريخ</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>المصدر الإنجليزي — الترجمة قيد الانتظار — <a href='../../../research/70d-program/BACKTEST_REPORT/'>الإنجليزية</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../../ar/research/'>البحث</a> / <a href='../../../../ar/research/70d-program/'>70d program</a> / <span class='crumb-current' aria-current='page'>BACKTEST REPORT</span></nav>
+<details class='toc-mobile'><summary>في هذه الصفحة</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#where-to-view'>Where to view</a></li><li class='toc-item toc-h2'><a href='#what-is-actually-tested'>What is actually tested</a></li><li class='toc-item toc-h2'><a href='#units-and-economics'>Units and economics</a></li><li class='toc-item toc-h2'><a href='#native-mt5-boundary'>Native MT5 boundary</a></li><li class='toc-item toc-h2'><a href='#local-verification'>Local verification</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='backtest-report-scope-and-interpretation'>Backtest report: scope and interpretation</h1>
+<h2 id='where-to-view'>Where to view</h2>
+<p>In the legacy Web dashboard, validate a Research candidate or open a Strategy Factory benchmark. The detailed report appears alongside the existing walk-forward, OOS, robustness and score gates. Download JSON saves the report locally; it does not send data to another service.</p>
+<p>New reports travel in <code>backtest.report</code>; Command Center validation responses expose <code>backtest_report</code>. Previously stored results without a report remain readable, but no detailed history is invented for them. Run validation again to produce a new report.</p>
+<h2 id='what-is-actually-tested'>What is actually tested</h2>
+<p><code>NSE_EMPIRICAL_REPLAY</code> revalues recorded, closed experience trades selected by the research pipeline. It does <strong>not</strong> execute an MQ5 Expert Advisor in MT5 Strategy Tester and is not proof of broker real-tick quality. Candidate filtering, temporal splits and independent validation gates remain in force. The report does not approve or promote strategies.</p>
+<p>With <code>BacktestEngine.run(use_split=True)</code>, report trades and metrics use only train plus validation observations, excluding purged/embargoed observations and OOS. Full-dataset diagnostic runs are labeled separately. Dataset source, supplied provenance, schema IDs, selected counts and configured split settings are retained.</p>
+<h2 id='units-and-economics'>Units and economics</h2>
+<ul>
+<li>R and USD are separate metric spaces. USD drawdown uses the closed-PnL USD curve, not the R curve.</li>
+<li>Recorded trade outcomes receive the configured additional spread/slippage stress. This is a model, not a reconstruction of broker fills. Added costs must never reduce the size of a losing USD trade.</li>
+<li>Economic assumptions describe the modeled account/friction/swap/sizing configuration. The separately labeled sized result is a counterfactual revaluation, not the observed account balance.</li>
+<li>Curves show cumulative outcomes; they are not mark-to-market equity curves. A recorded starting deposit must not be fabricated from a zero-based cumulative PnL curve.</li>
+<li>Profit factor with no losses and undefined statistics are unavailable rather than infinity. Report JSON must contain no NaN/Infinity values.</li>
+<li>Fields absent from the experience schema (including MT5 tick quality, native order records and floating equity drawdown) remain unavailable with explanations. Zero means a recorded or computed zero, not missing evidence.</li>
+<li>Trade-detail previews are capped and disclose total/returned counts. Summary metrics are calculated from all selected trades, not just the visible rows.</li>
+</ul>
+<h2 id='native-mt5-boundary'>Native MT5 boundary</h2>
+<p>The external <code>mt5-backtest</code> skill is a workflow reference for compilation, Strategy Tester configuration, real-tick mode, progress monitoring and native report inspection. It does not install MT5 or provide a tested NSE-to-MQ5 strategy translation. This change does not install or run its scripts, import broker credentials, terminate terminals or alter the RemoteMT5GatewayAdapter/client contract.</p>
+<p>Native real-tick certification still requires an available MT5 terminal, a compatible EA/strategy implementation, downloaded broker history, explicit tester configuration and inspection of the produced tester report/logs. Linux report/unit tests cannot certify that path.</p>
+<h2 id='local-verification'>Local verification</h2>
+<p>Invoke through the terminal from the repository root, using the project's test interpreter:</p>
+<div class='codeblock'><div class='codeblock-header'><span class='lang'>text</span><div class='actions'><button class='copy-btn' type='button' aria-label='نسخ' title='نسخ'>⧉</button></div></div><pre dir='ltr' class='code-ltr has-copy'><code>python -m pytest tests/unit/test_backtest_report.py tests/unit/test_backtest_report_integration.py tests/unit/test_factory_backtest_report_projection.py tests/unit/test_backtest_report_asset.py --override-ini addopts=&#x27;&#x27;
+node tests/js/test_backtest_report_ui.cjs</code></pre></div>
+<p>Test observations are explicitly synthetic calculation fixtures, never profitability evidence.</p></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>في هذه الصفحة</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#where-to-view'>Where to view</a></li><li class='toc-item toc-h2'><a href='#what-is-actually-tested'>What is actually tested</a></li><li class='toc-item toc-h2'><a href='#units-and-economics'>Units and economics</a></li><li class='toc-item toc-h2'><a href='#native-mt5-boundary'>Native MT5 boundary</a></li><li class='toc-item toc-h2'><a href='#local-verification'>Local verification</a></li></ul></aside></div>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/ar/research/70d-program/BACKTEST_REPORT.md'>تعديل هذه الصفحة على جيت هب</a> · الإصدار v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
+    <span><a href='../../../../ar/project/status/'>حالة المشروع</a> · <a href='../../../../ar/reference/faq/'>الأسئلة الشائعة</a> · <a href='../../../../ar/releases/'>كل الإصدارات</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../../ar/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='ابحث في التوثيق… — ⌘K' aria-label='ابحث في التوثيق…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>ابحث في التوثيق……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "ابحث في التوثيق…", "home": "الرئيسية", "repo": "جيت هب", "skip": "الانتقال إلى المحتوى", "language": "اللغة", "partial": "المصدر الإنجليزي — الترجمة قيد الانتظار", "english": "الإنجليزية", "version": "الإصدار", "next": "التالي", "prev": "السابق", "on_github": "تعديل هذه الصفحة على جيت هب", "menu": "القائمة", "whats_new": "الجديد", "all_releases": "كل الإصدارات", "get_started": "ابدأ", "view_architecture": "البنية", "view_roadmap": "خارطة الطريق", "close": "إغلاق", "theme": "المظهر", "theme_light": "فاتح", "theme_dark": "داكن", "theme_system": "النظام", "copy": "نسخ", "copied": "تم النسخ", "copy_error": "فشل النسخ", "no_results": "لا نتائج", "loading": "جارٍ التحميل…", "section": "القسم", "search_results": "نتائج البحث", "explore_docs": "استكشف التوثيق", "full_matrix": "المصفوفة الكاملة", "release_timeline": "الجدول الزمني للإصدارات", "hero_kicker": "منصة بحث وتنفيذ للتداول الكمي", "hero_title_a": "نكسوس", "hero_title_b": "سكالب إنجين", "hero_sub": "منصة سكالب قائمة على البحث، سداسية البنية ومدفوعة بالأحداث لميتاتريدر 5 — خصائص سببية، نماذج عميقة محوكم، محرك مخاطر ثابت، أدوات بحث حتمية وقابلية مراقبة جنائية في خط أنابيب واحد قابل للتدقيق.", "chip_released": "منشور", "chip_rev": "مراجعة", "chip_research": "بحث: 50D حي · 70D مرشح", "released_history": "التاريخ", "release_history_kicker": "سجل الإصدارات", "releases_intro": "كل إصدار مع أبرز ملامحه الحقيقية، مستمدة من بيانات إصدارات جيت هب وقت البناء. المصدر الوحيد للإصدار:", "nf404_title": "٤٠٤", "nf404_lead": "صفحة التوثيق هذه غير موجودة.", "nf404_home": "الرئيسية", "footer_prefix": "", "brand": "نكسوس", "brand_dim": "سكالب إنجين", "github_release": "الإصدار على جيت هب", "back_home": "العودة للرئيسية", "quickstart_label": "البداية السريعة", "status_label": "حالة المشروع", "faq_label": "الأسئلة الشائعة", "cap_engine": "محرك الخصائص السببية 50D", "cap_risk": "محرك المخاطر + قيود التنفيذ", "cap_oos": "Walk-Forward + بوابة OOS الصارمة", "cap_factory": "مصنع النماذج المبني على المصنوعات", "cap_70d": "عقد 70D (القاعدة+الأخبار+السيولة)", "cap_cf": "محرك المضاد للواقع (مشي NO_TRADE)", "pillar_evidence_t": "🧭 الأدلة قبل الادعاءات", "pillar_evidence_b": "المقاييس بلا أدلة تظهر n/a — وليس أصفارًا مزيفة أبدًا. النتائج السلبية تُنشر: مرشحنا البحثي 70D رفضه بوابة OOS لدينا.", "pillar_safety_t": "🔒 السلامة بالتصميم", "pillar_safety_b": "PAPER افتراضيًا · SHADOW بلا صلاحية أوامر · LIVE خلف تأكيد صريح · قيود مخاطر صارمة (HARD_MAX_LOTS، هامش ≤20%) مفروضة في مسار التنفيذ.", "pillar_research_t": "🔬 بحث حتمي", "pillar_research_b": "Walk-Forward مع التطهير والحجر، إعادة تشغيل مطابقة بت-بت، بيانات/نماذج ببصمة، مصدر لكل تشغيل — عقد خصائص واحد للحياة وإعادة التشغيل والتدريب.", "pillar_truth_t": "👁️ حقيقة وقت التشغيل", "pillar_truth_b": "قابلية مراقبة جنائية: سجلات مفصولة بالخطورة، ارتباط الحوادث، بوابة النشر. حقيقة الوسيط تتفوق على الحالة القديمة؛ البوابات مرجع، والإعدادات نية.", "capability": "القدرة", "status": "الحالة", "chip_certified": "مُصادق", "chip_implemented": "مُنفَّذ", "chip_experimental": "تجريبي", "chip_research_l": "بحثي", "cap_highlights": "أبرز القدرات", "callout_important": "مهم", "callout_note": "ملاحظة", "callout_warning": "تحذير", "how_it_works": "كيف يعمل نكسوس", "reading_time": "دقائق قراءة", "toc_title": "في هذه الصفحة", "toc_empty": "لا عناوين", "last_updated": "آخر تحديث", "share": "مشاركة", "edit_page": "تعديل هذه الصفحة", "related_title": "تابع الاستكشاف", "related_sub": "التالي في هذا القسم", "up_next": "التالي", "also_read": "اقرأ أيضًا", "prev_page": "السابق", "next_page": "التالي", "breadcrumb_home": "الرئيسية", "hero_eyebrow_project": "المشروع", "hero_eyebrow_architecture": "البنية", "hero_eyebrow_research": "البحث", "hero_eyebrow_engineering": "الهندسة", "hero_eyebrow_guides": "الأدلة", "hero_eyebrow_getting_started": "البداية", "hero_eyebrow_contributing": "المساهمة", "hero_eyebrow_reference": "المرجع", "hero_eyebrow_releases": "الإصدارات", "kpi_certified": "مُصادق", "kpi_experimental": "تجريبي", "kpi_coverage": "التغطية", "steps_title": "الخطوات", "copy_code": "نسخ", "diagram_title": "مخطط النظام", "diagram_sub": "عرض تفاعلي لخط الأنابيب", "stats_live": "العقد الحي", "callout_tip": "تلميح", "callout_info": "معلومة", "callout_success": "نجاح", "callout_danger": "خطر", "anchor_copy": "نسخ الرابط", "anchor_copied": "تم نسخ الرابط", "feedback_title": "هل كان مفيدًا؟", "feedback_yes": "نعم", "feedback_no": "لا", "feedback_thanks": "شكرًا لملاحظاتك", "prose_meta": "مقال", "word_count": "كلمات", "toc_toggle": "المحتويات", "hero_desc_project": "ما هو Nexus وما هو مُصادق مقابل تجريبي.", "hero_desc_architecture": "كيف بُني المحرك: الطبقات السداسية ومسار التيك إلى القرار.", "hero_desc_research": "كيف تتحول البيانات التاريخية إلى أدلة قابلة للتكذيب.", "hero_desc_engineering": "بوابات الجودة وبنية CI ووضعية الأمان.", "hero_desc_guides": "تشغيل المحرك يوميًا.", "hero_desc_getting_started": "تثبيت المحرك وتشغيله وضبطه.", "hero_desc_contributing": "العقد الهندسي وكيفية المساهمة.", "hero_desc_reference": "مرجع CLI والمسرد والإجابات الصادقة.", "hero_desc_releases": "كل إصدار مع أبرز ملامحه الحقيقية.", "on_this_page": "في هذه الصفحة"};
+window.NEXUS_LANG = "ar";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../../assets/docs-enhance.js' defer></script>
+<script src='../../../../assets/search.js' defer></script>
+
+</body>
+</html>

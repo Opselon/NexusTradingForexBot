@@ -47,6 +47,8 @@ ALLOWLIST_RE = re.compile(
     # glossary / product terms
     r"Walk-Forward|Walk-forward|Replay|OOS|CI|CLI|API|REST|SSE|WS|MT5|MetaTrader 5|"
     r"PAPER|SHADOW|LIVE|50D|70D|scalp_v\d|XAUUSD|SQLite|WAL|SBOM|SHA-256|ggplot|mplfinance|"
+    # code-fence language labels: identifiers shown in the block header, never prose
+    r"bash|sh|shell|console|powershell|ps1|yaml|yml|json|jsonc|toml|python|py|sql|text|diff|ini|env|http|mermaid|"
     r"LIVE CHART|Control Center|OB|FVG|M1|XAUUSD .* M1|"
     r"DATA|FEATURES|MODEL|STRATEGY / API|STRATEGY|RISK|EXECUTION|OBSERVABILITY|DATA . FEATURES|"
     r"CERTIFIED|IMPLEMENTED|EXPERIMENTAL|RESEARCH|PLANNED|BLOCKED|"

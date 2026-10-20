@@ -98,7 +98,26 @@
     "pulse_last_sync": "Última sincronización",
     "cta_title": "¿Listo para evaluar con datos reales — sin riesgo?",
     "cta_desc": "Empieza en SHADOW. Mismas funciones, mismas puertas, misma línea — cero autoridad de órdenes.",
-    "cta_install": "Instalación"
+    "cta_install": "Instalación",
+    "nav_pipe": "Pipeline",
+    "nav_why": "Por qué Nexus",
+    "nav_modes": "Modos",
+    "nav_research": "Investigación",
+    "nav_market": "Gráfico",
+    "nav_arch": "Arquitectura",
+    "nav_console": "Consola",
+    "nav_pulse": "Pulso",
+    "status.locales": "Idiomas",
+    "fresh_title": "Nuevo en main",
+    "fresh_badge": "SIN PUBLICAR",
+    "fresh_mcp_t": "Transporte MCP de solo lectura",
+    "fresh_mcp_b": "Las herramientas de trading se rechazan antes de cualquier E/S de red; inactivo por defecto (mt5.mcp).",
+    "fresh_trace_t": "Emisión de trazas redactadas",
+    "fresh_trace_b": "Cada llamada a MT5 emite una traza estructurada; los secretos se redactan en el límite.",
+    "fresh_replay_t": "Puerta de identidad del replay",
+    "fresh_replay_b": "El replay falla en cerrado cuando la huella del dataset no coincide.",
+    "fresh_mem_t": "Memoria de ejecución acotada",
+    "fresh_mem_b": "El libro de paper y el anillo de velas cerradas tienen tope; las sesiones shadow largas quedan acotadas."
   },
   "ui": {
     "search": "Buscar…",
@@ -230,7 +249,8 @@
     "hero_desc_getting_started": "Instala, ejecuta y configura el motor.",
     "hero_desc_contributing": "El contrato de ingeniería y cómo contribuir.",
     "hero_desc_reference": "Referencia CLI, glosario y respuestas honestas.",
-    "hero_desc_releases": "Cada versión con sus novedades reales."
+    "hero_desc_releases": "Cada versión con sus novedades reales.",
+    "on_this_page": "En esta página"
   },
   "nav": {
     "getting-started": "Inicio",
@@ -288,7 +308,8 @@
     "glossary": "Glosario",
     "terminology": "Terminología y traducciones",
     "faq": "FAQ",
-    "docs-hub": "Centro de documentación"
+    "docs-hub": "Centro de documentación",
+    "mcp-bridge": "Puente MCP y traza"
   },
   "sections": {
     "getting-started": "Instala, ejecuta y configura el motor. PAPER es el modo por defecto; SHADOW da datos en vivo sin autoridad de órdenes.",

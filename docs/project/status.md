@@ -25,6 +25,7 @@ lang: en
 | 70D contract (`scalp_v3`) | Canonical research SSoT; **candidate-only** | `features/schema_contract.py`; docs/70D_* |
 | 70D evidence to date | Real-data walk-forward + shadow benchmarks **negative / inconclusive** (OOS NOT_ELIGIBLE) | docs/TASK-05/TASK-09 final reports |
 | Champion governance | RESTORED_CANDIDATE state, operator decision pending; nothing auto-promoted | governance/ + MODEL_GOVERNANCE v2 |
+| MT5 MCP transport | **Read-only** adapter, **off by default** (unreleased on `main` after v9.0.17) | `adapters/mt5/mcp_adapter.py` + MCP contract suite |
 | CI | ruff · mypy · pytest (critical suite ~779 tests) · CodeQL · Trivy · OSV · JS tests | .github/workflows |
 | Docs platform | This site + translation tooling (partial translations marked honestly) | scripts/docs/check_docs.py |
 

@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang='de' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>CI/CD Telegram Operations — NexusTradingForexBot · Nexus Scalp Engine</title>
+<meta name='description' content='CI/CD Telegram Operations — NexusTradingForexBot — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/de/engineering/ops/ci-telegram-operations/'>
+<meta property='og:title' content='CI/CD Telegram Operations — NexusTradingForexBot'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/de/engineering/ops/ci-telegram-operations/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta property='og:description' content='CI/CD Telegram Operations — NexusTradingForexBot — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
+<meta name='twitter:title' content='CI/CD Telegram Operations — NexusTradingForexBot'>
+<meta name='twitter:description' content='CI/CD Telegram Operations — NexusTradingForexBot — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/engineering/ops/ci-telegram-operations/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/engineering/ops/ci-telegram-operations/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/engineering/ops/ci-telegram-operations/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/engineering/ops/ci-telegram-operations/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/engineering/ops/ci-telegram-operations/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/engineering/ops/ci-telegram-operations/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "CI/CD Telegram Operations — NexusTradingForexBot", "description": "CI/CD Telegram Operations — NexusTradingForexBot — Nexus Scalp Engine documentation", "inLanguage": "de", "url": "https://opselon.github.io/NexusTradingForexBot/de/engineering/ops/ci-telegram-operations/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>Zum Inhalt springen</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menü' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../../de/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.17</span>
+  </div>
+  <div class='header-actions'>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='Doku durchsuchen…' aria-label='Doku durchsuchen…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='Doku durchsuchen…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
+    <details class='theme-picker'>
+      <summary aria-label='Design' title='Design'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ Hell</button>
+        <button type='button' data-theme-set='dark'>☾ Dunkel</button>
+        <button type='button' data-theme-set='system'>🖥 System</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='Sprache' title='Sprache'><span aria-hidden='true'>🌐</span><span class='lp-name'>Deutsch</span></summary>
+      <div class='lang-menu'><a href='../../../../engineering/ops/ci-telegram-operations/' lang='en' hreflang='en'>English</a> <a href='../../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <span class='lang-current' lang='de'>Deutsch ✓</span></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../../de/'>Start</a>
+<div class='nav-section'><a class='' href='../../../../de/getting-started/'>Einstieg</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/getting-started/installation/'>Installation</a></li>
+<li><a class='' href='../../../../de/getting-started/quickstart/'>Quickstart</a></li>
+<li><a class='' href='../../../../de/getting-started/first-run/'>Erster Lauf</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/getting-started/configuration/'>Konfiguration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../de/project/'>Projekt</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/project/vision/'>Vision &amp; Warum</a></li>
+<li><a class='' href='../../../../de/project/scope/'>Umfang</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/project/status/'>Projektstatus</a></li>
+<li><a class='' href='../../../../de/project/capabilities/'>Fähigkeitsmatrix</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/project/roadmap/'>Roadmap</a></li>
+<li><a class='' href='../../../../de/project/milestones/'>Meilensteine</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../de/architecture/'>Architektur</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/architecture/overview/'>Überblick</a></li>
+<li><a class='' href='../../../../de/architecture/system-map/'>Systemkarte</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/data-flow/'>Datenfluss</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/runtime/'>Laufzeit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/research-stack/'>Forschungsstack</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/model-pipeline/'>Modellpipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/execution-pipeline/'>Ausführungspipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/observability/'>Observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/mcp-bridge/'>MCP-Brücke &amp; Trace</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/database/'>Datenbank</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../de/research/'>Forschung</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/research/methodology/'>Methodik</a></li>
+<li><a class='' href='../../../../de/research/datasets/'>Datensätze</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/research/backtesting/'>Backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/research/out-of-sample/'>OOS-Gate</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/research/replay/'>Replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/research/counterfactuals/'>Kontrafaktische</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/research/validation/'>Validierung</a></li>
+<li><a class='' href='../../../../de/research/reproducibility/'>Reproduzierbarkeit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../../de/engineering/'>Engineering</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/engineering/quality/'>Qualität &amp; Tests</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/engineering/ci/'>CI-Architektur</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/engineering/release-process/'>Release-Prozess</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/engineering/workflow-test-build-release/'>Test-, Build- und Release-Workflow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/engineering/security/'>Sicherheit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../de/guides/'>Anleitungen</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/guides/cli/'>CLI-Anleitung</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/guides/api/'>API-Referenz</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/guides/troubleshooting/'>Fehlerbehebung</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/guides/common-workflows/'>Typische Workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../de/contributing/'>Mitwirken</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/contributing/contribution-guide/'>Beitragsleitfaden</a></li>
+<li><a class='' href='../../../../de/contributing/documentation/'>Dokumentations-Workflow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/contributing/add-language/'>Sprache hinzufügen</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../de/reference/'>Referenz</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/reference/cli-reference/'>CLI-Referenz</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/reference/glossary/'>Glossar</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/reference/terminology/'>Terminologie &amp; Übersetzungen</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/reference/faq/'>FAQ</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../de/releases/'>Releases</a></div>
+<ul class='nav-list'><li><a href='../../../../de/releases/'>v9.0.17 &amp; Historie</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Englische Quelle — Übersetzung ausstehend — <a href='../../../engineering/ops/ci-telegram-operations/'>Englisch</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../../de/engineering/'>Engineering</a> / <a href='../../../../de/engineering/ops/'>ops</a> / <span class='crumb-current' aria-current='page'>ci telegram operations</span></nav>
+<details class='toc-mobile'><summary>Auf dieser Seite</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-architecture'>1. Architecture</a></li><li class='toc-item toc-h2'><a href='#1a-final-ai-summary-lane-bug-300--the-very-end-of-every-pipe'>1a. FINAL AI summary lane (BUG-300) — the very end of every pipeline</a></li><li class='toc-item toc-h2'><a href='#2-configuration-chat-id'>2. Configuration (chat id)</a></li><li class='toc-item toc-h2'><a href='#3-events-covered'>3. Events covered</a></li><li class='toc-item toc-h2'><a href='#4-message-format-html-design-system'>4. Message format (HTML design system)</a></li><li class='toc-item toc-h2'><a href='#5-file--artifact-handling'>5. File / artifact handling</a></li><li class='toc-item toc-h2'><a href='#6-retry--timeout-policy'>6. Retry / timeout policy</a></li><li class='toc-item toc-h2'><a href='#7-secret-redaction-policy'>7. Secret-redaction policy</a></li><li class='toc-item toc-h2'><a href='#8-failure-isolation'>8. Failure isolation</a></li><li class='toc-item toc-h2'><a href='#9-testing'>9. Testing</a></li><li class='toc-item toc-h2'><a href='#10-operations-notes'>10. Operations notes</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='cicd-telegram-operations--nexustradingforexbot'>CI/CD Telegram Operations — NexusTradingForexBot</h1>
+<p>Enterprise-grade CI/CD observability: every important CI/release event is reported to Telegram as structured, HTML-formatted, deduplicated, rate-limited, retryable, secret-safe notifications — with file/artifact attachments when something fails.</p>
+<h2 id='1-architecture'>1. Architecture</h2>
+<div class='codeblock'><div class='codeblock-header'><span class='lang'>text</span><div class='actions'><button class='copy-btn' type='button' aria-label='Kopieren' title='Kopieren'>⧉</button></div></div><pre dir='ltr' class='code-ltr has-copy'><code>GitHub Actions  ── ci-results/ (make_ci_results.py)
+GitHub events   ── GITHUB_* env
+        │
+        ▼
+scripts/ci/telegram_notify.py   (workflow entry point, exit 0 always)
+        │
+        ▼
+src/nexus_scalp/observability/ci_telegram_reporter.py   (orchestrator)
+        │  ├─ reads ci-results/ (run-info/*.json, junit.xml, coverage.xml)
+        │  ├─ resolves chat id (TELEGRAM_CHAT_ID &gt; NEXUS_TELEGRAM_ADMIN_ID)
+        │  ├─ formats via telegram_html.py (central HTML renderer)
+        │  ├─ redacts secrets (telegram_transport.redact_secrets)
+        │  └─ splits long messages (split_html_message, HTML-valid)
+        ├─ TelegramNotifier        (existing: queue, retry, 429, health)
+        └─ TelegramDocumentTransporter (NEW: sendDocument upload + captions)</code></pre></div>
+<p>Separation of concerns (spec §20):</p>
+<ul>
+<li><strong>Event generation</strong> — workflow steps call <code>telegram_notify.py &lt;cmd&gt;</code></li>
+<li><strong>Normalization</strong> — reporter reads real ci-results data (never guessed)</li>
+<li><strong>Policy</strong> — severity gating, dedup window, cooldown (existing notifier)</li>
+<li><strong>Redaction</strong> — <code>redact_secrets()</code> masks known secret shapes before text</li>
+</ul>
+<p>or file content reaches Telegram</p>
+<ul>
+<li><strong>HTML rendering</strong> — <code>telegram_html.py</code> (only place that builds markup)</li>
+<li><strong>Splitting</strong> — <code>split_html_message()</code> (tag-aware, logical groups)</li>
+<li><strong>Transport</strong> — notifier (text) + document transporter (files)</li>
+<li><strong>Retry/timeout</strong> — bounded, exponential backoff, 429 Retry-After</li>
+<li><strong>Audit</strong> — structured logs + health_state() on the notifier</li>
+</ul>
+<h2 id='1a-final-ai-summary-lane-bug-300--the-very-end-of-every-pipe'>1a. FINAL AI summary lane (BUG-300) — the very end of every pipeline</h2>
+<p>The dedicated AI final-summary workflow has been removed. <code>PR Evidence Report</code> remains the canonical post-run evidence surface. AI triage remains available to explicitly invoked CI tooling, but it is no longer an automatic workflow fan-out or a required final-summary stage.</p>
+<p>The canonical evidence flow is: (1) the reporting lane collects WHOLE-run evidence — run conclusion, job/step verdicts, junit + coverage from the ci-results artifact, PR diff stats + mergeable + review decision + recent comments, touched lanes via classify_changes; (2) <code>telegram_notify.py ai-triage</code> (analyzed in src/nexus_scalp/observability/ci_ai_triage.py) renders the verdict block; (3) it is delivered THREE ways: Telegram message, the run's GitHub step summary, and an automatic PR review comment (advisory, clearly labeled not-a-merge-authorization). <code>ci-results/run-info/ai-analysis.json</code> rides the artifact for audit.</p>
+<p>The pro prompt charter (see <code>_SYSTEM</code>/<code>PROMPTS</code> in ci_ai_triage.py) forces a six-line analyst report on every event: WHY (failed or succeeded), EVIDENCE, VERDICT (GOOD-TO-MERGE / MERGE-AFTER-FIX / DO-NOT-MERGE / INVESTIGATE), RISK (is it a good idea: safety boundaries, tests, registries), CHECK (ordered next actions), COMMENT (paste-ready for the author), CONFIDENCE. The model is told the repo taxonomy (lock drift, ruff-format blocking, stale-base phantom reds, release_auth_gate, review + Validate-documentation requirements, fail-closed money paths).</p>
+<p>Flow (src/nexus_scalp/observability/ci_ai_triage.py):</p>
+<ol>
+<li>CONFIG GATE — <code>AI_HOST</code>+<code>AI_KEY</code> secrets must be present (names in</li>
+</ol>
+<p><code>docs/engineering/ops/ci-secrets.md</code>), else provenance <code>AI_UNCONFIGURED</code> + rules fallback.</p>
+<ol>
+<li>REACHABILITY GATE (the timer) — TCP connect phase capped 2 s</li>
+</ol>
+<p>(<code>AI_PROBE_CONNECT_SEC</code>), full <code>/models</code> response budget 4 s (<code>AI_PROBE_TIMEOUT_SEC</code>); slower-than-2.5 s = <code>SLOW_OK</code> (one attempt, then circuit holds for the process). Verdict cached 120 s per host so N notifies pay the probe once. Down/timeout =&gt; <code>AI_UNREACHABLE</code> + fallback.</p>
+<ol>
+<li>COMPLETION — per-kind pro prompts (<code>PROMPTS</code> dict) under a strict analyst</li>
+</ol>
+<p>system charter; host model defaults <code>coding</code>, override <code>AI_MODEL</code>. Failure/empty =&gt; <code>AI_CHAT_FAILED</code> + fallback.</p>
+<ol>
+<li>FALLBACK RULES — deterministic pattern table (lock drift, ruff-format</li>
+</ol>
+<p>blocking, CRLF noise, rate-limit, stale-base conflict, CodeQL class, auth bootstrap, BUG-298 provisioning, runner timeout/OOM, network flake). Always delivered; silence only as <code>AI_RULES_EMPTY</code> (visible on channel).</p>
+<p>Kinds: <code>ci-failure</code> (ci/tests-os/js on failure), <code>release-failure</code> (release gates + nightly-qa), <code>security</code> (Trivy lane), <code>pr-analysis</code> (every PR: <code>scripts/ci/pr_evidence.py</code> bundle = changed files/lanes/commits — this is the automatic new-commit PR summary), <code>push-summary</code> (push events).</p>
+<p>Security posture: outbound evidence passes <code>redact_secrets</code> + literal scrub of AI_KEY/bot token/GITHUB_TOKEN before the host sees it; model output is HTML-escaped (untrusted content); advisory-only — the step is <code>continue-on-error</code> + <code>|| true</code>, CI verdicts never depend on the AI.</p>
+<h2 id='2-configuration-chat-id'>2. Configuration (chat id)</h2>
+<p>Required secrets (repository scope: <strong>Settings &gt; Secrets and variables &gt; Actions &gt; Secrets</strong>):</p>
+<div class='table-wrap'><table>
+<thead><tr><th>Secret</th><th>Purpose</th></tr></thead><tbody>
+<tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td>The bot token (from @BotFather).</td></tr>
+<tr><td><code>TELEGRAM_CHAT_ID</code></td><td>Numeric destination chat id (see below).</td></tr>
+</tbody></table></div>
+<p>How to obtain the chat id:</p>
+<ol>
+<li>Message your bot once (<code>/start</code>).</li>
+<li><code>curl "https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates"</code> and read</li>
+</ol>
+<p><code>result[0].message.chat.id</code> in the response.</p>
+<ol>
+<li>Add that number as <code>TELEGRAM_CHAT_ID</code>.</li>
+</ol>
+<p>Resolution order in the reporter: explicit <code>--chat-id</code> &gt; <code>TELEGRAM_CHAT_ID</code> env &gt; <code>USER_ID</code> env &gt; <code>NEXUS_TELEGRAM_ADMIN_ID</code> env. <code>USER_ID</code> is the existing repository secret (numeric Telegram destination) and serves as the fallback destination when <code>TELEGRAM_CHAT_ID</code> is not configured. When none is set, notifications are skipped (reported as <code>TELEGRAM_CONFIG_ERROR</code>) and CI never fails.</p>
+<p>Optional richer routing (add only when needed):</p>
+<ul>
+<li><code>TELEGRAM_ALERT_CHAT_ID</code> — alerts/incidents</li>
+<li><code>TELEGRAM_RELEASE_CHAT_ID</code> — release-only feed</li>
+</ul>
+<h2 id='3-events-covered'>3. Events covered</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Event</th><th>Command</th><th>Message</th></tr></thead><tbody>
+<tr><td>Workflow started</td><td><code>run-started</code></td><td><code>CI RUNNING</code> + context + correlation</td></tr>
+<tr><td>Workflow finished</td><td><code>run-finished</code></td><td><code>CI SUCCESS</code> / <code>CI FAILED</code> / <code>CI CANCELLED</code> + tests + coverage + failures + Next action; on failure uploads diagnostics</td></tr>
+<tr><td>Tests</td><td><code>test-summary</code></td><td><code>TEST RESULTS</code> + totals + failed names + coverage</td></tr>
+<tr><td>Artifacts</td><td><code>artifacts</code></td><td><code>ARTIFACTS</code> + file list + verification + retention</td></tr>
+<tr><td>Release started</td><td><code>release-started --tag</code></td><td><code>RELEASE STARTED</code> + tag + phase</td></tr>
+<tr><td>Release gates</td><td><code>test-summary</code> (gates job)</td><td><code>TEST RESULTS</code> + totals + coverage</td></tr>
+<tr><td>Release success</td><td><code>release-success --tag</code></td><td><code>RELEASE PUBLISHED</code> + gates + tests + coverage + artifacts + verification</td></tr>
+<tr><td>Release failure</td><td><code>release-failed</code></td><td><code>RELEASE FAILED</code> + phase/job/error class/retries/recovery/Next + diagnostics</td></tr>
+<tr><td>Post-release verified</td><td>(verify step in release job)</td><td>API re-fetch: tag match + assets present</td></tr>
+<tr><td>Push</td><td><code>push</code></td><td><code>PUSH</code> + author/branch/commits/latest/changes/CI</td></tr>
+<tr><td>PR</td><td><code>pr --action</code></td><td><code>PR OPENED/UPDATED/MERGED/CLOSED</code> + title/author/changes/CI</td></tr>
+<tr><td>Security scan</td><td><code>security --scan --status</code></td><td><code>SECURITY PASSED/FAILED</code> + scan name + context</td></tr>
+</tbody></table></div>
+<h2 id='4-message-format-html-design-system'>4. Message format (HTML design system)</h2>
+<ul>
+<li>Only Telegram-supported HTML tags: <code>&lt;b&gt; &lt;i&gt; &lt;u&gt; &lt;s&gt; &lt;a href&gt; &lt;code&gt; &lt;pre&gt; &lt;blockquote&gt;</code></li>
+<li>Every dynamic value passes <code>esc()</code> (HTML-escaped) — dynamic strings can</li>
+</ul>
+<p>never break the markup</p>
+<ul>
+<li>Vocabulary: ✅ SUCCESS · ❌ FAILURE · ⚠️ WARNING · 🛈 INFO · 🔄 RUNNING ·</li>
+</ul>
+<p>🚀 RELEASE · 🔁 RETRY · ⏱️ TIMEOUT · 📦 ARTIFACT · 🧪 TEST · 🛡️ SECURITY</p>
+<ul>
+<li>Every message carries the correlation id <code>NEXUS-CI-&lt;run&gt;-&lt;sha4&gt;</code> and</li>
+</ul>
+<p>context (repository/workflow/job/branch/commit/run)</p>
+<p>Long reports are split by <code>split_html_message()</code> into logical chunks (SUMMARY → FAILED TESTS → ERROR DETAILS → ARTIFACTS → LOGS), each chunk standalone-valid HTML (tags never split; Persian/Unicode preserved).</p>
+<h2 id='5-file--artifact-handling'>5. File / artifact handling</h2>
+<p>On failure the reporter:</p>
+<ol>
+<li>builds <code>nexus-ci-diagnostic.zip</code> (summary.json, failed-tests.txt,</li>
+</ol>
+<p>junit.xml, coverage.xml, pytest.txt, manifest, SHA256SUMS; all redacted)</p>
+<ol>
+<li>uploads it via <code>sendDocument</code> with a caption (file/job/run/commit/reason)</li>
+<li>additionally uploads junit.xml, coverage.xml, summary.md individually</li>
+</ol>
+<p>File size cap: 20 MB (Telegram hard cap 50 MB). Missing/oversized files return structured failures, never exceptions.</p>
+<h2 id='6-retry--timeout-policy'>6. Retry / timeout policy</h2>
+<ul>
+<li>Text sends: existing notifier — max 3 attempts, exponential backoff</li>
+</ul>
+<p>(base 2s), 429 honors Retry-After, 5xx retried, 4xx non-retryable</p>
+<ul>
+<li>Document uploads: transport — max 2 retries, backoff 2s * 2^attempt,</li>
+</ul>
+<p>Retry-After honored, 5xx/429 retried, auth/config not retried</p>
+<ul>
+<li>Timeouts: HTTP timeout 30s (uploads) / 4s (text); on timeout the send is</li>
+</ul>
+<p>retried per the policy above</p>
+<ul>
+<li>Aggregation: no per-microscopic-retry messages — only final outcomes</li>
+</ul>
+<p>surface (success/failure/exhausted)</p>
+<h2 id='7-secret-redaction-policy'>7. Secret-redaction policy</h2>
+<p><code>redact_secrets()</code> masks before anything reaches Telegram:</p>
+<ul>
+<li>Telegram bot tokens (<code>\d{8,10}:[A-Za-z0-9_-]{25,}</code>)</li>
+<li>GitHub tokens (<code>ghp_…</code>, <code>github_pat_…</code>)</li>
+<li>OpenAI-style <code>sk-…</code>, Slack <code>xoxb-…</code>, AWS <code>AKIA…</code></li>
+<li>PEM private key markers (BEGIN/END)</li>
+<li>generic <code>key=value</code> shapes for password/secret/token/api_key/auth</li>
+</ul>
+<p>Applied to: all message text, captions, and file contents included in the diagnostic bundle. GitHub's own masking remains a second layer; we never rely on it alone.</p>
+<h2 id='8-failure-isolation'>8. Failure isolation</h2>
+<ul>
+<li><code>telegram_notify.py</code> always exits 0 — CI never fails on Telegram errors</li>
+<li>Missing config → <code>TELEGRAM_CONFIG_ERROR</code> result, no exception</li>
+<li>Transport failures → structured <code>{ok, category, retryable}</code> results</li>
+<li>The notifier's <code>health_state()</code> reports READY/DEGRADED/STOPPED</li>
+</ul>
+<h2 id='9-testing'>9. Testing</h2>
+<p><code>tests/unit/test_telegram_html.py</code> (36 tests) covers escaping, splitting (tag-safe, oversized lines, Persian), redaction, correlation ids, and every formatter. <code>tests/unit/test_ci_telegram_reporter.py</code> (19 tests) covers real-ci-results reads (junit wrapper, coverage), chat-id resolution, dispatch (success/failure/cancelled), diagnostic bundle + redacted content, transport isolation (missing/oversized files), and multipart construction.</p>
+<h2 id='10-operations-notes'>10. Operations notes</h2>
+<ul>
+<li>Normal pushes: quality job sends <code>run-started</code> + <code>run-finished</code> +</li>
+</ul>
+<p><code>artifacts</code> (3 messages per run max — bounded, deduplicated)</p>
+<ul>
+<li>Heavy CI (ci-tests/dispatch): per-arm and aggregate messages follow the</li>
+</ul>
+<p>same paths via the aggregate job's ci-results tree</p>
+<ul>
+<li>Releases: <code>release-started</code> / <code>release-success</code> / <code>release-failed</code> from</li>
+</ul>
+<p>release.yml steps</p>
+<ul>
+<li>Diagnostics uploads happen ONLY on failure (or release failure) — success</li>
+</ul>
+<p>never floods the feed with files</p></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>Auf dieser Seite</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-architecture'>1. Architecture</a></li><li class='toc-item toc-h2'><a href='#1a-final-ai-summary-lane-bug-300--the-very-end-of-every-pipe'>1a. FINAL AI summary lane (BUG-300) — the very end of every pipeline</a></li><li class='toc-item toc-h2'><a href='#2-configuration-chat-id'>2. Configuration (chat id)</a></li><li class='toc-item toc-h2'><a href='#3-events-covered'>3. Events covered</a></li><li class='toc-item toc-h2'><a href='#4-message-format-html-design-system'>4. Message format (HTML design system)</a></li><li class='toc-item toc-h2'><a href='#5-file--artifact-handling'>5. File / artifact handling</a></li><li class='toc-item toc-h2'><a href='#6-retry--timeout-policy'>6. Retry / timeout policy</a></li><li class='toc-item toc-h2'><a href='#7-secret-redaction-policy'>7. Secret-redaction policy</a></li><li class='toc-item toc-h2'><a href='#8-failure-isolation'>8. Failure isolation</a></li><li class='toc-item toc-h2'><a href='#9-testing'>9. Testing</a></li><li class='toc-item toc-h2'><a href='#10-operations-notes'>10. Operations notes</a></li></ul></aside></div>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/de/engineering/ops/ci-telegram-operations.md'>Diese Seite auf GitHub bearbeiten</a> · Version v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
+    <span><a href='../../../../de/project/status/'>Projektstatus</a> · <a href='../../../../de/reference/faq/'>FAQ</a> · <a href='../../../../de/releases/'>Alle Releases</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../../de/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='Doku durchsuchen… — ⌘K' aria-label='Doku durchsuchen…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>Doku durchsuchen……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "Doku durchsuchen…", "home": "Start", "repo": "GitHub", "skip": "Zum Inhalt springen", "language": "Sprache", "partial": "Englische Quelle — Übersetzung ausstehend", "english": "Englisch", "version": "Version", "next": "Weiter", "prev": "Zurück", "on_github": "Diese Seite auf GitHub bearbeiten", "menu": "Menü", "whats_new": "Neuigkeiten", "all_releases": "Alle Releases", "get_started": "Erste Schritte", "view_architecture": "Architektur", "view_roadmap": "Roadmap", "close": "Schließen", "theme": "Design", "theme_light": "Hell", "theme_dark": "Dunkel", "theme_system": "System", "copy": "Kopieren", "copied": "Kopiert", "copy_error": "Kopieren fehlgeschlagen", "no_results": "Keine Ergebnisse", "loading": "Wird geladen…", "section": "Bereich", "search_results": "Suchergebnisse", "explore_docs": "Die Dokumentation erkunden", "full_matrix": "Vollständige Matrix", "release_timeline": "Release-Zeitleiste", "hero_kicker": "QUANTITATIVE HANDELSFORSCHUNGS- UND EXECUTION-PLATTFORM", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Eine forschungsgetriebene, hexagonale, ereignisgesteuerte Scalping-Plattform für MetaTrader 5 — kausale Features, governete Deep-Learning-Modelle, ein invariantes Risikosystem, deterministische Forschungswerkzeuge und forensische Observability in einer prüfbaren Pipeline.", "chip_released": "veröffentlicht", "chip_rev": "Rev", "chip_research": "Forschung: 50D live · 70D Kandidat", "released_history": "Historie", "release_history_kicker": "RELEASE-HISTORIE", "releases_intro": "Jedes Release mit seinen echten Highlights, abgeleitet aus GitHub-Release-Metadaten zur Build-Zeit. Einzelquelle für Versionen:", "nf404_title": "404", "nf404_lead": "Diese Dokumentationsseite existiert nicht.", "nf404_home": "Start", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Release auf GitHub", "back_home": "Zurück zur Startseite", "quickstart_label": "Quickstart", "status_label": "Projektstatus", "faq_label": "FAQ", "cap_engine": "Kausale 50D-Feature-Engine", "cap_risk": "Risikomotor + Ausführungs-Klemmen", "cap_oos": "Walk-Forward + hartes OOS-Gate", "cap_factory": "Artefakt-zentrierte Modellfabrik", "cap_70d": "70D-Vertrag (Basis+News+Liquidität)", "cap_cf": "Kontrafaktische Engine (NO_TRADE-Wanderung)", "pillar_evidence_t": "🧭 Evidenz vor Behauptungen", "pillar_evidence_b": "Metriken ohne Evidenz zeigen n/a — nie falsche Nullen. Negative Ergebnisse werden veröffentlicht: Unser 70D-Forschungskandidat wurde vom eigenen OOS-Gate abgelehnt.", "pillar_safety_t": "🔒 Sicherheit durch Konstruktion", "pillar_safety_b": "PAPER als Standard · SHADOW ohne Order-Autorität · LIVE hinter expliziter Bestätigung · harte Risikoklemmen (HARD_MAX_LOTS, Marge ≤20%) im Ausführungspfad erzwungen.", "pillar_research_t": "🔬 Deterministische Forschung", "pillar_research_b": "Gepurgtes + Embargo-Walk-Forward, bit-exaktes Replay, fingerprintierte Datensätze/Modelle, Provenienz bei jedem Lauf — derselbe Feature-Vertrag für Live, Replay und Training.", "pillar_truth_t": "👁️ Laufzeit-Wahrheit", "pillar_truth_b": "Forensische Observability: schweregetrennte Logs, Incident-Korrelation, Deploy-Gate. Broker-Wahrheit schlägt veralteten Zustand; Gates sind Autoritäten, Settings sind Absicht.", "capability": "Fähigkeit", "status": "Status", "chip_certified": "ZERTIFIZIERT", "chip_implemented": "IMPLEMENTIERT", "chip_experimental": "EXPERIMENTELL", "chip_research_l": "FORSCHUNG", "cap_highlights": "Fähigkeiten im Fokus", "callout_important": "WICHTIG", "callout_note": "HINWEIS", "callout_warning": "WARNUNG", "how_it_works": "So funktioniert Nexus", "reading_time": "Min. Lesezeit", "toc_title": "Auf dieser Seite", "toc_empty": "Keine Überschriften", "last_updated": "Zuletzt aktualisiert", "share": "Teilen", "edit_page": "Seite bearbeiten", "related_title": "Weiter erkunden", "related_sub": "Weiter in diesem Abschnitt", "up_next": "Weiter", "also_read": "Auch lesen", "prev_page": "Zurück", "next_page": "Weiter", "breadcrumb_home": "Start", "hero_eyebrow_project": "Projekt", "hero_eyebrow_architecture": "Architektur", "hero_eyebrow_research": "Forschung", "hero_eyebrow_engineering": "Engineering", "hero_eyebrow_guides": "Anleitungen", "hero_eyebrow_getting_started": "Einstieg", "hero_eyebrow_contributing": "Mitwirken", "hero_eyebrow_reference": "Referenz", "hero_eyebrow_releases": "Releases", "kpi_certified": "Zertifiziert", "kpi_experimental": "Experimentell", "kpi_coverage": "Abdeckung", "steps_title": "Schritte", "copy_code": "Kopieren", "diagram_title": "Systemdiagramm", "diagram_sub": "Interaktive Pipeline-Ansicht", "stats_live": "Live-Vertrag", "callout_tip": "TIPP", "callout_info": "INFO", "callout_success": "ERFOLG", "callout_danger": "GEFAHR", "anchor_copy": "Link kopieren", "anchor_copied": "Link kopiert", "feedback_title": "War das hilfreich?", "feedback_yes": "Ja", "feedback_no": "Nein", "feedback_thanks": "Danke für dein Feedback", "prose_meta": "Artikel", "word_count": "Wörter", "toc_toggle": "Inhalt", "hero_desc_project": "Was Nexus ist, was zertifiziert vs. experimentell ist.", "hero_desc_architecture": "Wie die Engine gebaut ist: hexagonale Schichten.", "hero_desc_research": "Wie historische Daten zu falsifizierbarer Evidenz werden.", "hero_desc_engineering": "Qualitäts-Gates, CI-Architektur und Sicherheitspostur.", "hero_desc_guides": "Die Engine im Alltag bedienen.", "hero_desc_getting_started": "Engine installieren und konfigurieren.", "hero_desc_contributing": "Der Ingenieursvertrag und wie man beiträgt.", "hero_desc_reference": "CLI-Referenz, Glossar und ehrliche Antworten.", "hero_desc_releases": "Jedes Release mit echten Highlights.", "on_this_page": "Auf dieser Seite"};
+window.NEXUS_LANG = "de";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../../assets/docs-enhance.js' defer></script>
+<script src='../../../../assets/search.js' defer></script>
+
+</body>
+</html>

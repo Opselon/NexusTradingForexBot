@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang='de' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>NSE Calibration Audit — ScalpNet Softmax Probability Calibration (ML-VAL-002) · Nexus Scalp Engine</title>
+<meta name='description' content='NSE Calibration Audit — ScalpNet Softmax Probability Calibration (ML-VAL-002) — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/de/research/CALIBRATION_AUDIT/'>
+<meta property='og:title' content='NSE Calibration Audit — ScalpNet Softmax Probability Calibration (ML-VAL-002)'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/de/research/CALIBRATION_AUDIT/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta property='og:description' content='NSE Calibration Audit — ScalpNet Softmax Probability Calibration (ML-VAL-002) — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
+<meta name='twitter:title' content='NSE Calibration Audit — ScalpNet Softmax Probability Calibration (ML-VAL-002)'>
+<meta name='twitter:description' content='NSE Calibration Audit — ScalpNet Softmax Probability Calibration (ML-VAL-002) — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/research/CALIBRATION_AUDIT/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/research/CALIBRATION_AUDIT/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/research/CALIBRATION_AUDIT/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/research/CALIBRATION_AUDIT/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/research/CALIBRATION_AUDIT/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/research/CALIBRATION_AUDIT/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "NSE Calibration Audit — ScalpNet Softmax Probability Calibration (ML-VAL-002)", "description": "NSE Calibration Audit — ScalpNet Softmax Probability Calibration (ML-VAL-002) — Nexus Scalp Engine documentation", "inLanguage": "de", "url": "https://opselon.github.io/NexusTradingForexBot/de/research/CALIBRATION_AUDIT/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>Zum Inhalt springen</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menü' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../de/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.17</span>
+  </div>
+  <div class='header-actions'>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='Doku durchsuchen…' aria-label='Doku durchsuchen…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='Doku durchsuchen…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
+    <details class='theme-picker'>
+      <summary aria-label='Design' title='Design'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ Hell</button>
+        <button type='button' data-theme-set='dark'>☾ Dunkel</button>
+        <button type='button' data-theme-set='system'>🖥 System</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='Sprache' title='Sprache'><span aria-hidden='true'>🌐</span><span class='lp-name'>Deutsch</span></summary>
+      <div class='lang-menu'><a href='../../../research/CALIBRATION_AUDIT/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <span class='lang-current' lang='de'>Deutsch ✓</span></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../de/'>Start</a>
+<div class='nav-section'><a class='' href='../../../de/getting-started/'>Einstieg</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/getting-started/installation/'>Installation</a></li>
+<li><a class='' href='../../../de/getting-started/quickstart/'>Quickstart</a></li>
+<li><a class='' href='../../../de/getting-started/first-run/'>Erster Lauf</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/getting-started/configuration/'>Konfiguration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/project/'>Projekt</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/project/vision/'>Vision &amp; Warum</a></li>
+<li><a class='' href='../../../de/project/scope/'>Umfang</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/project/status/'>Projektstatus</a></li>
+<li><a class='' href='../../../de/project/capabilities/'>Fähigkeitsmatrix</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/project/roadmap/'>Roadmap</a></li>
+<li><a class='' href='../../../de/project/milestones/'>Meilensteine</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/architecture/'>Architektur</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/architecture/overview/'>Überblick</a></li>
+<li><a class='' href='../../../de/architecture/system-map/'>Systemkarte</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/data-flow/'>Datenfluss</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/runtime/'>Laufzeit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/research-stack/'>Forschungsstack</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/model-pipeline/'>Modellpipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/execution-pipeline/'>Ausführungspipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/observability/'>Observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/mcp-bridge/'>MCP-Brücke &amp; Trace</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/architecture/database/'>Datenbank</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../de/research/'>Forschung</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/research/methodology/'>Methodik</a></li>
+<li><a class='' href='../../../de/research/datasets/'>Datensätze</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/backtesting/'>Backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/out-of-sample/'>OOS-Gate</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/replay/'>Replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/counterfactuals/'>Kontrafaktische</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/research/validation/'>Validierung</a></li>
+<li><a class='' href='../../../de/research/reproducibility/'>Reproduzierbarkeit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/engineering/'>Engineering</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/engineering/quality/'>Qualität &amp; Tests</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/ci/'>CI-Architektur</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/release-process/'>Release-Prozess</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/workflow-test-build-release/'>Test-, Build- und Release-Workflow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/engineering/security/'>Sicherheit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/guides/'>Anleitungen</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/guides/cli/'>CLI-Anleitung</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/api/'>API-Referenz</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/troubleshooting/'>Fehlerbehebung</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/guides/common-workflows/'>Typische Workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/contributing/'>Mitwirken</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/contributing/contribution-guide/'>Beitragsleitfaden</a></li>
+<li><a class='' href='../../../de/contributing/documentation/'>Dokumentations-Workflow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/contributing/add-language/'>Sprache hinzufügen</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/reference/'>Referenz</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../de/reference/cli-reference/'>CLI-Referenz</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/glossary/'>Glossar</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/terminology/'>Terminologie &amp; Übersetzungen</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../de/reference/faq/'>FAQ</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../de/releases/'>Releases</a></div>
+<ul class='nav-list'><li><a href='../../../de/releases/'>v9.0.17 &amp; Historie</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Englische Quelle — Übersetzung ausstehend — <a href='../../research/CALIBRATION_AUDIT/'>Englisch</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../de/research/'>Forschung</a> / <span class='crumb-current' aria-current='page'>CALIBRATION AUDIT</span></nav>
+<details class='toc-mobile'><summary>Auf dieser Seite</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-headline-finding--the-live-softmax-is-overconfident-by-con'>1. Headline finding — the live softmax is overconfident by construction</a></li><li class='toc-item toc-h2'><a href='#2-what-already-existed-do-not-duplicate'>2. What already existed (do NOT duplicate)</a></li><li class='toc-item toc-h2'><a href='#3-what-ml-val-002-adds'>3. What ML-VAL-002 adds</a></li><li class='toc-item toc-h2'><a href='#4-empirical-benchmark-20000-oos-samples-benchmarkplan'>4. Empirical benchmark (20,000 OOS samples, BENCHMARK_PLAN)</a></li><li class='toc-item toc-h2'><a href='#5-test-evidence'>5. Test evidence</a></li><li class='toc-item toc-h2'><a href='#6-a-test-design-bug-worth-recording-found-and-fixed-in-this'>6. A test-design bug worth recording (found and fixed in this run)</a></li><li class='toc-item toc-h2'><a href='#7-recommendation-operator-decision-not-implemented-here'>7. Recommendation (operator decision, not implemented here)</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='nse-calibration-audit--scalpnet-softmax-probability-calibrat'>NSE Calibration Audit — ScalpNet Softmax Probability Calibration (ML-VAL-002)</h1>
+<p><strong>Scope:</strong> <code>src/nexus_scalp/research/calibration.py</code> (new), 3-class (NO_TRADE / BUY / SELL) contract. Reference: Guo et al. (2017), <em>On Calibration of Modern Neural Networks</em>.</p>
+<p><strong>Date:</strong> 2026-09-21  ·  <strong>Specialist:</strong> AGENT-ML-VALIDATION  ·  <strong>Status:</strong> DONE</p>
+<hr>
+<h2 id='1-headline-finding--the-live-softmax-is-overconfident-by-con'>1. Headline finding — the live softmax is overconfident by construction</h2>
+<p>The production inference path applies raw softmax to logits and hands the result to <code>SignalPolicy</code>, which thresholds it:</p>
+<ul>
+<li><code>src/nexus_scalp/application/live/inference.py:170-185</code> —</li>
+</ul>
+<p><code>InferenceService.infer_probabilities</code> returns raw softmax <code>[P_NO_TRADE, P_BUY, P_SELL]</code>. Classified <code>PRODUCTION</code>, confidence 100%.</p>
+<ul>
+<li><code>src/nexus_scalp/signals/policy.py:550-600</code> — <code>SignalPolicy.evaluate_probabilities</code></li>
+</ul>
+<p>gates on confidence <code>&gt;= 0.35</code> and <code>&gt;= 0.60</code> for order triggers.</p>
+<p><strong>No temperature or Platt correction is applied anywhere on the live path.</strong> Softmax confidence is not a calibrated probability in general, and for a network trained to convergence with a hard argmax objective it is systematically overconfident — it <em>says</em> 0.90 when it is right ~65% of the time. The policy then treats that 0.90 as evidence for the <code>&gt;= 0.60</code> high-conviction branch, which mis-sizes risk on exactly the trades where the model is loudest.</p>
+<p><strong>This is a latent P1/P2 accuracy-to-confidence gap, not a crash.</strong> Nothing breaks; money is just mis-allocated against a wrong confidence prior.</p>
+<h2 id='2-what-already-existed-do-not-duplicate'>2. What already existed (do NOT duplicate)</h2>
+<p>A complete <em>binary</em> win/loss calibration subsystem already ships and is the runtime risk-sizing path — this audit explicitly does not replace it:</p>
+<ul>
+<li><code>src/nexus_scalp/model_lifecycle/confidence_calibration.py:140</code> —</li>
+</ul>
+<p><code>fit_platt_calibration()</code>: Platt sigmoid <code>p = sigmoid(a*conf + b)</code>, numpy GD, deterministic, L2-regularized.</p>
+<ul>
+<li><code>.../confidence_calibration.py:194</code> — <code>evaluate_calibration()</code>: binary ECE +</li>
+</ul>
+<p>Brier + per-bin <code>win_rate</code> on (confidence, win/loss) pairs.</p>
+<ul>
+<li><code>.../confidence_calibration.py:244</code> — <code>ConfidenceCalibrator</code>: FAIL-CLOSED</li>
+</ul>
+<p>runtime provider (<code>NOT_CALIBRATED</code>/<code>DEGRADED</code> → flat 1.0x sizing).</p>
+<ul>
+<li><code>src/nexus_scalp/model_lifecycle/calibration_collector.py:156</code> —</li>
+</ul>
+<p><code>collect_calibration_evidence()</code> over <code>audit_experiences</code>.</p>
+<ul>
+<li><code>src/nexus_scalp/governance/evidence.py:182</code> — <code>brier_score()</code> (binary).</li>
+<li><code>src/nexus_scalp/model_lab/evaluation.py:70,85</code> — <code>ece()</code> / <code>brier()</code> /</li>
+</ul>
+<p><code>log_loss()</code> for model-lab split evaluation.</p>
+<p>None of these exposes a multiclass <strong>temperature scaling</strong> capability, which is the gap ML-VAL-002 fills.</p>
+<h2 id='3-what-ml-val-002-adds'>3. What ML-VAL-002 adds</h2>
+<p><code>src/nexus_scalp/research/calibration.py</code> — research/validation-grade multiclass calibration:</p>
+<div class='table-wrap'><table>
+<thead><tr><th>Symbol</th><th>Purpose</th></tr></thead><tbody>
+<tr><td><code>compute_ece(probs, labels, n_bins=10)</code></td><td>Multiclass ECE (Guo eq. 3)</td></tr>
+<tr><td><code>reliability_diagram(...)</code></td><td>Bin table for the reliability plot</td></tr>
+<tr><td><code>brier_score(...)</code></td><td>Multiclass Brier</td></tr>
+<tr><td><code>log_loss</code> / <code>nll_loss(...)</code></td><td>NLL of the true class</td></tr>
+<tr><td><code>fit_temperature(logits, labels)</code></td><td>Fit scalar <code>T</code> minimizing NLL</td></tr>
+<tr><td><code>TemperatureScaler</code></td><td>Fit → apply; <code>apply_to_logits</code> / <code>apply_to_probs</code> / <code>wrap</code></td></tr>
+<tr><td><code>evaluate_temperature_scaling(...)</code></td><td>Before/after <code>CalibrationReport</code></td></tr>
+<tr><td><code>wrap_model_temperature(model, T)</code></td><td>Torch model → temperature-scaled softmax</td></tr>
+</tbody></table></div>
+<p><strong>Fit method.</strong> NLL(T) is smooth and unimodal in <code>log T</code>, so <code>T</code> is fitted by golden-section search on <code>log T</code> — deterministic, no optimizer state, no seed dependence, no GPU. This is the 1-D convex reduction of the Guo et al. LBFGS recipe. Bounds <code>T ∈ [0.05, 100]</code>; a fit that exits that range raises <code>ValueError</code>, which is the task's <code>ABORT_CONDITIONS</code> guard for exploding/vanishing logits.</p>
+<p><strong>Binning convention.</strong> Half-open <code>[lo, hi)</code> except the LAST bin, which is closed <code>[lo, 1.0]</code> — so a perfectly-calibrated flat model (confidence exactly <code>1/C</code>) is captured in a real bin instead of orphaned, and confidence <code>1.0</code> always lands in the top bin. This convention is single-sourced in <code>_bin_mask()</code>; the initial draft inlined three slightly different variants in <code>compute_ece</code> and <code>reliability_diagram</code>, which is exactly how binning bugs start.</p>
+<p><strong>Non-goals honored.</strong> No production weight mutation. <code>TemperatureScaler.wrap</code> is research-only — the live 50D inference service keeps its own softmax (INV-012 frozen tensor contract). The module imports cleanly without torch (lazy numpy/torch imports at function scope), so the slim test venv can exercise the numeric core.</p>
+<h2 id='4-empirical-benchmark-20000-oos-samples-benchmarkplan'>4. Empirical benchmark (20,000 OOS samples, BENCHMARK_PLAN)</h2>
+<p>Synthetic 3-class fold calibrated to the observed production shape (confidence ≈ 0.90 while accuracy ≈ 0.69):</p>
+<div class='codeblock'><div class='codeblock-header'><span class='lang'>text</span><div class='actions'><button class='copy-btn' type='button' aria-label='Kopieren' title='Kopieren'>⧉</button></div></div><pre dir='ltr' class='code-ltr has-copy'><code>N=20000   confidence=0.8972   accuracy=0.6934
+T fitted  = 3.5482
+ECE      0.20399 -&gt; 0.00640   (96.9% reduction)
+Brier    0.16659 -&gt; 0.13940
+NLL      1.23380 -&gt; 0.71445
+reliability bins populated: 7 -&gt; 7</code></pre></div>
+<p>Temperature scaling removes essentially all measured miscalibration on the synthetic overconfident fold and cuts NLL by 42%. <strong>On real NSE OOS folds the reduction will be smaller</strong> — this fixture is deliberately built at the miscalibrated end of the range to prove the mechanism works. The honest number requires fitting <code>T</code> on a training fold and evaluating on a held-out fold (<code>test_oos_protocol_fit_train_eval_val_reduces_ece</code>), which is also green.</p>
+<h2 id='5-test-evidence'>5. Test evidence</h2>
+<p><code>tests/unit/test_calibration_research.py</code> — <strong>63 tests, all passing</strong>:</p>
+<div class='codeblock'><div class='codeblock-header'><span class='lang'>text</span><div class='actions'><button class='copy-btn' type='button' aria-label='Kopieren' title='Kopieren'>⧉</button></div></div><pre dir='ltr' class='code-ltr has-copy'><code>63 passed, 1 warning in 1.51s</code></pre></div>
+<p>Coverage: ECE/Brier/NLL anchors and bounds, reliability bin accounting, temperature identity/sharpen/flattening/argmax-invariance, deterministic fit, serialization round-trip, OOS fit-train/eval-val protocol, fail-loud input validation, single-class and degenerate-temperature aborts, torch interop, and two contract-conformance tests: the module imports without torch and does not touch <code>application.live</code> / <code>live_engine</code>.</p>
+<div class='codeblock'><div class='codeblock-header'><span class='lang'>text</span><div class='actions'><button class='copy-btn' type='button' aria-label='Kopieren' title='Kopieren'>⧉</button></div></div><pre dir='ltr' class='code-ltr has-copy'><code>ruff check          All checks passed!
+ruff format --check clean
+mypy --explicit-package-bases  Success: no issues found in 1 source file
+verify_critical_suite_manifest.py  CRITICAL_SUITE_MANIFEST_OK: 220 paths</code></pre></div>
+<h2 id='6-a-test-design-bug-worth-recording-found-and-fixed-in-this'>6. A test-design bug worth recording (found and fixed in this run)</h2>
+<p>The first draft of the test battery derived labels from <code>argmax(logits)</code>. That makes the model <strong>100% accurate by construction</strong>: confidence and accuracy agree in every bin, ECE reads ~0, and the optimal temperature runs to the <code>T → 0</code> boundary — because at 100% accuracy the NLL minimum genuinely <em>is</em> maximum sharpness. Every "temperature scaling improves calibration" test was therefore self-fulfilling and could not have failed.</p>
+<p>The fixtures now draw the label first, boost the logit toward it by <em>less</em> than the softmax sharpening, and return the <strong>drawn</strong> labels (never the argmax). The fixture comment records the trap, and <code>test_ece_overconfident_fold_is_materially_miscalibrated</code> asserts the fold is genuinely miscalibrated (confidence <code>&gt; 0.80</code> while accuracy <code>&lt; 0.80</code>) so the improvement claim has something real to bite on.</p>
+<p>Two related test-arithmetic errors were caught by actually running the math rather than trusting it: the 3-class ECE ceiling is <code>1 - 1/C ≈ 0.667</code> (a <code>&gt; 0.9</code> assert is unreachable and would mask a regression), and ECE is <em>not</em> monotone in overconfidence — it is zero at both the calibrated and the confidently-wrong extremes, so the monotone quantity to assert on is mean confidence.</p>
+<h2 id='7-recommendation-operator-decision-not-implemented-here'>7. Recommendation (operator decision, not implemented here)</h2>
+<p>The live path remains uncalibrated by design in this change: ML-VAL-002's <code>NON_GOALS</code> forbid altering the model forward pass, and promoting a temperature into <code>InferenceService.infer_probabilities</code> is a live-tensor contract change requiring INV-012 review and a governance-gated promotion.</p>
+<p>If the measured OOS gap on real NSE data is material, the path is: fit <code>T</code> on a walk-forward validation fold → persist alongside the model artifact → apply <code>TemperatureScaler.apply_to_logits</code> in <code>infer_probabilities</code> under a feature flag → gate via the existing <code>ConfidenceCalibrator</code>/<code>PromotionState</code> machinery rather than a direct policy-threshold edit. That is a follow-up task (candidate: ML-GOV-003 adjacent), not this one.</p>
+<hr>
+<p><strong>Evidence files:</strong> <code>src/nexus_scalp/research/calibration.py</code>, <code>tests/unit/test_calibration_research.py</code>, this report.</p>
+<p><strong>Task:</strong> <code>docs/ml-system/tasks/ML-VAL-002.md</code> — all acceptance criteria <code>[x]</code>.</p></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>Auf dieser Seite</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-headline-finding--the-live-softmax-is-overconfident-by-con'>1. Headline finding — the live softmax is overconfident by construction</a></li><li class='toc-item toc-h2'><a href='#2-what-already-existed-do-not-duplicate'>2. What already existed (do NOT duplicate)</a></li><li class='toc-item toc-h2'><a href='#3-what-ml-val-002-adds'>3. What ML-VAL-002 adds</a></li><li class='toc-item toc-h2'><a href='#4-empirical-benchmark-20000-oos-samples-benchmarkplan'>4. Empirical benchmark (20,000 OOS samples, BENCHMARK_PLAN)</a></li><li class='toc-item toc-h2'><a href='#5-test-evidence'>5. Test evidence</a></li><li class='toc-item toc-h2'><a href='#6-a-test-design-bug-worth-recording-found-and-fixed-in-this'>6. A test-design bug worth recording (found and fixed in this run)</a></li><li class='toc-item toc-h2'><a href='#7-recommendation-operator-decision-not-implemented-here'>7. Recommendation (operator decision, not implemented here)</a></li></ul></aside></div>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/de/research/CALIBRATION_AUDIT.md'>Diese Seite auf GitHub bearbeiten</a> · Version v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
+    <span><a href='../../../de/project/status/'>Projektstatus</a> · <a href='../../../de/reference/faq/'>FAQ</a> · <a href='../../../de/releases/'>Alle Releases</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../de/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='Doku durchsuchen… — ⌘K' aria-label='Doku durchsuchen…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>Doku durchsuchen……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "Doku durchsuchen…", "home": "Start", "repo": "GitHub", "skip": "Zum Inhalt springen", "language": "Sprache", "partial": "Englische Quelle — Übersetzung ausstehend", "english": "Englisch", "version": "Version", "next": "Weiter", "prev": "Zurück", "on_github": "Diese Seite auf GitHub bearbeiten", "menu": "Menü", "whats_new": "Neuigkeiten", "all_releases": "Alle Releases", "get_started": "Erste Schritte", "view_architecture": "Architektur", "view_roadmap": "Roadmap", "close": "Schließen", "theme": "Design", "theme_light": "Hell", "theme_dark": "Dunkel", "theme_system": "System", "copy": "Kopieren", "copied": "Kopiert", "copy_error": "Kopieren fehlgeschlagen", "no_results": "Keine Ergebnisse", "loading": "Wird geladen…", "section": "Bereich", "search_results": "Suchergebnisse", "explore_docs": "Die Dokumentation erkunden", "full_matrix": "Vollständige Matrix", "release_timeline": "Release-Zeitleiste", "hero_kicker": "QUANTITATIVE HANDELSFORSCHUNGS- UND EXECUTION-PLATTFORM", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Eine forschungsgetriebene, hexagonale, ereignisgesteuerte Scalping-Plattform für MetaTrader 5 — kausale Features, governete Deep-Learning-Modelle, ein invariantes Risikosystem, deterministische Forschungswerkzeuge und forensische Observability in einer prüfbaren Pipeline.", "chip_released": "veröffentlicht", "chip_rev": "Rev", "chip_research": "Forschung: 50D live · 70D Kandidat", "released_history": "Historie", "release_history_kicker": "RELEASE-HISTORIE", "releases_intro": "Jedes Release mit seinen echten Highlights, abgeleitet aus GitHub-Release-Metadaten zur Build-Zeit. Einzelquelle für Versionen:", "nf404_title": "404", "nf404_lead": "Diese Dokumentationsseite existiert nicht.", "nf404_home": "Start", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Release auf GitHub", "back_home": "Zurück zur Startseite", "quickstart_label": "Quickstart", "status_label": "Projektstatus", "faq_label": "FAQ", "cap_engine": "Kausale 50D-Feature-Engine", "cap_risk": "Risikomotor + Ausführungs-Klemmen", "cap_oos": "Walk-Forward + hartes OOS-Gate", "cap_factory": "Artefakt-zentrierte Modellfabrik", "cap_70d": "70D-Vertrag (Basis+News+Liquidität)", "cap_cf": "Kontrafaktische Engine (NO_TRADE-Wanderung)", "pillar_evidence_t": "🧭 Evidenz vor Behauptungen", "pillar_evidence_b": "Metriken ohne Evidenz zeigen n/a — nie falsche Nullen. Negative Ergebnisse werden veröffentlicht: Unser 70D-Forschungskandidat wurde vom eigenen OOS-Gate abgelehnt.", "pillar_safety_t": "🔒 Sicherheit durch Konstruktion", "pillar_safety_b": "PAPER als Standard · SHADOW ohne Order-Autorität · LIVE hinter expliziter Bestätigung · harte Risikoklemmen (HARD_MAX_LOTS, Marge ≤20%) im Ausführungspfad erzwungen.", "pillar_research_t": "🔬 Deterministische Forschung", "pillar_research_b": "Gepurgtes + Embargo-Walk-Forward, bit-exaktes Replay, fingerprintierte Datensätze/Modelle, Provenienz bei jedem Lauf — derselbe Feature-Vertrag für Live, Replay und Training.", "pillar_truth_t": "👁️ Laufzeit-Wahrheit", "pillar_truth_b": "Forensische Observability: schweregetrennte Logs, Incident-Korrelation, Deploy-Gate. Broker-Wahrheit schlägt veralteten Zustand; Gates sind Autoritäten, Settings sind Absicht.", "capability": "Fähigkeit", "status": "Status", "chip_certified": "ZERTIFIZIERT", "chip_implemented": "IMPLEMENTIERT", "chip_experimental": "EXPERIMENTELL", "chip_research_l": "FORSCHUNG", "cap_highlights": "Fähigkeiten im Fokus", "callout_important": "WICHTIG", "callout_note": "HINWEIS", "callout_warning": "WARNUNG", "how_it_works": "So funktioniert Nexus", "reading_time": "Min. Lesezeit", "toc_title": "Auf dieser Seite", "toc_empty": "Keine Überschriften", "last_updated": "Zuletzt aktualisiert", "share": "Teilen", "edit_page": "Seite bearbeiten", "related_title": "Weiter erkunden", "related_sub": "Weiter in diesem Abschnitt", "up_next": "Weiter", "also_read": "Auch lesen", "prev_page": "Zurück", "next_page": "Weiter", "breadcrumb_home": "Start", "hero_eyebrow_project": "Projekt", "hero_eyebrow_architecture": "Architektur", "hero_eyebrow_research": "Forschung", "hero_eyebrow_engineering": "Engineering", "hero_eyebrow_guides": "Anleitungen", "hero_eyebrow_getting_started": "Einstieg", "hero_eyebrow_contributing": "Mitwirken", "hero_eyebrow_reference": "Referenz", "hero_eyebrow_releases": "Releases", "kpi_certified": "Zertifiziert", "kpi_experimental": "Experimentell", "kpi_coverage": "Abdeckung", "steps_title": "Schritte", "copy_code": "Kopieren", "diagram_title": "Systemdiagramm", "diagram_sub": "Interaktive Pipeline-Ansicht", "stats_live": "Live-Vertrag", "callout_tip": "TIPP", "callout_info": "INFO", "callout_success": "ERFOLG", "callout_danger": "GEFAHR", "anchor_copy": "Link kopieren", "anchor_copied": "Link kopiert", "feedback_title": "War das hilfreich?", "feedback_yes": "Ja", "feedback_no": "Nein", "feedback_thanks": "Danke für dein Feedback", "prose_meta": "Artikel", "word_count": "Wörter", "toc_toggle": "Inhalt", "hero_desc_project": "Was Nexus ist, was zertifiziert vs. experimentell ist.", "hero_desc_architecture": "Wie die Engine gebaut ist: hexagonale Schichten.", "hero_desc_research": "Wie historische Daten zu falsifizierbarer Evidenz werden.", "hero_desc_engineering": "Qualitäts-Gates, CI-Architektur und Sicherheitspostur.", "hero_desc_guides": "Die Engine im Alltag bedienen.", "hero_desc_getting_started": "Engine installieren und konfigurieren.", "hero_desc_contributing": "Der Ingenieursvertrag und wie man beiträgt.", "hero_desc_reference": "CLI-Referenz, Glossar und ehrliche Antworten.", "hero_desc_releases": "Jedes Release mit echten Highlights.", "on_this_page": "Auf dieser Seite"};
+window.NEXUS_LANG = "de";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../assets/docs-enhance.js' defer></script>
+<script src='../../../assets/search.js' defer></script>
+
+</body>
+</html>

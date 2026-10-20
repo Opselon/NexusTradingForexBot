@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang='fa' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>DATA AVAILABILITY + DATA QUALITY Gate — Forensic Report · نکسوس اسکالپ انجین</title>
+<meta name='description' content='DATA AVAILABILITY + DATA QUALITY Gate — Forensic Report — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/DATA_GATE_REPORT/'>
+<meta property='og:title' content='DATA AVAILABILITY + DATA QUALITY Gate — Forensic Report'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/DATA_GATE_REPORT/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta property='og:description' content='DATA AVAILABILITY + DATA QUALITY Gate — Forensic Report — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
+<meta name='twitter:title' content='DATA AVAILABILITY + DATA QUALITY Gate — Forensic Report'>
+<meta name='twitter:description' content='DATA AVAILABILITY + DATA QUALITY Gate — Forensic Report — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/architecture/database/DATA_GATE_REPORT/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/DATA_GATE_REPORT/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/DATA_GATE_REPORT/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/database/DATA_GATE_REPORT/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/architecture/database/DATA_GATE_REPORT/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/architecture/database/DATA_GATE_REPORT/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "DATA AVAILABILITY + DATA QUALITY Gate — Forensic Report", "description": "DATA AVAILABILITY + DATA QUALITY Gate — Forensic Report — Nexus Scalp Engine documentation", "inLanguage": "fa", "url": "https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/DATA_GATE_REPORT/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>پرش به محتوا</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='منو' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../../fa/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.17</span>
+  </div>
+  <div class='header-actions'>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='جستجو در مستندات…' aria-label='جستجو در مستندات…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='جستجو در مستندات…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
+    <details class='theme-picker'>
+      <summary aria-label='پوسته' title='پوسته'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ روشن</button>
+        <button type='button' data-theme-set='dark'>☾ تیره</button>
+        <button type='button' data-theme-set='system'>🖥 سیستم</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='زبان' title='زبان'><span aria-hidden='true'>🌐</span><span class='lp-name'>فارسی</span></summary>
+      <div class='lang-menu'><a href='../../../../architecture/database/DATA_GATE_REPORT/' lang='en' hreflang='en'>English</a> <span class='lang-current' lang='fa'>فارسی ✓</span> <a href='../../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>گیت‌هاب ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../../fa/'>خانه</a>
+<div class='nav-section'><a class='' href='../../../../fa/getting-started/'>شروع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/getting-started/installation/'>نصب</a></li>
+<li><a class='' href='../../../../fa/getting-started/quickstart/'>شروع سریع</a></li>
+<li><a class='' href='../../../../fa/getting-started/first-run/'>اجرای اول</a></li>
+<li><a class='' href='../../../../fa/getting-started/configuration/'>پیکربندی</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../fa/project/'>پروژه</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/project/vision/'>چشم‌انداز و چرایی</a></li>
+<li><a class='' href='../../../../fa/project/scope/'>محدوده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/project/status/'>وضعیت پروژه</a></li>
+<li><a class='' href='../../../../fa/project/capabilities/'>ماتریس قابلیت‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/project/roadmap/'>نقشه راه</a></li>
+<li><a class='' href='../../../../fa/project/milestones/'>نقاط عطف</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../../fa/architecture/'>معماری</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/architecture/overview/'>نمای کلی</a></li>
+<li><a class='' href='../../../../fa/architecture/system-map/'>نقشه سیستم</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/data-flow/'>جریان داده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/runtime/'>زمان اجرا</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/research-stack/'>پشته پژوهش</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/model-pipeline/'>خط لوله مدل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/execution-pipeline/'>خط لوله اجرا</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/observability/'>مشاهده‌پذیری</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/mcp-bridge/'>پل MCP و ردّ تصمیم</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/database/'>پایگاه داده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../fa/research/'>پژوهش</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/research/methodology/'>روش‌شناسی</a></li>
+<li><a class='' href='../../../../fa/research/datasets/'>دیتاست‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/research/backtesting/'>بک‌تست</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/research/out-of-sample/'>گیت OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/research/replay/'>بازپخش</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/research/counterfactuals/'>خلاف‌واقع</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/research/validation/'>اعتبارسنجی</a></li>
+<li><a class='' href='../../../../fa/research/reproducibility/'>بازتولیدپذیری</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../fa/engineering/'>مهندسی</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/engineering/quality/'>کیفیت و تست</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/engineering/ci/'>معماری CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/engineering/release-process/'>فرایند انتشار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/engineering/workflow-test-build-release/'>گردش کار تست، ساخت و انتشار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/engineering/security/'>امنیت</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../fa/guides/'>راهنما</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/guides/cli/'>راهنمای CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/guides/api/'>مرجع API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/guides/troubleshooting/'>عیب‌یابی</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/guides/common-workflows/'>گردش‌کارهای رایج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../fa/contributing/'>مشارکت</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/contributing/contribution-guide/'>راهنمای مشارکت</a></li>
+<li><a class='' href='../../../../fa/contributing/documentation/'>گردش‌کار مستندات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/contributing/add-language/'>افزودن زبان</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../fa/reference/'>مرجع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/reference/cli-reference/'>مرجع CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/reference/glossary/'>واژه‌نامه</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/reference/terminology/'>اصطلاحات و ترجمه‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/reference/faq/'>پرسش‌های متداول</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../fa/releases/'>انتشارها</a></div>
+<ul class='nav-list'><li><a href='../../../../fa/releases/'>v9.0.17 &amp; تاریخچه</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>متن انگلیسی نمایش داده می‌شود — ترجمه این صفحه هنوز تکمیل نشده است — <a href='../../../architecture/database/DATA_GATE_REPORT/'>انگلیسی</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../../fa/architecture/'>معماری</a> / <a href='../../../../fa/architecture/database/'>پایگاه داده</a> / <span class='crumb-current' aria-current='page'>DATA GATE REPORT</span></nav>
+<details class='toc-mobile'><summary>در این صفحه</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-broker--connection-read-only-verification'>1. Broker &amp; Connection (read-only verification)</a></li><li class='toc-item toc-h2'><a href='#2-raw-history-availability-terminal-cache-limits'>2. Raw History Availability (terminal cache limits)</a></li><li class='toc-item toc-h2'><a href='#3-raw-data-quality'>3. Raw Data Quality</a></li><li class='toc-item toc-h2'><a href='#4-dataset-artifact-phase-13-model-training-path'>4. Dataset Artifact (Phase 13 model-training path)</a></li><li class='toc-item toc-h2'><a href='#5-dataset-validation-datagatevalidatepy--datarawdatasetvalid'>5. Dataset Validation (data_gate_validate.py → data/raw/dataset_validation.json)</a></li><li class='toc-item toc-h2'><a href='#6-sufficiency-for-each-phase'>6. Sufficiency for Each Phase</a></li><li class='toc-item toc-h2'><a href='#7-eurusd--xauusd-config-mismatch-item-11--root-cause'>7. EURUSD ↔ XAUUSD Config Mismatch (item 11) — ROOT CAUSE</a></li><li class='toc-item toc-h2'><a href='#8-deliverables'>8. Deliverables</a></li><li class='toc-item toc-h2'><a href='#9-next-steps-gated-on-this-report'>9. Next Steps (gated on this report)</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='data-availability--data-quality-gate--forensic-report'>DATA AVAILABILITY + DATA QUALITY Gate — Forensic Report</h1>
+<p><strong>Date:</strong> 2026-08-17 (UTC) · <strong>Bot:</strong> Nexus Scalp Engine (NSE)</p>
+<p><strong>Scope:</strong> Broker history availability, raw capture, dataset artifact build + validation, config mismatch.</p>
+<p><strong>Status:</strong> ✅ GATE PASS (for model-training path) — ⚠️ executed-trade research path LIMITED</p>
+<hr>
+<h2 id='1-broker--connection-read-only-verification'>1. Broker &amp; Connection (read-only verification)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Item</th><th>Value</th></tr></thead><tbody>
+<tr><td>MT5 package</td><td>5.0.5735 (terminal 500.6116, 14 Aug 2026)</td></tr>
+<tr><td>Terminal</td><td>MetaTrader 5 @ <code>C:\Program Files\MetaTrader 5</code> (connected)</td></tr>
+<tr><td>Account</td><td>login <strong>10011755849</strong>, server <strong>MetaQuotes-Demo</strong>, USD</td></tr>
+<tr><td>Symbols total</td><td>12,525</td></tr>
+<tr><td>Gold symbols</td><td>XAUUSD, XAUEUR, XAUAUD, XAUCHF, XAUGBP, GOLD, XAUG</td></tr>
+<tr><td>Operations</td><td>READ-ONLY getters only — no orders, no writes to broker</td></tr>
+</tbody></table></div>
+<h2 id='2-raw-history-availability-terminal-cache-limits'>2. Raw History Availability (terminal cache limits)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>TF</th><th>Bars captured</th><th>Earliest (UTC)</th><th>Latest (UTC)</th><th>Span</th></tr></thead><tbody>
+<tr><td><strong>M1</strong></td><td>100,000</td><td>2026-05-01 17:15</td><td>2026-08-17 19:24</td><td>3.5 months</td></tr>
+<tr><td><strong>M5</strong></td><td>100,000</td><td>2025-03-12 02:05</td><td>2026-08-17 19:20</td><td><strong>17 months</strong></td></tr>
+<tr><td>M15</td><td>100,000</td><td>2022-05-18 03:15</td><td>2026-08-17 19:15</td><td>4.2 years</td></tr>
+<tr><td>H1</td><td>100,000</td><td>2009-07-17 09:00</td><td>2026-08-17 19:00</td><td>17 years</td></tr>
+<tr><td>H4</td><td>33,977</td><td>2004-06-11 04:00</td><td>2026-08-17 16:00</td><td>22 years</td></tr>
+<tr><td>D1</td><td>5,699</td><td>2004-06-11 00:00</td><td>2026-08-17 00:00</td><td>22 years</td></tr>
+</tbody></table></div>
+<p><strong>Hard limit discovered:</strong> the MT5 terminal's local cache caps M1/M5/M15 at exactly</p>
+<p><strong>100,000 bars</strong> (verified: <code>copy_rates_from_pos(pos=100_000)</code> → <code>Call failed</code>). Server-side full history exists only for H4/D1 (back to 2004) and H1 (2009).</p>
+<p><strong>To extend M1/M5:</strong> load deeper history in the terminal GUI (Tools → History Center) or capture ticks continuously.</p>
+<p>Capture location: <code>data/raw/XAUUSD_{M1,M5,M15,H1,H4,D1}.{parquet,csv}</code> + <code>capture_report.json</code>.</p>
+<h2 id='3-raw-data-quality'>3. Raw Data Quality</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Metric</th><th>M1</th><th>M5</th><th>M15</th><th>H1</th><th>H4</th><th>D1</th></tr></thead><tbody>
+<tr><td>Invalid OHLC rows</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td>Duplicate timestamps</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td>Zero/negative volume</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td>Gaps (total)</td><td>78</td><td>409</td><td>1,115</td><td>4,426</td><td>1,249</td><td>1,187</td></tr>
+<tr><td>Gap %</td><td>0.078%</td><td>0.409%</td><td>1.115%</td><td>4.426%</td><td>3.676%</td><td>20.8%</td></tr>
+<tr><td>Largest gap</td><td>53h</td><td>74h</td><td>74h</td><td>86h</td><td>112h</td><td>5d</td></tr>
+</tbody></table></div>
+<p>Gap structure is <strong>normal market behavior</strong>: ~93% of M5 gaps are weekend/holiday closures (<code>3x-24h</code> + <code>24h+</code> buckets), with only 10 near-1.5x-3x anomalies (intraday thin liquidity). No missing-week blocks, no random voids.</p>
+<p><strong>Timestamp convention:</strong> MT5 <code>copy_rates_*</code> epoch seconds = <strong>UTC</strong>; stored as naive-UTC in parquet (matches <code>SampleFactory._parse_ts</code> contract).</p>
+<h2 id='4-dataset-artifact-phase-13-model-training-path'>4. Dataset Artifact (Phase 13 model-training path)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Item</th><th>Value</th></tr></thead><tbody>
+<tr><td>dataset_id</td><td><strong><code>ds_cb30f87520e9e6a4</code></strong></td></tr>
+<tr><td>Symbol / TF</td><td>XAUUSD / <strong>M5</strong> (recommended balance)</td></tr>
+<tr><td>Rows</td><td><strong>99,946</strong> (warmup 54 dropped)</td></tr>
+<tr><td>Split</td><td>train <strong>69,962</strong> / val <strong>14,991</strong> / test <strong>14,993</strong></td></tr>
+<tr><td>Temporal range</td><td>2025-03-12 06:35 → 2026-08-17 19:20 UTC (523.5 days)</td></tr>
+<tr><td>Rows/day</td><td>~191</td></tr>
+<tr><td>SHA-256 (dataset.parquet)</td><td><code>4108ff0de3d24f111a306a84ee352a3ab52e7c824dd6332736fcd376be35b4dc</code></td></tr>
+<tr><td>Manifest</td><td><code>dataset_manifest.json</code> (schema, splits, purge params)</td></tr>
+<tr><td>Labels</td><td>0=NO_TRADE 88,202 · 1=BUY 5,930 · 2=SELL 5,814 · (3-class contract)</td></tr>
+<tr><td>Eval samples</td><td>20,897 · Purged 79,049</td></tr>
+</tbody></table></div>
+<p><strong>Feature pipeline:</strong> replicated the live engine's exact warmup path — <code>ScalpFeatureEngine.compute_from_bars(window, synthetic_tick)</code> per bar (55-bar causal lookback) → 50D <code>feat_0..49</code> → <code>TripleBarrierLabeler</code> (friction $0.35, TP 1.1×ATR, SL 1.0×ATR, horizon 15 bars, embargo 3).</p>
+<h2 id='5-dataset-validation-datagatevalidatepy--datarawdatasetvalid'>5. Dataset Validation (data_gate_validate.py → data/raw/dataset_validation.json)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Check</th><th>Result</th></tr></thead><tbody>
+<tr><td>Schema (76 cols; sample_id, timestamp, feat_0..49, label, splits…)</td><td>✅ PASS</td></tr>
+<tr><td>Feature finiteness (0 NaN/Inf)</td><td>✅ PASS</td></tr>
+<tr><td>Feature bounds (0 values outside [-3,3])</td><td>✅ PASS</td></tr>
+<tr><td>Chronological ordering</td><td>✅ PASS</td></tr>
+<tr><td>Duplicates (sample_id / timestamp)</td><td>✅ 0 / 0</td></tr>
+<tr><td><strong>Leakage guard</strong> (eval ∧ purged overlap)</td><td>✅ 0</td></tr>
+<tr><td>Gap stats</td><td>409 gaps (0.41%) — weekend-dominated</td></tr>
+<tr><td>Label class count</td><td>3 ✓</td></tr>
+<tr><td>Split sizes (train&gt;50k, val&gt;10k, test&gt;10k)</td><td>✅ PASS</td></tr>
+<tr><td><strong>Overall verdict</strong></td><td><strong>PASS</strong></td></tr>
+</tbody></table></div>
+<p>⚠️ Observation: <code>feat_9</code> (<code>rapid_reversal_spike_val</code>) is constant 0.0 across all rows — a rare-event spike detector with no firing in the window; not a data defect (same live pipeline behavior).</p>
+<h2 id='6-sufficiency-for-each-phase'>6. Sufficiency for Each Phase</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Phase</th><th>Data</th><th>Verdict</th></tr></thead><tbody>
+<tr><td>Phase 13 model training (future)</td><td>99,946 samples, clean, validated</td><td>✅ <strong>SUFFICIENT</strong></td></tr>
+<tr><td>Phase 13 model validation (OOS/regime/collapse)</td><td>test 14,993 + val 14,991</td><td>✅ <strong>SUFFICIENT</strong></td></tr>
+<tr><td>Phase 09B backtest (model-driven, on artifact)</td><td>99,946 M5 samples</td><td>✅ <strong>SUFFICIENT</strong> (via research dataset bridge)</td></tr>
+<tr><td>Phase 09B walk-forward / OOS / robustness</td><td>~17 months M5 = ~6× fold windows</td><td>✅ <strong>SUFFICIENT</strong></td></tr>
+<tr><td><strong>Phase 09B on EXECUTED trades (ledger)</strong></td><td>audit_ledger <strong>211 rows</strong>, experiences <strong>111</strong>, all 2026-08-17</td><td>⚠️ <strong>LIMITED</strong> — needs weeks of live trading</td></tr>
+<tr><td>Forward test / champion shadow</td><td>live M5 feed (live engine running)</td><td>✅ operational, no dataset needed</td></tr>
+</tbody></table></div>
+<p><strong>Executive judgement:</strong> the dataset artifact is <strong>ready for experiment creation, training, validation and backtest</strong>. The <em>executed-trade</em> research ledger will need more live time before walk-forward on real trades is meaningful.</p>
+<h2 id='7-eurusd--xauusd-config-mismatch-item-11--root-cause'>7. EURUSD ↔ XAUUSD Config Mismatch (item 11) — ROOT CAUSE</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Source</th><th>Symbol</th><th>model_artifact_path</th><th>Verdict</th></tr></thead><tbody>
+<tr><td><strong>configs/live.yaml</strong> (ACTIVE, Aug 17)</td><td><strong>XAUUSD</strong></td><td><code>artifacts/models/scalp/XAUUSD/v1.0.0/model.pt</code></td><td>✅ correct</td></tr>
+<tr><td>src config default (<code>ModelConfig</code>)</td><td>XAUUSD</td><td><code>artifacts/models/scalp/XAUUSD/...</code></td><td>✅ correct</td></tr>
+<tr><td>configs/live.yaml.example</td><td>XAUUSD</td><td><code>.../XAUUSD/...</code></td><td>✅ correct</td></tr>
+<tr><td><strong>configs/base.yaml</strong> (stale default)</td><td><strong>EURUSD</strong></td><td><code>.../EURUSD/v1.0.0/model.pt</code></td><td>❌ <strong>STALE — never updated</strong></td></tr>
+</tbody></table></div>
+<p>The live stack (<code>live.yaml</code>) is coherent with the real XAUUSD artifact; the logs confirm the running engine uses XAUUSD (close≈4401, model loaded from the XAUUSD path). <strong>Risk:</strong> anyone launching with <code>--config configs/base.yaml</code> would run EURUSD and fail to find the (nonexistent) EURUSD model. <strong>Recommended fix</strong> (needs user approval, repo is otherwise read-only): change base.yaml <code>symbol: EURUSD → XAUUSD</code> and the model path similarly.</p>
+<h2 id='8-deliverables'>8. Deliverables</h2>
+<div class='codeblock'><div class='codeblock-header'><span class='lang'>text</span><div class='actions'><button class='copy-btn' type='button' aria-label='کپی' title='کپی'>⧉</button></div></div><pre dir='ltr' class='code-ltr has-copy'><code>data/raw/XAUUSD_M1.parquet/.csv        raw broker capture (100k bars)
+data/raw/XAUUSD_M5.parquet/.csv        raw broker capture (100k bars)
+data/raw/XAUUSD_M15.parquet/.csv       raw broker capture (100k bars)
+data/raw/XAUUSD_H1.parquet/.csv        raw broker capture (100k bars)
+data/raw/XAUUSD_H4.parquet/.csv        raw broker capture (33,977 bars)
+data/raw/XAUUSD_D1.parquet/.csv        raw broker capture (5,699 bars)
+data/raw/capture_report.json           availability + quality report
+data/raw/dataset_validation.json       artifact validation report
+artifacts/model_generation/datasets/ds_cb30f87520e9e6a4/dataset.parquet    (20.4 MB)
+artifacts/model_generation/datasets/ds_cb30f87520e9e6a4/dataset_manifest.json</code></pre></div>
+<p><strong>Untouched:</strong> <code>artifacts/models/scalp/XAUUSD/v1.0.0/model.pt</code> (live legacy model — still loaded by the running engine; my scripts never write there). No model training performed. No live-engine changes. No news context attached (news.db has 0 analysis rows — readiness gate RED, dataset is news-neutral).</p>
+<h2 id='9-next-steps-gated-on-this-report'>9. Next Steps (gated on this report)</h2>
+<ol>
+<li>✅ DONE — raw capture + dataset artifact + validation (this gate)</li>
+<li><strong>NEXT:</strong> experiment creation (<code>nse model-experiment-create</code>), deterministic</li>
+</ol>
+<p>backtest, walk-forward/OOS/robustness, then candidate training — <strong>only if</strong> the user approves proceeding past this gate.</p></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>در این صفحه</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-broker--connection-read-only-verification'>1. Broker &amp; Connection (read-only verification)</a></li><li class='toc-item toc-h2'><a href='#2-raw-history-availability-terminal-cache-limits'>2. Raw History Availability (terminal cache limits)</a></li><li class='toc-item toc-h2'><a href='#3-raw-data-quality'>3. Raw Data Quality</a></li><li class='toc-item toc-h2'><a href='#4-dataset-artifact-phase-13-model-training-path'>4. Dataset Artifact (Phase 13 model-training path)</a></li><li class='toc-item toc-h2'><a href='#5-dataset-validation-datagatevalidatepy--datarawdatasetvalid'>5. Dataset Validation (data_gate_validate.py → data/raw/dataset_validation.json)</a></li><li class='toc-item toc-h2'><a href='#6-sufficiency-for-each-phase'>6. Sufficiency for Each Phase</a></li><li class='toc-item toc-h2'><a href='#7-eurusd--xauusd-config-mismatch-item-11--root-cause'>7. EURUSD ↔ XAUUSD Config Mismatch (item 11) — ROOT CAUSE</a></li><li class='toc-item toc-h2'><a href='#8-deliverables'>8. Deliverables</a></li><li class='toc-item toc-h2'><a href='#9-next-steps-gated-on-this-report'>9. Next Steps (gated on this report)</a></li></ul></aside></div>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/fa/architecture/database/DATA_GATE_REPORT.md'>ویرایش این صفحه در گیت‌هاب</a> · نسخه v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
+    <span><a href='../../../../fa/project/status/'>وضعیت پروژه</a> · <a href='../../../../fa/reference/faq/'>پرسش‌های متداول</a> · <a href='../../../../fa/releases/'>همه انتشارها</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../../fa/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='جستجو در مستندات… — ⌘K' aria-label='جستجو در مستندات…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>جستجو در مستندات……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "جستجو در مستندات…", "home": "خانه", "repo": "گیت‌هاب", "skip": "پرش به محتوا", "language": "زبان", "partial": "متن انگلیسی نمایش داده می‌شود — ترجمه این صفحه هنوز تکمیل نشده است", "english": "انگلیسی", "version": "نسخه", "next": "بعدی", "prev": "قبلی", "on_github": "ویرایش این صفحه در گیت‌هاب", "menu": "منو", "whats_new": "تازه‌ها", "all_releases": "همه انتشارها", "get_started": "شروع کنید", "view_architecture": "معماری", "view_roadmap": "نقشه راه", "close": "بستن", "theme": "پوسته", "theme_light": "روشن", "theme_dark": "تیره", "theme_system": "سیستم", "copy": "کپی", "copied": "کپی شد", "copy_error": "خطا در کپی", "no_results": "نتیجه‌ای یافت نشد", "loading": "در حال بارگذاری…", "section": "بخش", "search_results": "نتایج جستجو", "explore_docs": "کاوش در مستندات", "full_matrix": "ماتریس کامل", "release_timeline": "خط زمان انتشارها", "hero_kicker": "پلتفرم پژوهش و اجرای معاملات کمّی", "hero_title_a": "نکسوس", "hero_title_b": "اسکالپ انجین", "hero_sub": "پلتفرم اسکالپ پژوهش‌محور، شش‌ضلعی و رویدادمحور برای متاتریدر ۵ — ویژگی‌های علّی، مدل‌های عمیق تحت حکمرانی، موتور ریسک ثابت‌شده، ابزار پژوهش قطعی و مشاهده‌پذیری فارنزیک در یک خط لوله قابل‌ممیزی.", "chip_released": "منتشرشده", "chip_rev": "ریویژن", "chip_research": "پژوهش: 50D زنده · 70D کاندیدا", "released_history": "تاریخچه", "release_history_kicker": "تاریخچه انتشارها", "releases_intro": "هر انتشار با هایلایت‌های واقعی خود، برگرفته از فراداده انتشارهای گیت‌هاب در زمان ساخت. منبع یکتای نسخه:", "nf404_title": "۴۰۴", "nf404_lead": "این صفحه مستندات وجود ندارد.", "nf404_home": "خانه", "footer_prefix": "", "brand": "نکسوس", "brand_dim": "اسکالپ انجین", "github_release": "انتشار در گیت‌هاب", "back_home": "بازگشت به خانه", "quickstart_label": "شروع سریع", "status_label": "وضعیت پروژه", "faq_label": "پرسش‌های متداول", "cap_engine": "موتور ویژگی علّی 50D", "cap_risk": "موتور ریسک + کلمپ‌های اجرا", "cap_oos": "Walk-Forward + گیت سخت OOS", "cap_factory": "کارخانه مدل مصنوع-محور", "cap_70d": "قرارداد 70D (پایه+اخبار+نقدینگی)", "cap_cf": "موتور خلاف‌واقع (قدم زدن NO_TRADE)", "pillar_evidence_t": "🧭 شواهد پیش از ادعا", "pillar_evidence_b": "سنجه‌های بدون شواهد «n/a» نمایش داده می‌شوند — هرگز صفر جعلی نیست. نتایج منفی منتشر می‌شوند: کاندیدای پژوهشی 70D توسط گیت OOS خودمان رد شد.", "pillar_safety_t": "🔒 ایمنی در ساخت", "pillar_safety_b": "پیش‌فرض PAPER · SHADOW با صفر اختیار سفارش · LIVE پشت تأیید صریح · کلمپ‌های سخت ریسک (HARD_MAX_LOTS، مارجین ≤20٪) در مسیر اجرا اعمال می‌شوند.", "pillar_research_t": "🔬 پژوهش قطعی", "pillar_research_b": "Walk-Forward با پاکسازی و تحریم، بازپخش بی‌دقیق (bit-exact)، دیتاست/مدل‌های اثرانگشت‌شده، منشأ در هر اجرا — یک قرارداد ویژگی مشترک برای زنده، بازپخش و آموزش.", "pillar_truth_t": "👁️ حقیقت زمان اجرا", "pillar_truth_b": "مشاهده‌پذیری فارنزیک: لاگ‌های تفکیک‌شده با شدت، همبستگی رخدادها، گیت استقرار. حقیقت بروکر بر وضعیت کهنه می‌چربد؛ گیت‌ها مرجع‌اند، تنظیمات فقط قصد.", "capability": "قابلیت", "status": "وضعیت", "chip_certified": "گواهی‌شده", "chip_implemented": "پیاده‌سازی‌شده", "chip_experimental": "آزمایشی", "chip_research_l": "پژوهشی", "cap_highlights": "هایلایت قابلیت‌ها", "callout_important": "مهم", "callout_note": "یادداشت", "callout_warning": "هشدار", "how_it_works": "نکسوس چگونه کار می‌کند", "reading_time": "دقیقه مطالعه", "toc_title": "در این صفحه", "toc_empty": "بدون سرفصل", "last_updated": "آخرین به‌روزرسانی", "share": "اشتراک", "edit_page": "ویرایش این صفحه", "related_title": "ادامه کاوش", "related_sub": "بعدی در این بخش", "up_next": "بعدی", "also_read": "همچنین بخوانید", "prev_page": "قبلی", "next_page": "بعدی", "breadcrumb_home": "خانه", "hero_eyebrow_project": "پروژه", "hero_eyebrow_architecture": "معماری", "hero_eyebrow_research": "پژوهش", "hero_eyebrow_engineering": "مهندسی", "hero_eyebrow_guides": "راهنما", "hero_eyebrow_getting_started": "شروع", "hero_eyebrow_contributing": "مشارکت", "hero_eyebrow_reference": "مرجع", "hero_eyebrow_releases": "انتشارها", "kpi_certified": "گواهی‌شده", "kpi_experimental": "آزمایشی", "kpi_coverage": "پوشش", "steps_title": "مراحل", "copy_code": "کپی", "diagram_title": "نمودار سیستم", "diagram_sub": "نمای تعاملی خط لوله", "stats_live": "قرارداد زنده", "callout_tip": "نکته", "callout_info": "اطلاعات", "callout_success": "موفق", "callout_danger": "خطر", "anchor_copy": "کپی پیوند", "anchor_copied": "پیوند کپی شد", "feedback_title": "آیا مفید بود؟", "feedback_yes": "بله", "feedback_no": "خیر", "feedback_thanks": "سپاس از بازخورد شما", "prose_meta": "مقاله", "word_count": "واژه", "toc_toggle": "فهرست", "hero_desc_project": "نکسوس چیست، چه چیزی گواهی‌شده و چه چیزی آزمایشی است.", "hero_desc_architecture": "موتور چگونه ساخته شده: لایه‌های شش‌ضلعی و مسیر تیک تا تصمیم.", "hero_desc_research": "داده تاریخی چگونه به شواهد ابطال‌پذیر تبدیل می‌شود.", "hero_desc_engineering": "گیت‌های کیفیت، معماری CI و وضعیت امنیتی.", "hero_desc_guides": "کار روزانه با موتور.", "hero_desc_getting_started": "نصب، اجرا و پیکربندی موتور.", "hero_desc_contributing": "قرارداد مهندسی و نحوه مشارکت.", "hero_desc_reference": "مرجع CLI، واژه‌نامه و پاسخ‌های صادقانه.", "hero_desc_releases": "هر انتشار با هایلایت‌های واقعی.", "on_this_page": "در این صفحه"};
+window.NEXUS_LANG = "fa";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../../assets/docs-enhance.js' defer></script>
+<script src='../../../../assets/search.js' defer></script>
+
+</body>
+</html>

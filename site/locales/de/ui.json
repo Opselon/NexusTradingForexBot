@@ -98,7 +98,26 @@
     "pulse_last_sync": "Zuletzt synchronisiert",
     "cta_title": "Bereit, auf Live-Daten zu bewerten — ohne Risiko?",
     "cta_desc": "Starte im SHADOW. Gleiche Funktionen, gleiche Gates, gleiche Pipeline — null Order-Autorität.",
-    "cta_install": "Installation"
+    "cta_install": "Installation",
+    "nav_pipe": "Pipeline",
+    "nav_why": "Warum Nexus",
+    "nav_modes": "Modi",
+    "nav_research": "Forschung",
+    "nav_market": "Chart",
+    "nav_arch": "Architektur",
+    "nav_console": "Konsole",
+    "nav_pulse": "Puls",
+    "status.locales": "Sprachen",
+    "fresh_title": "Neu auf main",
+    "fresh_badge": "UNGVERÖFFENTLICHT",
+    "fresh_mcp_t": "MCP-Transport nur lesend",
+    "fresh_mcp_b": "Handelswerkzeuge werden vor jeder Netzwerk-E/A abgelehnt; standardmäßig aus (mt5.mcp).",
+    "fresh_trace_t": "Redigierte Trace-Ausgabe",
+    "fresh_trace_b": "Jeder MT5-Aufruf erzeugt einen strukturierten Trace; Geheimnisse werden an der Grenze redigiert.",
+    "fresh_replay_t": "Replay-Identitätsgate",
+    "fresh_replay_b": "Replay schlägt geschlossen fehl, wenn der Dataset-Fingerabdruck nicht passt.",
+    "fresh_mem_t": "Begrenzter Laufzeitspeicher",
+    "fresh_mem_b": "Paper-Ledger und Ring abgeschlossener Kerzen sind gedeckelt; lange Shadow-Läufe bleiben begrenzt."
   },
   "ui": {
     "search": "Doku durchsuchen…",
@@ -230,7 +249,8 @@
     "hero_desc_getting_started": "Engine installieren und konfigurieren.",
     "hero_desc_contributing": "Der Ingenieursvertrag und wie man beiträgt.",
     "hero_desc_reference": "CLI-Referenz, Glossar und ehrliche Antworten.",
-    "hero_desc_releases": "Jedes Release mit echten Highlights."
+    "hero_desc_releases": "Jedes Release mit echten Highlights.",
+    "on_this_page": "Auf dieser Seite"
   },
   "nav": {
     "getting-started": "Einstieg",
@@ -288,7 +308,8 @@
     "glossary": "Glossar",
     "terminology": "Terminologie & Übersetzungen",
     "faq": "FAQ",
-    "docs-hub": "Doku-Hub"
+    "docs-hub": "Doku-Hub",
+    "mcp-bridge": "MCP-Brücke & Trace"
   },
   "sections": {
     "getting-started": "Engine installieren, ausführen und konfigurieren. PAPER ist der Standard; SHADOW liefert Live-Daten ohne Order-Autorität.",

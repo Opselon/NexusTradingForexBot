@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang='fa' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>70D TEMPORAL LIQUIDITY INTELLIGENCE + SIGNAL STABILITY — FINAL REPORT · نکسوس اسکالپ انجین</title>
+<meta name='description' content='70D TEMPORAL LIQUIDITY INTELLIGENCE + SIGNAL STABILITY — FINAL REPORT — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/'>
+<meta property='og:title' content='70D TEMPORAL LIQUIDITY INTELLIGENCE + SIGNAL STABILITY — FINAL REPORT'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta property='og:description' content='70D TEMPORAL LIQUIDITY INTELLIGENCE + SIGNAL STABILITY — FINAL REPORT — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
+<meta name='twitter:title' content='70D TEMPORAL LIQUIDITY INTELLIGENCE + SIGNAL STABILITY — FINAL REPORT'>
+<meta name='twitter:description' content='70D TEMPORAL LIQUIDITY INTELLIGENCE + SIGNAL STABILITY — FINAL REPORT — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "70D TEMPORAL LIQUIDITY INTELLIGENCE + SIGNAL STABILITY — FINAL REPORT", "description": "70D TEMPORAL LIQUIDITY INTELLIGENCE + SIGNAL STABILITY — FINAL REPORT — Nexus Scalp Engine documentation", "inLanguage": "fa", "url": "https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>پرش به محتوا</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='منو' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../../fa/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.17</span>
+  </div>
+  <div class='header-actions'>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='جستجو در مستندات…' aria-label='جستجو در مستندات…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='جستجو در مستندات…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
+    <details class='theme-picker'>
+      <summary aria-label='پوسته' title='پوسته'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ روشن</button>
+        <button type='button' data-theme-set='dark'>☾ تیره</button>
+        <button type='button' data-theme-set='system'>🖥 سیستم</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='زبان' title='زبان'><span aria-hidden='true'>🌐</span><span class='lp-name'>فارسی</span></summary>
+      <div class='lang-menu'><a href='../../../../research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/' lang='en' hreflang='en'>English</a> <span class='lang-current' lang='fa'>فارسی ✓</span> <a href='../../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>گیت‌هاب ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../../fa/'>خانه</a>
+<div class='nav-section'><a class='' href='../../../../fa/getting-started/'>شروع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/getting-started/installation/'>نصب</a></li>
+<li><a class='' href='../../../../fa/getting-started/quickstart/'>شروع سریع</a></li>
+<li><a class='' href='../../../../fa/getting-started/first-run/'>اجرای اول</a></li>
+<li><a class='' href='../../../../fa/getting-started/configuration/'>پیکربندی</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../fa/project/'>پروژه</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/project/vision/'>چشم‌انداز و چرایی</a></li>
+<li><a class='' href='../../../../fa/project/scope/'>محدوده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/project/status/'>وضعیت پروژه</a></li>
+<li><a class='' href='../../../../fa/project/capabilities/'>ماتریس قابلیت‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/project/roadmap/'>نقشه راه</a></li>
+<li><a class='' href='../../../../fa/project/milestones/'>نقاط عطف</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../fa/architecture/'>معماری</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/architecture/overview/'>نمای کلی</a></li>
+<li><a class='' href='../../../../fa/architecture/system-map/'>نقشه سیستم</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/data-flow/'>جریان داده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/runtime/'>زمان اجرا</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/research-stack/'>پشته پژوهش</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/model-pipeline/'>خط لوله مدل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/execution-pipeline/'>خط لوله اجرا</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/observability/'>مشاهده‌پذیری</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/mcp-bridge/'>پل MCP و ردّ تصمیم</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/architecture/database/'>پایگاه داده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../../fa/research/'>پژوهش</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/research/methodology/'>روش‌شناسی</a></li>
+<li><a class='' href='../../../../fa/research/datasets/'>دیتاست‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/research/backtesting/'>بک‌تست</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/research/out-of-sample/'>گیت OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/research/replay/'>بازپخش</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/research/counterfactuals/'>خلاف‌واقع</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/research/validation/'>اعتبارسنجی</a></li>
+<li><a class='' href='../../../../fa/research/reproducibility/'>بازتولیدپذیری</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../fa/engineering/'>مهندسی</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/engineering/quality/'>کیفیت و تست</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/engineering/ci/'>معماری CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/engineering/release-process/'>فرایند انتشار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/engineering/workflow-test-build-release/'>گردش کار تست، ساخت و انتشار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/engineering/security/'>امنیت</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../fa/guides/'>راهنما</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/guides/cli/'>راهنمای CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/guides/api/'>مرجع API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/guides/troubleshooting/'>عیب‌یابی</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/guides/common-workflows/'>گردش‌کارهای رایج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../fa/contributing/'>مشارکت</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/contributing/contribution-guide/'>راهنمای مشارکت</a></li>
+<li><a class='' href='../../../../fa/contributing/documentation/'>گردش‌کار مستندات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/contributing/add-language/'>افزودن زبان</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../fa/reference/'>مرجع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../fa/reference/cli-reference/'>مرجع CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/reference/glossary/'>واژه‌نامه</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/reference/terminology/'>اصطلاحات و ترجمه‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../fa/reference/faq/'>پرسش‌های متداول</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../fa/releases/'>انتشارها</a></div>
+<ul class='nav-list'><li><a href='../../../../fa/releases/'>v9.0.17 &amp; تاریخچه</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>متن انگلیسی نمایش داده می‌شود — ترجمه این صفحه هنوز تکمیل نشده است — <a href='../../../research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/'>انگلیسی</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../../fa/research/'>پژوهش</a> / <a href='../../../../fa/research/70d-program/'>70d program</a> / <span class='crumb-current' aria-current='page'>70D TEMPORAL LIQUIDITY FINAL REPORT</span></nav>
+<details class='toc-mobile'><summary>در این صفحه</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#root-cause'>ROOT CAUSE</a></li><li class='toc-item toc-h2'><a href='#feature-forensics-all-10-liquidity-dims'>FEATURE FORENSICS (all 10 liquidity dims)</a></li><li class='toc-item toc-h2'><a href='#temporal-design'>TEMPORAL DESIGN</a></li><li class='toc-item toc-h2'><a href='#schema'>SCHEMA</a></li><li class='toc-item toc-h2'><a href='#model'>MODEL</a></li><li class='toc-item toc-h2'><a href='#stability-controller'>STABILITY CONTROLLER</a></li><li class='toc-item toc-h2'><a href='#entry--exit'>ENTRY / EXIT</a></li><li class='toc-item toc-h2'><a href='#replay'>REPLAY</a></li><li class='toc-item toc-h2'><a href='#ablation'>ABLATION</a></li><li class='toc-item toc-h2'><a href='#walk-forward--oos'>WALK-FORWARD / OOS</a></li><li class='toc-item toc-h2'><a href='#performance'>PERFORMANCE</a></li><li class='toc-item toc-h2'><a href='#debug'>DEBUG</a></li><li class='toc-item toc-h2'><a href='#tests'>TESTS</a></li><li class='toc-item toc-h2'><a href='#bugs'>BUGS</a></li><li class='toc-item toc-h2'><a href='#final-verdict'>FINAL VERDICT</a></li><li class='toc-item toc-h2'><a href='#files'>FILES</a></li><li class='toc-item toc-h2'><a href='#handoff-next-agent'>HANDOFF (next agent)</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='70d-temporal-liquidity-intelligence--signal-stability--final'>70D TEMPORAL LIQUIDITY INTELLIGENCE + SIGNAL STABILITY — FINAL REPORT</h1>
+<blockquote><p>Task: 70D Temporal Liquidity Intelligence + Signal Stability</p><p>Agent: Hermes-TemporalLiquidity (AGENT-TEMPORAL-01) · 2026-08-19</p><p>Base commit: a190602 (HEAD == origin/main at bootstrap)</p><p>Schema: scalp_v3 = 70D canonical (hash 235b8fccc96b7e0e), PROTECTED</p><p>Status: RESEARCH COMPLETE — no production promotion</p></blockquote>
+<h2 id='root-cause'>ROOT CAUSE</h2>
+<p>The rapid BUY/SELL oscillation is a THREE-FACTOR combination (brief §7 verdict E):</p>
+<ol>
+<li><strong>Liquidity feature instability (A)</strong>: 6 of the 10 canonical liquidity</li>
+</ol>
+<p>dimensions change on 88-98% of consecutive M1 bars (bsl_distance_atr 0.901, ssl 0.880, eqh 0.980, eql 0.985, htf 0.974, internal 0.911). The engine recomputes every feature fresh from the full causal bar history at every decision — the model sees a nearly NEW liquidity vector each bar with zero history of its evolution.</p>
+<ol>
+<li><strong>Model boundary noise (B)</strong>: the trained 70D baseline's decision margin</li>
+<div class='table-wrap'><table>
+<thead><tr><th>PBUY - PSELL</th><th>NEVER exceeds 0.27 (median 0.135, flip-event median</th></tr></thead><tbody>
+</tbody></table></div>
+</ol>
+<p>0.158). The raw argmax operates permanently near the BUY/SELL boundary.</p>
+<ol>
+<li><strong>Missing temporal context (C)</strong>: liquidity pool states re-derive per</li>
+</ol>
+<p>bar (SWEPT/RECLAIMED/TOUCHED oscillate around level boundaries — 12 pools observed), and no persistence/lag/state-duration information is presented to the model.</p>
+<p>Evidence: 4000-event real XAUUSD M1 capture (artifacts/forensics/ 70d_signal_flapping_trace.json) through the canonical 70D pipeline + a 70D baseline model trained on the same causal frame: <strong>597 BUY&lt;-&gt;SELL flips, median flip interval 60 s (= 1 M1 bar)</strong>.</p>
+<h2 id='feature-forensics-all-10-liquidity-dims'>FEATURE FORENSICS (all 10 liquidity dims)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>dim</th><th>name</th><th>unique</th><th>chg_frac</th><th>classification</th></tr></thead><tbody>
+<tr><td>60</td><td>bsl_distance_atr</td><td>3452</td><td>0.901</td><td>tick/bar-sensitive</td></tr>
+<tr><td>61</td><td>ssl_distance_atr</td><td>3363</td><td>0.880</td><td>tick/bar-sensitive</td></tr>
+<tr><td>62</td><td>eqh_strength</td><td>3885</td><td>0.980</td><td>structure-sensitive (recomputed)</td></tr>
+<tr><td>63</td><td>eql_strength</td><td>3909</td><td>0.985</td><td>structure-sensitive (recomputed)</td></tr>
+<tr><td>64</td><td>htf_liquidity_score</td><td>3878</td><td>0.974</td><td>HTF-sensitive (recomputed)</td></tr>
+<tr><td>65</td><td>internal_liquidity_distance</td><td>3540</td><td>0.911</td><td>tick/bar-sensitive</td></tr>
+<tr><td>66</td><td>external_liquidity_distance</td><td>1591</td><td>0.435</td><td>event/bar-sensitive</td></tr>
+<tr><td>67</td><td>liquidity_confluence</td><td>7</td><td>0.004</td><td>DEGENERATE (v1.0 class, BUG-107 family)</td></tr>
+<tr><td>68</td><td>liquidity_sweep_state</td><td>5</td><td>0.318</td><td>event-sensitive (step fn)</td></tr>
+<tr><td>69</td><td>post_sweep_displacement</td><td>519</td><td>0.193</td><td>event/bar-sensitive</td></tr>
+</tbody></table></div>
+<h2 id='temporal-design'>TEMPORAL DESIGN</h2>
+<p>22 causal dims (docs/70D_TEMPORAL_FEATURE_CONTRACT.md) in <code>features/temporal.py::TemporalLiquidityTracker</code>:</p>
+<ul>
+<li>distances (bsl/ssl/internal/external): lag1 + lag2 + delta1</li>
+<li>strengths (eqh/eql): lag1 + persistence(3-bar)</li>
+<li>htf score: lag1 + state_duration (bars since sign change)</li>
+<li>confluence: lag1 + persistence (degenerate source -&gt; near-constant)</li>
+<li>sweep state: persistence + time-since-change (event semantics, NOT a raw</li>
+</ul>
+<p>continuous series)</p>
+<ul>
+<li>displacement: lag1 + delta1</li>
+</ul>
+<p>Cold start: documented neutrals (3.0 distances, 0.0 others); delta at cold start = 0.0 (no change evidence). All clipped [-3,+3].</p>
+<h2 id='schema'>SCHEMA</h2>
+<ul>
+<li>CURRENT (protected): scalp_v3 = 70D (Base 0..49 | News 50..59 |</li>
+</ul>
+<p>Liquidity 60..69), hash 235b8fccc96b7e0e. UNTOUCHED.</p>
+<ul>
+<li>CANDIDATE: scalp_v4_temporal_candidate = 92D (70 canonical + 22 temporal),</li>
+</ul>
+<p>registered in features/schema.py. RESEARCH ONLY — never ACTIVE.</p>
+<h2 id='model'>MODEL</h2>
+<p>70D baseline trained on the same causal frame (CandidateTrainer, LEGACY_SCALPNET_V1, 8 epochs, seed 42). Raw vs stabilized decision on the same 4000 events:</p>
+<div class='table-wrap'><table>
+<thead><tr><th>cell</th><th>val_acc</th><th>raw flips</th><th>stable flips</th><th>reduction</th></tr></thead><tbody>
+<tr><td>A 70D</td><td>0.360</td><td>610</td><td>412</td><td>32.5%</td></tr>
+<tr><td>B +lag</td><td>0.260</td><td>754</td><td>414</td><td>45.1%</td></tr>
+<tr><td>C +lag+delta</td><td>0.400</td><td>527</td><td>441</td><td>16.3%</td></tr>
+<tr><td>D +lag+persist</td><td>0.379</td><td>467</td><td>408</td><td>12.6%</td></tr>
+<tr><td>E full 22D</td><td>0.398</td><td>589</td><td>486</td><td>17.5%</td></tr>
+</tbody></table></div>
+<h2 id='stability-controller'>STABILITY CONTROLLER</h2>
+<p><code>signals/stability_controller.py::DecisionStabilityController</code> — causal, O(1), stateful, deterministic, bounded. States NONE -&gt; BUY/SELL_CANDIDATE -&gt; CONFIRMED. Parameters (chosen by replay evidence): entry_min_margin 0.05, hard_reversal_margin 0.20, entry_confirm_bars 2, exit_confirm_bars 1, max_candidate_age 12. Entry/exit separation via position_open flag (brief 29). HARD_REVERSAL = margin &gt;= 0.20 (strong probability margin) — structural confirmation available via structural_buy/sell (brief 30). Reset on symbol/model/schema/timeframe/restart (brief 32).</p>
+<h2 id='entry--exit'>ENTRY / EXIT</h2>
+<p>Separate confirmations: entry needs 2 consecutive same-direction observations; an open position (position_open=True) exits on 1 — the different cost of delay (brief 29) is honored.</p>
+<h2 id='replay'>REPLAY</h2>
+<p>Real XAUUSD M1 history (data/raw/XAUUSD_M1.parquet). Flapping sequences replayed through A (70D), E (92D), and A+controller; metrics above.</p>
+<h2 id='ablation'>ABLATION</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>variant</th><th>val_acc</th><th>flips</th></tr></thead><tbody>
+<tr><td>E_full (22D)</td><td>0.398</td><td>589</td></tr>
+<tr><td>E_no_lag1</td><td>0.320</td><td>616</td></tr>
+<tr><td>E_no_lag2</td><td>0.360</td><td>628</td></tr>
+<tr><td>E_no_delta</td><td>0.335</td><td>598</td></tr>
+<tr><td>E_no_persist</td><td>0.359</td><td>635</td></tr>
+<tr><td>E_no_tsc</td><td>0.343</td><td>668</td></tr>
+</tbody></table></div>
+<p>lag1 and delta are the highest-value components (accuracy drops 0.08/0.06 when removed); persistence removal raises flips; tsc removal lowers accuracy. NO temporal component is redundant.</p>
+<h2 id='walk-forward--oos'>WALK-FORWARD / OOS</h2>
+<p>CandidateTrainer chronological split (last 20% = OOS) on the SAME frame for every cell — the only experimental variable is the feature representation (fair, brief 22). Full purged walk-forward is the next governance step (brief 44) before any promotion discussion.</p>
+<h2 id='performance'>PERFORMANCE</h2>
+<ul>
+<li>Temporal tracker update: O(1) (bounded 8-vector buffer); 5000 updates &lt;</li>
+</ul>
+<p>0.5 s measured. No DB/network/model reload on the update path (tested).</p>
+<ul>
+<li>Liquidity engine per-event cost (canonical): H=4000 ~1.2 s (BUG-106</li>
+</ul>
+<p>class, TASK-05 bounded); research capture used H=300 ~27 ms.</p>
+<ul>
+<li>p50/p95/p99 of the full capture pipeline not instrumented per-stage in</li>
+</ul>
+<p>this run (perf harness deferred to the governance phase); the tracker itself is microseconds.</p>
+<h2 id='debug'>DEBUG</h2>
+<p>TemporalLiquiditySnapshot exposes: current liquidity (via canonical vector), lag1/lag2, delta1, persistence, time-since-change per dimension. StabilityDecision exposes: raw_direction, stable_direction, PBUY, PSELL, margin, candidate_direction, candidate_age, confirmation_progress, required_confirmation, last_confirmed_direction, state (STABLE/NOISY/CHANGING/REVERSING/CONFIRMED). Raw model output is never altered — the controller only filters the stable decision (brief 35).</p>
+<h2 id='tests'>TESTS</h2>
+<p>tests/unit/test_temporal_liquidity_phase20.py — <strong>34 tests green</strong> covering TEST-TEMPORAL-01..30 (lag 1/2/3, delta, persistence, tsc, cold start, no-future-leakage, determinism, parity, state persistence, sweep persistence, cache parity, BUY/SELL stability, weak/strong opposite, candidate timeout, hard reversal, restart reset, model/schema reset, entry/exit separation, raw unchanged, deterministic, flip reduction, reversal latency, O(1), no I/O, debug fields, schema registration, ablation guard).</p>
+<h2 id='bugs'>BUGS</h2>
+<p>No liquidity feature mathematics was proven incorrect (determinism + parity verified). Two pre-existing findings documented, NOT introduced:</p>
+<ul>
+<li>liquidity_confluence v1.0 degeneracy (7 unique values) — BUG-107 family,</li>
+</ul>
+<p>owned by TASK-06 optimization.</p>
+<ul>
+<li>Pool-state per-bar oscillation (SWEPT/RECLAIMED/TOUCHED) around level</li>
+</ul>
+<p>boundaries — a design property of the canonical re-derivation, fixed at the DECISION layer (controller), not by rewriting the protected engine.</p>
+<h2 id='final-verdict'>FINAL VERDICT</h2>
+<p><strong>BOTH_REQUIRED</strong> — the temporal feature layer (lag/delta/persistence adds accuracy: C 0.400, E 0.398 vs A 0.360; D cuts raw flips 23%) AND the decision stability controller (12-45% flip reduction across cells, 32.5% on the baseline) are both justified by real replay evidence.</p>
+<h2 id='files'>FILES</h2>
+<ul>
+<li>src/nexus_scalp/features/temporal.py (new) — 22D causal temporal extractor</li>
+<li>src/nexus_scalp/signals/stability_controller.py (new) — controller</li>
+<li>src/nexus_scalp/features/schema.py (edit) — scalp_v4_temporal_candidate</li>
+<li>tests/unit/test_temporal_liquidity_phase20.py (new) — 34 tests</li>
+<li>docs/forensics/70D_TEMPORAL_FORENSIC_BASELINE.md (new)</li>
+<li>docs/70D_TEMPORAL_FEATURE_CONTRACT.md (new)</li>
+<li>docs/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT.md (this file)</li>
+<li>scratch/temporal_step01*.py, step02, step03, step07*.py (harnesses)</li>
+<li>artifacts/forensics/70d_signal_flapping_trace.json (8.6 MB)</li>
+<li>artifacts/forensics/liquidity_feature_deltas.json</li>
+<li>artifacts/forensics/temporal_step03_determinism_state.json</li>
+<li>artifacts/forensics/temporal_experiment_matrix.json</li>
+<li>artifacts/forensics/temporal_ablation.json</li>
+<li>artifacts/forensics/temporal_frame_4000.parquet</li>
+</ul>
+<h2 id='handoff-next-agent'>HANDOFF (next agent)</h2>
+<p>Read: this report + 70D_TEMPORAL_FORENSIC_BASELINE.md + 70D_TEMPORAL_FEATURE_CONTRACT.md. Next steps: (1) run the full purged walk-forward/OOS/robustness for cell C/E vs A with identical budgets (TASK-04 protocol); (2) if validated, move scalp_v4_temporal_candidate through governance (EVALUATING -&gt; VALIDATED) — NEVER promote within this series; (3) wire the controller's telemetry ([TEMPORAL_LIQUIDITY], [SIGNAL_STABILITY]) into the existing SSE/audit paths with bounded throttling; (4) re-run the canonical H=4000 parity for the final numbers (the research capture used the documented H=300 bound).</p></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>در این صفحه</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#root-cause'>ROOT CAUSE</a></li><li class='toc-item toc-h2'><a href='#feature-forensics-all-10-liquidity-dims'>FEATURE FORENSICS (all 10 liquidity dims)</a></li><li class='toc-item toc-h2'><a href='#temporal-design'>TEMPORAL DESIGN</a></li><li class='toc-item toc-h2'><a href='#schema'>SCHEMA</a></li><li class='toc-item toc-h2'><a href='#model'>MODEL</a></li><li class='toc-item toc-h2'><a href='#stability-controller'>STABILITY CONTROLLER</a></li><li class='toc-item toc-h2'><a href='#entry--exit'>ENTRY / EXIT</a></li><li class='toc-item toc-h2'><a href='#replay'>REPLAY</a></li><li class='toc-item toc-h2'><a href='#ablation'>ABLATION</a></li><li class='toc-item toc-h2'><a href='#walk-forward--oos'>WALK-FORWARD / OOS</a></li><li class='toc-item toc-h2'><a href='#performance'>PERFORMANCE</a></li><li class='toc-item toc-h2'><a href='#debug'>DEBUG</a></li><li class='toc-item toc-h2'><a href='#tests'>TESTS</a></li><li class='toc-item toc-h2'><a href='#bugs'>BUGS</a></li><li class='toc-item toc-h2'><a href='#final-verdict'>FINAL VERDICT</a></li><li class='toc-item toc-h2'><a href='#files'>FILES</a></li><li class='toc-item toc-h2'><a href='#handoff-next-agent'>HANDOFF (next agent)</a></li></ul></aside></div>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/fa/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT.md'>ویرایش این صفحه در گیت‌هاب</a> · نسخه v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
+    <span><a href='../../../../fa/project/status/'>وضعیت پروژه</a> · <a href='../../../../fa/reference/faq/'>پرسش‌های متداول</a> · <a href='../../../../fa/releases/'>همه انتشارها</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../../fa/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='جستجو در مستندات… — ⌘K' aria-label='جستجو در مستندات…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>جستجو در مستندات……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "جستجو در مستندات…", "home": "خانه", "repo": "گیت‌هاب", "skip": "پرش به محتوا", "language": "زبان", "partial": "متن انگلیسی نمایش داده می‌شود — ترجمه این صفحه هنوز تکمیل نشده است", "english": "انگلیسی", "version": "نسخه", "next": "بعدی", "prev": "قبلی", "on_github": "ویرایش این صفحه در گیت‌هاب", "menu": "منو", "whats_new": "تازه‌ها", "all_releases": "همه انتشارها", "get_started": "شروع کنید", "view_architecture": "معماری", "view_roadmap": "نقشه راه", "close": "بستن", "theme": "پوسته", "theme_light": "روشن", "theme_dark": "تیره", "theme_system": "سیستم", "copy": "کپی", "copied": "کپی شد", "copy_error": "خطا در کپی", "no_results": "نتیجه‌ای یافت نشد", "loading": "در حال بارگذاری…", "section": "بخش", "search_results": "نتایج جستجو", "explore_docs": "کاوش در مستندات", "full_matrix": "ماتریس کامل", "release_timeline": "خط زمان انتشارها", "hero_kicker": "پلتفرم پژوهش و اجرای معاملات کمّی", "hero_title_a": "نکسوس", "hero_title_b": "اسکالپ انجین", "hero_sub": "پلتفرم اسکالپ پژوهش‌محور، شش‌ضلعی و رویدادمحور برای متاتریدر ۵ — ویژگی‌های علّی، مدل‌های عمیق تحت حکمرانی، موتور ریسک ثابت‌شده، ابزار پژوهش قطعی و مشاهده‌پذیری فارنزیک در یک خط لوله قابل‌ممیزی.", "chip_released": "منتشرشده", "chip_rev": "ریویژن", "chip_research": "پژوهش: 50D زنده · 70D کاندیدا", "released_history": "تاریخچه", "release_history_kicker": "تاریخچه انتشارها", "releases_intro": "هر انتشار با هایلایت‌های واقعی خود، برگرفته از فراداده انتشارهای گیت‌هاب در زمان ساخت. منبع یکتای نسخه:", "nf404_title": "۴۰۴", "nf404_lead": "این صفحه مستندات وجود ندارد.", "nf404_home": "خانه", "footer_prefix": "", "brand": "نکسوس", "brand_dim": "اسکالپ انجین", "github_release": "انتشار در گیت‌هاب", "back_home": "بازگشت به خانه", "quickstart_label": "شروع سریع", "status_label": "وضعیت پروژه", "faq_label": "پرسش‌های متداول", "cap_engine": "موتور ویژگی علّی 50D", "cap_risk": "موتور ریسک + کلمپ‌های اجرا", "cap_oos": "Walk-Forward + گیت سخت OOS", "cap_factory": "کارخانه مدل مصنوع-محور", "cap_70d": "قرارداد 70D (پایه+اخبار+نقدینگی)", "cap_cf": "موتور خلاف‌واقع (قدم زدن NO_TRADE)", "pillar_evidence_t": "🧭 شواهد پیش از ادعا", "pillar_evidence_b": "سنجه‌های بدون شواهد «n/a» نمایش داده می‌شوند — هرگز صفر جعلی نیست. نتایج منفی منتشر می‌شوند: کاندیدای پژوهشی 70D توسط گیت OOS خودمان رد شد.", "pillar_safety_t": "🔒 ایمنی در ساخت", "pillar_safety_b": "پیش‌فرض PAPER · SHADOW با صفر اختیار سفارش · LIVE پشت تأیید صریح · کلمپ‌های سخت ریسک (HARD_MAX_LOTS، مارجین ≤20٪) در مسیر اجرا اعمال می‌شوند.", "pillar_research_t": "🔬 پژوهش قطعی", "pillar_research_b": "Walk-Forward با پاکسازی و تحریم، بازپخش بی‌دقیق (bit-exact)، دیتاست/مدل‌های اثرانگشت‌شده، منشأ در هر اجرا — یک قرارداد ویژگی مشترک برای زنده، بازپخش و آموزش.", "pillar_truth_t": "👁️ حقیقت زمان اجرا", "pillar_truth_b": "مشاهده‌پذیری فارنزیک: لاگ‌های تفکیک‌شده با شدت، همبستگی رخدادها، گیت استقرار. حقیقت بروکر بر وضعیت کهنه می‌چربد؛ گیت‌ها مرجع‌اند، تنظیمات فقط قصد.", "capability": "قابلیت", "status": "وضعیت", "chip_certified": "گواهی‌شده", "chip_implemented": "پیاده‌سازی‌شده", "chip_experimental": "آزمایشی", "chip_research_l": "پژوهشی", "cap_highlights": "هایلایت قابلیت‌ها", "callout_important": "مهم", "callout_note": "یادداشت", "callout_warning": "هشدار", "how_it_works": "نکسوس چگونه کار می‌کند", "reading_time": "دقیقه مطالعه", "toc_title": "در این صفحه", "toc_empty": "بدون سرفصل", "last_updated": "آخرین به‌روزرسانی", "share": "اشتراک", "edit_page": "ویرایش این صفحه", "related_title": "ادامه کاوش", "related_sub": "بعدی در این بخش", "up_next": "بعدی", "also_read": "همچنین بخوانید", "prev_page": "قبلی", "next_page": "بعدی", "breadcrumb_home": "خانه", "hero_eyebrow_project": "پروژه", "hero_eyebrow_architecture": "معماری", "hero_eyebrow_research": "پژوهش", "hero_eyebrow_engineering": "مهندسی", "hero_eyebrow_guides": "راهنما", "hero_eyebrow_getting_started": "شروع", "hero_eyebrow_contributing": "مشارکت", "hero_eyebrow_reference": "مرجع", "hero_eyebrow_releases": "انتشارها", "kpi_certified": "گواهی‌شده", "kpi_experimental": "آزمایشی", "kpi_coverage": "پوشش", "steps_title": "مراحل", "copy_code": "کپی", "diagram_title": "نمودار سیستم", "diagram_sub": "نمای تعاملی خط لوله", "stats_live": "قرارداد زنده", "callout_tip": "نکته", "callout_info": "اطلاعات", "callout_success": "موفق", "callout_danger": "خطر", "anchor_copy": "کپی پیوند", "anchor_copied": "پیوند کپی شد", "feedback_title": "آیا مفید بود؟", "feedback_yes": "بله", "feedback_no": "خیر", "feedback_thanks": "سپاس از بازخورد شما", "prose_meta": "مقاله", "word_count": "واژه", "toc_toggle": "فهرست", "hero_desc_project": "نکسوس چیست، چه چیزی گواهی‌شده و چه چیزی آزمایشی است.", "hero_desc_architecture": "موتور چگونه ساخته شده: لایه‌های شش‌ضلعی و مسیر تیک تا تصمیم.", "hero_desc_research": "داده تاریخی چگونه به شواهد ابطال‌پذیر تبدیل می‌شود.", "hero_desc_engineering": "گیت‌های کیفیت، معماری CI و وضعیت امنیتی.", "hero_desc_guides": "کار روزانه با موتور.", "hero_desc_getting_started": "نصب، اجرا و پیکربندی موتور.", "hero_desc_contributing": "قرارداد مهندسی و نحوه مشارکت.", "hero_desc_reference": "مرجع CLI، واژه‌نامه و پاسخ‌های صادقانه.", "hero_desc_releases": "هر انتشار با هایلایت‌های واقعی.", "on_this_page": "در این صفحه"};
+window.NEXUS_LANG = "fa";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../../assets/docs-enhance.js' defer></script>
+<script src='../../../../assets/search.js' defer></script>
+
+</body>
+</html>

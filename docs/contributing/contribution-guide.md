@@ -30,7 +30,7 @@ contract. A human contributor benefits from the same discipline:
 git clone https://github.com/Opselon/NexusTradingForexBot.git
 cd NexusTradingForexBot
 python -m venv .venv && .\.venv\Scripts\Activate.ps1
-pip install -e .[dev]
+pip install -e ".[dev]"
 pytest tests/unit -q          # must be green before you start
 ```
 

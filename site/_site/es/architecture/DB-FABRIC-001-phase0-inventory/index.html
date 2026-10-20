@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang='es' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>DATABASE FABRIC — Phase 0/1 Inventory (evidence-based) · Nexus Scalp Engine</title>
+<meta name='description' content='DATABASE FABRIC — Phase 0/1 Inventory (evidence-based) — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/DB-FABRIC-001-phase0-inventory/'>
+<meta property='og:title' content='DATABASE FABRIC — Phase 0/1 Inventory (evidence-based)'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/es/architecture/DB-FABRIC-001-phase0-inventory/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta property='og:description' content='DATABASE FABRIC — Phase 0/1 Inventory (evidence-based) — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
+<meta name='twitter:title' content='DATABASE FABRIC — Phase 0/1 Inventory (evidence-based)'>
+<meta name='twitter:description' content='DATABASE FABRIC — Phase 0/1 Inventory (evidence-based) — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/architecture/DB-FABRIC-001-phase0-inventory/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/architecture/DB-FABRIC-001-phase0-inventory/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/architecture/DB-FABRIC-001-phase0-inventory/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/DB-FABRIC-001-phase0-inventory/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/architecture/DB-FABRIC-001-phase0-inventory/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/architecture/DB-FABRIC-001-phase0-inventory/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "DATABASE FABRIC — Phase 0/1 Inventory (evidence-based)", "description": "DATABASE FABRIC — Phase 0/1 Inventory (evidence-based) — Nexus Scalp Engine documentation", "inLanguage": "es", "url": "https://opselon.github.io/NexusTradingForexBot/es/architecture/DB-FABRIC-001-phase0-inventory/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>Ir al contenido</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menú' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../es/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.17</span>
+  </div>
+  <div class='header-actions'>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='Buscar…' aria-label='Buscar…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='Buscar…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
+    <details class='theme-picker'>
+      <summary aria-label='Tema' title='Tema'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ Claro</button>
+        <button type='button' data-theme-set='dark'>☾ Oscuro</button>
+        <button type='button' data-theme-set='system'>🖥 Sistema</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='Idioma' title='Idioma'><span aria-hidden='true'>🌐</span><span class='lp-name'>Español</span></summary>
+      <div class='lang-menu'><a href='../../../architecture/DB-FABRIC-001-phase0-inventory/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <span class='lang-current' lang='es'>Español ✓</span> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../es/'>Inicio</a>
+<div class='nav-section'><a class='' href='../../../es/getting-started/'>Inicio</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/getting-started/installation/'>Instalación</a></li>
+<li><a class='' href='../../../es/getting-started/quickstart/'>Inicio rápido</a></li>
+<li><a class='' href='../../../es/getting-started/first-run/'>Primera ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/getting-started/configuration/'>Configuración</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/project/'>Proyecto</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/project/vision/'>Visión y propósito</a></li>
+<li><a class='' href='../../../es/project/scope/'>Alcance</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/project/status/'>Estado del proyecto</a></li>
+<li><a class='' href='../../../es/project/capabilities/'>Matriz de capacidades</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/project/roadmap/'>Hoja de ruta</a></li>
+<li><a class='' href='../../../es/project/milestones/'>Hitos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../es/architecture/'>Arquitectura</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/architecture/overview/'>Visión general</a></li>
+<li><a class='' href='../../../es/architecture/system-map/'>Mapa del sistema</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/data-flow/'>Flujo de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/runtime/'>Runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/research-stack/'>Pila de investigación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/model-pipeline/'>Pipeline de modelos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/execution-pipeline/'>Pipeline de ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/observability/'>Observabilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/mcp-bridge/'>Puente MCP y traza</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/architecture/database/'>Base de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/research/'>Investigación</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/research/methodology/'>Metodología</a></li>
+<li><a class='' href='../../../es/research/datasets/'>Datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/backtesting/'>Backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/out-of-sample/'>Puerta OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/replay/'>Replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/counterfactuals/'>Contrafactuales</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/research/validation/'>Validación</a></li>
+<li><a class='' href='../../../es/research/reproducibility/'>Reproducibilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/engineering/'>Ingeniería</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/engineering/quality/'>Calidad y pruebas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/ci/'>Arquitectura de CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/release-process/'>Proceso de release</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/workflow-test-build-release/'>Flujo de trabajo de pruebas, build y releases</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/engineering/security/'>Seguridad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/guides/'>Guías</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/guides/cli/'>Guía CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/guides/api/'>Referencia API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/guides/troubleshooting/'>Solución de problemas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/guides/common-workflows/'>Flujos comunes</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/contributing/'>Contribuir</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/contributing/contribution-guide/'>Guía de contribución</a></li>
+<li><a class='' href='../../../es/contributing/documentation/'>Flujo de documentación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/contributing/add-language/'>Añadir un idioma</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/reference/'>Referencia</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../es/reference/cli-reference/'>Referencia CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/reference/glossary/'>Glosario</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/reference/terminology/'>Terminología y traducciones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../es/reference/faq/'>FAQ</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../es/releases/'>Versiones</a></div>
+<ul class='nav-list'><li><a href='../../../es/releases/'>v9.0.17 &amp; historial</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Fuente en inglés — traducción pendiente — <a href='../../architecture/DB-FABRIC-001-phase0-inventory/'>inglés</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../es/architecture/'>Arquitectura</a> / <span class='crumb-current' aria-current='page'>DB FABRIC 001 phase0 inventory</span></nav>
+<details class='toc-mobile'><summary>En esta página</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-physical-persistence-inventory-live-read-only-probe'>1. Physical persistence inventory (LIVE, read-only probe)</a></li><li class='toc-item toc-h2'><a href='#2-real-domain-map--16-domains-not-3'>2. REAL domain map — 16 domains, not 3</a></li><li class='toc-item toc-h2'><a href='#3-consumer-classification-297-non-testnon-doc-consumers'>3. Consumer classification (297 non-test/non-doc consumers)</a></li><li class='toc-item toc-h3'><a href='#the-59-directsqlite-consumers-by-domain'>The 59 DIRECT_SQLITE consumers (by domain)</a></li><li class='toc-item toc-h3'><a href='#unknown--resolved-0-remain'>UNKNOWN → resolved (0 remain)</a></li><li class='toc-item toc-h2'><a href='#4-hot-path-findings-phase-23-evidence'>4. Hot-path findings (Phase 23 evidence)</a></li><li class='toc-item toc-h2'><a href='#5-existing-infrastructure--what-already-exists-do-not-rebuil'>5. Existing infrastructure — what already exists (do NOT rebuild)</a></li><li class='toc-item toc-h2'><a href='#6-what-is-genuinely-missing-the-real-work'>6. What is genuinely missing (the real work)</a></li><li class='toc-item toc-h2'><a href='#7-sqlite-specific-surface-to-isolate-phase-11-audit'>7. SQLite-specific surface to isolate (Phase 11 audit)</a></li><li class='toc-item toc-h2'><a href='#8-safety-constraints-discovered-must-respect'>8. Safety constraints discovered (must respect)</a></li><li class='toc-item toc-h2'><a href='#9-next-steps-per-phase-54-execution-order'>9. Next steps (per Phase 54 execution order)</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='database-fabric--phase-01-inventory-evidence-based'>DATABASE FABRIC — Phase 0/1 Inventory (evidence-based)</h1>
+<p>Generated from a full-repo scan of <code>agent/feature/DB-FABRIC-001</code> (origin/main @ 9a6a0c21) plus a read-only live-schema probe of the production SQLite databases. Method: automated pattern sweep (10,148 hits, 897 files), then per-consumer classification, then live <code>PRAGMA table_xinfo</code> / row-count enumeration on the real databases (read-only URI mode — WAL files left attached, engine undisturbed).</p>
+<hr>
+<h2 id='1-physical-persistence-inventory-live-read-only-probe'>1. Physical persistence inventory (LIVE, read-only probe)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>DB file</th><th>Size</th><th>Tables</th><th>Notes</th></tr></thead><tbody>
+<tr><td><code>artifacts/audit.db</code></td><td><strong>425.7 MB</strong></td><td><strong>70</strong></td><td>The monolith. Real domain count ≫ 3.</td></tr>
+<tr><td><code>artifacts/news.db</code></td><td>241.4 MB</td><td>22</td><td>news + calendar + AI analysis</td></tr>
+<tr><td><code>artifacts/strategies.db</code></td><td>30.5 MB</td><td>8</td><td>strategy factory / research</td></tr>
+<tr><td><code>artifacts/candle_intel.db</code></td><td>11.0 MB</td><td>14</td><td>candle + regime + risk evaluations</td></tr>
+<tr><td><code>artifacts/models.db</code></td><td>0.1 MB</td><td>2</td><td>model checkpoints + load history</td></tr>
+<tr><td><code>%LOCALAPPDATA%/NexusScalpEngine/databases/app_settings.db</code></td><td>0.2 MB</td><td>3</td><td>settings (NOT under artifacts/)</td></tr>
+<tr><td><code>artifacts/marketplace.db</code></td><td>0.15 MB</td><td>—</td><td>model marketplace</td></tr>
+<tr><td><code>artifacts/experiments/experiments.db</code></td><td>—</td><td>—</td><td>model lab experiments</td></tr>
+<tr><td><code>artifacts/archive/_hygiene_state/hygiene_state.db</code></td><td>—</td><td>—</td><td>hygiene archive</td></tr>
+<tr><td><code>artifacts/_quarantine/quarantine_store.db</code></td><td>—</td><td>—</td><td>quarantine</td></tr>
+<tr><td>Zero-byte decoys</td><td>0</td><td>0</td><td><code>app_settings.db</code> (repo copy), <code>nexus.db</code>, <code>nexus_scalp.db</code>, <code>research.db</code>, <code>settings.db</code></td></tr>
+</tbody></table></div>
+<p>Zero-byte decoys are documented NSE behavior: the live settings DB is the AppData copy, never the repo copy.</p>
+<hr>
+<h2 id='2-real-domain-map--16-domains-not-3'>2. REAL domain map — 16 domains, not 3</h2>
+<p>The existing <code>DatabaseDomain</code> enum only knows AUDIT / NEWS / CANDLE_INTEL. The audit.db monolith physically co-locates 12+ logical domains. Domains derived from actual table ownership + file layout:</p>
+<div class='table-wrap'><table>
+<thead><tr><th>#</th><th>Domain</th><th>Physical home</th><th>Tables (owner)</th><th>Largest tables</th><th>Provider switching?</th></tr></thead><tbody>
+<tr><td>1</td><td>audit_ledger</td><td>audit.db</td><td><code>audit_ledger</code>, <code>audit_orders</code>, <code>audit_executions*</code>, <code>audit_broker_*</code></td><td>audit_broker_orders 10.6k</td><td>yes (v1..v9)</td></tr>
+<tr><td>2</td><td>signals_telemetry</td><td>audit.db</td><td><code>audit_signals</code> 8.1k, <code>audit_guard_telemetry</code>, <code>audit_paper_executions</code></td><td>8.1k</td><td>yes</td></tr>
+<tr><td>3</td><td>experience</td><td>audit.db</td><td><code>audit_experiences</code> 4.3k, <code>audit_experience_outcomes</code> 1.6k, <code>audit_experience_corrections</code>, <code>position_lifecycle_events</code> 4.3k</td><td>4.3k</td><td>yes</td></tr>
+<tr><td>4</td><td>snapshots_risk</td><td>audit.db</td><td><code>audit_account_snapshots</code> 7.2k, <code>runtime_risk_state</code></td><td>7.2k</td><td>yes</td></tr>
+<tr><td>5</td><td>research</td><td>audit.db</td><td><code>research_events</code> <strong>82,726</strong>, <code>research_evidence</code> 18.3k, <code>research_gates</code> 26.1k, <code>research_runs</code> 4.4k, <code>research_run_snapshots</code>, <code>research_worker_*</code></td><td><strong>82.7k</strong></td><td>yes</td></tr>
+<tr><td>6</td><td>models_governance</td><td>audit.db</td><td><code>model_governance_events</code> <strong>59,161</strong>, <code>model_runtime_health</code> 1.7k, <code>model_comparisons</code>, <code>model_promotion_audit</code>, <code>model_rollback_audit</code>, <code>model_governance_state</code>, <code>experience_model_registry</code></td><td><strong>59.2k</strong></td><td>yes</td></tr>
+<tr><td>7</td><td>models_registry</td><td>models.db</td><td><code>model_checkpoints</code> 68, <code>model_load_history</code> 23</td><td>68</td><td><strong>NO — never in DatabaseDomain</strong></td></tr>
+<tr><td>8</td><td>strategies_factory</td><td>strategies.db</td><td><code>factory_*</code> (7 tables) + <code>strategy_research_meta</code></td><td>factory_failures 8.9k</td><td>partial (own store, own DDL, not in enum)</td></tr>
+<tr><td>9</td><td>strategy_intelligence</td><td>audit.db</td><td><code>strategy_intelligence_registry</code> 355, <code>strategy_registry</code> 4.1k, <code>strategy_evolution_candidates</code></td><td>4.1k</td><td>yes (no own version)</td></tr>
+<tr><td>10</td><td>shadow</td><td>audit.db</td><td><code>shadow_decisions</code> <strong>55,342</strong>, <code>shadow_runs</code> 63, <code>shadow_comparisons</code>, <code>shadow_promotions</code> + <code>shadow70_*</code></td><td><strong>55.3k</strong></td><td>yes</td></tr>
+<tr><td>11</td><td>news</td><td>news.db</td><td><code>news_articles</code> 24.4k, <code>news_impacts</code> 23k, <code>news_entities</code> 60.3k, <code>news_topics</code> 41.6k, <code>news_analysis*</code>, <code>calendar_events</code>, <code>news_sources</code></td><td>60.3k</td><td>yes</td></tr>
+<tr><td>12</td><td>candle_intel</td><td>candle_intel.db</td><td><code>candles</code>, <code>candle_closures</code>, <code>candle_patterns</code>, <code>market_regimes</code>, <code>risk_evaluations</code>, <code>trade_decisions</code>, <code>rule_vetoes</code></td><td>10.8k</td><td>yes</td></tr>
+<tr><td>13</td><td>incidents</td><td>audit.db</td><td><code>incidents</code> 8, <code>incident_events</code>, <code>incident_quarantine</code>, <code>incident_value_traces</code></td><td>8</td><td>yes (no own version)</td></tr>
+<tr><td>14</td><td>hygiene</td><td>audit.db</td><td><code>hygiene_state</code> (external file), quarantine tables</td><td>small</td><td>yes (no own version)</td></tr>
+<tr><td>15</td><td>behavior_intelligence</td><td>audit.db</td><td><code>behavior_detections</code> 323, <code>behavior_analysis</code> 414, <code>anomaly_events</code></td><td>414</td><td>yes (no own version)</td></tr>
+<tr><td>17</td><td>settings</td><td>app_settings.db (AppData)</td><td><code>application_settings</code> 49, <code>configuration_metadata</code> 7, <code>settings_audit</code> 1.4k</td><td>1.4k</td><td><strong>NO — hardcoded SQLite, AppData path</strong></td></tr>
+</tbody></table></div>
+<p><strong>Domain 7 (models.db) and 17 (settings) are NOT in <code>DatabaseDomain</code> and are NOT covered by provider switching.</strong> The task statement's "verify whether models.db/strategies.db are included" → models.db: <strong>excluded</strong>; strategies.db: partially portable (own store, not in the enum).</p>
+<hr>
+<h2 id='3-consumer-classification-297-non-testnon-doc-consumers'>3. Consumer classification (297 non-test/non-doc consumers)</h2>
+<p>From the full sweep (schema: <code>.db</code> / <code>.sqlite</code> / PRAGMA / WAL / <code>sqlite3</code> / DDL / transaction patterns; 897 files, 10,148 hits):</p>
+<div class='table-wrap'><table>
+<thead><tr><th>Classification</th><th>Count</th><th>Meaning</th></tr></thead><tbody>
+<tr><td>FULLY_PORTABLE</td><td>71</td><td>no sqlite3 import; provider-abstracted already</td></tr>
+<tr><td>DRIVER_PORTABLE</td><td>135</td><td>no direct sqlite3 import; may use SQLite-shaped SQL via driver</td></tr>
+<tr><td>PARTIALLY_PORTABLE</td><td>26</td><td>imports sqlite3 for types/connection only</td></tr>
+<tr><td><strong>DIRECT_SQLITE</strong></td><td><strong>59</strong></td><td>own schema, own DDL, own connection handling — hard porting</td></tr>
+<tr><td>UNKNOWN</td><td><strong>0</strong></td><td>all 6 initial UNKNOWNs resolved (below)</td></tr>
+</tbody></table></div>
+<h3 id='the-59-directsqlite-consumers-by-domain'>The 59 DIRECT_SQLITE consumers (by domain)</h3>
+<ul>
+<li><strong>audit</strong>: <code>adapters/database/audit_repository.py</code> (4,031 LOC), <code>experience/evaluator.py</code>, <code>experience/outcome_recovery.py</code>, <code>experience/spread_sketch.py</code></li>
+<li><strong>models</strong> (6): <code>model_generation/model_registry.py</code>, <code>model_lab/experiment_registry.py</code>, <code>model_lifecycle/{registry,store,learning_cycle}.py</code>, <code>model_provisioning/official_install.py</code></li>
+<li><strong>strategies</strong>: <code>strategies/factory/store.py</code></li>
+<li><strong>news</strong>: <code>news/memory/post_event.py</code></li>
+<li><strong>candle_intel</strong>: <code>candle_intelligence/store.py</code></li>
+<li><strong>governance</strong> (4): <code>governance/{engine,evidence,load_gate,store}.py</code></li>
+<li><strong>hygiene</strong> (9): <code>hygiene/{archive,consistency,detectors,hygiene_runtime,index_health,quarantine,state,worker,worker_runner}.py</code></li>
+<li><strong>incidents</strong> (3): <code>incidents/{occurrences,store,trace_lineage}.py</code></li>
+<li><strong>research</strong> (5): <code>research/{archive,champion_ceiling,contract_check,observability,store}.py</code></li>
+<li><strong>shadow</strong> (2): <code>shadow/store.py</code>, <code>shadow/shadow70/store.py</code></li>
+<li><strong>forensics</strong> (4): <code>forensics/{checks_support,experience_gap,news_sources}.py</code> + <code>scripts/forensics/exit_policy_counterfactual.py</code></li>
+<li><strong>settings</strong> (1): <code>settings/service.py</code></li>
+<li><strong>release_ops</strong> (5): <code>release/{diagnostics,health}.py</code>, <code>release/update_engine/{backup_migrate,orchestrator}.py</code>, <code>smoke/runner.py</code></li>
+<li><strong>surface</strong> (6): <code>cli/{db_commands,doctor}.py</code>, <code>web/{api_v1/incidents,calibration_monitor,debug_research_routes,operator_routes}.py</code></li>
+<li><strong>other</strong> (7): <code>adapters/database/{broker_history,dead_letter_store,executions_idempotency}.py</code>, <code>risk/concurrency_policy.py</code>, <code>storage/runtime.py</code>, CI/runtime scripts</li>
+</ul>
+<h3 id='unknown--resolved-0-remain'>UNKNOWN → resolved (0 remain)</h3>
+<div class='table-wrap'><table>
+<thead><tr><th>File</th><th>Resolution</th></tr></thead><tbody>
+<tr><td><code>experience/decision_evidence.py</code></td><td>PARTIALLY_PORTABLE — <code>sqlite3.Connection</code> type annotation + <code>sqlite3.OperationalError</code> catch, no connect</td></tr>
+<tr><td><code>model_lifecycle/champion_sentinel.py</code></td><td>PARTIALLY_PORTABLE — <code>sqlite3.Row</code> row factory only</td></tr>
+<tr><td><code>news/database.py</code></td><td>DRIVER_PORTABLE — uses <code>get_driver</code>, imports sqlite3 only for <code>sqlite3.Row</code></td></tr>
+<tr><td><code>release/versioning.py</code></td><td>FULLY_PORTABLE — comment references only</td></tr>
+<tr><td><code>strategies/factory/orchestrator.py</code></td><td>DIRECT_SQLITE — raw <code>_sq.connect</code> at line 1258</td></tr>
+<tr><td><code>model_lifecycle/learning_loop.py</code></td><td>FULLY_PORTABLE — comment references only</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id='4-hot-path-findings-phase-23-evidence'>4. Hot-path findings (Phase 23 evidence)</h2>
+<p><code>AuditRepository</code> is the only DB writer on the tick path, and it is <strong>already fully async</strong> — <code>_enqueue_financial</code> / <code>_enqueue_telemetry</code> feed a <code>queue.Queue(maxsize=10000)</code> drained by a single background worker (batch ≤ 500/transaction, <code>executemany</code> grouped by statement). No synchronous insert on the tick path.</p>
+<p>But: the PG path is empty. <code>_is_sqlite</code> gates the whole writer — <code>_process_queue_worker</code> returns immediately when <code>not self._is_sqlite</code>, and every write method early-returns. <strong>Under PostgreSQL the audit domain records nothing.</strong> 20+ <code>if not self._is_sqlite: return</code> sites. This is the single largest portability defect: the abstraction exists but the write plane was never implemented for PG.</p>
+<hr>
+<h2 id='5-existing-infrastructure--what-already-exists-do-not-rebuil'>5. Existing infrastructure — what already exists (do NOT rebuild)</h2>
+<ul>
+<li><code>DatabaseConfig</code> + <code>load_database_config</code> (settings DB + <code>NSE_DATABASE__*</code> env resolution order)</li>
+<li><code>mask_url_password</code>, <code>resolve_password</code>, <code>build_postgres_url</code> (secret store → URL at connect time)</li>
+<li><code>SecureSecretStore</code> (OS-backed, DPAPI on Windows) — reuse, do not reinvent</li>
+<li><code>DatabaseProvider.parse/from_url</code>, <code>default_sqlite_path</code>, <code>url_for_provider</code></li>
+<li><code>DatabaseDriver</code> ABC with <code>query_readonly</code> — SQLite enforces a <strong>real C-level authorizer</strong> (not a stub); PG <code>query_readonly</code> is a passthrough stub</li>
+<li><code>SQLiteDriver</code>: WAL, synchronous=NORMAL, temp_store=MEMORY, shared-memory support, single connect site</li>
+<li><code>PostgreSQLDriver</code>: psycopg v3, placeholder translation, <code>ON CONFLICT</code> upsert/insert-ignore, BIGSERIAL identity, DDL porting, <code>pg_type_for</code></li>
+<li><code>port_create_table</code> (ddl_port.py) — SQLite → PG DDL translation</li>
+<li><code>DatabaseMigrationEngine</code> (1,270 LOC) + <code>REGISTRY</code> (771 LOC) + manifests (audit v9, news, candle_intel)</li>
+<li><code>run_startup_migration_gate</code> — safe additive migration gate</li>
+<li>CLI: <code>nexus db status/plan/migrate/verify/migrations/history/repair/doctor</code> + portability sub-app (status/config/switch/test/preview/migrate/validate/backup)</li>
+<li>Web: <code>/api/db/console/*</code> SSMS-style explorer, already driver-abstracted</li>
+</ul>
+<h2 id='6-what-is-genuinely-missing-the-real-work'>6. What is genuinely missing (the real work)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>#</th><th>Gap</th><th>Phase</th><th>Severity</th></tr></thead><tbody>
+<tr><td>G1</td><td><strong>No read/write plane separation</strong> — driver methods are single-plane; <code>query_readonly</code> optional, no routing, no pool, no consistency classes</td><td>P4/P5</td><td><strong>P0</strong></td></tr>
+<tr><td>G2</td><td><strong>No PostgreSQL pooling</strong> — <code>PostgreSQLDriver.connect</code> = 1 connection per call, no <code>psycopg_pool</code></td><td>P6</td><td><strong>P0</strong></td></tr>
+<tr><td>G3</td><td><strong>AuditRepository write plane absent on PG</strong> — <code>_is_sqlite</code> disables everything; <code>_process_queue_worker</code> no-ops</td><td>P9/P10</td><td><strong>P0</strong></td></tr>
+<tr><td>G4</td><td><strong>No SQLite writer model</strong> — 155 raw <code>sqlite3.connect</code> sites in <code>src/</code>; read-only connections only in forensics; no read pool</td><td>P7</td><td><strong>P0</strong></td></tr>
+<tr><td>G5</td><td><strong>Domain map incomplete</strong> — <code>DatabaseDomain</code> = 3, reality = 16; models.db/settings not switchable</td><td>P1</td><td>P1</td></tr>
+<tr><td>G6</td><td><strong>59 consumers with own DDL/connection handling</strong> — competing schema authorities</td><td>P14</td><td>P1</td></tr>
+<tr><td>G7</td><td><strong>No PostgreSQL schema authority for the 70-table audit monolith</strong> — manifest covers a subset</td><td>P14</td><td>P1</td></tr>
+<tr><td>G8</td><td><strong>Cross-provider SQL parity untested</strong> — 38 AUTOINCREMENT / 32 INSERT OR REPLACE / 10 BEGIN IMMEDIATE / 310 sqlite datetime call sites</td><td>P11</td><td>P1</td></tr>
+<tr><td>G9</td><td><strong>No benchmark suite</strong> — latency claims unmeasured</td><td>P29</td><td>P1</td></tr>
+<tr><td>G10</td><td><strong>PostgreSQL not in CI</strong> — optional extra, skipped when absent</td><td>P49</td><td>P1</td></tr>
+<tr><td>G11</td><td><strong>Timestamp/type contract informal</strong> — no provider-parity proof</td><td>P12/P13</td><td>P2</td></tr>
+<tr><td>G12</td><td><strong>DB health collapsed to a few states</strong> — no DEGRADED/POOL_EXHAUSTED/MIGRATION_* granularity</td><td>P27</td><td>P2</td></tr>
+<tr><td>G13</td><td><strong>Migration engine lacks resumable checkpoints / checksums / dry-run for SQLite→PG</strong> — current migrator is PG→SQLite direction only (check)</td><td>P15</td><td>P1</td></tr>
+<tr><td>G14</td><td><strong>Settings DB hardcoded SQLite + AppData</strong> — not provider-switchable</td><td>P4</td><td>P2</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id='7-sqlite-specific-surface-to-isolate-phase-11-audit'>7. SQLite-specific surface to isolate (Phase 11 audit)</h2>
+<p>From the sweep:</p>
+<div class='table-wrap'><table>
+<thead><tr><th>Pattern</th><th>Files</th><th>Owner going forward</th></tr></thead><tbody>
+<tr><td><code>PRAGMA</code></td><td>183</td><td>SQLiteDriver only</td></tr>
+<tr><td><code>sqlite_master</code></td><td>37</td><td>SQLiteDriver only</td></tr>
+<tr><td><code>INSERT OR REPLACE</code></td><td>32</td><td><code>driver.upsert()</code></td></tr>
+<tr><td><code>INSERT OR IGNORE</code></td><td>32</td><td><code>driver.insert_ignore()</code></td></tr>
+<tr><td><code>AUTOINCREMENT</code></td><td>38</td><td><code>driver.identity_ddl()</code></td></tr>
+<tr><td><code>BEGIN IMMEDIATE</code></td><td>10</td><td><code>driver.transaction()</code></td></tr>
+<tr><td><code>last_insert_rowid</code></td><td>4</td><td><code>driver.last_insert_rowid()</code></td></tr>
+<tr><td><code>datetime()</code>/<code>strftime()</code>/<code>julianday</code></td><td>310</td><td>banned from domain SQL; app writes explicit UTC ISO strings</td></tr>
+<tr><td><code>json_extract</code></td><td>3</td><td>banned; serialize in code</td></tr>
+<tr><td><code>file::memory:</code>/<code>mode=ro</code></td><td>186</td><td>SQLiteDriver only</td></tr>
+<tr><td><code>VACUUM</code>/<code>ATTACH</code></td><td>52</td><td>SQLiteDriver only</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id='8-safety-constraints-discovered-must-respect'>8. Safety constraints discovered (must respect)</h2>
+<ul>
+<li><strong>Read-only URI probes are mandatory</strong> against live DBs (<code>file:...?mode=ro</code>, uri=True) — WAL stays attached, engine undisturbed. Applied throughout this audit.</li>
+<li><code>audit.db</code> is 425MB / 70 tables — <strong>never</strong> auto-drop, auto-VACUUM-full, or rewrite. Migration is copy-only, source untouched.</li>
+<li><code>settings.service.SettingsDatabase</code> opens AppData with <code>check_same_thread=False</code> + one shared connection — the provider switch must not relocate it silently.</li>
+<li><code>SecureSecretStore</code> is the ONLY secret mechanism. No new password storage.</li>
+<li>Repo is <code>core.autocrlf=true</code>; compare blob-vs-blob after CRLF normalization.</li>
+<li>Worktree pytest needs <code>PYTHONPATH=src</code> (editable install resolves to main checkout's <code>src/</code>).</li>
+</ul>
+<hr>
+<h2 id='9-next-steps-per-phase-54-execution-order'>9. Next steps (per Phase 54 execution order)</h2>
+<ol>
+<li><strong>Phase 2 ADR</strong> — target fabric architecture (this task, next artifact)</li>
+<li><strong>PR 1 — Fabric core</strong>: read plane, write plane, pools, routing, consistency classes, metrics, health (G1, G2, G4)</li>
+<li><strong>PR 2 — Audit/accounting</strong>: AuditRepository write plane on PG (G3) + read/write split + financial durability proofs</li>
+<li><strong>PR 3 — News/candle/research</strong>, <strong>PR 4 — models/strategies/governance/settings</strong> (G5, G6)</li>
+<li><strong>PR 5 — Migration engine 2.0</strong> + cutover UX (G13)</li>
+<li><strong>PR 6 — CI enforcement + benchmarks + docs</strong> (G8, G9, G10)</li>
+</ol></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>En esta página</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-physical-persistence-inventory-live-read-only-probe'>1. Physical persistence inventory (LIVE, read-only probe)</a></li><li class='toc-item toc-h2'><a href='#2-real-domain-map--16-domains-not-3'>2. REAL domain map — 16 domains, not 3</a></li><li class='toc-item toc-h2'><a href='#3-consumer-classification-297-non-testnon-doc-consumers'>3. Consumer classification (297 non-test/non-doc consumers)</a></li><li class='toc-item toc-h3'><a href='#the-59-directsqlite-consumers-by-domain'>The 59 DIRECT_SQLITE consumers (by domain)</a></li><li class='toc-item toc-h3'><a href='#unknown--resolved-0-remain'>UNKNOWN → resolved (0 remain)</a></li><li class='toc-item toc-h2'><a href='#4-hot-path-findings-phase-23-evidence'>4. Hot-path findings (Phase 23 evidence)</a></li><li class='toc-item toc-h2'><a href='#5-existing-infrastructure--what-already-exists-do-not-rebuil'>5. Existing infrastructure — what already exists (do NOT rebuild)</a></li><li class='toc-item toc-h2'><a href='#6-what-is-genuinely-missing-the-real-work'>6. What is genuinely missing (the real work)</a></li><li class='toc-item toc-h2'><a href='#7-sqlite-specific-surface-to-isolate-phase-11-audit'>7. SQLite-specific surface to isolate (Phase 11 audit)</a></li><li class='toc-item toc-h2'><a href='#8-safety-constraints-discovered-must-respect'>8. Safety constraints discovered (must respect)</a></li><li class='toc-item toc-h2'><a href='#9-next-steps-per-phase-54-execution-order'>9. Next steps (per Phase 54 execution order)</a></li></ul></aside></div>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/es/architecture/DB-FABRIC-001-phase0-inventory.md'>Editar esta página en GitHub</a> · Versión v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
+    <span><a href='../../../es/project/status/'>Estado del proyecto</a> · <a href='../../../es/reference/faq/'>FAQ</a> · <a href='../../../es/releases/'>Todas las versiones</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../es/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='Buscar… — ⌘K' aria-label='Buscar…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>Buscar……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "Buscar…", "home": "Inicio", "repo": "GitHub", "skip": "Ir al contenido", "language": "Idioma", "partial": "Fuente en inglés — traducción pendiente", "english": "inglés", "version": "Versión", "next": "Siguiente", "prev": "Anterior", "on_github": "Editar esta página en GitHub", "menu": "Menú", "whats_new": "Novedades", "all_releases": "Todas las versiones", "get_started": "Comenzar", "view_architecture": "Arquitectura", "view_roadmap": "Hoja de ruta", "close": "Cerrar", "theme": "Tema", "theme_light": "Claro", "theme_dark": "Oscuro", "theme_system": "Sistema", "copy": "Copiar", "copied": "Copiado", "copy_error": "Error al copiar", "no_results": "Sin resultados", "loading": "Cargando…", "section": "Sección", "search_results": "Resultados de búsqueda", "explore_docs": "Explora la documentación", "full_matrix": "Matriz completa", "release_timeline": "Cronología de versiones", "hero_kicker": "PLATAFORMA DE INVESTIGACIÓN Y EJECUCIÓN DE TRADING CUANTITATIVO", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Una plataforma de scalping basada en investigación, hexagonal y dirigida por eventos para MetaTrader 5 — características causales, modelos profundos gobernados, un motor de riesgo invariante, herramientas de investigación deterministas y observabilidad forense en un pipeline auditable.", "chip_released": "publicada", "chip_rev": "rev", "chip_research": "investigación: 50D vivo · 70D candidato", "released_history": "historial", "release_history_kicker": "HISTORIAL DE VERSIONES", "releases_intro": "Cada versión con sus novedades reales, derivadas de los metadatos de GitHub en tiempo de compilación. Fuente única de versión:", "nf404_title": "404", "nf404_lead": "Esta página de documentación no existe.", "nf404_home": "Inicio", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Versión en GitHub", "back_home": "Volver al inicio", "quickstart_label": "Inicio rápido", "status_label": "Estado del proyecto", "faq_label": "FAQ", "cap_engine": "Motor de características causales 50D", "cap_risk": "Motor de riesgo + límites de ejecución", "cap_oos": "Walk-Forward + puerta OOS estricta", "cap_factory": "Fábrica de modelos artefacto-céntrica", "cap_70d": "Contrato 70D (Base+Noticias+Liquidez)", "cap_cf": "Motor contrafactual (recorrido NO_TRADE)", "pillar_evidence_t": "🧭 Evidencia antes que afirmaciones", "pillar_evidence_b": "Las métricas sin evidencia muestran n/a — nunca ceros falsos. Los resultados negativos se publican: nuestro candidato insignia 70D fue rechazado por nuestra propia puerta OOS.", "pillar_safety_t": "🔒 Seguridad por construcción", "pillar_safety_b": "PAPER por defecto · SHADOW sin autoridad de órdenes · LIVE tras confirmación explícita · límites estrictos de riesgo (HARD_MAX_LOTS, margen ≤20%) aplicados en la ruta de ejecución.", "pillar_research_t": "🔬 Investigación determinista", "pillar_research_b": "Walk-forward purgado y con embargo, replay bit-exacto, datasets/modelos con huella, procedencia en cada ejecución — el mismo contrato de características para vivo, replay y entrenamiento.", "pillar_truth_t": "👁️ Verdad del runtime", "pillar_truth_b": "Observabilidad forense: logs por severidad, correlación de incidentes, puerta de despliegue. La verdad del bróker gana al estado obsoleto; las puertas son la autoridad, la configuración es intención.", "capability": "Capacidad", "status": "Estado", "chip_certified": "CERTIFICADO", "chip_implemented": "IMPLEMENTADO", "chip_experimental": "EXPERIMENTAL", "chip_research_l": "INVESTIGACIÓN", "cap_highlights": "Capacidades destacadas", "callout_important": "IMPORTANTE", "callout_note": "NOTA", "callout_warning": "ADVERTENCIA", "how_it_works": "Cómo funciona Nexus", "reading_time": "min de lectura", "toc_title": "En esta página", "toc_empty": "Sin encabezados", "last_updated": "Actualizado", "share": "Compartir", "edit_page": "Editar esta página", "related_title": "Sigue explorando", "related_sub": "A continuación en esta sección", "up_next": "Siguiente", "also_read": "Lee también", "prev_page": "Anterior", "next_page": "Siguiente", "breadcrumb_home": "Inicio", "hero_eyebrow_project": "Proyecto", "hero_eyebrow_architecture": "Arquitectura", "hero_eyebrow_research": "Investigación", "hero_eyebrow_engineering": "Ingeniería", "hero_eyebrow_guides": "Guías", "hero_eyebrow_getting_started": "Inicio", "hero_eyebrow_contributing": "Contribuir", "hero_eyebrow_reference": "Referencia", "hero_eyebrow_releases": "Versiones", "kpi_certified": "Certificado", "kpi_experimental": "Experimental", "kpi_coverage": "Cobertura", "steps_title": "Pasos", "copy_code": "Copiar", "diagram_title": "Diagrama del sistema", "diagram_sub": "Vista interactiva del pipeline", "stats_live": "Contrato vivo", "callout_tip": "CONSEJO", "callout_info": "INFO", "callout_success": "ÉXITO", "callout_danger": "PELIGRO", "anchor_copy": "Copiar enlace", "anchor_copied": "Enlace copiado", "feedback_title": "¿Te resultó útil?", "feedback_yes": "Sí", "feedback_no": "No", "feedback_thanks": "Gracias por tu comentario", "prose_meta": "Artículo", "word_count": "palabras", "toc_toggle": "Contenidos", "hero_desc_project": "Qué es Nexus, qué está certificado vs experimental.", "hero_desc_architecture": "Cómo está construido el motor: capas hexagonales y camino del tick.", "hero_desc_research": "Cómo los datos históricos se convierten en evidencia falsable.", "hero_desc_engineering": "Puertas de calidad, arquitectura de CI y postura de seguridad.", "hero_desc_guides": "Operar el motor día a día.", "hero_desc_getting_started": "Instala, ejecuta y configura el motor.", "hero_desc_contributing": "El contrato de ingeniería y cómo contribuir.", "hero_desc_reference": "Referencia CLI, glosario y respuestas honestas.", "hero_desc_releases": "Cada versión con sus novedades reales.", "on_this_page": "En esta página"};
+window.NEXUS_LANG = "es";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../assets/docs-enhance.js' defer></script>
+<script src='../../../assets/search.js' defer></script>
+
+</body>
+</html>

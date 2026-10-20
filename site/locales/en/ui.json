@@ -98,7 +98,26 @@
     "pulse_last_sync": "Last synchronized",
     "cta_title": "Ready to evaluate on live data — without risk?",
     "cta_desc": "Start in SHADOW. Same features, same gates, same pipeline — zero order authority.",
-    "cta_install": "Installation"
+    "cta_install": "Installation",
+    "nav_pipe": "Pipeline",
+    "nav_why": "Why Nexus",
+    "nav_modes": "Modes",
+    "nav_research": "Research",
+    "nav_market": "Chart",
+    "nav_arch": "Architecture",
+    "nav_console": "Console",
+    "nav_pulse": "Pulse",
+    "status.locales": "Locales",
+    "fresh_title": "Fresh on main",
+    "fresh_badge": "UNRELEASED",
+    "fresh_mcp_t": "Read-only MCP transport",
+    "fresh_mcp_b": "Trade tools are refused before any network I/O; off by default (mt5.mcp).",
+    "fresh_trace_t": "Redacted trace emission",
+    "fresh_trace_b": "Every MT5 call emits a structured trace; secrets are redacted at the boundary.",
+    "fresh_replay_t": "Replay identity gate",
+    "fresh_replay_b": "Replay fails closed when the dataset fingerprint does not match the run.",
+    "fresh_mem_t": "Bounded runtime memory",
+    "fresh_mem_b": "Paper ledger and completed-bar ring are capped; long shadow runs stay bounded."
   },
   "ui": {
     "search": "Search docs…",
@@ -230,7 +249,8 @@
     "hero_desc_getting_started": "Install, run and configure the engine.",
     "hero_desc_contributing": "The engineering contract and how to contribute.",
     "hero_desc_reference": "CLI reference, glossary, and honest answers.",
-    "hero_desc_releases": "Every release with real highlights."
+    "hero_desc_releases": "Every release with real highlights.",
+    "on_this_page": "On this page"
   },
   "nav": {
     "getting-started": "Getting Started",
@@ -288,7 +308,8 @@
     "glossary": "Glossary",
     "terminology": "Terminology & Translations",
     "faq": "FAQ",
-    "docs-hub": "Docs Hub"
+    "docs-hub": "Docs Hub",
+    "mcp-bridge": "MCP Bridge & Trace"
   },
   "sections": {
     "getting-started": "Install, run and configure the engine. PAPER mode is the default; SHADOW gives you live data with zero order authority.",

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang='ar' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>ML-ARCH-003 — Attention &amp; Positional Encoding Ablation Report · نكسوس سكالب إنجين</title>
+<meta name='description' content='ML-ARCH-003 — Attention &amp; Positional Encoding Ablation Report — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/ar/research/ATTENTION_ABLATION/'>
+<meta property='og:title' content='ML-ARCH-003 — Attention &amp; Positional Encoding Ablation Report'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/ar/research/ATTENTION_ABLATION/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta property='og:description' content='ML-ARCH-003 — Attention &amp; Positional Encoding Ablation Report — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
+<meta name='twitter:title' content='ML-ARCH-003 — Attention &amp; Positional Encoding Ablation Report'>
+<meta name='twitter:description' content='ML-ARCH-003 — Attention &amp; Positional Encoding Ablation Report — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/research/ATTENTION_ABLATION/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/research/ATTENTION_ABLATION/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/research/ATTENTION_ABLATION/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/research/ATTENTION_ABLATION/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/research/ATTENTION_ABLATION/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/research/ATTENTION_ABLATION/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "ML-ARCH-003 — Attention & Positional Encoding Ablation Report", "description": "ML-ARCH-003 — Attention & Positional Encoding Ablation Report — Nexus Scalp Engine documentation", "inLanguage": "ar", "url": "https://opselon.github.io/NexusTradingForexBot/ar/research/ATTENTION_ABLATION/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>الانتقال إلى المحتوى</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='القائمة' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../ar/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.17</span>
+  </div>
+  <div class='header-actions'>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='ابحث في التوثيق…' aria-label='ابحث في التوثيق…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='ابحث في التوثيق…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
+    <details class='theme-picker'>
+      <summary aria-label='المظهر' title='المظهر'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ فاتح</button>
+        <button type='button' data-theme-set='dark'>☾ داكن</button>
+        <button type='button' data-theme-set='system'>🖥 النظام</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='اللغة' title='اللغة'><span aria-hidden='true'>🌐</span><span class='lp-name'>العربية</span></summary>
+      <div class='lang-menu'><a href='../../../research/ATTENTION_ABLATION/' lang='en' hreflang='en'>English</a> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <span class='lang-current' lang='ar'>العربية ✓</span> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>جيت هب ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../ar/'>الرئيسية</a>
+<div class='nav-section'><a class='' href='../../../ar/getting-started/'>البداية</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/getting-started/installation/'>التثبيت</a></li>
+<li><a class='' href='../../../ar/getting-started/quickstart/'>البداية السريعة</a></li>
+<li><a class='' href='../../../ar/getting-started/first-run/'>التشغيل الأول</a></li>
+<li><a class='' href='../../../ar/getting-started/configuration/'>الإعداد</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/project/'>المشروع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/project/vision/'>الرؤية والغاية</a></li>
+<li><a class='' href='../../../ar/project/scope/'>النطاق</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/project/status/'>حالة المشروع</a></li>
+<li><a class='' href='../../../ar/project/capabilities/'>مصفوفة القدرات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/project/roadmap/'>خارطة الطريق</a></li>
+<li><a class='' href='../../../ar/project/milestones/'>المحطات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/architecture/'>البنية</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/architecture/overview/'>نظرة عامة</a></li>
+<li><a class='' href='../../../ar/architecture/system-map/'>خريطة النظام</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/data-flow/'>تدفق البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/runtime/'>وقت التشغيل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/research-stack/'>منظومة البحث</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/model-pipeline/'>خط أنابيب النموذج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/execution-pipeline/'>خط أنابيب التنفيذ</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/observability/'>قابلية المراقبة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/mcp-bridge/'>جسر MCP وتتبّع القرار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/architecture/database/'>قاعدة البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../ar/research/'>البحث</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/research/methodology/'>المنهجية</a></li>
+<li><a class='' href='../../../ar/research/datasets/'>مجموعات البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/backtesting/'>الاختبار الرجعي</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/out-of-sample/'>بوابة OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/replay/'>إعادة التشغيل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/counterfactuals/'>المضاد للواقع</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/research/validation/'>التحقق</a></li>
+<li><a class='' href='../../../ar/research/reproducibility/'>قابلية إعادة الإنتاج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/engineering/'>الهندسة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/engineering/quality/'>الجودة والاختبار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/ci/'>بنية CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/release-process/'>عملية الإصدار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/workflow-test-build-release/'>سير عمل الاختبار والبناء والإصدار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/engineering/security/'>الأمان</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/guides/'>أدلة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/guides/cli/'>دليل CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/api/'>مرجع API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/troubleshooting/'>استكشاف الأخطاء</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/guides/common-workflows/'>سير العمل الشائعة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/contributing/'>المساهمة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/contributing/contribution-guide/'>دليل المساهمة</a></li>
+<li><a class='' href='../../../ar/contributing/documentation/'>سير عمل التوثيق</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/contributing/add-language/'>إضافة لغة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/reference/'>مرجع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../ar/reference/cli-reference/'>مرجع CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/reference/glossary/'>المسرد</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/reference/terminology/'>المصطلحات والترجمات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../ar/reference/faq/'>الأسئلة الشائعة</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../ar/releases/'>الإصدارات</a></div>
+<ul class='nav-list'><li><a href='../../../ar/releases/'>v9.0.17 &amp; التاريخ</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>المصدر الإنجليزي — الترجمة قيد الانتظار — <a href='../../research/ATTENTION_ABLATION/'>الإنجليزية</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../ar/research/'>البحث</a> / <span class='crumb-current' aria-current='page'>ATTENTION ABLATION</span></nav>
+<details class='toc-mobile'><summary>في هذه الصفحة</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-what-was-built'>1. What was built</a></li><li class='toc-item toc-h2'><a href='#2-findings-the-important-part'>2. Findings (the important part)</a></li><li class='toc-item toc-h3'><a href='#21-the-causal-mask-is-a-no-op-at-the-decision-row-of-a-last'>2.1 The causal mask is a no-op at the decision row of a last-timestep-pooled model</a></li><li class='toc-item toc-h3'><a href='#22-attention-costs-latency-buys-little-on-a-balanced-synthet'>2.2 Attention costs latency, buys little on a balanced synthetic problem</a></li><li class='toc-item toc-h3'><a href='#23-architectural-details-worth-recording'>2.3 Architectural details worth recording</a></li><li class='toc-item toc-h2'><a href='#3-verification-evidence'>3. Verification evidence</a></li><li class='toc-item toc-h2'><a href='#4-recommendation-for-the-operator'>4. Recommendation (for the operator)</a></li><li class='toc-item toc-h2'><a href='#5-non-goals-respected'>5. Non-goals respected</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='ml-arch-003--attention--positional-encoding-ablation-report'>ML-ARCH-003 — Attention &amp; Positional Encoding Ablation Report</h1>
+<p>Status: COMPLETE (research artifacts only; <strong>not</strong> wired into live serving, per NON_GOALS) Task: <code>docs/ml-system/tasks/ML-ARCH-003.md</code> Owner: AGENT-ML-ARCH | Scope: <code>src/nexus_scalp/models/attention.py</code> Date: 2026-09-22</p>
+<hr>
+<h2 id='1-what-was-built'>1. What was built</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Artifact</th><th>Role</th></tr></thead><tbody>
+<tr><td><code>src/nexus_scalp/models/attention.py</code></td><td><code>CausalSelfAttention</code> (triangular causal mask as a <em>construction</em> property), <code>make_causal_mask</code>, <code>rotate_half</code>/<code>apply_rotary</code>, positional encoders <code>none</code> / <code>sinusoidal</code> / <code>learned</code> / <code>rotary</code>, <code>POSITIONAL_ENCODINGS</code> registry + <code>create_positional_encoding</code></td></tr>
+<tr><td><code>src/nexus_scalp/models/attention_ablation.py</code></td><td>Ablation harness: <code>AttentionArm</code> spec, <code>NoAttentionArm</code> (pure-TCN control), <code>AttentionAttentionArm</code>, <code>build_attention_ablation_arms</code> (attention × heads × positional matrix), <code>run_attention_ablation</code> (fixed data/seed/batches/steps per arm), <code>compute_macro_f1</code> (sklearn-free), <code>compute_val_metrics</code>, <code>measure_latency</code> (<code>time.process_time</code>, median)</td></tr>
+<tr><td><code>tests/unit/test_attention_ablation.py</code></td><td>86 tests, pinned in <code>tests/critical_suite.txt</code></td></tr>
+</tbody></table></div>
+<p>The incumbent bug this task exists to close is real and now reproducible: <code>model_generation/architectures.py:273</code> calls <code>self.attention(h, h, h, need_weights=False)</code> with <strong>no <code>attn_mask</code></strong>, and <code>models/scalp_net.py:231</code> does the same on its 3D path.</p>
+<h2 id='2-findings-the-important-part'>2. Findings (the important part)</h2>
+<h3 id='21-the-causal-mask-is-a-no-op-at-the-decision-row-of-a-last'>2.1 The causal mask is a no-op at the decision row of a last-timestep-pooled model</h3>
+<p><strong>This is the headline result.</strong> Proven, not assumed (<code>test_mask_only_affects_rows_before_the_last</code>):</p>
+<p>Take one <code>CausalSelfAttention</code> and one <code>CausalSelfAttention(causal=False)</code> loaded with the <em>same</em> weights. Feed the same input.</p>
+<ul>
+<li>The <strong>full</strong> outputs differ.</li>
+<li>The <strong>last row</strong> of the output and of the attention weights are <strong>identical</strong> (<code>atol=0.0</code>).</li>
+</ul>
+<div class='codeblock'><div class='codeblock-header'><span class='lang'>text</span><div class='actions'><button class='copy-btn' type='button' aria-label='نسخ' title='نسخ'>⧉</button></div></div><pre dir='ltr' class='code-ltr has-copy'><code>last-row outputs identical: True
+full outputs identical     : False
+row 3 attn identical       : False
+row3 causal future mass    : 0.0
+row3 unmasked future mass  : 1.498</code></pre></div>
+<p>Why: the model reads only <code>h[:, -1, :]</code>. Position <code>T-1</code>'s allowed set under a causal mask is <code>0..T-1</code> — which is <em>exactly</em> its allowed set without a mask. The mask forbids only taps that the pooling discards anyway.</p>
+<p>Consequence: the causal/unmasked ablation arms in this harness return</p>
+<p><strong>bit-identical loss and accuracy</strong> (verified: max diff <code>0.0</code> across all 8 matched arm pairs). That is not a harness bug — it is a true property of the architecture. A causal mask is a <strong>correctness invariant for the intermediate sequence</strong>, not a predictive-loss knob, on any model that pools the last timestep.</p>
+<p>Practical reading for NSE: <code>TCNAttentionV1</code> and ScalpNet-3D are safe to serve (their decision point never reads the future), but an "ablation" that flips only the mask while pooling the last timestep measures nothing. To make the mask bind on the decision you must change the pooling (mean-pool over positions — <code>test_mask_changes_a_mean_pooled_output</code> proves the outputs then diverge) or read a mid-sequence position.</p>
+<h3 id='22-attention-costs-latency-buys-little-on-a-balanced-synthet'>2.2 Attention costs latency, buys little on a balanced synthetic problem</h3>
+<p>Full matrix (20 arms), fixed fold, 60 steps, <code>lr=2e-3</code>, seed 1337, median of 25 <code>process_time</code> samples. Train set 512×32×50; class balance 492/10/10, so macro-F1 is dominated by the minority classes — read the <em>loss</em> column, not F1.</p>
+<div class='table-wrap'><table>
+<thead><tr><th>Arm</th><th>params</th><th>train_loss</th><th>val_loss</th><th>val_acc</th><th>macro-F1</th><th>latency/sample</th></tr></thead><tbody>
+<tr><td>control (no attention)</td><td>43 011</td><td>0.12594</td><td>0.28291</td><td>0.9583</td><td>0.3262</td><td>~299 µs</td></tr>
+<tr><td>best unmasked</td><td>59 779</td><td>0.20020</td><td>0.22490</td><td>0.9635</td><td>0.3271</td><td>~857 µs</td></tr>
+<tr><td>best causal</td><td>59 779</td><td>0.20020</td><td>0.22490</td><td>0.9635</td><td>0.3271</td><td>~1253 µs</td></tr>
+</tbody></table></div>
+<ul>
+<li>Attention improves val loss 0.283 → 0.225 (−20%) and accuracy +0.5 pt.</li>
+<li>Latency penalty is large: <strong>+558 µs (+187%)</strong> unmasked, <strong>+955 µs (+320%)</strong></li>
+</ul>
+<p>causal — against a sub-millisecond inference SLA for the 50D live path.</p>
+<ul>
+<li>Causal vs unmasked are identical on every metric (see 2.1) but causal pays a</li>
+</ul>
+<p><strong>+396 µs</strong> latency premium for the mask alone, because <code>nn.MultiheadAttention</code> materialises the <code>(T, T)</code> mask per forward while the unmasked path skips it.</p>
+<ul>
+<li><code>learned</code> positional encoding was the best arm in both attention families;</li>
+</ul>
+<p><code>rotary</code> was mid-pack; <code>sinusoidal</code> was the worst arm that used attention. Under this signal the positional choice moves val loss by ~0.03 (±13%).</p>
+<ul>
+<li>Head count 2 vs 4: <strong>no measurable difference</strong> at this problem size (loss</li>
+</ul>
+<p>identical to 4 dp across all matched pairs).</p>
+<h3 id='23-architectural-details-worth-recording'>2.3 Architectural details worth recording</h3>
+<ul>
+<li><code>CausalConv1dBlock</code> (inherited from ML-ARCH-002) carries an **unpadded</li>
+</ul>
+<p>residual**, so the whole conv stack's memory depth is the full sequence. This is why the arm's last-timestep decision legitimately depends on the whole window — it is causal history, not lookahead.</p>
+<ul>
+<li>The mask is always returned as a <strong>float additive</strong> mask, never <code>bool</code>. A bool</li>
+</ul>
+<p><code>attn_mask</code> inverts the convention (<code>True</code> = masked), which would silently permit exactly the future taps this module exists to prevent.</p>
+<ul>
+<li>RoPE is injected at Q/K only (<code>RotaryPositionalEncoding.forward</code> is a</li>
+</ul>
+<p>pass-through); additive encodings bias the residual stream. RoPE at position 0 is exactly the identity (<code>theta_0 = 0</code>), proven bit-exact.</p>
+<ul>
+<li><code>compute_macro_f1</code> follows sklearn's macro convention: a class absent from</li>
+</ul>
+<p>both predictions and labels is <strong>skipped</strong> (the divisor shrinks), while a class with an undefined F1 contributes 0. Hand-verified.</p>
+<h2 id='3-verification-evidence'>3. Verification evidence</h2>
+<div class='codeblock'><div class='codeblock-header'><span class='lang'>text</span><div class='actions'><button class='copy-btn' type='button' aria-label='نسخ' title='نسخ'>⧉</button></div></div><pre dir='ltr' class='code-ltr has-copy'><code>pytest tests/unit/test_attention_ablation.py  →  86 passed (serial, -p no:cacheprovider)
+ruff check 0.16.8 (CI pin)                   →  All checks passed!
+ruff format --check                          →  3 files already formatted
+mypy src/nexus_scalp/models/attention*.py    →  Success: no issues found
+scripts/ci/verify_critical_suite_manifest.py →  CRITICAL_SUITE_MANIFEST_OK: 234 paths</code></pre></div>
+<p>AC-1 (strict causal masking) — proven three ways on the layer itself: autograd Jacobian <code>dY_t/dX_{t+k} == 0</code> exactly in float64 across head counts 2 and 4 and sequence lengths 7/16; returned attention weights carry <strong>zero</strong> mass above the diagonal; empirical perturbation probe leaves past outputs bit-identical. The incumbent's unmasked layer is proven <em>non</em>-causal by the same Jacobian method (future block &gt; 0).</p>
+<p>AC-2 (benchmark documents the trade-off) — the table in §2.2 plus the mechanism analysis in §2.1. The task's "Sharpe" wording maps onto val loss / accuracy / macro-F1 here because this harness trains on synthetic data (real M1 bars are not committed to git); a Sharpe number would require a price series and is out of scope for a synthetic ablation.</p>
+<h2 id='4-recommendation-for-the-operator'>4. Recommendation (for the operator)</h2>
+<ol>
+<li><strong>Do not</strong> pay the causal-mask latency premium on a last-timestep-pooled</li>
+</ol>
+<p>model — it buys nothing on the decision and costs ~+400 µs/sample.</p>
+<ol>
+<li>The unmasked incumbent in <code>TCNAttentionV1</code>/ScalpNet-3D is not lookahead at the</li>
+</ol>
+<p>decision point (§2.1), so it is safe to serve; but the <em>intermediate</em> sequence states it produces are not functions of the past alone, which is a real invariant violation if anything ever consumes a mid-window state.</p>
+<ol>
+<li>If mid-window states ever matter (e.g. an auxiliary loss on intermediate</li>
+</ol>
+<p>positions, or mean-pooling), the mask becomes load-bearing and should be applied — <code>CausalSelfAttention(causal=True)</code> is the drop-in.</p>
+<ol>
+<li>Attention at this problem size gives a modest loss gain for a 2–3× latency</li>
+</ol>
+<p>cost. It does not belong on the sub-millisecond 50D live path; it belongs in the research/70D candidate path where latency is not the constraint.</p>
+<ol>
+<li>Ablation arms that flip only the mask must be paired with a pooling change,</li>
+</ol>
+<p>otherwise the comparison is degenerate by construction (§2.1).</p>
+<h2 id='5-non-goals-respected'>5. Non-goals respected</h2>
+<p>No live-serving path was modified. <code>TCNAttentionV1</code>, <code>ScalpNet</code>, <code>model_factory.py</code>, and <code>model_lab/architectures.py</code> are untouched; the new modules are research/ablation components only.</p></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>في هذه الصفحة</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-what-was-built'>1. What was built</a></li><li class='toc-item toc-h2'><a href='#2-findings-the-important-part'>2. Findings (the important part)</a></li><li class='toc-item toc-h3'><a href='#21-the-causal-mask-is-a-no-op-at-the-decision-row-of-a-last'>2.1 The causal mask is a no-op at the decision row of a last-timestep-pooled model</a></li><li class='toc-item toc-h3'><a href='#22-attention-costs-latency-buys-little-on-a-balanced-synthet'>2.2 Attention costs latency, buys little on a balanced synthetic problem</a></li><li class='toc-item toc-h3'><a href='#23-architectural-details-worth-recording'>2.3 Architectural details worth recording</a></li><li class='toc-item toc-h2'><a href='#3-verification-evidence'>3. Verification evidence</a></li><li class='toc-item toc-h2'><a href='#4-recommendation-for-the-operator'>4. Recommendation (for the operator)</a></li><li class='toc-item toc-h2'><a href='#5-non-goals-respected'>5. Non-goals respected</a></li></ul></aside></div>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/ar/research/ATTENTION_ABLATION.md'>تعديل هذه الصفحة على جيت هب</a> · الإصدار v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
+    <span><a href='../../../ar/project/status/'>حالة المشروع</a> · <a href='../../../ar/reference/faq/'>الأسئلة الشائعة</a> · <a href='../../../ar/releases/'>كل الإصدارات</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../ar/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='ابحث في التوثيق… — ⌘K' aria-label='ابحث في التوثيق…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>ابحث في التوثيق……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "ابحث في التوثيق…", "home": "الرئيسية", "repo": "جيت هب", "skip": "الانتقال إلى المحتوى", "language": "اللغة", "partial": "المصدر الإنجليزي — الترجمة قيد الانتظار", "english": "الإنجليزية", "version": "الإصدار", "next": "التالي", "prev": "السابق", "on_github": "تعديل هذه الصفحة على جيت هب", "menu": "القائمة", "whats_new": "الجديد", "all_releases": "كل الإصدارات", "get_started": "ابدأ", "view_architecture": "البنية", "view_roadmap": "خارطة الطريق", "close": "إغلاق", "theme": "المظهر", "theme_light": "فاتح", "theme_dark": "داكن", "theme_system": "النظام", "copy": "نسخ", "copied": "تم النسخ", "copy_error": "فشل النسخ", "no_results": "لا نتائج", "loading": "جارٍ التحميل…", "section": "القسم", "search_results": "نتائج البحث", "explore_docs": "استكشف التوثيق", "full_matrix": "المصفوفة الكاملة", "release_timeline": "الجدول الزمني للإصدارات", "hero_kicker": "منصة بحث وتنفيذ للتداول الكمي", "hero_title_a": "نكسوس", "hero_title_b": "سكالب إنجين", "hero_sub": "منصة سكالب قائمة على البحث، سداسية البنية ومدفوعة بالأحداث لميتاتريدر 5 — خصائص سببية، نماذج عميقة محوكم، محرك مخاطر ثابت، أدوات بحث حتمية وقابلية مراقبة جنائية في خط أنابيب واحد قابل للتدقيق.", "chip_released": "منشور", "chip_rev": "مراجعة", "chip_research": "بحث: 50D حي · 70D مرشح", "released_history": "التاريخ", "release_history_kicker": "سجل الإصدارات", "releases_intro": "كل إصدار مع أبرز ملامحه الحقيقية، مستمدة من بيانات إصدارات جيت هب وقت البناء. المصدر الوحيد للإصدار:", "nf404_title": "٤٠٤", "nf404_lead": "صفحة التوثيق هذه غير موجودة.", "nf404_home": "الرئيسية", "footer_prefix": "", "brand": "نكسوس", "brand_dim": "سكالب إنجين", "github_release": "الإصدار على جيت هب", "back_home": "العودة للرئيسية", "quickstart_label": "البداية السريعة", "status_label": "حالة المشروع", "faq_label": "الأسئلة الشائعة", "cap_engine": "محرك الخصائص السببية 50D", "cap_risk": "محرك المخاطر + قيود التنفيذ", "cap_oos": "Walk-Forward + بوابة OOS الصارمة", "cap_factory": "مصنع النماذج المبني على المصنوعات", "cap_70d": "عقد 70D (القاعدة+الأخبار+السيولة)", "cap_cf": "محرك المضاد للواقع (مشي NO_TRADE)", "pillar_evidence_t": "🧭 الأدلة قبل الادعاءات", "pillar_evidence_b": "المقاييس بلا أدلة تظهر n/a — وليس أصفارًا مزيفة أبدًا. النتائج السلبية تُنشر: مرشحنا البحثي 70D رفضه بوابة OOS لدينا.", "pillar_safety_t": "🔒 السلامة بالتصميم", "pillar_safety_b": "PAPER افتراضيًا · SHADOW بلا صلاحية أوامر · LIVE خلف تأكيد صريح · قيود مخاطر صارمة (HARD_MAX_LOTS، هامش ≤20%) مفروضة في مسار التنفيذ.", "pillar_research_t": "🔬 بحث حتمي", "pillar_research_b": "Walk-Forward مع التطهير والحجر، إعادة تشغيل مطابقة بت-بت، بيانات/نماذج ببصمة، مصدر لكل تشغيل — عقد خصائص واحد للحياة وإعادة التشغيل والتدريب.", "pillar_truth_t": "👁️ حقيقة وقت التشغيل", "pillar_truth_b": "قابلية مراقبة جنائية: سجلات مفصولة بالخطورة، ارتباط الحوادث، بوابة النشر. حقيقة الوسيط تتفوق على الحالة القديمة؛ البوابات مرجع، والإعدادات نية.", "capability": "القدرة", "status": "الحالة", "chip_certified": "مُصادق", "chip_implemented": "مُنفَّذ", "chip_experimental": "تجريبي", "chip_research_l": "بحثي", "cap_highlights": "أبرز القدرات", "callout_important": "مهم", "callout_note": "ملاحظة", "callout_warning": "تحذير", "how_it_works": "كيف يعمل نكسوس", "reading_time": "دقائق قراءة", "toc_title": "في هذه الصفحة", "toc_empty": "لا عناوين", "last_updated": "آخر تحديث", "share": "مشاركة", "edit_page": "تعديل هذه الصفحة", "related_title": "تابع الاستكشاف", "related_sub": "التالي في هذا القسم", "up_next": "التالي", "also_read": "اقرأ أيضًا", "prev_page": "السابق", "next_page": "التالي", "breadcrumb_home": "الرئيسية", "hero_eyebrow_project": "المشروع", "hero_eyebrow_architecture": "البنية", "hero_eyebrow_research": "البحث", "hero_eyebrow_engineering": "الهندسة", "hero_eyebrow_guides": "الأدلة", "hero_eyebrow_getting_started": "البداية", "hero_eyebrow_contributing": "المساهمة", "hero_eyebrow_reference": "المرجع", "hero_eyebrow_releases": "الإصدارات", "kpi_certified": "مُصادق", "kpi_experimental": "تجريبي", "kpi_coverage": "التغطية", "steps_title": "الخطوات", "copy_code": "نسخ", "diagram_title": "مخطط النظام", "diagram_sub": "عرض تفاعلي لخط الأنابيب", "stats_live": "العقد الحي", "callout_tip": "تلميح", "callout_info": "معلومة", "callout_success": "نجاح", "callout_danger": "خطر", "anchor_copy": "نسخ الرابط", "anchor_copied": "تم نسخ الرابط", "feedback_title": "هل كان مفيدًا؟", "feedback_yes": "نعم", "feedback_no": "لا", "feedback_thanks": "شكرًا لملاحظاتك", "prose_meta": "مقال", "word_count": "كلمات", "toc_toggle": "المحتويات", "hero_desc_project": "ما هو Nexus وما هو مُصادق مقابل تجريبي.", "hero_desc_architecture": "كيف بُني المحرك: الطبقات السداسية ومسار التيك إلى القرار.", "hero_desc_research": "كيف تتحول البيانات التاريخية إلى أدلة قابلة للتكذيب.", "hero_desc_engineering": "بوابات الجودة وبنية CI ووضعية الأمان.", "hero_desc_guides": "تشغيل المحرك يوميًا.", "hero_desc_getting_started": "تثبيت المحرك وتشغيله وضبطه.", "hero_desc_contributing": "العقد الهندسي وكيفية المساهمة.", "hero_desc_reference": "مرجع CLI والمسرد والإجابات الصادقة.", "hero_desc_releases": "كل إصدار مع أبرز ملامحه الحقيقية.", "on_this_page": "في هذه الصفحة"};
+window.NEXUS_LANG = "ar";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../assets/docs-enhance.js' defer></script>
+<script src='../../../assets/search.js' defer></script>
+
+</body>
+</html>

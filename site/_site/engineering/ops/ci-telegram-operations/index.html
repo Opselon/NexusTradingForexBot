@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang='en' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>CI/CD Telegram Operations — NexusTradingForexBot · Nexus Scalp Engine</title>
+<meta name='description' content='CI/CD Telegram Operations — NexusTradingForexBot — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/engineering/ops/ci-telegram-operations/'>
+<meta property='og:title' content='CI/CD Telegram Operations — NexusTradingForexBot'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/engineering/ops/ci-telegram-operations/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta property='og:description' content='CI/CD Telegram Operations — NexusTradingForexBot — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
+<meta name='twitter:title' content='CI/CD Telegram Operations — NexusTradingForexBot'>
+<meta name='twitter:description' content='CI/CD Telegram Operations — NexusTradingForexBot — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/engineering/ops/ci-telegram-operations/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/engineering/ops/ci-telegram-operations/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/engineering/ops/ci-telegram-operations/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/engineering/ops/ci-telegram-operations/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/engineering/ops/ci-telegram-operations/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/engineering/ops/ci-telegram-operations/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "CI/CD Telegram Operations — NexusTradingForexBot", "description": "CI/CD Telegram Operations — NexusTradingForexBot — Nexus Scalp Engine documentation", "inLanguage": "en", "url": "https://opselon.github.io/NexusTradingForexBot/engineering/ops/ci-telegram-operations/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>Skip to content</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menu' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.17</span>
+  </div>
+  <div class='header-actions'>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='Search docs…' aria-label='Search docs…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='Search docs…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
+    <details class='theme-picker'>
+      <summary aria-label='Theme' title='Theme'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ Light</button>
+        <button type='button' data-theme-set='dark'>☾ Dark</button>
+        <button type='button' data-theme-set='system'>🖥 System</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='Language' title='Language'><span aria-hidden='true'>🌐</span><span class='lp-name'>English</span></summary>
+      <div class='lang-menu'><span class='lang-current' lang='en'>English ✓</span> <a href='../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../'>Home</a>
+<div class='nav-section'><a class='' href='../../../getting-started/'>Getting Started</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../getting-started/installation/'>Installation</a></li>
+<li><a class='' href='../../../getting-started/quickstart/'>Quickstart</a></li>
+<li><a class='' href='../../../getting-started/first-run/'>First Run</a></li>
+<li><a class='' href='../../../getting-started/configuration/'>Configuration</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../project/'>Project</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../project/vision/'>Vision &amp; Why</a></li>
+<li><a class='' href='../../../project/scope/'>Scope</a></li>
+<li><a class='' href='../../../project/status/'>Project Status</a></li>
+<li><a class='' href='../../../project/capabilities/'>Capability Matrix</a></li>
+<li><a class='' href='../../../project/roadmap/'>Roadmap</a></li>
+<li><a class='' href='../../../project/milestones/'>Milestones</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../architecture/'>Architecture</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../architecture/overview/'>Overview</a></li>
+<li><a class='' href='../../../architecture/system-map/'>System Map</a></li>
+<li><a class='' href='../../../architecture/data-flow/'>Data Flow</a></li>
+<li><a class='' href='../../../architecture/runtime/'>Runtime</a></li>
+<li><a class='' href='../../../architecture/research-stack/'>Research Stack</a></li>
+<li><a class='' href='../../../architecture/model-pipeline/'>Model Pipeline</a></li>
+<li><a class='' href='../../../architecture/execution-pipeline/'>Execution Pipeline</a></li>
+<li><a class='' href='../../../architecture/observability/'>Observability</a></li>
+<li><a class='' href='../../../architecture/mcp-bridge/'>MCP Bridge &amp; Trace</a></li>
+<li><a class='' href='../../../architecture/database/'>Database</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../research/'>Research</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../research/methodology/'>Methodology</a></li>
+<li><a class='' href='../../../research/datasets/'>Datasets</a></li>
+<li><a class='' href='../../../research/backtesting/'>Backtesting</a></li>
+<li><a class='' href='../../../research/walk-forward/'>Walk-Forward</a></li>
+<li><a class='' href='../../../research/out-of-sample/'>Out-of-Sample Gate</a></li>
+<li><a class='' href='../../../research/replay/'>Replay</a></li>
+<li><a class='' href='../../../research/counterfactuals/'>Counterfactuals</a></li>
+<li><a class='' href='../../../research/validation/'>Validation</a></li>
+<li><a class='' href='../../../research/reproducibility/'>Reproducibility</a></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../engineering/'>Engineering</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../engineering/quality/'>Quality &amp; Testing</a></li>
+<li><a class='' href='../../../engineering/ci/'>CI Architecture</a></li>
+<li><a class='' href='../../../engineering/release-process/'>Release Process</a></li>
+<li><a class='' href='../../../engineering/workflow-test-build-release/'>Test, Build &amp; Release Workflow</a></li>
+<li><a class='' href='../../../engineering/security/'>Security</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../guides/'>Guides</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../guides/cli/'>CLI Guide</a></li>
+<li><a class='' href='../../../guides/api/'>API Reference</a></li>
+<li><a class='' href='../../../guides/troubleshooting/'>Troubleshooting</a></li>
+<li><a class='' href='../../../guides/common-workflows/'>Common Workflows</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../contributing/'>Contributing</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../contributing/contribution-guide/'>Contribution Guide</a></li>
+<li><a class='' href='../../../contributing/documentation/'>Documentation Workflow</a></li>
+<li><a class='' href='../../../contributing/add-language/'>Adding a Language</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../reference/'>Reference</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../reference/cli-reference/'>CLI Reference</a></li>
+<li><a class='' href='../../../reference/glossary/'>Glossary</a></li>
+<li><a class='' href='../../../reference/terminology/'>Terminology &amp; Translations</a></li>
+<li><a class='' href='../../../reference/faq/'>FAQ</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../releases/'>Releases</a></div>
+<ul class='nav-list'><li><a href='../../../releases/'>v9.0.17 &amp; history</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../engineering/'>Engineering</a> / <a href='../../../engineering/ops/'>ops</a> / <span class='crumb-current' aria-current='page'>ci telegram operations</span></nav>
+<details class='toc-mobile'><summary>On this page</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-architecture'>1. Architecture</a></li><li class='toc-item toc-h2'><a href='#1a-final-ai-summary-lane-bug-300--the-very-end-of-every-pipe'>1a. FINAL AI summary lane (BUG-300) — the very end of every pipeline</a></li><li class='toc-item toc-h2'><a href='#2-configuration-chat-id'>2. Configuration (chat id)</a></li><li class='toc-item toc-h2'><a href='#3-events-covered'>3. Events covered</a></li><li class='toc-item toc-h2'><a href='#4-message-format-html-design-system'>4. Message format (HTML design system)</a></li><li class='toc-item toc-h2'><a href='#5-file--artifact-handling'>5. File / artifact handling</a></li><li class='toc-item toc-h2'><a href='#6-retry--timeout-policy'>6. Retry / timeout policy</a></li><li class='toc-item toc-h2'><a href='#7-secret-redaction-policy'>7. Secret-redaction policy</a></li><li class='toc-item toc-h2'><a href='#8-failure-isolation'>8. Failure isolation</a></li><li class='toc-item toc-h2'><a href='#9-testing'>9. Testing</a></li><li class='toc-item toc-h2'><a href='#10-operations-notes'>10. Operations notes</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='cicd-telegram-operations--nexustradingforexbot'>CI/CD Telegram Operations — NexusTradingForexBot</h1>
+<p>Enterprise-grade CI/CD observability: every important CI/release event is reported to Telegram as structured, HTML-formatted, deduplicated, rate-limited, retryable, secret-safe notifications — with file/artifact attachments when something fails.</p>
+<h2 id='1-architecture'>1. Architecture</h2>
+<div class='codeblock'><div class='codeblock-header'><span class='lang'>text</span><div class='actions'><button class='copy-btn' type='button' aria-label='Copy' title='Copy'>⧉</button></div></div><pre dir='ltr' class='code-ltr has-copy'><code>GitHub Actions  ── ci-results/ (make_ci_results.py)
+GitHub events   ── GITHUB_* env
+        │
+        ▼
+scripts/ci/telegram_notify.py   (workflow entry point, exit 0 always)
+        │
+        ▼
+src/nexus_scalp/observability/ci_telegram_reporter.py   (orchestrator)
+        │  ├─ reads ci-results/ (run-info/*.json, junit.xml, coverage.xml)
+        │  ├─ resolves chat id (TELEGRAM_CHAT_ID &gt; NEXUS_TELEGRAM_ADMIN_ID)
+        │  ├─ formats via telegram_html.py (central HTML renderer)
+        │  ├─ redacts secrets (telegram_transport.redact_secrets)
+        │  └─ splits long messages (split_html_message, HTML-valid)
+        ├─ TelegramNotifier        (existing: queue, retry, 429, health)
+        └─ TelegramDocumentTransporter (NEW: sendDocument upload + captions)</code></pre></div>
+<p>Separation of concerns (spec §20):</p>
+<ul>
+<li><strong>Event generation</strong> — workflow steps call <code>telegram_notify.py &lt;cmd&gt;</code></li>
+<li><strong>Normalization</strong> — reporter reads real ci-results data (never guessed)</li>
+<li><strong>Policy</strong> — severity gating, dedup window, cooldown (existing notifier)</li>
+<li><strong>Redaction</strong> — <code>redact_secrets()</code> masks known secret shapes before text</li>
+</ul>
+<p>or file content reaches Telegram</p>
+<ul>
+<li><strong>HTML rendering</strong> — <code>telegram_html.py</code> (only place that builds markup)</li>
+<li><strong>Splitting</strong> — <code>split_html_message()</code> (tag-aware, logical groups)</li>
+<li><strong>Transport</strong> — notifier (text) + document transporter (files)</li>
+<li><strong>Retry/timeout</strong> — bounded, exponential backoff, 429 Retry-After</li>
+<li><strong>Audit</strong> — structured logs + health_state() on the notifier</li>
+</ul>
+<h2 id='1a-final-ai-summary-lane-bug-300--the-very-end-of-every-pipe'>1a. FINAL AI summary lane (BUG-300) — the very end of every pipeline</h2>
+<p>The dedicated AI final-summary workflow has been removed. <code>PR Evidence Report</code> remains the canonical post-run evidence surface. AI triage remains available to explicitly invoked CI tooling, but it is no longer an automatic workflow fan-out or a required final-summary stage.</p>
+<p>The canonical evidence flow is: (1) the reporting lane collects WHOLE-run evidence — run conclusion, job/step verdicts, junit + coverage from the ci-results artifact, PR diff stats + mergeable + review decision + recent comments, touched lanes via classify_changes; (2) <code>telegram_notify.py ai-triage</code> (analyzed in src/nexus_scalp/observability/ci_ai_triage.py) renders the verdict block; (3) it is delivered THREE ways: Telegram message, the run's GitHub step summary, and an automatic PR review comment (advisory, clearly labeled not-a-merge-authorization). <code>ci-results/run-info/ai-analysis.json</code> rides the artifact for audit.</p>
+<p>The pro prompt charter (see <code>_SYSTEM</code>/<code>PROMPTS</code> in ci_ai_triage.py) forces a six-line analyst report on every event: WHY (failed or succeeded), EVIDENCE, VERDICT (GOOD-TO-MERGE / MERGE-AFTER-FIX / DO-NOT-MERGE / INVESTIGATE), RISK (is it a good idea: safety boundaries, tests, registries), CHECK (ordered next actions), COMMENT (paste-ready for the author), CONFIDENCE. The model is told the repo taxonomy (lock drift, ruff-format blocking, stale-base phantom reds, release_auth_gate, review + Validate-documentation requirements, fail-closed money paths).</p>
+<p>Flow (src/nexus_scalp/observability/ci_ai_triage.py):</p>
+<ol>
+<li>CONFIG GATE — <code>AI_HOST</code>+<code>AI_KEY</code> secrets must be present (names in</li>
+</ol>
+<p><code>docs/engineering/ops/ci-secrets.md</code>), else provenance <code>AI_UNCONFIGURED</code> + rules fallback.</p>
+<ol>
+<li>REACHABILITY GATE (the timer) — TCP connect phase capped 2 s</li>
+</ol>
+<p>(<code>AI_PROBE_CONNECT_SEC</code>), full <code>/models</code> response budget 4 s (<code>AI_PROBE_TIMEOUT_SEC</code>); slower-than-2.5 s = <code>SLOW_OK</code> (one attempt, then circuit holds for the process). Verdict cached 120 s per host so N notifies pay the probe once. Down/timeout =&gt; <code>AI_UNREACHABLE</code> + fallback.</p>
+<ol>
+<li>COMPLETION — per-kind pro prompts (<code>PROMPTS</code> dict) under a strict analyst</li>
+</ol>
+<p>system charter; host model defaults <code>coding</code>, override <code>AI_MODEL</code>. Failure/empty =&gt; <code>AI_CHAT_FAILED</code> + fallback.</p>
+<ol>
+<li>FALLBACK RULES — deterministic pattern table (lock drift, ruff-format</li>
+</ol>
+<p>blocking, CRLF noise, rate-limit, stale-base conflict, CodeQL class, auth bootstrap, BUG-298 provisioning, runner timeout/OOM, network flake). Always delivered; silence only as <code>AI_RULES_EMPTY</code> (visible on channel).</p>
+<p>Kinds: <code>ci-failure</code> (ci/tests-os/js on failure), <code>release-failure</code> (release gates + nightly-qa), <code>security</code> (Trivy lane), <code>pr-analysis</code> (every PR: <code>scripts/ci/pr_evidence.py</code> bundle = changed files/lanes/commits — this is the automatic new-commit PR summary), <code>push-summary</code> (push events).</p>
+<p>Security posture: outbound evidence passes <code>redact_secrets</code> + literal scrub of AI_KEY/bot token/GITHUB_TOKEN before the host sees it; model output is HTML-escaped (untrusted content); advisory-only — the step is <code>continue-on-error</code> + <code>|| true</code>, CI verdicts never depend on the AI.</p>
+<h2 id='2-configuration-chat-id'>2. Configuration (chat id)</h2>
+<p>Required secrets (repository scope: <strong>Settings &gt; Secrets and variables &gt; Actions &gt; Secrets</strong>):</p>
+<div class='table-wrap'><table>
+<thead><tr><th>Secret</th><th>Purpose</th></tr></thead><tbody>
+<tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td>The bot token (from @BotFather).</td></tr>
+<tr><td><code>TELEGRAM_CHAT_ID</code></td><td>Numeric destination chat id (see below).</td></tr>
+</tbody></table></div>
+<p>How to obtain the chat id:</p>
+<ol>
+<li>Message your bot once (<code>/start</code>).</li>
+<li><code>curl "https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates"</code> and read</li>
+</ol>
+<p><code>result[0].message.chat.id</code> in the response.</p>
+<ol>
+<li>Add that number as <code>TELEGRAM_CHAT_ID</code>.</li>
+</ol>
+<p>Resolution order in the reporter: explicit <code>--chat-id</code> &gt; <code>TELEGRAM_CHAT_ID</code> env &gt; <code>USER_ID</code> env &gt; <code>NEXUS_TELEGRAM_ADMIN_ID</code> env. <code>USER_ID</code> is the existing repository secret (numeric Telegram destination) and serves as the fallback destination when <code>TELEGRAM_CHAT_ID</code> is not configured. When none is set, notifications are skipped (reported as <code>TELEGRAM_CONFIG_ERROR</code>) and CI never fails.</p>
+<p>Optional richer routing (add only when needed):</p>
+<ul>
+<li><code>TELEGRAM_ALERT_CHAT_ID</code> — alerts/incidents</li>
+<li><code>TELEGRAM_RELEASE_CHAT_ID</code> — release-only feed</li>
+</ul>
+<h2 id='3-events-covered'>3. Events covered</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Event</th><th>Command</th><th>Message</th></tr></thead><tbody>
+<tr><td>Workflow started</td><td><code>run-started</code></td><td><code>CI RUNNING</code> + context + correlation</td></tr>
+<tr><td>Workflow finished</td><td><code>run-finished</code></td><td><code>CI SUCCESS</code> / <code>CI FAILED</code> / <code>CI CANCELLED</code> + tests + coverage + failures + Next action; on failure uploads diagnostics</td></tr>
+<tr><td>Tests</td><td><code>test-summary</code></td><td><code>TEST RESULTS</code> + totals + failed names + coverage</td></tr>
+<tr><td>Artifacts</td><td><code>artifacts</code></td><td><code>ARTIFACTS</code> + file list + verification + retention</td></tr>
+<tr><td>Release started</td><td><code>release-started --tag</code></td><td><code>RELEASE STARTED</code> + tag + phase</td></tr>
+<tr><td>Release gates</td><td><code>test-summary</code> (gates job)</td><td><code>TEST RESULTS</code> + totals + coverage</td></tr>
+<tr><td>Release success</td><td><code>release-success --tag</code></td><td><code>RELEASE PUBLISHED</code> + gates + tests + coverage + artifacts + verification</td></tr>
+<tr><td>Release failure</td><td><code>release-failed</code></td><td><code>RELEASE FAILED</code> + phase/job/error class/retries/recovery/Next + diagnostics</td></tr>
+<tr><td>Post-release verified</td><td>(verify step in release job)</td><td>API re-fetch: tag match + assets present</td></tr>
+<tr><td>Push</td><td><code>push</code></td><td><code>PUSH</code> + author/branch/commits/latest/changes/CI</td></tr>
+<tr><td>PR</td><td><code>pr --action</code></td><td><code>PR OPENED/UPDATED/MERGED/CLOSED</code> + title/author/changes/CI</td></tr>
+<tr><td>Security scan</td><td><code>security --scan --status</code></td><td><code>SECURITY PASSED/FAILED</code> + scan name + context</td></tr>
+</tbody></table></div>
+<h2 id='4-message-format-html-design-system'>4. Message format (HTML design system)</h2>
+<ul>
+<li>Only Telegram-supported HTML tags: <code>&lt;b&gt; &lt;i&gt; &lt;u&gt; &lt;s&gt; &lt;a href&gt; &lt;code&gt; &lt;pre&gt; &lt;blockquote&gt;</code></li>
+<li>Every dynamic value passes <code>esc()</code> (HTML-escaped) — dynamic strings can</li>
+</ul>
+<p>never break the markup</p>
+<ul>
+<li>Vocabulary: ✅ SUCCESS · ❌ FAILURE · ⚠️ WARNING · 🛈 INFO · 🔄 RUNNING ·</li>
+</ul>
+<p>🚀 RELEASE · 🔁 RETRY · ⏱️ TIMEOUT · 📦 ARTIFACT · 🧪 TEST · 🛡️ SECURITY</p>
+<ul>
+<li>Every message carries the correlation id <code>NEXUS-CI-&lt;run&gt;-&lt;sha4&gt;</code> and</li>
+</ul>
+<p>context (repository/workflow/job/branch/commit/run)</p>
+<p>Long reports are split by <code>split_html_message()</code> into logical chunks (SUMMARY → FAILED TESTS → ERROR DETAILS → ARTIFACTS → LOGS), each chunk standalone-valid HTML (tags never split; Persian/Unicode preserved).</p>
+<h2 id='5-file--artifact-handling'>5. File / artifact handling</h2>
+<p>On failure the reporter:</p>
+<ol>
+<li>builds <code>nexus-ci-diagnostic.zip</code> (summary.json, failed-tests.txt,</li>
+</ol>
+<p>junit.xml, coverage.xml, pytest.txt, manifest, SHA256SUMS; all redacted)</p>
+<ol>
+<li>uploads it via <code>sendDocument</code> with a caption (file/job/run/commit/reason)</li>
+<li>additionally uploads junit.xml, coverage.xml, summary.md individually</li>
+</ol>
+<p>File size cap: 20 MB (Telegram hard cap 50 MB). Missing/oversized files return structured failures, never exceptions.</p>
+<h2 id='6-retry--timeout-policy'>6. Retry / timeout policy</h2>
+<ul>
+<li>Text sends: existing notifier — max 3 attempts, exponential backoff</li>
+</ul>
+<p>(base 2s), 429 honors Retry-After, 5xx retried, 4xx non-retryable</p>
+<ul>
+<li>Document uploads: transport — max 2 retries, backoff 2s * 2^attempt,</li>
+</ul>
+<p>Retry-After honored, 5xx/429 retried, auth/config not retried</p>
+<ul>
+<li>Timeouts: HTTP timeout 30s (uploads) / 4s (text); on timeout the send is</li>
+</ul>
+<p>retried per the policy above</p>
+<ul>
+<li>Aggregation: no per-microscopic-retry messages — only final outcomes</li>
+</ul>
+<p>surface (success/failure/exhausted)</p>
+<h2 id='7-secret-redaction-policy'>7. Secret-redaction policy</h2>
+<p><code>redact_secrets()</code> masks before anything reaches Telegram:</p>
+<ul>
+<li>Telegram bot tokens (<code>\d{8,10}:[A-Za-z0-9_-]{25,}</code>)</li>
+<li>GitHub tokens (<code>ghp_…</code>, <code>github_pat_…</code>)</li>
+<li>OpenAI-style <code>sk-…</code>, Slack <code>xoxb-…</code>, AWS <code>AKIA…</code></li>
+<li>PEM private key markers (BEGIN/END)</li>
+<li>generic <code>key=value</code> shapes for password/secret/token/api_key/auth</li>
+</ul>
+<p>Applied to: all message text, captions, and file contents included in the diagnostic bundle. GitHub's own masking remains a second layer; we never rely on it alone.</p>
+<h2 id='8-failure-isolation'>8. Failure isolation</h2>
+<ul>
+<li><code>telegram_notify.py</code> always exits 0 — CI never fails on Telegram errors</li>
+<li>Missing config → <code>TELEGRAM_CONFIG_ERROR</code> result, no exception</li>
+<li>Transport failures → structured <code>{ok, category, retryable}</code> results</li>
+<li>The notifier's <code>health_state()</code> reports READY/DEGRADED/STOPPED</li>
+</ul>
+<h2 id='9-testing'>9. Testing</h2>
+<p><code>tests/unit/test_telegram_html.py</code> (36 tests) covers escaping, splitting (tag-safe, oversized lines, Persian), redaction, correlation ids, and every formatter. <code>tests/unit/test_ci_telegram_reporter.py</code> (19 tests) covers real-ci-results reads (junit wrapper, coverage), chat-id resolution, dispatch (success/failure/cancelled), diagnostic bundle + redacted content, transport isolation (missing/oversized files), and multipart construction.</p>
+<h2 id='10-operations-notes'>10. Operations notes</h2>
+<ul>
+<li>Normal pushes: quality job sends <code>run-started</code> + <code>run-finished</code> +</li>
+</ul>
+<p><code>artifacts</code> (3 messages per run max — bounded, deduplicated)</p>
+<ul>
+<li>Heavy CI (ci-tests/dispatch): per-arm and aggregate messages follow the</li>
+</ul>
+<p>same paths via the aggregate job's ci-results tree</p>
+<ul>
+<li>Releases: <code>release-started</code> / <code>release-success</code> / <code>release-failed</code> from</li>
+</ul>
+<p>release.yml steps</p>
+<ul>
+<li>Diagnostics uploads happen ONLY on failure (or release failure) — success</li>
+</ul>
+<p>never floods the feed with files</p></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>On this page</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-architecture'>1. Architecture</a></li><li class='toc-item toc-h2'><a href='#1a-final-ai-summary-lane-bug-300--the-very-end-of-every-pipe'>1a. FINAL AI summary lane (BUG-300) — the very end of every pipeline</a></li><li class='toc-item toc-h2'><a href='#2-configuration-chat-id'>2. Configuration (chat id)</a></li><li class='toc-item toc-h2'><a href='#3-events-covered'>3. Events covered</a></li><li class='toc-item toc-h2'><a href='#4-message-format-html-design-system'>4. Message format (HTML design system)</a></li><li class='toc-item toc-h2'><a href='#5-file--artifact-handling'>5. File / artifact handling</a></li><li class='toc-item toc-h2'><a href='#6-retry--timeout-policy'>6. Retry / timeout policy</a></li><li class='toc-item toc-h2'><a href='#7-secret-redaction-policy'>7. Secret-redaction policy</a></li><li class='toc-item toc-h2'><a href='#8-failure-isolation'>8. Failure isolation</a></li><li class='toc-item toc-h2'><a href='#9-testing'>9. Testing</a></li><li class='toc-item toc-h2'><a href='#10-operations-notes'>10. Operations notes</a></li></ul></aside></div>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/docs/engineering/ops/ci-telegram-operations.md'>Edit this page on GitHub</a> · Version v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
+    <span><a href='../../../project/status/'>Project status</a> · <a href='../../../reference/faq/'>FAQ</a> · <a href='../../../releases/'>All releases</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='Search docs… — ⌘K' aria-label='Search docs…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>Search docs……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "Search docs…", "home": "Home", "repo": "GitHub", "skip": "Skip to content", "language": "Language", "partial": "English source shown — translation pending", "english": "English", "version": "Version", "next": "Next", "prev": "Previous", "on_github": "Edit this page on GitHub", "menu": "Menu", "whats_new": "What's New", "all_releases": "All releases", "get_started": "Get Started", "view_architecture": "View Architecture", "view_roadmap": "View Roadmap", "close": "Close", "theme": "Theme", "theme_light": "Light", "theme_dark": "Dark", "theme_system": "System", "copy": "Copy", "copied": "Copied", "copy_error": "Copy failed", "no_results": "No results", "loading": "Loading…", "section": "Section", "search_results": "Search results", "explore_docs": "Explore the documentation", "full_matrix": "Full matrix", "release_timeline": "Release timeline", "hero_kicker": "QUANTITATIVE TRADING RESEARCH & EXECUTION PLATFORM", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "A research-driven, hexagonal, event-driven scalping platform for MetaTrader 5 — causal features, governed deep models, an invariant risk engine, deterministic research tooling and forensic observability in one auditable pipeline.", "chip_released": "released", "chip_rev": "rev", "chip_research": "research: 50D live · 70D candidate", "released_history": "history", "release_history_kicker": "RELEASE HISTORY", "releases_intro": "Every release with its real highlights, derived from GitHub release metadata at build time. Version single-source:", "nf404_title": "404", "nf404_lead": "This documentation page does not exist.", "nf404_home": "Home", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "GitHub release", "back_home": "Back home", "quickstart_label": "Quickstart", "status_label": "Project status", "faq_label": "FAQ", "cap_engine": "Causal 50D feature engine", "cap_risk": "Risk engine + execution clamps", "cap_oos": "Walk-forward + hard OOS gate", "cap_factory": "Artifact-first Model Factory", "cap_70d": "70D contract (Base+News+Liquidity)", "cap_cf": "Counterfactual engine (NO_TRADE walk)", "pillar_evidence_t": "🧭 Evidence before claims", "pillar_evidence_b": "Metrics without evidence render n/a — never fake zeros. Negative results are published: the flagship 70D research candidate was rejected by our own OOS gate.", "pillar_safety_t": "🔒 Safety by construction", "pillar_safety_b": "PAPER default · SHADOW with zero order authority · LIVE behind explicit confirmation · hard risk clamps (HARD_MAX_LOTS, margin ≤20%) enforced in the execution path.", "pillar_research_t": "🔬 Deterministic research", "pillar_research_b": "Purged + embargoed walk-forward, bit-exact replay, fingerprinted datasets/models, provenance on every run — the same feature contract for live, replay and training.", "pillar_truth_t": "👁️ Runtime truth", "pillar_truth_b": "Forensic observability: severity-split logs, incident correlation, deploy gate. Broker truth wins over stale state; gates are authorities, settings are intent.", "capability": "Capability", "status": "Status", "chip_certified": "CERTIFIED", "chip_implemented": "IMPLEMENTED", "chip_experimental": "EXPERIMENTAL", "chip_research_l": "RESEARCH", "cap_highlights": "Capability highlights", "callout_important": "IMPORTANT", "callout_note": "NOTE", "callout_warning": "WARNING", "how_it_works": "How Nexus works", "reading_time": "min read", "toc_title": "On this page", "toc_empty": "No headings", "last_updated": "Last updated", "share": "Share", "edit_page": "Edit this page", "related_title": "Continue exploring", "related_sub": "Up next in this section", "up_next": "Up next", "also_read": "Also read", "prev_page": "Previous", "next_page": "Next", "breadcrumb_home": "Home", "hero_eyebrow_project": "Project", "hero_eyebrow_architecture": "Architecture", "hero_eyebrow_research": "Research", "hero_eyebrow_engineering": "Engineering", "hero_eyebrow_guides": "Guides", "hero_eyebrow_getting_started": "Getting Started", "hero_eyebrow_contributing": "Contributing", "hero_eyebrow_reference": "Reference", "hero_eyebrow_releases": "Releases", "kpi_certified": "Certified", "kpi_experimental": "Experimental", "kpi_coverage": "Coverage", "steps_title": "Steps", "copy_code": "Copy", "diagram_title": "System Diagram", "diagram_sub": "Interactive view of the pipeline", "stats_live": "Live contract", "callout_tip": "TIP", "callout_info": "INFO", "callout_success": "SUCCESS", "callout_danger": "DANGER", "anchor_copy": "Copy link", "anchor_copied": "Link copied", "feedback_title": "Was this helpful?", "feedback_yes": "Yes", "feedback_no": "No", "feedback_thanks": "Thanks for your feedback", "prose_meta": "Article", "word_count": "words", "toc_toggle": "Contents", "hero_desc_project": "What Nexus is, what is certified vs experimental, where it is going.", "hero_desc_architecture": "How the engine is built: hexagonal layers and the tick-to-decision path.", "hero_desc_research": "How historical data becomes falsifiable evidence.", "hero_desc_engineering": "Quality gates, CI architecture, and the security posture.", "hero_desc_guides": "Operating the engine day to day.", "hero_desc_getting_started": "Install, run and configure the engine.", "hero_desc_contributing": "The engineering contract and how to contribute.", "hero_desc_reference": "CLI reference, glossary, and honest answers.", "hero_desc_releases": "Every release with real highlights.", "on_this_page": "On this page"};
+window.NEXUS_LANG = "en";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../assets/docs-enhance.js' defer></script>
+<script src='../../../assets/search.js' defer></script>
+
+</body>
+</html>

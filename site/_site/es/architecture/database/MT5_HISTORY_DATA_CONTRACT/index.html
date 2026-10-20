@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang='es' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>MT5 History Data Contract · Nexus Scalp Engine</title>
+<meta name='description' content='MT5 History Data Contract — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/database/MT5_HISTORY_DATA_CONTRACT/'>
+<meta property='og:title' content='MT5 History Data Contract'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/es/architecture/database/MT5_HISTORY_DATA_CONTRACT/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta property='og:description' content='MT5 History Data Contract — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
+<meta name='twitter:title' content='MT5 History Data Contract'>
+<meta name='twitter:description' content='MT5 History Data Contract — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/architecture/database/MT5_HISTORY_DATA_CONTRACT/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/MT5_HISTORY_DATA_CONTRACT/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/MT5_HISTORY_DATA_CONTRACT/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/database/MT5_HISTORY_DATA_CONTRACT/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/architecture/database/MT5_HISTORY_DATA_CONTRACT/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/architecture/database/MT5_HISTORY_DATA_CONTRACT/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "MT5 History Data Contract", "description": "MT5 History Data Contract — Nexus Scalp Engine documentation", "inLanguage": "es", "url": "https://opselon.github.io/NexusTradingForexBot/es/architecture/database/MT5_HISTORY_DATA_CONTRACT/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>Ir al contenido</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menú' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../../es/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.17</span>
+  </div>
+  <div class='header-actions'>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='Buscar…' aria-label='Buscar…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='Buscar…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
+    <details class='theme-picker'>
+      <summary aria-label='Tema' title='Tema'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ Claro</button>
+        <button type='button' data-theme-set='dark'>☾ Oscuro</button>
+        <button type='button' data-theme-set='system'>🖥 Sistema</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='Idioma' title='Idioma'><span aria-hidden='true'>🌐</span><span class='lp-name'>Español</span></summary>
+      <div class='lang-menu'><a href='../../../../architecture/database/MT5_HISTORY_DATA_CONTRACT/' lang='en' hreflang='en'>English</a> <a href='../../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <span class='lang-current' lang='es'>Español ✓</span> <a href='../../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../../es/'>Inicio</a>
+<div class='nav-section'><a class='' href='../../../../es/getting-started/'>Inicio</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/getting-started/installation/'>Instalación</a></li>
+<li><a class='' href='../../../../es/getting-started/quickstart/'>Inicio rápido</a></li>
+<li><a class='' href='../../../../es/getting-started/first-run/'>Primera ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/getting-started/configuration/'>Configuración</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/project/'>Proyecto</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/project/vision/'>Visión y propósito</a></li>
+<li><a class='' href='../../../../es/project/scope/'>Alcance</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/project/status/'>Estado del proyecto</a></li>
+<li><a class='' href='../../../../es/project/capabilities/'>Matriz de capacidades</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/project/roadmap/'>Hoja de ruta</a></li>
+<li><a class='' href='../../../../es/project/milestones/'>Hitos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../../es/architecture/'>Arquitectura</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/architecture/overview/'>Visión general</a></li>
+<li><a class='' href='../../../../es/architecture/system-map/'>Mapa del sistema</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/data-flow/'>Flujo de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/runtime/'>Runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/research-stack/'>Pila de investigación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/model-pipeline/'>Pipeline de modelos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/execution-pipeline/'>Pipeline de ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/observability/'>Observabilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/mcp-bridge/'>Puente MCP y traza</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/database/'>Base de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/research/'>Investigación</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/research/methodology/'>Metodología</a></li>
+<li><a class='' href='../../../../es/research/datasets/'>Datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/backtesting/'>Backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/out-of-sample/'>Puerta OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/replay/'>Replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/counterfactuals/'>Contrafactuales</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/validation/'>Validación</a></li>
+<li><a class='' href='../../../../es/research/reproducibility/'>Reproducibilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/engineering/'>Ingeniería</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/engineering/quality/'>Calidad y pruebas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/engineering/ci/'>Arquitectura de CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/engineering/release-process/'>Proceso de release</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/engineering/workflow-test-build-release/'>Flujo de trabajo de pruebas, build y releases</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/engineering/security/'>Seguridad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/guides/'>Guías</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/guides/cli/'>Guía CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/guides/api/'>Referencia API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/guides/troubleshooting/'>Solución de problemas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/guides/common-workflows/'>Flujos comunes</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/contributing/'>Contribuir</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/contributing/contribution-guide/'>Guía de contribución</a></li>
+<li><a class='' href='../../../../es/contributing/documentation/'>Flujo de documentación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/contributing/add-language/'>Añadir un idioma</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/reference/'>Referencia</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/reference/cli-reference/'>Referencia CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/reference/glossary/'>Glosario</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/reference/terminology/'>Terminología y traducciones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/reference/faq/'>FAQ</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/releases/'>Versiones</a></div>
+<ul class='nav-list'><li><a href='../../../../es/releases/'>v9.0.17 &amp; historial</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Fuente en inglés — traducción pendiente — <a href='../../../architecture/database/MT5_HISTORY_DATA_CONTRACT/'>inglés</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../../es/architecture/'>Arquitectura</a> / <a href='../../../../es/architecture/database/'>Base de datos</a> / <span class='crumb-current' aria-current='page'>MT5 HISTORY DATA CONTRACT</span></nav>
+<details class='toc-mobile'><summary>En esta página</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-source-of-truth'>1. Source of truth</a></li><li class='toc-item toc-h2'><a href='#2-accountinfo-fields'>2. account_info fields</a></li><li class='toc-item toc-h2'><a href='#3-historyorders-fields-tradeorder-namedtuple-24-fields'>3. history_orders fields (TradeOrder namedtuple, 24 fields)</a></li><li class='toc-item toc-h2'><a href='#4-historydeals-fields-tradedeal-namedtuple-18-fields'>4. history_deals fields (TradeDeal namedtuple, 18 fields)</a></li><li class='toc-item toc-h2'><a href='#5-logical-trade-reconstruction-auditbrokertrades'>5. Logical trade reconstruction (audit_broker_trades)</a></li><li class='toc-item toc-h2'><a href='#6-deduplication--idempotency'>6. Deduplication / idempotency</a></li><li class='toc-item toc-h2'><a href='#7-data-validation'>7. Data validation</a></li><li class='toc-item toc-h2'><a href='#8-accounting-source-hierarchy'>8. Accounting source hierarchy</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='mt5-history-data-contract'>MT5 History Data Contract</h1>
+<p>Authoritative mapping between REAL MetaTrader 5 responses and the internal database / accounting / API / UI layers. Verified 2026-08-17 against a live MetaQuotes-Demo terminal (account 10011755849, XAUUSD) — fixtures captured in <code>tests/fixtures/mt5/*.json</code> reflect the EXACT shapes the installed MetaTrader5 Python package returns.</p>
+<h2 id='1-source-of-truth'>1. Source of truth</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>API</th><th>Returns</th><th>Fixture</th></tr></thead><tbody>
+<tr><td><code>account_info()</code></td><td>namedtuple (28 fields)</td><td>account_info.json</td></tr>
+<tr><td><code>terminal_info()</code></td><td>namedtuple</td><td>terminal_info.json</td></tr>
+<tr><td><code>symbol_info("XAUUSD")</code></td><td>namedtuple (spec block)</td><td>xauusd_symbol.json</td></tr>
+<tr><td><code>symbol_info_tick("XAUUSD")</code></td><td>namedtuple (tick block)</td><td>xauusd_tick.json</td></tr>
+<tr><td><code>positions_get()</code></td><td>tuple of namedtuples</td><td>positions.json</td></tr>
+<tr><td><code>orders_get()</code></td><td>tuple of namedtuples</td><td>orders.json</td></tr>
+<tr><td><code>history_orders_get(from,to)</code></td><td>tuple of TradeOrder</td><td>history_orders.json</td></tr>
+<tr><td><code>history_deals_get(from,to)</code></td><td>tuple of TradeDeal</td><td>history_deals.json</td></tr>
+<tr><td><code>copy_rates_from_pos(...)</code></td><td>numpy record array</td><td>xauusd_m1_rates.json</td></tr>
+<tr><td><code>order_calc_profit/margin(...)</code></td><td>float (positional-only!)</td><td>order_calc.json</td></tr>
+</tbody></table></div>
+<p>All timestamps are UTC epoch seconds → <code>datetime.fromtimestamp(ts, tz=UTC)</code>.</p>
+<h2 id='2-accountinfo-fields'>2. account_info fields</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>MT5 raw</th><th>Type</th><th>Example</th><th>Internal</th><th>Accounting use</th><th>NULL semantics</th></tr></thead><tbody>
+<tr><td>login</td><td>int</td><td>10011755849</td><td>AccountSnapshot.login</td><td>identity</td><td>—</td></tr>
+<tr><td>balance</td><td>float</td><td>37717.91</td><td>.balance</td><td>live balance</td><td>unavailable→None</td></tr>
+<tr><td>equity</td><td>float</td><td>37717.91</td><td>.equity</td><td>live equity / drawdown</td><td>unavailable→None</td></tr>
+<tr><td>margin</td><td>float</td><td>0.0</td><td>.margin</td><td>margin level</td><td>0 = no exposure</td></tr>
+<tr><td>margin_free</td><td>float</td><td>37717.91</td><td>.margin_free</td><td>free margin</td><td>—</td></tr>
+<tr><td>leverage</td><td>int</td><td>100</td><td>.leverage</td><td>risk plan</td><td>—</td></tr>
+<tr><td>currency</td><td>str</td><td>USD</td><td>.currency</td><td>display</td><td>—</td></tr>
+<tr><td>trade_mode</td><td>int</td><td>0 (demo)</td><td>.trade_mode</td><td>mode honesty</td><td>0=demo, 2=real</td></tr>
+<tr><td>trade_allowed</td><td>bool</td><td>True</td><td>.trade_allowed</td><td>runtime mode</td><td>—</td></tr>
+<tr><td>profit</td><td>float</td><td>0.0</td><td>.profit</td><td>floating net</td><td>—</td></tr>
+<tr><td>margin_level</td><td>float</td><td>0.0</td><td>.margin_level</td><td>margin level %</td><td>0 when no margin</td></tr>
+</tbody></table></div>
+<p>Derived: <code>floating_pnl = equity - balance</code> (MT5 definition).</p>
+<h2 id='3-historyorders-fields-tradeorder-namedtuple-24-fields'>3. history_orders fields (TradeOrder namedtuple, 24 fields)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>MT5 raw</th><th>Type</th><th>Internal (audit_broker_orders)</th><th>Notes</th></tr></thead><tbody>
+<tr><td>ticket</td><td>int</td><td>ticket (PK)</td><td>order identity</td></tr>
+<tr><td>position_id</td><td>int</td><td>position_id</td><td>link to position lifecycle</td></tr>
+<tr><td>type</td><td>int</td><td>type</td><td>ORDER_TYPE_*</td></tr>
+<tr><td>magic</td><td>int</td><td>magic</td><td>bot magic 888101</td></tr>
+<tr><td>state</td><td>int</td><td>state</td><td>ORDER_STATE_*</td></tr>
+<tr><td>volume_initial</td><td>float</td><td>volume_initial</td><td>—</td></tr>
+<tr><td>volume_current</td><td>float</td><td>volume_current</td><td>—</td></tr>
+<tr><td>price_open</td><td>float</td><td>price_open</td><td>—</td></tr>
+<tr><td>price_current</td><td>float</td><td>price_current</td><td>—</td></tr>
+<tr><td><strong>price_stoplimit</strong></td><td>float</td><td>price_stop_limit</td><td>REAL MT5 name (not <code>price_stop_limit</code>)</td></tr>
+<tr><td>sl / tp</td><td>float</td><td>sl / tp</td><td>—</td></tr>
+<tr><td>time_setup / time_done</td><td>int</td><td>time_setup / time_done</td><td>UTC epoch</td></tr>
+<tr><td>reason</td><td>int</td><td>reason</td><td>ORDER_REASON_*</td></tr>
+<tr><td>comment</td><td>str</td><td>comment</td><td>e.g. "NSE_PENDING"</td></tr>
+<tr><td>external_id</td><td>str</td><td>external_id</td><td>—</td></tr>
+</tbody></table></div>
+<h2 id='4-historydeals-fields-tradedeal-namedtuple-18-fields'>4. history_deals fields (TradeDeal namedtuple, 18 fields)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>MT5 raw</th><th>Type</th><th>Internal (audit_broker_deals)</th><th>Accounting use</th><th>NULL semantics</th></tr></thead><tbody>
+<tr><td>ticket</td><td>int</td><td>ticket (PK)</td><td>deal identity</td><td>—</td></tr>
+<tr><td>order</td><td>int</td><td>order</td><td>link to order</td><td>—</td></tr>
+<tr><td>position_id</td><td>int</td><td>position_id</td><td>LOGICAL TRADE KEY</td><td>—</td></tr>
+<tr><td>entry</td><td>int</td><td>entry</td><td>0=IN, 1=OUT</td><td>partial closes = many OUT</td></tr>
+<tr><td>type</td><td>int</td><td>type</td><td>0=BUY, 1=SELL (direction)</td><td>direction from OPEN deal</td></tr>
+<tr><td>volume</td><td>float</td><td>volume</td><td>trade volume (OPEN leg)</td><td>—</td></tr>
+<tr><td>price</td><td>float</td><td>price</td><td>entry/exit prices</td><td>—</td></tr>
+<tr><td>profit</td><td>float</td><td>profit</td><td>gross PnL sum</td><td>—</td></tr>
+<tr><td>commission</td><td>float</td><td>commission</td><td>cost, stored NEGATIVE</td><td>net = profit − \</td><td>comm\</td><td>− \</td><td>swap\</td><td>− \</td><td>fee\</td><td></td></tr>
+<tr><td>swap</td><td>float</td><td>swap</td><td>cost</td><td>—</td></tr>
+<tr><td>fee</td><td>float</td><td>fee</td><td>cost</td><td>—</td></tr>
+<tr><td>reason</td><td>int</td><td>reason</td><td>DEAL_REASON_*</td><td>exit reason</td></tr>
+<tr><td>comment</td><td>str</td><td>comment</td><td>e.g. "NSE_CLOSE"</td><td>—</td></tr>
+</tbody></table></div>
+<p><strong>net_result (per deal) = profit − |commission| − |swap| − |fee|</strong> — sign convention verified on real terminal (all costs negative in MT5 records).</p>
+<h2 id='5-logical-trade-reconstruction-auditbrokertrades'>5. Logical trade reconstruction (audit_broker_trades)</h2>
+<p>Identity: <code>trade_id = position_id</code> (deterministic broker identity, no UUIDs).</p>
+<p>One position lifecycle = open deal + N close/partial deals → ONE row:</p>
+<div class='table-wrap'><table>
+<thead><tr><th>Field</th><th>Source</th></tr></thead><tbody>
+<tr><td>entry_time / entry_price</td><td>OPEN deal (entry=0)</td></tr>
+<tr><td>exit_time / exit_price</td><td>last OUT deal (entry=1)</td></tr>
+<tr><td>volume</td><td>sum of OPEN-leg deal volumes</td></tr>
+<tr><td>gross_pnl</td><td>Σ deal profit</td></tr>
+<tr><td>commission / swap / fee</td><td>Σ (abs of costs)</td></tr>
+<tr><td>net_pnl</td><td>gross − commission − swap − fee</td></tr>
+<tr><td>deal_ids / order_ids</td><td>all deal tickets / order tickets of the lifecycle</td></tr>
+<tr><td>duration_sec</td><td>exit_time − entry_time</td></tr>
+</tbody></table></div>
+<p>Positions with NO OUT deal in the fetched window are still OPEN at the broker → never persisted as trades (no fabricated realized result).</p>
+<h2 id='6-deduplication--idempotency'>6. Deduplication / idempotency</h2>
+<ul>
+<li><code>audit_broker_orders.ticket</code> UNIQUE → insert-or-ignore</li>
+<li><code>audit_broker_deals.ticket</code> UNIQUE → insert-or-ignore</li>
+<li><code>audit_broker_trades.trade_id</code> UNIQUE → insert-or-ignore</li>
+<li>Re-ingesting identical history 10× ⇒ 0 new rows, identical totals (tested)</li>
+</ul>
+<h2 id='7-data-validation'>7. Data validation</h2>
+<p>Deal/order tickets unique per fetch; position_id consistent across deals; timestamps UTC-normalized; volumes/prices finite; profit/costs aggregated with sign convention above. Malformed rows are diagnosed via <code>[MT5_HISTORY] event=FETCH_RESULT</code> logs — never silently discarded.</p>
+<h2 id='8-accounting-source-hierarchy'>8. Accounting source hierarchy</h2>
+<ol>
+<li><code>audit_broker_trades</code> (authoritative reconstructed broker outcomes)</li>
+<li><code>audit_ledger</code> (engine's own execution autopsy — fallback, may carry</li>
+</ol>
+<p>zero-PnL rows when the deal path never reached it)</p>
+<p><code>AccountingCore.load_trades()</code> reads the ledger first (engine-lived trades with full context) and falls back to the broker copy. When broker history is present, every financial total (net PnL, win rate, best/worst, expectancy, profit factor) is traceable to real MT5 deal rows.</p></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>En esta página</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-source-of-truth'>1. Source of truth</a></li><li class='toc-item toc-h2'><a href='#2-accountinfo-fields'>2. account_info fields</a></li><li class='toc-item toc-h2'><a href='#3-historyorders-fields-tradeorder-namedtuple-24-fields'>3. history_orders fields (TradeOrder namedtuple, 24 fields)</a></li><li class='toc-item toc-h2'><a href='#4-historydeals-fields-tradedeal-namedtuple-18-fields'>4. history_deals fields (TradeDeal namedtuple, 18 fields)</a></li><li class='toc-item toc-h2'><a href='#5-logical-trade-reconstruction-auditbrokertrades'>5. Logical trade reconstruction (audit_broker_trades)</a></li><li class='toc-item toc-h2'><a href='#6-deduplication--idempotency'>6. Deduplication / idempotency</a></li><li class='toc-item toc-h2'><a href='#7-data-validation'>7. Data validation</a></li><li class='toc-item toc-h2'><a href='#8-accounting-source-hierarchy'>8. Accounting source hierarchy</a></li></ul></aside></div>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/es/architecture/database/MT5_HISTORY_DATA_CONTRACT.md'>Editar esta página en GitHub</a> · Versión v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
+    <span><a href='../../../../es/project/status/'>Estado del proyecto</a> · <a href='../../../../es/reference/faq/'>FAQ</a> · <a href='../../../../es/releases/'>Todas las versiones</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../../es/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='Buscar… — ⌘K' aria-label='Buscar…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>Buscar……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "Buscar…", "home": "Inicio", "repo": "GitHub", "skip": "Ir al contenido", "language": "Idioma", "partial": "Fuente en inglés — traducción pendiente", "english": "inglés", "version": "Versión", "next": "Siguiente", "prev": "Anterior", "on_github": "Editar esta página en GitHub", "menu": "Menú", "whats_new": "Novedades", "all_releases": "Todas las versiones", "get_started": "Comenzar", "view_architecture": "Arquitectura", "view_roadmap": "Hoja de ruta", "close": "Cerrar", "theme": "Tema", "theme_light": "Claro", "theme_dark": "Oscuro", "theme_system": "Sistema", "copy": "Copiar", "copied": "Copiado", "copy_error": "Error al copiar", "no_results": "Sin resultados", "loading": "Cargando…", "section": "Sección", "search_results": "Resultados de búsqueda", "explore_docs": "Explora la documentación", "full_matrix": "Matriz completa", "release_timeline": "Cronología de versiones", "hero_kicker": "PLATAFORMA DE INVESTIGACIÓN Y EJECUCIÓN DE TRADING CUANTITATIVO", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Una plataforma de scalping basada en investigación, hexagonal y dirigida por eventos para MetaTrader 5 — características causales, modelos profundos gobernados, un motor de riesgo invariante, herramientas de investigación deterministas y observabilidad forense en un pipeline auditable.", "chip_released": "publicada", "chip_rev": "rev", "chip_research": "investigación: 50D vivo · 70D candidato", "released_history": "historial", "release_history_kicker": "HISTORIAL DE VERSIONES", "releases_intro": "Cada versión con sus novedades reales, derivadas de los metadatos de GitHub en tiempo de compilación. Fuente única de versión:", "nf404_title": "404", "nf404_lead": "Esta página de documentación no existe.", "nf404_home": "Inicio", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Versión en GitHub", "back_home": "Volver al inicio", "quickstart_label": "Inicio rápido", "status_label": "Estado del proyecto", "faq_label": "FAQ", "cap_engine": "Motor de características causales 50D", "cap_risk": "Motor de riesgo + límites de ejecución", "cap_oos": "Walk-Forward + puerta OOS estricta", "cap_factory": "Fábrica de modelos artefacto-céntrica", "cap_70d": "Contrato 70D (Base+Noticias+Liquidez)", "cap_cf": "Motor contrafactual (recorrido NO_TRADE)", "pillar_evidence_t": "🧭 Evidencia antes que afirmaciones", "pillar_evidence_b": "Las métricas sin evidencia muestran n/a — nunca ceros falsos. Los resultados negativos se publican: nuestro candidato insignia 70D fue rechazado por nuestra propia puerta OOS.", "pillar_safety_t": "🔒 Seguridad por construcción", "pillar_safety_b": "PAPER por defecto · SHADOW sin autoridad de órdenes · LIVE tras confirmación explícita · límites estrictos de riesgo (HARD_MAX_LOTS, margen ≤20%) aplicados en la ruta de ejecución.", "pillar_research_t": "🔬 Investigación determinista", "pillar_research_b": "Walk-forward purgado y con embargo, replay bit-exacto, datasets/modelos con huella, procedencia en cada ejecución — el mismo contrato de características para vivo, replay y entrenamiento.", "pillar_truth_t": "👁️ Verdad del runtime", "pillar_truth_b": "Observabilidad forense: logs por severidad, correlación de incidentes, puerta de despliegue. La verdad del bróker gana al estado obsoleto; las puertas son la autoridad, la configuración es intención.", "capability": "Capacidad", "status": "Estado", "chip_certified": "CERTIFICADO", "chip_implemented": "IMPLEMENTADO", "chip_experimental": "EXPERIMENTAL", "chip_research_l": "INVESTIGACIÓN", "cap_highlights": "Capacidades destacadas", "callout_important": "IMPORTANTE", "callout_note": "NOTA", "callout_warning": "ADVERTENCIA", "how_it_works": "Cómo funciona Nexus", "reading_time": "min de lectura", "toc_title": "En esta página", "toc_empty": "Sin encabezados", "last_updated": "Actualizado", "share": "Compartir", "edit_page": "Editar esta página", "related_title": "Sigue explorando", "related_sub": "A continuación en esta sección", "up_next": "Siguiente", "also_read": "Lee también", "prev_page": "Anterior", "next_page": "Siguiente", "breadcrumb_home": "Inicio", "hero_eyebrow_project": "Proyecto", "hero_eyebrow_architecture": "Arquitectura", "hero_eyebrow_research": "Investigación", "hero_eyebrow_engineering": "Ingeniería", "hero_eyebrow_guides": "Guías", "hero_eyebrow_getting_started": "Inicio", "hero_eyebrow_contributing": "Contribuir", "hero_eyebrow_reference": "Referencia", "hero_eyebrow_releases": "Versiones", "kpi_certified": "Certificado", "kpi_experimental": "Experimental", "kpi_coverage": "Cobertura", "steps_title": "Pasos", "copy_code": "Copiar", "diagram_title": "Diagrama del sistema", "diagram_sub": "Vista interactiva del pipeline", "stats_live": "Contrato vivo", "callout_tip": "CONSEJO", "callout_info": "INFO", "callout_success": "ÉXITO", "callout_danger": "PELIGRO", "anchor_copy": "Copiar enlace", "anchor_copied": "Enlace copiado", "feedback_title": "¿Te resultó útil?", "feedback_yes": "Sí", "feedback_no": "No", "feedback_thanks": "Gracias por tu comentario", "prose_meta": "Artículo", "word_count": "palabras", "toc_toggle": "Contenidos", "hero_desc_project": "Qué es Nexus, qué está certificado vs experimental.", "hero_desc_architecture": "Cómo está construido el motor: capas hexagonales y camino del tick.", "hero_desc_research": "Cómo los datos históricos se convierten en evidencia falsable.", "hero_desc_engineering": "Puertas de calidad, arquitectura de CI y postura de seguridad.", "hero_desc_guides": "Operar el motor día a día.", "hero_desc_getting_started": "Instala, ejecuta y configura el motor.", "hero_desc_contributing": "El contrato de ingeniería y cómo contribuir.", "hero_desc_reference": "Referencia CLI, glosario y respuestas honestas.", "hero_desc_releases": "Cada versión con sus novedades reales.", "on_this_page": "En esta página"};
+window.NEXUS_LANG = "es";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../../assets/docs-enhance.js' defer></script>
+<script src='../../../../assets/search.js' defer></script>
+
+</body>
+</html>

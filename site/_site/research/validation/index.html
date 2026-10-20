@@ -5,16 +5,21 @@
 <meta name='viewport' content='width=device-width, initial-scale=1'>
 <title>Validation · Nexus Scalp Engine</title>
 <meta name='description' content='The validation philosophy — what &quot;validated&quot; means, the 12 gates, and why rejections are published.'>
+<meta name='theme-color' content='#ffffff'>
 <link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/research/validation/'>
 <meta property='og:title' content='Validation'>
 <meta property='og:type' content='website'>
 <meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/research/validation/'>
 <meta property='og:site_name' content='Nexus Scalp Engine'>
-<meta name='twitter:card' content='summary'>
+<meta property='og:description' content='The validation philosophy — what &quot;validated&quot; means, the 12 gates, and why rejections are published.'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
 <meta name='twitter:title' content='Validation'>
 <meta name='twitter:description' content='The validation philosophy — what &quot;validated&quot; means, the 12 gates, and why rejections are published.'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
 <link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/research/validation/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/research/validation/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/research/validation/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/research/validation/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/research/validation/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/research/validation/'>
-<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Validation", "description": "The validation philosophy — what \"validated\" means, the 12 gates, and why rejections are published.", "inLanguage": "en", "url": "https://opselon.github.io/NexusTradingForexBot/research/validation/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine"}}</script>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Validation", "description": "The validation philosophy — what \"validated\" means, the 12 gates, and why rejections are published.", "inLanguage": "en", "url": "https://opselon.github.io/NexusTradingForexBot/research/validation/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
 <link rel='preconnect' href='https://fonts.googleapis.com'>
 <link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
 <link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
@@ -32,11 +37,13 @@
   </button>
   <div class='brand'>
     <a href='../../' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
-    <span class='brand-badge'>v9.0.14</span>
+    <span class='brand-badge'>v9.0.17</span>
   </div>
   <div class='header-actions'>
-    <input id='doc-search' class='search' type='search' placeholder='Search docs…' aria-label='Search docs…' autocomplete='off'>
-    <button id='cmdk-open' class='chip' type='button' aria-label='Command palette' title='⌘K / Ctrl+K'>⌘K</button>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='Search docs…' aria-label='Search docs…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='Search docs…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
     <details class='theme-picker'>
       <summary aria-label='Theme' title='Theme'>◐</summary>
       <div class='lang-menu theme-menu'>
@@ -46,7 +53,7 @@
       </div>
     </details>
     <details class='lang-picker'>
-      <summary aria-label='Language'>🌐 English</summary>
+      <summary aria-label='Language' title='Language'><span aria-hidden='true'>🌐</span><span class='lp-name'>English</span></summary>
       <div class='lang-menu'><span class='lang-current' lang='en'>English ✓</span> <a href='../../fa/research/validation/' lang='fa' hreflang='fa'>فارسی</a> <a href='../../ar/research/validation/' lang='ar' hreflang='ar'>العربية</a> <a href='../../es/research/validation/' lang='es' hreflang='es'>Español</a> <a href='../../de/research/validation/' lang='de' hreflang='de'>Deutsch</a></div>
     </details>
     <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a>
@@ -82,6 +89,7 @@
 <li><a class='' href='../../architecture/model-pipeline/'>Model Pipeline</a></li>
 <li><a class='' href='../../architecture/execution-pipeline/'>Execution Pipeline</a></li>
 <li><a class='' href='../../architecture/observability/'>Observability</a></li>
+<li><a class='' href='../../architecture/mcp-bridge/'>MCP Bridge &amp; Trace</a></li>
 <li><a class='' href='../../architecture/database/'>Database</a></li>
 </ul>
 <div class='nav-section'><a class='active' href='../../research/'>Research</a></div>
@@ -125,16 +133,14 @@
 <li><a class='' href='../../reference/faq/'>FAQ</a></li>
 </ul>
 <div class='nav-section'><a class='' href='../../releases/'>Releases</a></div>
-<ul class='nav-list'><li><a href='../../releases/'>v9.0.14 &amp; history</a></li></ul>
+<ul class='nav-list'><li><a href='../../releases/'>v9.0.17 &amp; history</a></li></ul>
 </nav>
 <main id='content' class='content' tabindex='-1'>
 
 <nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../research/'>Research</a> / <span class='crumb-current' aria-current='page'>Validation</span></nav>
-<h1 id='validation'>Validation</h1>
+<details class='toc-mobile'><summary>On this page</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#philosophy'>Philosophy</a></li><li class='toc-item toc-h2'><a href='#the-gate-chain'>The gate chain</a></li><li class='toc-item toc-h2'><a href='#the-12-validation-gates-candidate-lifecycle'>The 12 validation gates (candidate lifecycle)</a></li><li class='toc-item toc-h2'><a href='#failure-handling'>Failure handling</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='validation'>Validation</h1>
 <h2 id='philosophy'>Philosophy</h2>
-<p>Validation is the reason the platform exists. Every layer has its own gates,</p>
-<p>and <strong>a failure at any gate is terminal for that candidate</strong> — no averaging,</p>
-<p>no "close enough".</p>
+<p>Validation is the reason the platform exists. Every layer has its own gates, and <strong>a failure at any gate is terminal for that candidate</strong> — no averaging, no "close enough".</p>
 <h2 id='the-gate-chain'>The gate chain</h2>
 <div class='table-wrap'><table>
 <thead><tr><th>Layer</th><th>Gates</th></tr></thead><tbody>
@@ -147,20 +153,13 @@
 <tr><td>Release</td><td>SHA-256 digests, manifests, SBOM, post-publish verification</td></tr>
 </tbody></table></div>
 <h2 id='the-12-validation-gates-candidate-lifecycle'>The 12 validation gates (candidate lifecycle)</h2>
-<p>The candidate validation path runs 12 gates over a candidate (manifest</p>
-<p>integrity, schema family, scaler identity, dataset provenance, calibration,</p>
-<p>OOS, robustness…). Governance verification adds a 14-gate matrix on top for</p>
-<p>promotion readiness. A candidate that fails any gate is stored as CHALLENGER</p>
-<p>at best — and only an operator can ever promote.</p>
+<p>The candidate validation path runs 12 gates over a candidate (manifest integrity, schema family, scaler identity, dataset provenance, calibration, OOS, robustness…). Governance verification adds a 14-gate matrix on top for promotion readiness. A candidate that fails any gate is stored as CHALLENGER at best — and only an operator can ever promote.</p>
 <h2 id='failure-handling'>Failure handling</h2>
-<p>Rejections are recorded with evidence and stay public: the 70D OOS rejection</p>
-<p>and the benchmark history are in <a href="../project/status.md">Project Status</a>. A</p>
-<p>failed validation is a <strong>result</strong>, not an embarrassment — it is what makes the</p>
-<p>passing cases meaningful.</p>
+<p>Rejections are recorded with evidence and stay public: the 70D OOS rejection and the benchmark history are in <a href="../project/status.md">Project Status</a>. A failed validation is a <strong>result</strong>, not an embarrassment — it is what makes the passing cases meaningful.</p></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>On this page</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#philosophy'>Philosophy</a></li><li class='toc-item toc-h2'><a href='#the-gate-chain'>The gate chain</a></li><li class='toc-item toc-h2'><a href='#the-12-validation-gates-candidate-lifecycle'>The 12 validation gates (candidate lifecycle)</a></li><li class='toc-item toc-h2'><a href='#failure-handling'>Failure handling</a></li></ul></aside></div>
 <nav class='prev-next' aria-label='pagination'><a class='pn pn-prev' href='../../research/counterfactuals/'><span class='pn-label'>Previous</span><span class='pn-name'>Counterfactuals</span></a><a class='pn pn-next' href='../../research/reproducibility/'><span class='pn-label'>Next</span><span class='pn-name'>Reproducibility</span></a></nav>
 <footer class='page-footer'>
   <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
-    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/docs/research/validation.md'>Edit this page on GitHub</a> · Version v9.0.14 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/8566bd3'>8566bd3</a></span>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/docs/research/validation.md'>Edit this page on GitHub</a> · Version v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
     <span><a href='../../project/status/'>Project status</a> · <a href='../../reference/faq/'>FAQ</a> · <a href='../../releases/'>All releases</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
   </div>
   <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../project/status/'>Evidence-graded status</a>.</div>
@@ -174,9 +173,10 @@
   </div>
 </div>
 <script>
-window.NEXUS_LOCALE = {"search": "Search docs…", "home": "Home", "repo": "GitHub", "skip": "Skip to content", "language": "Language", "partial": "English source shown — translation pending", "english": "English", "version": "Version", "next": "Next", "prev": "Previous", "on_github": "Edit this page on GitHub", "menu": "Menu", "whats_new": "What's New", "all_releases": "All releases", "get_started": "Get Started", "view_architecture": "View Architecture", "view_roadmap": "View Roadmap", "close": "Close", "theme": "Theme", "theme_light": "Light", "theme_dark": "Dark", "theme_system": "System", "copy": "Copy", "copied": "Copied", "copy_error": "Copy failed", "no_results": "No results", "loading": "Loading…", "section": "Section", "search_results": "Search results", "explore_docs": "Explore the documentation", "full_matrix": "Full matrix", "release_timeline": "Release timeline", "hero_kicker": "QUANTITATIVE TRADING RESEARCH & EXECUTION PLATFORM", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "A research-driven, hexagonal, event-driven scalping platform for MetaTrader 5 — causal features, governed deep models, an invariant risk engine, deterministic research tooling and forensic observability in one auditable pipeline.", "chip_released": "released", "chip_rev": "rev", "chip_research": "research: 50D live · 70D candidate", "released_history": "history", "release_history_kicker": "RELEASE HISTORY", "releases_intro": "Every release with its real highlights, derived from GitHub release metadata at build time. Version single-source:", "nf404_title": "404", "nf404_lead": "This documentation page does not exist.", "nf404_home": "Home", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "GitHub release", "back_home": "Back home", "quickstart_label": "Quickstart", "status_label": "Project status", "faq_label": "FAQ", "cap_engine": "Causal 50D feature engine", "cap_risk": "Risk engine + execution clamps", "cap_oos": "Walk-forward + hard OOS gate", "cap_factory": "Artifact-first Model Factory", "cap_70d": "70D contract (Base+News+Liquidity)", "cap_cf": "Counterfactual engine (NO_TRADE walk)", "pillar_evidence_t": "🧭 Evidence before claims", "pillar_evidence_b": "Metrics without evidence render n/a — never fake zeros. Negative results are published: the flagship 70D research candidate was rejected by our own OOS gate.", "pillar_safety_t": "🔒 Safety by construction", "pillar_safety_b": "PAPER default · SHADOW with zero order authority · LIVE behind explicit confirmation · hard risk clamps (HARD_MAX_LOTS, margin ≤20%) enforced in the execution path.", "pillar_research_t": "🔬 Deterministic research", "pillar_research_b": "Purged + embargoed walk-forward, bit-exact replay, fingerprinted datasets/models, provenance on every run — the same feature contract for live, replay and training.", "pillar_truth_t": "👁️ Runtime truth", "pillar_truth_b": "Forensic observability: severity-split logs, incident correlation, deploy gate. Broker truth wins over stale state; gates are authorities, settings are intent.", "capability": "Capability", "status": "Status", "chip_certified": "CERTIFIED", "chip_implemented": "IMPLEMENTED", "chip_experimental": "EXPERIMENTAL", "chip_research_l": "RESEARCH", "cap_highlights": "Capability highlights", "callout_important": "IMPORTANT", "callout_note": "NOTE", "callout_warning": "WARNING", "how_it_works": "How Nexus works", "reading_time": "min read", "toc_title": "On this page", "toc_empty": "No headings", "last_updated": "Last updated", "share": "Share", "edit_page": "Edit this page", "related_title": "Continue exploring", "related_sub": "Up next in this section", "up_next": "Up next", "also_read": "Also read", "prev_page": "Previous", "next_page": "Next", "breadcrumb_home": "Home", "hero_eyebrow_project": "Project", "hero_eyebrow_architecture": "Architecture", "hero_eyebrow_research": "Research", "hero_eyebrow_engineering": "Engineering", "hero_eyebrow_guides": "Guides", "hero_eyebrow_getting_started": "Getting Started", "hero_eyebrow_contributing": "Contributing", "hero_eyebrow_reference": "Reference", "hero_eyebrow_releases": "Releases", "kpi_certified": "Certified", "kpi_experimental": "Experimental", "kpi_coverage": "Coverage", "steps_title": "Steps", "copy_code": "Copy", "diagram_title": "System Diagram", "diagram_sub": "Interactive view of the pipeline", "stats_live": "Live contract", "callout_tip": "TIP", "callout_info": "INFO", "callout_success": "SUCCESS", "callout_danger": "DANGER", "anchor_copy": "Copy link", "anchor_copied": "Link copied", "feedback_title": "Was this helpful?", "feedback_yes": "Yes", "feedback_no": "No", "feedback_thanks": "Thanks for your feedback", "prose_meta": "Article", "word_count": "words", "toc_toggle": "Contents", "hero_desc_project": "What Nexus is, what is certified vs experimental, where it is going.", "hero_desc_architecture": "How the engine is built: hexagonal layers and the tick-to-decision path.", "hero_desc_research": "How historical data becomes falsifiable evidence.", "hero_desc_engineering": "Quality gates, CI architecture, and the security posture.", "hero_desc_guides": "Operating the engine day to day.", "hero_desc_getting_started": "Install, run and configure the engine.", "hero_desc_contributing": "The engineering contract and how to contribute.", "hero_desc_reference": "CLI reference, glossary, and honest answers.", "hero_desc_releases": "Every release with real highlights."};
+window.NEXUS_LOCALE = {"search": "Search docs…", "home": "Home", "repo": "GitHub", "skip": "Skip to content", "language": "Language", "partial": "English source shown — translation pending", "english": "English", "version": "Version", "next": "Next", "prev": "Previous", "on_github": "Edit this page on GitHub", "menu": "Menu", "whats_new": "What's New", "all_releases": "All releases", "get_started": "Get Started", "view_architecture": "View Architecture", "view_roadmap": "View Roadmap", "close": "Close", "theme": "Theme", "theme_light": "Light", "theme_dark": "Dark", "theme_system": "System", "copy": "Copy", "copied": "Copied", "copy_error": "Copy failed", "no_results": "No results", "loading": "Loading…", "section": "Section", "search_results": "Search results", "explore_docs": "Explore the documentation", "full_matrix": "Full matrix", "release_timeline": "Release timeline", "hero_kicker": "QUANTITATIVE TRADING RESEARCH & EXECUTION PLATFORM", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "A research-driven, hexagonal, event-driven scalping platform for MetaTrader 5 — causal features, governed deep models, an invariant risk engine, deterministic research tooling and forensic observability in one auditable pipeline.", "chip_released": "released", "chip_rev": "rev", "chip_research": "research: 50D live · 70D candidate", "released_history": "history", "release_history_kicker": "RELEASE HISTORY", "releases_intro": "Every release with its real highlights, derived from GitHub release metadata at build time. Version single-source:", "nf404_title": "404", "nf404_lead": "This documentation page does not exist.", "nf404_home": "Home", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "GitHub release", "back_home": "Back home", "quickstart_label": "Quickstart", "status_label": "Project status", "faq_label": "FAQ", "cap_engine": "Causal 50D feature engine", "cap_risk": "Risk engine + execution clamps", "cap_oos": "Walk-forward + hard OOS gate", "cap_factory": "Artifact-first Model Factory", "cap_70d": "70D contract (Base+News+Liquidity)", "cap_cf": "Counterfactual engine (NO_TRADE walk)", "pillar_evidence_t": "🧭 Evidence before claims", "pillar_evidence_b": "Metrics without evidence render n/a — never fake zeros. Negative results are published: the flagship 70D research candidate was rejected by our own OOS gate.", "pillar_safety_t": "🔒 Safety by construction", "pillar_safety_b": "PAPER default · SHADOW with zero order authority · LIVE behind explicit confirmation · hard risk clamps (HARD_MAX_LOTS, margin ≤20%) enforced in the execution path.", "pillar_research_t": "🔬 Deterministic research", "pillar_research_b": "Purged + embargoed walk-forward, bit-exact replay, fingerprinted datasets/models, provenance on every run — the same feature contract for live, replay and training.", "pillar_truth_t": "👁️ Runtime truth", "pillar_truth_b": "Forensic observability: severity-split logs, incident correlation, deploy gate. Broker truth wins over stale state; gates are authorities, settings are intent.", "capability": "Capability", "status": "Status", "chip_certified": "CERTIFIED", "chip_implemented": "IMPLEMENTED", "chip_experimental": "EXPERIMENTAL", "chip_research_l": "RESEARCH", "cap_highlights": "Capability highlights", "callout_important": "IMPORTANT", "callout_note": "NOTE", "callout_warning": "WARNING", "how_it_works": "How Nexus works", "reading_time": "min read", "toc_title": "On this page", "toc_empty": "No headings", "last_updated": "Last updated", "share": "Share", "edit_page": "Edit this page", "related_title": "Continue exploring", "related_sub": "Up next in this section", "up_next": "Up next", "also_read": "Also read", "prev_page": "Previous", "next_page": "Next", "breadcrumb_home": "Home", "hero_eyebrow_project": "Project", "hero_eyebrow_architecture": "Architecture", "hero_eyebrow_research": "Research", "hero_eyebrow_engineering": "Engineering", "hero_eyebrow_guides": "Guides", "hero_eyebrow_getting_started": "Getting Started", "hero_eyebrow_contributing": "Contributing", "hero_eyebrow_reference": "Reference", "hero_eyebrow_releases": "Releases", "kpi_certified": "Certified", "kpi_experimental": "Experimental", "kpi_coverage": "Coverage", "steps_title": "Steps", "copy_code": "Copy", "diagram_title": "System Diagram", "diagram_sub": "Interactive view of the pipeline", "stats_live": "Live contract", "callout_tip": "TIP", "callout_info": "INFO", "callout_success": "SUCCESS", "callout_danger": "DANGER", "anchor_copy": "Copy link", "anchor_copied": "Link copied", "feedback_title": "Was this helpful?", "feedback_yes": "Yes", "feedback_no": "No", "feedback_thanks": "Thanks for your feedback", "prose_meta": "Article", "word_count": "words", "toc_toggle": "Contents", "hero_desc_project": "What Nexus is, what is certified vs experimental, where it is going.", "hero_desc_architecture": "How the engine is built: hexagonal layers and the tick-to-decision path.", "hero_desc_research": "How historical data becomes falsifiable evidence.", "hero_desc_engineering": "Quality gates, CI architecture, and the security posture.", "hero_desc_guides": "Operating the engine day to day.", "hero_desc_getting_started": "Install, run and configure the engine.", "hero_desc_contributing": "The engineering contract and how to contribute.", "hero_desc_reference": "CLI reference, glossary, and honest answers.", "hero_desc_releases": "Every release with real highlights.", "on_this_page": "On this page"};
 window.NEXUS_LANG = "en";
 (function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
   try {
     var saved = localStorage.getItem("nexus-theme");
     var theme = saved || "system";

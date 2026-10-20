@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang='ar' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>DATABASE HYGIENE MATRIX — NSE (2026-08-18, TASK-11 inventory) · نكسوس سكالب إنجين</title>
+<meta name='description' content='DATABASE HYGIENE MATRIX — NSE (2026-08-18, TASK-11 inventory) — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/DATABASE_HYGIENE_MATRIX/'>
+<meta property='og:title' content='DATABASE HYGIENE MATRIX — NSE (2026-08-18, TASK-11 inventory)'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/DATABASE_HYGIENE_MATRIX/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta property='og:description' content='DATABASE HYGIENE MATRIX — NSE (2026-08-18, TASK-11 inventory) — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
+<meta name='twitter:title' content='DATABASE HYGIENE MATRIX — NSE (2026-08-18, TASK-11 inventory)'>
+<meta name='twitter:description' content='DATABASE HYGIENE MATRIX — NSE (2026-08-18, TASK-11 inventory) — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/architecture/database/DATABASE_HYGIENE_MATRIX/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/DATABASE_HYGIENE_MATRIX/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/DATABASE_HYGIENE_MATRIX/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/database/DATABASE_HYGIENE_MATRIX/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/architecture/database/DATABASE_HYGIENE_MATRIX/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/architecture/database/DATABASE_HYGIENE_MATRIX/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "DATABASE HYGIENE MATRIX — NSE (2026-08-18, TASK-11 inventory)", "description": "DATABASE HYGIENE MATRIX — NSE (2026-08-18, TASK-11 inventory) — Nexus Scalp Engine documentation", "inLanguage": "ar", "url": "https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/DATABASE_HYGIENE_MATRIX/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>الانتقال إلى المحتوى</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='القائمة' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../../ar/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.17</span>
+  </div>
+  <div class='header-actions'>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='ابحث في التوثيق…' aria-label='ابحث في التوثيق…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='ابحث في التوثيق…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
+    <details class='theme-picker'>
+      <summary aria-label='المظهر' title='المظهر'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ فاتح</button>
+        <button type='button' data-theme-set='dark'>☾ داكن</button>
+        <button type='button' data-theme-set='system'>🖥 النظام</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='اللغة' title='اللغة'><span aria-hidden='true'>🌐</span><span class='lp-name'>العربية</span></summary>
+      <div class='lang-menu'><a href='../../../../architecture/database/DATABASE_HYGIENE_MATRIX/' lang='en' hreflang='en'>English</a> <a href='../../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <span class='lang-current' lang='ar'>العربية ✓</span> <a href='../../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>جيت هب ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../../ar/'>الرئيسية</a>
+<div class='nav-section'><a class='' href='../../../../ar/getting-started/'>البداية</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/getting-started/installation/'>التثبيت</a></li>
+<li><a class='' href='../../../../ar/getting-started/quickstart/'>البداية السريعة</a></li>
+<li><a class='' href='../../../../ar/getting-started/first-run/'>التشغيل الأول</a></li>
+<li><a class='' href='../../../../ar/getting-started/configuration/'>الإعداد</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../ar/project/'>المشروع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/project/vision/'>الرؤية والغاية</a></li>
+<li><a class='' href='../../../../ar/project/scope/'>النطاق</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/project/status/'>حالة المشروع</a></li>
+<li><a class='' href='../../../../ar/project/capabilities/'>مصفوفة القدرات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/project/roadmap/'>خارطة الطريق</a></li>
+<li><a class='' href='../../../../ar/project/milestones/'>المحطات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../../ar/architecture/'>البنية</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/architecture/overview/'>نظرة عامة</a></li>
+<li><a class='' href='../../../../ar/architecture/system-map/'>خريطة النظام</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/data-flow/'>تدفق البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/runtime/'>وقت التشغيل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/research-stack/'>منظومة البحث</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/model-pipeline/'>خط أنابيب النموذج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/execution-pipeline/'>خط أنابيب التنفيذ</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/observability/'>قابلية المراقبة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/mcp-bridge/'>جسر MCP وتتبّع القرار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/architecture/database/'>قاعدة البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../ar/research/'>البحث</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/research/methodology/'>المنهجية</a></li>
+<li><a class='' href='../../../../ar/research/datasets/'>مجموعات البيانات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/research/backtesting/'>الاختبار الرجعي</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/research/out-of-sample/'>بوابة OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/research/replay/'>إعادة التشغيل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/research/counterfactuals/'>المضاد للواقع</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/research/validation/'>التحقق</a></li>
+<li><a class='' href='../../../../ar/research/reproducibility/'>قابلية إعادة الإنتاج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../ar/engineering/'>الهندسة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/engineering/quality/'>الجودة والاختبار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/engineering/ci/'>بنية CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/engineering/release-process/'>عملية الإصدار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/engineering/workflow-test-build-release/'>سير عمل الاختبار والبناء والإصدار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/engineering/security/'>الأمان</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../ar/guides/'>أدلة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/guides/cli/'>دليل CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/guides/api/'>مرجع API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/guides/troubleshooting/'>استكشاف الأخطاء</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/guides/common-workflows/'>سير العمل الشائعة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../ar/contributing/'>المساهمة</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/contributing/contribution-guide/'>دليل المساهمة</a></li>
+<li><a class='' href='../../../../ar/contributing/documentation/'>سير عمل التوثيق</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/contributing/add-language/'>إضافة لغة</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../ar/reference/'>مرجع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../ar/reference/cli-reference/'>مرجع CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/reference/glossary/'>المسرد</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/reference/terminology/'>المصطلحات والترجمات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../ar/reference/faq/'>الأسئلة الشائعة</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../ar/releases/'>الإصدارات</a></div>
+<ul class='nav-list'><li><a href='../../../../ar/releases/'>v9.0.17 &amp; التاريخ</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>المصدر الإنجليزي — الترجمة قيد الانتظار — <a href='../../../architecture/database/DATABASE_HYGIENE_MATRIX/'>الإنجليزية</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../../ar/architecture/'>البنية</a> / <a href='../../../../ar/architecture/database/'>قاعدة البيانات</a> / <span class='crumb-current' aria-current='page'>DATABASE HYGIENE MATRIX</span></nav>
+<details class='toc-mobile'><summary>في هذه الصفحة</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#data-tiers-spec-3'>Data tiers (spec §3)</a></li><li class='toc-item toc-h2'><a href='#auditdb-35-tables-509-mb-owner-auditrepository'>audit.db (35 tables, 50.9 MB, owner: AuditRepository)</a></li><li class='toc-item toc-h2'><a href='#newsdb-16-tables-64-mb-owner-newsdatabase'>news.db (16 tables, 6.4 MB, owner: NewsDatabase)</a></li><li class='toc-item toc-h2'><a href='#candleinteldb-13-tables-10-mb--42-mb-wal-owner-candleintelst'>candle_intel.db (13 tables, 1.0 MB + 4.2 MB WAL, owner: CandleIntelStore)</a></li><li class='toc-item toc-h2'><a href='#source-of-truth-rules-spec-5'>Source-of-truth rules (spec §5)</a></li><li class='toc-item toc-h2'><a href='#junk-definition-spec-6-approved-classes'>Junk definition (spec §6, approved classes)</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='database-hygiene-matrix--nse-2026-08-18-task-11-inventory'>DATABASE HYGIENE MATRIX — NSE (2026-08-18, TASK-11 inventory)</h1>
+<blockquote><p>Source of truth: live schema inspection of <code>artifacts/audit.db</code>, <code>artifacts/news.db</code>,</p><p><code>artifacts/candle_intel.db</code> on 2026-08-18. Row counts are snapshots (engine live).</p></blockquote>
+<h2 id='data-tiers-spec-3'>Data tiers (spec §3)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Tier</th><th>Meaning</th><th>Auto-delete</th></tr></thead><tbody>
+<tr><td>TIER-0</td><td>Immutable financial / broker truth</td><td>NEVER</td></tr>
+<tr><td>TIER-1</td><td>Canonical audit / experience</td><td>NEVER automatically</td></tr>
+<tr><td>TIER-2</td><td>Research / learning evidence</td><td>NEVER automatically (archive first)</td></tr>
+<tr><td>TIER-3</td><td>Strategy / model metadata</td><td>Never without migration/archive safety</td></tr>
+<tr><td>TIER-4</td><td>News intelligence (canonical evidence)</td><td>Never; derived/duplicates only</td></tr>
+<tr><td>TIER-5</td><td>Derived analytics</td><td>Rebuildable; bounded retention</td></tr>
+<tr><td>TIER-6</td><td>Cache</td><td>TTL-based cleanup allowed</td></tr>
+<tr><td>TIER-7</td><td>Temporary / job state</td><td>Short retention allowed</td></tr>
+<tr><td>TIER-8</td><td>Legacy / migration artifact</td><td>Only after TASK-10 migration verified</td></tr>
+</tbody></table></div>
+<h2 id='auditdb-35-tables-509-mb-owner-auditrepository'>audit.db (35 tables, 50.9 MB, owner: AuditRepository)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Table</th><th>Rows</th><th>Tier</th><th>Purpose / source of truth</th><th>Retention</th><th>Cleanup rule</th><th>Rebuildable</th><th>Deletable</th></tr></thead><tbody>
+<tr><td>audit_ledger</td><td>266</td><td>TIER-1</td><td>Canonical trade ledger (opened+closed autopsy rows)</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>audit_experiences</td><td>229</td><td>TIER-1</td><td>Immutable decision snapshots (schema-versioned)</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>audit_experience_outcomes</td><td>74</td><td>TIER-1</td><td>Append-only outcome events</td><td>never_delete</td><td>none (DB UNIQUE dedup)</td><td>NO</td><td>NO</td></tr>
+<tr><td>audit_experience_corrections</td><td>0</td><td>TIER-1</td><td>Additive correction log</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>audit_broker_deals</td><td>7516</td><td>TIER-0</td><td>Broker deal truth (entry/exit)</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>audit_broker_orders</td><td>9634</td><td>TIER-0</td><td>Broker order history</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>audit_broker_trades</td><td>3635</td><td>TIER-0</td><td>Broker canonical trade reconstruction</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>audit_broker_history_meta</td><td>1</td><td>TIER-1</td><td>Sync metadata</td><td>never_delete</td><td>none</td><td>rebuildable on next sync</td><td>NO (canonical meta)</td></tr>
+<tr><td>audit_account_snapshots</td><td>997</td><td>TIER-1</td><td>Balance/equity history (accounting invariant)</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>audit_executions</td><td>261</td><td>TIER-1</td><td>Order dispatch records</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>audit_orders</td><td>7461</td><td>TIER-1</td><td>Order lifecycle rows</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>audit_signals</td><td>15142</td><td>TIER-5</td><td>Signal/rejection census (model funnel)</td><td>7 days (existing purge)</td><td>bounded purge (BUG-054)</td><td>YES (lossy)</td><td>ONLY via existing purge</td></tr>
+<tr><td>audit_guard_telemetry</td><td>562</td><td>TIER-7</td><td>Guard counters</td><td>13 days (existing purge)</td><td>bounded purge (BUG-054)</td><td>YES</td><td>ONLY via existing purge</td></tr>
+<tr><td>position_lifecycle_events</td><td>11875</td><td>TIER-1*</td><td>Immutable position timeline (*POSITION_MOVING subset is telemetry)</td><td>MOVING: 3d; others never</td><td>purge MOVING only</td><td>NO (non-MOVING)</td><td>MOVING only</td></tr>
+<tr><td>behavior_analysis</td><td>264</td><td>TIER-2</td><td>Behavioral flags</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>behavior_detections</td><td>225</td><td>TIER-2</td><td>Detection records</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>anomaly_events</td><td>22</td><td>TIER-2</td><td>Anomaly evidence</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>trade_autopsies</td><td>73</td><td>TIER-2</td><td>Forensic narratives</td><td>never_delete</td><td>none</td><td>rebuildable from ledger</td><td>NO</td></tr>
+<tr><td>strategy_intelligence_registry</td><td>109</td><td>TIER-3</td><td>Strategy score evidence</td><td>never_delete</td><td>none</td><td>YES (derived)</td><td>NO (keep derived evidence)</td></tr>
+<tr><td>strategy_registry</td><td>2</td><td>TIER-3</td><td>Strategy manifest</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>strategy_evolution_candidates</td><td>0</td><td>TIER-2</td><td>Candidate evidence</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>experience_model_registry</td><td>2</td><td>TIER-3</td><td>Model provenance metadata</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>model_governance_events</td><td>0</td><td>TIER-3</td><td>Governance events</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>model_governance_state</td><td>0</td><td>TIER-3</td><td>Governance state</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>model_runtime_health</td><td>3</td><td>TIER-3</td><td>Health snapshots</td><td>never_delete</td><td>none</td><td>rebuildable</td><td>NO</td></tr>
+<tr><td>model_shadow_comparisons</td><td>0</td><td>TIER-2</td><td>Shadow eval</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>model_comparisons</td><td>0</td><td>TIER-2</td><td>Comparison evidence</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>training_runs</td><td>0</td><td>TIER-3</td><td>Training metadata</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>research_runs</td><td>0</td><td>TIER-2</td><td>Research runs</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>research_worker_state</td><td>0</td><td>TIER-7</td><td>Worker checkpoint</td><td>30d stale</td><td>stale-only</td><td>YES</td><td>stale only</td></tr>
+<tr><td>intelligence_worker_state</td><td>0</td><td>TIER-7</td><td>Worker checkpoint</td><td>30d stale</td><td>stale-only</td><td>YES</td><td>stale only</td></tr>
+<tr><td>trading_rules_config</td><td>30</td><td>TIER-3</td><td>Rule config (active)</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>sqlite_sequence</td><td>13</td><td>TIER-7</td><td>SQLite autoincrement bookkeeping</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+</tbody></table></div>
+<h2 id='newsdb-16-tables-64-mb-owner-newsdatabase'>news.db (16 tables, 6.4 MB, owner: NewsDatabase)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Table</th><th>Rows</th><th>Tier</th><th>Purpose / source of truth</th><th>Retention</th><th>Cleanup rule</th><th>Rebuildable</th><th>Deletable</th></tr></thead><tbody>
+<tr><td>news_articles</td><td>1677</td><td>TIER-4</td><td>Canonical article evidence (article_hash UNIQUE)</td><td>long (configurable)</td><td>dedup only (is_duplicate flag exists)</td><td>NO</td><td>duplicates-of-proven rows only</td></tr>
+<tr><td>news_analysis</td><td>877</td><td>TIER-4</td><td>Per-article analysis evidence</td><td>never_delete</td><td>none</td><td>rebuildable via provider but keep</td><td>NO</td></tr>
+<tr><td>news_analysis_runs</td><td>877</td><td>TIER-4</td><td>Run manifests</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>news_entities</td><td>2056</td><td>TIER-4</td><td>Entity extraction evidence</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>news_impacts</td><td>671</td><td>TIER-4</td><td>Impact evidence (trade/news link)</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>news_topics</td><td>1663</td><td>TIER-4</td><td>Topic tags</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>news_sources</td><td>11</td><td>TIER-3</td><td>Source config</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>news_article_versions</td><td>0</td><td>TIER-4</td><td>Version history</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>news_consensus</td><td>0</td><td>TIER-4</td><td>Consensus evidence</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>news_event_links</td><td>0</td><td>TIER-4</td><td>Event links</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>news_trade_links</td><td>0</td><td>TIER-4</td><td>Trade-context links</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>news_post_event</td><td>0</td><td>TIER-4</td><td>Post-event state</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+<tr><td>news_health</td><td>10</td><td>TIER-5</td><td>Health snapshots</td><td>90d</td><td>bounded</td><td>YES</td><td>90d+</td></tr>
+<tr><td>news_worker_state</td><td>1</td><td>TIER-7</td><td>Worker checkpoint</td><td>30d stale</td><td>stale-only</td><td>YES</td><td>stale only</td></tr>
+</tbody></table></div>
+<h2 id='candleinteldb-13-tables-10-mb--42-mb-wal-owner-candleintelst'>candle_intel.db (13 tables, 1.0 MB + 4.2 MB WAL, owner: CandleIntelStore)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Table</th><th>Rows</th><th>Tier</th><th>Purpose / source of truth</th><th>Retention</th><th>Cleanup rule</th><th>Rebuildable</th><th>Deletable</th></tr></thead><tbody>
+<tr><td>candles</td><td>339</td><td>TIER-5</td><td>Derived candle snapshots (rebuildable from broker history)</td><td>30d</td><td>bounded purge</td><td>YES</td><td>yes (rebuildable)</td></tr>
+<tr><td>candle_closures</td><td>339</td><td>TIER-5</td><td>Derived closure classifications</td><td>30d</td><td>bounded purge</td><td>YES</td><td>yes (rebuildable)</td></tr>
+<tr><td>candle_patterns</td><td>1054</td><td>TIER-5</td><td>Derived pattern detections</td><td>30d</td><td>bounded purge</td><td>YES</td><td>yes (rebuildable)</td></tr>
+<tr><td>market_regimes</td><td>393</td><td>TIER-5</td><td>Derived regime history</td><td>30d</td><td>bounded purge</td><td>YES</td><td>yes (rebuildable)</td></tr>
+<tr><td>risk_evaluations</td><td>393</td><td>TIER-5</td><td>Derived risk eval</td><td>30d</td><td>bounded purge</td><td>YES</td><td>yes (rebuildable)</td></tr>
+<tr><td>trade_decisions</td><td>393</td><td>TIER-5</td><td>Derived decision mirror (non-authoritative; audit.db is truth)</td><td>30d</td><td>bounded purge</td><td>YES</td><td>yes (rebuildable)</td></tr>
+<tr><td>rule_vetoes</td><td>113</td><td>TIER-5</td><td>Derived veto log</td><td>30d</td><td>bounded purge</td><td>YES</td><td>yes (rebuildable)</td></tr>
+<tr><td>feature_vectors</td><td>0</td><td>TIER-6</td><td>Cache</td><td>TTL</td><td>cache rule</td><td>YES</td><td>yes</td></tr>
+<tr><td>trade_proposals</td><td>0</td><td>TIER-6</td><td>Cache</td><td>TTL</td><td>cache rule</td><td>YES</td><td>yes</td></tr>
+<tr><td>open_positions</td><td>0</td><td>TIER-7</td><td>Active-state mirror</td><td>short</td><td>stale-only</td><td>YES</td><td>stale only</td></tr>
+<tr><td>exit_signals</td><td>0</td><td>TIER-7</td><td>Active-state mirror</td><td>short</td><td>stale-only</td><td>YES</td><td>stale only</td></tr>
+<tr><td>audit_log</td><td>0</td><td>TIER-1</td><td>Local audit log</td><td>never_delete</td><td>none</td><td>NO</td><td>NO</td></tr>
+</tbody></table></div>
+<h2 id='source-of-truth-rules-spec-5'>Source-of-truth rules (spec §5)</h2>
+<ul>
+<li>Broker truth (audit_broker_*) and audit_ledger are NEVER deleted (TIER-0/1).</li>
+<li>candle_intel trade_decisions/market_regimes are DERIVED mirrors — audit.db</li>
+</ul>
+<p>is the authority; the candle store rows are rebuildable, NOT duplicates.</p>
+<ul>
+<li>news_articles dedup is by <code>article_hash</code> UNIQUE — <code>is_duplicate</code> /</li>
+</ul>
+<p><code>duplicate_of</code> columns are the canonical marker; cleanup only targets rows flagged duplicate with a live canonical row present (confidence 1.0).</p>
+<ul>
+<li>research/strategy/model tables are evidence — archive before any removal.</li>
+<li>Migration metadata / schema history: NEVER junk (spec §28). TASK-10 owns</li>
+</ul>
+<p>the migration engine; the hygiene worker only CLASSIFIES legacy artifacts.</p>
+<h2 id='junk-definition-spec-6-approved-classes'>Junk definition (spec §6, approved classes)</h2>
+<p>JUNK (only these may ever be auto-deleted, each with confidence 1.0):</p>
+<ol>
+<li>audit_signals older than retention (existing BUG-054 purge).</li>
+<li>position_lifecycle_events POSITION_MOVING older than retention (existing).</li>
+<li>audit_guard_telemetry older than retention (existing).</li>
+<li>candle_intel derived rows older than retention (NEW, bounded purge).</li>
+<li>news_health rows older than 90 days (NEW, bounded purge).</li>
+<li>stale worker-state rows (no active worker identity, 30d old) (NEW).</li>
+<li>news_articles flagged <code>is_duplicate=1</code> with a verified canonical row</li>
+</ol>
+<p>present (article_hash match on duplicate_of) (NEW, confidence 1.0 only).</p>
+<ol>
+<li>temp files under NSE-owned paths older than TTL, not locked (NEW).</li>
+</ol>
+<p>NOT junk (never auto-delete): losing trades, old trades, BE/zero-PnL trades, strategy candidates, rejected strategies, model failures, old news, research runs, behavioral anomalies, failed executions, broker reconciliation records, migration history, model manifests.</p></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>في هذه الصفحة</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#data-tiers-spec-3'>Data tiers (spec §3)</a></li><li class='toc-item toc-h2'><a href='#auditdb-35-tables-509-mb-owner-auditrepository'>audit.db (35 tables, 50.9 MB, owner: AuditRepository)</a></li><li class='toc-item toc-h2'><a href='#newsdb-16-tables-64-mb-owner-newsdatabase'>news.db (16 tables, 6.4 MB, owner: NewsDatabase)</a></li><li class='toc-item toc-h2'><a href='#candleinteldb-13-tables-10-mb--42-mb-wal-owner-candleintelst'>candle_intel.db (13 tables, 1.0 MB + 4.2 MB WAL, owner: CandleIntelStore)</a></li><li class='toc-item toc-h2'><a href='#source-of-truth-rules-spec-5'>Source-of-truth rules (spec §5)</a></li><li class='toc-item toc-h2'><a href='#junk-definition-spec-6-approved-classes'>Junk definition (spec §6, approved classes)</a></li></ul></aside></div>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/ar/architecture/database/DATABASE_HYGIENE_MATRIX.md'>تعديل هذه الصفحة على جيت هب</a> · الإصدار v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
+    <span><a href='../../../../ar/project/status/'>حالة المشروع</a> · <a href='../../../../ar/reference/faq/'>الأسئلة الشائعة</a> · <a href='../../../../ar/releases/'>كل الإصدارات</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../../ar/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='ابحث في التوثيق… — ⌘K' aria-label='ابحث في التوثيق…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>ابحث في التوثيق……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "ابحث في التوثيق…", "home": "الرئيسية", "repo": "جيت هب", "skip": "الانتقال إلى المحتوى", "language": "اللغة", "partial": "المصدر الإنجليزي — الترجمة قيد الانتظار", "english": "الإنجليزية", "version": "الإصدار", "next": "التالي", "prev": "السابق", "on_github": "تعديل هذه الصفحة على جيت هب", "menu": "القائمة", "whats_new": "الجديد", "all_releases": "كل الإصدارات", "get_started": "ابدأ", "view_architecture": "البنية", "view_roadmap": "خارطة الطريق", "close": "إغلاق", "theme": "المظهر", "theme_light": "فاتح", "theme_dark": "داكن", "theme_system": "النظام", "copy": "نسخ", "copied": "تم النسخ", "copy_error": "فشل النسخ", "no_results": "لا نتائج", "loading": "جارٍ التحميل…", "section": "القسم", "search_results": "نتائج البحث", "explore_docs": "استكشف التوثيق", "full_matrix": "المصفوفة الكاملة", "release_timeline": "الجدول الزمني للإصدارات", "hero_kicker": "منصة بحث وتنفيذ للتداول الكمي", "hero_title_a": "نكسوس", "hero_title_b": "سكالب إنجين", "hero_sub": "منصة سكالب قائمة على البحث، سداسية البنية ومدفوعة بالأحداث لميتاتريدر 5 — خصائص سببية، نماذج عميقة محوكم، محرك مخاطر ثابت، أدوات بحث حتمية وقابلية مراقبة جنائية في خط أنابيب واحد قابل للتدقيق.", "chip_released": "منشور", "chip_rev": "مراجعة", "chip_research": "بحث: 50D حي · 70D مرشح", "released_history": "التاريخ", "release_history_kicker": "سجل الإصدارات", "releases_intro": "كل إصدار مع أبرز ملامحه الحقيقية، مستمدة من بيانات إصدارات جيت هب وقت البناء. المصدر الوحيد للإصدار:", "nf404_title": "٤٠٤", "nf404_lead": "صفحة التوثيق هذه غير موجودة.", "nf404_home": "الرئيسية", "footer_prefix": "", "brand": "نكسوس", "brand_dim": "سكالب إنجين", "github_release": "الإصدار على جيت هب", "back_home": "العودة للرئيسية", "quickstart_label": "البداية السريعة", "status_label": "حالة المشروع", "faq_label": "الأسئلة الشائعة", "cap_engine": "محرك الخصائص السببية 50D", "cap_risk": "محرك المخاطر + قيود التنفيذ", "cap_oos": "Walk-Forward + بوابة OOS الصارمة", "cap_factory": "مصنع النماذج المبني على المصنوعات", "cap_70d": "عقد 70D (القاعدة+الأخبار+السيولة)", "cap_cf": "محرك المضاد للواقع (مشي NO_TRADE)", "pillar_evidence_t": "🧭 الأدلة قبل الادعاءات", "pillar_evidence_b": "المقاييس بلا أدلة تظهر n/a — وليس أصفارًا مزيفة أبدًا. النتائج السلبية تُنشر: مرشحنا البحثي 70D رفضه بوابة OOS لدينا.", "pillar_safety_t": "🔒 السلامة بالتصميم", "pillar_safety_b": "PAPER افتراضيًا · SHADOW بلا صلاحية أوامر · LIVE خلف تأكيد صريح · قيود مخاطر صارمة (HARD_MAX_LOTS، هامش ≤20%) مفروضة في مسار التنفيذ.", "pillar_research_t": "🔬 بحث حتمي", "pillar_research_b": "Walk-Forward مع التطهير والحجر، إعادة تشغيل مطابقة بت-بت، بيانات/نماذج ببصمة، مصدر لكل تشغيل — عقد خصائص واحد للحياة وإعادة التشغيل والتدريب.", "pillar_truth_t": "👁️ حقيقة وقت التشغيل", "pillar_truth_b": "قابلية مراقبة جنائية: سجلات مفصولة بالخطورة، ارتباط الحوادث، بوابة النشر. حقيقة الوسيط تتفوق على الحالة القديمة؛ البوابات مرجع، والإعدادات نية.", "capability": "القدرة", "status": "الحالة", "chip_certified": "مُصادق", "chip_implemented": "مُنفَّذ", "chip_experimental": "تجريبي", "chip_research_l": "بحثي", "cap_highlights": "أبرز القدرات", "callout_important": "مهم", "callout_note": "ملاحظة", "callout_warning": "تحذير", "how_it_works": "كيف يعمل نكسوس", "reading_time": "دقائق قراءة", "toc_title": "في هذه الصفحة", "toc_empty": "لا عناوين", "last_updated": "آخر تحديث", "share": "مشاركة", "edit_page": "تعديل هذه الصفحة", "related_title": "تابع الاستكشاف", "related_sub": "التالي في هذا القسم", "up_next": "التالي", "also_read": "اقرأ أيضًا", "prev_page": "السابق", "next_page": "التالي", "breadcrumb_home": "الرئيسية", "hero_eyebrow_project": "المشروع", "hero_eyebrow_architecture": "البنية", "hero_eyebrow_research": "البحث", "hero_eyebrow_engineering": "الهندسة", "hero_eyebrow_guides": "الأدلة", "hero_eyebrow_getting_started": "البداية", "hero_eyebrow_contributing": "المساهمة", "hero_eyebrow_reference": "المرجع", "hero_eyebrow_releases": "الإصدارات", "kpi_certified": "مُصادق", "kpi_experimental": "تجريبي", "kpi_coverage": "التغطية", "steps_title": "الخطوات", "copy_code": "نسخ", "diagram_title": "مخطط النظام", "diagram_sub": "عرض تفاعلي لخط الأنابيب", "stats_live": "العقد الحي", "callout_tip": "تلميح", "callout_info": "معلومة", "callout_success": "نجاح", "callout_danger": "خطر", "anchor_copy": "نسخ الرابط", "anchor_copied": "تم نسخ الرابط", "feedback_title": "هل كان مفيدًا؟", "feedback_yes": "نعم", "feedback_no": "لا", "feedback_thanks": "شكرًا لملاحظاتك", "prose_meta": "مقال", "word_count": "كلمات", "toc_toggle": "المحتويات", "hero_desc_project": "ما هو Nexus وما هو مُصادق مقابل تجريبي.", "hero_desc_architecture": "كيف بُني المحرك: الطبقات السداسية ومسار التيك إلى القرار.", "hero_desc_research": "كيف تتحول البيانات التاريخية إلى أدلة قابلة للتكذيب.", "hero_desc_engineering": "بوابات الجودة وبنية CI ووضعية الأمان.", "hero_desc_guides": "تشغيل المحرك يوميًا.", "hero_desc_getting_started": "تثبيت المحرك وتشغيله وضبطه.", "hero_desc_contributing": "العقد الهندسي وكيفية المساهمة.", "hero_desc_reference": "مرجع CLI والمسرد والإجابات الصادقة.", "hero_desc_releases": "كل إصدار مع أبرز ملامحه الحقيقية.", "on_this_page": "في هذه الصفحة"};
+window.NEXUS_LANG = "ar";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../../assets/docs-enhance.js' defer></script>
+<script src='../../../../assets/search.js' defer></script>
+
+</body>
+</html>

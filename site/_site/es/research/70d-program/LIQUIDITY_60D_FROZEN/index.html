@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang='es' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>LIQUIDITY 60D FROZEN CONTRACT (TASK-02 STEP 16-17) · Nexus Scalp Engine</title>
+<meta name='description' content='LIQUIDITY 60D FROZEN CONTRACT (TASK-02 STEP 16-17) — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/LIQUIDITY_60D_FROZEN/'>
+<meta property='og:title' content='LIQUIDITY 60D FROZEN CONTRACT (TASK-02 STEP 16-17)'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/LIQUIDITY_60D_FROZEN/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta property='og:description' content='LIQUIDITY 60D FROZEN CONTRACT (TASK-02 STEP 16-17) — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
+<meta name='twitter:title' content='LIQUIDITY 60D FROZEN CONTRACT (TASK-02 STEP 16-17)'>
+<meta name='twitter:description' content='LIQUIDITY 60D FROZEN CONTRACT (TASK-02 STEP 16-17) — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/research/70d-program/LIQUIDITY_60D_FROZEN/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/LIQUIDITY_60D_FROZEN/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/LIQUIDITY_60D_FROZEN/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/LIQUIDITY_60D_FROZEN/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/LIQUIDITY_60D_FROZEN/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/research/70d-program/LIQUIDITY_60D_FROZEN/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "LIQUIDITY 60D FROZEN CONTRACT (TASK-02 STEP 16-17)", "description": "LIQUIDITY 60D FROZEN CONTRACT (TASK-02 STEP 16-17) — Nexus Scalp Engine documentation", "inLanguage": "es", "url": "https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/LIQUIDITY_60D_FROZEN/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>Ir al contenido</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menú' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../../es/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.17</span>
+  </div>
+  <div class='header-actions'>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='Buscar…' aria-label='Buscar…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='Buscar…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
+    <details class='theme-picker'>
+      <summary aria-label='Tema' title='Tema'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ Claro</button>
+        <button type='button' data-theme-set='dark'>☾ Oscuro</button>
+        <button type='button' data-theme-set='system'>🖥 Sistema</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='Idioma' title='Idioma'><span aria-hidden='true'>🌐</span><span class='lp-name'>Español</span></summary>
+      <div class='lang-menu'><a href='../../../../research/70d-program/LIQUIDITY_60D_FROZEN/' lang='en' hreflang='en'>English</a> <a href='../../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <span class='lang-current' lang='es'>Español ✓</span> <a href='../../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../../es/'>Inicio</a>
+<div class='nav-section'><a class='' href='../../../../es/getting-started/'>Inicio</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/getting-started/installation/'>Instalación</a></li>
+<li><a class='' href='../../../../es/getting-started/quickstart/'>Inicio rápido</a></li>
+<li><a class='' href='../../../../es/getting-started/first-run/'>Primera ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/getting-started/configuration/'>Configuración</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/project/'>Proyecto</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/project/vision/'>Visión y propósito</a></li>
+<li><a class='' href='../../../../es/project/scope/'>Alcance</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/project/status/'>Estado del proyecto</a></li>
+<li><a class='' href='../../../../es/project/capabilities/'>Matriz de capacidades</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/project/roadmap/'>Hoja de ruta</a></li>
+<li><a class='' href='../../../../es/project/milestones/'>Hitos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/architecture/'>Arquitectura</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/architecture/overview/'>Visión general</a></li>
+<li><a class='' href='../../../../es/architecture/system-map/'>Mapa del sistema</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/data-flow/'>Flujo de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/runtime/'>Runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/research-stack/'>Pila de investigación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/model-pipeline/'>Pipeline de modelos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/execution-pipeline/'>Pipeline de ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/observability/'>Observabilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/mcp-bridge/'>Puente MCP y traza</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/database/'>Base de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../../es/research/'>Investigación</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/research/methodology/'>Metodología</a></li>
+<li><a class='' href='../../../../es/research/datasets/'>Datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/backtesting/'>Backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/out-of-sample/'>Puerta OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/replay/'>Replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/counterfactuals/'>Contrafactuales</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/validation/'>Validación</a></li>
+<li><a class='' href='../../../../es/research/reproducibility/'>Reproducibilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/engineering/'>Ingeniería</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/engineering/quality/'>Calidad y pruebas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/engineering/ci/'>Arquitectura de CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/engineering/release-process/'>Proceso de release</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/engineering/workflow-test-build-release/'>Flujo de trabajo de pruebas, build y releases</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/engineering/security/'>Seguridad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/guides/'>Guías</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/guides/cli/'>Guía CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/guides/api/'>Referencia API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/guides/troubleshooting/'>Solución de problemas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/guides/common-workflows/'>Flujos comunes</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/contributing/'>Contribuir</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/contributing/contribution-guide/'>Guía de contribución</a></li>
+<li><a class='' href='../../../../es/contributing/documentation/'>Flujo de documentación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/contributing/add-language/'>Añadir un idioma</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/reference/'>Referencia</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/reference/cli-reference/'>Referencia CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/reference/glossary/'>Glosario</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/reference/terminology/'>Terminología y traducciones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/reference/faq/'>FAQ</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/releases/'>Versiones</a></div>
+<ul class='nav-list'><li><a href='../../../../es/releases/'>v9.0.17 &amp; historial</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Fuente en inglés — traducción pendiente — <a href='../../../research/70d-program/LIQUIDITY_60D_FROZEN/'>inglés</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../../es/research/'>Investigación</a> / <a href='../../../../es/research/70d-program/'>70d program</a> / <span class='crumb-current' aria-current='page'>LIQUIDITY 60D FROZEN</span></nav>
+<details class='toc-mobile'><summary>En esta página</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#algorithm-version'>Algorithm version</a></li><li class='toc-item toc-h2'><a href='#schema'>Schema</a></li><li class='toc-item toc-h2'><a href='#frozen-constants-task-01-handoff-validated-on-real-data'>Frozen constants (TASK-01 handoff; validated on real data)</a></li><li class='toc-item toc-h2'><a href='#indices-5059'>Indices 50..59</a></li><li class='toc-item toc-h2'><a href='#normalization--clipping--missing-policy'>Normalization / clipping / missing policy</a></li><li class='toc-item toc-h2'><a href='#causal-delays'>Causal delays</a></li><li class='toc-item toc-h2'><a href='#real-data-evidence-2026-08-19-xauusd-m1-100k-bars'>Real-data evidence (2026-08-19, XAUUSD M1, 100k bars)</a></li><li class='toc-item toc-h2'><a href='#parity-evidence'>Parity evidence</a></li><li class='toc-item toc-h2'><a href='#golden-snapshot'>Golden snapshot</a></li><li class='toc-item toc-h2'><a href='#tests'>Tests</a></li><li class='toc-item toc-h2'><a href='#commit-shas-task-02-steps'>Commit SHAs (TASK-02 steps)</a></li><li class='toc-item toc-h2'><a href='#change-policy'>Change policy</a></li><li class='toc-item toc-h2'><a href='#step-2122-performance-measurement-real-data-2026-08-19'>STEP 21/22 PERFORMANCE MEASUREMENT (real data, 2026-08-19)</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='liquidity-60d-frozen-contract-task-02-step-16-17'>LIQUIDITY 60D FROZEN CONTRACT (TASK-02 STEP 16-17)</h1>
+<blockquote><p>Agent: AGENT-02 (Hermes-LiquidityIntegration) · 2026-08-19</p><p>This document FREEZES the liquidity algorithm after real-data validation.</p></blockquote>
+<h2 id='algorithm-version'>Algorithm version</h2>
+<ul>
+<li><code>LIQUIDITY_ALGORITHM_VERSION = "scalp_liquidity_v1.0.0"</code></li>
+<li>Constant source: <code>src/nexus_scalp/features/liquidity_runtime.py</code></li>
+</ul>
+<h2 id='schema'>Schema</h2>
+<ul>
+<li>schema id: <code>scalp_liquidity_v1</code> (registered in <code>features/schema.py</code>)</li>
+<li>dimension: 60 (indices 0..49 = protected scalp_v1; 50..59 = liquidity)</li>
+<li>supersedes: <code>scalp_v1</code>; ACTIVE live schema remains <code>scalp_v1</code></li>
+<li>schema hash: see the golden snapshot file (tests/golden/liquidity_70d_reference.json)</li>
+</ul>
+<h2 id='frozen-constants-task-01-handoff-validated-on-real-data'>Frozen constants (TASK-01 handoff; validated on real data)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>constant</th><th>value</th></tr></thead><tbody>
+<tr><td>SWING_CONFIRM_BARS</td><td>5</td></tr>
+<tr><td>EQH_TOLERANCE_ATR</td><td>0.30</td></tr>
+<tr><td>CONFLUENCE_CUTOFF_ATR</td><td>0.75</td></tr>
+<tr><td>TOUCH_PROXIMITY_ATR</td><td>0.05</td></tr>
+<tr><td>RECLAIM_FRACTION_ATR</td><td>0.15</td></tr>
+<tr><td>HTF weight H1</td><td>0.9</td></tr>
+<tr><td>HTF weight H4</td><td>1.2</td></tr>
+<tr><td>HTF weight D1</td><td>1.6</td></tr>
+<tr><td>ATR period</td><td>14 (mean TR, floor 0.20)</td></tr>
+<tr><td>HTF proximity band</td><td>6 ATR</td></tr>
+</tbody></table></div>
+<h2 id='indices-5059'>Indices 50..59</h2>
+<p>50 bsl_distance_atr · 51 ssl_distance_atr · 52 eqh_strength · 53 eql_strength · 54 htf_liquidity_score · 55 internal_liquidity_distance · 56 external_liquidity_distance · 57 liquidity_confluence · 58 liquidity_sweep_state · 59 post_sweep_displacement</p>
+<h2 id='normalization--clipping--missing-policy'>Normalization / clipping / missing policy</h2>
+<ul>
+<li>All values: finite, clipped [-3,+3] via ONE central <code>_clip3()</code>; NaN/Inf -&gt; 0.0</li>
+<li>Missing: no pool -&gt; 3.0 (far); no evidence -&gt; 0.0 (neutral)</li>
+<li>Never NaN, never Inf, never random</li>
+</ul>
+<h2 id='causal-delays'>Causal delays</h2>
+<ul>
+<li>Swing: candidate_at (swing bar) -&gt; confirmed_at (bar + SWING_CONFIRM_BARS)</li>
+<li>HTF: forming bucket excluded; only buckets fully closed at decision time</li>
+<li>Sweep: penetration + LATER closed rejection bar; event at rejection close</li>
+<li>Displacement: measured only from bars AFTER the sweep-confirming bar</li>
+</ul>
+<h2 id='real-data-evidence-2026-08-19-xauusd-m1-100k-bars'>Real-data evidence (2026-08-19, XAUUSD M1, 100k bars)</h2>
+<ul>
+<li>swing confirm-delay exact +5: 500/500</li>
+<li>HTF forming-exclusion: 25/25</li>
+<li>sweep future-invariant: 25/25</li>
+<li>historical invariance bit-exact: 25/25</li>
+<li>feature latency p50=39.6ms p95=49.7ms max=54.4ms (501-bar window)</li>
+<li>frame: 99,946 rows, 60 feat cols, all finite, all in [-3,3]</li>
+</ul>
+<p>(artifacts/model_generation/liquidity_task02/)</p>
+<h2 id='parity-evidence'>Parity evidence</h2>
+<ul>
+<li>dataset/replay/runtime: all call the SAME canonical</li>
+</ul>
+<p><code>compute_liquidity_features</code> (structural parity; TEST-LIQ-29/30 + task02 tests)</p>
+<ul>
+<li>50D protected: TEST-60D-BASE-01 + TEST-TASK02-08</li>
+</ul>
+<h2 id='golden-snapshot'>Golden snapshot</h2>
+<ul>
+<li>tests/golden/liquidity_70d_reference.json (see STEP 10 commit)</li>
+</ul>
+<h2 id='tests'>Tests</h2>
+<ul>
+<li>tests/unit/test_liquidity_engine_{contract,causality,features}.py (60)</li>
+<li>tests/unit/test_liquidity_task02_integration.py (25)</li>
+<li>tests/unit/test_liquidity_runtime_integration_phase18.py (30)</li>
+<li>tests/integration/test_liquidity_api.py (14)</li>
+</ul>
+<h2 id='commit-shas-task-02-steps'>Commit SHAs (TASK-02 steps)</h2>
+<ul>
+<li>STEP-0 baseline: cf84f79</li>
+<li>STEP-1/2 flag contract + persistence fix: 9eab99e</li>
+<li>STEP-3 API state: a703b8e</li>
+<li>STEP-4/5 UI toggle: 5bca9f3</li>
+<li>STEP-6/7 hot reload + runtime 60D vector: 8d8270e</li>
+<li>STEP-9 real-data causality: 4de3ce7</li>
+</ul>
+<h2 id='change-policy'>Change policy</h2>
+<p>ANY change to the frozen constants/formulas requires: schema/version review -&gt; new tests -&gt; new experiment -&gt; new commit -&gt; new handoff (per TASK-02 §3). A weak model result is NOT a reason to change.</p>
+<h2 id='step-2122-performance-measurement-real-data-2026-08-19'>STEP 21/22 PERFORMANCE MEASUREMENT (real data, 2026-08-19)</h2>
+<p>Measured (cProfile, 200-row real window on XAUUSD M1):</p>
+<ul>
+<li>per-row cost: ~11.6 ms/row (compute_liquidity_frame, 1000 rows = 70s on a</li>
+</ul>
+<p>contended host; 100k rows = 499s standalone)</p>
+<ul>
+<li>dominant cost: _bars_to_arrays/_bar_times re-derivation (~40% of time:</li>
+</ul>
+<p>each sub-function re-builds numpy arrays + timestamps from the BarData list on every call)</p>
+<p>PROVEN BOTTLENECK: the canonical engine re-derives bar arrays per sub-call. DESIGNED FIX (NOT applied — engine frozen): thread a single pre-computed (bars_to_arrays, bar_times) pair through compute_liquidity_features and its sub-functions; identical outputs, ~2-3x throughput. Apply in a FUTURE schema version with its own golden re-baseline, per the change policy.</p>
+<p>Live hot-path impact: the liquidity snapshot runs on the bar-close cadence (not per-tick); 11.6ms &lt;&lt; 60s M1 cadence -&gt; NO live hot-path regression. Dataset-build impact: 100k-row frame ≈ 8-19 min; bounded slices recommended for iteration.</p></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>En esta página</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#algorithm-version'>Algorithm version</a></li><li class='toc-item toc-h2'><a href='#schema'>Schema</a></li><li class='toc-item toc-h2'><a href='#frozen-constants-task-01-handoff-validated-on-real-data'>Frozen constants (TASK-01 handoff; validated on real data)</a></li><li class='toc-item toc-h2'><a href='#indices-5059'>Indices 50..59</a></li><li class='toc-item toc-h2'><a href='#normalization--clipping--missing-policy'>Normalization / clipping / missing policy</a></li><li class='toc-item toc-h2'><a href='#causal-delays'>Causal delays</a></li><li class='toc-item toc-h2'><a href='#real-data-evidence-2026-08-19-xauusd-m1-100k-bars'>Real-data evidence (2026-08-19, XAUUSD M1, 100k bars)</a></li><li class='toc-item toc-h2'><a href='#parity-evidence'>Parity evidence</a></li><li class='toc-item toc-h2'><a href='#golden-snapshot'>Golden snapshot</a></li><li class='toc-item toc-h2'><a href='#tests'>Tests</a></li><li class='toc-item toc-h2'><a href='#commit-shas-task-02-steps'>Commit SHAs (TASK-02 steps)</a></li><li class='toc-item toc-h2'><a href='#change-policy'>Change policy</a></li><li class='toc-item toc-h2'><a href='#step-2122-performance-measurement-real-data-2026-08-19'>STEP 21/22 PERFORMANCE MEASUREMENT (real data, 2026-08-19)</a></li></ul></aside></div>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/es/research/70d-program/LIQUIDITY_60D_FROZEN.md'>Editar esta página en GitHub</a> · Versión v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
+    <span><a href='../../../../es/project/status/'>Estado del proyecto</a> · <a href='../../../../es/reference/faq/'>FAQ</a> · <a href='../../../../es/releases/'>Todas las versiones</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../../es/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='Buscar… — ⌘K' aria-label='Buscar…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>Buscar……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "Buscar…", "home": "Inicio", "repo": "GitHub", "skip": "Ir al contenido", "language": "Idioma", "partial": "Fuente en inglés — traducción pendiente", "english": "inglés", "version": "Versión", "next": "Siguiente", "prev": "Anterior", "on_github": "Editar esta página en GitHub", "menu": "Menú", "whats_new": "Novedades", "all_releases": "Todas las versiones", "get_started": "Comenzar", "view_architecture": "Arquitectura", "view_roadmap": "Hoja de ruta", "close": "Cerrar", "theme": "Tema", "theme_light": "Claro", "theme_dark": "Oscuro", "theme_system": "Sistema", "copy": "Copiar", "copied": "Copiado", "copy_error": "Error al copiar", "no_results": "Sin resultados", "loading": "Cargando…", "section": "Sección", "search_results": "Resultados de búsqueda", "explore_docs": "Explora la documentación", "full_matrix": "Matriz completa", "release_timeline": "Cronología de versiones", "hero_kicker": "PLATAFORMA DE INVESTIGACIÓN Y EJECUCIÓN DE TRADING CUANTITATIVO", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Una plataforma de scalping basada en investigación, hexagonal y dirigida por eventos para MetaTrader 5 — características causales, modelos profundos gobernados, un motor de riesgo invariante, herramientas de investigación deterministas y observabilidad forense en un pipeline auditable.", "chip_released": "publicada", "chip_rev": "rev", "chip_research": "investigación: 50D vivo · 70D candidato", "released_history": "historial", "release_history_kicker": "HISTORIAL DE VERSIONES", "releases_intro": "Cada versión con sus novedades reales, derivadas de los metadatos de GitHub en tiempo de compilación. Fuente única de versión:", "nf404_title": "404", "nf404_lead": "Esta página de documentación no existe.", "nf404_home": "Inicio", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Versión en GitHub", "back_home": "Volver al inicio", "quickstart_label": "Inicio rápido", "status_label": "Estado del proyecto", "faq_label": "FAQ", "cap_engine": "Motor de características causales 50D", "cap_risk": "Motor de riesgo + límites de ejecución", "cap_oos": "Walk-Forward + puerta OOS estricta", "cap_factory": "Fábrica de modelos artefacto-céntrica", "cap_70d": "Contrato 70D (Base+Noticias+Liquidez)", "cap_cf": "Motor contrafactual (recorrido NO_TRADE)", "pillar_evidence_t": "🧭 Evidencia antes que afirmaciones", "pillar_evidence_b": "Las métricas sin evidencia muestran n/a — nunca ceros falsos. Los resultados negativos se publican: nuestro candidato insignia 70D fue rechazado por nuestra propia puerta OOS.", "pillar_safety_t": "🔒 Seguridad por construcción", "pillar_safety_b": "PAPER por defecto · SHADOW sin autoridad de órdenes · LIVE tras confirmación explícita · límites estrictos de riesgo (HARD_MAX_LOTS, margen ≤20%) aplicados en la ruta de ejecución.", "pillar_research_t": "🔬 Investigación determinista", "pillar_research_b": "Walk-forward purgado y con embargo, replay bit-exacto, datasets/modelos con huella, procedencia en cada ejecución — el mismo contrato de características para vivo, replay y entrenamiento.", "pillar_truth_t": "👁️ Verdad del runtime", "pillar_truth_b": "Observabilidad forense: logs por severidad, correlación de incidentes, puerta de despliegue. La verdad del bróker gana al estado obsoleto; las puertas son la autoridad, la configuración es intención.", "capability": "Capacidad", "status": "Estado", "chip_certified": "CERTIFICADO", "chip_implemented": "IMPLEMENTADO", "chip_experimental": "EXPERIMENTAL", "chip_research_l": "INVESTIGACIÓN", "cap_highlights": "Capacidades destacadas", "callout_important": "IMPORTANTE", "callout_note": "NOTA", "callout_warning": "ADVERTENCIA", "how_it_works": "Cómo funciona Nexus", "reading_time": "min de lectura", "toc_title": "En esta página", "toc_empty": "Sin encabezados", "last_updated": "Actualizado", "share": "Compartir", "edit_page": "Editar esta página", "related_title": "Sigue explorando", "related_sub": "A continuación en esta sección", "up_next": "Siguiente", "also_read": "Lee también", "prev_page": "Anterior", "next_page": "Siguiente", "breadcrumb_home": "Inicio", "hero_eyebrow_project": "Proyecto", "hero_eyebrow_architecture": "Arquitectura", "hero_eyebrow_research": "Investigación", "hero_eyebrow_engineering": "Ingeniería", "hero_eyebrow_guides": "Guías", "hero_eyebrow_getting_started": "Inicio", "hero_eyebrow_contributing": "Contribuir", "hero_eyebrow_reference": "Referencia", "hero_eyebrow_releases": "Versiones", "kpi_certified": "Certificado", "kpi_experimental": "Experimental", "kpi_coverage": "Cobertura", "steps_title": "Pasos", "copy_code": "Copiar", "diagram_title": "Diagrama del sistema", "diagram_sub": "Vista interactiva del pipeline", "stats_live": "Contrato vivo", "callout_tip": "CONSEJO", "callout_info": "INFO", "callout_success": "ÉXITO", "callout_danger": "PELIGRO", "anchor_copy": "Copiar enlace", "anchor_copied": "Enlace copiado", "feedback_title": "¿Te resultó útil?", "feedback_yes": "Sí", "feedback_no": "No", "feedback_thanks": "Gracias por tu comentario", "prose_meta": "Artículo", "word_count": "palabras", "toc_toggle": "Contenidos", "hero_desc_project": "Qué es Nexus, qué está certificado vs experimental.", "hero_desc_architecture": "Cómo está construido el motor: capas hexagonales y camino del tick.", "hero_desc_research": "Cómo los datos históricos se convierten en evidencia falsable.", "hero_desc_engineering": "Puertas de calidad, arquitectura de CI y postura de seguridad.", "hero_desc_guides": "Operar el motor día a día.", "hero_desc_getting_started": "Instala, ejecuta y configura el motor.", "hero_desc_contributing": "El contrato de ingeniería y cómo contribuir.", "hero_desc_reference": "Referencia CLI, glosario y respuestas honestas.", "hero_desc_releases": "Cada versión con sus novedades reales.", "on_this_page": "En esta página"};
+window.NEXUS_LANG = "es";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../../assets/docs-enhance.js' defer></script>
+<script src='../../../../assets/search.js' defer></script>
+
+</body>
+</html>
