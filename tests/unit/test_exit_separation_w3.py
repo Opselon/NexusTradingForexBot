@@ -245,10 +245,10 @@ def _run_chain(om, pos, adapter, tick, probs, holding=30.0, atr=0.0):
 
 
 def test_be_lock_usd_trigger_never_closes():
-    """Flat $15 trigger path: the only broker interaction is modify_position."""
+    """A fired risk-free lock may only modify the stop — never close."""
     adapter = SpyMT5Adapter(close_poison=True)
     om = _manager(adapter=adapter)
-    pos = _buy(9101, profit=20.0)
+    pos = _buy(9101, profit=100.0)  # 2R when the live stop is $50 of risk
     adapter.positions = [pos]
     om.refresh_protection_state(pos, adapter.get_symbol_info("XAUUSD"))
     applied = om.apply_breakeven_lock(
@@ -256,7 +256,8 @@ def test_be_lock_usd_trigger_never_closes():
         symbol_info=adapter.get_symbol_info("XAUUSD"),
         atr=0.0,
         min_stop_gap=0.0,
-        current_tick=_tick(2000.55, 2000.57),
+        current_tick=_tick(2010.00, 2010.02),
+        hold_seconds=90.0,
     )
     assert applied
     assert om.get_protection_state(9101).was_sl_modified
@@ -268,8 +269,8 @@ def test_be_lock_r_and_atr_trigger_paths_never_close():
     """R-floor and ATR trigger flavors are equally close-free."""
     adapter = SpyMT5Adapter(close_poison=True)
     om = _manager(adapter=adapter)
-    om._initial_risks[9102] = 250.0  # 0.15R floor = $37.5
-    pos = _buy(9102, profit=50.0, volume=0.5)
+    om._initial_risks[9102] = 250.0  # 1R = $250, so 1.5R = $375
+    pos = _buy(9102, profit=1.5 * 250.0, volume=0.5)
     adapter.positions = [pos]
     om.refresh_protection_state(pos, adapter.get_symbol_info("XAUUSD"))
     assert om.apply_breakeven_lock(
@@ -277,19 +278,21 @@ def test_be_lock_r_and_atr_trigger_paths_never_close():
         symbol_info=adapter.get_symbol_info("XAUUSD"),
         atr=0.0,
         min_stop_gap=0.0,
-        current_tick=_tick(2000.55, 2000.57),
+        current_tick=_tick(2007.50, 2007.52),
+        hold_seconds=90.0,
     )
-    # ATR alternative trigger on a second ticket (1.5*ATR path).
-    pos2 = _buy(9103, profit=18.0, volume=1.0)
+    # Second ticket: the same geometry with a different volume/risk pair.
+    pos2 = _buy(9103, profit=150.0, volume=1.0)
     adapter.positions = [pos, pos2]
-    om._initial_risks[9103] = 100_000.0  # absurd R floor: ATR path must arm
+    om._initial_risks[9103] = 100.0
     om.refresh_protection_state(pos2, adapter.get_symbol_info("XAUUSD"))
     assert om.apply_breakeven_lock(
         pos=pos2,
         symbol_info=adapter.get_symbol_info("XAUUSD"),
         atr=0.12,
         min_stop_gap=0.0,
-        current_tick=_tick(2000.55, 2000.57),
+        current_tick=_tick(2001.50, 2001.52),
+        hold_seconds=90.0,
     )
     assert len(adapter.modifications) == 2
     _assert_broker_calls_modify_only(adapter)

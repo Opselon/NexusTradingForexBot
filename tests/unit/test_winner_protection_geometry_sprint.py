@@ -110,6 +110,12 @@ def _tick(bid, ask, seconds=0):
     return TickData(symbol="XAUUSD", timestamp=base, bid=bid, ask=ask, volume=1.0)
 
 
+def _tick_at(profit, volume=0.5, entry=2000.00):
+    """A tick whose price is consistent with the position's floating profit."""
+    bid = entry + profit / (volume * 100.0)
+    return _tick(round(bid, 2), round(bid + 0.02, 2))
+
+
 def _prime_risk(om, ticket, risk_usd):
     """Seed the planned-risk tracker the engine fills at POSITION discovery."""
     om._initial_risks[ticket] = risk_usd
@@ -140,11 +146,16 @@ def test_be_trigger_requires_r_floor_not_flat_15():
     assert adapter.modifications == []
 
 
-def test_be_trigger_fires_once_r_floor_reached():
-    """Same position reaching 0.20R ($50 on $250 risk > $37.5 trigger) locks BE."""
+def test_be_trigger_fires_once_the_structural_floor_is_reached():
+    """1.5R of profit after a developed hold locks the risk-free stop.
+
+    EXIT-POLICY v2 raised the floor from the old 0.15R (which armed at a
+    fraction of the planned risk and scratched every pullback) to 1.0R plus
+    the ATR/dwell gates, and made the lock cost-aware.
+    """
     adapter = SprintMockAdapter()
     om = _manager(adapter)
-    pos = _buy(9102, profit=50.0)
+    pos = _buy(9102, profit=1.5 * 250.0)
     adapter.positions = [pos]
     _prime_risk(om, 9102, 250.0)
     om.refresh_protection_state(pos, adapter.get_symbol_info("XAUUSD"))
@@ -153,22 +164,25 @@ def test_be_trigger_fires_once_r_floor_reached():
         symbol_info=adapter.get_symbol_info("XAUUSD"),
         atr=0.0,
         min_stop_gap=0.0,
-        current_tick=_tick(2000.55, 2000.57),
+        current_tick=_tick_at(1.5 * 250.0),
+        hold_seconds=120.0,
     )
     assert applied
     assert om.get_protection_state(9102).was_sl_modified
-    # lock offset: 0.60 pips * 0.10 pip size = $0.06/oz above entry
     ticket, new_sl, _tp = adapter.modifications[0]
     assert ticket == 9102
-    assert new_sl == pytest.approx(2000.06, abs=1e-6)
+    # The lock covers the round-trip cost plus the buffer: strictly above entry.
+    assert new_sl > pos.price_open
+    assert new_sl >= pos.price_open + 0.06
 
 
-def test_be_trigger_flat_floor_still_works_without_risk_provenance():
-    """Without a tracked planned risk (restart re-observation gap), the flat $15
-    floor still arms the lock — fail-safe toward the pre-sprint behavior."""
+def test_missing_risk_provenance_recovers_1r_from_the_live_stop():
+    """Restart gap: no `_initial_risks`, but the position's own SL distance is
+    the risk it was opened with — protection must use it, not shut down."""
     adapter = SprintMockAdapter()
     om = _manager(adapter)
-    pos = _buy(9103, profit=16.0)
+    # 0.5 lots, entry 2000, SL 1995 -> the live stop IS $250 of risk.
+    pos = _buy(9103, profit=300.0)
     adapter.positions = [pos]
     # no _initial_risks seeded
     om.refresh_protection_state(pos, adapter.get_symbol_info("XAUUSD"))
@@ -177,31 +191,53 @@ def test_be_trigger_flat_floor_still_works_without_risk_provenance():
         symbol_info=adapter.get_symbol_info("XAUUSD"),
         atr=0.0,
         min_stop_gap=0.0,
-        current_tick=_tick(2000.60, 2000.62),
+        current_tick=_tick_at(300.0),
+        hold_seconds=180.0,
     )
     assert applied
     assert om.get_protection_state(9103).was_sl_modified
+    _ticket, new_sl, _tp = adapter.modifications[0]
+    assert new_sl > pos.price_open
 
 
-def test_be_atr_alternative_trigger_unchanged():
-    """The volatility-scaled (1.5 ATR) trigger must remain an independent
-    activation path: a huge ATR threshold arms BE even below the USD floors."""
+def test_no_stop_and_no_provenance_leaves_the_position_untouched():
+    """Degenerate ticket: nothing to anchor R on, so no modification is issued."""
     adapter = SprintMockAdapter()
     om = _manager(adapter)
-    pos = _buy(9104, profit=18.0, volume=1.0)
+    pos = _buy(9105, profit=16.0, sl=0.0)
     adapter.positions = [pos]
-    _prime_risk(om, 9104, 100_000.0)  # absurd R floor: never reachable
     om.refresh_protection_state(pos, adapter.get_symbol_info("XAUUSD"))
-    # 1.5 ATR on 1.0 lot with ATR=$20 -> $3000 trigger... use small ATR so the
-    # ATR threshold is ~$18: ATR=0.12 -> 1.5*0.12*100oz*1.0 = $18
-    applied = om.apply_breakeven_lock(
+    assert not om.apply_breakeven_lock(
         pos=pos,
         symbol_info=adapter.get_symbol_info("XAUUSD"),
-        atr=0.12,
+        atr=0.0,
         min_stop_gap=0.0,
         current_tick=_tick(2000.60, 2000.62),
+        hold_seconds=600.0,
     )
-    assert applied
+    assert adapter.modifications == []
+
+
+def test_atr_is_a_noise_floor_instead_of_a_competing_trigger():
+    """v2 inverted the old ATR rule: ATR now RAISES the bar (the move must beat
+    the instrument's noise), it can no longer arm BE below the R floor."""
+    adapter = SprintMockAdapter()
+    om = _manager(adapter)
+    pos = _buy(9104, profit=2.0 * 250.0, volume=0.5)
+    adapter.positions = [pos]
+    _prime_risk(om, 9104, 250.0)
+
+    # A 1.2R profit inside a 12x stop-width wick is noise, not a move.
+    om.refresh_protection_state(pos, adapter.get_symbol_info("XAUUSD"))
+    assert not om.apply_breakeven_lock(
+        pos=pos,
+        symbol_info=adapter.get_symbol_info("XAUUSD"),
+        atr=60.0,
+        min_stop_gap=0.0,
+        current_tick=_tick_at(2.0 * 250.0),
+        hold_seconds=120.0,
+    )
+    assert adapter.modifications == []
 
 
 # ---------------------------------------------------------------------------

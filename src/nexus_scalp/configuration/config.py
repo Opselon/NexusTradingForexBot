@@ -120,6 +120,10 @@ class ModelConfig(BaseModel):
 
 
 class AlgoConfig(BaseModel):
+    #: EXIT-POLICY v2: adaptive (R + ATR + cost + regime aware) breakeven and
+    #: partial de-risk ladder. Default ON — the legacy flat-$15/0.15R trigger
+    #: moved the stop to entry far too early and scratched winners.
+    exit_policy_v2_enabled: bool = Field(default=True)
     atr_sl_buffer_multiplier: float = Field(default=1.5, ge=0.5, le=4.0)
     min_risk_reward_ratio: float = Field(default=1.8, ge=1.0, le=5.0)
     min_rr_high_confidence: float = Field(default=1.2, ge=0.5, le=5.0)
