@@ -22,7 +22,7 @@ polars==2.0.0
 psycopg-pool==3.3.3
 psycopg==3.3.6
 pyarrow==26.0.0
-pydantic-settings==2.16.0
+pydantic-settings==2.16.1
 pydantic==2.14.1
 pygments==2.21.0
 pyinstaller==6.22.3
