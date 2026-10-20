@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -46,6 +47,30 @@ from typing import Any
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.model_generation.certification")
+
+_SAFE_MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def _bundle_artifact(bundle_dir: str | Path, model_id: str, suffix: str) -> Path:
+    """Resolve ``<bundle_dir>/<model_id><suffix>`` INSIDE the artifact bundle.
+
+    ``model_id`` arrives from manifests, registry rows and CLI arguments, so it
+    is validated as a single path COMPONENT before the join: a value carrying a
+    separator, a parent reference or an anchor would otherwise put the read —
+    and, for the certificate, the WRITE — outside the artifact root. This gate
+    is the trust boundary for model loading, so an id that cannot be confined
+    is rejected instead of being normalised into something loadable.
+    """
+    if not _SAFE_MODEL_ID.match(model_id):
+        raise CompatibilityError(f"LOAD_REJECTED: unsafe model id {model_id!r}")
+    root = Path(bundle_dir).resolve()
+    candidate = (root / f"{model_id}{suffix}").resolve()
+    if candidate.parent != root:
+        raise CompatibilityError(
+            f"LOAD_REJECTED: model id {model_id!r} resolves outside the artifact bundle"
+        )
+    return candidate
+
 
 __all__ = [
     "CERTIFICATION_VERSION",
@@ -503,10 +528,9 @@ class ModelCertificationGate:
         """
         if bundle_dir is None:
             return GateVerdict("ARTIFACT_INTEGRITY", False, "no artifact bundle directory supplied")
-        d = Path(bundle_dir)
-        weights = d / f"{model_id}.pt"
-        manifest_path = d / f"{model_id}.meta.json"
-        scaler_path = d / f"{model_id}.scaler.npz"
+        weights = _bundle_artifact(bundle_dir, model_id, ".pt")
+        manifest_path = _bundle_artifact(bundle_dir, model_id, ".meta.json")
+        scaler_path = _bundle_artifact(bundle_dir, model_id, ".scaler.npz")
 
         missing = [
             n
@@ -665,11 +689,10 @@ def verify_artifact_bundle(
     load path surfaces that reason verbatim as ``LOAD_REJECTED`` — it never
     adapts, truncates, zero-pads or substitutes a different model.
     """
-    d = Path(bundle_dir)
-    weights = d / f"{model_id}.pt"
-    manifest_path = d / f"{model_id}.meta.json"
-    scaler_path = d / f"{model_id}.scaler.npz"
-    cert_path = d / f"{model_id}.certificate.json"
+    weights = _bundle_artifact(bundle_dir, model_id, ".pt")
+    manifest_path = _bundle_artifact(bundle_dir, model_id, ".meta.json")
+    scaler_path = _bundle_artifact(bundle_dir, model_id, ".scaler.npz")
+    cert_path = _bundle_artifact(bundle_dir, model_id, ".certificate.json")
 
     for label, p in (
         ("model.pt", weights),
@@ -805,14 +828,14 @@ def certify_model(
     if out_dir is not None:
         d = Path(out_dir)
         d.mkdir(parents=True, exist_ok=True)
-        (d / f"{model_id}.certificate.json").write_text(
+        _bundle_artifact(d, model_id, ".certificate.json").write_text(
             json.dumps(cert.to_dict(), indent=2, default=str), encoding="utf-8"
         )
     return cert
 
 
 def load_certificate(bundle_dir: str | Path, model_id: str) -> ModelCertificate | None:
-    p = Path(bundle_dir) / f"{model_id}.certificate.json"
+    p = _bundle_artifact(bundle_dir, model_id, ".certificate.json")
     if not p.is_file():
         return None
     try:
