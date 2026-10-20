@@ -52,7 +52,7 @@ T_MAX = 4.0
 DEFAULT_BINS = 15
 
 
-def _as_2d(probabilities: Sequence[Sequence[float]] | np.ndarray) -> np.ndarray:
+def _as_2d(probabilities: Sequence[Sequence[float]] | Sequence[float] | np.ndarray) -> np.ndarray:
     array = np.asarray(probabilities, dtype=float)
     if array.ndim == 1:
         array = array.reshape(1, -1)
@@ -188,7 +188,9 @@ def write_artifact(path: Path | str, artifact: CalibrationArtifact) -> Path:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(target.suffix + ".tmp")
-    tmp.write_text(json.dumps(artifact.as_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(artifact.as_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     os.replace(tmp, target)
     return target
 

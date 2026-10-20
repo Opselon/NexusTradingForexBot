@@ -36,9 +36,7 @@ def test_the_perf_middleware_can_be_switched_off(app_factory, monkeypatch):
     # add_middleware is still called with the config; the config is what
     # disables it, so the class stays in the stack but must be inert.
     configs = [
-        entry.kwargs.get("config")
-        for entry in app.user_middleware
-        if entry.cls is PerfMiddleware
+        entry.kwargs.get("config") for entry in app.user_middleware if entry.cls is PerfMiddleware
     ]
     assert all(isinstance(config, PerfConfig) and not config.enabled for config in configs)
 

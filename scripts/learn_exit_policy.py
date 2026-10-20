@@ -78,7 +78,9 @@ def _read_ledger(db_url: str, limit: int) -> list[ExitObservation]:
 
 
 def _print_table(report: dict) -> None:
-    print(f"{'regime':<12}{'n':>7}{'trigger':>10}{'baseline R':>13}{'expected R':>13}{'lift':>9}  accepted")
+    print(
+        f"{'regime':<12}{'n':>7}{'trigger':>10}{'baseline R':>13}{'expected R':>13}{'lift':>9}  accepted"
+    )
     print("-" * 80)
     for regime, rec in sorted(report["regimes"].items()):
         print(
@@ -88,23 +90,42 @@ def _print_table(report: dict) -> None:
         )
         print(f"{'':<12}{rec['reason']}")
     print("-" * 80)
-    print(f"observations: {report['total_observations']} · lock: {report['lock_r']}R · grid: {report['grid']}")
+    print(
+        f"observations: {report['total_observations']} · lock: {report['lock_r']}R · grid: {report['grid']}"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--db", default=DEFAULT_DB, help=f"audit DB url or path (default: {DEFAULT_DB})")
-    parser.add_argument("--from-csv", type=Path, default=None, help="offline input: regime,mfe_r,final_r")
-    parser.add_argument("--out", type=Path, default=None, help="artifact path to write (default: artifacts/exit_policy.json)")
-    parser.add_argument("--min-samples", type=int, default=40, help="closed trades per regime before learning")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--db", default=DEFAULT_DB, help=f"audit DB url or path (default: {DEFAULT_DB})"
+    )
+    parser.add_argument(
+        "--from-csv", type=Path, default=None, help="offline input: regime,mfe_r,final_r"
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="artifact path to write (default: artifacts/exit_policy.json)",
+    )
+    parser.add_argument(
+        "--min-samples", type=int, default=40, help="closed trades per regime before learning"
+    )
     parser.add_argument("--limit", type=int, default=20000, help="ledger rows to read")
-    parser.add_argument("--dry-run", action="store_true", help="print the recommendation, write nothing")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="print the recommendation, write nothing"
+    )
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args(argv)
 
     observations = _read_csv(args.from_csv) if args.from_csv else _read_ledger(args.db, args.limit)
     if not observations:
-        print("no closed observations found — nothing to learn (artifact untouched)", file=sys.stderr)
+        print(
+            "no closed observations found — nothing to learn (artifact untouched)", file=sys.stderr
+        )
         return 2
 
     result = optimize(observations, min_samples=args.min_samples)

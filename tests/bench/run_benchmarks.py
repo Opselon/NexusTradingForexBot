@@ -41,7 +41,9 @@ if str(REPO_ROOT / "src") not in sys.path:
 
 JSON_PAYLOAD = (
     b'{"status":"ok","version":42,"rows":['
-    + b",".join(b'{"ticket":%d,"symbol":"XAUUSD","pnl":%d.%02d}' % (i, i, i % 100) for i in range(2500))
+    + b",".join(
+        b'{"ticket":%d,"symbol":"XAUUSD","pnl":%d.%02d}' % (i, i, i % 100) for i in range(2500)
+    )
     + b"]}"
 )
 
@@ -75,7 +77,9 @@ class BenchResult:
         }
 
 
-def measure(name: str, fn: Callable[[], Any], *, calls: int, budget_us: float, warmup: int = 5) -> BenchResult:
+def measure(
+    name: str, fn: Callable[[], Any], *, calls: int, budget_us: float, warmup: int = 5
+) -> BenchResult:
     for _ in range(warmup):
         fn()
     gc.collect()
@@ -202,7 +206,13 @@ def build_web_subject():
         async def receive():
             return {"type": "http.request", "body": b"", "more_body": False}
 
-        scope = {"type": "http", "method": "GET", "path": "/api/state", "headers": headers, "query_string": b""}
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/state",
+            "headers": headers,
+            "query_string": b"",
+        }
         loop.run_until_complete(middleware(scope, receive, send))
         start = next(m for m in sent if m["type"] == "http.response.start")
         body = b"".join(m.get("body", b"") for m in sent[1:])
@@ -233,7 +243,9 @@ def run_benchmarks(max_regression_pct: float, baseline: dict[str, Any]) -> dict[
     results.append(measure("exit_policy.plan (no modify)", plan, calls=4000, budget_us=250.0))
 
     cal = build_calibration_subject()
-    results.append(measure("calibration.apply_temperature (64x4)", cal["apply"], calls=20000, budget_us=60.0))
+    results.append(
+        measure("calibration.apply_temperature (64x4)", cal["apply"], calls=20000, budget_us=60.0)
+    )
     results.append(measure("calibration.ece (8k rows)", cal["ece"], calls=40, budget_us=12_000.0))
 
     web_call, raw_bytes, _loop = build_web_subject()
@@ -262,13 +274,22 @@ def run_benchmarks(max_regression_pct: float, baseline: dict[str, Any]) -> dict[
     revalidate.meta = {"status": not_modified["status"], "body_bytes": len(not_modified["body"])}
     results.append(revalidate)
 
-    results.append(measure("exit_optimizer.optimize (3k obs)", build_optimizer_subject(), calls=6, budget_us=400_000.0))
+    results.append(
+        measure(
+            "exit_optimizer.optimize (3k obs)",
+            build_optimizer_subject(),
+            calls=6,
+            budget_us=400_000.0,
+        )
+    )
 
     # Noise floor: the same cheap call measured twice on THIS machine. Any
     # delta under it is measurement, not regression.
     first_pass = measure("noise.floor.a", cal["apply"], calls=4000, budget_us=1e9)
     second_pass = measure("noise.floor.b", cal["apply"], calls=4000, budget_us=1e9)
-    noise_pct = abs(second_pass.median_us - first_pass.median_us) / max(first_pass.median_us, 1e-9) * 100.0
+    noise_pct = (
+        abs(second_pass.median_us - first_pass.median_us) / max(first_pass.median_us, 1e-9) * 100.0
+    )
     noise_pct = round(max(noise_pct, 3.0), 2)
 
     verdict = "PASS"
@@ -295,17 +316,27 @@ def run_benchmarks(max_regression_pct: float, baseline: dict[str, Any]) -> dict[
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--baseline-json", type=Path, default=None, help="recorded medians to compare against")
-    parser.add_argument("--report-json", type=Path, default=None, help="where to write the full report")
-    parser.add_argument("--write-baseline", action="store_true", help="overwrite the baseline with this run")
-    parser.add_argument("--fail-on-regression", action="store_true", help="non-zero exit on FAIL/REGRESSED")
+    parser.add_argument(
+        "--baseline-json", type=Path, default=None, help="recorded medians to compare against"
+    )
+    parser.add_argument(
+        "--report-json", type=Path, default=None, help="where to write the full report"
+    )
+    parser.add_argument(
+        "--write-baseline", action="store_true", help="overwrite the baseline with this run"
+    )
+    parser.add_argument(
+        "--fail-on-regression", action="store_true", help="non-zero exit on FAIL/REGRESSED"
+    )
     parser.add_argument("--max-regression-pct", type=float, default=20.0)
     args = parser.parse_args(argv)
 
     baseline: dict[str, Any] = {}
     if args.baseline_json and args.baseline_json.exists():
         try:
-            baseline = json.loads(args.baseline_json.read_text(encoding="utf-8")).get("benchmarks", {})
+            baseline = json.loads(args.baseline_json.read_text(encoding="utf-8")).get(
+                "benchmarks", {}
+            )
         except Exception as error:  # pragma: no cover - defensive
             print(f"warning: unreadable baseline ({error}); continuing without it", file=sys.stderr)
 
@@ -333,7 +364,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.write_baseline and args.baseline_json:
         payload = {
             "tool": report["tool"],
-            "benchmarks": {b["name"]: {"median_us": b["median_us"], "budget_us": b["budget_us"]} for b in report["benchmarks"]},
+            "benchmarks": {
+                b["name"]: {"median_us": b["median_us"], "budget_us": b["budget_us"]}
+                for b in report["benchmarks"]
+            },
         }
         args.baseline_json.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         print(f"baseline written to {args.baseline_json}")

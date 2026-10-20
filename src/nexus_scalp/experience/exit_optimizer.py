@@ -123,8 +123,7 @@ class ExitOptimization:
 def normalize_regime(regime: str | None) -> str:
     """Three buckets, mirroring the runtime policy's vocabulary."""
     key = str(regime or "").strip().upper()
-    if key in {"TREND", "TRENDING", "TREND_UP", "TREND_DOWN", "EXPANSION",
-               "VOLATILITY_EXPANSION"}:
+    if key in {"TREND", "TRENDING", "TREND_UP", "TREND_DOWN", "EXPANSION", "VOLATILITY_EXPANSION"}:
         return "TREND"
     if key in {"RANGE", "RANGING", "MEAN_REVERSION", "COMPRESSION", "CHOP"}:
         return "RANGE"
@@ -187,8 +186,9 @@ def counterfactual_r(
     return observation.final_r - dip_fraction * (observation.final_r - lock_r)
 
 
-def estimate_dip_fraction(observations: Sequence[ExitObservation],
-                          giveback_r: float = 0.5) -> float:
+def estimate_dip_fraction(
+    observations: Sequence[ExitObservation], giveback_r: float = 0.5
+) -> float:
     """Share of winning trades that gave back at least ``giveback_r`` of their MFE.
 
     This is the empirical chance that a locked stop would have been hit while
@@ -202,13 +202,17 @@ def estimate_dip_fraction(observations: Sequence[ExitObservation],
     return min(0.60, max(0.05, dipped / len(winners)))
 
 
-def expected_r(observations: Sequence[ExitObservation], trigger_r: float,
-               lock_r: float, dip_fraction: float = 0.25) -> float:
+def expected_r(
+    observations: Sequence[ExitObservation],
+    trigger_r: float,
+    lock_r: float,
+    dip_fraction: float = 0.25,
+) -> float:
     if not observations:
         return 0.0
-    return sum(
-        counterfactual_r(o, trigger_r, lock_r, dip_fraction) for o in observations
-    ) / len(observations)
+    return sum(counterfactual_r(o, trigger_r, lock_r, dip_fraction) for o in observations) / len(
+        observations
+    )
 
 
 def _expected_r_arrays(mfe, final, trigger_r: float, lock_r: float, dip_fraction: float):
@@ -221,9 +225,14 @@ def _expected_r_arrays(mfe, final, trigger_r: float, lock_r: float, dip_fraction
     return float(values.mean())
 
 
-def _bootstrap_lift_ci(observations: Sequence[ExitObservation], chosen: float, baseline: float,
-                       lock_r: float, seed: int = 20260101,
-                       dip_fraction: float = 0.25) -> tuple[float, float]:
+def _bootstrap_lift_ci(
+    observations: Sequence[ExitObservation],
+    chosen: float,
+    baseline: float,
+    lock_r: float,
+    seed: int = 20260101,
+    dip_fraction: float = 0.25,
+) -> tuple[float, float]:
     """Percentile bootstrap CI of (mean R at ``chosen`` minus mean R at ``baseline``).
 
     Resampling is done on index arrays against pre-extracted columns: the
@@ -240,15 +249,17 @@ def _bootstrap_lift_ci(observations: Sequence[ExitObservation], chosen: float, b
     lifts = np.empty(BOOTSTRAP_ITERS, dtype=float)
     for index in range(BOOTSTRAP_ITERS):
         pick = rng.integers(0, n, size=n)
-        lifts[index] = _expected_r_arrays(mfe[pick], final[pick], chosen, lock_r, dip_fraction) - _expected_r_arrays(
-            mfe[pick], final[pick], baseline, lock_r, dip_fraction
-        )
+        lifts[index] = _expected_r_arrays(
+            mfe[pick], final[pick], chosen, lock_r, dip_fraction
+        ) - _expected_r_arrays(mfe[pick], final[pick], baseline, lock_r, dip_fraction)
     lo = float(np.quantile(lifts, (1.0 - CONFIDENCE) / 2.0))
     hi = float(np.quantile(lifts, (1.0 + CONFIDENCE) / 2.0))
     return lo, hi
 
 
-def negative_rate_at(observations: Sequence[ExitObservation], trigger_r: float) -> tuple[int, float]:
+def negative_rate_at(
+    observations: Sequence[ExitObservation], trigger_r: float
+) -> tuple[int, float]:
     """Trades that reached ``trigger_r`` but still closed at a loss (share)."""
     reached = [o for o in observations if o.mfe_r >= trigger_r]
     if not reached:
@@ -326,7 +337,9 @@ def optimize(
         # The CI is evidence FOR a change; computing it when nothing changed
         # would cost the whole budget for a number nobody reads.
         ci_low, _ci_high = (
-            _bootstrap_lift_ci(rows, trigger, baseline_trigger_r, lock_r, seed, dip) if changed else (0.0, 0.0)
+            _bootstrap_lift_ci(rows, trigger, baseline_trigger_r, lock_r, seed, dip)
+            if changed
+            else (0.0, 0.0)
         )
         recommendations[regime] = RegimeRecommendation(
             regime=regime,

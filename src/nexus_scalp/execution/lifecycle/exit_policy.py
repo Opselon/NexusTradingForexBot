@@ -182,7 +182,9 @@ class ExitProtectionPolicy:
     def learned_trigger_r(self, regime: str) -> float | None:
         return self._learned.get(normalize_regime(regime))
 
-    def trigger_floor_r(self, regime: str, r_unit: float, atr_price: float) -> tuple[float, dict[str, float]]:
+    def trigger_floor_r(
+        self, regime: str, r_unit: float, atr_price: float
+    ) -> tuple[float, dict[str, float]]:
         """Resolve the R floor for this ticket and expose its provenance."""
         bucket = normalize_regime(regime)
         cfg = self.cfg
@@ -237,9 +239,7 @@ class ExitProtectionPolicy:
         """Stop at ``-partial_de_risk_stop_r`` R (half the open risk removed)."""
         offset = self.cfg.partial_de_risk_stop_r * r_unit
         return (
-            position.price_open - offset
-            if self._is_buy(position)
-            else position.price_open + offset
+            position.price_open - offset if self._is_buy(position) else position.price_open + offset
         )
 
     def lock_price(
@@ -354,7 +354,11 @@ class ExitProtectionPolicy:
                 ExitAction.HOLD,
                 trigger_r=floor_r,
                 reason="profit collapsed below spike allowance",
-                evidence={**evidence, "pnl_usd": current_usd, "reference_usd": round(reference_usd, 2)},
+                evidence={
+                    **evidence,
+                    "pnl_usd": current_usd,
+                    "reference_usd": round(reference_usd, 2),
+                },
             )
 
         # Ladder step 1: partial de-risk below the full trigger.

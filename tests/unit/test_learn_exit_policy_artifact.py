@@ -59,13 +59,20 @@ def test_the_artifact_written_is_the_one_the_runtime_loads(learner, tmp_path):
 def test_a_dry_run_writes_nothing(learner, tmp_path):
     source = write_csv(tmp_path / "trades.csv", round_trip_book())
     out = tmp_path / "exit_policy.json"
-    assert learner.main(["--from-csv", str(source), "--out", str(out), "--min-samples", "20", "--dry-run"]) == 0
+    assert (
+        learner.main(
+            ["--from-csv", str(source), "--out", str(out), "--min-samples", "20", "--dry-run"]
+        )
+        == 0
+    )
     assert not out.exists()
 
 
 def test_a_thin_book_never_overwrites_the_live_artifact(learner, tmp_path):
     out = tmp_path / "exit_policy.json"
-    out.write_text(json.dumps({"version": 3, "regimes": {"TREND": {"trigger_r": 1.5}}}), encoding="utf-8")
+    out.write_text(
+        json.dumps({"version": 3, "regimes": {"TREND": {"trigger_r": 1.5}}}), encoding="utf-8"
+    )
     source = write_csv(tmp_path / "trades.csv", [("TREND", 1.0, -1.0)] * 3)
 
     assert learner.main(["--from-csv", str(source), "--out", str(out), "--min-samples", "20"]) == 0

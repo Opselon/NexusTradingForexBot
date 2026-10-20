@@ -176,7 +176,10 @@ class PerfMiddleware:
         content_type = lowered.get("content-type", "")
         status = int(head.get("status", 200))
 
-        if not _is_cacheable(scope.get("method", ""), content_type) or status not in _CACHEABLE_STATUSES:
+        if (
+            not _is_cacheable(scope.get("method", ""), content_type)
+            or status not in _CACHEABLE_STATUSES
+        ):
             for message in messages:
                 await send(message)
             return
@@ -206,12 +209,21 @@ class PerfMiddleware:
             extra["vary"] = "Accept-Encoding"
 
         new_headers = _replace_headers(headers, etag=etag, extra=extra)
-        new_headers.append((b"server-timing", f"app;dur={(time.perf_counter() - started) * 1000:.1f}".encode()))
-        new_headers = _set_content_length(new_headers, len(send_body) if scope.get("method") != "HEAD" else len(body))
+        new_headers.append(
+            (b"server-timing", f"app;dur={(time.perf_counter() - started) * 1000:.1f}".encode())
+        )
+        new_headers = _set_content_length(
+            new_headers, len(send_body) if scope.get("method") != "HEAD" else len(body)
+        )
 
         await send({"type": "http.response.start", "status": status, "headers": new_headers})
         # HEAD advertises the entity's length but must never carry it.
-        await send({"type": "http.response.body", "body": b"" if scope.get("method") == "HEAD" else send_body})
+        await send(
+            {
+                "type": "http.response.body",
+                "body": b"" if scope.get("method") == "HEAD" else send_body,
+            }
+        )
 
 
 def _replace_headers(
@@ -227,7 +239,9 @@ def _replace_headers(
     return out
 
 
-def _set_content_length(headers: list[tuple[bytes, bytes]], length: int) -> list[tuple[bytes, bytes]]:
+def _set_content_length(
+    headers: list[tuple[bytes, bytes]], length: int
+) -> list[tuple[bytes, bytes]]:
     out = [(key, value) for key, value in headers if key.lower() != b"content-length"]
     out.append((b"content-length", str(length).encode()))
     return out

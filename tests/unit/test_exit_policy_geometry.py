@@ -28,7 +28,7 @@ from nexus_scalp.execution.lifecycle.exit_policy import (
 
 CONTRACT = 100.0  # XAUUSD
 ENTRY = 2400.00
-RISK_USD = 150.0          # planned risk
+RISK_USD = 150.0  # planned risk
 R_UNIT = RISK_USD / (0.10 * CONTRACT)  # 15.00 USD of price per 1R at 0.10 lots
 
 
@@ -207,9 +207,15 @@ def test_regime_aliases_collapse_onto_three_buckets():
 def test_a_learned_profile_raises_the_bar():
     base = ExitProtectionPolicy()
     learned = ExitProtectionPolicy(learned={"TREND": 2.2})
-    assert plan(1.5 * RISK_USD, atr=0.2, regime="TREND", policy=base).action == ExitAction.BREAKEVEN_LOCK
+    assert (
+        plan(1.5 * RISK_USD, atr=0.2, regime="TREND", policy=base).action
+        == ExitAction.BREAKEVEN_LOCK
+    )
     # With a 2.2R learned floor the same trade may only take the ladder step:
-    assert plan(1.5 * RISK_USD, atr=0.2, regime="TREND", policy=learned).action == ExitAction.PARTIAL_DE_RISK
+    assert (
+        plan(1.5 * RISK_USD, atr=0.2, regime="TREND", policy=learned).action
+        == ExitAction.PARTIAL_DE_RISK
+    )
 
 
 def test_an_absurd_learned_value_is_rejected():
